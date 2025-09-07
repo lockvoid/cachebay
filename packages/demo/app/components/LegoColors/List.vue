@@ -35,7 +35,5 @@ const loadMore = () => {
         Load more
       </span>
     </button>
-
-    {{ legoColorsQueryVariables }}
   </div>
 </template>

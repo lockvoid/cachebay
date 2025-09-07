@@ -36,12 +36,13 @@ export function buildCachebayPlugin(
     collectNonRelayEntities,
   } = args;
 
-  // Leaders + take-latest (scope-aware)
+  // In-flight + take-latest (scope-aware)
   const inflightRequests = new Map<string, { listeners: Set<(res: { data?: any; error?: any }) => void> }>();
-  const inflightByFam = new Map<string, string>();      // famKey -> latest leader inflightKey
+  const inflightByFam = new Map<string, string>(); // famKey -> latest leader inflightKey
   const lastPublishedByFam = new Map<string, { data: any; variables: Record<string, any> }>();
   const reentryGuard = new Set<string>();
 
+  // Unique key for each leader
   let inflightSeq = 0;
 
   const RELAY_CURSOR_FIELDS = ["after", "before", "first", "last"] as const;
@@ -50,7 +51,7 @@ export function buildCachebayPlugin(
 
   const setOpCache = (k: string, v: { data: any; variables: Record<string, any> }) => {
     internals.operationCache.set(k, v);
-    if (internals.operationCache.size > opCacheMax) {
+    if (internals.operationCache.size > args.opCacheMax) {
       const oldest = internals.operationCache.keys().next().value as string | undefined;
       if (oldest) internals.operationCache.delete(oldest);
     }
@@ -61,17 +62,19 @@ export function buildCachebayPlugin(
     const originalUseResult = ctx.useResult;
     const originalAfterQuery = ctx.afterQuery ?? (() => { });
 
+    // Keys
     const scope = (operation.context as any)?.concurrencyScope ?? (operation.context as any)?.cachebayScope ?? "";
-    const famKey = familyKeyForOperation(operation); // includes ::scope when present
+    const famKey = familyKeyForOperation(operation);      // includes ::scope when present
     const opKey = operationKey(operation);
     const inflightKeyBase = scope ? `${opKey}::${scope}` : opKey;
-    const inflightKey = `${inflightKeyBase}::#${++inflightSeq}`; // unique leader key
+    const inflightKey = `${inflightKeyBase}::#${++inflightSeq}`;
 
     // SUBSCRIPTIONS
     if (operation.type === "subscription") {
       if (shouldAddTypename && operation.query) {
         operation.query = ensureDocumentHasTypenameSmart(operation.query as any);
       }
+
       const passThrough = originalUseResult;
       ctx.useResult = (incoming: any) => {
         if (isObservableLike(incoming)) return passThrough(incoming, true);
@@ -95,16 +98,15 @@ export function buildCachebayPlugin(
       operation.query = ensureDocumentHasTypenameSmart(operation.query as any);
     }
 
-    const cachedForKey = internals.operationCache.get(opKey);
-
-    // Register THIS ctx as the latest leader
+    // Register this leader
     inflightRequests.set(inflightKey, { listeners: new Set() });
     inflightByFam.set(famKey, inflightKey);
 
-    // Cache-first publish (guarded to avoid duplicate UI renders of same object)
+    // Cached fast-path (cache-first / cache-and-network / cache-only)
+    const cachedForKey = internals.operationCache.get(opKey);
     if (operation.type === "query" && operation.cachePolicy !== "network-only") {
       if (cachedForKey) {
-        const hasHydrateTicket = hydrateOperationTicket.has(opKey);
+        const hasHydrateTicket = args.hydrateOperationTicket.has(opKey);
         const isReentry = reentryGuard.has(inflightKey);
         const shouldTerminate =
           operation.cachePolicy === "cache-first" ||
@@ -115,29 +117,38 @@ export function buildCachebayPlugin(
 
         if (hasHydrateTicket) reentryGuard.add(inflightKey);
 
+        // ✅ Avoid duplicate cached emit if the exact same object already rendered for this family
         const last = lastPublishedByFam.get(famKey);
         const alreadyOnScreen = last && last.data === cachedForKey.data;
 
         if (!alreadyOnScreen) {
           registerViewsFromResult(cachedForKey.data, cachedForKey.variables);
+          // update "on screen" marker for this family
+          lastPublishedByFam.set(famKey, { data: cachedForKey.data, variables: cachedForKey.variables });
           originalUseResult({ data: cachedForKey.data }, shouldTerminate);
+        } else if (shouldTerminate) {
+          // No-op but terminate cleanly (do NOT emit empty payload)
+          const e = inflightRequests.get(inflightKey);
+          if (e) inflightRequests.delete(inflightKey);
+          if (inflightByFam.get(famKey) === inflightKey) inflightByFam.delete(famKey);
+          if (hasHydrateTicket) args.hydrateOperationTicket.delete(opKey);
+          return;
         }
 
-        if (hasHydrateTicket) hydrateOperationTicket.delete(opKey);
+        if (hasHydrateTicket) args.hydrateOperationTicket.delete(opKey);
 
         if (shouldTerminate) {
           const e = inflightRequests.get(inflightKey);
           if (e) {
-            if (!alreadyOnScreen) {
-              e.listeners.forEach((fn) => fn({ data: cachedForKey.data }));
-            }
+            // fan-out only if we emitted above (otherwise nothing to deliver)
+            if (!alreadyOnScreen) e.listeners.forEach((fn) => fn({ data: cachedForKey.data }));
             inflightRequests.delete(inflightKey);
           }
           if (inflightByFam.get(famKey) === inflightKey) inflightByFam.delete(famKey);
           return;
         }
       } else if (operation.cachePolicy === "cache-only") {
-        originalUseResult({}, true);
+        // Miss on cache-only: terminate without emitting any payload (no blanks)
         inflightRequests.delete(inflightKey);
         if (inflightByFam.get(famKey) === inflightKey) inflightByFam.delete(famKey);
         return;
@@ -160,12 +171,13 @@ export function buildCachebayPlugin(
       setTimeout(() => { reentryGuard.delete(inflightKey); }, 0);
 
       const vars = operation.variables || {};
-      const isCursorPage = vars && (vars.after != null || vars.before != null);
+      const isCursorPage = (vars && (vars.after != null || vars.before != null)) === true;
+
       const latestLeader = inflightByFam.get(famKey);
       const isLatestLeader = latestLeader === inflightKey;
 
       if (!res || (!("data" in res) && !(res as any).error)) {
-        if (isLatestLeader) originalUseResult({}, true);
+        if (isLatestLeader) originalUseResult({}, true); // terminate self; UI won't blank because we don't rely on this
         finishAndNotify(null);
         return;
       }
@@ -180,6 +192,7 @@ export function buildCachebayPlugin(
         return;
       }
 
+      // Drop non-latest unless cursor page (allowed replay)
       if (!isLatestLeader && !isCursorPage) {
         setOpCache(opKey, { data: (res as any).data, variables: vars });
         finishAndNotify(null);

@@ -1,17 +1,6 @@
-export const tick = () => {
-  new Promise((resolve) => setTimeout(resolve, 0));
-};
-
-export const delay = (ms: number) => {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-};
-
-export const raf = () => {
-  return new Promise((resolve) =>
-    (globalThis as any).requestAnimationFrame ? requestAnimationFrame(() => resolve()) : setTimeout(() => resolve(), 16),
-  );
-}
-
+export * from './concurrency';
+export * from './transport';
+export * from './dom';
 
 /** Treat the cache (plugin) as a function Villus will call with a context. */
 export function asPlugin(cache: any) {

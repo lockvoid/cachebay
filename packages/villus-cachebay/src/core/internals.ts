@@ -14,6 +14,7 @@ import { relay } from "../resolvers/relay";
 import { buildCachebayPlugin, provideCachebay } from "./plugin";
 import { createModifyOptimistic } from "../features/optimistic";
 import { createSSRFeatures } from "../features/ssr";
+import { createInspect } from "../features/debug";
 
 import type {
   CachebayOptions,
@@ -727,6 +728,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
           (value as any)[pageInfoFieldName] = shallowReactive(pageInfoObj || {});
         }
 
+        // Merge connection-level meta fields into state.meta (excluding edges/pageInfo/__typename)
         if (value && typeof value === "object") {
           const vk = Object.keys(value);
           for (let i = 0; i < vk.length; i++) {
@@ -735,21 +737,55 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
           }
         }
 
+        // ── NEW: inherit current visible limit (max across views) for newest view
+        let currentLimit = 0;
+        if (state.views && state.views.size) {
+          state.views.forEach((v: any) => {
+            if (v && typeof v.limit === "number" && v.limit > currentLimit) currentLimit = v.limit;
+          });
+        }
+
+        const newEdgesRef = (value as any)[edgesFieldName];
+
+        // Add the new view; for the very first view limit is this page size,
+        // for subsequent views inherit the currentLimit so newest view shows the same window.
         addStrongView(state, {
-          edges: (value as any)[edgesFieldName],
+          edges: newEdgesRef,
           pageInfo: (value as any)[pageInfoFieldName],
           root: value,
           edgesKey: edgesFieldName,
           pageInfoKey: pageInfoFieldName,
           pinned: false,
-          limit: Array.isArray(edgesArr) ? edgesArr.length : 0,
+          limit: state.initialized
+            ? currentLimit
+            : (Array.isArray(edgesArr) ? edgesArr.length : 0),
         });
 
+        // Ensure the just-added view's limit is at least the currentLimit and never beyond list length
+        const newView = (() => {
+          for (const v of state.views.values()) {
+            if (v && v.edges === newEdgesRef) return v as any;
+          }
+          return null;
+        })();
+
+        if (newView && state.initialized) {
+          if (typeof newView.limit !== "number" || newView.limit < currentLimit) {
+            newView.limit = currentLimit;
+          }
+          if (newView.limit > state.list.length) {
+            newView.limit = state.list.length;
+          }
+        }
+
+        // Immediate sync so the newest view displays the full visible window now
+        synchronizeConnectionViews(state);
+
         if (!state.initialized) {
-          synchronizeConnectionViews(state);
           state.initialized = true;
         } else {
-          markConnectionDirty(state);
+          // Optionally keep the dirty mark to coalesce with other updates
+          // markConnectionDirty(state);
         }
       }
     });
@@ -944,7 +980,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
       ensureConnectionState,
       buildConnectionKey,
       parentEntityKeyFor,
-      getRelayOptionsByType, // ✅ FIX: was missing; needed to find relay spec for Query.colors
+      getRelayOptionsByType, // ✅ FIX: needed to find relay spec for Query.colors
 
       // entity helpers
       parseEntityKey,
@@ -985,23 +1021,10 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
 
   (instance as any).modifyOptimistic = modifyOptimistic;
 
-  // Lazy: load inspect from feature/debug on first access (keeps prod lean)
-  let __inspectCache: any | null = null;
-  Object.defineProperty(instance as any, "inspect", {
-    configurable: true,
-    enumerable: true,
-    get() {
-      if (!__inspectCache) {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const mod = require("../features/debug") as typeof import("../features/debug");
-        __inspectCache = mod.createInspect({
-          entityStore,
-          connectionStore,
-          stableIdentityExcluding,
-        });
-      }
-      return __inspectCache;
-    },
+  (instance as any).inspect = createInspect({
+    entityStore,
+    connectionStore,
+    stableIdentityExcluding,
   });
 
   (instance as any).listEntityKeys = listEntityKeysMatching;
