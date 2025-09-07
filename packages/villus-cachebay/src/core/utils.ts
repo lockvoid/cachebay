@@ -1,3 +1,4 @@
+import objectHash from 'object-hash';
 import { visit, Kind, parse, print, type DocumentNode } from "graphql";
 import type { RelayOptions } from "./types";
 
@@ -13,8 +14,12 @@ const PRINT_CACHE = new WeakMap<DocumentNode, string>();
 function addTypename(doc: DocumentNode): DocumentNode {
   return visit(doc, {
     SelectionSet(node, _key, parent: any) {
-      if (node.selections?.some((sel) => sel.kind === Kind.FIELD && (sel as any).name?.value === "__typename")) return;
-      if (parent && parent.kind === Kind.OPERATION_DEFINITION) return;
+      if (node.selections?.some((sel) => sel.kind === Kind.FIELD && (sel as any).name?.value === "__typename")) {
+        return;
+      }
+      if (parent && parent.kind === Kind.OPERATION_DEFINITION) {
+        return;
+      }
       return { ...node, selections: [...node.selections, TYPENAME_FIELD_NODE as any] };
     },
   });
@@ -23,30 +28,39 @@ function addTypename(doc: DocumentNode): DocumentNode {
 export function ensureDocumentHasTypenameSmart(query: string | DocumentNode): DocumentNode {
   if (typeof query === "string") {
     const cached = STRING_DOCUMENT_CACHE.get(query);
-    if (cached) return cached;
+    if (cached) {
+      return cached;
+    }
     const parsed = parse(query);
     const withTypename = addTypename(parsed);
     STRING_DOCUMENT_CACHE.set(query, withTypename);
     return withTypename;
   }
   const cached = DOCUMENT_CACHE.get(query);
-  if (cached) return cached;
+  if (cached) {
+    return cached;
+  }
   const withTypename = addTypename(query);
   DOCUMENT_CACHE.set(query, withTypename);
   return withTypename;
 }
 
 export function getOperationBody(query: string | DocumentNode): string {
-  if (typeof query === "string") return query;
+  if (typeof query === "string") {
+    return query;
+  }
   const loc = (query as any)?.loc?.source?.body;
-  if (loc) return loc;
+  if (loc) {
+    return loc;
+  }
   const cached = PRINT_CACHE.get(query);
-  if (cached) return cached;
+  if (cached) {
+    return cached;
+  }
   const body = print(query);
   PRINT_CACHE.set(query, body);
   return body;
 }
-
 
 /** Stable signature for variables (optionally excluding keys). */
 const VAR_SIG = new WeakMap<object, Map<string, string>>();
@@ -55,30 +69,38 @@ export function stableIdentityExcluding(
   vars: Record<string, any>,
   remove: string[],
 ): string {
+  // Produce a stable, order-independent identity for variables (deep).
+  // Uses object-hash so nested object key order doesn't affect the signature.
   if (!vars || typeof vars !== "object") return "";
   const removeKey = remove.length ? remove.slice().sort().join(",") : "";
   const perObj = VAR_SIG.get(vars as any);
   if (perObj && perObj.has(removeKey)) return perObj.get(removeKey)!;
 
+  // Build filtered shallow copy (we purposely don't clone deeply to keep cost low;
+  // object-hash will traverse the structure).
   const exclude = new Set(remove);
-  const keys = Object.keys(vars).filter((k) => !exclude.has(k)).sort();
-
-  let out = "";
+  const filtered: Record<string, any> = {};
+  const keys = Object.keys(vars).sort();
   for (let i = 0; i < keys.length; i++) {
     const k = keys[i];
+    if (exclude.has(k)) continue;
     const v = (vars as any)[k];
     if (v == null) continue;
-    out += (out ? "|" : "") + k + ":" + JSON.stringify(v);
+    filtered[k] = v;
   }
 
+  // Signature: a short hash string (hex) that is stable across key order.
+  // We prefer unorderedObjects so {a:1,b:2} === {b:2,a:1}.
+  const sig = objectHash(filtered, { unorderedObjects: true });
+
   if (perObj) {
-    perObj.set(removeKey, out);
+    perObj.set(removeKey, sig);
   } else {
     const map = new Map<string, string>();
-    map.set(removeKey, out);
+    map.set(removeKey, sig);
     VAR_SIG.set(vars as any, map);
   }
-  return out;
+  return sig;
 }
 
 export const buildStableVariableString = (vars: Record<string, any>) =>
@@ -89,8 +111,11 @@ export function readPathValue(obj: any, path: string | string[]) {
   const segs = Array.isArray(path) ? path : path.split(".");
   let current = obj;
   for (let i = 0; i < segs.length; i++) {
-    if (current == null) return undefined;
-    current = (current as any)[segs[i]];
+    if (current == null) {
+      return undefined;
+    }
+    const seg = segs[i];
+    current = current[seg];
   }
   return current;
 }
@@ -127,10 +152,10 @@ export function normalizeParentKeyInput(
   if (parent === "Query") return "Query";
   const t = (parent as any).__typename;
   const id = (parent as any).id ?? (parent as any)._id;
-  return t && id != null ? String(t) + ":" + String(id) : "Query";
+  return t && id != null ? `${t}:${id}` : null;
 }
 
-/** Parse serialized variables section inside a connection key (after prefix). */
+/** Attempt to parse variables back from a connection key (legacy string format only). */
 export function parseVariablesFromConnectionKey(
   ckey: string,
   prefix: string,
@@ -139,6 +164,7 @@ export function parseVariablesFromConnectionKey(
   const inside = ckey.slice(prefix.length, ckey.length - 1);
   const vars: Record<string, any> = {};
   if (!inside) return vars;
+  if (inside.indexOf(':') === -1) { return vars; } // hashed signature cannot be parsed back
   const parts = inside.split("|");
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i];

@@ -1,3 +1,6 @@
+// core/internals.ts
+// Uses object-hash via core/utils (stableIdentityExcluding, buildConnectionKey)
+
 import {
   reactive,
   shallowReactive,
@@ -15,7 +18,6 @@ import { createSSRFeatures } from "../features/ssr";
 import type {
   CachebayOptions,
   KeysConfig,
-  InterfacesConfig,
   ResolversFactory,
   ResolversDict,
   FieldResolver,
@@ -28,10 +30,10 @@ import type {
 } from "./types";
 
 import {
-  stableIdentityExcluding,
+  stableIdentityExcluding, // object-hash based
   readPathValue,
   parseEntityKey,
-  buildConnectionKey,
+  buildConnectionKey,      // object-hash based (filters cursors)
 } from "./utils";
 
 export type CachebayInstance = ClientPlugin & {
@@ -931,12 +933,20 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   };
 
   // ----------------------------------------
-  // Optimistic feature (extracted)
+  // Optimistic feature (IMPORTANT: include getRelayOptionsByType)
   // ----------------------------------------
   const modifyOptimistic = createModifyOptimistic(
     {
       entityStore,
       connectionStore,
+
+      // Connection machinery required by c.connections(...)
+      ensureConnectionState,
+      buildConnectionKey,
+      parentEntityKeyFor,
+      getRelayOptionsByType, // ✅ FIX: was missing; needed to find relay spec for Query.colors
+
+      // entity helpers
       parseEntityKey,
       resolveConcreteEntityKey,
       doesEntityKeyMatch,
@@ -944,10 +954,14 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
       unlinkEntityFromConnection,
       putEntity,
       idOf,
+
+      // change propagation
       markConnectionDirty,
       touchConnectionsForEntityKey,
       markEntityDirty,
       bumpEntitiesTick,
+
+      // interfaces + hashing
       isInterfaceTypename,
       getImplementationsFor,
       stableIdentityExcluding,

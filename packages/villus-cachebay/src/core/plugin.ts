@@ -1,12 +1,13 @@
+// core/plugin.ts
 import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus";
-import type { CachebayInternals } from "../core/types";
-import { ensureDocumentHasTypenameSmart } from "./utils";
+import type { CachebayInternals } from "./types";
 import {
+  ensureDocumentHasTypenameSmart,
   familyKeyForOperation,
   operationKey,
   stableIdentityExcluding,
   isObservableLike,
-} from "../core/utils";
+} from "./utils";
 import type { App } from "vue";
 
 type BuildArgs = {
@@ -35,63 +36,57 @@ export function buildCachebayPlugin(
     collectNonRelayEntities,
   } = args;
 
+  // Leaders + take-latest (scope-aware)
   const inflightRequests = new Map<string, { listeners: Set<(res: { data?: any; error?: any }) => void> }>();
-  const inflightByFam = new Map<string, string>();
-  const baseByOpKey = new Map<string, string>();
-  const latestSeqByFam = new Map<string, number>();
-  const latestBaseByFam = new Map<string, string>();
+  const inflightByFam = new Map<string, string>();      // famKey -> latest leader inflightKey
   const lastPublishedByFam = new Map<string, { data: any; variables: Record<string, any> }>();
-  const skipAfterQueryOnce = new Set<string>();
   const reentryGuard = new Set<string>();
+
+  let inflightSeq = 0;
 
   const RELAY_CURSOR_FIELDS = ["after", "before", "first", "last"] as const;
   const baseSig = (vars?: Record<string, any> | null) =>
-    stableIdentityExcluding(vars || {}, RELAY_CURSOR_FIELDS as any);
+    stableIdentityExcluding(vars || {}, RELAY_CURSOR_FIELDS as unknown as string[]);
 
-  function setOpCache(k: string, v: { data: any; variables: Record<string, any> }) {
+  const setOpCache = (k: string, v: { data: any; variables: Record<string, any> }) => {
     internals.operationCache.set(k, v);
     if (internals.operationCache.size > opCacheMax) {
       const oldest = internals.operationCache.keys().next().value as string | undefined;
       if (oldest) internals.operationCache.delete(oldest);
     }
-  }
+  };
 
   const plugin: ClientPlugin = (ctx: ClientPluginContext) => {
-    const { operation, useResult, afterQuery } = ctx;
-    const originalUseResult = useResult;
+    const { operation } = ctx;
+    const originalUseResult = ctx.useResult;
+    const originalAfterQuery = ctx.afterQuery ?? (() => { });
 
-    // SUBSCRIPTION
+    const scope = (operation.context as any)?.concurrencyScope ?? (operation.context as any)?.cachebayScope ?? "";
+    const famKey = familyKeyForOperation(operation); // includes ::scope when present
+    const opKey = operationKey(operation);
+    const inflightKeyBase = scope ? `${opKey}::${scope}` : opKey;
+    const inflightKey = `${inflightKeyBase}::#${++inflightSeq}`; // unique leader key
+
+    // SUBSCRIPTIONS
     if (operation.type === "subscription") {
       if (shouldAddTypename && operation.query) {
         operation.query = ensureDocumentHasTypenameSmart(operation.query as any);
       }
-
       const passThrough = originalUseResult;
-
-      ctx.useResult = (incoming: any, _terminate?: boolean) => {
+      ctx.useResult = (incoming: any) => {
         if (isObservableLike(incoming)) return passThrough(incoming, true);
-
         const r = incoming as OperationResult<any>;
         if (!r) return;
-
         if ((r as any).error) return passThrough({ error: (r as any).error } as any, false);
         if (!("data" in r) || !r.data) return;
 
         const vars = operation.variables || {};
-
         applyResolversOnGraph((r as any).data, vars, { stale: false });
-
         collectNonRelayEntities((r as any).data);
         registerViewsFromResult((r as any).data, vars);
-
-        lastPublishedByFam.set(familyKeyForOperation(operation), {
-          data: (r as any).data,
-          variables: vars,
-        });
-
+        lastPublishedByFam.set(famKey, { data: (r as any).data, variables: vars });
         return passThrough({ data: (r as any).data }, false);
       };
-
       return;
     }
 
@@ -100,69 +95,17 @@ export function buildCachebayPlugin(
       operation.query = ensureDocumentHasTypenameSmart(operation.query as any);
     }
 
-    const opKey = operationKey(operation);
-    const famKey = familyKeyForOperation(operation);
-    const curBase = baseSig(operation.variables);
     const cachedForKey = internals.operationCache.get(opKey);
 
-    // Dedup 1: same opKey inflight
-    if (inflightRequests.has(opKey)) {
-      if (operation.cachePolicy !== "network-only" && cachedForKey) {
-        registerViewsFromResult(cachedForKey.data, cachedForKey.variables);
-        originalUseResult({ data: cachedForKey.data }, true);
-      } else {
-        originalUseResult({}, true);
-      }
+    // Register THIS ctx as the latest leader
+    inflightRequests.set(inflightKey, { listeners: new Set() });
+    inflightByFam.set(famKey, inflightKey);
 
-      inflightRequests.get(opKey)!.listeners.add((res) => {
-        if (res && "error" in res && res.error) {
-          originalUseResult({ error: res.error as any }, false);
-          return;
-        }
-        if (res && "data" in res) {
-          registerViewsFromResult(res.data, operation.variables || {});
-          originalUseResult({ data: res.data }, false);
-        }
-      });
-
-      return;
-    }
-
-    // Dedup 2: family-level, same baseSig inflight
-    const famOp = inflightByFam.get(famKey);
-    if (famOp && inflightRequests.has(famOp) && baseByOpKey.get(famOp) === curBase) {
-      if (operation.cachePolicy !== "network-only" && cachedForKey) {
-        registerViewsFromResult(cachedForKey.data, cachedForKey.variables);
-        originalUseResult({ data: cachedForKey.data }, true);
-      } else {
-        originalUseResult({}, true);
-      }
-
-      inflightRequests.get(famOp)!.listeners.add((res) => {
-        if (res && "error" in res && res.error) {
-          originalUseResult({ error: res.error as any }, false);
-          return;
-        }
-        if (res && "data" in res) {
-          registerViewsFromResult(res.data, operation.variables || {});
-          originalUseResult({ data: res.data }, false);
-        }
-      });
-
-      return;
-    }
-
-    // New inflight
-    inflightRequests.set(opKey, { listeners: new Set() });
-    inflightByFam.set(famKey, opKey);
-    baseByOpKey.set(opKey, curBase);
-
-    // Cache-first publish (if allowed)
+    // Cache-first publish (guarded to avoid duplicate UI renders of same object)
     if (operation.type === "query" && operation.cachePolicy !== "network-only") {
       if (cachedForKey) {
         const hasHydrateTicket = hydrateOperationTicket.has(opKey);
-        const isReentry = reentryGuard.has(opKey);
-
+        const isReentry = reentryGuard.has(inflightKey);
         const shouldTerminate =
           operation.cachePolicy === "cache-first" ||
           operation.cachePolicy === "cache-only" ||
@@ -170,103 +113,95 @@ export function buildCachebayPlugin(
           hasHydrateTicket ||
           isReentry;
 
-        if (hasHydrateTicket) reentryGuard.add(opKey);
+        if (hasHydrateTicket) reentryGuard.add(inflightKey);
 
-        registerViewsFromResult(cachedForKey.data, cachedForKey.variables);
-        originalUseResult({ data: cachedForKey.data }, shouldTerminate);
+        const last = lastPublishedByFam.get(famKey);
+        const alreadyOnScreen = last && last.data === cachedForKey.data;
+
+        if (!alreadyOnScreen) {
+          registerViewsFromResult(cachedForKey.data, cachedForKey.variables);
+          originalUseResult({ data: cachedForKey.data }, shouldTerminate);
+        }
 
         if (hasHydrateTicket) hydrateOperationTicket.delete(opKey);
 
         if (shouldTerminate) {
-          const e = inflightRequests.get(opKey);
+          const e = inflightRequests.get(inflightKey);
           if (e) {
-            e.listeners.forEach((fn) => fn({ data: cachedForKey.data }));
-            inflightRequests.delete(opKey);
+            if (!alreadyOnScreen) {
+              e.listeners.forEach((fn) => fn({ data: cachedForKey.data }));
+            }
+            inflightRequests.delete(inflightKey);
           }
-          if (inflightByFam.get(famKey) === opKey) inflightByFam.delete(famKey);
-          baseByOpKey.delete(opKey);
+          if (inflightByFam.get(famKey) === inflightKey) inflightByFam.delete(famKey);
           return;
         }
       } else if (operation.cachePolicy === "cache-only") {
         originalUseResult({}, true);
-        inflightRequests.delete(opKey);
-        if (inflightByFam.get(famKey) === opKey) inflightByFam.delete(famKey);
-        baseByOpKey.delete(opKey);
+        inflightRequests.delete(inflightKey);
+        if (inflightByFam.get(famKey) === inflightKey) inflightByFam.delete(famKey);
         return;
       }
     }
 
-    // Concurrency tracking
-    let mySeq = 0;
-    if (operation.type === "query") {
-      const prevSeq = latestSeqByFam.get(famKey) || 0;
-      mySeq = prevSeq + 1;
-      latestSeqByFam.set(famKey, mySeq);
-      latestBaseByFam.set(famKey, curBase);
-    }
-
-    // Fulfillment flow
-    const performAfterQuery = (res: OperationResult) => {
-      reentryGuard.add(opKey);
-      setTimeout(() => { reentryGuard.delete(opKey); }, 0);
-
-      const notifyDedup = (payload: { data?: any; error?: any }) => {
-        const entry = inflightRequests.get(opKey);
-        if (entry) {
+    const finishAndNotify = (payload?: { data?: any; error?: any } | null) => {
+      const entry = inflightRequests.get(inflightKey);
+      if (entry) {
+        if (payload && (Object.prototype.hasOwnProperty.call(payload, "data") || Object.prototype.hasOwnProperty.call(payload, "error"))) {
           entry.listeners.forEach((fn) => fn(payload));
-          inflightRequests.delete(opKey);
         }
-        if (inflightByFam.get(famKey) === opKey) inflightByFam.delete(famKey);
-        baseByOpKey.delete(opKey);
-      };
+        inflightRequests.delete(inflightKey);
+      }
+      if (inflightByFam.get(famKey) === inflightKey) inflightByFam.delete(famKey);
+    };
 
-      const isStale = mySeq !== (latestSeqByFam.get(famKey) || 0);
+    const performAfterQuery = (res: OperationResult) => {
+      reentryGuard.add(inflightKey);
+      setTimeout(() => { reentryGuard.delete(inflightKey); }, 0);
+
       const vars = operation.variables || {};
+      const isCursorPage = vars && (vars.after != null || vars.before != null);
+      const latestLeader = inflightByFam.get(famKey);
+      const isLatestLeader = latestLeader === inflightKey;
 
       if (!res || (!("data" in res) && !(res as any).error)) {
-        if (!isStale) originalUseResult({}, true);
-        notifyDedup({});
+        if (isLatestLeader) originalUseResult({}, true);
+        finishAndNotify(null);
         return;
       }
 
       if ((res as any)?.error) {
-        if (!isStale) originalUseResult({ error: (res as any).error }, false);
-        notifyDedup({ error: (res as any).error });
+        if (isLatestLeader || isCursorPage) {
+          originalUseResult({ error: (res as any).error }, false);
+          finishAndNotify({ error: (res as any).error });
+        } else {
+          finishAndNotify(null);
+        }
         return;
       }
 
-      if (isStale) {
-        const latestBase = latestBaseByFam.get(famKey) || "";
-        const sameBase = curBase === latestBase;
-        if (!sameBase) {
-          setOpCache(opKey, { data: (res as any).data, variables: vars });
-          originalUseResult({}, true);
-          notifyDedup({});
-          return;
-        }
+      if (!isLatestLeader && !isCursorPage) {
+        setOpCache(opKey, { data: (res as any).data, variables: vars });
+        finishAndNotify(null);
+        return;
       }
 
-      applyResolversOnGraph((res as any).data, vars, { stale: isStale });
-
+      applyResolversOnGraph((res as any).data, vars, { stale: !isLatestLeader });
       collectNonRelayEntities((res as any).data);
       setOpCache(opKey, { data: (res as any).data, variables: vars });
       lastPublishedByFam.set(famKey, { data: (res as any).data, variables: vars });
 
       registerViewsFromResult((res as any).data, vars);
       originalUseResult({ data: (res as any).data }, false);
-      notifyDedup({ data: (res as any).data });
+      finishAndNotify({ data: (res as any).data });
     };
 
-    afterQuery((res) => {
-      if (skipAfterQueryOnce.has(opKey)) {
-        skipAfterQueryOnce.delete(opKey);
-        return;
-      }
+    ctx.afterQuery = (res) => {
       performAfterQuery(res);
-    }, ctx);
+      originalAfterQuery();
+    };
 
     ctx.useResult = (result: any) => {
-      skipAfterQueryOnce.add(opKey);
       performAfterQuery(result);
     };
   };
@@ -275,7 +210,7 @@ export function buildCachebayPlugin(
 }
 
 // ----------------------------------------
-// Vue provide/inject helper (moved from composables to avoid circular imports)
+// Vue provide/inject helper
 // ----------------------------------------
 export const CACHEBAY_KEY: symbol = Symbol("villus-cachebay");
 
@@ -291,7 +226,6 @@ export function provideCachebay(app: App, instance: any) {
     __entitiesTick: (instance as any).__entitiesTick,
   };
 
-  // Lazily proxy inspect to avoid pulling debug into prod bundles
   Object.defineProperty(api, "inspect", {
     configurable: true,
     enumerable: true,

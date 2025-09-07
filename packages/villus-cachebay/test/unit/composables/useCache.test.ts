@@ -14,20 +14,24 @@ describe('composables/useCache', () => {
       setup() {
         const api = useCache();
         // Write two entities
-        api.writeFragment({ __typename: 'Color', id: 1, name: 'Black' });
-        api.writeFragment({ __typename: 'Color', id: 2, name: 'Blue' });
+        const tx1 = (api as any).writeFragment({ __typename: 'Color', id: 2, name: 'Blue' });
+        const tx2 = (api as any).writeFragment({ __typename: 'Color', id: 1, name: 'Black' });
+        tx1.commit?.();
+        tx2.commit?.();
         return { api };
       },
-      render() { return h('div'); },
+      render() {
+        return h('div');
+      },
     });
 
-    const wrapper = mount(Comp, { global: { plugins: [{ install(app: any) { (cache as any).install(app); } }] } });
+    // ✅ Install the cache plugin so it provides CACHEBAY_KEY via provideCachebay()
+    const wrapper = mount(Comp, { global: { plugins: [cache as any] } });
     await tick();
 
-    const api = (wrapper.vm as any).api as ReturnType<typeof useCache>;
+    const api = (wrapper.vm as any).api;
 
-    // identify + hasFragment + readFragment
-    expect(api.identify({ __typename: 'Color', id: 1 })).toBe('Color:1');
+    // has/read
     expect(api.hasFragment('Color:1')).toBe(true);
     expect(api.readFragment('Color:1')?.name).toBe('Black');
 

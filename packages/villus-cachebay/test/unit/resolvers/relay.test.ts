@@ -1,6 +1,3 @@
-// tests/relay.spec.ts
-import { describe, it, expect } from 'vitest';
-// ⬇️ Adjust this import to your project structure:
 import { relay } from '@/src/resolvers/relay';
 
 // Minimal “internals” test double that satisfies what the resolver touches.

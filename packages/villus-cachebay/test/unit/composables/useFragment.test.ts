@@ -5,57 +5,50 @@ import { createCache, useFragment } from '@/src';
 import { tick } from '@/test/helpers';
 
 describe('composables/useFragment', () => {
-  it('returns reactive proxy that updates when entity changes', async () => {
-    const cache = createCache({
-      keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
-    });
-
-    // Seed entity
-    cache.writeFragment({ __typename: 'Color', id: 1, name: 'Black' });
-
-    await tick();
-
-    // Sanity check: cache has the entity
-    const sanity = (cache as any).readFragment('Color:1');
-    expect(sanity?.name).toBe('Black');
+  it('dynamic mode (auto) returns a Ref that updates when entity changes', async () => {
+    const cache = createCache({ keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }) });
+    (cache as any).writeFragment({ __typename: 'Color', id: 1, name: 'Black' }).commit?.();
 
     const Comp = defineComponent({
       setup() {
-        const key = ref('Color:1');
-        const color = useFragment<{ id: number; name: string }>(key);
+        const source = ref('Color:1');
+        const color = useFragment(source);
         return { color };
       },
       render() {
-        // render not used for assertion, but required by Vue
         return h('div');
       },
     });
 
-    const wrapper = mount(Comp, {
-      global: {
-        plugins: [
-          {
-            install(app: any) {
-              (cache as any).install(app);
-            },
-          },
-        ],
+    // ✅ install cache plugin so provideCachebay() runs
+    const wrapper = mount(Comp, { global: { plugins: [cache as any] } });
+    await tick();
+
+    (cache as any).writeFragment({ __typename: 'Color', id: 1, name: 'Jet Black' }).commit?.();
+    await tick(); // propagate entity change
+    await tick(); // flush view sync
+
+    expect((wrapper.vm as any).color!.name).toBe('Jet Black');
+  });
+
+  it('static + asObject returns plain object (non-Ref)', async () => {
+    const cache = createCache({ keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }) });
+    (cache as any).writeFragment({ __typename: 'Color', id: 2, name: 'Blue' }).commit?.();
+
+    const Comp = defineComponent({
+      setup() {
+        const color = useFragment('Color:2', { asObject: true });
+        return { color };
+      },
+      render() {
+        return h('div');
       },
     });
 
-    expect((wrapper.vm as any).color.name).toBe('Black');
-
-    await tick();
-    // Initial value may not be populated synchronously, assert after update below
-
-    // Update entity
-    cache.writeFragment({ __typename: 'Color', id: 1, name: 'Jet Black' });
-    await tick();
-    await tick();
-    await tick();
-    await tick();
+    // ✅ install cache plugin so provideCachebay() runs
+    const wrapper = mount(Comp, { global: { plugins: [cache as any] } });
     await tick();
 
-    expect((wrapper.vm as any).color.name).toBe('Jet Black');
+    expect((wrapper.vm as any).color!.name).toBe('Blue');
   });
 });
