@@ -10,7 +10,7 @@ import {
   parseVariablesFromConnectionKey,
   operationKey,
   familyKeyForOperation,
-} from '../../src/core/utils';
+} from '@/src/core/utils';
 
 describe('core/utils', () => {
   it('ensureDocumentHasTypenameSmart adds __typename to selections', () => {

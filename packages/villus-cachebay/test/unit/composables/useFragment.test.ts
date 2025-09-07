@@ -1,11 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { defineComponent, h, ref } from 'vue';
 import { mount } from '@vue/test-utils';
-import { createCache } from '../../src';
-import { useFragment } from '../../src/composables/useFragment';
-import { tick } from '../helpers';
+import { createCache, useFragment } from '@/src';
+import { tick } from '@/test/helpers';
 
-describe.skip('composables/useFragment', () => {
+describe('composables/useFragment', () => {
   it('returns reactive proxy that updates when entity changes', async () => {
     const cache = createCache({
       keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
@@ -13,6 +12,8 @@ describe.skip('composables/useFragment', () => {
 
     // Seed entity
     cache.writeFragment({ __typename: 'Color', id: 1, name: 'Black' });
+
+    await tick();
 
     // Sanity check: cache has the entity
     const sanity = (cache as any).readFragment('Color:1');
@@ -42,13 +43,19 @@ describe.skip('composables/useFragment', () => {
       },
     });
 
+    expect((wrapper.vm as any).color.name).toBe('Black');
+
     await tick();
     // Initial value may not be populated synchronously, assert after update below
 
     // Update entity
     cache.writeFragment({ __typename: 'Color', id: 1, name: 'Jet Black' });
     await tick();
+    await tick();
+    await tick();
+    await tick();
+    await tick();
 
-    expect((wrapper.vm as any).color.value?.name).toBe('Jet Black');
+    expect((wrapper.vm as any).color.name).toBe('Jet Black');
   });
 });

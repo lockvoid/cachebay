@@ -1,9 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { defineComponent, h, nextTick } from 'vue';
 import { mount } from '@vue/test-utils';
-import { createCache } from '../../src';
-import { useFragments } from '../../src/composables/useFragments';
-import { tick } from '../helpers';
+import { createCache, useFragments } from '@/src';
+import { tick } from '@/test/helpers';
 
 describe('composables/useFragments', () => {
   it('returns a computed list matching selector patterns and updates on entity add/remove', async () => {
@@ -23,30 +22,30 @@ describe('composables/useFragments', () => {
       render() { return h('div'); },
     });
 
-    const wrapper = mount(Comp, { global: { plugins: [{ install(app:any){ (cache as any).install(app); } }] } });
+    const wrapper = mount(Comp, { global: { plugins: [{ install(app: any) { (cache as any).install(app); } }] } });
 
     await nextTick();
     // Bump entities tick by adding a temp entity
     cache.writeFragment({ __typename: 'Color', id: 3, name: 'Green' });
     await nextTick();
-    let list = (wrapper.vm as any).list.value ?? [];
+    let list = (wrapper.vm as any).list ?? [];
     expect(list.length).toBe(3);
     const namesAfterAdd = list.map((c: any) => c?.name).sort();
-    expect(namesAfterAdd).toEqual(['Black','Blue','Green']);
+    expect(namesAfterAdd).toEqual(['Black', 'Blue', 'Green']);
 
     // Remove temp entity and expect update
-    (cache as any).modifyOptimistic((c:any) => { c.del('Color:3'); }).commit?.();
+    (cache as any).modifyOptimistic((c: any) => { c.del('Color:3'); }).commit?.();
     await nextTick();
-    list = (wrapper.vm as any).list.value ?? [];
+    list = (wrapper.vm as any).list ?? [];
     expect(list.length).toBe(2);
 
     // Remove one entity and expect update
-    (cache as any).modifyOptimistic((c:any) => {
+    (cache as any).modifyOptimistic((c: any) => {
       c.del('Color:1');
     }).commit?.();
 
     await tick();
-    const next = (wrapper.vm as any).list.value;
+    const next = (wrapper.vm as any).list;
     expect(next.length).toBe(1);
     expect(next[0]?.name).toBe('Blue');
   });

@@ -1,9 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { defineComponent, h } from 'vue';
 import { mount } from '@vue/test-utils';
-import { createCache } from '../../src';
-import { useCache } from '../../src/composables/useCache';
-import { tick } from '../helpers';
+import { createCache, useCache } from '@/src';
+import { tick } from '@/test/helpers';
 
 describe('composables/useCache', () => {
   it('exposes fragment API and entity listing', async () => {
@@ -22,7 +21,7 @@ describe('composables/useCache', () => {
       render() { return h('div'); },
     });
 
-    const wrapper = mount(Comp, { global: { plugins: [{ install(app:any){ (cache as any).install(app); } }] } });
+    const wrapper = mount(Comp, { global: { plugins: [{ install(app: any) { (cache as any).install(app); } }] } });
     await tick();
 
     const api = (wrapper.vm as any).api as ReturnType<typeof useCache>;
@@ -34,7 +33,7 @@ describe('composables/useCache', () => {
 
     // list keys and entities (materialized and raw)
     const keys = api.listEntityKeys('Color');
-    expect(keys.sort()).toEqual(['Color:1','Color:2']);
+    expect(keys.sort()).toEqual(['Color:1', 'Color:2']);
 
     const mats = api.listEntities('Color');
     expect(mats.length).toBe(2);

@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { createCache } from '../../src';
+import { createCache } from '@/src';
 
 function runQuery(cache: any, data: any) {
   const plugin = cache as unknown as (ctx: any) => void;
   const ctx: any = {
     operation: { type: 'query', query: 'query X { colors { edges { cursor node { __typename id name } } pageInfo { endCursor hasNextPage } } }', variables: {}, cachePolicy: 'cache-and-network', context: {} },
-    useResult: (_: any) => {},
-    afterQuery: (_cb: any) => {},
+    useResult: (_: any) => { },
+    afterQuery: (_cb: any) => { },
   };
   plugin(ctx);
   ctx.useResult({ data });

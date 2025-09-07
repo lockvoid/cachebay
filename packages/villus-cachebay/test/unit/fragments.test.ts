@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createCache } from '../../src/index';
-import { tick } from '../helpers';
+import { createCache } from '@/src';
+import { tick } from '@/test/helpers';
 
 /**
  * Unit tests for fragment API: identify, readFragment, writeFragment.
