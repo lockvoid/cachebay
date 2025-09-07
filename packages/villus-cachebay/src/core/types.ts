@@ -34,6 +34,7 @@ export type RelayOptions = {
   cursors: { after: string; before: string; first: string; last: string };
   hasNodePath: boolean;
   write?: WritePolicy;
+  mode?: "append" | "prepend" | "replace" | "auto";
 };
 
 export type CachebayInternals = {

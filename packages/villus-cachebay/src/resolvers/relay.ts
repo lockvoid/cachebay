@@ -29,6 +29,7 @@ function normalizeRelayOptions(opts?: RelayOptsPartial): RelayOptions {
 
 export const relay = defineResolver((internals, opts: RelayOptsPartial) => {
   const relayOptions = normalizeRelayOptions(opts);
+  const requestedMode = opts?.mode;
 
   return (ctx) => {
     const v = ctx.variables || {};
@@ -55,15 +56,18 @@ export const relay = defineResolver((internals, opts: RelayOptsPartial) => {
     const beforeVal = variables[relayOptions.cursors.before];
 
     const writeMode: "append" | "prepend" | "replace" =
-      ctx.hint.relayMode && ctx.hint.relayMode !== "auto"
-        ? ctx.hint.relayMode
-        : afterVal != null
-          ? "append"
-          : beforeVal != null
-            ? "prepend"
-            : "replace";
+      (requestedMode && requestedMode !== "auto")
+        ? requestedMode
+        : ctx.hint.relayMode && ctx.hint.relayMode !== "auto"
+          ? ctx.hint.relayMode
+          : afterVal != null
+            ? "append"
+            : beforeVal != null
+              ? "prepend"
+              : "replace";
 
-    if (writeMode === "replace" && !ctx.hint.stale) {
+    // For replace, always reset list (both cached and fresh publishes)
+    if (writeMode === "replace") {
       for (let i = 0, n = connectionState.list.length; i < n; i++) {
         internals.unlinkEntityFromConnection(connectionState.list[i].key, connectionState);
       }
@@ -191,16 +195,12 @@ export const relay = defineResolver((internals, opts: RelayOptsPartial) => {
       connectionState.views.delete(invalid[i]);
     }
 
-    const relayViewMode = ctx.hint.relayView || "cumulative";
+    // Stable growth limit for views: append/prepend increases by page size; replace sets to page size
     if (targetView) {
-      if (relayViewMode === "windowed") {
-        if (writeMode === "replace") {
-          if (!ctx.hint.stale) (targetView as any).limit = edgesCount;
-        } else {
-          (targetView as any).limit = ((targetView as any).limit ?? 0) + edgesCount;
-        }
+      if (writeMode === "replace") {
+        (targetView as any).limit = edgesCount;
       } else {
-        (targetView as any).limit = connectionState.list.length;
+        (targetView as any).limit = ((targetView as any).limit ?? 0) + edgesCount;
       }
     }
 

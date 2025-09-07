@@ -8,7 +8,7 @@ import {
   type Ref,
   type App,
 } from "vue";
-import type { CachebayInstance } from "./core/internals";
+import { useCache } from "./useCache";
 
 export function useFragments<T = any>(pattern: string | string[], opts: { materialized?: boolean } = {}) {
   const api = useCache();

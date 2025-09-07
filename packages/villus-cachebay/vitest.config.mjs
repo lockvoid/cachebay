@@ -7,7 +7,7 @@ export default defineConfig({
     globals: true,
 
     include: [
-      'test/unit/**/*.test.{ts,js}',
+      'test/unit/**/*.{test,spec}.{ts,js}',
     ],
   },
 });

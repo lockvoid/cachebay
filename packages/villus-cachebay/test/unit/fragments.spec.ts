@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createCache } from '../../src/index';
+import { tick } from '../helpers';
 
 /**
  * Unit tests for fragment API: identify, readFragment, writeFragment.
@@ -16,35 +17,32 @@ describe('Cachebay fragments', () => {
     expect(key).toBe('User:1');
   });
 
-  it('writeFragment upserts and readFragment reads back (materialized by default)', () => {
+  it('writeFragment upserts and readFragment reads back (materialized by default)', async () => {
     const cache = createCache({
       keys: () => ({ User: (o: any) => (o?.id != null ? String(o.id) : null) }),
     });
 
-    // Nothing yet
-    expect(cache.readFragment('User:1')).toBeUndefined();
+    // Nothing yet (raw snapshot)
+    expect(cache.readFragment('User:1', false)).toBeUndefined();
 
     // Upsert
-    const { commit, revert } = cache.writeFragment({ __typename: 'User', id: 1, name: 'Alice' });
-    commit?.();
+    const { revert } = cache.writeFragment({ __typename: 'User', id: 1, name: 'Alice' });
 
     const u1 = cache.readFragment('User:1');
     expect(u1).toBeTruthy();
     expect(u1!.name).toBe('Alice');
 
     // Update and verify reactivity path (shallow check)
-    const { commit: commit2 } = cache.writeFragment({ __typename: 'User', id: 1, name: 'Alice Updated' });
-    commit2?.();
+    cache.writeFragment({ __typename: 'User', id: 1, name: 'Alice Updated' });
+    await tick();
     const u2 = cache.readFragment('User:1');
     expect(u2!.name).toBe('Alice Updated');
 
     // Revert last write by writing previous snapshot
     revert?.();
-    const u3 = cache.readFragment('User:1');
-    // After revert we expect entity deleted (since first write created it)
-    // or restored to prior state if existed; internals implement revert to previous.
-    // Here previous was undefined, so entity should be gone.
-    expect(u3).toBeUndefined();
+    const u3raw = cache.readFragment('User:1', false);
+    // After revert first write, entity should be gone
+    expect(u3raw).toBeUndefined();
   });
 
   it('readFragment can return raw snapshot when materialized=false', () => {

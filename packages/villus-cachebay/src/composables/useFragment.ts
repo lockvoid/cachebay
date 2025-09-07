@@ -8,7 +8,7 @@ import {
   type Ref,
   type App,
 } from "vue";
-import type { CachebayInstance } from "./core/internals";
+import { useCache } from "./useCache";
 
 
 /** useFragment… (unchanged) */

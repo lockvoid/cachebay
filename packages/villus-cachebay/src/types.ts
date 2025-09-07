@@ -11,6 +11,7 @@ export type RelayOptsPartial = {
   first?: string;
   last?: string;
   write?: WritePolicy;
+  mode?: "append" | "prepend" | "replace" | "auto";
 };
 
 type PublishHint = {
