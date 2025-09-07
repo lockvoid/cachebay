@@ -55,6 +55,10 @@ export default defineNuxtConfig({
       },
     },
 
+    nitro: {
+      assetsInclude: ['~/server/db/**'], 
+    },
+
     plugins: [
       tailwindcss(),
     ],
@@ -73,6 +77,8 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
+    databaseUrl: process.env.DATABASE_URL,
+    
     public: {
       graphqlEndpoint: 'https://lego.hasura.app/v1beta1/relay',
     },
