@@ -1,12 +1,13 @@
 import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus";
 import type { CachebayInternals } from "../core/types";
-import { ensureDocumentHasTypenameSmart } from "../core/addTypename";
+import { ensureDocumentHasTypenameSmart } from "./utils";
 import {
   familyKeyForOperation,
   operationKey,
   stableIdentityExcluding,
   isObservableLike,
 } from "../core/utils";
+import type { App } from "vue";
 
 type BuildArgs = {
   shouldAddTypename: boolean;
@@ -271,4 +272,33 @@ export function buildCachebayPlugin(
   };
 
   return plugin;
+}
+
+// ----------------------------------------
+// Vue provide/inject helper (moved from composables to avoid circular imports)
+// ----------------------------------------
+export const CACHEBAY_KEY: symbol = Symbol("villus-cachebay");
+
+export function provideCachebay(app: App, instance: any) {
+  const api: any = {
+    readFragment: instance.readFragment,
+    writeFragment: instance.writeFragment,
+    identify: instance.identify,
+    modifyOptimistic: instance.modifyOptimistic,
+    hasFragment: (instance as any).hasFragment,
+    listEntityKeys: (instance as any).listEntityKeys,
+    listEntities: (instance as any).listEntities,
+    __entitiesTick: (instance as any).__entitiesTick,
+  };
+
+  // Lazily proxy inspect to avoid pulling debug into prod bundles
+  Object.defineProperty(api, "inspect", {
+    configurable: true,
+    enumerable: true,
+    get() {
+      return (instance as any).inspect;
+    },
+  });
+
+  app.provide(CACHEBAY_KEY, api);
 }

@@ -6,7 +6,7 @@ export { createCache } from "./core/internals";
 export type { CachebayInstance } from "./core/internals";
 
 // Vue composables
-export { CACHEBAY_KEY, provideCachebay, useCache } from "./composables/useCache";
+export { useCache } from "./composables/useCache";
 export { useFragments } from "./composables/useFragments";
 export { useFragment } from "./composables/useFragment";
 

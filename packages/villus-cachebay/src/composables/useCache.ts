@@ -6,35 +6,10 @@ import {
   computed,
   unref,
   type Ref,
-  type App,
 } from "vue";
-import type { CachebayInstance } from "./core/internals";
-
-export const CACHEBAY_KEY: symbol = Symbol("villus-cachebay");
-
-export function provideCachebay(app: App, instance: CachebayInstance) {
-  const api: any = {
-    readFragment: instance.readFragment,
-    writeFragment: instance.writeFragment,
-    identify: instance.identify,
-    modifyOptimistic: instance.modifyOptimistic,
-    hasFragment: (instance as any).hasFragment,
-    listEntityKeys: (instance as any).listEntityKeys,
-    listEntities: (instance as any).listEntities,
-    __entitiesTick: (instance as any).__entitiesTick,
-  };
-
-  // Lazily proxy inspect to avoid pulling debug into prod bundles
-  Object.defineProperty(api, "inspect", {
-    configurable: true,
-    enumerable: true,
-    get() {
-      return (instance as any).inspect; // this triggers lazy getter in core
-    },
-  });
-
-  app.provide(CACHEBAY_KEY, api);
-}
+import type { CachebayInstance } from "../core/internals";
+import { CACHEBAY_KEY } from "../core/plugin";
+export { provideCachebay } from "../core/plugin";
 
 export function useCache(): {
   readFragment: CachebayInstance["readFragment"];

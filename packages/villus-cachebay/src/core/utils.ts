@@ -1,4 +1,5 @@
 import { visit, Kind, parse, print, type DocumentNode } from "graphql";
+import type { RelayOptions } from "./types";
 
 const TYPENAME_FIELD_NODE = {
   kind: Kind.FIELD,
@@ -46,8 +47,6 @@ export function getOperationBody(query: string | DocumentNode): string {
   return body;
 }
 
-import type { RelayOptions } from "./types";
-import { getOperationBody } from "./addTypename";
 
 /** Stable signature for variables (optionally excluding keys). */
 const VAR_SIG = new WeakMap<object, Map<string, string>>();

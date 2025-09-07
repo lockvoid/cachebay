@@ -8,8 +8,7 @@ import {
 import type { ClientPlugin } from "villus";
 
 import { relay } from "../resolvers/relay";
-import { datetime } from "../resolvers/datetime";
-import { buildCachebayPlugin } from "../plugin/cachebay";
+import { buildCachebayPlugin, provideCachebay } from "./plugin";
 import { createModifyOptimistic } from "../features/optimistic";
 import { createSSRFeatures } from "../features/ssr";
 
@@ -20,7 +19,7 @@ import type {
   ResolversFactory,
   ResolversDict,
   FieldResolver,
-} from "../types/public";
+} from "../types";
 import type {
   CachebayInternals,
   EntityKey,
@@ -76,7 +75,11 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   const shouldAddTypename = options.addTypename !== false;
 
   const interfaceMap: Record<string, string[]> =
-    typeof options.interfaces === "function" ? options.interfaces() : options.interfaces ? options.interfaces : ({} as NonNullable<InterfacesConfig>);
+    typeof options.interfaces === "function"
+      ? options.interfaces()
+      : options.interfaces
+        ? (options.interfaces as Record<string, string[]>)
+        : {};
 
   const useShallowEntities = options.entityShallow === true;
   const trackNonRelayResults = options.trackNonRelayResults !== false;
@@ -679,7 +682,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   const resolverSource = options.resolvers;
   const resolverSpecs: ResolversDict | undefined =
     typeof resolverSource === "function"
-      ? (resolverSource as ResolversFactory)({ relay, datetime })
+      ? (resolverSource as ResolversFactory)({ relay })
       : (resolverSource as ResolversDict | undefined);
 
   FIELD_RESOLVERS = bindResolversTree(resolverSpecs, internals);
@@ -976,7 +979,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     get() {
       if (!__inspectCache) {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const mod = require("../feature/debug") as typeof import("../feature/debug");
+        const mod = require("../features/debug") as typeof import("../features/debug");
         __inspectCache = mod.createInspect({
           entityStore,
           connectionStore,
@@ -993,9 +996,6 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   (instance as any).__entitiesTick = entityAddedRemovedTick;
 
   (instance as any).install = (app: App) => {
-    // late import avoids circular ref with composables
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { provideCachebay } = require("../composables") as typeof import("../composables");
     provideCachebay(app, instance);
   };
 

@@ -1,0 +1,41 @@
+<script setup lang="ts">
+import { useQuery } from 'villus';
+
+const legoColorsActivity = useLegoColorsActivity();
+
+const legoColorsPagination = useLegoColorsPagination();
+
+const legoColorsQuery = await useLegoColorsQuery();
+
+const legoColors = computed(() => {
+  return legoColorsQuery.data.value?.legoColors;
+});
+
+const loadMore = () => {
+  if (!legoColors.value.pageInfo.hasNextPage) {
+    return;
+  }
+
+  legoColorsPagination.setAfter(legoColors.value.pageInfo.endCursor);
+};
+</script>
+
+<template>
+  <div class="flex flex-col gap-2">
+    <ul class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      <LegoColorsItem v-for="edge in legoColors.edges" :key="edge.node.id" :color="edge.node" />
+    </ul>
+
+    <button class="self-center px-3 py-2 rounded bg-gray-900 text-white disabled:opacity-50 hover:cursor-pointer" :disabled="legoColorsActivity.isFetching || !legoColors.pageInfo.hasNextPage" @click="loadMore">
+      <span v-if="legoColorsActivity.isFetching">
+        Loading…
+      </span>
+
+      <span v-else>
+        Load more
+      </span>
+    </button>
+
+    {{ legoColorsQueryVariables }}
+  </div>
+</template>

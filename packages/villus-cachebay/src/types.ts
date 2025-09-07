@@ -61,7 +61,6 @@ export type KeysConfig =
 
 export type ResolversFactory = (r: {
   relay: (opts?: RelayOptsPartial) => ResolverSpec;
-  datetime: (opts: { to: "date" | "timestamp" }) => ResolverSpec;
 }) => ResolversDict;
 
 export type CachebayOptions = {
