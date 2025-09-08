@@ -363,12 +363,12 @@ export function createModifyOptimistic(deps: Deps, _api: PublicAPI) {
   }
 
   return function modifyOptimistic(build: (c: {
-    write: (entity: any, policy?: "merge" | "replace") => void;
-    del: (key: string) => void;
+    patch: (entity: any, policy?: "merge" | "replace") => void;
+    delete: (key: string) => void;
     connections: (args: ConnectionsArgs) => Readonly<[{
       addNode: (node: any, opts?: { cursor?: string | null; position?: "start" | "end"; edge?: any }) => void;
       removeNode: (ref: { __typename: string; id?: any; _id?: any }) => void;
-      updatePageInfo: (pi: Record<string, any>) => void;
+      patch: (pi: Record<string, any>) => void;
       key: string;
     }]>;
   }) => void) {
@@ -380,7 +380,7 @@ export function createModifyOptimistic(deps: Deps, _api: PublicAPI) {
 
     // API used by the builder; applies immediately
     const apiForBuilder = {
-      write(entity: any, policy: "merge" | "replace" = "merge") {
+      patch(entity: any, policy: "merge" | "replace" = "merge") {
         const key = deps.idOf(entity);
         if (!key) {
           return;
@@ -390,7 +390,7 @@ export function createModifyOptimistic(deps: Deps, _api: PublicAPI) {
         applyEntityWrite(entity, policy);
       },
 
-      del(key: string) {
+      delete(key: string) {
         const op: EntityOp = { type: "entityDelete", key };
         layer.entityOps.push(op);
         applyEntityDelete(key);
@@ -406,7 +406,7 @@ export function createModifyOptimistic(deps: Deps, _api: PublicAPI) {
 
         const relay = deps.getRelayOptionsByType(parentTypename, args.field);
         if (!relay) {
-          const noop = { addNode() { }, removeNode() { }, updatePageInfo() { }, key: "" } as const;
+          const noop = { addNode() { }, removeNode() { }, patch() { }, key: "" } as const;
           return [noop] as const;
         }
 
@@ -447,7 +447,7 @@ export function createModifyOptimistic(deps: Deps, _api: PublicAPI) {
             applyConnOp(op);
           },
 
-          updatePageInfo: (pi: Record<string, any>) => {
+          patch: (pi: Record<string, any>) => {
             if (!pi || typeof pi !== "object") {
               return;
             }

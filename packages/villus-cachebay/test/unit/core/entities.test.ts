@@ -45,7 +45,7 @@ describe('internals — interface-aware entity access', () => {
 
     // Delete optimistically
     const t = (cache as any).modifyOptimistic((c: any) => {
-      c.del('Thing:1');
+      c.delete('Thing:1');
     });
     t.commit?.();
     await tick();

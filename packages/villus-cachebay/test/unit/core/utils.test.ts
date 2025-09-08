@@ -97,4 +97,38 @@ describe('core/utils (object-hash signatures)', () => {
     const opScoped: any = { query: 'query X { a }', variables: { where: { a: 2, b: 1 } }, context: { concurrencyScope: 'tab' } };
     expect(getFamilyKey(opScoped).endsWith('::tab')).toBe(true);
   });
+
+  it('familyKey is stable w.r.t. variable order', () => {
+    const opA: any = { query: 'query Q($a:Int,$b:Int){x}', variables: { a: 1, b: 2 }, context: {} };
+    const opB: any = { query: 'query Q($a:Int,$b:Int){x}', variables: { b: 2, a: 1 }, context: {} };
+
+    const fa = getFamilyKey(opA);
+    const fb = getFamilyKey(opB);
+    expect(fa).toBe(fb);
+  });
+
+  it('familyKey includes concurrencyScope (isolates families)', () => {
+    const op1: any = { query: 'query Q { x }', variables: {}, context: { concurrencyScope: 'tab-1' } };
+    const op2: any = { query: 'query Q { x }', variables: {}, context: { concurrencyScope: 'tab-2' } };
+
+    const f1 = getFamilyKey(op1);
+    const f2 = getFamilyKey(op2);
+
+    expect(f1).not.toBe(f2);
+    expect(f1.endsWith('::tab-1')).toBe(true);
+    expect(f2.endsWith('::tab-2')).toBe(true);
+  });
+
+  it('getOperationKey changes when variables change', () => {
+    const A: any = { query: 'query Q { x }', variables: { n: 1 }, context: {} };
+    const B: any = { query: 'query Q { x }', variables: { n: 2 }, context: {} };
+    expect(getOperationKey(A)).not.toBe(getOperationKey(B));
+  });
+
+  it('getOperationKey is identical for string vs DocumentNode, all else equal', () => {
+    const src = 'query Q { x }';
+    const opStr: any = { query: src, variables: {}, context: {} };
+    const opDoc: any = { query: parse(src), variables: {}, context: {} };
+    expect(getOperationKey(opStr)).toBe(getOperationKey(opDoc));
+  });
 });

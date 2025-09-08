@@ -1,446 +1,269 @@
-# Cachebay for Villus — SSR-safe normalized cache & Relay-style connections
+# Cachebay for Villus
 
-Blazing-fast normalized cache + Relay-style connections for Villus.
+**Blazing-fast normalized cache + Relay-style connections for Villus.**
 
-A tiny, instance-scoped cache layer for **Villus** that gives you:
+A tiny (12KB gzip), instance-scoped cache layer for **Villus** that gives you:
 
-- **Fast** (microtask batched), **~14KB gzipped**
-- Normalized **entities** (with auto-`__typename`)
-- **Relay-style connections** with reactive “splice” updates (no array churn)
-- **Optimistic** helpers & fragment read/write
-- **SSR dehydrate/hydrate** that suppresses duplicate client re-requests
-- A clean **resolver spec** system (`defineResolver`) with built-ins:
-  - `relay(...)` — pagination & connection views
-  - `datetime({ to: 'date' | 'timestamp' })` — scalar transforms
-- A `useCache()` hook to read/write fragments, run optimistic edits, and inspect
+- **Normalized entities** — one source of truth keyed by `__typename:id`, zero fuss.
+- **Relay-style connections** — append/prepend/replace, edge de-duplication by node key, reactive `pageInfo`/meta, and **no array churn**.
+- **Optimistic updates that stack** — layered commits/reverts for entities *and* connections (add/remove/update pageInfo) with clean rollback.
+- **SSR that just works** — dehydrate/hydrate entities, connections, and op-cache; first client mount renders from cache without a duplicate request, then behaves like normal CN.
+- **Fragments API** — `identify`, `readFragment`, `writeFragment` (supports interfaces like `Node:*`), with reactive materialized proxies.
+- **Resolver pipeline** — bind per-type field resolvers (e.g. `relay()` for connections, your own computed/scalar transforms).
+- **Subscriptions** — observable pass-through; plain frames get normalized and stream as non-terminating updates.
+- **Batched reactivity** — microtask-coalesced updates to minimize re-renders.
+- **Suspense** — suspense out of the box, with different strategies.
+
+
+![Cachebay](https://pub-464e6b9480014239a02034726cf0073c.r2.dev/cachebay.jpg)
+
+---
+
+## Install
+
+```bash
+npm i villus villus-cachebay
+# or
+pnpm add villus villus-cachebay
+```
 
 ---
 
 ## Quick start
 
 ```ts
-// plugins/villus.client-server.ts (Nuxt 3 example)
-import { createClient, fetch as fetchPlugin, dedup as dedupPlugin } from 'villus'
-import { createCachebay } from '~/lib/cachebay'
+// client.ts
+import { createClient } from 'villus'
+import { createCache } from 'villus-cachebay'
+import { fetch as fetchPlugin, dedup as dedupPlugin } from 'villus' // your transport
+
+export const cache = createCache({
+  resolvers: ({ relay }) => ({
+    Query: {
+      assets: relay(),   // Relay connection (append/prepend/replace handled automatically)
+    },
+  }),
+})
+
+export const client = createClient({
+  url: '/graphql',
+
+  cachePolicy: 'cache-and-network',
+
+  use: [
+    // (optional) put your network dedup plugin first if you have one
+    cache,
+    dedupPlugin(),
+    fetchPlugin(),
+  ],
+})
+```
+
+Query with Relay:
+
+```ts
+// in a component
+import { useQuery } from 'villus'
+
+const { data } = useQuery({
+  query: `
+    query Assets($first:Int,$after:String) {
+      assets(first:$first, after:$after) {
+        pageInfo {
+          endCursor
+          hasNextPage
+        }
+
+        edges {
+          node {
+            id name
+          }
+        }
+      }
+    }
+  `,
+
+  variables: {
+    first: 20,
+  },
+})
+```
+
+### SSR
+
+```ts
+// server (per request):
+const snapshot = cachebay.dehydrate()
+
+// client boot
+cachebay.hydrate(snapshot, { materialize: true })
+```
+
+> On first client mount after `hydrate`, **cache-and-network** uses a one-time ticket so it **renders from cache without a duplicate request**. After that, "cache-and-network" behaves normally (cached + revalidate).
+
+---
+
+## Install with Nuxt 4
+
+> Minimal pattern: one cache instance per SSR request, dehydrate to a Nuxt state, hydrate on the client, and expose Villus + Cachebay via plugins.
+
+**1) Create a Nuxt plugin (client & server) to wire Villus + Cachebay**
+
+```ts
+// plugins/villus.ts
+
+import { createClient } from 'villus'
+import { createCache } from 'villus-cachebay'
+import { fetch as fetchPlugin } from 'villus'
 
 export default defineNuxtPlugin((nuxtApp) => {
-  const cachebay = createCachebay({
-    addTypename: true,
-    keys: () => ({
-      User: (o) => (o.id ?? o._id ? String(o.id ?? o._id) : null),
-    }),
-    resolvers: ({ relay, datetime }) => ({
-      Query: {
-        assets: relay(),                         // Relay connection
-      },
-      Asset: {
-        createdAt: datetime({ to: 'date' }),     // Convert ISO string → Date
-      },
+  const cachebay = createCache({
+    resolvers: ({ relay }) => ({
+      Query: { assets: relay() },
     }),
   })
 
+  const state = useState('cachebay', () => null);
+
+  if (process.server) {
+    // After this request is rendered, stash a snapshot into Nuxt state
+
+    nuxtApp.hook('app:rendered', () => {
+      state.value = cachebay.dehydrate()
+    })
+  } else {
+    // On client boot, hydrate once (if a snapshot was provided)
+
+    if (state.value) {
+      cachebay.hydrate(state.value, { materialize: true })
+    }
+  }
+
+  // Build the Villus client
+
   const client = createClient({
-    url: useRuntimeConfig().public.apiHttpUrl + '/graphql',
+    url: '/graphql',
+
     cachePolicy: 'cache-and-network',
+
     use: [
-      dedupPlugin(),  // keep *before* network
-      cachebay,       // Cachebay (Villus plugin)
-      fetchPlugin(),  // network
+      cachebay,
+      fetchPlugin(),
     ],
   })
 
-  // Villus + Cachebay (also provides useCache())
+  // Provide both to the app
+
   nuxtApp.vueApp.use(client)
   nuxtApp.vueApp.use(cachebay)
 })
 ```
 
-### SSR hydrate / dehydrate (Nuxt)
+**2) Use it in components**
 
-```ts
-// Same plugin file
-export default defineNuxtPlugin({
-  name: 'villus+cachebay',
-  setup(nuxtApp) {
-    const cachebay = /* …createCachebay(...) as above… */
+```vue
+<script setup lang="ts">
+  import { useQuery } from 'villus'
 
-    // …set up Villus client & app.use(cachebay) …
+  const { data } = await useQuery({
+    query: `...`,
+  })
+</script>
 
-    if (import.meta.client) {
-      const snap = useState('cachebay:snapshot').value
-      if (snap) cachebay.hydrate(snap) // ⟵ suppresses first client re-fetch
-    }
-  },
-  hooks: {
-    'app:rendered'() {
-      if (import.meta.server) {
-        useState('cachebay:snapshot').value =
-          (globalThis as any).__cachebay?.dehydrate?.()
-          ?? /* if you kept a local variable */ cachebay.dehydrate()
-      }
-    },
-  },
-})
+<template>
+  <ul>
+    <li v-for="edge in data.assets.edges" :key="edge.node.id">
+      {{ edge.node.name }}
+    </li>
+  </ul>
+</template>
 ```
 
-> **Hydration notes.** During `hydrate()`, Cachebay re-registers cached results and issues a one-time **ticket** per operation key so `cache-and-network` won’t re-fire *immediately* on the client. We also guard the immediate post-Suspense re-entry. Subsequent remounts still refresh as usual.
+**Demo app:**
+👉 **[Nuxt 4 demo](...)**
 
 ---
 
-## Concepts
-
-- **Instance scoped.** `createCachebay(...)` returns a Villus plugin *with methods*. Create one per SSR request.
-- **Resolvers.** Pure, instance-agnostic “specs” via `defineResolver`. Cachebay binds them to the instance on install.
-- **Keys.** A per-instance factory mapping `__typename -> (obj) => id` used to build normalized keys like `User:123`.
-- **Connections.** Relay-style connection state + reactive **views** that splice updates (no array recreation).
-
----
-
-## API surface
-
-### `createCachebay(options) → CachebayInstance`
+## Fragments
 
 ```ts
-type CachebayOptions = {
-  typenameKey?: string;                    // default "__typename"
-  addTypename?: boolean;                   // default true
-  writePolicy?: 'replace' | 'merge';       // default 'replace'
-  idFromObject?: (obj:any) => string | null;
+import { useCache } from 'villus-cachebay'
 
-  keys?: () => Record<string, (obj:any)=>string|null>;
-  resolvers?: (builtins:{
-    relay: (opts?: RelayOptsPartial) => ResolverSpec;
-    datetime: (opts:{ to:'date'|'timestamp' }) => ResolverSpec;
-  }) => Record<string, Record<string, ResolverSpec | FieldResolver>>;
-}
-```
+const { readFragment, writeFragment } = useCache()
 
-The returned **instance** is both:
+const asset = readFragment('Asset:42') // reactive$
 
-- a **Villus plugin** (put in `use: [...]`), and
-- a **Vue plugin** (call `app.use(cachebay)` to enable `useCache()`)
-
-It also exposes:
-
-```ts
-type CachebayInstance = ClientPlugin & {
-  dehydrate(): any
-  hydrate(input: any | ((hydrate:(snapshot:any)=>void)=>void)): void
-
-  identify(obj:any): string | null
-  readFragment(refOrKey, materialized?: boolean): any
-  writeFragment(obj:any): { commit():void; revert():void }
-  modifyOptimistic(build:(api:any)=>void): { commit():void; revert():void }
-
-  inspect: {
-    entities(typename?: string): string[]
-    get(key: string): any
-    connections(): string[]
-    connection(parent:'Query'|{__typename:string;id?:any;_id?:any}, field:string, variables?:Record<string,any>): any
-  }
-
-  install(app: App): void
-  gc?: { connections(predicate?:(key:string,state:any)=>boolean): void }
-}
-```
-
-### Vue integration
-
-- **Provide**: `app.use(cachebay)` or `provideCachebay(app, cachebay)`
-- **Consume**:
-
-```ts
-const { readFragment, writeFragment, identify, modifyOptimistic, inspect } = useCache()
+writeFragment({ __typename: 'Asset', id: 42, name: 'Renamed' }).commit?.()
 ```
 
 ---
 
-## Resolver system
-
-Author resolvers without touching instance internals:
+## Optimistic updates (entities & connections)
 
 ```ts
-import { defineResolver } from '~/lib/cachebay'
+const tx = (cache as any).modifyOptimistic((optimistic) => {
+  // Write an entity
 
-// Example: uppercase certain fields
-export const uppercase = defineResolver((_inst, opts: { fields: string[] }) => {
-  return ({ value, set }) => {
-    if (!value || typeof value !== 'object') return
-    const next = { ...value }
-    for (const f of opts.fields) {
-      if (typeof next[f] === 'string') next[f] = next[f].toUpperCase()
-    }
-    set(next)
-  }
-})
-```
+  optimistic.write({ __typename:'Asset', id: 999, name:'New (optimistic)' }, 'merge')
 
-Attach resolvers per instance:
+  // Connection
 
-```ts
-resolvers: ({ relay, datetime }) => ({
-  Query:   { assets: relay() },
-  Asset:   { createdAt: datetime({ to: 'date' }) },
-  // Foo:   { bar: uppercase({ fields: ['title'] }) },
-})
-```
+  const [connection] = optimistic.connections({ parent: 'Query', field: 'assets' })
 
-### Built-ins
+  connection.addNode({ __typename:'Asset', id: 999, name:'New (optimistic)' }, { cursor: 'client:999', position: 'start' })
 
-#### `relay(opts?)`
-
-```ts
-type RelayOptsPartial = {
-  edges?: string          // default 'edges'
-  node?: string           // default 'node' or 'edge.node'
-  pageInfo?: string       // default 'pageInfo'
-  after?: string          // default 'after'
-  before?: string         // default 'before'
-  first?: string          // default 'first'
-  last?: string           // default 'last'
-  write?: 'replace'|'merge' // entity write policy for nodes
-}
-```
-
-- Normalizes edge `node`s into the entity store (dedup by normalized key)
-- Maintains reactive **views** for `edges[]` and `pageInfo`
-- **Stable connection identity** ignores cursor variables (`after/before/first/last`)
-- Interface-aware: an `Asset` interface edge will bind to `Image:1` / `Video:1` depending on what exists
-
-#### `datetime({ to })`
-Converts ISO strings to **Date** (`to: 'date'`) or to **number** (`to: 'timestamp'`). Works on scalars and arrays.
-
----
-
-## Relay **view modes** & **merge modes**
-
-These are **per-operation** hints passed via Villus **operation context**.
-
-### View modes (what your component renders)
-
-- `relayView: 'cumulative' | 'windowed'` (default **`'cumulative'`**)
-
-**`'cumulative'`** (default)
-Render **everything** present in the connection cache. When you paginate, the view grows and stays grown. Switching tabs and coming back still shows all accumulated pages from cache (then refreshes).
-
-**`'windowed'`**
-Render a **window** over cached edges:
-- First page (`replace`) sets the window to **that page size**
-- Subsequent pages (`append`/`prepend`) **increase** the window by **that page size**
-- Switching away and back (fresh view) **resets to one page** again (even though the cache still holds many)
-
-```ts
-useQuery({
-  query: AssetsQuery,
-  variables: { after: null },
-  context: {
-    relayView: 'windowed',  // or 'cumulative'
-  },
-})
-```
-
-### Merge modes (how incoming pages write into the connection)
-
-- `relayMode: 'append' | 'prepend' | 'replace' | 'auto'` (default **`'append'`**)
-
-**`'append'`** (default) — forward pagination (common case).
-**`'prepend'`** — reverse/older-first pagination.
-**`'replace'`** — replace edges for this identity (first page semantics).
-**`'auto'`** — infer: `after != null → append`, `before != null → prepend`, else `replace` (classic Relay detection).
-
-```ts
-useQuery({
-  query: AssetsQuery,
-  variables: { after: cursor },
-  context: {
-    relayMode: 'append',     // default
-    relayView: 'windowed',
-  },
-})
-```
-
-> **Stale first-page safety.** If a **stale** `replace` arrives (e.g., a late page-1 after you’ve already loaded page-2), Cachebay **does not clear** the list. It upserts nodes/meta only, keeping later pages and avoiding flicker.
-
----
-
-## Behavior matrix (summary)
-
-| Write kind  | Latest result (publishes)                                   | Stale result (processed & cached)                              |
-|-------------|--------------------------------------------------------------|-----------------------------------------------------------------|
-| **replace** | **Windowed**: window resets to the page size. **Cumulative**: show all. | **No clear**. Upsert only. **Windowed**: **do not shrink**. Publish only if Relay allowed (pagination + base match). |
-| **append**  | Add to tail (dedup). Window grows by page size if windowed. | Same as latest; publish only if allowed.                        |
-| **prepend** | Add to head (dedup). Window grows by page size if windowed. | Same as latest; publish only if allowed.                        |
-
----
-
-## Take-latest & anti-replay (how results publish)
-
-Cachebay installs a tiny concurrency guard:
-
-- **Families.** Queries are grouped by a **family key** (`query body + optional concurrency scope`). Only the **latest** result for a family is eligible to publish.
-- **Stale results.** Still **processed and cached** (resolvers run, entities/connection updated), but **not published** unless the **Relay resolver** explicitly sets `allowReplayOnStale` **and** the **base variables** (excluding cursors) match. This allows safe replay for true pagination results.
-
-> You can optionally set a **family scope** on an operation to isolate concurrent runs:
->
-> ```ts
-> useQuery({ query, variables, context: { concurrencyScope: 'assets-tab-1' } })
-> ```
-
----
-
-## Fragments & optimistic
-
-Available via `useCache()` (or on the instance):
-
-- `identify(obj) → "Type:id" | null`
-- `readFragment(refOrKey, materialized = true)`
-- `writeFragment(obj) → { commit, revert }`
-- `modifyOptimistic(build) → { commit, revert }`
-
-Inside `modifyOptimistic(build)`:
-
-```ts
-cache.connections({ parent, field, variables? }) // → array of handles for matching connections
-// handle API:
-.addNode(node, { cursor?, position?: 'start'|'end', edge?: Record<string,any> | (node)=>Record<string,any>|undefined })
-.addNodeByKey('Type:id', { cursor?, position?, edge? })
-.removeNode(node)
-.removeNodeByKey('Type:id')
-.patch('hasNextPage', (v)=>true)
-
-cache.write(obj)                    // upsert entity
-cache.patch('Type:id', { name:'…' })// shallow merge fields
-cache.del('Type:id')                // delete entity + unlink from connections
-cache.identify, cache.readFragment, cache.writeFragment
-```
-
----
-
-## Inspect (dev helpers)
-
-```ts
-const { inspect } = useCache()
-
-inspect.entities('Asset')        // → ['Asset:1', 'Asset:2', …]
-inspect.get('Asset:1')           // → raw snapshot (no __typename/id copy)
-inspect.connections()            // → all connection keys
-inspect.connection('Query', 'assets', { status: 'OPEN' })
-// → { key, variables, size, edges: [{key,cursor}], pageInfo, meta }
-```
-
----
-
-## Recipes
-
-### Typical infinite scroll (forward)
-
-```ts
-const { data, isFetching, execute } = useQuery({
-  query: gql`query Assets($after: String) { assets(first: 30, after: $after) { edges { cursor node { id __typename name } } pageInfo { hasNextPage endCursor } } }`,
-  variables: { after: null },
-  context: { relayView: 'windowed', relayMode: 'append' },
+  connection.removeNode(`Asset:999`)
 })
 
-async function loadMore() {
-  if (!data.value?.assets?.pageInfo?.hasNextPage) return
-  await execute({ after: data.value.assets.pageInfo.endCursor })
-}
+tx.commit?.()
+
+tx.revert?.() // Rolls back this layer only and replays any later ones
 ```
 
-- First mount shows **one page** (windowed).
-- Each `loadMore()` extends the window by one page (cache accumulates all).
-- Switching away/back recreates a fresh view with **one page** again (still cache-first + background refresh).
+- Layers stack in order; `revert()` drops that layer and **rebuilds** state from the base + other layers.
+- Connection helpers dedup by entity key and update cursor/meta in place.
+- See **docs/OPTIMISTIC_UPDATES.md** for the full API and patterns.
 
-### Reverse timeline (prepend)
+---
 
-Use `relayMode: 'prepend'` (and your server should support `before/last`).
+## Cache policies (at a glance)
 
-### Optimistic edge insert
+- **cache-only**: if cached → render cached; else error `CacheOnlyMiss`. No network.
+- **cache-first**: if cached → render cached; else wait for network. No revalidate.
+- **cache-and-network**: if cached → render cached immediately; also revalidate (except on the **first client mount after SSR**, where we render cached without the duplicate).
 
-```ts
-const { modifyOptimistic, identify } = useCache()
+---
 
-modifyOptimistic((cache) => {
-  const id = identify({ __typename:'Asset', id:'temp' })
-  cache.write({ __typename:'Asset', id:'temp', name:'Uploading…' })
+## Recommended plugin order
 
-  cache.connections({ parent:'Query', field:'assets', variables:{ /* your base filters */ } })
-    .forEach(conn => conn.addNodeByKey(id!, { position:'start', edge: { cursor:null } }))
-})
+```
+cachebay → dedup() → fetch()
 ```
 
 ---
 
-## Behavior & guarantees
+## Links
 
-- **Instance scoped.** New instance per SSR request; no cross-request state.
-- **Hydration guard.** The first client pass after `hydrate()` won’t refetch hydrated ops (even under `cache-and-network`).
-- **Suspense guard.** The post-Suspense immediate re-exec of the same op is swallowed once (microtask).
-- **Plugin order.** `dedupPlugin()` → **cachebay** → `fetchPlugin()`. (Always put Cachebay **before** network.)
-
----
-
-## Troubleshooting
-
-**“Two requests” in dev**
-Dev HMR + Suspense can remount. Keep `dedupPlugin()` enabled and ordered before network. Cachebay swallows the immediate post-hydrate/post-Suspense repeat once.
-
-**Late page-1 collapses my list**
-Handled. Stale `replace` no longer clears the list; it upserts only, so page-2+ remain intact. If you still *see* fewer items in the UI under `windowed`, that’s the **view limit** doing its job.
-
-**Why don’t I see stale page results immediately?**
-Stale results are cached but not published unless Relay allowed replay (cursor op + same base). Next user action (or a new latest result) will publish consistent state.
-
-**Interface nodes show wrong type**
-Make sure your `interfaces` mapping (if you pass one) lists concrete implementors; Cachebay binds proxies to the concrete snapshot it finds.
+- **Optimistic updates** — layering, rollback, connection helpers
+  👉 [docs/OPTIMISTIC_UPDATES.md](./docs/OPTIMISTIC_UPDATES.md)
+- **Relay connections** — append/prepend/replace, dedup, view limits, policy matrix
+  👉 [docs/RELAY_CONNECTIONS.md](./docs/RELAY_CONNECTIONS.md)
+- **SSR** — dehydrate/hydrate, one-time CN suppression, materialization, Suspense notes
+  👉 [docs/SSR.md](./docs/SSR.md)
+- **Cache fragments** — identify/read/write, interfaces, proxies vs raw
+  👉 [docs/CACHE_FRAGMENTS.md](./docs/CACHE_FRAGMENTS.md)
+- **Resolvers** — writing custom resolvers; using `relay()`
+  👉 [docs/RESOLVERS.md](./docs/RESOLVERS.md)
+- **Subscriptions** — pass-through vs frame mode
+  👉 [docs/SUBSCRIPTIONS.md](./docs/SUBSCRIPTIONS.md)
 
 ---
 
-## Performance tips
+## Why Cachebay?
 
-- Prefer `writePolicy: 'merge'` for large, frequently updated entities to reduce churn.
-- Use `identify + writeFragment` in mutation handlers to avoid refetching.
-- For connections, prefer `modifyOptimistic` to update edges locally.
+- **Small & focused.** One instance per client/SSR request; no global singletons.
+- **Fast rendering.** Microtask-batched updates; stable Relay views that don’t churn arrays.
+- **Practical SSR.** Hydrate once, show cached instantly, then carry on like normal CN.
+- **Ergonomic APIs.** Fragments, optimistic edits, resolvers — without ceremony.
 
----
-
-## Type reference
-
-```ts
-export function createCachebay(opts?: CachebayOptions): CachebayInstance
-
-export function provideCachebay(app: App, instance: CachebayInstance): void
-export function useCache(): {
-  readFragment: (...args:any[]) => any
-  writeFragment: (...args:any[]) => { commit():void; revert():void }
-  identify: (obj:any) => string | null
-  modifyOptimistic: (build:(api:any)=>void) => { commit():void; revert():void }
-  inspect: {
-    entities(typename?: string): string[]
-    get(key: string): any
-    connections(): string[]
-    connection(parent:'Query'|{__typename:string;id?:any;_id?:any}, field:string, variables?:Record<string,any>): any
-  }
-}
-
-export function defineResolver<TOpts>(
-  binder: (inst: CachebayInternals, opts: TOpts) => FieldResolver
-): (opts: TOpts) => ResolverSpec
-
-export const relay: (opts?: RelayOptsPartial) => ResolverSpec
-export const datetime: (opts:{ to: 'date'|'timestamp' }) => ResolverSpec
-```
-
----
-
-## Naming cheatsheet
-
-- **View mode** (rendering): `relayView: 'windowed' | 'cumulative'` (default **`'cumulative'`**)
-- **Merge mode** (writing): `relayMode: 'append' | 'prepend' | 'replace' | 'auto'` (default **`'append'`**)
-  Use `'auto'` to mimic classic after/before detection.
-
----
-
-## License
-
-MIT © LockVoid Labs \~●~
+MIT © LockVoid Labs ~●~

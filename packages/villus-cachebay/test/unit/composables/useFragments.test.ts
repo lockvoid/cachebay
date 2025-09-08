@@ -29,7 +29,7 @@ describe('composables/useFragments', () => {
 
     // Remove one entity
     (cache as any).modifyOptimistic((c: any) => {
-      c.del('Color:1');
+      c.delete('Color:1');
     }).commit?.();
     await tick();
 

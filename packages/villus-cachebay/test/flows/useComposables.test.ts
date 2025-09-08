@@ -90,7 +90,7 @@ describe('Integration • useFragment / useFragments / useCache', () => {
     await waitUntil(() => liText(w).sort().join(',') === 'Blue,Red');
 
     // remove via optimistic
-    const t = (cache as any).modifyOptimistic((c: any) => { c.del('Color:1'); });
+    const t = (cache as any).modifyOptimistic((c: any) => { c.delete('Color:1'); });
     t.commit?.();
     await waitUntil(() => liText(w).join(',') === 'Blue');
 
@@ -129,7 +129,7 @@ describe('Integration • useFragment / useFragments / useCache', () => {
     expect((w.vm as any).list?.[0]?.name).toBe('A2');
 
     // cleanup (optional)
-    const t = (cache as any).modifyOptimistic((c: any) => { c.del('T:2'); });
+    const t = (cache as any).modifyOptimistic((c: any) => { c.delete('T:2'); });
     t.commit?.(); await tick();
   });
 

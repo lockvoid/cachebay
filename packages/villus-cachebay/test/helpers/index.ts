@@ -1,6 +1,5 @@
 export * from './concurrency';
 export * from './transport';
-export * from './dom';
 export * from './cache';
 
 /** Treat the cache (plugin) as a function Villus will call with a context. */

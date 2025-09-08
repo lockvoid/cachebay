@@ -61,7 +61,7 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
 
   /* ───────────────────────────── Entities ───────────────────────────── */
 
-  it('Entity: write+commit, then revert restores previous snapshot', async () => {
+  it('Entity: patch+commit, then revert restores previous snapshot', async () => {
     const cache = createCache({
       keys: () => ({ T: (o: any) => (o?.id != null ? String(o.id) : null) }),
     });
@@ -69,7 +69,7 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
     expect((cache as any).hasFragment('T:1')).toBe(false);
 
     const t = (cache as any).modifyOptimistic((c: any) => {
-      c.write({ __typename: 'T', id: 1, name: 'A' }, 'merge');
+      c.patch({ __typename: 'T', id: 1, name: 'A' }, 'merge');
     });
     t.commit?.(); await tick();
 
@@ -86,10 +86,10 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
     });
 
     const T1 = (cache as any).modifyOptimistic((c: any) => {
-      c.write({ __typename: 'T', id: 1, name: 'A' }, 'merge');
+      c.patch({ __typename: 'T', id: 1, name: 'A' }, 'merge');
     });
     const T2 = (cache as any).modifyOptimistic((c: any) => {
-      c.write({ __typename: 'T', id: 1, name: 'B' }, 'merge');
+      c.patch({ __typename: 'T', id: 1, name: 'B' }, 'merge');
     });
 
     T1.commit?.(); T2.commit?.(); await tick();
@@ -108,10 +108,10 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
     });
 
     const T1 = (cache as any).modifyOptimistic((c: any) => {
-      c.write({ __typename: 'T', id: 1, name: 'A' }, 'merge');
+      c.patch({ __typename: 'T', id: 1, name: 'A' }, 'merge');
     });
     const T2 = (cache as any).modifyOptimistic((c: any) => {
-      c.write({ __typename: 'T', id: 1, name: 'B' }, 'merge');
+      c.patch({ __typename: 'T', id: 1, name: 'B' }, 'merge');
     });
 
     T1.commit?.(); T2.commit?.(); await tick();
@@ -126,7 +126,7 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
 
   /* ─────────────────────────── Connections ─────────────────────────── */
 
-  it('Connection: addNode at end/start, removeNode, updatePageInfo', async () => {
+  it('Connection: addNode at end/start, removeNode, patch', async () => {
     const cache = createCache({
       addTypename: true,
       resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
@@ -146,7 +146,7 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
       conn.addNode({ __typename: 'Color', id: 0, name: 'A0' }, { cursor: 'c0', position: 'start' });
 
       // pageInfo
-      conn.updatePageInfo({ endCursor: 'c2', hasNextPage: true });
+      conn.patch({ endCursor: 'c2', hasNextPage: true });
 
       // remove middle then add back at end
       conn.removeNode({ __typename: 'Color', id: 1 });
@@ -238,13 +238,13 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
       const [conn] = c.connections({ parent: 'Query', field: 'colors' });
       conn.addNode({ __typename: 'Color', id: 1, name: 'A1' }, { cursor: 'c1' });
       conn.addNode({ __typename: 'Color', id: 2, name: 'A2' }, { cursor: 'c2' });
-      conn.updatePageInfo({ endCursor: 'c2', hasNextPage: true });
+      conn.patch({ endCursor: 'c2', hasNextPage: true });
     });
 
     const T2 = (cache as any).modifyOptimistic((c: any) => {
       const [conn] = c.connections({ parent: 'Query', field: 'colors' });
       conn.addNode({ __typename: 'Color', id: 3, name: 'A3' }, { cursor: 'c3' });
-      conn.updatePageInfo({ endCursor: 'c3', hasNextPage: false });
+      conn.patch({ endCursor: 'c3', hasNextPage: false });
     });
 
     T1.commit?.(); T2.commit?.(); await tick();

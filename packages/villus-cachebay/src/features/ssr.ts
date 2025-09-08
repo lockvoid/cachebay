@@ -1,4 +1,3 @@
-// src/features/ssr.ts
 import type { EntityKey, ConnectionState } from "../core/types";
 
 type Deps = {
@@ -20,9 +19,12 @@ type Deps = {
   /** Clears internal runtime bookkeeping (dirty sets, entity→connection links, etc.). */
   resetRuntime: () => void;
 
-  // optional graph helpers (safe to omit)
+  // Optional graph/entity helpers used during hydrate(materialize: true)
   applyResolversOnGraph?: (root: any, vars: Record<string, any>, hint: { stale?: boolean }) => void;
   collectEntities?: (root: any) => void;
+
+  // NEW: live materializer to stitch edges[].node → proxies
+  materializeResult?: (root: any) => void;
 };
 
 export function createSSRFeatures(deps: Deps) {
@@ -37,9 +39,10 @@ export function createSSRFeatures(deps: Deps) {
     resetRuntime,
     applyResolversOnGraph,
     collectEntities,
+    materializeResult,
   } = deps;
 
-  // Used by the plugin to allow a one-off cached emit on CN after hydrate
+  // Used by cache plugin to allow CN cached+terminate on first mount after hydrate
   const hydrateOperationTicket = new Set<string>();
   let hydrating = false;
 
@@ -57,14 +60,14 @@ export function createSSRFeatures(deps: Deps) {
 
   /**
    * Hydrate a snapshot.
-   * opts.materialize — when true, rebuilds views/entities from op-cache so UI can render immediately.
-   * opts.rabbit — when true (default), drops a "hydrate ticket" for each op-key so CN may emit cached once & terminate.
+   * opts.materialize — rebuilds views/entities from op-cache so UI renders immediately.
+   * opts.rabbit — drops a "hydrate ticket" for each op-key so CN may emit cached once & terminate (Suspense-friendly).
    */
   const hydrate = (
     input: any | ((hydrate: (snapshot: any) => void) => void),
     opts?: { materialize?: boolean; rabbit?: boolean }
   ) => {
-    const materialize = !!opts?.materialize;
+    const doMaterialize = !!opts?.materialize;
     const rabbit = opts?.rabbit !== false; // default true
 
     const run = (snapshot: any) => {
@@ -95,7 +98,7 @@ export function createSSRFeatures(deps: Deps) {
         }
       }
 
-      // restore op-cache (+ optional "rabbit" tickets)
+      // restore op-cache (+ optional “rabbit” tickets)
       if (Array.isArray(snapshot.op)) {
         for (const [k, v] of snapshot.op) {
           operationCache.set(k, { data: v.data, variables: v.variables || {} });
@@ -103,13 +106,15 @@ export function createSSRFeatures(deps: Deps) {
         }
       }
 
-      // optional materialization pass
-      if (materialize) {
+      // Optional materialization pass from op-cache
+      if (doMaterialize) {
         operationCache.forEach(({ data, variables }) => {
           const vars = variables || {};
           applyResolversOnGraph?.(data, vars, { stale: false });
           collectEntities?.(data);
           registerViewsFromResult(data, vars);
+          // 🔑 stitch edges[].node into live proxies so writeFragment will update the view
+          materializeResult?.(data);
         });
       }
     };
@@ -119,11 +124,8 @@ export function createSSRFeatures(deps: Deps) {
       if (typeof input === "function") input((s) => run(s));
       else run(input);
     } finally {
-      // keep microtask flip so tests can decide to await a tick;
-      // if you prefer synchronous, set hydrating = false directly.
-      queueMicrotask(() => {
-        hydrating = false;
-      });
+      // keep microtask flip (tests can await tick(2) if needed)
+      queueMicrotask(() => { hydrating = false; });
     }
   };
 
