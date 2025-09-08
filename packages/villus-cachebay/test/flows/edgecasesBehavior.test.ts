@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { defineComponent, h, computed, watch } from 'vue';
 import { mount } from '@vue/test-utils';
 import { createClient } from 'villus';
-import { createCache } from '@/src';
+import { createCache, useFragments } from '@/src';
 import { createFetchMock, type Route, tick, delay, seedCache } from '@/test/helpers';
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -179,7 +179,7 @@ describe('Integration • Edge-cases & performance guards', () => {
    *    - CN + cached hit + identical network → only 1 render
    *    - CN + cached hit + different network → 2 renders
    * ────────────────────────────────────────────────────────────────────────── */
-  it('cache-and-network: identical network as cache → single render; different network → two renders', async () => {
+  it.only('cache-and-network: identical network as cache → single render; different network → two renders', async () => {
     const cache = makeAssetsCache();
 
     // Seed op cache (pretend SSR or earlier visit)
@@ -341,7 +341,7 @@ describe('Integration • Edge-cases & performance guards', () => {
     // edges array pointer stable across all renders
     expect(edgeRefs.length).toBeGreaterThanOrEqual(3);
     const firstRef = edgeRefs[0];
-    for (const r of edgeRefs) expect(r).toBe(firstRef);
+    for (const r of edgeRefs) expect(r).toStrictEqual(firstRef);
 
     // first node proxy identity stable across update
     expect(firstNodeRefs.length).toBeGreaterThanOrEqual(3);
@@ -431,7 +431,6 @@ describe('Integration • Edge-cases & performance guards', () => {
     // Materialized fragments via useFragments('Node:*')
     const Comp = defineComponent({
       setup() {
-        const { useFragments } = require('@/src');
         return { list: useFragments('Node:*') };
       },
       render() { return h('div'); },

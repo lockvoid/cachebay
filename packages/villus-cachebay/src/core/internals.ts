@@ -39,7 +39,7 @@ import {
 
 export type CachebayInstance = ClientPlugin & {
   dehydrate: () => any;
-  hydrate: (input: any | ((hydrate: (snapshot: any) => void) => void)) => void;
+  hydrate: (input: any | ((hydrate: (snapshot: any) => void) => void), opts?: { materialize?: boolean }) => void;
 
   identify: (obj: any) => string | null;
 
@@ -646,6 +646,32 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     isReactive,
     reactive,
     shallowReactive,
+    // 🔑 expose stitcher for plugin to bind cached/network results to reactive proxies
+    materializeResult: (root: any) => {
+      if (!root || typeof root !== 'object') return;
+      const stack = [root];
+      while (stack.length) {
+        const cur: any = stack.pop();
+        if (!cur || typeof cur !== 'object') continue;
+
+        if (Object.prototype.hasOwnProperty.call(cur, 'node')) {
+          const n = cur.node;
+          if (n && typeof n === 'object') {
+            const key = idOf(n);
+            if (key) {
+              const resolved = resolveConcreteEntityKey(key) || key;
+              cur.node = proxyForEntityKey(resolved);
+            }
+          }
+        }
+
+        for (const k of Object.keys(cur)) {
+          const v = cur[k];
+          if (v && typeof v === 'object') stack.push(v);
+        }
+      }
+    },
+
     applyFieldResolvers: (typename, obj, vars, hint) => {
       const map = FIELD_RESOLVERS[typename];
       if (!map) return;
@@ -737,7 +763,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
           }
         }
 
-        // ── NEW: inherit current visible limit (max across views) for newest view
+        // ── Inherit visible window for newest view
         let currentLimit = 0;
         if (state.views && state.views.size) {
           state.views.forEach((v: any) => {
@@ -747,8 +773,6 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
 
         const newEdgesRef = (value as any)[edgesFieldName];
 
-        // Add the new view; for the very first view limit is this page size,
-        // for subsequent views inherit the currentLimit so newest view shows the same window.
         addStrongView(state, {
           edges: newEdgesRef,
           pageInfo: (value as any)[pageInfoFieldName],
@@ -761,7 +785,6 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
             : (Array.isArray(edgesArr) ? edgesArr.length : 0),
         });
 
-        // Ensure the just-added view's limit is at least the currentLimit and never beyond list length
         const newView = (() => {
           for (const v of state.views.values()) {
             if (v && v.edges === newEdgesRef) return v as any;
@@ -783,9 +806,6 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
 
         if (!state.initialized) {
           state.initialized = true;
-        } else {
-          // Optionally keep the dirty mark to coalesce with other updates
-          // markConnectionDirty(state);
         }
       }
     });
@@ -980,7 +1000,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
       ensureConnectionState,
       buildConnectionKey,
       parentEntityKeyFor,
-      getRelayOptionsByType, // ✅ FIX: needed to find relay spec for Query.colors
+      getRelayOptionsByType,
 
       // entity helpers
       parseEntityKey,

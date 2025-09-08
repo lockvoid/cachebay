@@ -9,6 +9,9 @@ import {
 } from "./utils";
 import type { App } from "vue";
 
+/* ----------------------------------------------------------------------------
+ * Build args (deps from cache core)
+ * -------------------------------------------------------------------------- */
 type BuildArgs = {
   shouldAddTypename: boolean;
   opCacheMax: number;
@@ -17,6 +20,7 @@ type BuildArgs = {
   isHydrating?: () => boolean;
   hydrateOperationTicket?: Set<string>;
 
+  // Core graph/materialization
   applyResolversOnGraph: (root: any, vars: Record<string, any>, hint: { stale?: boolean }) => void;
   registerViewsFromResult: (root: any, variables: Record<string, any>) => void;
   collectEntities: (root: any) => void;
@@ -31,8 +35,11 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
+/* ----------------------------------------------------------------------------
+ * Plugin
+ * -------------------------------------------------------------------------- */
 export function buildCachebayPlugin(
-  internals: CachebayInternals,
+  internals: CachebayInternals, // expects internals.materializeResult?: (root:any)=>void
   args: BuildArgs,
 ): ClientPlugin {
   const {
@@ -45,7 +52,7 @@ export function buildCachebayPlugin(
     collectEntities,
   } = args;
 
-  // Per-opKey (+scope) → dedup: followers await leader’s real {data|error}
+  // Per-opKey (+scope) → dedup followers await leader’s real {data|error}
   const operationDeferred = new Map<string, ReturnType<typeof createDeferred<ResultShape>>>();
 
   // Family ticket: latest ticket wins (take-latest across variables within a family)
@@ -70,9 +77,12 @@ export function buildCachebayPlugin(
     const originalUseResult = ctx.useResult;
     const originalAfterQuery = ctx.afterQuery ?? (() => { });
 
-    const famKey = getFamilyKey(operation); // must include concurrencyScope inside util
+    const famKey = getFamilyKey(operation); // includes concurrencyScope when present
     const baseOpKey = getOperationKey(operation);
-    const scope = (operation.context as any)?.concurrencyScope ?? (operation.context as any)?.cachebayScope ?? "";
+    const scope =
+      (operation.context as any)?.concurrencyScope ??
+      (operation.context as any)?.cachebayScope ??
+      "";
     const scopedOpKey = scope ? `${baseOpKey}::scope=${scope}` : baseOpKey;
 
     if (shouldAddTypename && operation.query) {
@@ -82,7 +92,7 @@ export function buildCachebayPlugin(
     const cachePolicy =
       operation.cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
 
-    // ── CACHE-ONLY
+    /* ------------------------------ CACHE-ONLY ------------------------------ */
     if (cachePolicy === "cache-only") {
       const cached = internals.operationCache.get(baseOpKey);
       if (cached) {
@@ -90,6 +100,7 @@ export function buildCachebayPlugin(
         applyResolversOnGraph(cached.data, vars, { stale: false });
         collectEntities(cached.data);
         registerViewsFromResult(cached.data, vars);
+        internals.materializeResult?.(cached.data);
         originalUseResult({ data: cached.data }, true);
       } else {
         const error = new CombinedError({
@@ -102,7 +113,7 @@ export function buildCachebayPlugin(
       return;
     }
 
-    // ── CACHE-FIRST
+    /* ------------------------------ CACHE-FIRST ----------------------------- */
     if (cachePolicy === "cache-first") {
       const cached = internals.operationCache.get(baseOpKey);
       if (cached) {
@@ -110,56 +121,70 @@ export function buildCachebayPlugin(
         applyResolversOnGraph(cached.data, vars, { stale: false });
         collectEntities(cached.data);
         registerViewsFromResult(cached.data, vars);
+        internals.materializeResult?.(cached.data);
         originalUseResult({ data: cached.data }, true);
         return;
       }
     }
 
-    // ── DEDUP (opKey + scope): followers await leader; returning Promise halts fetch
+    /* -------------------------------- DEDUP --------------------------------- */
     const dedupKey = scopedOpKey; // dedup is policy-agnostic
     if (operationDeferred.has(dedupKey)) {
-      // a follower exists → mark its leader allowed to publish even if not latest ticket
+      // follower exists → mark its leader allowed to publish even if not latest ticket
       allowLeaderByOp.add(dedupKey);
-
       const d = operationDeferred.get(dedupKey)!;
       return d.promise.then((winner) => {
-        // Route via the follower's ctx.useResult (original; we returned before overriding)
         ctx.useResult(winner, true);
       });
     } else {
       operationDeferred.set(dedupKey, createDeferred<ResultShape>());
     }
 
-    // ── Elect family ticket ONLY for leaders (after dedup)
+    /* ------------------------- ELECT FAMILY TICKET -------------------------- */
     const myTicket = (familyCounter.get(famKey) ?? 0) + 1;
     familyCounter.set(famKey, myTicket);
 
-    // ── CACHE-AND-NETWORK: immediate cached reveal (non-terminating) if not already on screen
+    /* ------------------------- CACHE-AND-NETWORK HIT ------------------------ */
     if (cachePolicy === "cache-and-network") {
       const cached = internals.operationCache.get(baseOpKey);
       if (cached) {
-        // Hydration guard: only suppress when actually hydrating; tickets are consumed but do not suppress.
         const hydratingNow = !!(isHydrating && isHydrating());
-        if (hydrateOperationTicket && hydrateOperationTicket.has(baseOpKey)) {
-          hydrateOperationTicket.delete(baseOpKey); // consume ticket; do NOT suppress on ticket alone
+        const hadTicket = !!(hydrateOperationTicket && hydrateOperationTicket.has(baseOpKey));
+        if (hadTicket) hydrateOperationTicket!.delete(baseOpKey); // consume ticket
+
+        // ✅ If this opKey came from hydrate, emit cached and TERMINATE (no initial refetch),
+        // even if hydratingNow is already false (Suspense expects a terminating result).
+        if (hadTicket) {
+          const vars = operation.variables || cached.variables || {};
+          applyResolversOnGraph(cached.data, vars, { stale: false });
+          collectEntities(cached.data);
+          registerViewsFromResult(cached.data, vars);
+          internals.materializeResult?.(cached.data);
+          originalUseResult({ data: cached.data }, true);
+          lastPublishedByFam.set(famKey, { data: cached.data, variables: vars });
+          return; // stop pipeline here
         }
 
+        // Normal CN outside hydrate ticket path: emit cached non-terminating and revalidate (unless already on screen).
         if (!hydratingNow) {
+          const vars = operation.variables || cached.variables || {};
           const last = lastPublishedByFam.get(famKey);
           const alreadyOnScreen = last && last.data === cached.data;
+
           if (!alreadyOnScreen) {
-            const vars = operation.variables || cached.variables || {};
             applyResolversOnGraph(cached.data, vars, { stale: false });
             collectEntities(cached.data);
             registerViewsFromResult(cached.data, vars);
+            internals.materializeResult?.(cached.data);
             originalUseResult({ data: cached.data }, false); // non-terminating
             lastPublishedByFam.set(famKey, { data: cached.data, variables: vars });
           }
         }
+        // else (hydrating but no ticket): suppress cached emit
       }
     }
 
-    // ── Unified result path (network)
+    /* ----------------------------- RESULT PATH ------------------------------ */
     ctx.useResult = (incoming: OperationResult, terminate?: boolean) => {
       const res: ResultShape =
         (incoming as any)?.error
@@ -169,30 +194,28 @@ export function buildCachebayPlugin(
       const vars = operation.variables || {};
       const isCursorPage = vars && (vars.after != null || vars.before != null);
 
-      // Resolve per-opKey followers with the REAL result
+      // resolve per-opKey followers
       const opDef = operationDeferred.get(dedupKey);
       if (opDef) {
         opDef.resolve(res);
         operationDeferred.delete(dedupKey);
       }
 
-      // Non-terminating cached reveal path
+      // non-terminating cached reveal
       if (terminate === false && res.data) {
         return originalUseResult(res, false);
       }
 
-      // Winner vs loser by ticket
+      // winner vs loser by ticket
       const latestTicket = familyCounter.get(famKey) ?? myTicket;
       const iAmWinner = myTicket === latestTicket;
 
-      // ⬅️ HARD DROP GUARD — ALWAYS FIRST for non-cursor losers (no publish, no warm):
+      // HARD DROP: non-cursor losers never publish unless dedup-leader exception
       if (!iAmWinner && !isCursorPage && !allowLeaderByOp.has(dedupKey)) {
         const last = lastPublishedByFam.get(famKey);
         if (last?.data) {
-          // settle quietly with last visible winner pointer (no visible change)
           return originalUseResult({ data: last.data }, true);
         }
-        // If no winner yet (rare), settle with a harmless error
         return originalUseResult(
           {
             error: new CombinedError({
@@ -205,17 +228,18 @@ export function buildCachebayPlugin(
         );
       }
 
-      // Cursor-page exception (older page can publish)
+      // cursor-page exception: allow publish
       if (!iAmWinner && isCursorPage && res.data) {
         applyResolversOnGraph(res.data, vars, { stale: true });
         collectEntities(res.data);
         registerViewsFromResult(res.data, vars);
         setOpCache(baseOpKey, { data: res.data, variables: vars });
         lastPublishedByFam.set(famKey, { data: res.data, variables: vars });
+        internals.materializeResult?.(res.data);
         return originalUseResult(res, true);
       }
 
-      // Stale loser (non-cursor) — leader-with-follower exception: allow publish
+      // stale loser (non-cursor) with dedup follower exception: allow publish once
       if (!iAmWinner && !isCursorPage) {
         if (allowLeaderByOp.has(dedupKey)) {
           allowLeaderByOp.delete(dedupKey);
@@ -225,21 +249,21 @@ export function buildCachebayPlugin(
             registerViewsFromResult(res.data, vars);
             setOpCache(baseOpKey, { data: res.data, variables: vars });
             lastPublishedByFam.set(famKey, { data: res.data, variables: vars });
+            internals.materializeResult?.(res.data);
           }
           return originalUseResult(res, true);
         }
-
-        // (Normal stale loser never gets here due to the hard-drop guard above)
-        return;
+        return; // normal stale loser already hard-dropped above
       }
 
-      // Winner: publish once
+      // winner: publish once
       if (res.data) {
         applyResolversOnGraph(res.data, vars, { stale: false });
         collectEntities(res.data);
         registerViewsFromResult(res.data, vars);
         setOpCache(baseOpKey, { data: res.data, variables: vars });
         lastPublishedByFam.set(famKey, { data: res.data, variables: vars });
+        internals.materializeResult?.(res.data);
       }
       return originalUseResult(res, true);
     };
@@ -252,9 +276,9 @@ export function buildCachebayPlugin(
   return plugin;
 }
 
-// ----------------------------------------
-// Vue provide/inject helper
-// ----------------------------------------
+/* ----------------------------------------------------------------------------
+ * Vue provide/inject helper
+ * -------------------------------------------------------------------------- */
 export const CACHEBAY_KEY: symbol = Symbol("villus-cachebay");
 
 export function provideCachebay(app: App, instance: any) {

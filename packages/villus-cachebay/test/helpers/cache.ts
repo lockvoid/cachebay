@@ -7,6 +7,7 @@ export function seedCache(
     variables = {},
     data,
     materialize = true,
+    rabbit = false,
   }: {
     query: any;
     variables?: Record<string, any>;
@@ -20,6 +21,6 @@ export function seedCache(
     {
       op: [[opKey, { data, variables }]],
     },
-    { materialize },
+    { materialize, rabbit },
   );
 }
