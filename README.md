@@ -8,7 +8,7 @@ A tiny (12KB gzip), instance-scoped cache layer for **Villus** that gives you:
 - **Relay-style connections** — append/prepend/replace, edge de-duplication by node key, reactive `pageInfo`/meta, and **no array churn**.
 - **Optimistic updates that stack** — layered commits/reverts for entities *and* connections (add/remove/update pageInfo) with clean rollback.
 - **SSR that just works** — dehydrate/hydrate entities, connections, and op-cache; first client mount renders from cache without a duplicate request, then behaves like normal CN.
-- **Fragments API** — `identify`, `readFragment`, `writeFragment` (supports interfaces like `Node:*`), with reactive materialized proxies.
+- **Fragments API** — `identify`, `readFragment`/`useFragment`/`useFragments`, `writeFragment` (supports interfaces like `Node:*`), with reactive materialized proxies.
 - **Resolver pipeline** — bind per-type field resolvers (e.g. `relay()` for connections, your own computed/scalar transforms).
 - **Subscriptions** — observable pass-through; plain frames get normalized and stream as non-terminating updates.
 - **Batched reactivity** — microtask-coalesced updates to minimize re-renders.
@@ -244,26 +244,18 @@ cachebay → dedup() → fetch()
 
 ## Links
 
-- **Optimistic updates** — layering, rollback, connection helpers
-  👉 [docs/OPTIMISTIC_UPDATES.md](./docs/OPTIMISTIC_UPDATES.md)
-- **Relay connections** — append/prepend/replace, dedup, view limits, policy matrix
-  👉 [docs/RELAY_CONNECTIONS.md](./docs/RELAY_CONNECTIONS.md)
-- **SSR** — dehydrate/hydrate, one-time CN suppression, materialization, Suspense notes
-  👉 [docs/SSR.md](./docs/SSR.md)
-- **Cache fragments** — identify/read/write, interfaces, proxies vs raw
-  👉 [docs/CACHE_FRAGMENTS.md](./docs/CACHE_FRAGMENTS.md)
-- **Resolvers** — writing custom resolvers; using `relay()`
-  👉 [docs/RESOLVERS.md](./docs/RESOLVERS.md)
-- **Subscriptions** — pass-through vs frame mode
-  👉 [docs/SUBSCRIPTIONS.md](./docs/SUBSCRIPTIONS.md)
-
+- 👉 **[Optimistic updates](./docs/OPTIMISTIC_UPDATES.md)** — layering, rollback, `patch`/`delete`, connection helpers
+- 👉 **[Relay connections](./docs/RELAY_CONNECTIONS.md)** — append/prepend/replace, de-dup, view limits, policy matrix
+- 👉 **[SSR](./docs/SSR.md)** — dehydrate/hydrate, one-time CN suppression, materialization, Suspense notes
+- 👉 **[Cache fragments](./docs/CACHE_FRAGMENTS.md)** — identify/read/write, interfaces, proxies vs raw
+- 👉 **[Resolvers](./docs/RESOLVERS.md)** — writing custom resolvers; using `relay()`
+- 👉 **[Composables](./docs/COMPOSABLES.md)** — `useCache()`, `useFragment()`, `useFragments()`
 ---
 
 ## Why Cachebay?
 
-- **Small & focused.** One instance per client/SSR request; no global singletons.
+- **Small & focused APIs.** Fragments, optimistic edits, resolvers — without ceremony.
 - **Fast rendering.** Microtask-batched updates; stable Relay views that don’t churn arrays.
 - **Practical SSR.** Hydrate once, show cached instantly, then carry on like normal CN.
-- **Ergonomic APIs.** Fragments, optimistic edits, resolvers — without ceremony.
 
 MIT © LockVoid Labs ~●~
