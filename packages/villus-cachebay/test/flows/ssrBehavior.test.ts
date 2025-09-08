@@ -43,7 +43,6 @@ function ColorsHarness(cachePolicy: 'cache-first' | 'cache-and-network') {
 /** Build a minimal Query payload from the hydrated connection state (no fetch). */
 function buildRootFromHydrated(cache: any, field: string, parent = 'Query') {
   const conns = (cache as any).inspect.connection(parent, field);
-  // Your inspect returns an array of connections; use the first (single bucket by vars in these tests)
   const c = Array.isArray(conns) ? conns[0] : null;
   if (!c) return null;
 
@@ -52,7 +51,6 @@ function buildRootFromHydrated(cache: any, field: string, parent = 'Query') {
     node: {
       __typename: (e.node && e.node.__typename) || (e.key ? e.key.split(':')[0] : 'Node'),
       id: e.node?.id ?? (e.key ? e.key.split(':')[1] : undefined),
-      // copy known fields (your proxies will fill the rest)
       ...(e.node?.name ? { name: e.node.name } : {}),
     },
   }));
@@ -75,12 +73,10 @@ function seedClientFromHydratedState(cache: any, query: any, variables: Record<s
   const pluginFn = cache as unknown as (ctx: any) => void;
   const ctx: any = {
     operation: { type: 'query', query, variables: cleanVars(variables), context: {} },
-    useResult: (_payload: any) => { },  // plugin will call this; we don’t need to intercept
+    useResult: (_: any) => { },
     afterQuery: () => { },
   };
-  // Install plugin hooks for this synthetic operation
   pluginFn(ctx);
-  // Push the hydrated root once into the plugin pipeline
   ctx.useResult({ data: root }, true);
 }
 
@@ -135,10 +131,7 @@ describe('Integration • SSR / hydration', () => {
       addTypename: true,
       resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
     });
-    (cache as any).hydrate(snapshot);
-
-    // Seed the client cache from hydrated state (no network)
-    seedClientFromHydratedState(cache, COLORS, { first: 2 });
+    (cache as any).hydrate(snapshot, { materialize: true });
 
     const fx = createFetchMock([]); // ensure no initial refetch counts
     const client = createClient({ url: '/client', use: [cache as any, fx.plugin] });
@@ -164,10 +157,7 @@ describe('Integration • SSR / hydration', () => {
       addTypename: true,
       resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
     });
-    (cache as any).hydrate(snapshot);
-
-    // Seed CN op from hydrated state
-    seedClientFromHydratedState(cache, COLORS, { first: 2 });
+    (cache as any).hydrate(snapshot, { materialize: true });
 
     const routes: Route[] = [{
       when: ({ variables }) => variables.after === 'c2' && variables.first === 2,
@@ -212,8 +202,7 @@ describe('Integration • SSR / hydration', () => {
       addTypename: true,
       resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
     });
-    (cache as any).hydrate(snapshot);
-    seedClientFromHydratedState(cache, COLORS, { first: 2 });
+    (cache as any).hydrate(snapshot, { materialize: true });
 
     const routes: Route[] = [{
       when: ({ variables }) => !variables.after && variables.first === 2,

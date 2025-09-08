@@ -5,7 +5,10 @@ import { createClient } from 'villus';
 import { createCache } from '@/src';
 import { createFetchMock, type Route, tick, delay } from '@/test/helpers';
 
-/* Shared Relay query */
+/* -----------------------------------------------------------------------------
+ * Shared Relay query & cache factory
+ * -------------------------------------------------------------------------- */
+
 const COLORS = /* GraphQL */ `
   query Colors($first:Int,$after:String) {
     colors(first:$first, after:$after) {
@@ -22,6 +25,10 @@ function makeCache() {
     keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
   });
 }
+
+/* -----------------------------------------------------------------------------
+ * Small helpers
+ * -------------------------------------------------------------------------- */
 
 const liText = (w: any) => w.findAll('li').map((li: any) => li.text());
 
@@ -51,6 +58,7 @@ function MakeHarness(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-ne
       const vars = computed(() => cleanVars({ first: props.first, after: props.after }));
       const { data, error } = useQuery({ query: COLORS, variables: vars, cachePolicy });
 
+      // Record only meaningful payloads: edges with items, or explicit empty edges array.
       watch(
         () => data.value,
         (v) => {
@@ -64,6 +72,7 @@ function MakeHarness(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-ne
         { immediate: true },
       );
 
+      // Record GraphQL/transport errors once
       watch(
         () => error.value,
         (e) => { if (e) (props.errors as any[]).push(e.message || 'error'); },
@@ -76,8 +85,13 @@ function MakeHarness(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-ne
   });
 }
 
+/* -----------------------------------------------------------------------------
+ * Tests
+ * -------------------------------------------------------------------------- */
+
 describe('Integration • Errors', () => {
   const mocks: Array<{ waitAll: () => Promise<void>, restore: () => void }> = [];
+
   afterEach(async () => {
     // Drain timers for all mocks, then restore fetch to avoid “result was not set” noise.
     while (mocks.length) {
@@ -119,7 +133,11 @@ describe('Integration • Errors', () => {
   it('Latest-only gating (non-cursor): older error is dropped; newer data renders', async () => {
     const routes: Route[] = [
       // Older op (first=2) – slow error
-      { when: ({ variables }) => variables.first === 2 && !variables.after, delay: 30, respond: () => ({ error: new Error('Older error') }) },
+      {
+        when: ({ variables }) => variables.first === 2 && !variables.after,
+        delay: 30,
+        respond: () => ({ error: new Error('Older error') }),
+      },
       // Newer op (first=3) – fast data
       {
         when: ({ variables }) => variables.first === 3 && !variables.after,
@@ -127,7 +145,11 @@ describe('Integration • Errors', () => {
         respond: () => ({
           data: {
             __typename: 'Query',
-            colors: { __typename: 'ColorConnection', edges: [{ cursor: 'n', node: { __typename: 'Color', id: 9, name: 'NEW' } }], pageInfo: {} },
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [{ cursor: 'n', node: { __typename: 'Color', id: 9, name: 'NEW' } }],
+              pageInfo: {},
+            },
           },
         }),
       },
@@ -147,6 +169,7 @@ describe('Integration • Errors', () => {
       global: { plugins: [client as any] },
     });
 
+    // Newer leader
     await w.setProps({ first: 3 }); await tick();
 
     await delay(10); await tick();
@@ -154,13 +177,14 @@ describe('Integration • Errors', () => {
     expect(errors.length).toBe(0);
     expect(empties.length).toBe(0);
 
+    // Older error arrives later → dropped
     await delay(25); await tick();
     expect(errors.length).toBe(0);
     expect(renders).toEqual([['NEW']]);
   });
 
   it('Cursor-page error is dropped (no replay); latest success remains', async () => {
-    // Your core currently *drops* older cursor-page errors.
+    // Core drops older cursor-page errors.
     const routes: Route[] = [
       // Newer (no cursor) fast success
       {
@@ -169,11 +193,15 @@ describe('Integration • Errors', () => {
         respond: () => ({
           data: {
             __typename: 'Query',
-            colors: { __typename: 'ColorConnection', edges: [{ cursor: 'p1', node: { __typename: 'Color', id: 1, name: 'NEW' } }], pageInfo: {} },
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [{ cursor: 'p1', node: { __typename: 'Color', id: 1, name: 'NEW' } }],
+              pageInfo: {},
+            },
           },
         }),
       },
-      // Older cursor op (after='p1') slow error -> DROPPED by take-latest in your implementation
+      // Older cursor op (after='p1') slow error -> DROPPED
       {
         when: ({ variables }) => variables.after === 'p1' && variables.first === 2,
         delay: 30,
@@ -192,7 +220,7 @@ describe('Integration • Errors', () => {
 
     const App = MakeHarness('network-only');
     const w = mount(App, {
-      // Start with the older cursor op in-flight…
+      // Start with older cursor op in-flight…
       props: { first: 2, after: 'p1', renders, errors, empties, name: 'CR' },
       global: { plugins: [client as any] },
     });
@@ -206,9 +234,9 @@ describe('Integration • Errors', () => {
     expect(errors.length).toBe(0);
     expect(empties.length).toBe(0);
 
-    // Cursor error arrives later — per current core it is DROPPED
+    // Cursor error arrives later — dropped
     await delay(25); await tick();
-    expect(errors.length).toBe(0); // <- dropped
+    expect(errors.length).toBe(0);
     expect(renders).toEqual([['NEW']]);
     expect(empties.length).toBe(0);
   });
@@ -222,7 +250,11 @@ describe('Integration • Errors', () => {
         respond: () => ({
           data: {
             __typename: 'Query',
-            colors: { __typename: 'ColorConnection', edges: [{ cursor: 'o1', node: { __typename: 'Color', id: 1, name: 'O1' } }], pageInfo: {} },
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [{ cursor: 'o1', node: { __typename: 'Color', id: 1, name: 'O1' } }],
+              pageInfo: {},
+            },
           },
         }),
       },
@@ -235,7 +267,11 @@ describe('Integration • Errors', () => {
         respond: () => ({
           data: {
             __typename: 'Query',
-            colors: { __typename: 'ColorConnection', edges: [{ cursor: 'o3', node: { __typename: 'Color', id: 3, name: 'O3' } }], pageInfo: {} },
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [{ cursor: 'o3', node: { __typename: 'Color', id: 3, name: 'O3' } }],
+              pageInfo: {},
+            },
           },
         }),
       },
@@ -256,17 +292,21 @@ describe('Integration • Errors', () => {
       global: { plugins: [client as any] },
     });
 
+    // enqueue O2 then O3
     await w.setProps({ first: 3 }); await tick();
     await w.setProps({ first: 4 }); await tick();
 
+    // Fast error arrives (dropped), medium still pending
     await delay(10); await tick();
     expect(errors.length).toBe(0);
     expect(renders.length).toBe(0);
     expect(empties.length).toBe(0);
 
+    // O3 arrives
     await delay(15); await tick();
     expect(renders).toEqual([['O3']]);
 
+    // O1 comes last — ignored (older)
     await delay(40); await tick();
     expect(renders).toEqual([['O3']]);
     expect(errors.length).toBe(0);

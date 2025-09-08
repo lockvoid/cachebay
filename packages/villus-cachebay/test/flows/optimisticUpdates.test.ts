@@ -3,7 +3,10 @@ import { createClient } from 'villus';
 import { createCache } from '@/src';
 import { createFetchMock, type Route, tick } from '@/test/helpers';
 
-/* Seed Query.colors relay options once so modifyOptimistic().connections(...) knows paths */
+/* -----------------------------------------------------------------------------
+ * Shared query & helpers
+ * -------------------------------------------------------------------------- */
+
 const COLORS = /* GraphQL */ `
   query Colors($first:Int,$after:String,$last:Int,$before:String) {
     colors(first:$first, after:$after, last:$last, before:$before) {
@@ -13,30 +16,41 @@ const COLORS = /* GraphQL */ `
   }
 `;
 
+/** Seed Relay options once so modifyOptimistic().connections(...) knows paths. */
 async function seedRelayOptions(cache: any) {
   const routes: Route[] = [{
     when: ({ body }) => body.includes('query Colors'),
     delay: 0,
     respond: () => ({
-      data: { __typename: 'Query', colors: { __typename: 'ColorConnection', edges: [], pageInfo: {} } },
+      data: {
+        __typename: 'Query',
+        colors: { __typename: 'ColorConnection', edges: [], pageInfo: {} },
+      },
     }),
   }];
+
   const fx = createFetchMock(routes);
   const client = createClient({ url: '/seed', use: [cache as any, fx.plugin] });
   await client.execute({ query: COLORS, variables: {} });
   await fx.waitAll(); fx.restore();
 }
 
-/* Small helpers for the array-of-connections shape */
-const edgesKeys = (conns: any) =>
-  Array.isArray(conns) && conns[0]?.edges
-    ? conns[0].edges.map((e: any) => e.key)
+/** Convenience readers for the `inspect.connection` shape (array of buckets). */
+const edgesKeys = (buckets: any) =>
+  Array.isArray(buckets) && buckets[0]?.edges
+    ? buckets[0].edges.map((e: any) => e.key)
     : [];
-const pInfo = (conns: any) =>
-  (Array.isArray(conns) && conns[0]?.pageInfo) ? conns[0].pageInfo : {};
+
+const pInfo = (buckets: any) =>
+  (Array.isArray(buckets) && buckets[0]?.pageInfo) ? buckets[0].pageInfo : {};
+
+/* -----------------------------------------------------------------------------
+ * Tests
+ * -------------------------------------------------------------------------- */
 
 describe('Integration • Optimistic updates (entities & connections)', () => {
   const mocks: Array<{ waitAll: () => Promise<void>, restore: () => void }> = [];
+
   afterEach(async () => {
     while (mocks.length) {
       const m = mocks.pop()!;
@@ -118,6 +132,7 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
       resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
       keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
     });
+
     await seedRelayOptions(cache);
 
     const t = (cache as any).modifyOptimistic((c: any) => {
@@ -150,6 +165,7 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
       resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
       keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
     });
+
     await seedRelayOptions(cache);
 
     const t1 = (cache as any).modifyOptimistic((c: any) => {
@@ -163,7 +179,7 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
       const [conn] = c.connections({ parent: 'Query', field: 'colors' });
       conn.addNode(
         { __typename: 'Color', id: 1, name: 'A1-upd' },
-        { cursor: 'c1b', edge: { score: 99 }, position: 'end' }
+        { cursor: 'c1b', edge: { score: 99 }, position: 'end' },
       );
     });
     t2.commit?.(); await tick();
@@ -171,7 +187,10 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
     const t3 = (cache as any).modifyOptimistic((c: any) => {
       const [conn] = c.connections({ parent: 'Query', field: 'colors' });
       conn.removeNode({ __typename: 'Color', id: 1 });
-      conn.addNode({ __typename: 'Color', id: 1, name: 'A1-back' }, { cursor: 'c1c', position: 'start' });
+      conn.addNode(
+        { __typename: 'Color', id: 1, name: 'A1-back' },
+        { cursor: 'c1c', position: 'start' },
+      );
     });
     t3.commit?.(); await tick();
 
@@ -192,11 +211,12 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
       resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
       keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
     });
+
     await seedRelayOptions(cache);
 
     const t = (cache as any).modifyOptimistic((c: any) => {
       const [conn] = c.connections({ parent: 'Query', field: 'colors' });
-      conn.addNode({ id: 1, name: 'NoTypename' } as any, { cursor: 'x' });     // invalid
+      conn.addNode({ id: 1, name: 'NoTypename' } as any, { cursor: 'x' });        // invalid
       conn.addNode({ __typename: 'Color', name: 'NoId' } as any, { cursor: 'y' }); // invalid
     });
     t.commit?.(); await tick();
@@ -211,6 +231,7 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
       resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
       keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
     });
+
     await seedRelayOptions(cache);
 
     const T1 = (cache as any).modifyOptimistic((c: any) => {
