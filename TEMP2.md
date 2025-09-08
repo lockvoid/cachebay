@@ -49,7 +49,7 @@ Optimistic updates (entities & connections)
 	•	Invalid nodes (missing id/__typename) are ignored safely.
 	•	Layering + revert sequence on connections (state list/pageInfo integrity).
 
-SSR / hydration
+1 SSR / hydration
 	•	Dehydrate on server → hydrate on client
 	•	Entities and connections restored; views bound (edges/pageInfo are reactive).
 	•	Hydration tickets
@@ -63,19 +63,24 @@ Operation identity & keys (object-hash)
 	•	familyKey includes scope: different concurrencyScope → different family.
 	•	connectionKey: ignores cursor args and is deep order-independent.
 
-Errors & edge conditions
+2 Errors
 	•	Network/GraphQL error
 	•	Latest-only gating for non-cursor errors.
 	•	Cursor page error replay rules (if you allow).
 	•	No “empty” emission before/after error.
 	•	Transport reordering: multiple ops complete out of order; asserts above behaviors hold.
+
+4 edgecases + Performance/behavior guards (assertions sprinkled across flows) + &
+	•	Never emit empty payloads to consumers (no {}, undefined, or missing edges).
+	•	Single render per logical result: no triple-renders on cache-first + network unless data is actually different.
+	•	No array churn in relay views: edges array length only grows/shrinks as expected; entries mutate in place (where applicable).
 	•	Cache eviction (LRU)
 	•	Hit op-cache max → oldest evicted; next cache-first with evicted key should not render immediately.
+	•	Interface reads: Node:* returns concrete implementors, both keys and materialized objects.
 
-Fragments & interfaces (consumer APIs)
+0 Fragments & interfaces (consumer APIs)
 	•	useFragment (ref & static) updates on entity change; asObject returns stable non-ref snapshot.
 	•	useFragments (selector) reacts to entity add/remove; raw vs materialized.
-	•	Interface reads: Node:* returns concrete implementors, both keys and materialized objects.
 
 GC & lifecycle
 	•	Connection GC: removing all views & empty list allows GC of connection state (if you expose gc.connections).
@@ -83,8 +88,3 @@ GC & lifecycle
 
 Subscriptions (if in scope now or later)
 	•	Ably/websocket payload → resolver runs before publish; non-relay linking works; relay append/prepend on subscription events.
-
-Performance/behavior guards (assertions sprinkled across flows)
-	•	Never emit empty payloads to consumers (no {}, undefined, or missing edges).
-	•	Single render per logical result: no triple-renders on cache-first + network unless data is actually different.
-	•	No array churn in relay views: edges array length only grows/shrinks as expected; entries mutate in place (where applicable).

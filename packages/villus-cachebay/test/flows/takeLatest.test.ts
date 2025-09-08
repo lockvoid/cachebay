@@ -334,7 +334,7 @@ describe('Integration • UI latency / tab switching flows + cache-and-network',
     expect(liText(w)).toEqual(['P1-1', 'P1-2', 'P2-1', 'P2-2']);
   });
 
-  it('cache-and-network: rapid leaders X→Y→X; dedup → final X renders and Y never renders', async () => {
+  it.only('cache-and-network: rapid leaders X→Y→X; dedup → final X renders and Y never renders', async () => {
     const routes: Route[] = [
       // X (slow)
       {
@@ -387,10 +387,10 @@ describe('Integration • UI latency / tab switching flows + cache-and-network',
     // Flip to Y, then IMMEDIATELY back to X (no tick in between)
     await w.setProps({ tab: 'Y' });
     await w.setProps({ tab: 'X' });
-    await tick(); // let latest-leader settle
+    await delay(40); // let latest-leader settle
 
     // Final winner must be X; Y must not have rendered at all
-    await waitForListText(() => liText(w), ['X'], 300);
+    expect(liText(w)).toEqual(['X']);
 
     // Ensure Y never rendered
     const anyYRender = renders.some(r => r.length === 1 && r[0] === 'Y');

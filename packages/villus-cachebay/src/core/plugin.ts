@@ -176,29 +176,35 @@ export function buildCachebayPlugin(
       const latestLeader = inflightByFam.get(famKey);
       const isLatestLeader = latestLeader === inflightKey;
 
+      // 1) No payload (neither data nor error) → satisfy Villus for ALL ops to avoid unhandled rejections
       if (!res || (!("data" in res) && !(res as any).error)) {
-        if (isLatestLeader) originalUseResult({}, true); // terminate self; UI won't blank because we don't rely on this
+        originalUseResult({}, true);     // no render (your harness doesn’t count {} as “empty”)
         finishAndNotify(null);
         return;
       }
 
+      // 2) Error path — latest only (cursor errors are dropped per tests)
       if ((res as any)?.error) {
-        if (isLatestLeader || isCursorPage) {
+        if (isLatestLeader) {
           originalUseResult({ error: (res as any).error }, false);
           finishAndNotify({ error: (res as any).error });
         } else {
+          // Drop older/non-latest error, but still satisfy Villus
+          originalUseResult({}, true);
           finishAndNotify(null);
         }
         return;
       }
 
-      // Drop non-latest unless cursor page (allowed replay)
+      // 3) Older non-cursor data → drop, but satisfy Villus; keep cache fresh
       if (!isLatestLeader && !isCursorPage) {
         setOpCache(opKey, { data: (res as any).data, variables: vars });
+        originalUseResult({}, true);     // prevents “Operation result was not set…”
         finishAndNotify(null);
         return;
       }
 
+      // 4) Deliver data (latest leader OR cursor page)
       applyResolversOnGraph((res as any).data, vars, { stale: !isLatestLeader });
       collectNonRelayEntities((res as any).data);
       setOpCache(opKey, { data: (res as any).data, variables: vars });

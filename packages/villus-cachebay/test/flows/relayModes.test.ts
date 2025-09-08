@@ -438,7 +438,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
 
   /* Cursor replay hint (allow older page to apply after newer) */
 
-  it.only('cursor replay: older page (after present) is allowed to apply after a newer family leader', async () => {
+  it('cursor replay: older page (after present) is allowed to apply after a newer family leader', async () => {
     const routes: Route[] = [
       // newer (no after)
       {
