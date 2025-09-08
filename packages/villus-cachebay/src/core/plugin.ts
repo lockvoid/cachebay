@@ -13,6 +13,10 @@ type BuildArgs = {
   shouldAddTypename: boolean;
   opCacheMax: number;
 
+  // Hydration knobs (optional)
+  isHydrating?: () => boolean;
+  hydrateOperationTicket?: Set<string>;
+
   applyResolversOnGraph: (root: any, vars: Record<string, any>, hint: { stale?: boolean }) => void;
   registerViewsFromResult: (root: any, variables: Record<string, any>) => void;
   collectEntities: (root: any) => void;
@@ -34,6 +38,8 @@ export function buildCachebayPlugin(
   const {
     shouldAddTypename,
     opCacheMax,
+    isHydrating,
+    hydrateOperationTicket,
     applyResolversOnGraph,
     registerViewsFromResult,
     collectEntities,
@@ -53,7 +59,7 @@ export function buildCachebayPlugin(
 
   const setOpCache = (k: string, v: { data: any; variables: Record<string, any> }) => {
     internals.operationCache.set(k, v);
-    if (internals.operationCache.size > args.opCacheMax) {
+    if (internals.operationCache.size > opCacheMax) {
       const oldest = internals.operationCache.keys().next().value as string | undefined;
       if (oldest) internals.operationCache.delete(oldest);
     }
@@ -131,15 +137,23 @@ export function buildCachebayPlugin(
     if (cachePolicy === "cache-and-network") {
       const cached = internals.operationCache.get(baseOpKey);
       if (cached) {
-        const last = lastPublishedByFam.get(famKey);
-        const alreadyOnScreen = last && last.data === cached.data;
-        if (!alreadyOnScreen) {
-          const vars = operation.variables || cached.variables || {};
-          applyResolversOnGraph(cached.data, vars, { stale: false });
-          collectEntities(cached.data);
-          registerViewsFromResult(cached.data, vars);
-          originalUseResult({ data: cached.data }, false); // non-terminating
-          lastPublishedByFam.set(famKey, { data: cached.data, variables: vars });
+        // Hydration guard: only suppress when actually hydrating; tickets are consumed but do not suppress.
+        const hydratingNow = !!(isHydrating && isHydrating());
+        if (hydrateOperationTicket && hydrateOperationTicket.has(baseOpKey)) {
+          hydrateOperationTicket.delete(baseOpKey); // consume ticket; do NOT suppress on ticket alone
+        }
+
+        if (!hydratingNow) {
+          const last = lastPublishedByFam.get(famKey);
+          const alreadyOnScreen = last && last.data === cached.data;
+          if (!alreadyOnScreen) {
+            const vars = operation.variables || cached.variables || {};
+            applyResolversOnGraph(cached.data, vars, { stale: false });
+            collectEntities(cached.data);
+            registerViewsFromResult(cached.data, vars);
+            originalUseResult({ data: cached.data }, false); // non-terminating
+            lastPublishedByFam.set(famKey, { data: cached.data, variables: vars });
+          }
         }
       }
     }
