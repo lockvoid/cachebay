@@ -794,7 +794,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // ----------------------------------------
   // Collect non-Relay entities from result trees
   // ----------------------------------------
-  const collectNonRelayEntities = (root: any) => {
+  const collectEntities = (root: any) => {
     const touchedKeys = new Set<EntityKey>();
     const visited = new WeakSet<object>();
     const stack = [root];
@@ -884,7 +884,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     hydrateOperationTicket: ssr.hydrateOperationTicket,
     applyResolversOnGraph,
     registerViewsFromResult,
-    collectNonRelayEntities,
+    collectEntities,
   });
 
   // ----------------------------------------

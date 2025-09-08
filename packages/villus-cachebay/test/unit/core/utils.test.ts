@@ -7,8 +7,8 @@ import {
   parseEntityKey,
   buildConnectionKey,
   stableIdentityExcluding,
-  operationKey,
-  familyKeyForOperation,
+  getOperationKey,
+  getFamilyKey,
   normalizeParentKeyInput,
 } from '@/src/core/utils';
 
@@ -89,12 +89,12 @@ describe('core/utils (object-hash signatures)', () => {
     expect(normalizeParentKeyInput({ __typename: 'User', id: 1 } as any, 'posts')).toBe('User:1');
   });
 
-  it('operationKey and familyKeyForOperation use hashed variable identity', () => {
+  it('getOperationKey and getFamilyKey use hashed variable identity', () => {
     const opA: any = { query: 'query X { a }', variables: { where: { b: 1, a: 2 } }, context: {} };
     const opB: any = { query: 'query X { a }', variables: { where: { a: 2, b: 1 } }, context: {} };
-    expect(operationKey(opA)).toBe(operationKey(opB));
+    expect(getOperationKey(opA)).toBe(getOperationKey(opB));
 
     const opScoped: any = { query: 'query X { a }', variables: { where: { a: 2, b: 1 } }, context: { concurrencyScope: 'tab' } };
-    expect(familyKeyForOperation(opScoped).endsWith('::tab')).toBe(true);
+    expect(getFamilyKey(opScoped).endsWith('::tab')).toBe(true);
   });
 });

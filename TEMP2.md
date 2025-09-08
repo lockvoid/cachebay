@@ -59,7 +59,7 @@ Optimistic updates (entities & connections)
 	•	Client receives SSR HTML + state; first render on client uses hydrated cache (no flash/empty arrays).
 
 Operation identity & keys (object-hash)
-	•	operationKey stability: same body + variables (different key order) → same key.
+	•	getOperationKey stability: same body + variables (different key order) → same key.
 	•	familyKey includes scope: different concurrencyScope → different family.
 	•	connectionKey: ignores cursor args and is deep order-independent.
 

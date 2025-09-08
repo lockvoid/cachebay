@@ -26,6 +26,8 @@ export function createSSRFeatures(deps: Deps) {
     shallowReactive,
     registerViewsFromResult,
     resetRuntime,
+    applyResolversOnGraph,
+    collectEntities,
   } = deps;
 
   const hydrateOperationTicket = new Set<string>();
@@ -42,8 +44,12 @@ export function createSSRFeatures(deps: Deps) {
       { data: v.data, variables: v.variables },
     ]),
   });
+  const hydrate = (
+    input: any | ((hydrate: (snapshot: any) => void) => void),
+    opts?: { materialize?: boolean }
+  ) => {
+    const materialize = !!(opts && opts.materialize);
 
-  const hydrate = (input: any | ((hydrate: (snapshot: any) => void) => void)) => {
     const run = (snapshot: any) => {
       if (!snapshot) return;
 
@@ -76,9 +82,16 @@ export function createSSRFeatures(deps: Deps) {
         }
       }
 
-      operationCache.forEach(({ data, variables }) =>
-        registerViewsFromResult(data, variables || {}),
-      );
+      // Only materialize views/entities from opCache when requested
+      if (materialize) {
+        operationCache.forEach(({ data, variables }) => {
+          const vars = variables || {};
+          // If these helpers exist in scope, apply them; otherwise it's safe to omit
+          applyResolversOnGraph?.(data, vars, { stale: false });
+          collectEntities?.(data);
+          registerViewsFromResult(data, vars);
+        });
+      }
     };
 
     hydrating = true;

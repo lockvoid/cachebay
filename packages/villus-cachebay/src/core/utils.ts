@@ -181,17 +181,16 @@ export function parseVariablesFromConnectionKey(
   return vars;
 }
 
-/** Identify a "family" of operations (query body + optional concurrency scope). */
-export function familyKeyForOperation(op: any) {
+export function getFamilyKey(op: { query: any; variables: Record<string, any>, context?: { concurrencyScope?: string } }) {
   const body = getOperationBody(op.query);
-  const scope = op.context?.concurrencyScope ?? op.context?.cachebayScope;
-  return scope ? `${body}::${scope}` : body;
+
+  return `${body}::${op.context?.concurrencyScope || 'default'}`;
 }
 
-/** Unique key for an operation instance (body + full variables). */
-export function operationKey(op: { query: any; variables: Record<string, any> }) {
+export function getOperationKey(op: { query: any; variables: Record<string, any> }) {
   const body = getOperationBody(op.query);
-  return body + "::" + buildStableVariableString(op.variables || {});
+
+  return `${body}::${buildStableVariableString(op.variables || {})}`;
 }
 
 /** Tiny type guard for observable-like values (subscriptions). */
