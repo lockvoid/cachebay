@@ -116,7 +116,7 @@ export function buildCachebayPlugin(
     }
 
     // ── DEDUP (opKey + scope): followers await leader; returning Promise halts fetch
-    const dedupKey = scopedOpKey; // ⬅️ reverted: dedup is policy-agnostic
+    const dedupKey = scopedOpKey; // dedup is policy-agnostic
     if (operationDeferred.has(dedupKey)) {
       // a follower exists → mark its leader allowed to publish even if not latest ticket
       allowLeaderByOp.add(dedupKey);
@@ -185,41 +185,11 @@ export function buildCachebayPlugin(
       const latestTicket = familyCounter.get(famKey) ?? myTicket;
       const iAmWinner = myTicket === latestTicket;
 
-      // Cursor-page exception (older page can publish)
-      if (!iAmWinner && isCursorPage && res.data) {
-        applyResolversOnGraph(res.data, vars, { stale: true });
-        collectEntities(res.data);
-        registerViewsFromResult(res.data, vars);
-        setOpCache(baseOpKey, { data: res.data, variables: vars });
-        lastPublishedByFam.set(famKey, { data: res.data, variables: vars });
-        return originalUseResult(res, true);
-      }
-
-      // Stale loser (non-cursor)
-      if (!iAmWinner && !isCursorPage) {
-        // EXCEPTION: if this leader has a dedup follower for the same opKey, allow it to publish once.
-        if (allowLeaderByOp.has(dedupKey)) {
-          allowLeaderByOp.delete(dedupKey);
-          if (res.data) {
-            applyResolversOnGraph(res.data, vars, { stale: false });
-            collectEntities(res.data);
-            registerViewsFromResult(res.data, vars);
-            setOpCache(baseOpKey, { data: res.data, variables: vars });
-            lastPublishedByFam.set(famKey, { data: res.data, variables: vars });
-          }
-          return originalUseResult(res, true);
-        }
-
-        // normal stale loser: warm stores only; DO NOT publish
-        if (res.data) {
-          applyResolversOnGraph(res.data, vars, { stale: true });
-          collectEntities(res.data);
-          setOpCache(baseOpKey, { data: res.data, variables: vars });
-        }
-
-        // settle op so Villus doesn’t throw, but with the last winner payload to avoid visible change
+      // ⬅️ HARD DROP GUARD — ALWAYS FIRST for non-cursor losers (no publish, no warm):
+      if (!iAmWinner && !isCursorPage && !allowLeaderByOp.has(dedupKey)) {
         const last = lastPublishedByFam.get(famKey);
-        if (last && last.data) {
+        if (last?.data) {
+          // settle quietly with last visible winner pointer (no visible change)
           return originalUseResult({ data: last.data }, true);
         }
         // If no winner yet (rare), settle with a harmless error
@@ -233,6 +203,34 @@ export function buildCachebayPlugin(
           },
           true
         );
+      }
+
+      // Cursor-page exception (older page can publish)
+      if (!iAmWinner && isCursorPage && res.data) {
+        applyResolversOnGraph(res.data, vars, { stale: true });
+        collectEntities(res.data);
+        registerViewsFromResult(res.data, vars);
+        setOpCache(baseOpKey, { data: res.data, variables: vars });
+        lastPublishedByFam.set(famKey, { data: res.data, variables: vars });
+        return originalUseResult(res, true);
+      }
+
+      // Stale loser (non-cursor) — leader-with-follower exception: allow publish
+      if (!iAmWinner && !isCursorPage) {
+        if (allowLeaderByOp.has(dedupKey)) {
+          allowLeaderByOp.delete(dedupKey);
+          if (res.data) {
+            applyResolversOnGraph(res.data, vars, { stale: false });
+            collectEntities(res.data);
+            registerViewsFromResult(res.data, vars);
+            setOpCache(baseOpKey, { data: res.data, variables: vars });
+            lastPublishedByFam.set(famKey, { data: res.data, variables: vars });
+          }
+          return originalUseResult(res, true);
+        }
+
+        // (Normal stale loser never gets here due to the hard-drop guard above)
+        return;
       }
 
       // Winner: publish once
