@@ -1,4 +1,3 @@
-```md
 # Relay connections — deep guide
 
 Relay-style pagination in Cachebay gives you **stable, reactive lists** with:
@@ -205,4 +204,3 @@ tx.commit?.()
 - **Optimistic updates** — layering, `patch` / `delete`, connection helpers: [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)
 - **SSR** — hydrate/dehydrate, first-mount CN behavior: [SSR.md](./SSR.md)
 - **Fragments** — identify/read/write & interface keys: [CACHE_FRAGMENTS.md](./CACHE_FRAGMENTS.md)
-```
