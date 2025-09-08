@@ -69,6 +69,9 @@ export function buildCachebayPlugin(
     const inflightKeyBase = scope ? `${opKey}::${scope}` : opKey;
     const inflightKey = `${inflightKeyBase}::#${++inflightSeq}`;
 
+    console.log('famKey', famKey)
+    console.log('opKey', opKey)
+    console.log('inflightKeyBase', inflightKeyBase)
     // SUBSCRIPTIONS
     if (operation.type === "subscription") {
       if (shouldAddTypename && operation.query) {
@@ -102,6 +105,7 @@ export function buildCachebayPlugin(
     inflightRequests.set(inflightKey, { listeners: new Set() });
     inflightByFam.set(famKey, inflightKey);
 
+    console.log('inflightByFam', inflightByFam)
     // Cached fast-path (cache-first / cache-and-network / cache-only)
     const cachedForKey = internals.operationCache.get(opKey);
     if (operation.type === "query" && operation.cachePolicy !== "network-only") {
@@ -196,10 +200,10 @@ export function buildCachebayPlugin(
         return;
       }
 
+      console.log('isLatestLeader', isLatestLeader, isCursorPage, opKey)
       // 3) Older non-cursor data → drop, but satisfy Villus; keep cache fresh
       if (!isLatestLeader && !isCursorPage) {
         setOpCache(opKey, { data: (res as any).data, variables: vars });
-        originalUseResult({}, true);     // prevents “Operation result was not set…”
         finishAndNotify(null);
         return;
       }

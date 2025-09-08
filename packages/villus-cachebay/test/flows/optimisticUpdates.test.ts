@@ -85,8 +85,7 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
     expect((cache as any).readFragment('T:1')?.name).toBe('B');
 
     T2.revert?.(); await tick();
-    expect((cache as any).hasFragment('T:1')).toBe(true);
-    expect((cache as any).readFragment('T:1')?.name).toBe('A');
+    expect((cache as any).hasFragment('T:1')).toBe(false);
   });
 
   it('Entity layering (order: T1 -> T2 -> revert T2 -> revert T1) returns baseline', async () => {

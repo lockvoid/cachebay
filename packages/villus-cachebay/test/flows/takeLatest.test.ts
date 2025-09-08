@@ -334,7 +334,7 @@ describe('Integration • UI latency / tab switching flows + cache-and-network',
     expect(liText(w)).toEqual(['P1-1', 'P1-2', 'P2-1', 'P2-2']);
   });
 
-  it.only('cache-and-network: rapid leaders X→Y→X; dedup → final X renders and Y never renders', async () => {
+  it('cache-and-network: rapid leaders X→Y→X; dedup → final X renders and Y never renders', async () => {
     const routes: Route[] = [
       // X (slow)
       {

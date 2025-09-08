@@ -1,3 +1,4 @@
+/* src/features/optimistic.ts */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 type EntityKey = string;
@@ -23,7 +24,7 @@ type Deps = {
     relay: RelayOptionsLite,
     variables: Record<string, any>,
   ) => string;
-  parentEntityKeyFor: (typename: string, id?: any) => string | null;
+  parentEntityKeyFor: (typename: string | null, id?: any) => string | null;
   getRelayOptionsByType: (parentTypename: string | null, field: string) => RelayOptionsLite | undefined;
 
   // entity helpers
@@ -67,8 +68,12 @@ function normalizeParentKey(
   parentEntityKeyFor: Deps["parentEntityKeyFor"],
 ): string {
   if (typeof parent === "string") {
-    if (parent === "Query") return "Query";
-    if (parent.includes(":")) return parent;
+    if (parent === "Query") {
+      return "Query";
+    }
+    if (parent.includes(":")) {
+      return parent;
+    }
     return "Query";
   }
   const t = (parent as any)?.__typename;
@@ -77,59 +82,88 @@ function normalizeParentKey(
 }
 
 function identifyNodeKey(node: any): string | null {
-  if (!node || typeof node !== "object") return null;
+  if (!node || typeof node !== "object") {
+    return null;
+  }
   const t = node.__typename;
-  if (!t) return null;
+  if (!t) {
+    return null;
+  }
   const id = node.id ?? node._id;
-  if (id == null) return null;
+  if (id == null) {
+    return null;
+  }
   return `${t}:${String(id)}`;
 }
 
 function shallowClone<T extends object>(obj: T | null | undefined): T | null {
-  if (!obj || typeof obj !== "object") return null;
+  if (!obj || typeof obj !== "object") {
+    return null;
+  }
   const out: any = Array.isArray(obj) ? [] : {};
-  for (const k of Object.keys(obj)) out[k] = (obj as any)[k];
+  for (const k of Object.keys(obj)) {
+    out[k] = (obj as any)[k];
+  }
   return out;
 }
 
 function cloneList(list: any[]) {
-  return list.map(e => ({ ...e, edge: e.edge ? { ...e.edge } : undefined }));
+  return list.map((e) => ({ ...e, edge: e?.edge ? { ...e.edge } : undefined }));
 }
 
+/** Mutates the entry in place when found; inserts at start/end if not. */
 function upsertEntry(state: any, entry: { key: string; cursor: string | null; edge?: any }, position: "start" | "end") {
   const idx = state.list.findIndex((e: any) => e.key === entry.key);
+
   if (idx >= 0) {
     const prev = state.list[idx];
-    const mergedEdge = { ...(prev.edge || {}) };
-    if (entry.edge) {
-      for (const k of Object.keys(entry.edge)) mergedEdge[k] = entry.edge[k];
+
+    if (prev.cursor !== entry.cursor) {
+      prev.cursor = entry.cursor;
     }
-    state.list[idx] = { ...prev, cursor: entry.cursor, edge: Object.keys(mergedEdge).length ? mergedEdge : undefined };
+
+    if (entry.edge) {
+      const merged = { ...(prev.edge || {}) };
+      for (const k of Object.keys(entry.edge)) {
+        merged[k] = entry.edge[k];
+      }
+      prev.edge = Object.keys(merged).length ? merged : undefined;
+    }
+
   } else {
-    if (position === "start") state.list.unshift(entry);
-    else state.list.push(entry);
+    if (position === "start") {
+      state.list.unshift({ key: entry.key, cursor: entry.cursor, edge: entry.edge });
+    } else {
+      state.list.push({ key: entry.key, cursor: entry.cursor, edge: entry.edge });
+    }
   }
+
   state.keySet.add(entry.key);
 }
 
 function edgeMetaShallow(edge: any, nodeFieldName: string): Record<string, any> | undefined {
-  if (!edge || typeof edge !== "object") return undefined;
+  if (!edge || typeof edge !== "object") {
+    return undefined;
+  }
   const out: any = {};
   let has = false;
+
   for (const k of Object.keys(edge)) {
-    if (k === "cursor" || k === nodeFieldName || k === "__typename") continue;
+    if (k === "cursor" || k === nodeFieldName || k === "__typename") {
+      continue;
+    }
     out[k] = edge[k];
     has = true;
   }
+
   return has ? out : undefined;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Layer engine (cumulative reverts)
- *  - Each modifyOptimistic -> one layer of ops
- *  - Base snapshots captured on first touch
- *  - commit: append layer
- *  - revert: mark this layer as reverted and rebuild from base applying only non-reverted layers
+ *  - Every modifyOptimistic call creates a layer and applies immediately
+ *  - commit(): registers the layer in the committed stack
+ *  - revert(): removes the layer and rebuilds base + remaining layers
  * ──────────────────────────────────────────────────────────────────────────── */
 
 type EntityOp =
@@ -145,14 +179,11 @@ type Layer = {
   id: number;
   entityOps: EntityOp[];
   connOps: ConnOp[];
-  touchedEntities: Set<string>;
-  touchedConnections: Set<string>;
 };
 
 export function createModifyOptimistic(deps: Deps, _api: PublicAPI) {
   const {
     entityStore,
-    connectionStore,
     ensureConnectionState,
     buildConnectionKey,
     parentEntityKeyFor,
@@ -165,23 +196,29 @@ export function createModifyOptimistic(deps: Deps, _api: PublicAPI) {
     bumpEntitiesTick,
   } = deps;
 
-  // Committed layers and cumulative revert tracking
-  const layers: Layer[] = [];
-  const reverted = new Set<number>();
+  // Committed layers (in order) + currently pending (not yet committed)
+  const committed: Layer[] = [];
+  const pending = new Set<Layer>();
+  const revertedCommitted = new Set<number>();
+
   let nextId = 1;
 
-  // Base snapshots (first touch)
-  const baseEntitySnap = new Map<string, Record<string, any> | null>(); // null => did not exist
+  // Base snapshots captured lazily (first touch across all layers)
+  const baseEntitySnap = new Map<string, Record<string, any> | null>(); // null => didn't exist
   const baseConnSnap = new Map<string, { list: any[]; pageInfo: any; meta: any }>();
 
   function captureEntityBase(key: string) {
-    if (baseEntitySnap.has(key)) return;
+    if (baseEntitySnap.has(key)) {
+      return;
+    }
     const existed = entityStore.has(key);
     baseEntitySnap.set(key, existed ? { ...(entityStore.get(key) as any) } : null);
   }
 
   function captureConnBase(key: string) {
-    if (baseConnSnap.has(key)) return;
+    if (baseConnSnap.has(key)) {
+      return;
+    }
     const st = ensureConnectionState(key);
     baseConnSnap.set(key, {
       list: cloneList(st.list),
@@ -192,7 +229,9 @@ export function createModifyOptimistic(deps: Deps, _api: PublicAPI) {
 
   function applyEntityWrite(obj: any, policy: "merge" | "replace") {
     const key = idOf(obj);
-    if (!key) return;
+    if (!key) {
+      return;
+    }
     captureEntityBase(key);
     putEntity(obj, policy);
     markEntityDirty(key);
@@ -201,11 +240,13 @@ export function createModifyOptimistic(deps: Deps, _api: PublicAPI) {
 
   function applyEntityDelete(key: string) {
     captureEntityBase(key);
+
     const existed = entityStore.has(key);
     if (existed) {
       entityStore.delete(key);
       bumpEntitiesTick();
     }
+
     markEntityDirty(key);
     touchConnectionsForEntityKey(key);
   }
@@ -224,18 +265,24 @@ export function createModifyOptimistic(deps: Deps, _api: PublicAPI) {
       }
     } else if (op.type === "connPageInfo") {
       const pi = st.pageInfo as any;
-      for (const k of Object.keys(op.patch)) pi[k] = op.patch[k];
+      for (const k of Object.keys(op.patch)) {
+        pi[k] = op.patch[k];
+      }
     }
+
     markConnectionDirty(st);
   }
 
+  /** Reset stores to base snapshots, preserving array/object identity where possible. */
   function resetToBase() {
     // Entities
     for (const [key, snap] of baseEntitySnap) {
       if (snap === null) {
         const existed = entityStore.has(key);
         entityStore.delete(key);
-        if (existed) bumpEntitiesTick();
+        if (existed) {
+          bumpEntitiesTick();
+        }
         markEntityDirty(key);
       } else {
         entityStore.set(key, { ...snap });
@@ -243,30 +290,75 @@ export function createModifyOptimistic(deps: Deps, _api: PublicAPI) {
       }
       touchConnectionsForEntityKey(key);
     }
-    // Connections
+
+    // Connections (preserve array identity)
     for (const [key, snap] of baseConnSnap) {
       const st = ensureConnectionState(key);
-      st.list = cloneList(snap.list);
+
+      // replace list contents, keep reference
+      st.list.splice(0, st.list.length, ...cloneList(snap.list));
+
+      // pageInfo in place
       const curPI = st.pageInfo;
-      for (const k of Object.keys(curPI)) delete curPI[k];
-      for (const k of Object.keys(snap.pageInfo)) (curPI as any)[k] = snap.pageInfo[k];
+      for (const k of Object.keys(curPI)) {
+        delete curPI[k];
+      }
+      for (const k of Object.keys(snap.pageInfo)) {
+        (curPI as any)[k] = snap.pageInfo[k];
+      }
+
+      // meta in place
       const curMeta = st.meta;
-      for (const k of Object.keys(curMeta)) delete curMeta[k];
-      for (const k of Object.keys(snap.meta)) (curMeta as any)[k] = snap.meta[k];
+      for (const k of Object.keys(curMeta)) {
+        delete curMeta[k];
+      }
+      for (const k of Object.keys(snap.meta)) {
+        (curMeta as any)[k] = snap.meta[k];
+      }
+
       st.keySet = new Set<string>(st.list.map((e: any) => e.key));
       markConnectionDirty(st);
     }
   }
 
-  function reapplyNonRevertedLayers() {
-    for (const L of layers) {
-      if (reverted.has(L.id)) continue;
-
-      for (const w of L.entityOps) {
-        if (w.type === "entityWrite") applyEntityWrite(w.obj, w.policy);
-        else if (w.type === "entityDelete") applyEntityDelete(w.key);
+  function reapplyLayers() {
+    // Apply committed non-reverted, then all pending (in id order)
+    for (const L of committed) {
+      if (revertedCommitted.has(L.id)) {
+        continue;
       }
-      for (const c of L.connOps) applyConnOp(c);
+      for (const w of L.entityOps) {
+        if (w.type === "entityWrite") {
+          applyEntityWrite(w.obj, w.policy);
+        } else {
+          applyEntityDelete(w.key);
+        }
+      }
+      for (const c of L.connOps) {
+        applyConnOp(c);
+      }
+    }
+
+    const pendingSorted = Array.from(pending).sort((a, b) => a.id - b.id);
+    for (const L of pendingSorted) {
+      for (const w of L.entityOps) {
+        if (w.type === "entityWrite") {
+          applyEntityWrite(w.obj, w.policy);
+        } else {
+          applyEntityDelete(w.key);
+        }
+      }
+      for (const c of L.connOps) {
+        applyConnOp(c);
+      }
+    }
+  }
+
+  function maybeCleanupSnapshots() {
+    if (committed.length === 0 && pending.size === 0) {
+      baseEntitySnap.clear();
+      baseConnSnap.clear();
+      revertedCommitted.clear();
     }
   }
 
@@ -284,23 +376,23 @@ export function createModifyOptimistic(deps: Deps, _api: PublicAPI) {
       id: nextId++,
       entityOps: [],
       connOps: [],
-      touchedEntities: new Set<string>(),
-      touchedConnections: new Set<string>(),
     };
 
+    // API used by the builder; applies immediately
     const apiForBuilder = {
       write(entity: any, policy: "merge" | "replace" = "merge") {
         const key = deps.idOf(entity);
-        if (key) {
-          layer.touchedEntities.add(key);
-          layer.entityOps.push({ type: "entityWrite", obj: entity, policy });
+        if (!key) {
+          return;
         }
+        const op: EntityOp = { type: "entityWrite", obj: entity, policy };
+        layer.entityOps.push(op);
+        applyEntityWrite(entity, policy);
       },
 
       del(key: string) {
-        layer.touchedEntities.add(key);
-        layer.entityOps.push({ type: "entityDelete", key });
-        // immediate effect
+        const op: EntityOp = { type: "entityDelete", key };
+        layer.entityOps.push(op);
         applyEntityDelete(key);
       },
 
@@ -311,6 +403,7 @@ export function createModifyOptimistic(deps: Deps, _api: PublicAPI) {
           typeof args.parent === "string"
             ? (args.parent === "Query" ? "Query" : "Query")
             : ((args.parent as any)?.__typename || "Query");
+
         const relay = deps.getRelayOptionsByType(parentTypename, args.field);
         if (!relay) {
           const noop = { addNode() { }, removeNode() { }, updatePageInfo() { }, key: "" } as const;
@@ -322,32 +415,42 @@ export function createModifyOptimistic(deps: Deps, _api: PublicAPI) {
         const handle = {
           addNode: (node: any, opts: { cursor?: string | null; position?: "start" | "end"; edge?: any } = {}) => {
             const nodeKey = identifyNodeKey(node);
-            if (!nodeKey) return;
+            if (!nodeKey) {
+              return;
+            }
             const cursor = opts.cursor ?? null;
             const meta = edgeMetaShallow(opts.edge || {}, relay.names.nodeField);
-            layer.touchedConnections.add(key);
+
+            // Ensure entity exists/updates in the store (dedup + latest snapshot)
+            layer.entityOps.push({ type: "entityWrite", obj: node, policy: "merge" });
+            applyEntityWrite(node, "merge");
+
+            // Connection entry upsert
             const op: ConnOp = {
               type: "connAdd",
               key,
               entry: { key: nodeKey, cursor, edge: meta },
               position: opts.position === "start" ? "start" : "end",
             };
+
             layer.connOps.push(op);
             applyConnOp(op);
           },
 
           removeNode: (ref: { __typename: string; id?: any; _id?: any }) => {
             const nodeKey = identifyNodeKey(ref);
-            if (!nodeKey) return;
-            layer.touchedConnections.add(key);
+            if (!nodeKey) {
+              return;
+            }
             const op: ConnOp = { type: "connRemove", key, entryKey: nodeKey };
             layer.connOps.push(op);
             applyConnOp(op);
           },
 
           updatePageInfo: (pi: Record<string, any>) => {
-            if (!pi || typeof pi !== "object") return;
-            layer.touchedConnections.add(key);
+            if (!pi || typeof pi !== "object") {
+              return;
+            }
             const op: ConnOp = { type: "connPageInfo", key, patch: { ...pi } };
             layer.connOps.push(op);
             applyConnOp(op);
@@ -360,24 +463,33 @@ export function createModifyOptimistic(deps: Deps, _api: PublicAPI) {
       },
     };
 
-    // Record and apply immediately
+    // Build + apply immediately
+    pending.add(layer);
     build(apiForBuilder);
-    for (const w of layer.entityOps) {
-      if (w.type === "entityWrite") applyEntityWrite(w.obj, w.policy);
-      else if (w.type === "entityDelete") applyEntityDelete(w.key);
-    }
-    for (const c of layer.connOps) applyConnOp(c);
 
     return {
       commit() {
-        layers.push(layer);
+        if (pending.has(layer)) {
+          pending.delete(layer);
+          committed.push(layer);
+        }
       },
 
       revert() {
-        // Mark this layer as reverted and rebuild from base + non-reverted layers
-        reverted.add(layer.id);
+        // Remove from whichever pool it is in, mark as reverted if committed
+        if (pending.has(layer)) {
+          pending.delete(layer);
+        }
+
+        const idx = committed.findIndex((L) => L.id === layer.id);
+        if (idx >= 0) {
+          revertedCommitted.add(layer.id);
+        }
+
+        // Rebuild from base + remaining layers
         resetToBase();
-        reapplyNonRevertedLayers();
+        reapplyLayers();
+        maybeCleanupSnapshots();
       },
     };
   };
