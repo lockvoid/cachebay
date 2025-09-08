@@ -23,7 +23,9 @@ const QUERY = /* GraphQL */ `
  *   - anyEdges: renders colors.edges || colors.items (for custom paths)
  * Variables are computed → prop changes retrigger useQuery.
  * ──────────────────────────────────────────────────────────────────────────── */
-function harnessEdges(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-network' | 'cache-only' = 'network-only') {
+function harnessEdges(
+  cachePolicy: 'network-only' | 'cache-first' | 'cache-and-network' | 'cache-only' = 'network-only',
+) {
   return defineComponent({
     props: { after: String, before: String, first: Number, last: Number },
     setup(props) {
@@ -36,12 +38,20 @@ function harnessEdges(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-n
       }));
       const { data } = useQuery({ query: QUERY, variables: vars, cachePolicy });
       return () =>
-        h('ul', {}, (data?.value?.colors?.edges ?? []).map((e: any) => h('li', {}, e.node?.name || '')));
+        h(
+          'ul',
+          {},
+          (data?.value?.colors?.edges ?? []).map((e: any) =>
+            h('li', {}, e.node?.name || ''),
+          ),
+        );
     },
   });
 }
 
-function harnessAnyEdges(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-network' | 'cache-only' = 'network-only') {
+function harnessAnyEdges(
+  cachePolicy: 'network-only' | 'cache-first' | 'cache-and-network' | 'cache-only' = 'network-only',
+) {
   return defineComponent({
     props: { after: String, before: String, first: Number, last: Number },
     setup(props) {
@@ -56,7 +66,11 @@ function harnessAnyEdges(cachePolicy: 'network-only' | 'cache-first' | 'cache-an
       return () => {
         const c = (data?.value as any)?.colors || {};
         const edges = c.edges ?? c.items ?? [];
-        return h('ul', {}, edges.map((e: any) => h('li', {}, (e.node && e.node.name) || '')));
+        return h(
+          'ul',
+          {},
+          edges.map((e: any) => h('li', {}, (e.node && e.node.name) || '')),
+        );
       };
     },
   });
@@ -65,10 +79,7 @@ function harnessAnyEdges(cachePolicy: 'network-only' | 'cache-first' | 'cache-an
 /* ─────────────────────────────────────────────────────────────────────────────
  * Client builders (different resolver configs)
  * ──────────────────────────────────────────────────────────────────────────── */
-function makeClientMode(
-  mode: 'append' | 'prepend' | 'replace' | 'auto',
-  routes: Route[],
-) {
+function makeClientMode(mode: 'append' | 'prepend' | 'replace' | 'auto', routes: Route[]) {
   const cache = createCache({
     addTypename: true,
     resolvers: ({ relay }: any) => ({
@@ -148,7 +159,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
         }),
       },
     ];
-    const { client, fetchMock, cache } = makeClientMode('append', routes);
+    const { client, fetchMock } = makeClientMode('append', routes);
     restores.push(fetchMock.restore);
 
     const w = mount(harnessEdges('network-only'), { props: { first: 2 }, global: { plugins: [client as any] } });
@@ -158,8 +169,6 @@ describe('Integration • Relay flows (spec coverage)', () => {
 
     await w.setProps({ first: 2, after: 'c2' });
     await delay(7); await tick(6);
-
-    console.log(cache.inspect.connection('Query', 'colors'))
     expect(liText(w)).toEqual(['A1', 'A2', 'A3', 'A4']); // bumped by page size again
   });
 
@@ -475,22 +484,21 @@ describe('Integration • Relay flows (spec coverage)', () => {
     const { client, fetchMock } = makeClientMode('append', routes);
     restores.push(fetchMock.restore);
 
-    // 🔸 Mount starting with the cursor page (older op) so it’s truly “older”.
-    //    Then switch to no-after (newer family leader), then let both resolve.
+    // Start with the cursor op to ensure it is truly "older"
     const w = mount(harnessEdges('network-only'), {
-      props: { after: 'n1' }, // start with cursor op
+      props: { after: 'n1' },
       global: { plugins: [client as any] },
     });
 
-    // Now trigger the "newer" family leader (no after)
+    // Trigger newer leader (no-after)
     await w.setProps({ after: undefined });
-    await tick(); // let useQuery enqueue the newer op
+    await tick();
 
     // Newer returns first
     await delay(7); await tick(2);
     expect(liText(w)).toEqual(['NEW']);
 
-    // Cursor page (older) returns later and is allowed to replay
+    // Older cursor page returns later and is allowed to replay
     await delay(25); await tick(2);
     expect(liText(w)).toEqual(['NEW', 'OLD-CURSOR-PAGE']);
   });

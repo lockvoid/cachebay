@@ -3,7 +3,7 @@ import { defineComponent, h, computed, watch } from 'vue';
 import { mount } from '@vue/test-utils';
 import { createClient } from 'villus';
 import { createCache } from '@/src';
-import { createFetchMock, type Route, tick, delay } from '@/test/helpers';
+import { createFetchMock, type Route, tick, delay, seedCache } from '@/test/helpers';
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Queries & helpers
@@ -65,12 +65,12 @@ function MakeColorsHarness(cachePolicy: 'network-only' | 'cache-first' | 'cache-
         if (con && Array.isArray(con.edges)) {
           if (con.edges.length > 0) {
             (props.renders as any[]).push(con.edges.map((e: any) => e?.node?.name || ''));
-            // tap array identity + node identity + length changes
+            // taps
             if (taps?.edgeRefs) taps.edgeRefs.push(con.edges);
             if (taps?.firstNodeRefs && con.edges[0]?.node) taps.firstNodeRefs.push(con.edges[0].node);
             if (taps?.lens) taps.lens.push(con.edges.length);
           } else {
-            (props.empties as any[]).push('empty'); // only real [] payloads
+            (props.empties as any[]).push('empty'); // only true [] payloads
           }
         }
       }, { immediate: true });
@@ -124,11 +124,7 @@ describe('Integration • Edge-cases & performance guards', () => {
         respond: () => ({
           data: {
             __typename: 'Query',
-            colors: {
-              __typename: 'ColorConnection',
-              edges: [{ cursor: 'c1', node: { __typename: 'Color', id: 1, name: 'A1' } }],
-              pageInfo: {},
-            },
+            colors: { __typename: 'ColorConnection', edges: [{ cursor: 'c1', node: { __typename: 'Color', id: 1, name: 'A1' } }], pageInfo: {} },
           },
         }),
       },
@@ -145,11 +141,7 @@ describe('Integration • Edge-cases & performance guards', () => {
         respond: () => ({
           data: {
             __typename: 'Query',
-            colors: {
-              __typename: 'ColorConnection',
-              edges: [{ cursor: 'c2', node: { __typename: 'Color', id: 2, name: 'A2' } }],
-              pageInfo: {},
-            },
+            colors: { __typename: 'ColorConnection', edges: [{ cursor: 'c2', node: { __typename: 'Color', id: 2, name: 'A2' } }], pageInfo: {} },
           },
         }),
       },
@@ -167,19 +159,19 @@ describe('Integration • Edge-cases & performance guards', () => {
     const w = mount(App, { props: { first: 2, renders, errors, empties, name: 'A' }, global: { plugins: [client as any] } });
 
     // queue older error then final success
-    await w.setProps({ first: 3 }); await tick();
-    await w.setProps({ first: 4 }); await tick();
+    await w.setProps({ first: 3 }); await tick(6);
+    await w.setProps({ first: 4 }); await tick(6);
 
-    await delay(8); await tick();
+    await delay(8); await tick(6);
     expect(renders.length).toBe(0);
     expect(errors.length).toBe(0);
     expect(empties.length).toBe(0);
 
-    await delay(15); await tick();
-    // Now success landed
+    await delay(15); await tick(6);
     expect(renders).toEqual([['A2']]);
     expect(errors.length).toBe(0);
     expect(empties.length).toBe(0);
+    expect(fx.calls.length).toBe(3); // sanity: all three requests executed
   });
 
   /* ───────────────────────────────────────────────────────────────────────────
@@ -189,25 +181,17 @@ describe('Integration • Edge-cases & performance guards', () => {
    * ────────────────────────────────────────────────────────────────────────── */
   it('cache-and-network: identical network as cache → single render; different network → two renders', async () => {
     const cache = makeAssetsCache();
+
     // Seed op cache (pretend SSR or earlier visit)
-    {
-      const seedRoutes: Route[] = [{
-        when: ({ variables }) => variables.t === 'HIT',
-        delay: 0,
-        respond: () => ({
-          data: {
-            __typename: 'Query', assets: {
-              __typename: 'AssetConnection',
-              edges: [{ cursor: 'h', node: { __typename: 'Asset', id: 1, name: 'X0' } }], pageInfo: {}
-            }
-          },
-        }),
-      }];
-      const sfx = createFetchMock(seedRoutes);
-      const sclient = createClient({ url: '/seed', use: [cache as any, sfx.plugin] });
-      await sclient.execute({ query: ASSETS, variables: { t: 'HIT' }, context: { concurrencyScope: 'seed' } });
-      await sfx.waitAll(); sfx.restore();
-    }
+    await seedCache(cache, {
+      query: ASSETS,
+      variables: { t: 'HIT' },
+      data: {
+        __typename: 'Query',
+        assets: { __typename: 'AssetConnection', edges: [{ cursor: 'h', node: { __typename: 'Asset', id: 1, name: 'X0' } }], pageInfo: {} },
+      },
+      materialize: true,
+    });
 
     // Case 1: Identical network payload
     {
@@ -216,10 +200,8 @@ describe('Integration • Edge-cases & performance guards', () => {
         delay: 10,
         respond: () => ({
           data: {
-            __typename: 'Query', assets: {
-              __typename: 'AssetConnection',
-              edges: [{ cursor: 'h', node: { __typename: 'Asset', id: 1, name: 'X0' } }], pageInfo: {}
-            }
+            __typename: 'Query',
+            assets: { __typename: 'AssetConnection', edges: [{ cursor: 'h', node: { __typename: 'Asset', id: 1, name: 'X0' } }], pageInfo: {} },
           },
         }),
       }];
@@ -227,17 +209,16 @@ describe('Integration • Edge-cases & performance guards', () => {
       const client = createClient({ url: '/cn-ident', use: [cache as any, fx.plugin] });
       mocks.push(fx);
 
-      const renders: string[][] = [];
-      const empties: string[] = [];
-      const errors: string[] = [];
+      const renders: string[][] = []; const empties: string[] = []; const errors: string[] = [];
       const App = MakeAssetsHarness('cache-and-network');
       mount(App, { props: { t: 'HIT', renders, empties, errors }, global: { plugins: [client as any] } });
 
-      await tick(); // cached render
+      await tick(6);                  // cached render
       expect(renders).toEqual([['X0']]);
 
-      await delay(15); await tick(); // network identical
-      expect(renders).toEqual([['X0']]); // still 1 render
+      await delay(15); await tick(6); // identical network: no extra render
+      expect(renders).toEqual([['X0']]);
+      expect(fx.calls.length).toBe(1); // one refresh request
     }
 
     // Case 2: Different network payload
@@ -247,10 +228,8 @@ describe('Integration • Edge-cases & performance guards', () => {
         delay: 10,
         respond: () => ({
           data: {
-            __typename: 'Query', assets: {
-              __typename: 'AssetConnection',
-              edges: [{ cursor: 'h2', node: { __typename: 'Asset', id: 2, name: 'X1' } }], pageInfo: {}
-            }
+            __typename: 'Query',
+            assets: { __typename: 'AssetConnection', edges: [{ cursor: 'h2', node: { __typename: 'Asset', id: 2, name: 'X1' } }], pageInfo: {} },
           },
         }),
       }];
@@ -258,17 +237,16 @@ describe('Integration • Edge-cases & performance guards', () => {
       const client = createClient({ url: '/cn-diff', use: [cache as any, fx.plugin] });
       mocks.push(fx);
 
-      const renders: string[][] = [];
-      const empties: string[] = [];
-      const errors: string[] = [];
+      const renders: string[][] = []; const empties: string[] = []; const errors: string[] = [];
       const App = MakeAssetsHarness('cache-and-network');
       mount(App, { props: { t: 'HIT', renders, empties, errors }, global: { plugins: [client as any] } });
 
-      await tick();
+      await tick(6);
       expect(renders).toEqual([['X0']]); // cached
 
-      await delay(15); await tick();
+      await delay(15); await tick(6);
       expect(renders).toEqual([['X0'], ['X1']]); // network refresh different
+      expect(fx.calls.length).toBe(1);          // still one fetch
     }
   });
 
@@ -345,17 +323,17 @@ describe('Integration • Edge-cases & performance guards', () => {
     const App = MakeColorsHarness('network-only', { edgeRefs, firstNodeRefs, lens });
     const w = mount(App, { props: { first: 2, renders, empties, errors, name: 'CHURN' }, global: { plugins: [client as any] } });
 
-    await delay(8); await tick();
+    await delay(8); await tick(6);
     expect(renders).toEqual([['A1', 'A2']]);
     expect(lens[0]).toBe(2);
 
-    await w.setProps({ first: 2, after: 'c2' }); await tick();
-    await delay(12); await tick();
+    await w.setProps({ first: 2, after: 'c2' }); await tick(6);
+    await delay(12); await tick(6);
     expect(renders).toEqual([['A1', 'A2'], ['A1', 'A2', 'A3', 'A4']]);
     expect(lens[1]).toBe(4);
 
-    await w.setProps({ first: 1, after: 'c4' }); await tick();
-    await delay(12); await tick();
+    await w.setProps({ first: 1, after: 'c4' }); await tick(6);
+    await delay(12); await tick(6);
     // still 4 entries; A1 name updated
     expect(renders.at(-1)).toEqual(['A1-upd', 'A2', 'A3', 'A4']);
     expect(lens.at(-1)).toBe(4);
@@ -376,22 +354,26 @@ describe('Integration • Edge-cases & performance guards', () => {
    * ────────────────────────────────────────────────────────────────────────── */
   it('LRU op cache: eviction prevents CF immediate render; non-evicted still hits', async () => {
     const cache = makeAssetsCache({ lruOperationCacheSize: 2 });
+
     // Seed 3 different ops → oldest (A) evicted
-    {
-      const routes: Route[] = [
-        { when: ({ variables }) => variables.t === 'A', delay: 0, respond: () => ({ data: { __typename: 'Query', assets: { __typename: 'AssetConnection', edges: [{ cursor: 'a', node: { __typename: 'Asset', id: 11, name: 'A' } }], pageInfo: {} } } }) },
-        { when: ({ variables }) => variables.t === 'B', delay: 0, respond: () => ({ data: { __typename: 'Query', assets: { __typename: 'AssetConnection', edges: [{ cursor: 'b', node: { __typename: 'Asset', id: 12, name: 'B' } }], pageInfo: {} } } }) },
-        { when: ({ variables }) => variables.t === 'C', delay: 0, respond: () => ({ data: { __typename: 'Query', assets: { __typename: 'AssetConnection', edges: [{ cursor: 'c', node: { __typename: 'Asset', id: 13, name: 'C' } }], pageInfo: {} } } }) },
-      ];
-      const fx = createFetchMock(routes);
-      const client = createClient({ url: '/seed-lru', use: [cache as any, fx.plugin] });
-
-      await client.execute({ query: ASSETS, variables: { t: 'A' }, context: { concurrencyScope: 'seed' } });
-      await client.execute({ query: ASSETS, variables: { t: 'B' }, context: { concurrencyScope: 'seed' } });
-      await client.execute({ query: ASSETS, variables: { t: 'C' }, context: { concurrencyScope: 'seed' } });
-
-      await fx.waitAll(); fx.restore();
-    }
+    await seedCache(cache, {
+      query: ASSETS,
+      variables: { t: 'A' },
+      data: { __typename: 'Query', assets: { __typename: 'AssetConnection', edges: [{ cursor: 'a', node: { __typename: 'Asset', id: 11, name: 'A' } }], pageInfo: {} } },
+      materialize: true,
+    });
+    await seedCache(cache, {
+      query: ASSETS,
+      variables: { t: 'B' },
+      data: { __typename: 'Query', assets: { __typename: 'AssetConnection', edges: [{ cursor: 'b', node: { __typename: 'Asset', id: 12, name: 'B' } }], pageInfo: {} } },
+      materialize: true,
+    });
+    await seedCache(cache, {
+      query: ASSETS,
+      variables: { t: 'C' },
+      data: { __typename: 'Query', assets: { __typename: 'AssetConnection', edges: [{ cursor: 'c', node: { __typename: 'Asset', id: 13, name: 'C' } }], pageInfo: {} } },
+      materialize: true,
+    });
 
     // CF hit for non-evicted (B) — should render immediately
     {
@@ -403,12 +385,12 @@ describe('Integration • Edge-cases & performance guards', () => {
       const App = MakeAssetsHarness('cache-first');
       mount(App, { props: { t: 'B', renders, empties, errors }, global: { plugins: [client as any] } });
 
-      await tick();
+      await tick(6);
       expect(renders).toEqual([['B']]);
       expect(fx.calls.length).toBe(0);
     }
 
-    // CF miss for evicted (A) — should NOT render immediately
+    // CF miss for evicted (A) — should NOT render immediately; also no network (CF)
     {
       const fx = createFetchMock([]); // no network responses
       const client = createClient({ url: '/cf-A', use: [cache as any, fx.plugin] });
@@ -418,7 +400,7 @@ describe('Integration • Edge-cases & performance guards', () => {
       const App = MakeAssetsHarness('cache-first');
       mount(App, { props: { t: 'A', renders, empties, errors }, global: { plugins: [client as any] } });
 
-      await tick();
+      await tick(6);
       expect(renders.length).toBe(0); // no immediate render (evicted)
       expect(fx.calls.length).toBe(0); // CF: no network fetch
     }
@@ -440,7 +422,7 @@ describe('Integration • Edge-cases & performance guards', () => {
     // Seed concrete implementors
     (cache as any).writeFragment({ __typename: 'Color', id: 1, name: 'C1' }).commit?.();
     (cache as any).writeFragment({ __typename: 'T', id: 2, name: 'T2' }).commit?.();
-    await tick();
+    await tick(6);
 
     // Keys for Node:* (via cache.inspect.listEntityKeys if exposed on instance)
     const keys = (cache as any).listEntityKeys('Node');
@@ -449,19 +431,53 @@ describe('Integration • Edge-cases & performance guards', () => {
     // Materialized fragments via useFragments('Node:*')
     const Comp = defineComponent({
       setup() {
-        const { useFragments } = require('@/src'); // from public API
+        const { useFragments } = require('@/src');
         return { list: useFragments('Node:*') };
       },
       render() { return h('div'); },
     });
 
     const w = mount(Comp, { global: { plugins: [cache as any] } });
-    await tick();
+    await tick(6);
 
     const list = (w.vm as any).list;
     expect(Array.isArray(list)).toBe(true);
     expect(list.length).toBe(2);
     const names = list.map((x: any) => x?.name).sort();
     expect(names).toEqual(['C1', 'T2']);
+  });
+
+  /* ───────────────────────────────────────────────────────────────────────────
+   * 6) Network dedup in-flight: identical queries → 1 fetch
+   * ────────────────────────────────────────────────────────────────────────── */
+  it('Dedup: two identical in-flight queries only fetch once; both render', async () => {
+    const cache = makeAssetsCache();
+
+    const routes: Route[] = [{
+      when: ({ variables }) => variables.t === 'D',
+      delay: 15,
+      respond: () => ({
+        data: {
+          __typename: 'Query',
+          assets: { __typename: 'AssetConnection', edges: [{ cursor: 'd1', node: { __typename: 'Asset', id: 42, name: 'D1' } }], pageInfo: {} },
+        },
+      }),
+    }];
+
+    const fx = createFetchMock(routes);
+    const client = createClient({ url: '/dedup', use: [cache as any, fx.plugin] });
+    mocks.push(fx);
+
+    const renders1: string[][] = []; const renders2: string[][] = [];
+    const empties: string[] = []; const errors: string[] = [];
+
+    const App = MakeAssetsHarness('network-only');
+    mount(App, { props: { t: 'D', renders: renders1, empties, errors }, global: { plugins: [client as any] } });
+    mount(App, { props: { t: 'D', renders: renders2, empties, errors }, global: { plugins: [client as any] } });
+
+    await delay(20); await tick(6);
+    expect(fx.calls.length).toBe(1); // ✅ dedup: only one fetch
+    expect(renders1).toEqual([['D1']]);
+    expect(renders2).toEqual([['D1']]);
   });
 });

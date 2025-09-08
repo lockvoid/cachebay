@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createCache } from '@/src';
 import { parse } from 'graphql';
 import { getOperationKey, getFamilyKey } from '@/src/core/utils';
-import { tick } from '@/test/helpers';
+import { tick, seedCache } from '@/test/helpers';
 
 /** Pull a friendly name out of the payload (first edge node name) */
 function dataName(payload: any): string | null {
@@ -48,29 +48,6 @@ function makeCtx(
   } as any;
 }
 
-export function seedCache(
-  cache: any,
-  {
-    query,
-    variables = {},
-    data,
-    materialize = true,
-  }: {
-    query: any;
-    variables?: Record<string, any>;
-    data: any;
-    materialize?: boolean;
-  }
-) {
-  const opKey = getOperationKey({ type: "query", query, variables, context: {} } as any);
-
-  cache.hydrate(
-    {
-      op: [[opKey, { data, variables }]],
-    },
-    { materialize },
-  );
-}
 
 /** Test queries */
 const QUERY = /* GraphQL */ `

@@ -98,9 +98,8 @@ function makeTabsClient(routes: Route[]) {
 const liText = (w: any) => w.findAll('li').map((li: any) => li.text());
 
 describe('Integration • take-latest / scope / no blanking', () => {
-  const mocks: Array<{ waitAll: () => Promise<void>, restore: () => void }> = [];
+  const mocks: Array<{ waitAll: () => Promise<void>, restore: () => void, calls: any[] }> = [];
   afterEach(async () => {
-    // wait for timers from this test, THEN restore fetch
     for (const m of mocks) await m.waitAll();
     while (mocks.length) (mocks.pop()!).restore();
   });
@@ -121,6 +120,9 @@ describe('Integration • take-latest / scope / no blanking', () => {
 
     await delay(25); await tick(2);
     expect(liText(w)).toEqual(['NEW']);
+
+    // exactly two fetches (older + newer)
+    expect(fetchMock.calls.length).toBe(2);
   });
 
   it('Cursor exception: older cursor page is allowed to apply after latest', async () => {
@@ -140,6 +142,8 @@ describe('Integration • take-latest / scope / no blanking', () => {
 
     await delay(25); await tick(2);
     expect(liText(w)).toEqual(['NEW', 'OLD-CURSOR-PAGE']);
+
+    expect(fetchMock.calls.length).toBe(2);
   });
 
   it('Scope isolation: same query in A/B scopes both deliver', async () => {
@@ -154,6 +158,9 @@ describe('Integration • take-latest / scope / no blanking', () => {
     await tick(2);
     expect(liText(WA)).toEqual(['S']);
     expect(liText(WB)).toEqual(['S']);
+
+    expect(fa.calls.length).toBe(1);
+    expect(fb.calls.length).toBe(1);
   });
 
   it('No follower blanking: rapid leaders never produce empty view', async () => {
@@ -175,11 +182,13 @@ describe('Integration • take-latest / scope / no blanking', () => {
 
     await delay(10); await tick(2);
     expect(liText(w).length).toBeGreaterThan(0); // never blank
+    await delay(95); await tick(2);
+    expect(fetchMock.calls.length).toBe(3);
   });
 });
 
 describe('Integration • UI latency / tab switching flows + cache-and-network', () => {
-  const mocks: Array<{ waitAll: () => Promise<void>, restore: () => void }> = [];
+  const mocks: Array<{ waitAll: () => Promise<void>, restore: () => void, calls: any[] }> = [];
   afterEach(async () => {
     for (const m of mocks) await m.waitAll();
     while (mocks.length) (mocks.pop()!).restore();
@@ -214,6 +223,14 @@ describe('Integration • UI latency / tab switching flows + cache-and-network',
     await delay(70); await tick(2);
     expect(liText(w)).toEqual(['C1']);
     expect(reports.find(r => r.length === 0)).toBeUndefined();
+
+    // A, C, D, B, C → last C dedupbed → 4 fetches total
+    expect(fetchMock.calls.length).toBe(4);
+    const aCalls = fetchMock.calls.filter(c => c.variables?.t === 'A').length;
+    const bCalls = fetchMock.calls.filter(c => c.variables?.t === 'B').length;
+    const cCalls = fetchMock.calls.filter(c => c.variables?.t === 'C').length;
+    const dCalls = fetchMock.calls.filter(c => c.variables?.t === 'D').length;
+    expect({ aCalls, bCalls, cCalls, dCalls }).toEqual({ aCalls: 1, bCalls: 1, cCalls: 1, dCalls: 1 });
   });
 
   it('A→B→C→A→B→C (final C): renders A then C only; older in-flights never render', async () => {
@@ -240,10 +257,16 @@ describe('Integration • UI latency / tab switching flows + cache-and-network',
     await delay(15); await tick(2);
     expect(liText(w)).toEqual(['C']);
     expect(reports.some(r => r.length === 1 && r[0] === 'B')).toBe(false);
+
+    const aCalls = fetchMock.calls.filter(c => c.variables?.t === 'A').length;
+    const bCalls = fetchMock.calls.filter(c => c.variables?.t === 'B').length;
+    const cCalls = fetchMock.calls.filter(c => c.variables?.t === 'C').length;
+    expect(bCalls).toBe(1);
+    expect(aCalls).toBeGreaterThanOrEqual(1);
+    expect(cCalls).toBeGreaterThanOrEqual(1);
   });
 
   it('Return to cached tab: revisiting B with identical object may re-emit at most twice (first + revisit); no network', async () => {
-    // seed op-cache for B in a different scope so cache-first hits immediately
     const seedRoutes: Route[] = [
       { when: ({ variables }) => variables.t === 'B', delay: 0, respond: () => ({ data: { __typename: 'Query', assets: { __typename: 'AssetConnection', edges: [{ cursor: 'b1', node: { __typename: 'Asset', id: 2, name: 'B1' } }], pageInfo: {} } } }) },
     ];
@@ -268,14 +291,10 @@ describe('Integration • UI latency / tab switching flows + cache-and-network',
     expect(fx.calls.length).toBe(0);
     expect(liText(w)).toEqual(['B1']);
     const bRenders = renders.filter(r => JSON.stringify(r) === JSON.stringify(['B1']));
-    expect(bRenders.length).toBeLessThanOrEqual(2); // allow first + revisit
-    await fx.waitAll(); fx.restore();
+    expect(bRenders.length).toBeLessThanOrEqual(2);
   });
 
-  /* ------------------ Extra cache-and-network race coverage ------------------ */
-
   it('cache-and-network: cached render THEN refresh; latest wins across families', async () => {
-    // Page X cached, then switch to Y (newer family leader) while revalidate runs for X
     const seedRoutes: Route[] = [
       { when: ({ variables }) => variables.t === 'X', delay: 0, respond: () => ({ data: { __typename: 'Query', assets: { __typename: 'AssetConnection', edges: [{ cursor: 'x', node: { __typename: 'Asset', id: 1, name: 'X0' } }], pageInfo: {} } } }) },
     ];
@@ -286,9 +305,7 @@ describe('Integration • UI latency / tab switching flows + cache-and-network',
     await seedFx.waitAll(); seedFx.restore();
 
     const routes: Route[] = [
-      // Revalidate X (slow)
       { when: ({ variables }) => variables.t === 'X', delay: 40, respond: () => ({ data: { __typename: 'Query', assets: { __typename: 'AssetConnection', edges: [{ cursor: 'x1', node: { __typename: 'Asset', id: 1, name: 'X1' } }], pageInfo: {} } } }) },
-      // Newer family Y (fast)
       { when: ({ variables }) => variables.t === 'Y', delay: 5, respond: () => ({ data: { __typename: 'Query', assets: { __typename: 'AssetConnection', edges: [{ cursor: 'y1', node: { __typename: 'Asset', id: 2, name: 'Y1' } }], pageInfo: {} } } }) },
     ];
     const fx = createFetchMock(routes);
@@ -296,27 +313,27 @@ describe('Integration • UI latency / tab switching flows + cache-and-network',
 
     const w = mount(TabsHarness('cache-and-network'), { props: { tab: 'X' }, global: { plugins: [client as any] } });
 
-    // Cached X shows immediately
     await tick(2);
     expect(liText(w)).toEqual(['X0']);
 
-    // Switch to Y while X revalidate pending
     await w.setProps({ tab: 'Y' }); await tick();
 
     await delay(7); await tick(2);
-    expect(liText(w)).toEqual(['Y1']); // Y wins
+    expect(liText(w)).toEqual(['Y1']);
 
     await delay(40); await tick(2);
-    expect(liText(w)).toEqual(['Y1']); // late X refresh ignored (take-latest)
-    await fx.waitAll(); fx.restore();
+    expect(liText(w)).toEqual(['Y1']);
+
+    expect(fx.calls.length).toBe(2);
+    const xCalls = fx.calls.filter(c => c.variables?.t === 'X').length;
+    const yCalls = fx.calls.filter(c => c.variables?.t === 'Y').length;
+    expect(xCalls).toBe(1);
+    expect(yCalls).toBe(1);
   });
 
   it('cache-and-network: cursor page cached immediate reveal + revalidate merge', async () => {
-    // Seed page1 then request page2 in cache-and-network; page1 immediate show, page2 merges later
     const routes: Route[] = [
-      // page1 cached-like fast
       { when: ({ variables }) => variables.first === 2 && !variables.after, delay: 0, respond: () => ({ data: { __typename: 'Query', colors: { __typename: 'ColorConnection', edges: [{ cursor: 'c1', node: { __typename: 'Color', id: 1, name: 'P1-1' } }, { cursor: 'c2', node: { __typename: 'Color', id: 2, name: 'P1-2' } }], pageInfo: { endCursor: 'c2', hasNextPage: true } } } }) },
-      // page2 revalidate
       { when: ({ variables }) => variables.after === 'c2' && variables.first === 2, delay: 20, respond: () => ({ data: { __typename: 'Query', colors: { __typename: 'ColorConnection', edges: [{ cursor: 'c3', node: { __typename: 'Color', id: 3, name: 'P2-1' } }, { cursor: 'c4', node: { __typename: 'Color', id: 4, name: 'P2-2' } }], pageInfo: { endCursor: 'c4', hasNextPage: false } } } }) },
     ];
     const { client, fetchMock } = makeColorsClient(routes);
@@ -324,7 +341,6 @@ describe('Integration • UI latency / tab switching flows + cache-and-network',
 
     const w = mount(ColorsHarness('cache-and-network'), { props: { first: 2 }, global: { plugins: [client as any] } });
 
-    // immediate show p1
     await tick(2);
     expect(liText(w)).toEqual(['P1-1', 'P1-2']);
 
@@ -332,38 +348,30 @@ describe('Integration • UI latency / tab switching flows + cache-and-network',
 
     await delay(25); await tick(2);
     expect(liText(w)).toEqual(['P1-1', 'P1-2', 'P2-1', 'P2-2']);
+
+    expect(fetchMock.calls.length).toBe(2);
   });
 
   it('cache-and-network: rapid leaders X→Y→X; dedup → final X renders and Y never renders', async () => {
     const routes: Route[] = [
-      // X (slow)
       {
         when: ({ variables }) => variables.t === 'X',
         delay: 25,
         respond: () => ({
           data: {
             __typename: 'Query',
-            assets: {
-              __typename: 'AssetConnection',
-              edges: [{ cursor: 'x', node: { __typename: 'Asset', id: 1, name: 'X' } }],
-              pageInfo: {}
-            }
-          }
+            assets: { __typename: 'AssetConnection', edges: [{ cursor: 'x', node: { __typename: 'Asset', id: 1, name: 'X' } }], pageInfo: {} },
+          },
         }),
       },
-      // Y (fast)
       {
         when: ({ variables }) => variables.t === 'Y',
         delay: 5,
         respond: () => ({
           data: {
             __typename: 'Query',
-            assets: {
-              __typename: 'AssetConnection',
-              edges: [{ cursor: 'y', node: { __typename: 'Asset', id: 2, name: 'Y' } }],
-              pageInfo: {}
-            }
-          }
+            assets: { __typename: 'AssetConnection', edges: [{ cursor: 'y', node: { __typename: 'Asset', id: 2, name: 'Y' } }], pageInfo: {} },
+          },
         }),
       },
     ];
@@ -377,26 +385,22 @@ describe('Integration • UI latency / tab switching flows + cache-and-network',
     });
     const client = createClient({ url: '/tabs', use: [cache as any, fx.plugin] });
 
-    // capture actual non-empty renders in order
     const renders: string[][] = [];
     const w = mount(TabsHarness('cache-and-network'), {
       props: { tab: 'X', report: (x: string[]) => renders.push(x) },
       global: { plugins: [client as any] },
     });
 
-    // Flip to Y, then IMMEDIATELY back to X (no tick in between)
+    // Flip quickly: X → Y → X
     await w.setProps({ tab: 'Y' });
     await w.setProps({ tab: 'X' });
-    await delay(40); // let latest-leader settle
+    await delay(40); await tick(2);
 
-    // Final winner must be X; Y must not have rendered at all
     expect(liText(w)).toEqual(['X']);
-
-    // Ensure Y never rendered
     const anyYRender = renders.some(r => r.length === 1 && r[0] === 'Y');
     expect(anyYRender).toBe(false);
 
-    // Dedup: exactly one X fetch and one Y fetch were issued
+    // Dedup: exactly one X fetch and one Y fetch
     const xCalls = fx.calls.filter(c => c.variables?.t === 'X').length;
     const yCalls = fx.calls.filter(c => c.variables?.t === 'Y').length;
     expect(xCalls).toBe(1);

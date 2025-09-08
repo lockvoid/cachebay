@@ -3,7 +3,13 @@ import { defineComponent, h } from 'vue';
 import { mount } from '@vue/test-utils';
 import { createClient } from 'villus';
 import { createCache } from '@/src';
-import { tick, delay, createFetchMock, type Route } from '@/test/helpers';
+import {
+  tick,
+  delay,
+  createFetchMock,
+  type Route,
+  seedCache, // 👈 use the shared helper
+} from '@/test/helpers';
 
 const QUERY = /* GraphQL */ `
   query Assets($t: String) {
@@ -14,12 +20,23 @@ const QUERY = /* GraphQL */ `
   }
 `;
 
-function Harness(policy: 'cache-first' | 'cache-and-network' | 'network-only' | 'cache-only', vars: any) {
+function Harness(
+  policy: 'cache-first' | 'cache-and-network' | 'network-only' | 'cache-only',
+  vars: any,
+) {
   return defineComponent({
     setup() {
+      // lazy require keeps test envs simple
       const { useQuery } = require('villus');
       const { data } = useQuery({ query: QUERY, variables: vars, cachePolicy: policy });
-      return () => h('ul', {}, (data?.value?.assets?.edges ?? []).map((e: any) => h('li', {}, e.node?.name || '')));
+      return () =>
+        h(
+          'ul',
+          {},
+          (data?.value?.assets?.edges ?? []).map((e: any) =>
+            h('li', {}, e.node?.name || ''),
+          ),
+        );
     },
   });
 }
@@ -32,19 +49,6 @@ function makeClient(routes: Route[]) {
   const fx = createFetchMock(routes);
   const client = createClient({ url: '/test', use: [cache as any, fx.plugin] });
   return { cache, client, fetchMock: fx };
-}
-
-/** Seed op cache via a real fetch, but in a different family scope so UI family isn't "already on screen". */
-async function seedOpCache(cache: any, variables: any, dataEnvelope: any) {
-  const routes: Route[] = [{
-    when: ({ variables: v }) => JSON.stringify(v) === JSON.stringify(variables),
-    delay: 0,
-    respond: () => ({ data: dataEnvelope }),
-  }];
-  const fx = createFetchMock(routes);
-  const seedClient = createClient({ url: '/seed', use: [cache as any, fx.plugin] });
-  await seedClient.execute({ query: QUERY, variables, context: { concurrencyScope: 'seed' } });
-  fx.restore();
 }
 
 describe('Integration • cache policies', () => {
@@ -61,8 +65,8 @@ describe('Integration • cache policies', () => {
           assets: {
             __typename: 'AssetConnection',
             edges: [{ cursor: 'a1', node: { __typename: 'Asset', id: 1, name: 'A1' } }],
-            pageInfo: { endCursor: 'a1', hasNextPage: false }
-          }
+            pageInfo: { endCursor: 'a1', hasNextPage: false },
+          },
         },
       }),
     }];
@@ -93,7 +97,8 @@ describe('Integration • cache policies', () => {
       },
     };
 
-    await seedOpCache(cache, { t: 'C' }, cachedC0);
+    // Seed op-cache without touching the UI family’s lastPublished markers
+    await seedCache(cache, { query: QUERY, variables: { t: 'C' }, data: cachedC0, materialize: true });
 
     const routes: Route[] = [{
       when: ({ variables }) => variables.t === 'C',
@@ -105,7 +110,7 @@ describe('Integration • cache policies', () => {
             __typename: 'AssetConnection',
             edges: [{ node: { __typename: 'Asset', id: 3, name: 'C1' } }],
             pageInfo: { endCursor: 'c1', hasNextPage: false },
-          }
+          },
         },
       }),
     }];
@@ -136,8 +141,8 @@ describe('Integration • cache policies', () => {
           assets: {
             __typename: 'AssetConnection',
             edges: [{ cursor: 'n1', node: { __typename: 'Asset', id: 99, name: 'N1' } }],
-            pageInfo: { endCursor: 'n1', hasNextPage: false }
-          }
+            pageInfo: { endCursor: 'n1', hasNextPage: false },
+          },
         },
       }),
     }];
@@ -166,7 +171,8 @@ describe('Integration • cache policies', () => {
         pageInfo: { endCursor: 'h1', hasNextPage: false },
       },
     };
-    await seedOpCache(cache, { t: 'HIT' }, hitData);
+
+    await seedCache(cache, { query: QUERY, variables: { t: 'HIT' }, data: hitData, materialize: true });
 
     // No routes -> still a working fetch stub, but no recorded matches
     const fxHit = createFetchMock([]);

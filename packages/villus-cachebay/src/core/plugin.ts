@@ -13,7 +13,7 @@ type BuildArgs = {
   shouldAddTypename: boolean;
   opCacheMax: number;
 
-  // Hydration knobs (optional)
+  // Hydration (optional)
   isHydrating?: () => boolean;
   hydrateOperationTicket?: Set<string>;
 
@@ -70,7 +70,7 @@ export function buildCachebayPlugin(
     const originalUseResult = ctx.useResult;
     const originalAfterQuery = ctx.afterQuery ?? (() => { });
 
-    const famKey = getFamilyKey(operation); // must include concurrencyScope
+    const famKey = getFamilyKey(operation); // must include concurrencyScope inside util
     const baseOpKey = getOperationKey(operation);
     const scope = (operation.context as any)?.concurrencyScope ?? (operation.context as any)?.cachebayScope ?? "";
     const scopedOpKey = scope ? `${baseOpKey}::scope=${scope}` : baseOpKey;
@@ -116,17 +116,18 @@ export function buildCachebayPlugin(
     }
 
     // ── DEDUP (opKey + scope): followers await leader; returning Promise halts fetch
-    if (operationDeferred.has(scopedOpKey)) {
+    const dedupKey = scopedOpKey; // ⬅️ reverted: dedup is policy-agnostic
+    if (operationDeferred.has(dedupKey)) {
       // a follower exists → mark its leader allowed to publish even if not latest ticket
-      allowLeaderByOp.add(scopedOpKey);
+      allowLeaderByOp.add(dedupKey);
 
-      const d = operationDeferred.get(scopedOpKey)!;
+      const d = operationDeferred.get(dedupKey)!;
       return d.promise.then((winner) => {
         // Route via the follower's ctx.useResult (original; we returned before overriding)
         ctx.useResult(winner, true);
       });
     } else {
-      operationDeferred.set(scopedOpKey, createDeferred<ResultShape>());
+      operationDeferred.set(dedupKey, createDeferred<ResultShape>());
     }
 
     // ── Elect family ticket ONLY for leaders (after dedup)
@@ -169,10 +170,10 @@ export function buildCachebayPlugin(
       const isCursorPage = vars && (vars.after != null || vars.before != null);
 
       // Resolve per-opKey followers with the REAL result
-      const opDef = operationDeferred.get(scopedOpKey);
+      const opDef = operationDeferred.get(dedupKey);
       if (opDef) {
         opDef.resolve(res);
-        operationDeferred.delete(scopedOpKey);
+        operationDeferred.delete(dedupKey);
       }
 
       // Non-terminating cached reveal path
@@ -184,7 +185,7 @@ export function buildCachebayPlugin(
       const latestTicket = familyCounter.get(famKey) ?? myTicket;
       const iAmWinner = myTicket === latestTicket;
 
-      // Cursor-page exception
+      // Cursor-page exception (older page can publish)
       if (!iAmWinner && isCursorPage && res.data) {
         applyResolversOnGraph(res.data, vars, { stale: true });
         collectEntities(res.data);
@@ -197,8 +198,8 @@ export function buildCachebayPlugin(
       // Stale loser (non-cursor)
       if (!iAmWinner && !isCursorPage) {
         // EXCEPTION: if this leader has a dedup follower for the same opKey, allow it to publish once.
-        if (allowLeaderByOp.has(scopedOpKey)) {
-          allowLeaderByOp.delete(scopedOpKey);
+        if (allowLeaderByOp.has(dedupKey)) {
+          allowLeaderByOp.delete(dedupKey);
           if (res.data) {
             applyResolversOnGraph(res.data, vars, { stale: false });
             collectEntities(res.data);
@@ -209,13 +210,29 @@ export function buildCachebayPlugin(
           return originalUseResult(res, true);
         }
 
-        // normal stale loser: warm stores only; no publish
+        // normal stale loser: warm stores only; DO NOT publish
         if (res.data) {
           applyResolversOnGraph(res.data, vars, { stale: true });
           collectEntities(res.data);
           setOpCache(baseOpKey, { data: res.data, variables: vars });
         }
-        return; // wrapper ran → Villus satisfied
+
+        // settle op so Villus doesn’t throw, but with the last winner payload to avoid visible change
+        const last = lastPublishedByFam.get(famKey);
+        if (last && last.data) {
+          return originalUseResult({ data: last.data }, true);
+        }
+        // If no winner yet (rare), settle with a harmless error
+        return originalUseResult(
+          {
+            error: new CombinedError({
+              networkError: Object.assign(new Error("STALE_DROPPED"), { name: "StaleDropped" }),
+              graphqlErrors: [],
+              response: undefined,
+            }),
+          },
+          true
+        );
       }
 
       // Winner: publish once
