@@ -9,9 +9,6 @@ import {
 } from "./utils";
 import type { App } from "vue";
 
-/* ----------------------------------------------------------------------------
- * Build args (deps from cache core)
- * -------------------------------------------------------------------------- */
 type BuildArgs = {
   shouldAddTypename: boolean;
   opCacheMax: number;
@@ -35,11 +32,8 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
-/* ----------------------------------------------------------------------------
- * Plugin
- * -------------------------------------------------------------------------- */
 export function buildCachebayPlugin(
-  internals: CachebayInternals, // expects internals.materializeResult?: (root:any)=>void
+  internals: CachebayInternals,
   args: BuildArgs,
 ): ClientPlugin {
   const {
@@ -52,21 +46,29 @@ export function buildCachebayPlugin(
     collectEntities,
   } = args;
 
-  // Per-opKey (+scope) → dedup followers await leader’s real {data|error}
   const operationDeferred = new Map<string, ReturnType<typeof createDeferred<ResultShape>>>();
-
-  // Family ticket: latest ticket wins (take-latest across variables within a family)
   const familyCounter = new Map<string, number>();
-
-  // If a dedup follower exists for an opKey, allow that leader to publish even if not latest ticket.
   const allowLeaderByOp = new Set<string>();
-
-  // Suppress redundant cached reveals by family (pointer identity)
   const lastPublishedByFam = new Map<string, { data: any; variables: Record<string, any> }>();
+
+  // NEW: family-level deferred so losers can await the winner
+  const familyDeferred = new Map<string, ReturnType<typeof createDeferred<ResultShape>>>();
+  const ensureFamilyDeferred = (famKey: string) => {
+    let d = familyDeferred.get(famKey);
+    if (!d) {
+      d = createDeferred<ResultShape>();
+      familyDeferred.set(famKey, d);
+    }
+    return d;
+  };
+
+  // Signature-based duplicate suppression for CN winner
+  const lastContentSigByFam = new Map<string, string>();
+  const dataSig = (data: any) => { try { return JSON.stringify(data); } catch { return ""; } };
 
   const setOpCache = (k: string, v: { data: any; variables: Record<string, any> }) => {
     internals.operationCache.set(k, v);
-    if (internals.operationCache.size > opCacheMax) {
+    if (internals.operationCache.size > args.opCacheMax) {
       const oldest = internals.operationCache.keys().next().value as string | undefined;
       if (oldest) internals.operationCache.delete(oldest);
     }
@@ -77,7 +79,7 @@ export function buildCachebayPlugin(
     const originalUseResult = ctx.useResult;
     const originalAfterQuery = ctx.afterQuery ?? (() => { });
 
-    const famKey = getFamilyKey(operation); // includes concurrencyScope when present
+    const famKey = getFamilyKey(operation);
     const baseOpKey = getOperationKey(operation);
     const scope =
       (operation.context as any)?.concurrencyScope ??
@@ -92,15 +94,18 @@ export function buildCachebayPlugin(
     const cachePolicy =
       operation.cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
 
-    /* ------------------------------ CACHE-ONLY ------------------------------ */
+    // CACHE-ONLY
     if (cachePolicy === "cache-only") {
       const cached = internals.operationCache.get(baseOpKey);
       if (cached) {
         const vars = operation.variables || cached.variables || {};
+        // record raw sig BEFORE transforms
+        lastContentSigByFam.set(famKey, dataSig(cached.data));
         applyResolversOnGraph(cached.data, vars, { stale: false });
         collectEntities(cached.data);
         registerViewsFromResult(cached.data, vars);
         internals.materializeResult?.(cached.data);
+        lastPublishedByFam.set(famKey, { data: cached.data, variables: vars });
         originalUseResult({ data: cached.data }, true);
       } else {
         const error = new CombinedError({
@@ -113,122 +118,113 @@ export function buildCachebayPlugin(
       return;
     }
 
-    /* ------------------------------ CACHE-FIRST ----------------------------- */
+    // CACHE-FIRST
     if (cachePolicy === "cache-first") {
       const cached = internals.operationCache.get(baseOpKey);
       if (cached) {
         const vars = operation.variables || cached.variables || {};
+        lastContentSigByFam.set(famKey, dataSig(cached.data));
         applyResolversOnGraph(cached.data, vars, { stale: false });
         collectEntities(cached.data);
         registerViewsFromResult(cached.data, vars);
         internals.materializeResult?.(cached.data);
+        lastPublishedByFam.set(famKey, { data: cached.data, variables: vars });
         originalUseResult({ data: cached.data }, true);
         return;
       }
     }
 
-    /* -------------------------------- DEDUP --------------------------------- */
-    const dedupKey = scopedOpKey; // dedup is policy-agnostic
+    // DEDUP (per-opKey)
+    const dedupKey = scopedOpKey;
     if (operationDeferred.has(dedupKey)) {
-      // follower exists → mark its leader allowed to publish even if not latest ticket
       allowLeaderByOp.add(dedupKey);
       const d = operationDeferred.get(dedupKey)!;
-      return d.promise.then((winner) => {
-        ctx.useResult(winner, true);
-      });
+      return d.promise.then(winner => ctx.useResult(winner, true));
     } else {
       operationDeferred.set(dedupKey, createDeferred<ResultShape>());
     }
 
-    /* ------------------------- ELECT FAMILY TICKET -------------------------- */
+    // Elect family ticket
     const myTicket = (familyCounter.get(famKey) ?? 0) + 1;
     familyCounter.set(famKey, myTicket);
 
-    /* ------------------------- CACHE-AND-NETWORK HIT ------------------------ */
+    // CACHE-AND-NETWORK cached path
     if (cachePolicy === "cache-and-network") {
       const cached = internals.operationCache.get(baseOpKey);
       if (cached) {
         const hydratingNow = !!(isHydrating && isHydrating());
         const hadTicket = !!(hydrateOperationTicket && hydrateOperationTicket.has(baseOpKey));
-        if (hadTicket) hydrateOperationTicket!.delete(baseOpKey); // consume ticket
+        if (hadTicket) hydrateOperationTicket!.delete(baseOpKey);
 
-        // ✅ If this opKey came from hydrate, emit cached and TERMINATE (no initial refetch),
-        // even if hydratingNow is already false (Suspense expects a terminating result).
+        // If hydrated, emit cached and TERMINATE (suspense-friendly), store content sig
         if (hadTicket) {
           const vars = operation.variables || cached.variables || {};
+          lastContentSigByFam.set(famKey, dataSig(cached.data));
           applyResolversOnGraph(cached.data, vars, { stale: false });
           collectEntities(cached.data);
           registerViewsFromResult(cached.data, vars);
           internals.materializeResult?.(cached.data);
-          originalUseResult({ data: cached.data }, true);
           lastPublishedByFam.set(famKey, { data: cached.data, variables: vars });
-          return; // stop pipeline here
+          originalUseResult({ data: cached.data }, true);
+          return;
         }
 
-        // Normal CN outside hydrate ticket path: emit cached non-terminating and revalidate (unless already on screen).
+        // Normal CN: cached non-terminating unless already on screen
         if (!hydratingNow) {
           const vars = operation.variables || cached.variables || {};
           const last = lastPublishedByFam.get(famKey);
           const alreadyOnScreen = last && last.data === cached.data;
 
           if (!alreadyOnScreen) {
+            lastContentSigByFam.set(famKey, dataSig(cached.data));
             applyResolversOnGraph(cached.data, vars, { stale: false });
             collectEntities(cached.data);
             registerViewsFromResult(cached.data, vars);
             internals.materializeResult?.(cached.data);
-            originalUseResult({ data: cached.data }, false); // non-terminating
             lastPublishedByFam.set(famKey, { data: cached.data, variables: vars });
+            originalUseResult({ data: cached.data }, false);
           }
         }
         // else (hydrating but no ticket): suppress cached emit
       }
     }
 
-    /* ----------------------------- RESULT PATH ------------------------------ */
+    // RESULT PATH
     ctx.useResult = (incoming: OperationResult, terminate?: boolean) => {
-      const res: ResultShape =
-        (incoming as any)?.error
-          ? { error: (incoming as any).error }
-          : { data: (incoming as any).data };
+      const rawData = (incoming as any)?.error ? undefined : (incoming as any)?.data;
+      const res: ResultShape = (incoming as any)?.error ? { error: (incoming as any).error } : { data: rawData };
 
       const vars = operation.variables || {};
       const isCursorPage = vars && (vars.after != null || vars.before != null);
 
-      // resolve per-opKey followers
+      // resolve op-level followers
       const opDef = operationDeferred.get(dedupKey);
       if (opDef) {
         opDef.resolve(res);
         operationDeferred.delete(dedupKey);
       }
 
-      // non-terminating cached reveal
       if (terminate === false && res.data) {
         return originalUseResult(res, false);
       }
 
-      // winner vs loser by ticket
       const latestTicket = familyCounter.get(famKey) ?? myTicket;
       const iAmWinner = myTicket === latestTicket;
 
-      // HARD DROP: non-cursor losers never publish unless dedup-leader exception
+      // HARD DROP: non-cursor losers never publish
       if (!iAmWinner && !isCursorPage && !allowLeaderByOp.has(dedupKey)) {
         const last = lastPublishedByFam.get(famKey);
         if (last?.data) {
           return originalUseResult({ data: last.data }, true);
         }
-        return originalUseResult(
-          {
-            error: new CombinedError({
-              networkError: Object.assign(new Error("STALE_DROPPED"), { name: "StaleDropped" }),
-              graphqlErrors: [],
-              response: undefined,
-            }),
-          },
-          true
-        );
+        // ✅ Instead of emitting {}, await the family winner and publish that when it arrives
+        const famD = ensureFamilyDeferred(famKey);
+        return famD.promise.then(winner => {
+          originalUseResult(winner, true);
+        });
       }
 
-      // cursor-page exception: allow publish
+      // Cursor replay (older page allowed)
       if (!iAmWinner && isCursorPage && res.data) {
         applyResolversOnGraph(res.data, vars, { stale: true });
         collectEntities(res.data);
@@ -236,34 +232,62 @@ export function buildCachebayPlugin(
         setOpCache(baseOpKey, { data: res.data, variables: vars });
         lastPublishedByFam.set(famKey, { data: res.data, variables: vars });
         internals.materializeResult?.(res.data);
+        // resolve any family waiters too (they should show winner content eventually)
+        const famD = familyDeferred.get(famKey);
+        if (famD) { famD.resolve({ data: res.data }); familyDeferred.delete(famKey); }
         return originalUseResult(res, true);
       }
 
-      // stale loser (non-cursor) with dedup follower exception: allow publish once
+      // Stale loser with dedup-leader exception: allow publish once (with duplicate suppression)
       if (!iAmWinner && !isCursorPage) {
-        if (allowLeaderByOp.has(dedupKey)) {
-          allowLeaderByOp.delete(dedupKey);
-          if (res.data) {
-            applyResolversOnGraph(res.data, vars, { stale: false });
-            collectEntities(res.data);
-            registerViewsFromResult(res.data, vars);
+        if (allowLeaderByOp.has(dedupKey) && res.data) {
+          const prevRawSig = lastContentSigByFam.get(famKey);
+          const nextRawSig = dataSig(res.data);
+          applyResolversOnGraph(res.data, vars, { stale: false });
+          collectEntities(res.data);
+          registerViewsFromResult(res.data, vars);
+
+          if (prevRawSig && nextRawSig === prevRawSig) {
             setOpCache(baseOpKey, { data: res.data, variables: vars });
-            lastPublishedByFam.set(famKey, { data: res.data, variables: vars });
-            internals.materializeResult?.(res.data);
+            return;
           }
+
+          setOpCache(baseOpKey, { data: res.data, variables: vars });
+          lastPublishedByFam.set(famKey, { data: res.data, variables: vars });
+          internals.materializeResult?.(res.data);
+          lastContentSigByFam.set(famKey, nextRawSig);
+          const famD = familyDeferred.get(famKey);
+          if (famD) { famD.resolve({ data: res.data }); familyDeferred.delete(famKey); }
           return originalUseResult(res, true);
         }
-        return; // normal stale loser already hard-dropped above
+        return;
       }
 
-      // winner: publish once
+      // WINNER: publish once (suppress duplicate when raw content identical to cached)
       if (res.data) {
+        const prevRawSig = lastContentSigByFam.get(famKey);
+        const nextRawSig = dataSig(res.data);
+
         applyResolversOnGraph(res.data, vars, { stale: false });
         collectEntities(res.data);
         registerViewsFromResult(res.data, vars);
+
+        if (prevRawSig && nextRawSig === prevRawSig) {
+          setOpCache(baseOpKey, { data: res.data, variables: vars });
+          lastContentSigByFam.set(famKey, nextRawSig);
+          // resolve family waiters with this data (even though we didn't re-render)
+          const famD = familyDeferred.get(famKey);
+          if (famD) { famD.resolve({ data: res.data }); familyDeferred.delete(famKey); }
+          return;
+        }
+
         setOpCache(baseOpKey, { data: res.data, variables: vars });
         lastPublishedByFam.set(famKey, { data: res.data, variables: vars });
         internals.materializeResult?.(res.data);
+        lastContentSigByFam.set(famKey, nextRawSig);
+        // resolve family waiters
+        const famD = familyDeferred.get(famKey);
+        if (famD) { famD.resolve({ data: res.data }); familyDeferred.delete(famKey); }
       }
       return originalUseResult(res, true);
     };

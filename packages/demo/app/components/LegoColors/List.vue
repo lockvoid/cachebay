@@ -26,7 +26,7 @@ const loadMore = () => {
       <LegoColorsItem v-for="edge in legoColors.edges" :key="edge.node.id" :color="edge.node" />
     </ul>
 
-    <button class="self-center px-3 py-2 rounded bg-gray-900 text-white disabled:opacity-50 hover:cursor-pointer" :disabled="legoColorsActivity.isFetching || !legoColors.pageInfo.hasNextPage" @click="loadMore">
+    <button v-if="legoColors.pageInfo.hasNextPage" class="self-center px-3 py-2 rounded bg-gray-900 text-white disabled:opacity-50 hover:cursor-pointer" :disabled="legoColorsActivity.isFetching || !legoColors.pageInfo.hasNextPage" @click="loadMore">
       <span v-if="legoColorsActivity.isFetching">
         Loading…
       </span>

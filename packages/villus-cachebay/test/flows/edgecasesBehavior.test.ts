@@ -115,7 +115,7 @@ describe('Integration • Edge-cases & performance guards', () => {
    * 1) Never emit empty payloads to consumers
    *    (no {}, undefined, or missing edges)
    * ────────────────────────────────────────────────────────────────────────── */
-  it('Never emits empties across slow network, errors, and drops', async () => {
+  it.only('Never emits empties across slow network, errors, and drops', async () => {
     const routes: Route[] = [
       // initial slow success
       {
@@ -179,7 +179,7 @@ describe('Integration • Edge-cases & performance guards', () => {
    *    - CN + cached hit + identical network → only 1 render
    *    - CN + cached hit + different network → 2 renders
    * ────────────────────────────────────────────────────────────────────────── */
-  it.only('cache-and-network: identical network as cache → single render; different network → two renders', async () => {
+  it('cache-and-network: identical network as cache → single render; different network → two renders', async () => {
     const cache = makeAssetsCache();
 
     // Seed op cache (pretend SSR or earlier visit)
