@@ -720,51 +720,90 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   }
 
   // Register views from result (Relay connections)
-  function registerViewsFromResult(root: any, variables: Record<string, any>) {
+  // In src/core/internals.ts (inside createCache scope)
+  const registerViewsFromResult = (root: any, variables: Record<string, any>) => {
     walkGraph(root, "Query", (parentTypename, parentObj, field, value) => {
       if (!parentTypename) return;
+
       const relayOptions = getRelayOptionsByType(parentTypename, field);
       if (!relayOptions) return;
 
+      // Build connection key
       const parentId = (parentObj as any)?.id ?? (parentObj as any)?._id;
       const parentKey = parentEntityKeyFor(parentTypename, parentId) || "Query";
-      const connectionKey = buildConnectionKey(parentKey!, field, relayOptions, variables);
-      const state = ensureConnectionState(connectionKey);
+      const key = buildConnectionKey(parentKey!, field, relayOptions as any, variables);
+      const state = ensureConnectionState(key);
 
+      // Extract edges + pageInfo
       const edgesArr = readPathValue(value, relayOptions.segs.edges);
       const pageInfoObj = readPathValue(value, relayOptions.segs.pageInfo);
+      if (!edgesArr || !pageInfoObj) return;
 
-      if (edgesArr && pageInfoObj) {
-        const edgesFieldName = relayOptions.names.edges;
-        const pageInfoFieldName = relayOptions.names.pageInfo;
-        const exclude = new Set([edgesFieldName, relayOptions.paths.pageInfo, "__typename"]);
+      const edgesFieldName = relayOptions.names.edges;
+      const pageInfoFieldName = relayOptions.names.pageInfo;
 
-        if (!isReactive((value as any)[edgesFieldName])) {
-          (value as any)[edgesFieldName] = reactive(Array.isArray(edgesArr) ? edgesArr : []);
+      // Ensure result references are reactive (views point at these)
+      if (!isReactive((value as any)[edgesFieldName])) {
+        (value as any)[edgesFieldName] = reactive(Array.isArray(edgesArr) ? edgesArr : []);
+      }
+      if (!isReactive((value as any)[pageInfoFieldName])) {
+        (value as any)[pageInfoFieldName] = shallowReactive(pageInfoObj || {});
+      }
+
+      // Merge connection-level meta (exclude edges/pageInfo/__typename)
+      const exclude = new Set([edgesFieldName, relayOptions.paths.pageInfo, "__typename"]);
+      if (value && typeof value === "object") {
+        const vk = Object.keys(value);
+        for (let i = 0; i < vk.length; i++) {
+          const k = vk[i];
+          if (!exclude.has(k)) (state.meta as any)[k] = (value as any)[k];
         }
-        if (!isReactive((value as any)[pageInfoFieldName])) {
-          (value as any)[pageInfoFieldName] = shallowReactive(pageInfoObj || {});
-        }
+      }
 
-        // merge meta into state.meta (excluding edges/pageInfo/__typename)
-        if (value && typeof value === "object") {
-          const vk = Object.keys(value);
-          for (let i = 0; i < vk.length; i++) {
-            const k = vk[i];
-            if (!exclude.has(k)) (state.meta as any)[k] = (value as any)[k];
+      // Compute requested page size from variables (fallback to edgesArr length if absent)
+      const requested = typeof (variables as any)?.first === 'number'
+        ? (variables as any).first
+        : (Array.isArray(edgesArr) ? edgesArr.length : 0);
+
+      const isCursorPage = !!((variables as any)?.after != null || (variables as any)?.before != null);
+
+      // Highest existing limit across views
+      let currentLimit = 0;
+      if (state.views && state.views.size) {
+        state.views.forEach((v: any) => {
+          if (v && typeof v.limit === "number" && v.limit > currentLimit) currentLimit = v.limit;
+        });
+      }
+
+      // Decide the new limit:
+      // - first initialization: limit = requested
+      // - cursor page: limit += requested (cap to list length)
+      // - baseline: limit = requested (reset)
+      let nextLimit: number;
+      if (!state.initialized) {
+        nextLimit = requested;
+      } else if (isCursorPage) {
+        nextLimit = Math.min(state.list.length, currentLimit + requested);
+      } else {
+        nextLimit = requested;
+      }
+
+      const newEdgesRef = (value as any)[edgesFieldName];
+
+      // If a view already uses this exact edges[] reference, REPLACE its limit (allow shrink)
+      let reused = false;
+      if (state.views && state.views.size) {
+        for (const v of state.views.values()) {
+          if (v && v.edges === newEdgesRef) {
+            (v as any).limit = nextLimit;
+            reused = true;
+            break;
           }
         }
+      }
 
-        // inherit visible limit for newest view
-        let currentLimit = 0;
-        if (state.views && state.views.size) {
-          state.views.forEach((v: any) => {
-            if (v && typeof v.limit === "number" && v.limit > currentLimit) currentLimit = v.limit;
-          });
-        }
-
-        const newEdgesRef = (value as any)[edgesFieldName];
-
+      // Else, register a new view for this edges[] ref
+      if (!reused) {
         addStrongView(state, {
           edges: newEdgesRef,
           pageInfo: (value as any)[pageInfoFieldName],
@@ -772,35 +811,18 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
           edgesKey: edgesFieldName,
           pageInfoKey: pageInfoFieldName,
           pinned: false,
-          limit: state.initialized
-            ? currentLimit
-            : (Array.isArray(edgesArr) ? edgesArr.length : 0),
+          limit: nextLimit,
         });
+      }
 
-        const newView = (() => {
-          for (const v of state.views.values()) {
-            if (v && v.edges === newEdgesRef) return v as any;
-          }
-          return null;
-        })();
+      // Immediate sync so the new/updated view reflects the correct window
+      synchronizeConnectionViews(state);
 
-        if (newView && state.initialized) {
-          if (typeof newView.limit !== "number" || newView.limit < currentLimit) {
-            newView.limit = currentLimit;
-          }
-          if (newView.limit > state.list.length) {
-            newView.limit = state.list.length;
-          }
-        }
-
-        synchronizeConnectionViews(state);
-
-        if (!state.initialized) {
-          state.initialized = true;
-        }
+      if (!state.initialized) {
+        state.initialized = true;
       }
     });
-  }
+  };
 
   // Collect non-Relay entities
   function collectEntities(root: any) {

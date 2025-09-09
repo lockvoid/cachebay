@@ -1,23 +1,33 @@
 <script setup lang="ts">
-import { useQuery } from 'villus';
+  const settings = useSettings();
 
-const legoColorsActivity = useLegoColorsActivity();
+  const legoColorsActivity = useLegoColorsActivity();
 
-const legoColorsPagination = useLegoColorsPagination();
+  const legoColorsPagination = useLegoColorsPagination();
 
-const legoColorsQuery = await useLegoColorsQuery();
+  const legoColorsQuery = await useLegoColorsQuery({ cachePolicy: settings.cachePolicy.value });
 
-const legoColors = computed(() => {
-  return legoColorsQuery.data.value?.legoColors;
-});
+  const legoColors = computed(() => {
+    console.log(legoColorsQuery.data.value);
 
-const loadMore = () => {
-  if (!legoColors.value.pageInfo.hasNextPage) {
-    return;
-  }
+    return legoColorsQuery.data.value?.legoColors;
+  });
 
-  legoColorsPagination.setAfter(legoColors.value.pageInfo.endCursor);
-};
+  const count = ref(0);
+
+  const loadMore = () => {
+    if (!legoColors.value.pageInfo.hasNextPage) {
+      return;
+    }
+
+    legoColorsPagination.setAfter(legoColors.value.pageInfo.endCursor);
+  };
+
+  onMounted(async () => {
+    setInterval(async () => {
+      count.value += 1;
+    }, 100);
+  });
 </script>
 
 <template>
@@ -25,6 +35,8 @@ const loadMore = () => {
     <ul class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       <LegoColorsItem v-for="edge in legoColors.edges" :key="edge.node.id" :color="edge.node" />
     </ul>
+
+    {{ count }}
 
     <button v-if="legoColors.pageInfo.hasNextPage" class="self-center px-3 py-2 rounded bg-gray-900 text-white disabled:opacity-50 hover:cursor-pointer" :disabled="legoColorsActivity.isFetching || !legoColors.pageInfo.hasNextPage" @click="loadMore">
       <span v-if="legoColorsActivity.isFetching">

@@ -19,7 +19,7 @@ export default defineNuxtPlugin((nuxtApp) => {
 
     use: [
       cachebay,
-      dedupPlugin(),
+      // dedupPlugin(),
       fetchPlugin(),
     ],
   });
@@ -40,4 +40,8 @@ export default defineNuxtPlugin((nuxtApp) => {
       useState("cachebay").value = cachebay.dehydrate();
     }
   });
+
+  if (import.meta.client) {
+    window.CACHEBAY = cachebay;
+  }
 });

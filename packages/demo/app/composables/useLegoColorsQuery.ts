@@ -2,7 +2,7 @@ import { useQuery } from "villus";
 
 const LEGO_COLORS_QUERY = /* GraphQL */ `
   query LegoColors($after: String, $first: Int, $where: colorsBoolExp) {
-    legoColors: colorsConnection(after: $after, first: $first, where: $where) {
+    legoColors: colorsConnection(after: $after, first: $first, where: $where, orderBy: { id: ASC }) {
       pageInfo {
         startCursor
         endCursor
@@ -12,10 +12,10 @@ const LEGO_COLORS_QUERY = /* GraphQL */ `
 
       edges {
         cursor
-        node { 
-          id 
-          name 
-          rgb 
+        node {
+          id
+          name
+          rgb
         }
       }
     }

@@ -20,7 +20,7 @@ export const useLegoColorsPagination = defineStore('legoColorsPagination', () =>
     after.value = null;
   }
 
-  const setFirst = (value : number) => {
+  const setFirst = (value: number) => {
     first.value = value;
   }
 
@@ -45,7 +45,7 @@ export const useLegoColorsPagination = defineStore('legoColorsPagination', () =>
 });
 
 export const useLegoColorsActivity = defineStore('legoColorsActivity', () => {
-  const state = reactive({ isFetching: false  })
+  const state = reactive({ isFetching: false })
 
   return state;
 });

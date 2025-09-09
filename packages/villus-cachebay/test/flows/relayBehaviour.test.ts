@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { defineComponent, h, computed } from 'vue';
+import { defineComponent, h, computed, Suspense } from 'vue';
 import { mount } from '@vue/test-utils';
 import { createClient } from 'villus';
 import { createCache } from '@/src';
@@ -8,7 +8,7 @@ import { createFetchMock, type Route, tick, delay } from '@/test/helpers';
 /* ─────────────────────────────────────────────────────────────────────────────
  * Shared query
  * ──────────────────────────────────────────────────────────────────────────── */
-const QUERY = /* GraphQL */ `
+const COLORS = /* GraphQL */ `
   query Colors($first:Int,$after:String,$last:Int,$before:String) {
     colors(first:$first, after:$after, last:$last, before:$before) {
       edges { cursor node { __typename id name } }
@@ -36,7 +36,7 @@ function harnessEdges(
         last: props.last,
         before: props.before,
       }));
-      const { data } = useQuery({ query: QUERY, variables: vars, cachePolicy });
+      const { data } = useQuery({ query: COLORS, variables: vars, cachePolicy });
       return () =>
         h(
           'ul',
@@ -62,7 +62,7 @@ function harnessAnyEdges(
         last: props.last,
         before: props.before,
       }));
-      const { data } = useQuery({ query: QUERY, variables: vars, cachePolicy });
+      const { data } = useQuery({ query: COLORS, variables: vars, cachePolicy });
       return () => {
         const c = (data?.value as any)?.colors || {};
         const edges = c.edges ?? c.items ?? [];
@@ -503,3 +503,423 @@ describe('Integration • Relay flows (spec coverage)', () => {
     expect(liText(w)).toEqual(['NEW', 'OLD-CURSOR-PAGE']);
   });
 });
+
+/* ------------------------------- Test routes ------------------------------ */
+/**
+ * We’ll use the same cache instance across seed + test client to retain op-cache.
+ * For “filter A” we seed both page1 + page2. For “filter B” we seed page1 only.
+ */
+
+function ColorsHarness(cachePolicy: 'cache-first' | 'cache-and-network' | 'network-only' = 'cache-and-network') {
+  return defineComponent({
+    props: { t: String, first: Number, after: String },
+    setup(props) {
+      const { useQuery } = require('villus')
+      const vars = computed(() => {
+        const v: any = { t: props.t, first: props.first, after: props.after }
+        Object.keys(v).forEach(k => v[k] === undefined && delete v[k])
+        return v
+      })
+      const { data } = useQuery({ query: COLORS, variables: vars, cachePolicy })
+      return () => h('ul', {}, (data?.value?.colors?.edges ?? []).map((e: any) => h('li', {}, e?.node?.name || '')))
+    },
+  })
+}
+
+function makeCache() {
+  return createCache({
+    addTypename: true,
+    resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
+    keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+  })
+}
+
+describe('Integration • Relay pagination reset & append from cache', () => {
+  const mocks: Array<{ waitAll: () => Promise<void>, restore: () => void }> = []
+  afterEach(async () => {
+    while (mocks.length) { const m = mocks.pop()!; await m.waitAll?.(); m.restore?.(); }
+  })
+
+  it('A) baseline resets to page1; B) cursor op appends from cache immediately, then revalidates', async () => {
+    const cache = makeCache()
+    const App = ColorsHarness('cache-and-network')
+
+    // 1) First mount with FAST routes to emulate real user steps that populate cache
+
+    const fastRoutes: Route[] = [
+      // A: baseline page1
+      {
+        when: ({ variables }) => variables.t === 'A' && !variables.after && variables.first === 2,
+        delay: 0,
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [
+                { cursor: 'a1', node: { __typename: 'Color', id: 1, name: 'A-1' } },
+                { cursor: 'a2', node: { __typename: 'Color', id: 2, name: 'A-2' } },
+              ],
+              pageInfo: { endCursor: 'a2', hasNextPage: true }
+            }
+          }
+        }),
+      },
+      // A: page2
+      {
+        when: ({ variables }) => variables.t === 'A' && variables.after === 'a2' && variables.first === 2,
+        delay: 0,
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [
+                { cursor: 'a3', node: { __typename: 'Color', id: 3, name: 'A-3' } },
+                { cursor: 'a4', node: { __typename: 'Color', id: 4, name: 'A-4' } },
+              ],
+              pageInfo: { endCursor: 'a4', hasNextPage: false }
+            }
+          }
+        }),
+      },
+      // B: baseline page1
+      {
+        when: ({ variables }) => {
+          return variables.t === 'B' && !variables.after && variables.first === 2;
+        },
+        delay: 0,
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [
+                { cursor: 'b1', node: { __typename: 'Color', id: 10, name: 'B-1' } },
+                { cursor: 'b2', node: { __typename: 'Color', id: 11, name: 'B-2' } },
+              ],
+              pageInfo: { endCursor: 'b2', hasNextPage: false }
+            }
+          }
+        }),
+      },
+    ]
+    const fxFast = createFetchMock(fastRoutes)
+    mocks.push(fxFast)
+    const clientFast = createClient({ url: '/fast', use: [cache as any, fxFast.plugin] })
+
+    // Mount
+    let w = mount(App, { props: { t: 'A', first: 2 }, global: { plugins: [clientFast as any] } })
+
+    // A baseline (fast)
+    await tick(2)
+    expect(liText(w)).toEqual(['A-1', 'A-2'])
+
+    // LOAD MORE (A page2)
+    await w.setProps({ t: 'A', first: 2, after: 'a2' })
+    await tick(2)
+    expect(liText(w)).toEqual(['A-1', 'A-2', 'A-3', 'A-4']) // page2 visible
+
+    // Switch to B (fast)
+    await w.setProps({ t: 'B', first: 2, after: undefined })
+    await tick(2)
+    expect(liText(w)).toEqual(['B-1', 'B-2'])
+
+    // Unmount (we're going to swap to a "slow network" client to test cached CN behavior)
+    w.unmount()
+
+    // 2) Second mount with SLOW routes (same cache), to test resetting baseline and appending from cache instantly
+
+    const slowRoutes: Route[] = [
+      // A: baseline slow network revalidate (but we want cached immediate)
+      {
+        when: ({ variables }) => variables.t === 'A' && !variables.after && variables.first === 2,
+        delay: 250, // slow
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [
+                { cursor: 'a1', node: { __typename: 'Color', id: 1, name: 'A-1' } },
+                { cursor: 'a2', node: { __typename: 'Color', id: 2, name: 'A-2' } },
+              ],
+              pageInfo: { endCursor: 'a2', hasNextPage: true }
+            }
+          }
+        }),
+      },
+      // A: page2 slow revalidate (should show from cache immediately)
+      {
+        when: ({ variables }) => variables.t === 'A' && variables.after === 'a2' && variables.first === 2,
+        delay: 250,
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [
+                { cursor: 'a3', node: { __typename: 'Color', id: 3, name: 'A-3' } },
+                { cursor: 'a4', node: { __typename: 'Color', id: 4, name: 'A-4' } },
+              ],
+              pageInfo: { endCursor: 'a4', hasNextPage: false }
+            }
+          }
+        }),
+      },
+      // B baseline slow (not directly used below, but here for completeness)
+      {
+        when: ({ variables }) => variables.t === 'B' && !variables.after && variables.first === 2,
+        delay: 250,
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [
+                { cursor: 'b1', node: { __typename: 'Color', id: 10, name: 'B-1' } },
+                { cursor: 'b2', node: { __typename: 'Color', id: 11, name: 'B-2' } },
+              ],
+              pageInfo: { endCursor: 'b2', hasNextPage: false }
+            }
+          }
+        }),
+      },
+    ]
+    const fxSlow = createFetchMock(slowRoutes)
+    mocks.push(fxSlow)
+    const clientSlow = createClient({ url: '/slow', use: [cache as any, fxSlow.plugin] })
+
+    // Re-mount with slow client, start on A baseline; CN cached emit should show ONLY page1 (reset)
+    w = mount(App, { props: { t: 'A', first: 2 }, global: { plugins: [clientSlow as any] } })
+    await tick(2)
+    expect(liText(w)).toEqual(['A-1', 'A-2']) // ✅ reset baseline window (page2 hidden)
+
+    // LOAD MORE on A: CN cached reveal should append from cache immediately
+    await w.setProps({ t: 'A', first: 2, after: 'a2' })
+    await tick(2)
+    expect(liText(w)).toEqual(['A-1', 'A-2', 'A-3', 'A-4']) // ✅ page2 appears from cache immediately
+
+    // after slow revalidate, final is unchanged
+    await delay(260); await tick(2)
+    expect(liText(w)).toEqual(['A-1', 'A-2', 'A-3', 'A-4'])
+
+    // tidy
+    w.unmount()
+  })
+});
+
+function SuspenseColorsHarness(
+  cachePolicy: 'cache-first' | 'cache-and-network' | 'network-only' = 'cache-and-network'
+) {
+  const Child = defineComponent({
+    props: { t: String, first: Number, after: String },
+    async setup(props) {
+      const { useQuery } = require('villus')
+      const vars = computed(() => {
+        const v: any = { t: props.t, first: props.first, after: props.after }
+        Object.keys(v).forEach((k) => v[k] === undefined && delete v[k])
+        return v
+      })
+      const { data } = await useQuery({ query: COLORS, variables: vars, cachePolicy })
+      return () =>
+        h(
+          'ul',
+          {},
+          (data?.value?.colors?.edges ?? []).map((e: any) => h('li', {}, e?.node?.name || ''))
+        )
+    },
+  })
+
+  return defineComponent({
+    props: { t: String, first: Number, after: String },
+    setup(props) {
+      return () =>
+        h(
+          Suspense,
+          {},
+          {
+            default: () => h(Child, { t: props.t, first: props.first, after: props.after }),
+            // visible fallback so you can assert Suspense if you want
+            fallback: () => h('div', { class: 'fallback' }, 'loading…'),
+          }
+        )
+    },
+  })
+}
+
+describe('Integration • Suspense • Relay pagination reset & append from cache', () => {
+  const mocks: Array<{ waitAll: () => Promise<void>; restore: () => void }> = []
+  afterEach(async () => {
+    while (mocks.length) {
+      const m = mocks.pop()!
+      await m.waitAll?.()
+      m.restore?.()
+    }
+  })
+
+  it('A) baseline resets to page1; B) cursor op appends from cache immediately, then revalidates', async () => {
+    const cache = makeCache()
+    const App = SuspenseColorsHarness('cache-and-network')
+
+    // 1) First mount with FAST routes to emulate real user steps that populate cache
+    const fastRoutes: Route[] = [
+      // A: baseline page1
+      {
+        when: ({ variables }) => variables.t === 'A' && !variables.after && variables.first === 2,
+        delay: 0,
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [
+                { cursor: 'a1', node: { __typename: 'Color', id: 1, name: 'A-1' } },
+                { cursor: 'a2', node: { __typename: 'Color', id: 2, name: 'A-2' } },
+              ],
+              pageInfo: { endCursor: 'a2', hasNextPage: true },
+            },
+          },
+        }),
+      },
+      // A: page2
+      {
+        when: ({ variables }) => variables.t === 'A' && variables.after === 'a2' && variables.first === 2,
+        delay: 0,
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [
+                { cursor: 'a3', node: { __typename: 'Color', id: 3, name: 'A-3' } },
+                { cursor: 'a4', node: { __typename: 'Color', id: 4, name: 'A-4' } },
+              ],
+              pageInfo: { endCursor: 'a4', hasNextPage: false },
+            },
+          },
+        }),
+      },
+      // B: baseline page1
+      {
+        when: ({ variables }) => variables.t === 'B' && !variables.after && variables.first === 2,
+        delay: 0,
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [
+                { cursor: 'b1', node: { __typename: 'Color', id: 10, name: 'B-1' } },
+                { cursor: 'b2', node: { __typename: 'Color', id: 11, name: 'B-2' } },
+              ],
+              pageInfo: { endCursor: 'b2', hasNextPage: false },
+            },
+          },
+        }),
+      },
+    ]
+    const fxFast = createFetchMock(fastRoutes)
+    mocks.push(fxFast)
+    const clientFast = createClient({ url: '/fast', use: [cache as any, fxFast.plugin] })
+
+    // Mount
+    let w = mount(App, { props: { t: 'A', first: 2 }, global: { plugins: [clientFast as any] } })
+
+    // A baseline (fast)
+    await tick(2)
+    expect(liText(w)).toEqual(['A-1', 'A-2'])
+
+    // LOAD MORE (A page2)
+    await w.setProps({ t: 'A', first: 2, after: 'a2' })
+    await tick(2)
+    expect(liText(w)).toEqual(['A-1', 'A-2', 'A-3', 'A-4']) // page2 visible
+
+    // Switch to B (fast)
+    await w.setProps({ t: 'B', first: 2, after: undefined })
+    await tick(2)
+    expect(liText(w)).toEqual(['B-1', 'B-2'])
+
+    // Unmount (we're going to swap to a "slow network" client to test cached CN behavior)
+    w.unmount()
+
+    // 2) Second mount with SLOW routes (same cache), to test resetting baseline and appending from cache instantly
+    const slowRoutes: Route[] = [
+      // A: baseline slow network revalidate (but we want cached immediate)
+      {
+        when: ({ variables }) => variables.t === 'A' && !variables.after && variables.first === 2,
+        delay: 250, // slow
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [
+                { cursor: 'a1', node: { __typename: 'Color', id: 1, name: 'A-1' } },
+                { cursor: 'a2', node: { __typename: 'Color', id: 2, name: 'A-2' } },
+              ],
+              pageInfo: { endCursor: 'a2', hasNextPage: true },
+            },
+          },
+        }),
+      },
+      // A: page2 slow revalidate (should show from cache immediately)
+      {
+        when: ({ variables }) => variables.t === 'A' && variables.after === 'a2' && variables.first === 2,
+        delay: 250,
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [
+                { cursor: 'a3', node: { __typename: 'Color', id: 3, name: 'A-3' } },
+                { cursor: 'a4', node: { __typename: 'Color', id: 4, name: 'A-4' } },
+              ],
+              pageInfo: { endCursor: 'a4', hasNextPage: false },
+            },
+          },
+        }),
+      },
+      // B baseline slow (not directly used below, but here for completeness)
+      {
+        when: ({ variables }) => variables.t === 'B' && !variables.after && variables.first === 2,
+        delay: 250,
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [
+                { cursor: 'b1', node: { __typename: 'Color', id: 10, name: 'B-1' } },
+                { cursor: 'b2', node: { __typename: 'Color', id: 11, name: 'B-2' } },
+              ],
+              pageInfo: { endCursor: 'b2', hasNextPage: false },
+            },
+          },
+        }),
+      },
+    ]
+    const fxSlow = createFetchMock(slowRoutes)
+    mocks.push(fxSlow)
+    const clientSlow = createClient({ url: '/slow', use: [cache as any, fxSlow.plugin] })
+
+    // Re-mount with slow client, start on A baseline; CN cached emit should show ONLY page1 (reset)
+    w = mount(App, { props: { t: 'A', first: 2 }, global: { plugins: [clientSlow as any] } })
+    await tick(2)
+    expect(liText(w)).toEqual(['A-1', 'A-2']) // ✅ reset baseline window (page2 hidden)
+
+    // LOAD MORE on A: CN cached reveal should append from cache immediately
+    await w.setProps({ t: 'A', first: 2, after: 'a2' })
+    await tick(2)
+    expect(liText(w)).toEqual(['A-1', 'A-2', 'A-3', 'A-4']) // ✅ page2 appears from cache immediately
+
+    // after slow revalidate, final is unchanged
+    await delay(260)
+    await tick(2)
+    expect(liText(w)).toEqual(['A-1', 'A-2', 'A-3', 'A-4'])
+
+    // tidy
+    w.unmount()
+  })
+})
