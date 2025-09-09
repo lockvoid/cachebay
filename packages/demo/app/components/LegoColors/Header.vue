@@ -8,11 +8,11 @@
       Colors
     </h2>
 
-    <div class="flex flex-row items-center justify-center gap-3">
+    <div class="flex flex-row items-center gap-3">
       <UiSearchInput v-model="colorsPagination.filters.query" />
 
-      <button class="px-3 py-2 rounded border hover:cursor-pointer" @click="colorsPagination.clearFilters()" v-if="colorsPagination.filters.query">
-        Clear
+      <button class="rounded underline underline-offset-4 hover:cursor-pointer" @click="colorsPagination.clearFilters()" v-if="colorsPagination.filters.query">
+        Clear filters
       </button>
     </div>
   </header>

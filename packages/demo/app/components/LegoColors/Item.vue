@@ -25,11 +25,11 @@
 
 <template>
   <li class="rounded p-3 flex flex-col items-center gap-3" :style="{ backgroundColor: '#' + color.rgb }">
-    <div class="font-medium truncate">
+    <div class="font-medium truncate mix-blend-difference contrast-200  text-white">
       {{ color.name }}
     </div>
 
-    <div class="text-xs text-gray-500">
+    <div class="text-xs mix-blend-hard-light text-white">
       #{{ color.rgb }}
     </div>
 
