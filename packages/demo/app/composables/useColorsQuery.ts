@@ -1,7 +1,7 @@
 import { useQuery } from "villus";
 
 export const COLOR_FIELDS = `
-  fragment ColorFields on Color {
+  fragment ColorFields on colors {
     id
     name
     rgb
@@ -9,6 +9,8 @@ export const COLOR_FIELDS = `
 `;
 
 export const COLORS_QUERY = `
+  ${COLOR_FIELDS}
+
   query Colors($after: String, $first: Int, $where: colorsBoolExp) {
     colors: colorsConnection(after: $after, first: $first, where: $where, orderBy: { id: ASC }) {
       pageInfo {

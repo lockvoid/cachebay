@@ -5,12 +5,10 @@
 
   const colorsPagination = useColorsPagination();
 
-  const colorsQuery = await useColorsQuery({ cachePolicy: settings.cachePolicy.value });
+  const colorsQuery = await useColorsQuery({ cachePolicy: settings.cachePolicy });
 
   const colors = computed(() => {
-    console.log(colorsQuery.data.value);
-
-    return colorsQuery.data.value?.colors;
+    return colorsQuery.data.value.colors;
   });
 
   const loadMore = () => {
