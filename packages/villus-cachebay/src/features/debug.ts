@@ -73,17 +73,36 @@ export const Debug = createDebug();
 type InspectDeps = {
   entityStore: Map<EntityKey, any>;
   connectionStore: Map<string, ConnectionState>;
+  operationCache: Map<string, { data: any; variables: Record<string, any> }>;
   stableIdentityExcluding: (vars: Record<string, any>, remove: string[]) => string;
 };
+
+type OpFilter = {
+  /** substring to match in op key (e.g. part of the query or hash) */
+  keyIncludes?: string;
+  /** shallow equals for provided vars; ignores keys not present in this object */
+  varsEquals?: Record<string, any>;
+  /** limit number of returned entries */
+  limit?: number;
+};
+
+function varsMatch(entryVars: Record<string, any>, want?: Record<string, any>): boolean {
+  if (!want) return true;
+  for (const k of Object.keys(want)) {
+    if (entryVars[k] !== want[k]) return false;
+  }
+  return true;
+}
 
 /**
  * Build the dev-only inspect API from internal stores.
  * NOTE: This is called lazily by core when you access `instance.inspect`.
  */
 export function createInspect(deps: InspectDeps) {
-  const { entityStore, connectionStore, stableIdentityExcluding } = deps;
+  const { entityStore, connectionStore, operationCache, stableIdentityExcluding } = deps;
 
   return {
+    /* ───────── entities ───────── */
     entities(typename?: string) {
       const out: string[] = [];
       entityStore.forEach((_v, k) => {
@@ -95,6 +114,8 @@ export function createInspect(deps: InspectDeps) {
     get(key: EntityKey) {
       return entityStore.get(key);
     },
+
+    /* ───────── connections ───────── */
     connections() {
       return Array.from(connectionStore.keys());
     },
@@ -137,6 +158,34 @@ export function createInspect(deps: InspectDeps) {
       });
 
       return variables ? results[0] || null : results;
+    },
+
+    /* ───────── operation cache (ONE-SHOT) ───────── */
+    /**
+     * Returns an array of full op-cache entries, filtered.
+     * You can filter by substring on the key and/or shallow vars equality.
+     * Example:
+     *   inspect.operations({ keyIncludes: "LegoColors", varsEquals: { first: 10 } })
+     */
+    operations(filter?: OpFilter) {
+      const out: Array<{ key: string; variables: Record<string, any>; data: any }> = [];
+      const { keyIncludes, varsEquals, limit } = filter || {};
+      for (const [key, entry] of operationCache.entries()) {
+        if (keyIncludes && !key.includes(keyIncludes)) continue;
+        if (!varsMatch(entry.variables || {}, varsEquals)) continue;
+        out.push({ key, variables: entry.variables || {}, data: entry.data });
+        if (limit && out.length >= limit) break;
+      }
+      return out;
+    },
+
+    /**
+     * Read a specific operation cache entry by key (full object).
+     */
+    operation(key: string) {
+      const entry = operationCache.get(key);
+      if (!entry) return null;
+      return { key, variables: entry.variables, data: entry.data };
     },
   };
 }

@@ -1,5 +1,5 @@
 <template>
-  <AppNav />
+  <AppHeader />
 
   <div class="p-6 font-sans">
     <slot />

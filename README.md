@@ -1,21 +1,37 @@
+
 # Cachebay for Villus
 
 **Blazing-fast normalized cache + Relay-style connections for Villus.**
 
 A tiny (12KB gzip), instance-scoped cache layer for **Villus** that gives you:
 
+- **Small & focused APIs.** Fragments, optimistic edits, resolvers, keys — without ceremony.
+- **Fast rendering.** Microtask-batched updates; stable Relay views that don’t churn arrays.
 - **Normalized entities** — one source of truth keyed by `__typename:id`, zero fuss.
 - **Relay-style connections** — append/prepend/replace, edge de-duplication by node key, reactive `pageInfo`/meta, and **no array churn**.
 - **Optimistic updates that stack** — layered commits/reverts for entities *and* connections (add/remove/update pageInfo) with clean rollback.
 - **SSR that just works** — dehydrate/hydrate entities, connections, and op-cache; first client mount renders from cache without a duplicate request, then behaves like normal CN.
-- **Fragments API** — `identify`, `readFragment`/`useFragment`/`useFragments`, `writeFragment` (supports interfaces like `Node:*`), with reactive materialized proxies.
+- **Fragments API** — `identify`, `readFragment`, `writeFragment`
+- (supports interfaces like `Node:*`), with reactive materialized proxies.
+- **Tiny composables** — `useFragment`, `useFragments`, `useCache`
 - **Resolver pipeline** — bind per-type field resolvers (e.g. `relay()` for connections, your own computed/scalar transforms).
 - **Subscriptions** — observable pass-through; plain frames get normalized and stream as non-terminating updates.
 - **Batched reactivity** — microtask-coalesced updates to minimize re-renders.
 - **Suspense** — suspense out of the box, with different strategies.
 
-
 ![Cachebay](https://pub-464e6b9480014239a02034726cf0073c.r2.dev/cachebay.jpg)
+
+---
+
+## Documentation
+
+- 👉 **[Getting started](./docs/GETTING_STARTED.md)** — quick start guide
+- 👉 **[Optimistic updates](./docs/OPTIMISTIC_UPDATES.md)** — layering, rollback, `patch`/`delete`, connection helpers
+- 👉 **[Relay connections](./docs/RELAY_CONNECTIONS.md)** — append/prepend/replace, de-dup, view limits, policy matrix
+- 👉 **[SSR](./docs/SSR.md)** — dehydrate/hydrate, one-time CN suppression, materialization, Suspense notes
+- 👉 **[Cache fragments](./docs/CACHE_FRAGMENTS.md)** — identify/read/write, interfaces, proxies vs raw
+- 👉 **[Resolvers](./docs/RESOLVERS.md)** — writing custom resolvers; using `relay()`
+- 👉 **[Composables](./docs/COMPOSABLES.md)** — `useCache()`, `useFragment()`, `useFragments()`
 
 ---
 
@@ -103,7 +119,7 @@ cachebay.hydrate(snapshot, { materialize: true })
 
 ---
 
-## Install with Nuxt 4
+## Usage with Nuxt 4
 
 > Minimal pattern: one cache instance per SSR request, dehydrate to a Nuxt state, hydrate on the client, and expose Villus + Cachebay via plugins.
 
@@ -239,23 +255,5 @@ tx.revert?.() // Rolls back this layer only and replays any later ones
 ```
 cachebay → dedup() → fetch()
 ```
-
----
-
-## Links
-
-- 👉 **[Optimistic updates](./docs/OPTIMISTIC_UPDATES.md)** — layering, rollback, `patch`/`delete`, connection helpers
-- 👉 **[Relay connections](./docs/RELAY_CONNECTIONS.md)** — append/prepend/replace, de-dup, view limits, policy matrix
-- 👉 **[SSR](./docs/SSR.md)** — dehydrate/hydrate, one-time CN suppression, materialization, Suspense notes
-- 👉 **[Cache fragments](./docs/CACHE_FRAGMENTS.md)** — identify/read/write, interfaces, proxies vs raw
-- 👉 **[Resolvers](./docs/RESOLVERS.md)** — writing custom resolvers; using `relay()`
-- 👉 **[Composables](./docs/COMPOSABLES.md)** — `useCache()`, `useFragment()`, `useFragments()`
----
-
-## Why Cachebay?
-
-- **Small & focused APIs.** Fragments, optimistic edits, resolvers — without ceremony.
-- **Fast rendering.** Microtask-batched updates; stable Relay views that don’t churn arrays.
-- **Practical SSR.** Hydrate once, show cached instantly, then carry on like normal CN.
 
 MIT © LockVoid Labs ~●~

@@ -4,10 +4,12 @@ import { createCache } from 'villus-cachebay';
 export default defineNuxtPlugin((nuxtApp) => {
   const config = useRuntimeConfig();
 
+  const settings = useSettings();
+
   const cachebay = createCache({
     resolvers: ({ relay }) => ({
       Query: {
-        legoColors: relay(),
+        legoColors: relay({ paginationMode: settings.relayMode }),
       },
     }),
   });
@@ -15,7 +17,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   const client = createClient({
     url: config.public.graphqlEndpoint,
 
-    cachePolicy: 'cache-and-network',
+    cachePolicy: settings.cachePolicy,
 
     use: [
       cachebay,

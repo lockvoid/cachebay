@@ -33,9 +33,14 @@ export const useSettings = defineStore('settings', () => {
     default: () => 'cache-and-network' as string
   });
 
-  const ssr = ref(ssrCookie.value);
-  const suspense = ref(suspenseCookie.value);
-  const cachePolicy = ref(cachePolicyCookie.value);
+  const relayModeCookie = useCookie('settings-relay-mode', {
+    default: () => 'append' as string
+  });
+
+  const ssr = ref(ssrCookie.value ?? true);
+  const suspense = ref(suspenseCookie.value ?? true);
+  const cachePolicy = ref(cachePolicyCookie.value ?? 'cache-and-network');
+  const relayMode = ref(relayModeCookie.value ?? 'append');
 
   watch(ssr, (newValue) => {
     ssrCookie.value = newValue;
@@ -49,9 +54,14 @@ export const useSettings = defineStore('settings', () => {
     cachePolicyCookie.value = newValue;
   });
 
+  watch(relayMode, (newValue) => {
+    relayModeCookie.value = newValue;
+  });
+
   return {
     ssr,
     suspense,
-    cachePolicy
+    cachePolicy,
+    relayMode
   };
 });
