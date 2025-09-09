@@ -9,7 +9,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   const cachebay = createCache({
     resolvers: ({ relay }) => ({
       Query: {
-        legoColors: relay({ paginationMode: settings.relayMode }),
+        colors: relay({ paginationMode: settings.relayMode }),
       },
     }),
   });

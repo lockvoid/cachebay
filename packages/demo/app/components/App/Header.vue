@@ -11,11 +11,11 @@
         Sets
       </NuxtLink>
 
-      <NuxtLink to="/sets" class="underline underline-offset-4 decoration-2 hover:decoration-4 hover:decoration-yellow-500">
+      <NuxtLink to="/parts" class="underline underline-offset-4 decoration-2 hover:decoration-4 hover:decoration-yellow-500">
         Parts
       </NuxtLink>
 
-      <NuxtLink to="/sets" class="underline underline-offset-4 decoration-2 hover:decoration-4 hover:decoration-yellow-500">
+      <NuxtLink to="/colors" class="underline underline-offset-4 decoration-2 hover:decoration-4 hover:decoration-yellow-500">
         Colors
       </NuxtLink>
     </nav>

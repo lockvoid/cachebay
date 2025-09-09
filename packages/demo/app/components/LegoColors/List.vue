@@ -1,45 +1,35 @@
 <script setup lang="ts">
   const settings = useSettings();
 
-  const legoColorsActivity = useLegoColorsActivity();
+  const colorsActivity = useColorsActivity();
 
-  const legoColorsPagination = useLegoColorsPagination();
+  const colorsPagination = useColorsPagination();
 
-  const legoColorsQuery = await useLegoColorsQuery({ cachePolicy: settings.cachePolicy.value });
+  const colorsQuery = await useColorsQuery({ cachePolicy: settings.cachePolicy.value });
 
-  const legoColors = computed(() => {
-    console.log(legoColorsQuery.data.value);
+  const colors = computed(() => {
+    console.log(colorsQuery.data.value);
 
-    return legoColorsQuery.data.value?.legoColors;
+    return colorsQuery.data.value?.colors;
   });
 
-  const count = ref(0);
-
   const loadMore = () => {
-    if (!legoColors.value.pageInfo.hasNextPage) {
+    if (!colors.value.pageInfo.hasNextPage) {
       return;
     }
 
-    legoColorsPagination.setAfter(legoColors.value.pageInfo.endCursor);
+    colorsPagination.setAfter(colors.value.pageInfo.endCursor);
   };
-
-  onMounted(async () => {
-    setInterval(async () => {
-      count.value += 1;
-    }, 100);
-  });
 </script>
 
 <template>
   <div class="flex flex-col gap-2">
     <ul class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-      <LegoColorsItem v-for="edge in legoColors.edges" :key="edge.node.id" :color="edge.node" />
+      <LegoColorsItem v-for="edge in colors.edges" :key="edge.node.id" :color="edge.node" />
     </ul>
 
-    {{ count }}
-
-    <button v-if="legoColors.pageInfo.hasNextPage" class="self-center px-3 py-2 rounded bg-gray-900 text-white disabled:opacity-50 hover:cursor-pointer" :disabled="legoColorsActivity.isFetching || !legoColors.pageInfo.hasNextPage" @click="loadMore">
-      <span v-if="legoColorsActivity.isFetching">
+    <button v-if="colors.pageInfo.hasNextPage" class="self-center px-3 py-2 rounded bg-gray-900 text-white disabled:opacity-50 hover:cursor-pointer" :disabled="colorsActivity.isFetching || !colors.pageInfo.hasNextPage" @click="loadMore">
+      <span v-if="colorsActivity.isFetching">
         Loading…
       </span>
 

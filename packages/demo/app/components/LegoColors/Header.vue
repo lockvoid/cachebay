@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  const pagination = useLegoColorsPagination();
+  const colorsPagination = useColorsPagination();
 </script>
 
 <template>
@@ -9,9 +9,9 @@
     </h2>
 
     <div class="flex items-center gap-3">
-      <input v-model="pagination.filters.query" type="text" placeholder="Search" class="w-64 px-3 py-2 rounded border focus:outline-none focus:ring" />
-      
-      <button class="px-3 py-2 rounded border hover:cursor-pointer" @click="pagination.clearFilters()" v-if="pagination.filters.query">
+      <input v-model="colorsPagination.filters.query" type="text" placeholder="Search" class="w-64 px-3 py-2 rounded border focus:outline-none focus:ring" />
+
+      <button class="px-3 py-2 rounded border hover:cursor-pointer" @click="colorsPagination.clearFilters()" v-if="colorsPagination.filters.query">
         Clear
       </button>
     </div>

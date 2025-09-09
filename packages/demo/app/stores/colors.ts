@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 
-export const useLegoColorsPagination = defineStore('legoColorsPagination', () => {
+export const useColorsPagination = defineStore('colorsPagination', () => {
   const after = ref(null);
   const first = ref(10);
 
@@ -44,7 +44,7 @@ export const useLegoColorsPagination = defineStore('legoColorsPagination', () =>
   };
 });
 
-export const useLegoColorsActivity = defineStore('legoColorsActivity', () => {
+export const useColorsActivity = defineStore('colorsActivity', () => {
   const state = reactive({ isFetching: false })
 
   return state;
