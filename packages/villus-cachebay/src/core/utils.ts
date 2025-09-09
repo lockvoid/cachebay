@@ -197,3 +197,32 @@ export function getOperationKey(op: { query: any; variables: Record<string, any>
 export function isObservableLike(v: any): v is { subscribe: Function } {
   return !!v && typeof v.subscribe === "function";
 }
+
+// Signature for duplicate suppression
+export const toSig = (data: any) => {
+  try { return JSON.stringify(data); } catch { return ""; }
+};
+
+// Strip undefined so opKey stabilizes
+export const cleanVars = (vars: Record<string, any> | undefined | null) => {
+  const out: Record<string, any> = {};
+  if (!vars || typeof vars !== "object") return out;
+  for (const k of Object.keys(vars)) {
+    const v = (vars as any)[k];
+    if (v !== undefined) out[k] = v;
+  }
+  return out;
+};
+
+// Shallow root clone (cheap) — we always REPLACE the connection node inside
+export const viewRootOf = (root: any) => {
+  if (!root || typeof root !== "object") return root;
+  return Array.isArray(root) ? root.slice() : { ...root };
+};
+
+// NOTE: op-cache entries must be PLAIN (no Vue proxies). Network payloads are
+// usually plain already; to be safe against accidental reactive wrapping upstream,
+// normalize deeply only for JSON-safe trees via fast JSON fallback.
+export const toPlainDeep = (x: any) => {
+  try { return JSON.parse(JSON.stringify(x)); } catch { return x; }
+};

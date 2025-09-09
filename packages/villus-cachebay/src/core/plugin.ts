@@ -9,6 +9,9 @@ import {
 } from "./utils";
 import type { App } from "vue";
 
+/* ----------------------------------------------------------------------------
+ * Build args (deps from cache core)
+ * -------------------------------------------------------------------------- */
 type BuildArgs = {
   shouldAddTypename: boolean;
   opCacheMax: number;
@@ -25,16 +28,16 @@ type BuildArgs = {
 
 type ResultShape = { data?: any; error?: any };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+/* ----------------------------------------------------------------------------
+ * Small helpers
+ * -------------------------------------------------------------------------- */
 
 // Signature for duplicate suppression
 const toSig = (data: any) => {
   try { return JSON.stringify(data); } catch { return ""; }
 };
 
-// Strip undefined so opKey stabilizes
+// Remove undefined to stabilize opKey across equivalent shapes
 const cleanVars = (vars: Record<string, any> | undefined | null) => {
   const out: Record<string, any> = {};
   if (!vars || typeof vars !== "object") return out;
@@ -45,19 +48,15 @@ const cleanVars = (vars: Record<string, any> | undefined | null) => {
   return out;
 };
 
-// Shallow root clone (cheap) — we always REPLACE the connection node inside
+// Cheap view container (never hand out op-cache references)
 const viewRootOf = (root: any) => {
   if (!root || typeof root !== "object") return root;
   return Array.isArray(root) ? root.slice() : { ...root };
 };
 
-// NOTE: op-cache entries must be PLAIN (no Vue proxies). Network payloads are
-// usually plain already; to be safe against accidental reactive wrapping upstream,
-// normalize deeply only for JSON-safe trees via fast JSON fallback.
-const toPlainDeep = (x: any) => {
-  try { return JSON.parse(JSON.stringify(x)); } catch { return x; }
-};
-
+/* ----------------------------------------------------------------------------
+ * Plugin
+ * -------------------------------------------------------------------------- */
 export function buildCachebayPlugin(
   internals: CachebayInternals,
   args: BuildArgs,
@@ -72,23 +71,14 @@ export function buildCachebayPlugin(
     collectEntities,
   } = args;
 
-  // "what the UI is currently rendering" per family
+  // Track "what the UI is currently rendering" by family (for duplicate-winner suppression)
   const lastPublishedByFam = new Map<string, { data: any; variables: Record<string, any> }>();
   const lastContentSigByFam = new Map<string, string>();
-
-  const setOpCache = (k: string, v: { data: any; variables: Record<string, any> }) => {
-    // normalize to plain before storing — NO proxies in op-cache
-    const plain = { data: toPlainDeep(v.data), variables: toPlainDeep(v.variables || {}) };
-    internals.operationCache.set(k, plain);
-    if (internals.operationCache.size > opCacheMax) {
-      const oldest = internals.operationCache.keys().next().value as string | undefined;
-      if (oldest) internals.operationCache.delete(oldest);
-    }
-  };
 
   const plugin: ClientPlugin = (ctx: ClientPluginContext) => {
     const { operation } = ctx;
     const originalUseResult = ctx.useResult;
+    const originalAfterQuery = ctx.afterQuery ?? (() => { });
 
     const famKey = getFamilyKey(operation);
     const baseOpKey = getOperationKey(operation);
@@ -97,42 +87,43 @@ export function buildCachebayPlugin(
       operation.query = ensureDocumentHasTypenameSmart(operation.query as any);
     }
 
-    // -------------------------------------------------------------------------
-    // SUBSCRIPTIONS
-    // - Observable-like → pass through (terminate=true)
-    // - Data frames → normalize + non-terminating emit
-    // - Others → forward non-terminating
-    // -------------------------------------------------------------------------
+    /* ------------------------------- SUBSCRIPTIONS ------------------------------- */
     if (operation.type === "subscription") {
-      if (shouldAddTypename && operation.query) {
-        operation.query = ensureDocumentHasTypenameSmart(operation.query as any);
-      }
       ctx.useResult = (incoming: any, _terminate?: boolean) => {
+        // Observable source -> let Villus subscribe
         if (isObservableLike(incoming)) return originalUseResult(incoming, true);
 
         const r = incoming as OperationResult<any>;
-        if (r && "data" in r && r.data) {
-          const vars = operation.variables || {};
-          const viewRoot = viewRootOf(r.data);
-          applyResolversOnGraph(viewRoot, vars, { stale: false });
-          collectEntities(viewRoot);
-          registerViewsFromResult(viewRoot, vars);
-          lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
-          return originalUseResult({ data: viewRoot }, false);
+        if (!r) return originalUseResult(incoming as any, false);
+
+        if ((r as any).error) {
+          // Forward non-terminating error frame to keep the stream alive
+          return originalUseResult({ error: (r as any).error } as any, false);
         }
-        // still call, keep stream open
-        return originalUseResult(incoming as any, false);
+
+        if (!("data" in r) || !r.data) {
+          // Keep stream open (heartbeat/keepalive frames)
+          return originalUseResult(incoming as any, false);
+        }
+
+        // Normalize and stream as non-terminating
+        const vars = operation.variables || {};
+        const viewRoot = viewRootOf((r as any).data);
+        applyResolversOnGraph(viewRoot, vars, { stale: false });
+        collectEntities(viewRoot);
+        registerViewsFromResult(viewRoot, vars);
+        lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
+        return originalUseResult({ data: viewRoot }, false);
       };
       return;
     }
 
-    // -------------------------------------------------------------------------
-    // QUERIES / MUTATIONS
-    // -------------------------------------------------------------------------
+    /* --------------------------- QUERIES / MUTATIONS --------------------------- */
 
     const cachePolicy =
       operation.cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
 
+    // Try base key, else a "cleaned" variables key (undefined-removed)
     const lookupCached = () => {
       const byBase = internals.operationCache.get(baseOpKey);
       if (byBase) return { key: baseOpKey, entry: byBase };
@@ -147,13 +138,14 @@ export function buildCachebayPlugin(
         type: operation.type,
         query: operation.query,
         variables: cleaned,
-        context: operation.context
+        context: operation.context,
       } as any);
+
       const byAlt = internals.operationCache.get(altKey);
       return byAlt ? { key: altKey, entry: byAlt } : null;
     };
 
-    // ------------------------------ CACHE-ONLY ------------------------------
+    /* ------------------------------ CACHE-ONLY ------------------------------ */
     if (cachePolicy === "cache-only") {
       const hit = lookupCached();
       if (hit) {
@@ -177,7 +169,7 @@ export function buildCachebayPlugin(
       return;
     }
 
-    // ------------------------------ CACHE-FIRST -----------------------------
+    /* ------------------------------ CACHE-FIRST ----------------------------- */
     if (cachePolicy === "cache-first") {
       const hit = lookupCached();
       if (hit) {
@@ -192,22 +184,22 @@ export function buildCachebayPlugin(
         originalUseResult({ data: viewRoot }, true);
         return;
       }
-      // miss → fetch plugin will call useResult later
+      // miss -> fetch plugin will call useResult later
     }
 
-    // ------------------------- CACHE-AND-NETWORK HIT ------------------------
+    /* ------------------------- CACHE-AND-NETWORK HIT ------------------------ */
     if (cachePolicy === "cache-and-network") {
       const hit = lookupCached();
       if (hit) {
         const { entry } = hit;
         const vars = operation.variables || entry.variables || {};
 
-        const hadTicket = !!(hydrateOperationTicket && hydrateOperationTicket.has(hit.key));
+        const hasTicket = !!(hydrateOperationTicket && hydrateOperationTicket.has(hit.key));
         const hydratingNow = !!(isHydrating && isHydrating());
-        if (hadTicket) hydrateOperationTicket!.delete(hit.key);
+        if (hasTicket) hydrateOperationTicket!.delete(hit.key);
 
-        // SSR ticket / hydrating → terminal cached (resolve Suspense immediately)
-        if (hadTicket || hydratingNow) {
+        // SSR ticket or in-flight hydration: deliver TERMINAL cached to resolve Suspense
+        if (hasTicket || hydratingNow) {
           const viewRoot = viewRootOf(entry.data);
           lastContentSigByFam.set(famKey, toSig(viewRoot));
           applyResolversOnGraph(viewRoot, vars, { stale: false });
@@ -218,21 +210,19 @@ export function buildCachebayPlugin(
           return;
         }
 
-        // Normal CN cached reveal: bind views on a view clone
+        // Normal CN cached reveal: non-terminating, fetch continues
         const viewRoot = viewRootOf(entry.data);
         lastContentSigByFam.set(famKey, toSig(viewRoot));
         applyResolversOnGraph(viewRoot, vars, { stale: false });
         collectEntities(viewRoot);
         registerViewsFromResult(viewRoot, vars);
         lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
-
-        // Non-terminating: UI updates instantly; fetch still runs
         originalUseResult({ data: viewRoot }, false);
       }
-      // no cached hit → fetch plugin will emit later
+      // no cached hit -> fetch plugin will publish
     }
 
-    // ----------------------------- RESULT PATH ------------------------------
+    /* ----------------------------- RESULT PATH ------------------------------ */
     ctx.useResult = (result: OperationResult, terminate?: boolean) => {
       const r: any = result;
       const hasData = r && "data" in r && r.data != null;
@@ -241,54 +231,47 @@ export function buildCachebayPlugin(
       const vars = operation.variables || {};
       const isCursorPage = vars && (vars.after != null || vars.before != null);
 
-      // Placeholder frames: forward, but keep op open
-      if (!hasData && !hasError) {
-        return originalUseResult(result as any, false);
-      }
+      // Placeholder frame: forward non-terminating
+      if (!hasData && !hasError) return originalUseResult(result as any, false);
 
-      // Non-terminating frames: pass through
-      if (terminate === false && hasData) {
-        return originalUseResult(result, false);
-      }
+      // Non-terminating data frame: pass through
+      if (terminate === false && hasData) return originalUseResult(result, false);
 
-      // CURSOR PAGES — terminal publish; keep op-cache RAW & PLAIN
+      // Cursor pages: terminal publish + keep op-cache fresh (RAW), UI via view clone
       if (isCursorPage && hasData) {
-        // 1) RAW for op-cache
-        const cacheRoot = toPlainDeep(r.data);
-        applyResolversOnGraph(cacheRoot, vars, { stale: true });
-        collectEntities(cacheRoot);
-        setOpCache(baseOpKey, { data: cacheRoot, variables: vars });
+        const cacheRoot = r.data; // raw result
+        args.applyResolversOnGraph(cacheRoot, vars, { stale: true });
+        args.collectEntities(cacheRoot);
+        internals.writeOpCache(baseOpKey, { data: cacheRoot, variables: vars });
 
-        // 2) VIEW for publish
         const viewRoot = viewRootOf(r.data);
-        applyResolversOnGraph(viewRoot, vars, { stale: true });
-        collectEntities(viewRoot);
-        registerViewsFromResult(viewRoot, vars);
+        args.applyResolversOnGraph(viewRoot, vars, { stale: true });
+        args.collectEntities(viewRoot);
+        args.registerViewsFromResult(viewRoot, vars);
         lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
         return originalUseResult({ data: viewRoot }, true);
       }
 
-      // WINNER (baseline) with duplicate suppression
+      // Winner (baseline) with duplicate suppression
       if (hasData) {
-        // Prepare RAW for op-cache and signature on its plain form
-        const cacheRoot = toPlainDeep(r.data);
-        applyResolversOnGraph(cacheRoot, vars, { stale: false });
-        collectEntities(cacheRoot);
+        // RAW for op-cache (fast sanitizer lives inside internals.writeOpCache)
+        const cacheRoot = r.data;
+        args.applyResolversOnGraph(cacheRoot, vars, { stale: false });
+        args.collectEntities(cacheRoot);
+        internals.writeOpCache(baseOpKey, { data: cacheRoot, variables: vars });
 
-        const prevSig = lastContentSigByFam.get(famKey);
         const nextSig = toSig(cacheRoot);
-
-        setOpCache(baseOpKey, { data: cacheRoot, variables: vars });
+        const prevSig = lastContentSigByFam.get(famKey);
         lastContentSigByFam.set(famKey, nextSig);
 
         // VIEW for publish
         const viewRoot = viewRootOf(r.data);
-        applyResolversOnGraph(viewRoot, vars, { stale: false });
-        collectEntities(viewRoot);
-        registerViewsFromResult(viewRoot, vars);
+        args.applyResolversOnGraph(viewRoot, vars, { stale: false });
+        args.collectEntities(viewRoot);
+        args.registerViewsFromResult(viewRoot, vars);
 
         if (prevSig && nextSig === prevSig) {
-          // Same content — keep existing ref to avoid re-render; still satisfy Villus
+          // Same content -> keep the existing ref to avoid churn; still satisfy Villus
           const last = lastPublishedByFam.get(famKey);
           const sameRef = last?.data ?? viewRoot;
           lastPublishedByFam.set(famKey, { data: sameRef, variables: vars });
@@ -299,13 +282,15 @@ export function buildCachebayPlugin(
         return originalUseResult({ data: viewRoot }, true);
       }
 
-      // Errors: forward terminally
-      if (hasError) {
-        return originalUseResult(result, true);
-      }
+      // Error: terminal forward
+      if (hasError) return originalUseResult(result, true);
 
       // Fallback
       return originalUseResult(result, terminate);
+    };
+
+    ctx.afterQuery = () => {
+      originalAfterQuery();
     };
   };
 
@@ -314,7 +299,7 @@ export function buildCachebayPlugin(
 
 /* ----------------------------------------------------------------------------
  * Vue provide/inject helper
- * ---------------------------------------------------------------------------- */
+ * -------------------------------------------------------------------------- */
 export const CACHEBAY_KEY: symbol = Symbol("villus-cachebay");
 
 export function provideCachebay(app: App, instance: any) {
@@ -329,5 +314,6 @@ export function provideCachebay(app: App, instance: any) {
     inspect: (instance as any).inspect,
     __entitiesTick: (instance as any).__entitiesTick,
   };
+
   app.provide(CACHEBAY_KEY, api);
 }

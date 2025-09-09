@@ -50,6 +50,7 @@ export type CachebayInternals = {
   setRelayOptionsByType: (parentTypename: string, field: string, opts: RelayOptions) => void;
 
   operationCache: Map<string, { data: any; variables: Record<string, any> }>;
+  writeOperationCache: (k: string, v: { data: any; variables: Record<string, any> }) => void;
 
   putEntity: (obj: any, override?: WritePolicy) => string | null;
   materializeEntity: (key: string) => any;

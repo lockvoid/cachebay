@@ -4,6 +4,8 @@ import {
   reactive,
   shallowReactive,
   isReactive,
+  isRef,
+  toRaw,
   ref,
   type App,
 } from "vue";
@@ -48,7 +50,10 @@ export type CachebayInstance = ClientPlugin & {
 
   identify: (obj: any) => string | null;
 
-  readFragment: (refOrKey: string | { __typename: string; id?: any; _id?: any }, materialized?: boolean) => any;
+  readFragment: (
+    refOrKey: string | { __typename: string; id?: any; _id?: any },
+    materialized?: boolean
+  ) => any;
   hasFragment: (refOrKey: string | { __typename: string; id?: any; _id?: any }) => boolean;
   writeFragment: (obj: any) => { commit(): void; revert(): void };
 
@@ -63,6 +68,7 @@ export type CachebayInstance = ClientPlugin & {
       field: string,
       variables?: Record<string, any>,
     ) => any;
+    // NOTE: your debug module can expose operations() if desired
   };
 
   listEntityKeys: (selector: string | string[]) => string[];
@@ -95,7 +101,8 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
 
   const useShallowEntities = options.entityShallow === true;
   const trackNonRelayResults = options.trackNonRelayResults !== false;
-  const OP_CACHE_MAX = typeof options.lruOperationCacheSize === "number" ? Math.max(1, options.lruOperationCacheSize) : 200;
+  const OP_CACHE_MAX =
+    typeof options.lruOperationCacheSize === "number" ? Math.max(1, options.lruOperationCacheSize) : 200;
 
   // Stores
   const entityStore = new Map<EntityKey, any>();
@@ -169,7 +176,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   }
 
   /* ───────────────────────────────────────────────────────────────────────────
-   * Entity id & parent helpers (function declarations → hoisted)
+   * Entity id & parent helpers (hoisted)
    * ────────────────────────────────────────────────────────────────────────── */
   function idOf(o: any): EntityKey | null {
     if (customIdFromObject) return customIdFromObject(o);
@@ -191,7 +198,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   }
 
   /* ───────────────────────────────────────────────────────────────────────────
-   * Connection state (function declaration → hoisted)
+   * Connection state (hoisted)
    * ────────────────────────────────────────────────────────────────────────── */
   function ensureConnectionState(key: string): ConnectionState {
     let state = connectionStore.get(key);
@@ -242,7 +249,24 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     for (let i = 0; i < toRemove.length; i++) state.views.delete(toRemove[i]);
   }
 
-  function addStrongView(state: ConnectionState, view: any) {
+  /**
+   * Strong view registry with window control:
+   * - if `resetLimit` true → hard reset limit to the requested window (baseline)
+   * - else → only extend limit (cursor pages)
+   */
+  function addStrongView(
+    state: ConnectionState,
+    view: {
+      edges: any[];
+      pageInfo: any;
+      root: any;
+      edgesKey: string;
+      pageInfoKey: string;
+      pinned?: boolean;
+      limit?: number;
+      resetLimit?: boolean;
+    }
+  ) {
     pruneInvalidViews(state);
     if (!isValidView(view)) return;
 
@@ -251,18 +275,24 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
         state.views.delete(existing);
         continue;
       }
-      if (existing.edges === view.edges) {
-        if (view.limit != null) {
-          const prev = (existing as any).limit ?? 0;
-          if (view.limit > prev) (existing as any).limit = view.limit;
+      if ((existing as any).edges === view.edges) {
+        if (typeof view.limit === "number") {
+          if (view.resetLimit === true) {
+            (existing as any).limit = view.limit; // baseline: shrink back to requested
+          } else {
+            const prev = (existing as any).limit ?? 0; // cursor: extend only
+            if (view.limit > prev) (existing as any).limit = view.limit;
+          }
         }
         if (view.pinned) (existing as any).pinned = true;
         return;
       }
     }
 
+    // new view entry
     state.views.add(view);
 
+    // cap number of strong views
     if (state.views.size > MAX_STRONG_VIEWS) {
       let toDrop: any | null = null;
       for (const v of state.views.values()) {
@@ -280,7 +310,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   }
 
   /* ───────────────────────────────────────────────────────────────────────────
-   * Entity write/read (function declaration → hoisted)
+   * Entity write/read (hoisted)
    * ────────────────────────────────────────────────────────────────────────── */
   function putEntity(obj: any, override?: "replace" | "merge"): EntityKey | null {
     const key = idOf(obj);
@@ -317,7 +347,8 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
    * ────────────────────────────────────────────────────────────────────────── */
   const HAS_WEAKREF = typeof (globalThis as any).WeakRef !== "undefined";
   const PROXY_CACHE = HAS_WEAKREF ? new Map<EntityKey, WeakRef<any>>() : new Map<EntityKey, any>();
-  const MATERIALIZED_CACHE_REF: Map<EntityKey, any> | null = HAS_WEAKREF ? new Map<EntityKey, WeakRef<any>>() : null;
+  const MATERIALIZED_CACHE_REF: Map<EntityKey, any> | null =
+    HAS_WEAKREF ? new Map<EntityKey, WeakRef<any>>() : null;
 
   function isInterfaceTypename(t: string | null) { return !!(t && interfaceMap[t]); }
   function getImplementationsFor(t: string) { return interfaceMap[t] || []; }
@@ -426,18 +457,17 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
 
   /* ───────────────────────────────────────────────────────────────────────────
    * Stitch a result tree so edges[].node become live proxies
-   * (embedded non-factory function; not attached to `internals`)
    * ────────────────────────────────────────────────────────────────────────── */
   function materializeResult(root: any) {
-    if (!root || typeof root !== 'object') return;
+    if (!root || typeof root !== "object") return;
     const stack = [root];
     while (stack.length) {
       const cur: any = stack.pop();
-      if (!cur || typeof cur !== 'object') continue;
+      if (!cur || typeof cur !== "object") continue;
 
-      if (Object.prototype.hasOwnProperty.call(cur, 'node')) {
+      if (Object.prototype.hasOwnProperty.call(cur, "node")) {
         const n = cur.node;
-        if (n && typeof n === 'object') {
+        if (n && typeof n === "object") {
           const key = idOf(n);
           if (key) {
             const resolved = resolveConcreteEntityKey(key) || key;
@@ -447,7 +477,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
       }
       for (const k of Object.keys(cur)) {
         const v = cur[k];
-        if (v && typeof v === 'object') stack.push(v);
+        if (v && typeof v === "object") stack.push(v);
       }
     }
   }
@@ -615,11 +645,19 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     return keys.map((k) => proxyForEntityKey(k));
   }
 
-  // Walk graph for field resolvers
+  /* ───────────────────────────────────────────────────────────────────────────
+   * Graph walker for resolvers
+   * ────────────────────────────────────────────────────────────────────────── */
   function walkGraph(
     obj: any,
     parentTypename: string | null,
-    visitNode: (pt: string | null, parentObj: any, field: string, v: any, set: (nv: any) => void) => void,
+    visitNode: (
+      pt: string | null,
+      parentObj: any,
+      field: string,
+      v: any,
+      set: (nv: any) => void
+    ) => void,
   ) {
     if (!obj || typeof obj !== "object") return;
     const pt = (obj && (obj as any)[TYPENAME_KEY]) || parentTypename;
@@ -637,7 +675,49 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     }
   }
 
-  // Resolvers binding
+  /* ───────────────────────────────────────────────────────────────────────────
+   * Op-cache writer (plain, proxy-safe, LRU)
+   * ────────────────────────────────────────────────────────────────────────── */
+  function unwrapShallow<T = any>(v: any): T {
+    const base = isRef(v) ? v.value : v;
+    return (isReactive(base) ? toRaw(base) : base) as T;
+  }
+
+  /** Make payload plain: unwrap root & first-level props/array items */
+  function sanitizeForOpCache<T = any>(data: any): T {
+    const root = unwrapShallow(data);
+    if (!root || typeof root !== "object") return root as T;
+
+    if (Array.isArray(root)) {
+      const out = new Array(root.length);
+      for (let i = 0; i < root.length; i++) out[i] = unwrapShallow(root[i]);
+      return out as any;
+    }
+
+    const out: any = {};
+    const keys = Object.keys(root);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      out[k] = unwrapShallow((root as any)[k]);
+    }
+    return out;
+  }
+
+  /** Public writer so plugin can store RAW results efficiently */
+  function writeOpCache(opKey: string, payload: { data: any; variables: Record<string, any> }) {
+    const plainData = sanitizeForOpCache(payload.data);
+    const plainVars = sanitizeForOpCache(payload.variables || {});
+    operationCache.set(opKey, { data: plainData, variables: plainVars });
+
+    if (operationCache.size > OP_CACHE_MAX) {
+      const oldest = operationCache.keys().next().value as string | undefined;
+      if (oldest) operationCache.delete(oldest);
+    }
+  }
+
+  /* ───────────────────────────────────────────────────────────────────────────
+   * Resolvers binding
+   * ────────────────────────────────────────────────────────────────────────── */
   let FIELD_RESOLVERS: Record<string, Record<string, FieldResolver>> = {};
   const RESOLVE_SIG = Symbol("cb_resolve_sig");
 
@@ -665,6 +745,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     isReactive,
     reactive,
     shallowReactive,
+    writeOpCache, // 👈 moved here for the plugin
 
     applyFieldResolvers: (typename, obj, vars, hint) => {
       const map = FIELD_RESOLVERS[typename];
@@ -720,9 +801,8 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   }
 
   // Register views from result (Relay connections)
-  // In src/core/internals.ts (inside createCache scope)
   const registerViewsFromResult = (root: any, variables: Record<string, any>) => {
-    walkGraph(root, "Query", (parentTypename, parentObj, field, value, set) => {
+    walkGraph(root, "Query", (parentTypename, parentObj, field, value) => {
       if (!parentTypename) return;
 
       const relayOptions = getRelayOptionsByType(parentTypename, field);
@@ -742,7 +822,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
       const edgesField = relayOptions.names.edges;
       const pageInfoField = relayOptions.names.pageInfo;
 
-      // Prepare a fresh view container (never reuse source arrays)
+      // Fresh view container (never reuse incoming arrays)
       let viewObj: any = (parentObj as any)[field];
       const needNew =
         !viewObj ||
@@ -755,7 +835,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
         viewObj.__typename = (value as any)?.__typename ?? "Connection";
         viewObj[edgesField] = reactive([] as any[]);
         viewObj[pageInfoField] = shallowReactive({});
-        (parentObj as any)[field] = viewObj; // replace node on parent
+        (parentObj as any)[field] = viewObj;
       }
 
       // Merge connection-level meta (exclude edges/pageInfo/__typename)
@@ -768,12 +848,14 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
         }
       }
 
-      // Compute visible window based on requested
-      const requested = typeof (variables as any)?.first === "number"
-        ? (variables as any).first
-        : (Array.isArray(edgesArr) ? edgesArr.length : 0);
+      // Decide visible window
+      const requested =
+        typeof (variables as any)?.first === "number"
+          ? (variables as any).first
+          : (Array.isArray(edgesArr) ? edgesArr.length : 0);
 
-      const isCursorPage = !!((variables as any)?.after != null || (variables as any)?.before != null);
+      const isCursorPage =
+        (variables as any)?.after != null || (variables as any)?.before != null;
 
       let currentLimit = 0;
       if (state.views && state.views.size) {
@@ -786,12 +868,12 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
       if (!state.initialized) {
         nextLimit = requested;
       } else if (isCursorPage) {
-        nextLimit = Math.min(state.list.length, currentLimit + requested);
+        nextLimit = Math.min(state.list.length, currentLimit + requested); // extend
       } else {
-        nextLimit = requested;
+        nextLimit = requested; // baseline reset
       }
 
-      // Register/update strong view using viewObj's reactive refs
+      // Register/update strong view using the view's reactive refs
       addStrongView(state, {
         edges: viewObj[edgesField],
         pageInfo: viewObj[pageInfoField],
@@ -800,6 +882,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
         pageInfoKey: pageInfoField,
         pinned: false,
         limit: nextLimit,
+        resetLimit: !isCursorPage, // baseline should shrink back to requested
       });
 
       // sync immediately so viewObj shows correct window
@@ -819,11 +902,9 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
       const current = stack.pop();
       if (!current || typeof current !== "object") continue;
       if (visited.has(current as object)) continue;
-
       visited.add(current as object);
 
       const typename = (current as any)[TYPENAME_KEY];
-
       if (typename) {
         const ek = idOf(current);
         if (ek) {
@@ -874,7 +955,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     });
   }
 
-  // SSR feature (now receives the materializer)
+  // SSR feature
   const ssr = createSSRFeatures({
     entityStore,
     connectionStore,
@@ -886,10 +967,10 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     resetRuntime,
     applyResolversOnGraph,
     collectEntities,
-    materializeResult, // ✅ stitch hydrated results so UI is reactive immediately
+    materializeResult,
   });
 
-  // Cache plugin (policies + stitching) — cache-only scope, no take-latest here
+  // Cache plugin
   const plugin = buildCachebayPlugin(internals, {
     shouldAddTypename,
     opCacheMax: OP_CACHE_MAX,
@@ -915,7 +996,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     if (!raw) return false;
     const { typename, id } = parseEntityKey(raw);
     if (!typename) return false;
-    if (isInterfaceTypename(typename) && id != null) {
+    if (isInterfaceTypenameLocal(typename) && id != null) {
       const impls = (interfaceMap as Record<string, string[]>)[typename] || [];
       for (let i = 0; i < impls.length; i++) {
         const k = impls[i] + ":" + id;
@@ -926,12 +1007,15 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     return entityStore.has(raw);
   }
 
-  function readFragment(refOrKey: EntityKey | { __typename: string; id?: any; _id?: any }, materialized = true) {
+  function readFragment(
+    refOrKey: EntityKey | { __typename: string; id?: any; _id?: any },
+    materialized = true
+  ) {
     const key = keyFromRefOrKey(refOrKey);
     if (!key) return undefined;
     if (!materialized) {
       const { typename, id } = parseEntityKey(key);
-      if (isInterfaceTypename(typename) && id != null) {
+      if (isInterfaceTypenameLocal(typename) && id != null) {
         const impls = interfaceMap[typename] || [];
         for (let i = 0; i < impls.length; i++) {
           const k = impls[i] + ":" + id;
@@ -949,7 +1033,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     let key = idOf(obj);
     if (key) {
       const { typename } = parseEntityKey(key);
-      if (isInterfaceTypename(typename)) {
+      if (isInterfaceTypenameLocal(typename)) {
         const resolved = resolveConcreteEntityKey(key);
         if (!resolved) return { commit() { }, revert() { } };
         key = resolved;
@@ -1028,6 +1112,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     entityStore,
     connectionStore,
     stableIdentityExcluding,
+    operationCache, // if your debug UI wants it
   });
 
   (instance as any).listEntityKeys = listEntityKeysMatching;

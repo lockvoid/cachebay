@@ -1,1 +1,10 @@
 @import "tailwindcss";
+
+@theme {
+  --color-lego-red: #da1e28;
+  --color-lego-yellow: #fdd90d;
+}
+
+html {
+  font-size: 18px;
+}
