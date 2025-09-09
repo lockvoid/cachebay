@@ -37,10 +37,25 @@ export const useSettings = defineStore('settings', () => {
     default: () => 'append' as string
   });
 
-  const ssr = ref(ssrCookie.value ?? true);
-  const suspense = ref(suspenseCookie.value ?? true);
-  const cachePolicy = ref(cachePolicyCookie.value ?? 'cache-and-network');
-  const relayMode = ref(relayModeCookie.value ?? 'append');
+  const optimisticCookie = useCookie('settings-optimistic', {
+    default: () => true,
+
+    serializer: {
+      read: (value) => {
+        return value === 'true';
+      },
+
+      write: (value) => {
+        return String(value);
+      }
+    }
+  });
+
+  const ssr = ref(ssrCookie.value);
+  const suspense = ref(suspenseCookie.value);
+  const cachePolicy = ref(cachePolicyCookie.value);
+  const relayMode = ref(relayModeCookie.value);
+  const optimistic = ref(optimisticCookie.value);
 
   watch(ssr, (newValue) => {
     ssrCookie.value = newValue;
@@ -58,10 +73,15 @@ export const useSettings = defineStore('settings', () => {
     relayModeCookie.value = newValue;
   });
 
+  watch(optimistic, (newValue) => {
+    optimisticCookie.value = newValue;
+  });
+
   return {
     ssr,
     suspense,
     cachePolicy,
-    relayMode
+    relayMode,
+    optimistic
   };
 });

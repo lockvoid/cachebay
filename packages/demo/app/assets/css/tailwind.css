@@ -5,6 +5,10 @@
   --color-lego-yellow: #fdd90d;
 }
 
+@utility a {
+  @apply underline decoration-2 underline-offset-4 hover:decoration-4 hover:cursor-pointer;
+}
+
 html {
   font-size: 18px;
 }

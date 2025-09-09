@@ -3,41 +3,40 @@ import { useCache } from 'villus-cachebay';
 
 export const UPDATE_COLOR_MUTATION = `
   ${COLOR_FIELDS}
-  ${VALIDATION_ERROR_FIELDS}
 
-  mutation UpdateColor($id: Int!, $input: colorsCetInput!) {
+  mutation UpdateColor($id: Int!, $input: colorsSetInput) {
     updateColorsByPk(pkColumns: { id: $id }, _set: $input) {
-      color {
-        ...ColorFields
-      }
-
-      errors {
-        ...ValidationErrorFields
-      }
+      ...ColorFields
     }
   }
 `;
 
 export const useUpdateColor = () => {
+  const settings = useSettings();
+
   const updateColor = useMutation(UPDATE_COLOR_MUTATION);
 
   const cache = useCache();
 
   const execute = async (variables) => {
-    const tx = cache.modifyOptimistic((state) => {
-      state.patch(`Color:${variables.id}`, { ...variables.input });
-    });
+    let tx;
+
+    if (settings.optimistic) {
+      tx = cache.modifyOptimistic((state) => {
+        state.patch({ ...variables.input, __typename: 'colors', id: variables.id });
+      });
+    }
 
     try {
-      const result = await updateColor.execute(variables);
+      const result = await updateColor.execute({ ...variables, id: getPk(variables.id) });
 
       if (result.error) {
-        tx.revert();
+        tx?.revert();
       }
 
       return result;
     } catch (error) {
-      tx.revert();
+      tx?.revert();
 
       throw error;
     }

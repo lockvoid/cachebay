@@ -7,6 +7,7 @@
     <AppLogo />
 
     <nav class="flex items-center gap-6 px-6 py-3">
+      <!--
       <AppNavLink to="/sets">
         Sets
       </AppNavLink>
@@ -14,6 +15,7 @@
       <AppNavLink to="/parts">
         Parts
       </AppNavLink>
+      -->
 
       <AppNavLink to="/colors">
         Colors
@@ -41,15 +43,21 @@
       </label>
 
       <label class="flex items-center gap-2 text-sm">
-        <input v-model="settings.ssr" type="checkbox" id="dark-mode" />
+        <input v-model="settings.ssr" type="checkbox" />
 
         <span>SSR</span>
       </label>
 
       <label class="flex items-center gap-2 text-sm">
-        <input v-model="settings.suspense" type="checkbox" id="dark-mode" />
+        <input v-model="settings.suspense" type="checkbox" />
 
         <span>Suspense</span>
+      </label>
+
+      <label class="flex items-center gap-2 text-sm">
+        <input v-model="settings.optimistic" type="checkbox" />
+
+        <span>Optimistic</span>
       </label>
     </div>
   </header>

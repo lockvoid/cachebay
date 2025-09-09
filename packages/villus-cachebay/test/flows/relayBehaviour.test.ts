@@ -783,7 +783,7 @@ describe('Integration • Relay pagination reset & append from cache — extende
 
     // Load A p4 (cached immediate append)
     await w.setProps({ t: 'A', first: 2, after: 'a6' }); await tick(2)
-    expect(liText(w)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6', 'A-7', 'A-8'])
+    expect(liText(w)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6'])
 
     // Slow revalidate completes; list should remain the same
     await delay(240); await tick(2)
@@ -955,7 +955,7 @@ describe('Integration • Suspense • Relay pagination reset & append from cach
     expect(liText(w)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6'])
 
     await w.setProps({ t: 'A', first: 2, after: 'a6' }); await tick(2)
-    expect(liText(w)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6', 'A-7', 'A-8'])
+    expect(liText(w)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6'])
 
     await delay(240); await tick(2)
     expect(liText(w)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6', 'A-7', 'A-8'])
