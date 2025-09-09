@@ -7,17 +7,17 @@
     <AppLogo />
 
     <nav class="flex items-center gap-6 px-6 py-3">
-      <NuxtLink to="/sets" class="underline underline-offset-4 decoration-2 hover:decoration-4 hover:decoration-lego-yellow">
+      <AppNavLink to="/sets">
         Sets
-      </NuxtLink>
+      </AppNavLink>
 
-      <NuxtLink to="/parts" class="underline underline-offset-4 decoration-2 hover:decoration-4 hover:decoration-yellow-500">
+      <AppNavLink to="/parts">
         Parts
-      </NuxtLink>
+      </AppNavLink>
 
-      <NuxtLink to="/colors" class="underline underline-offset-4 decoration-2 hover:decoration-4 hover:decoration-yellow-500">
+      <AppNavLink to="/colors">
         Colors
-      </NuxtLink>
+      </AppNavLink>
     </nav>
 
     <div class="ml-auto flex items-center gap-3 px-6 py-3 text-sm bg-gray-100 rounded-full">
