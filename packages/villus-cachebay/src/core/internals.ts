@@ -228,6 +228,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
         views: new Set(),
         keySet: new Set(),
         initialized: false,
+        window: 0,
       } as ConnectionState;
       (state as any).__key = key;
       connectionStore.set(key, state);
@@ -720,37 +721,51 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   const registerViewsFromResult = (root: any, variables: Record<string, any>) => {
     walkGraph(root, "Query", (parentTypename, parentObj, field, value) => {
       if (!parentTypename) return;
-      const relayOptions = getRelayOptionsByType(parentTypename, field);
-      if (!relayOptions) return;
 
+      const spec = getRelayOptionsByType(parentTypename, field);
+      if (!spec) return;
+
+      // Resolve key/state
       const parentId = (parentObj as any)?.id ?? (parentObj as any)?._id;
       const parentKey = parentEntityKeyFor(parentTypename, parentId) || "Query";
-      const key = buildConnectionKey(parentKey!, field, relayOptions as any, variables);
-      const state = ensureConnectionState(key);
+      const connKey = buildConnectionKey(parentKey!, field, spec as any, variables);
+      const state = ensureConnectionState(connKey);
 
-      const edgesArr = readPathValue(value, relayOptions.segs.edges);
-      const pageInfoObj = readPathValue(value, relayOptions.segs.pageInfo);
+      // Extract parts
+      const edgesArr = readPathValue(value, spec.segs.edges);
+      const pageInfoObj = readPathValue(value, spec.segs.pageInfo);
       if (!edgesArr || !pageInfoObj) return;
 
-      const edgesField = relayOptions.names.edges;
-      const pageInfoField = relayOptions.names.pageInfo;
+      const edgesField = spec.names.edges;
+      const pageInfoField = spec.names.pageInfo;
 
+      const isCursorPage =
+        (variables as any)?.after != null || (variables as any)?.before != null;
+
+      // Requested "page" size from variables (fallback to payload size once)
+      const pageSize =
+        typeof (variables as any)?.first === "number"
+          ? (variables as any).first
+          : (Array.isArray(edgesArr) ? edgesArr.length : 0);
+
+      // Prepare/reuse parent view container
       let viewObj: any = (parentObj as any)[field];
-      const needNew =
+      const invalid =
         !viewObj ||
         typeof viewObj !== "object" ||
         !Array.isArray((viewObj as any)[edgesField]) ||
         !(viewObj as any)[pageInfoField];
 
-      if (needNew) {
+      if (invalid) {
         viewObj = Object.create(null);
         viewObj.__typename = (value as any)?.__typename ?? "Connection";
-        viewObj[edgesField] = reactive([] as any[]);
-        viewObj[pageInfoField] = shallowReactive({});
         (parentObj as any)[field] = viewObj;
       }
+      if (!isReactive(viewObj[edgesField])) viewObj[edgesField] = reactive(viewObj[edgesField] || []);
+      if (!isReactive(viewObj[pageInfoField])) viewObj[pageInfoField] = shallowReactive(viewObj[pageInfoField] || {});
 
-      const exclude = new Set([edgesField, relayOptions.paths.pageInfo, "__typename"]);
+      // Merge connection-level meta
+      const exclude = new Set([edgesField, spec.paths.pageInfo, "__typename"]);
       if (value && typeof value === "object") {
         const vk = Object.keys(value);
         for (let i = 0; i < vk.length; i++) {
@@ -759,28 +774,17 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
         }
       }
 
-      const requested =
-        typeof (variables as any)?.first === "number"
-          ? (variables as any).first
-          : (Array.isArray(edgesArr) ? edgesArr.length : 0);
-
-      const isCursorPage = !!((variables as any)?.after != null || (variables as any)?.before != null);
-
-      let currentLimit = 0;
-      if (state.views && state.views.size) {
-        state.views.forEach((v: any) => {
-          if (v && typeof v.limit === "number" && v.limit > currentLimit) currentLimit = v.limit;
-        });
-      }
-
-      let nextLimit: number;
+      // ---- CANONICAL WINDOW: update exactly once per bind ----
       if (!state.initialized) {
-        nextLimit = requested;
+        state.window = pageSize;  // first bind = one page
       } else if (isCursorPage) {
-        nextLimit = Math.min(state.list.length, currentLimit + requested);
+        state.window = Math.min(state.list.length, (state.window || 0) + pageSize);
       } else {
-        nextLimit = requested;
+        state.window = pageSize;  // baseline reset back to one page
       }
+
+      // Keep exactly one canonical view for this connection key
+      state.views.clear();
 
       addStrongView(state, {
         edges: viewObj[edgesField],
@@ -789,14 +793,22 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
         edgesKey: edgesField,
         pageInfoKey: pageInfoField,
         pinned: false,
-        limit: nextLimit,
+        limit: state.window,       // <- single source of truth
       });
 
+      // Sync so UI renders now with the right window
       synchronizeConnectionViews(state);
 
       if (!state.initialized) state.initialized = true;
+
+      // DEBUG
+      console.debug("sdcsc", variables);
+      console.debug("Connection key:", connKey);
+      console.debug("[views]", Array.from(state.views).map(v => v.limit));
     });
   };
+  // console.debug('Connection key:', connKey);
+  // console.debug('[views]', Array.from(state.views).map(v => v.limit));
 
   // Collect non-Relay entities
   function collectEntities(root: any) {
