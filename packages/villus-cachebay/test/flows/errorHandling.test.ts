@@ -1,9 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { defineComponent, h, computed, watch } from 'vue';
-import { mount } from '@vue/test-utils';
-import { createClient } from 'villus';
-import { createCache } from '@/src';
 import { createFetchMock, type Route, tick, delay } from '@/test/helpers';
+import { mountWithClient } from '@/test/helpers/integration';
+import { createCache } from '@/src';
 
 /* -----------------------------------------------------------------------------
  * Shared Relay query & cache factory
@@ -21,7 +20,7 @@ const COLORS = /* GraphQL */ `
 function makeCache() {
   return createCache({
     addTypename: true,
-    resolvers: ({ relay }: any) => ({ Query: { colors: relay() } },
+    resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
     keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
   });
 }
@@ -106,23 +105,26 @@ describe('Integration • Errors', () => {
       {
         when: ({ variables }) => variables.first === 2 && !variables.after,
         delay: 5,
-        respond: () => ({ error: new Error('Boom') },
+        respond: () => ({ error: new Error('Boom') }),
       },
     ];
     const cache = makeCache();
-    const fx = createFetchMock(routes);
-    const client = createClient({ url: '/err', use: [cache as any, fx.plugin] });
-    mocks.push(fx);
 
     const renders: string[][] = [];
     const errors: string[] = [];
     const empties: string[] = [];
 
     const App = MakeHarness('network-only');
-    mount(App, {
-      props: { first: 2, renders, errors, empties, name: 'E1' },
-      global: { plugins: [client as any] },
-    });
+    const { wrapper, fx } = await mountWithClient(
+      defineComponent({
+        setup() {
+          return () => h(App, { first: 2, renders, errors, empties, name: 'E1' });
+        }
+      }),
+      routes,
+      cache
+    );
+    mocks.push(fx);
 
     await delay(10); await tick();
     expect(errors.length).toBe(1);
@@ -136,7 +138,7 @@ describe('Integration • Errors', () => {
       {
         when: ({ variables }) => variables.first === 2 && !variables.after,
         delay: 30,
-        respond: () => ({ error: new Error('Older error') },
+        respond: () => ({ error: new Error('Older error') }),
       },
       // Newer op (first=3) – fast data
       {
@@ -151,26 +153,30 @@ describe('Integration • Errors', () => {
               pageInfo: {},
             },
           },
-        },
+        }),
       },
     ];
     const cache = makeCache();
-    const fx = createFetchMock(routes);
-    const client = createClient({ url: '/gating', use: [cache as any, fx.plugin] });
-    mocks.push(fx);
 
     const renders: string[][] = [];
     const errors: string[] = [];
     const empties: string[] = [];
 
     const App = MakeHarness('network-only');
-    const w = mount(App, {
-      props: { first: 2, renders, errors, empties, name: 'GATE' },
-      global: { plugins: [client as any] },
-    });
+    const { wrapper, fx } = await mountWithClient(
+      defineComponent({
+        props: ['first'],
+        setup(props) {
+          return () => h(App, { first: props.first, renders, errors, empties, name: 'GATE' });
+        }
+      }),
+      routes,
+      cache
+    );
+    mocks.push(fx);
 
     // Newer leader
-    await w.setProps({ first: 3 }); await tick();
+    await wrapper.setProps({ first: 3 }); await tick();
 
     await delay(10); await tick();
     expect(renders).toEqual([['NEW']]);
@@ -199,34 +205,39 @@ describe('Integration • Errors', () => {
               pageInfo: {},
             },
           },
-        },
+        }),
       },
       // Older cursor op (after='p1') slow error -> DROPPED
       {
         when: ({ variables }) => variables.after === 'p1' && variables.first === 2,
         delay: 30,
-        respond: () => ({ error: new Error('Cursor page failed') },
+        respond: () => ({ error: new Error('Cursor page failed') }),
       },
     ];
 
     const cache = makeCache();
-    const fx = createFetchMock(routes);
-    const client = createClient({ url: '/cursor-drop', use: [cache as any, fx.plugin] });
-    mocks.push(fx);
 
     const renders: string[][] = [];
     const errors: string[] = [];
     const empties: string[] = [];
 
     const App = MakeHarness('network-only');
-    const w = mount(App, {
-      // Start with older cursor op in-flight…
-      props: { first: 2, after: 'p1', renders, errors, empties, name: 'CR' },
-      global: { plugins: [client as any] },
-    });
+    const { wrapper, fx } = await mountWithClient(
+      defineComponent({
+        props: ['first', 'after'],
+        setup(props) {
+          return () => h(App, { first: props.first, after: props.after, renders, errors, empties, name: 'CR' });
+        }
+      }),
+      routes,
+      cache
+    );
+    mocks.push(fx);
 
+    // Start with older cursor op in-flight…
+    await wrapper.setProps({ first: 2, after: 'p1' });
     // …then issue the newer leader (no cursor)
-    await w.setProps({ first: 2, after: undefined }); await tick();
+    await wrapper.setProps({ first: 2, after: undefined }); await tick();
 
     // Newer success arrives
     await delay(10); await tick();
@@ -256,7 +267,7 @@ describe('Integration • Errors', () => {
               pageInfo: {},
             },
           },
-        },
+        }),
       },
       // O2: first=3 (fast error)
       { when: ({ variables }) => variables.first === 3 && !variables.after, delay: 5, respond: () => ({ error: new Error('O2 err') }) },
@@ -273,28 +284,34 @@ describe('Integration • Errors', () => {
               pageInfo: {},
             },
           },
-        },
+        }),
       },
     ];
 
     const cache = makeCache();
-    const fx = createFetchMock(routes);
-    const client = createClient({ url: '/reorder', use: [cache as any, fx.plugin] });
-    mocks.push(fx);
 
     const renders: string[][] = [];
     const errors: string[] = [];
     const empties: string[] = [];
 
     const App = MakeHarness('network-only');
-    const w = mount(App, {
-      props: { first: 2, renders, errors, empties, name: 'REORD' },
-      global: { plugins: [client as any] },
-    });
+    const { wrapper, fx } = await mountWithClient(
+      defineComponent({
+        props: ['first'],
+        setup(props) {
+          return () => h(App, { first: props.first, renders, errors, empties, name: 'REORD' });
+        }
+      }),
+      routes,
+      cache
+    );
+    mocks.push(fx);
 
+    // Start with O1
+    await wrapper.setProps({ first: 2 });
     // enqueue O2 then O3
-    await w.setProps({ first: 3 }); await tick();
-    await w.setProps({ first: 4 }); await tick();
+    await wrapper.setProps({ first: 3 }); await tick();
+    await wrapper.setProps({ first: 4 }); await tick();
 
     // Fast error arrives (dropped), medium still pending
     await delay(10); await tick();
