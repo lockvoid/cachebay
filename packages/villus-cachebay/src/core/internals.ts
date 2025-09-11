@@ -118,10 +118,10 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   });
 
   // Views (entity/connection views & proxy registration)
-  const views = createViews({
+  const views = createViews({}, {
     entityStore: graph.entityStore,
     connectionStore: graph.connectionStore,
-    ensureConnectionState: graph.getOrCreateConnection,
+    ensureConnectionState: graph.ensureReactiveConnection,
     materializeEntity: graph.materializeEntity,
     makeEntityProxy: graph.makeReactive,
     idOf: graph.identify,

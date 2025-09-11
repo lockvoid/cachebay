@@ -16,20 +16,22 @@ import { readPathValue } from "./utils";
 
 export type ViewsAPI = ReturnType<typeof createViews>;
 
-export function createViews(args: {
-  // from graph.ts
-  entityStore: Map<EntityKey, any>;
-  connectionStore: Map<string, ConnectionState>;
-  ensureConnectionState: (key: string) => ConnectionState;
+export function createViews(
+  options: {},
+  dependencies: {
+    // from graph.ts
+    entityStore: Map<EntityKey, any>;
+    connectionStore: Map<string, ConnectionState>;
+    ensureConnectionState: (key: string) => ConnectionState;
 
-  // entity helpers
-  materializeEntity: (key: EntityKey) => any;
-  makeEntityProxy: (base: any) => any;
+    // entity helpers
+    materializeEntity: (key: EntityKey) => any;
+    makeEntityProxy: (base: any) => any;
 
-  // for id + proxies
-  idOf: (o: any) => EntityKey | null;
-
-}) {
+    // for id + proxies
+    idOf: (o: any) => EntityKey | null;
+  }
+) {
   const {
     entityStore,
     connectionStore,
@@ -37,7 +39,7 @@ export function createViews(args: {
     materializeEntity,
     makeEntityProxy,
     idOf,
-  } = args;
+  } = dependencies;
 
   /* ───────────────────────────────────────────────────────────────────────────
    * Entity views: registration & synchronization
