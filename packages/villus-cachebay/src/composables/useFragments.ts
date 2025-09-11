@@ -33,7 +33,7 @@ export function useFragments<T = any>(pattern: string | string[], opts: { materi
       if (currentKeys !== lastKeys) {
         lastKeys = currentKeys;
         // Deep clone to ensure snapshots don't update
-        cachedResult = currentList.map((item: any) => item ? JSON.parse(JSON.stringify(item)) : item);
+        cachedResult = currentList.map((item: any) => item ? structuredClone(item) : item);
       }
       
       return cachedResult;

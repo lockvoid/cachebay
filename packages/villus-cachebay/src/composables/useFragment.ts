@@ -13,7 +13,7 @@ import { useCache } from "./useCache";
 
 /** useFragment… (unchanged) */
 type UseFragmentMode = "auto" | "static" | "dynamic";
-type UseFragmentOpts = { materialized?: boolean; mode?: UseFragmentMode; asObject?: boolean };
+type UseFragmentOpts = { materialized?: boolean; mode?: UseFragmentMode; };
 
 function keySig(v: any): string {
   if (!v) return "";
@@ -40,12 +40,10 @@ export function useFragment<T = any>(
     const result = input ? (readFragment(input, { materialized }) as any as T) : undefined;
     
     // If not materialized, return a deep clone to ensure it's a true snapshot
+    // This is needed because materializeEntity uses a WeakRef cache that gets mutated in place
     if (!materialized) {
-      return result ? JSON.parse(JSON.stringify(result)) : result;
+      return result ? structuredClone(result) : result;
     }
-    
-    // If asObject, return reactive object directly
-    if (opts.asObject) return result;
     
     // Default: return reactive Ref
     const out = shallowRef<T | undefined>(result);
