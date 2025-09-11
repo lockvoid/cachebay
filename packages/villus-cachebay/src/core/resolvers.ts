@@ -11,9 +11,11 @@ import { isReactive, reactive } from "vue";
 export { relay } from "../resolvers/relay";
 
 // Relay-related helpers
+// These are now deprecated - kept for backward compatibility but not used
 export const relayResolverIndex = new Map<string, any>();
 export const relayResolverIndexByType = new Map<string, Map<string, any>>();
 
+// Deprecated global functions - these now just operate on the deprecated global maps
 export function getRelayOptionsByType(typename: string | null, field: string): any {
   if (!typename) return null;
   const typeMap = relayResolverIndexByType.get(typename);
@@ -44,13 +46,23 @@ export function createResolvers(
   const { resolvers: resolverSpecs } = options;
   const { graph, views } = dependencies;
 
-  // Use the global maps for relay options so they're accessible everywhere
+  // Instance-specific relay options storage (not global!)
+  const relayOptionsByType = new Map<string, Map<string, any>>();
+  
   const setRelayOptionsByTypeImpl = (typename: string, field: string, opts: any) => {
-    setRelayOptionsByType(typename, field, opts); // Use the global function
+    let typeMap = relayOptionsByType.get(typename);
+    if (!typeMap) {
+      typeMap = new Map();
+      relayOptionsByType.set(typename, typeMap);
+    }
+    typeMap.set(field, opts);
   };
   
   const getRelayOptionsByTypeImpl = (typename: string | null, field: string) => {
-    return getRelayOptionsByType(typename, field); // Use the global function
+    if (!typename) return null;
+    const typeMap = relayOptionsByType.get(typename);
+    if (!typeMap) return null;
+    return typeMap.get(field);
   };
 
   // Create utils object with helper functions

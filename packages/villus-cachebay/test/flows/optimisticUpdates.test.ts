@@ -119,23 +119,35 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
 
     expect(getListItems(wrapper)).toEqual(['Post 1', 'Post 2', 'Post 3']);
 
-    // Apply optimistic update
-    const t = (cache as any).modifyOptimistic((c: any) => {
+    const tx = (cache as any).modifyOptimistic((c: any) => {
       const [conn] = c.connections({ parent: 'Query', field: 'posts' });
-      
-      // Add new post at end
+
+      // Add Post 5 at end
       conn.addNode({ __typename: 'Post', id: '5', title: 'Post 5', content: 'Content for Post 5', authorId: '1' }, { cursor: 'c5', position: 'end' });
+
+      // Add Post 6 after Post 5
+      conn.addNode({ __typename: 'Post', id: '6', title: 'Post 6', content: 'Content for Post 6', authorId: '1' }, { cursor: 'c6', position: 'end' });
+
+      // Remove Post 1
+      conn.removeNode({ __typename: 'Post', id: '1' });
+
+      // Add Post 4 as first
+      conn.addNode({ __typename: 'Post', id: '4', title: 'Post 4', content: 'Content for Post 4', authorId: '1' }, { cursor: 'c4', position: 'start' });
+
+      // Update pageInfo
+      conn.patch({ endCursor: 'c6', hasNextPage: false });
     });
-    t.commit?.();
-    
-    // Wait for microtask to complete (view synchronization happens in microtask)
-    await new Promise(resolve => queueMicrotask(() => resolve(undefined)));
-    await tick();
-    await delay(10);
+    tx.commit?.();
+
+    await tick(2);
 
     // Check the rendered output
     const items = getListItems(wrapper);
-    expect(items).toEqual(['Post 1', 'Post 2', 'Post 3', 'Post 5']);
+    expect(items).toEqual(['Post 4', 'Post 2', 'Post 3', 'Post 5', 'Post 6']);
+
+    // Check pageInfo was updated
+    expect(wrapper.find('.pageInfo').text()).toContain('"endCursor":"c6"');
+    expect(wrapper.find('.pageInfo').text()).toContain('"hasNextPage":false');
   });
 
   it.skip('Connection: dedup on add; re-add after remove inserts at specified position', async () => {

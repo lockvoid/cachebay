@@ -233,7 +233,8 @@ export function createViews(
 
         if (edgesArray.length > desiredLength) edgesArray.splice(desiredLength);
 
-        for (let i = oldLen; i < desiredLength; i++) {
+        // Always resync all items to handle removals and reordering correctly
+        for (let i = 0; i < desiredLength; i++) {
           const lastC = state.list[state.list.length - 1]?.cursor;
           const entry = state.list[i];
           let edgeObject = edgesArray[i] as any;
