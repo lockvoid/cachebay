@@ -48,6 +48,7 @@ export type CachebayInternals = {
   relayResolverIndexByType: Map<string, Map<string, RelayOptions>>;
   getRelayOptionsByType: (parentTypename: string | null, field: string) => RelayOptions | undefined;
   setRelayOptionsByType: (parentTypename: string, field: string, opts: RelayOptions) => void;
+  relay: (opts?: any) => any;
 
   operationCache: Map<string, { data: any; variables: Record<string, any> }>;
   writeOperationCache: (k: string, v: { data: any; variables: Record<string, any> }) => void;

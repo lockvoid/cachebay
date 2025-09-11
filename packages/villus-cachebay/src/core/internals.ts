@@ -9,7 +9,6 @@ import {
 } from "vue";
 import type { ClientPlugin } from "villus";
 
-import { relay } from "../resolvers/relay";
 import { buildCachebayPlugin, provideCachebay } from "./plugin";
 import { createModifyOptimistic } from "../features/optimistic";
 import { createSSR } from "../features/ssr";
@@ -46,6 +45,7 @@ import {
   setRelayOptionsByType,
   relayResolverIndex,
   relayResolverIndexByType,
+  relay,
 } from "./resolvers";
 import { createFragments } from "./fragments";
 
@@ -135,6 +135,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     relayResolverIndexByType,
     getRelayOptionsByType,
     setRelayOptionsByType,
+    relay,
     operationCache: graph.operationStore,
     putEntity: graph.putEntity,
     materializeEntity: graph.materializeEntity,
