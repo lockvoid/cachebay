@@ -18,7 +18,9 @@ import { getRelayOptionsByType } from "./resolvers";
 export type ViewsAPI = ReturnType<typeof createViews>;
 
 export function createViews(
-  options: {},
+  options: {
+    trackNonRelayResults?: boolean;
+  },
   dependencies: {
     // from graph.ts
     entityStore: Map<EntityKey, any>;
@@ -28,6 +30,7 @@ export function createViews(
     // entity helpers
     materializeEntity: (key: EntityKey) => any;
     makeEntityProxy: (base: any) => any;
+    putEntity?: (obj: any) => EntityKey | null;
 
     // for id + proxies
     idOf: (o: any) => EntityKey | null;
@@ -38,11 +41,16 @@ export function createViews(
   }
 ) {
   const {
+    trackNonRelayResults = true,
+  } = options;
+  
+  const {
     entityStore,
     connectionStore,
     ensureConnectionState,
     materializeEntity,
     makeEntityProxy,
+    putEntity,
     idOf,
     getEntityParentKey,
     typenameKey = '__typename',
@@ -471,6 +479,74 @@ export function createViews(
     }
   };
 
+  /* ───────────────────────────────────────────────────────────────────────────
+   * Collect non-Relay entities from result
+   * ────────────────────────────────────────────────────────────────────────── */
+  const collectEntities = (root: any) => {
+    const touchedKeys = new Set<EntityKey>();
+    const visited = new WeakSet<object>();
+    const stack = [root];
+
+    while (stack.length) {
+      const current = stack.pop();
+      if (!current || typeof current !== "object") continue;
+      if (visited.has(current as object)) continue;
+      visited.add(current as object);
+
+      const typename = (current as any)[typenameKey];
+
+      if (typename) {
+        const ek = idOf(current);
+        if (ek && putEntity) {
+          putEntity(current);
+          if (trackNonRelayResults) registerEntityView(ek, current);
+          touchedKeys.add(ek);
+        }
+      }
+
+      const keys = Object.keys(current as any);
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        const value = (current as any)[k];
+
+        if (!value || typeof value !== "object") continue;
+
+        const opts = getRelayOptionsByType(typename || null, k);
+        if (opts) {
+          const edges = readPathValue(value, opts.segs.edges);
+          if (Array.isArray(edges)) {
+            const hasPath = opts.hasNodePath;
+            const nodeField = opts.names.nodeField;
+
+            for (let j = 0; j < edges.length; j++) {
+              const edge = edges[j];
+              if (!edge || typeof edge !== "object") continue;
+
+              const node = hasPath ? readPathValue(edge, opts.segs.node) : (edge as any)[nodeField];
+              if (!node || typeof node !== "object") continue;
+
+              const key = idOf(node);
+              if (!key) continue;
+
+              if (putEntity) {
+                putEntity(node);
+                touchedKeys.add(key);
+              }
+            }
+          }
+          continue;
+        }
+
+        stack.push(value);
+      }
+    }
+
+    touchedKeys.forEach((key) => {
+      markEntityDirty(key);
+      touchConnectionsForEntityKey(key);
+    });
+  };
+
   return {
     // entity views
     registerEntityView,
@@ -487,8 +563,9 @@ export function createViews(
     synchronizeConnectionViews,
     markConnectionDirty,
 
-    // relay connections
+    // result processing
     registerViewsFromResult,
+    collectEntities,
 
     // runtime
     resetRuntime,

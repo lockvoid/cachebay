@@ -12,7 +12,7 @@ import type { ClientPlugin } from "villus";
 import { relay } from "../resolvers/relay";
 import { buildCachebayPlugin, provideCachebay } from "./plugin";
 import { createModifyOptimistic } from "../features/optimistic";
-import { createSSRFeatures } from "../features/ssr";
+import { createSSR } from "../features/ssr";
 import { createInspect } from "../features/debug";
 
 import type {
@@ -118,12 +118,15 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   });
 
   // Views (entity/connection views & proxy registration)
-  const views = createViews({}, {
+  const views = createViews({
+    trackNonRelayResults,
+  }, {
     entityStore: graph.entityStore,
     connectionStore: graph.connectionStore,
     ensureConnectionState: graph.ensureReactiveConnection,
     materializeEntity: graph.materializeEntity,
-    makeEntityProxy: graph.makeReactive,
+    makeEntityProxy: graph.getReactiveEntity,
+    putEntity: graph.putEntity,
     idOf: graph.identify,
     getEntityParentKey: graph.getEntityParentKey,
     typenameKey: "__typename",
@@ -141,10 +144,10 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     relayResolverIndexByType,
     getRelayOptionsByType,
     setRelayOptionsByType,
-    operationCache: graph.operationCache,
+    operationCache: graph.operationStore,
     putEntity: graph.putEntity,
     materializeEntity: graph.materializeEntity,
-    ensureConnectionState: graph.getOrCreateConnection,
+    ensureConnectionState: graph.ensureReactiveConnection,
     synchronizeConnectionViews: views.synchronizeConnectionViews,
     parentEntityKeyFor: graph.getEntityParentKey,
     buildConnectionKey,
@@ -175,7 +178,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     internals,
     resolverSpecs,
   });
-  
+
   let FIELD_RESOLVERS = resolvers.FIELD_RESOLVERS;
 
   const applyFieldResolvers = makeApplyFieldResolvers({
@@ -192,84 +195,19 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     });
   }
 
-  /* ───────────────────────────────────────────────────────────────────────────
-   * Collect non-Relay entities
-   * ────────────────────────────────────────────────────────────────────────── */
-  function collectEntities(root: any) {
-    const touchedKeys = new Set<EntityKey>();
-    const visited = new WeakSet<object>();
-    const stack = [root];
-
-    while (stack.length) {
-      const current = stack.pop();
-      if (!current || typeof current !== "object") continue;
-      if (visited.has(current as object)) continue;
-      visited.add(current as object);
-
-      const typename = (current as any)[internals.TYPENAME_KEY];
-
-      if (typename) {
-        const ek = graph.identify(current);
-        if (ek) {
-          graph.putEntity(current);
-          if (trackNonRelayResults) views.registerEntityView(ek, current);
-          touchedKeys.add(ek);
-        }
-      }
-
-      const keys = Object.keys(current as any);
-      for (let i = 0; i < keys.length; i++) {
-        const k = keys[i];
-        const value = (current as any)[k];
-
-        if (!value || typeof value !== "object") continue;
-
-        const opts = getRelayOptionsByType(typename || null, k);
-        if (opts) {
-          const edges = readPathValue(value, opts.segs.edges);
-          if (Array.isArray(edges)) {
-            const hasPath = opts.hasNodePath;
-            const nodeField = opts.names.nodeField;
-
-            for (let j = 0; j < edges.length; j++) {
-              const edge = edges[j];
-              if (!edge || typeof edge !== "object") continue;
-
-              const node = hasPath ? readPathValue(edge, opts.segs.node) : (edge as any)[nodeField];
-              if (!node || typeof node !== "object") continue;
-
-              const key = graph.idOf(node);
-              if (!key) continue;
-
-              graph.putEntity(node);
-              touchedKeys.add(key);
-            }
-          }
-          continue;
-        }
-
-        stack.push(value);
-      }
-    }
-
-    touchedKeys.forEach((key) => {
-      views.markEntityDirty(key);
-      views.touchConnectionsForEntityKey(key);
-    });
-  }
 
   // SSR features
-  const ssr = createSSRFeatures({
+  const ssr = createSSR({
     entityStore: graph.entityStore,
     connectionStore: graph.connectionStore,
-    operationCache: graph.operationCache,
-    ensureConnectionState: graph.getOrCreateConnection,
+    operationCache: graph.operationStore,
+    ensureConnectionState: graph.ensureReactiveConnection,
     linkEntityToConnection: views.linkEntityToConnection,
     shallowReactive,
     registerViewsFromResult: views.registerViewsFromResult,
     resetRuntime: views.resetRuntime,
     applyResolversOnGraph,
-    collectEntities,
+    collectEntities: views.collectEntities,
     materializeResult: views.materializeResult,
   });
 
@@ -280,7 +218,8 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     hydrateOperationTicket: ssr.hydrateOperationTicket,
     applyResolversOnGraph,
     registerViewsFromResult: views.registerViewsFromResult,
-    collectEntities,
+    collectEntities: views.collectEntities,
+    opCacheMax: options.opCacheMax || 25,
   }) as unknown) as CachebayInstance;
 
   // Create fragments
@@ -329,7 +268,9 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   (instance as any).inspect = inspect;
 
   (instance as any).listEntityKeys = graph.getEntityKeys;
-  (instance as any).listEntities = graph.getEntities;
+  (instance as any).listEntities = (selector: string | string[], materialized = true) => {
+    return materialized ? graph.materializeEntities(selector) : graph.getEntities(selector);
+  };
 
   (instance as any).__entitiesTick = graph.entitiesTick;
 
@@ -338,6 +279,10 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
       views.gcConnections(predicate);
     },
   };
+
+  // Attach SSR methods
+  (instance as any).dehydrate = ssr.dehydrate;
+  (instance as any).hydrate = ssr.hydrate;
 
   return instance;
 }

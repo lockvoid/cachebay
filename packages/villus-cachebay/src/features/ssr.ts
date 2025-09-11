@@ -27,7 +27,7 @@ type Deps = {
   materializeResult?: (root: any) => void;
 };
 
-export function createSSRFeatures(deps: Deps) {
+export function createSSR(deps: Deps) {
   const {
     entityStore,
     connectionStore,
