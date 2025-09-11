@@ -172,6 +172,15 @@ export function createCache(options: CachebayOptions = {}) {
   // Attach SSR methods
   (instance as any).dehydrate = ssr.dehydrate;
   (instance as any).hydrate = ssr.hydrate;
+  
+  // Attach internals for testing/debugging
+  (instance as any).__internals = {
+    graph,
+    views,
+    ssr,
+    resolvers,
+    fragments,
+  };
 
   return instance;
 }
