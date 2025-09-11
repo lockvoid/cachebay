@@ -1,5 +1,5 @@
 // src/resolvers/relay.ts
-import { shallowReactive } from "vue";
+import { shallowReactive, reactive, isReactive } from "vue";
 import { defineResolver, type RelayOptsPartial } from "../types";
 import type { RelayOptions } from "../core/types";
 
@@ -36,10 +36,11 @@ function normalizeRelayOptions(opts?: RelayOptsPartial): RelayOptions {
  *   - append/prepend: view.limit += pageSize
  *   - replace:        view.limit  = pageSize (destructive)
  */
-export const relay = defineResolver((internals, opts: RelayOptsPartial) => {
+export const relay = defineResolver((opts?: RelayOptsPartial) => {
   const relayOptions = normalizeRelayOptions(opts);
 
-  return (ctx) => {
+  return (deps: { graph: any; views: any; utils: any }) => (ctx: any) => {
+    const { graph, views, utils } = deps;
     const v = ctx.variables || {};
     if (v[relayOptions.cursors.after] != null || v[relayOptions.cursors.before] != null) {
       ctx.hint.allowReplayOnStale = true;
@@ -49,21 +50,19 @@ export const relay = defineResolver((internals, opts: RelayOptsPartial) => {
     const fieldName = ctx.field;
 
     // Persist per-field options for later usage (e.g., view registration)
-    internals.setRelayOptionsByType(parentTypename, fieldName, relayOptions);
+    utils.setRelayOptionsByType(parentTypename, fieldName, relayOptions);
 
-    const parentId = (ctx.parent as any)?.id ?? (ctx.parent as any)?._id;
-    const parentKey =
-      ctx.parentTypename === "Query"
-        ? "Query"
-        : internals.parentEntityKeyFor(parentTypename, parentId) || "Query";
-
-    const connectionKey = internals.buildConnectionKey(
+    const parentKey = graph.getEntityParentKey(
+      parentTypename,
+      graph.identify?.(ctx.parent),
+    );
+    const connectionKey = utils.buildConnectionKey(
       parentKey!,
       fieldName,
       relayOptions,
       ctx.variables,
     );
-    const connectionState = internals.ensureConnectionState(connectionKey);
+    const connectionState = graph.ensureReactiveConnection(connectionKey);
 
     const variables = ctx.variables || {};
     const afterVal = variables[relayOptions.cursors.after];
@@ -83,40 +82,43 @@ export const relay = defineResolver((internals, opts: RelayOptsPartial) => {
     // Destructive clear for replace
     if (writeMode === "replace") {
       for (let i = 0, n = connectionState.list.length; i < n; i++) {
-        internals.unlinkEntityFromConnection(connectionState.list[i].key, connectionState);
+        views.unlinkEntityFromConnection(connectionState.list[i].key, connectionState);
       }
       connectionState.list.length = 0;
       connectionState.keySet.clear();
     }
 
-    // Read edges/pageInfo using string paths (internals.readPathValue supports string)
-    const edges = internals.readPathValue(ctx.value, relayOptions.paths.edges);
-    const edgesCount = Array.isArray(edges) ? edges.length : 0;
+    // Read edges/pageInfo using string paths
+    const edgesArray = utils.readPathValue(ctx.value, relayOptions.paths.edges);
+    const edgesCount = Array.isArray(edgesArray) ? edgesArray.length : 0;
 
-    if (Array.isArray(edges)) {
+    if (Array.isArray(edgesArray)) {
       const hasNodePath = relayOptions.hasNodePath;
       const nodeFieldName = relayOptions.names.nodeField;
 
-      // Preserve server order: prepend iterates backwards + unshift
-      const start = writeMode === "prepend" ? edges.length - 1 : 0;
-      const end = writeMode === "prepend" ? -1 : edges.length;
-      const step = writeMode === "prepend" ? -1 : 1;
+      // Always iterate forward to maintain order
+      const start = 0;
+      const end = edgesArray.length;
+      const step = 1;
+
+      const toUnlink: any[] = [];
+      const nextEntries: any[] = [];
 
       for (let i = start; i !== end; i += step) {
-        const edge = edges[i];
+        const edge = edgesArray[i];
         if (!edge || typeof edge !== "object") continue;
 
-        const node = hasNodePath
-          ? internals.readPathValue(edge, relayOptions.paths.node)
-          : (edge as any)[nodeFieldName];
+        let node = relayOptions.hasNodePath
+          ? utils.readPathValue(edge, relayOptions.paths.node)
+          : edge[nodeFieldName];
         if (!node) continue;
 
-        const nodeTypename = node?.[internals.TYPENAME_KEY];
-        if (nodeTypename && internals.applyFieldResolvers) {
-          internals.applyFieldResolvers(nodeTypename, node, ctx.variables || {}, ctx.hint);
+        const nodeTypename = node[utils.TYPENAME_KEY];
+        if (nodeTypename && utils.applyFieldResolvers) {
+          utils.applyFieldResolvers(nodeTypename, node, ctx.variables || {}, ctx.hint);
         }
 
-        const entityKey = internals.putEntity(node, relayOptions.writePolicy);
+        const entityKey = graph.putEntity(node, relayOptions.writePolicy);
         if (!entityKey) continue;
 
         const cursor = (edge as any).cursor != null ? (edge as any).cursor : null;
@@ -140,25 +142,31 @@ export const relay = defineResolver((internals, opts: RelayOptsPartial) => {
                 cursor,
                 edge: edgeMeta ?? connectionState.list[j].edge,
               };
-              internals.linkEntityToConnection(entityKey, connectionState);
+              views.linkEntityToConnection(entityKey, connectionState);
               break;
             }
           }
         } else {
-          const newEntry = { key: entityKey, cursor, edge: edgeMeta };
-          if (writeMode === "prepend") {
-            connectionState.list.unshift(newEntry);
-          } else {
-            connectionState.list.push(newEntry);
-          }
-          connectionState.keySet.add(entityKey);
-          internals.linkEntityToConnection(entityKey, connectionState);
+          nextEntries.push({ key: entityKey, cursor, edge: shallowReactive({}) });
         }
       }
+
+      // unlink orphaned nodes
+      for (const entry of toUnlink) {
+        views.unlinkEntityFromConnection(entry.key, connectionState);
+      }
+
+      if (writeMode === "prepend") {
+        connectionState.list.unshift(...nextEntries);
+      } else {
+        connectionState.list.push(...nextEntries);
+      }
+      connectionState.keySet.add(...nextEntries.map((entry) => entry.key));
+      nextEntries.forEach((entry) => views.linkEntityToConnection(entry.key, connectionState));
     }
 
     // Merge pageInfo
-    const pageInfoFromServer = internals.readPathValue(ctx.value, relayOptions.paths.pageInfo);
+    const pageInfoFromServer = utils.readPathValue(ctx.value, relayOptions.paths.pageInfo);
     if (pageInfoFromServer && typeof pageInfoFromServer === "object") {
       const pik = Object.keys(pageInfoFromServer as any);
       for (let i = 0; i < pik.length; i++) {
@@ -189,23 +197,23 @@ export const relay = defineResolver((internals, opts: RelayOptsPartial) => {
     }
 
     // Ensure reactive connection surface
-    const connectionObject = internals.isReactive(ctx.value) ? ctx.value : internals.reactive(ctx.value);
+    const connectionObject = isReactive(ctx.value) ? ctx.value : reactive(ctx.value);
     if (connectionObject !== ctx.value) ctx.set(connectionObject);
 
     if (
       !Array.isArray(connectionObject[edgesFieldName]) ||
-      !internals.isReactive(connectionObject[edgesFieldName])
+      !isReactive(connectionObject[edgesFieldName])
     ) {
-      connectionObject[edgesFieldName] = internals.reactive(
+      connectionObject[edgesFieldName] = reactive(
         Array.isArray(connectionObject[edgesFieldName]) ? connectionObject[edgesFieldName] : [],
       );
     }
-    if (!internals.isReactive(connectionObject[pageInfoFieldName])) {
-      connectionObject[pageInfoFieldName] = shallowReactive(connectionObject[pageInfoFieldName] || {});
+    if (!isReactive(connectionObject[pageInfoFieldName])) {
+      connectionObject[pageInfoFieldName] = reactive(connectionObject[pageInfoFieldName] || {});
     }
 
     // Register a strong view for this edges array
-    internals.addStrongView(connectionState, {
+    views.addStrongView(connectionState, {
       edges: connectionObject[edgesFieldName],
       pageInfo: connectionObject[pageInfoFieldName],
       root: connectionObject,
@@ -227,10 +235,10 @@ export const relay = defineResolver((internals, opts: RelayOptsPartial) => {
 
     // Sync or schedule
     if (!connectionState.initialized) {
-      (internals as any).synchronizeConnectionViews?.(connectionState);
+      views.synchronizeConnectionViews?.(connectionState);
       connectionState.initialized = true;
     } else {
-      internals.markConnectionDirty(connectionState);
+      views.markConnectionDirty(connectionState);
     }
   };
 });

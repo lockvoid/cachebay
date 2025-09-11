@@ -12,8 +12,8 @@ export type RelayOptsPartial = {
   before?: string;
   first?: string;
   last?: string;
-  write?: WritePolicy;
-  mode?: "append" | "prepend" | "replace" | "auto";
+  writePolicy?: WritePolicy;
+  paginationMode?: "append" | "prepend" | "replace" | "auto";
 };
 
 type PublishHint = {
@@ -37,14 +37,14 @@ export type FieldResolver = (ctx: ResolverContext) => void;
 
 export type ResolverSpec = {
   __cb_resolver__: true;
-  bind: (inst: CachebayInternals) => FieldResolver;
+  bind: (deps: any) => FieldResolver;
 };
 
 export function defineResolver<TOpts>(
-  binder: (inst: CachebayInternals, opts: TOpts) => FieldResolver,
+  binder: (opts: TOpts) => (deps: any) => FieldResolver,
 ) {
   return (opts: TOpts): ResolverSpec => {
-    return { __cb_resolver__: true, bind: (inst) => binder(inst, opts) };
+    return { __cb_resolver__: true, bind: binder(opts) };
   };
 }
 

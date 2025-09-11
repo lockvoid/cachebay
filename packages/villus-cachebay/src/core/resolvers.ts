@@ -58,6 +58,24 @@ export function createResolvers(
     return relayOptionsByType.get(typename)?.get(field);
   };
 
+  // Create utils object with helper functions
+  const utils = {
+    TYPENAME_KEY: '__typename',
+    setRelayOptionsByType,
+    buildConnectionKey,
+    readPathValue: (obj: any, path: string) => {
+      if (!obj || !path) return undefined;
+      const parts = path.split('.');
+      let current = obj;
+      for (const part of parts) {
+        if (current == null) return undefined;
+        current = current[part];
+      }
+      return current;
+    },
+    applyFieldResolvers: null as any, // Will be set after FIELD_RESOLVERS is created
+  };
+
   function bindResolversTree(
     tree: ResolversDict | undefined,
     inst: any
@@ -70,56 +88,9 @@ export function createResolvers(
         const spec = (tree[type] as any)[field];
         // Check if it's a resolver spec that needs binding
         if (spec && typeof spec === 'object' && spec.__cb_resolver__ === true && typeof spec.bind === 'function') {
-          // Create an internals object with the required dependencies
-          const internals = {
-            TYPENAME_KEY: '__typename',
-            isReactive: (obj: any) => isReactive(obj),
-            reactive: (obj: any) => reactive(obj),
-            markConnectionDirty: (state: any) => views.markConnectionDirty(state),
-            addStrongView: (state: any, view: any) => views.addStrongView(state, view),
-            setRelayOptionsByType,
-            parentEntityKeyFor: (typename: string, id: any) => graph.getEntityParentKey(typename, id),
-            buildConnectionKey: (parentKey: string, field: string, relayOpts: any, vars: any) => buildConnectionKey(parentKey, field, relayOpts, vars),
-            ensureConnectionState: (key: string) => graph.ensureReactiveConnection(key),
-            synchronizeConnectionViews: (state: any) => views.synchronizeConnectionViews(state),
-            unlinkEntityFromConnection: (key: string, state: any) => views.unlinkEntityFromConnection(key, state),
-            putEntity: (entity: any, policy?: string) => graph.putEntity(entity, policy),
-            linkEntityToConnection: (key: string, state: any) => views.linkEntityToConnection(key, state),
-            identify: (obj: any) => graph.identify(obj),
-            applyFieldResolvers: (typename: string, obj: any, vars: Record<string, any>, hint?: { stale?: boolean }) => {
-              // Apply field resolvers using the bound resolvers
-              const map = FIELD_RESOLVERS[typename];
-              if (!map) return;
-              const sig = (hint?.stale ? "S|" : "F|") + stableIdentityExcluding(vars || {}, []);
-              if ((obj as any)[RESOLVE_SIGNATURE] === sig) return;
-              for (const field in map) {
-                const resolver = map[field];
-                if (!resolver) continue;
-                const val = (obj as any)[field];
-                resolver({
-                  parentTypename: typename,
-                  field,
-                  parent: obj,
-                  value: val,
-                  variables: vars,
-                  hint,
-                  set: (nv) => { (obj as any)[field] = nv; },
-                });
-              }
-              (obj as any)[RESOLVE_SIGNATURE] = sig;
-            },
-            readPathValue: (obj: any, path: string) => {
-              if (!obj || !path) return undefined;
-              const parts = path.split('.');
-              let current = obj;
-              for (const part of parts) {
-                if (current == null) return undefined;
-                current = current[part];
-              }
-              return current;
-            },
-          };
-          out[type][field] = spec.bind(internals);
+          // Pass core dependencies directly
+          const deps = { graph, views, utils };
+          out[type][field] = spec.bind(deps);
         } else {
           // Regular resolver function
           out[type][field] = spec as FieldResolver;

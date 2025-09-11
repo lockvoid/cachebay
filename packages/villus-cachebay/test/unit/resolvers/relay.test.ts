@@ -1,7 +1,7 @@
 import { relay } from '@/src/resolvers/relay';
 
-// Minimal “internals” test double that satisfies what the resolver touches.
-function createInternalsMock() {
+// Minimal deps test double that satisfies what the resolver touches.
+function createDepsMock() {
   const TYPENAME_KEY = '__typename';
   const entityStore = new Map<string, any>();
   const connectionStore = new Map<string, any>();
@@ -9,11 +9,11 @@ function createInternalsMock() {
 
   function setRelayOptionsByType(parentTypename: string, field: string, opts: any) {
     let fm = relayResolverIndexByType.get(parentTypename);
-    if (!fm) { fm = new Map(); relayResolverIndexByType.set(parentTypename, fm); }
+    if (!fm) relayResolverIndexByType.set(parentTypename, fm = new Map());
     fm.set(field, opts);
   }
 
-  function parentEntityKeyFor(typename: string, id?: any) {
+  function getEntityParentKey(typename: string, id?: any) {
     return typename === 'Query' ? 'Query' : (id == null ? null : `${typename}:${id}`);
   }
 
@@ -105,27 +105,30 @@ function createInternalsMock() {
     });
   }
 
+  // Return grouped dependencies matching the new structure
   return {
-    // state
-    TYPENAME_KEY,
-    entityStore,
-    connectionStore,
-    // api used by resolver
-    setRelayOptionsByType,
-    parentEntityKeyFor,
-    buildConnectionKey,
-    ensureConnectionState,
-    readPathValue,
-    putEntity,
-    addStrongView,
-    linkEntityToConnection,
-    unlinkEntityFromConnection,
-    markConnectionDirty,
-    // “reactivity” no-op for tests
-    isReactive: (_v: any) => false,
-    reactive: (v: any) => v,
-    applyFieldResolvers: undefined,
-    synchronizeConnectionViews,
+    graph: {
+      entityStore,
+      connectionStore,
+      getEntityParentKey,
+      ensureReactiveConnection: ensureConnectionState,
+      putEntity,
+      identify: (obj: any) => obj?.id,
+    },
+    views: {
+      addStrongView,
+      linkEntityToConnection,
+      unlinkEntityFromConnection,
+      markConnectionDirty,
+      synchronizeConnectionViews,
+    },
+    utils: {
+      TYPENAME_KEY,
+      setRelayOptionsByType,
+      buildConnectionKey,
+      readPathValue,
+      applyFieldResolvers: undefined,
+    },
   };
 }
 
@@ -155,9 +158,9 @@ function makeCtx({
 
 describe('relay resolver (paginationMode + writePolicy)', () => {
   it('replace: initializes list with page 1, sets limit = pageSize', () => {
-    const internals = createInternalsMock();
+    const deps = createDepsMock();
     const spec = relay({ paginationMode: 'replace' });
-    const fn = spec.bind(internals);
+    const fn = spec.bind(deps);
 
     const page1 = {
       __typename: 'AssetConnection',
@@ -172,7 +175,7 @@ describe('relay resolver (paginationMode + writePolicy)', () => {
     fn(ctx);
 
     // state shape
-    const state = internals.connectionStore.values().next().value;
+    const state = deps.graph.connectionStore.values().next().value;
     expect(state.list.map((e: any) => e.key)).toEqual(['Asset:1', 'Asset:2']);
 
     // view sizing: replace → limit = pageSize
@@ -181,9 +184,9 @@ describe('relay resolver (paginationMode + writePolicy)', () => {
   });
 
   it('append: adds page 2 after page 1, limit grows by pageSize', () => {
-    const internals = createInternalsMock();
+    const deps = createDepsMock();
     const spec = relay({ paginationMode: 'append' });
-    const fn = spec.bind(internals);
+    const fn = spec.bind(deps);
 
     // Page 1 (no after)
     const page1 = {
@@ -205,7 +208,7 @@ describe('relay resolver (paginationMode + writePolicy)', () => {
     };
     fn(makeCtx({ connectionValue: page2, variables: { after: 'c2', first: 2 } }));
 
-    const state = internals.connectionStore.values().next().value;
+    const state = deps.graph.connectionStore.values().next().value;
     expect(state.list.map((e: any) => e.key)).toEqual(['Asset:1', 'Asset:2', 'Asset:3', 'Asset:4']);
 
     const view = Array.from(state.views)[0];
@@ -213,9 +216,9 @@ describe('relay resolver (paginationMode + writePolicy)', () => {
   });
 
   it('prepend: inserts page 0 before page 1, limit grows by pageSize', () => {
-    const internals = createInternalsMock();
+    const deps = createDepsMock();
     const spec = relay({ paginationMode: 'prepend' });
-    const fn = spec.bind(internals);
+    const fn = spec.bind(deps);
 
     // Page 1 baseline
     fn(makeCtx({
@@ -240,7 +243,7 @@ describe('relay resolver (paginationMode + writePolicy)', () => {
       variables: { before: 'c1', last: 2 },
     }));
 
-    const state = internals.connectionStore.values().next().value;
+    const state = deps.graph.connectionStore.values().next().value;
     expect(state.list.map((e: any) => e.key)).toEqual(['Asset:0a', 'Asset:0b', 'Asset:1', 'Asset:2']);
 
     const view = Array.from(state.views)[0];
@@ -248,9 +251,9 @@ describe('relay resolver (paginationMode + writePolicy)', () => {
   });
 
   it('replace is destructive: clears previous list before writing', () => {
-    const internals = createInternalsMock();
+    const deps = createDepsMock();
     const spec = relay({ paginationMode: 'replace' });
-    const fn = spec.bind(internals);
+    const fn = spec.bind(deps);
 
     // Page 1
     fn(makeCtx({
@@ -275,16 +278,16 @@ describe('relay resolver (paginationMode + writePolicy)', () => {
       variables: { after: 'c2', first: 2 },
     }));
 
-    const state = internals.connectionStore.values().next().value;
+    const state = deps.graph.connectionStore.values().next().value;
     expect(state.list.map((e: any) => e.key)).toEqual(['Asset:3', 'Asset:4']);
     const view = Array.from(state.views)[0];
     expect(view.limit).toBe(2);
   });
 
   it('dedups nodes by key and updates edge meta in place', () => {
-    const internals = createInternalsMock();
+    const deps = createDepsMock();
     const spec = relay({ paginationMode: 'append' });
-    const fn = spec.bind(internals);
+    const fn = spec.bind(deps);
 
     // page with Asset:1 and Asset:2
     fn(makeCtx({
@@ -308,21 +311,21 @@ describe('relay resolver (paginationMode + writePolicy)', () => {
       variables: { after: 'c2', first: 1 },
     }));
 
-    const state = internals.connectionStore.values().next().value;
+    const state = deps.graph.connectionStore.values().next().value;
     expect(state.list.length).toBe(2);
     // Edge meta updated:
     const entry = state.list.find((e: any) => e.key === 'Asset:1');
     expect(entry.cursor).toBe('c1b');
     expect(entry.edge?.score).toBe(99);
     // Entity snapshot updated (writePolicy default "merge"):
-    expect(internals.entityStore.get('Asset:1').name).toBe('A1-new');
+    expect(deps.graph.entityStore.get('Asset:1').name).toBe('A1-new');
   });
 
   it('writePolicy=replace overwrites entity snapshot, merge keeps unknown fields', () => {
-    const internals = createInternalsMock();
+    const deps = createDepsMock();
     // First call merges initial entity with extra field
     const specMerge = relay({ paginationMode: 'replace', writePolicy: 'merge' });
-    const fnMerge = specMerge.bind(internals);
+    const fnMerge = specMerge.bind(deps);
 
     fnMerge(makeCtx({
       connectionValue: {
@@ -332,11 +335,11 @@ describe('relay resolver (paginationMode + writePolicy)', () => {
         pageInfo: {},
       },
     }));
-    expect(internals.entityStore.get('Asset:1')).toEqual({ foo: 1, bar: 2 });
+    expect(deps.graph.entityStore.get('Asset:1')).toEqual({ foo: 1, bar: 2 });
 
     // Now call with writePolicy: replace and a partial node
     const specReplace = relay({ paginationMode: 'replace', writePolicy: 'replace' });
-    const fnReplace = specReplace.bind(internals);
+    const fnReplace = specReplace.bind(deps);
 
     fnReplace(makeCtx({
       connectionValue: {
@@ -347,13 +350,13 @@ describe('relay resolver (paginationMode + writePolicy)', () => {
       },
     }));
     // Snapshot should be overwritten to only { foo: 10 }
-    expect(internals.entityStore.get('Asset:1')).toEqual({ foo: 10 });
+    expect(deps.graph.entityStore.get('Asset:1')).toEqual({ foo: 10 });
   });
 
   it('merges pageInfo properties', () => {
-    const internals = createInternalsMock();
+    const deps = createDepsMock();
     const spec = relay({ paginationMode: 'append' });
-    const fn = spec.bind(internals);
+    const fn = spec.bind(deps);
 
     fn(makeCtx({
       connectionValue: {
@@ -362,7 +365,7 @@ describe('relay resolver (paginationMode + writePolicy)', () => {
       },
     }));
 
-    const state = internals.connectionStore.values().next().value;
+    const state = deps.graph.connectionStore.values().next().value;
     expect(state.pageInfo).toEqual({ endCursor: 'x', hasNextPage: true });
 
     // Update pageInfo (flip hasNextPage)
@@ -377,9 +380,9 @@ describe('relay resolver (paginationMode + writePolicy)', () => {
   });
 
   it('sets allowReplayOnStale when after/before is present', () => {
-    const internals = createInternalsMock();
+    const deps = createDepsMock();
     const spec = relay({ paginationMode: 'append' });
-    const fn = spec.bind(internals);
+    const fn = spec.bind(deps);
 
     const ctx = makeCtx({
       connectionValue: { edges: [], pageInfo: {} },
@@ -390,9 +393,9 @@ describe('relay resolver (paginationMode + writePolicy)', () => {
   });
 
   it('supports nested node path (e.g., "item.node")', () => {
-    const internals = createInternalsMock();
+    const deps = createDepsMock();
     const spec = relay({ paginationMode: 'replace', node: 'item.node' } as any);
-    const fn = spec.bind(internals);
+    const fn = spec.bind(deps);
 
     fn(makeCtx({
       connectionValue: {
@@ -403,7 +406,7 @@ describe('relay resolver (paginationMode + writePolicy)', () => {
       },
     }));
 
-    const state = internals.connectionStore.values().next().value;
+    const state = deps.graph.connectionStore.values().next().value;
     expect(state.list.map((e: any) => e.key)).toEqual(['Asset:1']);
   });
 });
