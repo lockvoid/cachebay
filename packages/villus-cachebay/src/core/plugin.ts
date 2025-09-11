@@ -153,7 +153,7 @@ export function buildCachebayPlugin(
         const viewRoot = viewRootOf(entry.data);
         lastContentSigByFam.set(famKey, toSig(viewRoot));
         resolvers.applyResolversOnGraph(viewRoot, vars, { stale: false });
-        views.collectEntities(viewRoot);
+        views.collectEntities(viewRoot); // Collect entities AFTER resolvers
         views.registerViewsFromResult(viewRoot, vars);
         lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
         originalUseResult({ data: viewRoot }, true);
