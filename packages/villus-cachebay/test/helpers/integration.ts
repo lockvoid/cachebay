@@ -2,6 +2,7 @@ import { defineComponent, h, computed, watch, type Ref } from 'vue';
 import { mount } from '@vue/test-utils';
 import { createClient, type Client } from 'villus';
 import { createCache } from '@/src';
+import { CACHEBAY_KEY } from '@/src/core/plugin';
 import { createFetchMock, type Route, tick, delay } from './index';
 
 /**
@@ -135,9 +136,24 @@ export async function mountWithClient(
 ) {
   const { client, cache, fx } = createTestClient(routes, cacheConfig);
   
+  // Prepare cache API for provide/inject
+  const cacheApi = {
+    readFragment: (cache as any).readFragment,
+    readFragments: (cache as any).readFragments,
+    writeFragment: (cache as any).writeFragment,
+    identify: (cache as any).identify,
+    modifyOptimistic: (cache as any).modifyOptimistic,
+    hasFragment: (cache as any).hasFragment,
+    inspect: (cache as any).inspect,
+    entitiesTick: (cache as any).__entitiesTick,
+  };
+  
   const wrapper = mount(component, {
     global: {
       plugins: [client as any],
+      provide: {
+        [CACHEBAY_KEY]: cacheApi,
+      },
     },
   });
   

@@ -1,11 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { defineComponent, h, ref, computed, watchEffect, watch } from 'vue';
-import { isReactive } from 'vue';
+import { isReactive, provide } from 'vue';
 import { createCache } from '@/src';
-import { tick, delay } from '@/test/helpers';
-import { mount } from '@vue/test-utils';
-import { createClient } from 'villus';
-import { provide } from 'vue';
+import { tick, delay, type Route } from '@/test/helpers';
+import { mountWithClient } from '@/test/helpers/integration';
 import { useCache, useFragment, useFragments } from '@/src';
 import { CACHEBAY_KEY } from '@/src/core/plugin';
 
@@ -185,6 +183,7 @@ describe('Integration • Fragments Behavior', () => {
 
   describe('Fragment Reactivity in Components', () => {
     it('components update when fragments change', async () => {
+      const routes: Route[] = [];
       const cache = createCache({
         keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
       });
@@ -208,26 +207,7 @@ describe('Integration • Fragments Behavior', () => {
         }
       });
 
-      const api = {
-        readFragment: (cache as any).readFragment,
-        readFragments: (cache as any).readFragments,
-        writeFragment: (cache as any).writeFragment,
-        identify: (cache as any).identify,
-        modifyOptimistic: (cache as any).modifyOptimistic,
-        hasFragment: (cache as any).hasFragment,
-        listEntityKeys: (cache as any).listEntityKeys,
-        listEntities: (cache as any).listEntities,
-        inspect: (cache as any).inspect,
-        entitiesTick: (cache as any).__entitiesTick,
-      };
-
-      const wrapper = mount(Component, {
-        global: {
-          provide: {
-            [CACHEBAY_KEY as symbol]: api
-          }
-        }
-      });
+      const { wrapper } = await mountWithClient(Component, routes, cache);
 
       await tick(2);
       expect(renders).toEqual(['Initial Name']);
@@ -243,6 +223,7 @@ describe('Integration • Fragments Behavior', () => {
     });
 
     it('multiple components react to same fragment changes', async () => {
+      const routes: Route[] = [];
       const cache = createCache({
         keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
       });
@@ -280,24 +261,11 @@ describe('Integration • Fragments Behavior', () => {
 
       const WrapperComponent = defineComponent({
         setup() {
-          const api = {
-            readFragment: (cache as any).readFragment,
-            readFragments: (cache as any).readFragments,
-            writeFragment: (cache as any).writeFragment,
-            identify: (cache as any).identify,
-            modifyOptimistic: (cache as any).modifyOptimistic,
-            hasFragment: (cache as any).hasFragment,
-            listEntityKeys: (cache as any).listEntityKeys,
-            listEntities: (cache as any).listEntities,
-            inspect: (cache as any).inspect,
-            entitiesTick: (cache as any).__entitiesTick,
-          };
-          provide(CACHEBAY_KEY as symbol, api);
           return () => h('div', {}, [h(Component1), h(Component2)]);
         }
       });
 
-      const wrapper = mount(WrapperComponent);
+      const { wrapper } = await mountWithClient(WrapperComponent, routes, cache);
 
       await tick(2);
       expect(renders1).toEqual(['C1:Shared User']);
@@ -317,6 +285,7 @@ describe('Integration • Fragments Behavior', () => {
     });
 
     it('useFragments composable works with multiple fragments', async () => {
+      const routes: Route[] = [];
       const cache = createCache({
         keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
       });
@@ -347,26 +316,7 @@ describe('Integration • Fragments Behavior', () => {
         }
       });
 
-      const api = {
-        readFragment: (cache as any).readFragment,
-        readFragments: (cache as any).readFragments,
-        writeFragment: (cache as any).writeFragment,
-        identify: (cache as any).identify,
-        modifyOptimistic: (cache as any).modifyOptimistic,
-        hasFragment: (cache as any).hasFragment,
-        listEntityKeys: (cache as any).listEntityKeys,
-        listEntities: (cache as any).listEntities,
-        inspect: (cache as any).inspect,
-        entitiesTick: (cache as any).__entitiesTick,
-      };
-
-      const wrapper = mount(Component, {
-        global: {
-          provide: {
-            [CACHEBAY_KEY as symbol]: api
-          }
-        }
-      });
+      const { wrapper } = await mountWithClient(Component, routes, cache);
 
       await tick(2);
       expect(renders).toEqual([['Alice', 'Bob']]);
@@ -382,6 +332,7 @@ describe('Integration • Fragments Behavior', () => {
     });
 
     it('components do not update for unrelated fragment changes', async () => {
+      const routes: Route[] = [];
       const cache = createCache({
         keys: {
           User: (o: any) => (o?.id != null ? String(o.id) : null),
@@ -425,24 +376,11 @@ describe('Integration • Fragments Behavior', () => {
 
       const WrapperComponent = defineComponent({
         setup() {
-          const api = {
-            readFragment: (cache as any).readFragment,
-            readFragments: (cache as any).readFragments,
-            writeFragment: (cache as any).writeFragment,
-            identify: (cache as any).identify,
-            modifyOptimistic: (cache as any).modifyOptimistic,
-            hasFragment: (cache as any).hasFragment,
-            listEntityKeys: (cache as any).listEntityKeys,
-            listEntities: (cache as any).listEntities,
-            inspect: (cache as any).inspect,
-            entitiesTick: (cache as any).__entitiesTick,
-          };
-          provide(CACHEBAY_KEY as symbol, api);
           return () => h('div', {}, [h(UserComponent), h(PostComponent)]);
         }
       });
 
-      const wrapper = mount(WrapperComponent);
+      const { wrapper } = await mountWithClient(WrapperComponent, routes, cache);
 
       await tick(2);
       expect(userRenders).toEqual(['Alice']);
