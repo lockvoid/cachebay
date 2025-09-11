@@ -96,12 +96,27 @@ export function createFragments(options: {}, dependencies: FragmentsDependencies
 
     for (const selector of selectors) {
       if (selector.endsWith(':*')) {
-        // Get all entities of a type
+        // Get all entities of a type or interface
         const typename = selector.slice(0, -2);
-        const keys = graph.getEntityKeys(typename + ':');
-        for (const key of keys) {
-          const result = readFragment(key, opts);
-          if (result) results.push(result);
+        
+        // Check if it's an interface
+        const implementors = graph.getInterfaceTypes(typename);
+        if (implementors && implementors.length > 0) {
+          // It's an interface - get all entities of types that implement it
+          for (const implementor of implementors) {
+            const keys = graph.getEntityKeys(implementor + ':');
+            for (const key of keys) {
+              const result = readFragment(key, opts);
+              if (result) results.push(result);
+            }
+          }
+        } else {
+          // Regular type - get all entities of this type
+          const keys = graph.getEntityKeys(typename + ':');
+          for (const key of keys) {
+            const result = readFragment(key, opts);
+            if (result) results.push(result);
+          }
         }
       } else {
         // Single entity
