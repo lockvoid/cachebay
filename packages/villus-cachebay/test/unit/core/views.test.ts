@@ -1,21 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createViews } from '@/src/core/views';
 import { reactive, isReactive } from 'vue';
+import { createMockGraph } from '@/test/helpers/mocks';
 
 describe('core/views', () => {
   describe('createViews', () => {
     it('creates view functions with dependencies', () => {
-      const mockGraph = {
-        entityStore: new Map(),
-        connectionStore: new Map(),
-        ensureReactiveConnection: vi.fn(),
-        materializeEntity: vi.fn(),
-        getReactiveEntity: vi.fn(),
-        identify: vi.fn(),
-        putEntity: vi.fn(),
-        getEntityParentKey: vi.fn(),
-      };
-
+      const mockGraph = createMockGraph();
       const views = createViews({}, { graph: mockGraph });
 
       expect(views).toHaveProperty('registerEntityView');
@@ -28,18 +19,9 @@ describe('core/views', () => {
 
   describe('entity views', () => {
     it('registerEntityView registers valid entity views', () => {
-      const entityStore = new Map();
-      const mockGraph = {
-        entityStore,
-        connectionStore: new Map(),
-        ensureReactiveConnection: vi.fn(),
-        materializeEntity: vi.fn(),
-        getReactiveEntity: vi.fn((obj) => obj),
-        identify: vi.fn(),
-        putEntity: vi.fn(),
-        getEntityParentKey: vi.fn(),
-      };
-
+      const mockGraph = createMockGraph({
+        getReactiveEntity: vi.fn((obj) => obj)
+      });
       const views = createViews({}, { graph: mockGraph });
       const entity = { id: 1, name: 'Test' };
       const key = 'Entity:1';
@@ -52,17 +34,11 @@ describe('core/views', () => {
 
     it('synchronizeEntityViews updates all views for an entity', () => {
       const entityStore = new Map([['User:1', { name: 'Updated' }]]);
-      const mockGraph = {
+      const mockGraph = createMockGraph({
         entityStore,
-        connectionStore: new Map(),
-        ensureReactiveConnection: vi.fn(),
         materializeEntity: vi.fn(() => ({ id: 1, name: 'Updated' })),
-        getReactiveEntity: vi.fn((obj) => obj),
-        identify: vi.fn(),
-        putEntity: vi.fn(),
-        getEntityParentKey: vi.fn(),
-      };
-
+        getReactiveEntity: vi.fn((obj) => obj)
+      });
       const views = createViews({}, { graph: mockGraph });
       const view1 = { id: 1, name: 'Old' };
       const view2 = { id: 1, name: 'Old' };
@@ -80,17 +56,11 @@ describe('core/views', () => {
 
     it('markEntityDirty schedules entity synchronization', () => {
       const entityStore = new Map([['User:1', { name: 'Test' }]]);
-      const mockGraph = {
+      const mockGraph = createMockGraph({
         entityStore,
-        connectionStore: new Map(),
-        ensureReactiveConnection: vi.fn(),
         materializeEntity: vi.fn(() => ({ id: 1, name: 'Test' })),
-        getReactiveEntity: vi.fn((obj) => obj),
-        identify: vi.fn(),
-        putEntity: vi.fn(),
-        getEntityParentKey: vi.fn(),
-      };
-
+        getReactiveEntity: vi.fn((obj) => obj)
+      });
       const views = createViews({}, { graph: mockGraph });
       const entity = { name: 'Old' };
       
@@ -109,47 +79,29 @@ describe('core/views', () => {
 
   describe('proxyForEntityKey', () => {
     it('returns materialized entity wrapped in proxy when not already reactive', () => {
-      const mockMaterializeEntity = vi.fn(() => ({ id: 1, name: 'Test' }));
-      const mockGetReactiveEntity = vi.fn((obj) => reactive(obj));
-      const mockGraph = {
-        entityStore: new Map(),
-        connectionStore: new Map(),
-        ensureReactiveConnection: vi.fn(),
-        materializeEntity: mockMaterializeEntity,
-        getReactiveEntity: mockGetReactiveEntity,
-        identify: vi.fn(),
-        putEntity: vi.fn(),
-        getEntityParentKey: vi.fn(),
-      };
-
+      const mockGraph = createMockGraph({
+        materializeEntity: vi.fn(() => ({ id: 1, name: 'Test' })),
+        getReactiveEntity: vi.fn((obj) => reactive(obj))
+      });
       const views = createViews({}, { graph: mockGraph });
       const result = views.proxyForEntityKey('User:1');
 
-      expect(mockMaterializeEntity).toHaveBeenCalledWith('User:1');
-      expect(mockGetReactiveEntity).toHaveBeenCalled();
+      expect(mockGraph.materializeEntity).toHaveBeenCalledWith('User:1');
+      expect(mockGraph.getReactiveEntity).toHaveBeenCalled();
       expect(isReactive(result)).toBe(true);
     });
 
     it('returns existing reactive object without re-wrapping', () => {
       const reactiveObj = reactive({ id: 1, name: 'Test' });
-      const mockMaterializeEntity = vi.fn(() => reactiveObj);
-      const mockGetReactiveEntity = vi.fn((obj) => obj);
-      const mockGraph = {
-        entityStore: new Map(),
-        connectionStore: new Map(),
-        ensureReactiveConnection: vi.fn(),
-        materializeEntity: mockMaterializeEntity,
-        getReactiveEntity: mockGetReactiveEntity,
-        identify: vi.fn(),
-        putEntity: vi.fn(),
-        getEntityParentKey: vi.fn(),
-      };
-
+      const mockGraph = createMockGraph({
+        materializeEntity: vi.fn(() => reactiveObj),
+        getReactiveEntity: vi.fn((obj) => obj)
+      });
       const views = createViews({}, { graph: mockGraph });
       const result = views.proxyForEntityKey('User:1');
 
-      expect(mockMaterializeEntity).toHaveBeenCalledWith('User:1');
-      expect(mockGetReactiveEntity).toHaveBeenCalled();
+      expect(mockGraph.materializeEntity).toHaveBeenCalledWith('User:1');
+      expect(mockGraph.getReactiveEntity).toHaveBeenCalled();
       expect(result).toBe(reactiveObj);
     });
   });
@@ -160,17 +112,7 @@ describe('core/views', () => {
         views: new Set(),
         list: [],
       };
-      const mockGraph = {
-        entityStore: new Map(),
-        connectionStore: new Map(),
-        ensureReactiveConnection: vi.fn(),
-        materializeEntity: vi.fn(),
-        getReactiveEntity: vi.fn(),
-        identify: vi.fn(),
-        putEntity: vi.fn(),
-        getEntityParentKey: vi.fn(),
-      };
-
+      const mockGraph = createMockGraph();
       const views = createViews({}, { graph: mockGraph });
       const view = {
         edges: [],
@@ -193,17 +135,7 @@ describe('core/views', () => {
         ['conn1', { list: [], views: new Set(), pageInfo: {}, meta: {}, keySet: new Set(), initialized: false } as any],
         ['conn2', { list: [{ key: 'User:1' }], views: new Set([view1]), pageInfo: {}, meta: {}, keySet: new Set(), initialized: false } as any],
       ]);
-      const mockGraph = {
-        entityStore: new Map(),
-        connectionStore,
-        ensureReactiveConnection: vi.fn(),
-        materializeEntity: vi.fn(),
-        getReactiveEntity: vi.fn(),
-        identify: vi.fn(),
-        putEntity: vi.fn(),
-        getEntityParentKey: vi.fn(),
-      };
-
+      const mockGraph = createMockGraph({ connectionStore });
       const views = createViews({}, { graph: mockGraph });
       views.gcConnections();
 
