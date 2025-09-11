@@ -1,6 +1,8 @@
 // src/core/resolvers.ts
 import type { FieldResolver, ResolversDict } from "../types";
 import type { CachebayInternals } from "./types";
+import type { GraphAPI } from "./graph";
+import type { ViewsAPI } from "./views";
 import { stableIdentityExcluding, buildConnectionKey } from "./utils";
 import { RESOLVE_SIGNATURE } from "./constants";
 import { isReactive, reactive } from "vue";
@@ -28,14 +30,16 @@ export function setRelayOptionsByType(typename: string, field: string, options: 
   typeMap.set(field, options);
 }
 
+export type ResolversDependencies = {
+  graph: GraphAPI;
+  views: ViewsAPI;
+};
+
 export function createResolvers(
   options: {
     resolvers?: ResolversDict;
   },
-  dependencies: {
-    graph: any;
-    views: any;
-  }
+  dependencies: ResolversDependencies
 ) {
   const { resolvers: resolverSpecs } = options;
   const { graph, views } = dependencies;

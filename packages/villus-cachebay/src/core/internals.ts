@@ -38,18 +38,10 @@ import {
 } from "./utils";
 
 // split modules
-import { createGraph } from "./graph";
-import { createViews } from "./views";
-import {
-  createResolvers,
-  applyResolversOnGraph as applyResolversOnGraphImpl,
-  getRelayOptionsByType,
-  setRelayOptionsByType,
-  relayResolverIndex,
-  relayResolverIndexByType,
-  relay,
-} from "./resolvers";
-import { createFragments } from "./fragments";
+import { createFragments, type FragmentsDependencies } from "./fragments";
+import { createViews, type ViewsDependencies } from "./views";
+import { createGraph, type GraphAPI } from "./graph";
+import { createResolvers, type ResolversDependencies, applyResolversOnGraph as applyResolversOnGraphImpl, getRelayOptionsByType, setRelayOptionsByType, relayResolverIndex, relayResolverIndexByType, relay } from "./resolvers";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Public instance type
@@ -111,7 +103,7 @@ export function createCache(options: CachebayOptions = {}) {
     trackNonRelayResults,
   }, {
     graph,
-  });
+  } satisfies ViewsDependencies);
 
   /* ───────────────────────────────────────────────────────────────────────────
    * Resolvers preparation
@@ -121,7 +113,7 @@ export function createCache(options: CachebayOptions = {}) {
   const resolvers = createResolvers({ resolvers: options.resolvers }, {
     graph,
     views,
-  });
+  } satisfies ResolversDependencies);
 
   // SSR features
   const ssr = createSSR({
@@ -144,7 +136,7 @@ export function createCache(options: CachebayOptions = {}) {
   ) as unknown) as CachebayInstance;
 
   // Create fragments
-  const fragments = createFragments({}, { graph, views });
+  const fragments = createFragments({}, { graph, views } satisfies FragmentsDependencies);
 
   // Create optimistic features
   const modifyOptimistic = createModifyOptimistic({

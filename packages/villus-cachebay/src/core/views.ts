@@ -7,6 +7,7 @@ import {
 } from "vue";
 
 import type { EntityKey, ConnectionState } from "./types";
+import type { GraphAPI } from "./graph";
 import { getRelayOptionsByType } from "./resolvers";
 import { buildConnectionKey, readPathValue } from "./utils";
 import { TYPENAME_FIELD } from "./constants";
@@ -18,13 +19,15 @@ import { TYPENAME_FIELD } from "./constants";
 
 export type ViewsAPI = ReturnType<typeof createViews>;
 
+export type ViewsDependencies = {
+  graph: GraphAPI;
+};
+
 export function createViews(
   options: {
     trackNonRelayResults?: boolean;
   },
-  dependencies: {
-    graph: any;
-  }
+  dependencies: ViewsDependencies
 ) {
   const {
     trackNonRelayResults = true,

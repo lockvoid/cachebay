@@ -3,10 +3,17 @@
 import type { EntityKey } from "./types";
 import { parseEntityKey } from "./utils";
 import { TYPENAME_FIELD } from "./constants";
+import type { GraphAPI } from "./graph";
+import type { ViewsAPI } from "./views";
 
 export type Fragments = ReturnType<typeof createFragments>;
 
-export function createFragments(options: {}, dependencies: { graph: any; views: any }) {
+export type FragmentsDependencies = {
+  graph: GraphAPI;
+  views: ViewsAPI;
+};
+
+export function createFragments(options: {}, dependencies: FragmentsDependencies) {
   const { graph, views } = dependencies;
 
   function keyFromRefOrKey(refOrKey: EntityKey | { __typename: string; id?: any; _id?: any }): EntityKey | null {
