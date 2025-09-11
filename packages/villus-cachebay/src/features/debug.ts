@@ -13,6 +13,7 @@ import type { EntityKey, ConnectionState } from "../core/types";
 import {
   normalizeParentKeyInput,
   parseVariablesFromConnectionKey,
+  stableIdentityExcluding,
 } from "../core/utils";
 
 /* ────────────────────────────── LOGGING ────────────────────────────── */
@@ -70,11 +71,9 @@ export const Debug = createDebug();
 
 /* ────────────────────────────── INSPECT ────────────────────────────── */
 
-type InspectDeps = {
-  entityStore: Map<EntityKey, any>;
-  connectionStore: Map<string, ConnectionState>;
-  operationCache: Map<string, { data: any; variables: Record<string, any> }>;
-  stableIdentityExcluding: (vars: Record<string, any>, remove: string[]) => string;
+export type InspectDeps = {
+  graph: any;
+  views?: any;
 };
 
 type OpFilter = {
@@ -99,25 +98,25 @@ function varsMatch(entryVars: Record<string, any>, want?: Record<string, any>): 
  * NOTE: This is called lazily by core when you access `instance.inspect`.
  */
 export function createInspect(deps: InspectDeps) {
-  const { entityStore, connectionStore, operationCache, stableIdentityExcluding } = deps;
+  const { graph, views } = deps;
 
   return {
     /* ───────── entities ───────── */
     entities(typename?: string) {
       const out: string[] = [];
-      entityStore.forEach((_v, k) => {
+      graph.entityStore.forEach((_v: any, k: string) => {
         if (!typename) out.push(k);
         else if (k.startsWith(typename + ":")) out.push(k);
       });
       return out;
     },
     get(key: EntityKey) {
-      return entityStore.get(key);
+      return graph.entityStore.get(key);
     },
 
     /* ───────── connections ───────── */
     connections() {
-      return Array.from(connectionStore.keys());
+      return Array.from(graph.connectionStore.keys());
     },
     connection(
       parent: "Query" | { __typename: string; id?: any; _id?: any },
@@ -139,7 +138,7 @@ export function createInspect(deps: InspectDeps) {
         meta: any;
       }> = [];
 
-      connectionStore.forEach((state, ckey) => {
+      graph.connectionStore.forEach((state: any, ckey: string) => {
         if (!ckey.startsWith(prefix)) return;
         const vars = parseVariablesFromConnectionKey(ckey, prefix);
         if (vars == null) return;
@@ -170,12 +169,12 @@ export function createInspect(deps: InspectDeps) {
     operations(filter?: OpFilter) {
       const out: Array<{ key: string; variables: Record<string, any>; data: any }> = [];
       const { keyIncludes, varsEquals, limit } = filter || {};
-      for (const [key, entry] of operationCache.entries()) {
-        if (keyIncludes && !key.includes(keyIncludes)) continue;
-        if (!varsMatch(entry.variables || {}, varsEquals)) continue;
-        out.push({ key, variables: entry.variables || {}, data: entry.data });
-        if (limit && out.length >= limit) break;
-      }
+      graph.operationStore.forEach((entry: any, k: string) => {
+        if (keyIncludes && !k.includes(keyIncludes)) return;
+        if (!varsMatch(entry.variables || {}, varsEquals)) return;
+        out.push({ key: k, variables: entry.variables || {}, data: entry.data });
+        if (limit && out.length >= limit) return;
+      });
       return out;
     },
 
@@ -183,7 +182,9 @@ export function createInspect(deps: InspectDeps) {
      * Read a specific operation cache entry by key (full object).
      */
     operation(key: string) {
-      const entry = operationCache.get(key);
+      const count = graph.operationStore.size;
+      if (count === 0) return null;
+      const entry = graph.operationStore.get(key);
       if (!entry) return null;
       return { key, variables: entry.variables, data: entry.data };
     },

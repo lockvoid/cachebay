@@ -1,7 +1,50 @@
 /* src/features/optimistic.ts */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { buildConnectionKey, parseEntityKey, stableIdentityExcluding } from "../core/utils";
+
 type EntityKey = string;
+
+// Helper functions
+function cloneList(list: any[]): any[] {
+  return list.map(e => ({ ...e, edge: e.edge ? { ...e.edge } : undefined }));
+}
+
+function shallowClone(obj: any): any {
+  return obj ? { ...obj } : null;
+}
+
+function upsertEntry(state: any, entry: { key: string; cursor: string | null; edge?: any }, position: "start" | "end") {
+  const idx = state.list.findIndex((e: any) => e.key === entry.key);
+  if (idx >= 0) {
+    state.list[idx] = { ...entry };
+  } else {
+    if (position === "start") {
+      state.list.unshift({ ...entry });
+    } else {
+      state.list.push({ ...entry });
+    }
+    state.keySet.add(entry.key);
+  }
+}
+
+function identifyNodeKey(obj: any): EntityKey | null {
+  if (!obj || typeof obj !== "object") return null;
+  const typename = obj.__typename;
+  const id = obj.id ?? obj._id;
+  return typename && id != null ? `${typename}:${id}` : null;
+}
+
+function edgeMetaShallow(edge: any, nodeField: string): any {
+  if (!edge || typeof edge !== "object") return {};
+  const meta: any = {};
+  for (const k of Object.keys(edge)) {
+    if (k !== nodeField && k !== "cursor") {
+      meta[k] = edge[k];
+    }
+  }
+  return meta;
+}
 
 type RelayOptionsLite = {
   names: { edges: string; pageInfo: string; nodeField: string };
@@ -12,159 +55,14 @@ type RelayOptionsLite = {
 };
 
 type Deps = {
-  // stores
-  entityStore: Map<EntityKey, Record<string, any>>;
-  connectionStore: Map<string, any>;
-
-  // connection/core helpers
-  ensureConnectionState: (key: string) => any;
-  buildConnectionKey: (
-    parentKey: string,
-    field: string,
-    relay: RelayOptionsLite,
-    variables: Record<string, any>,
-  ) => string;
-  parentEntityKeyFor: (typename: string | null, id?: any) => string | null;
+  graph: any;
+  views: any;
   getRelayOptionsByType: (parentTypename: string | null, field: string) => RelayOptionsLite | undefined;
-
-  // entity helpers
-  parseEntityKey: (key: string) => { typename: string | null; id: string | null };
-  resolveConcreteEntityKey: (abstractKey: string) => string | null;
-  doesEntityKeyMatch: (a: string, b: string) => boolean;
-  putEntity: (obj: any, writePolicy?: "merge" | "replace") => EntityKey | null;
-  idOf: (obj: any) => EntityKey | null;
-
-  // change propagation
-  markConnectionDirty: (state: any) => void;
-  touchConnectionsForEntityKey: (key: string) => void;
-  markEntityDirty: (key: string) => void;
-  bumpEntitiesTick: () => void;
-
-  // interfaces + hashing
-  isInterfaceTypename: (t: string | null) => boolean;
-  getImplementationsFor: (t: string) => string[];
-  stableIdentityExcluding: (vars: Record<string, any>, remove: string[]) => string;
 };
 
 type PublicAPI = {
   identify: (obj: any) => string | null;
-  readFragment: (refOrKey: string | { __typename: string; id?: any; _id?: any }, materialized?: boolean) => any;
-  hasFragment: (refOrKey: string | { __typename: string; id?: any; _id?: any }) => boolean;
-  writeFragment: (obj: any) => { commit(): void; revert(): void };
 };
-
-type ConnectionsArgs = {
-  parent: "Query" | { __typename: string; id?: any; _id?: any } | string;
-  field: string;
-  variables?: Record<string, any>;
-};
-
-/* ─────────────────────────────────────────────────────────────────────────────
- * Utilities
- * ──────────────────────────────────────────────────────────────────────────── */
-
-function normalizeParentKey(
-  parent: "Query" | { __typename: string; id?: any; _id?: any } | string,
-  parentEntityKeyFor: Deps["parentEntityKeyFor"],
-): string {
-  if (typeof parent === "string") {
-    if (parent === "Query") {
-      return "Query";
-    }
-    if (parent.includes(":")) {
-      return parent;
-    }
-    return "Query";
-  }
-  const t = (parent as any)?.__typename;
-  const id = (parent as any)?.id ?? (parent as any)?._id;
-  return parentEntityKeyFor(t, id) || "Query";
-}
-
-function identifyNodeKey(node: any): string | null {
-  if (!node || typeof node !== "object") {
-    return null;
-  }
-  const t = node.__typename;
-  if (!t) {
-    return null;
-  }
-  const id = node.id ?? node._id;
-  if (id == null) {
-    return null;
-  }
-  return `${t}:${String(id)}`;
-}
-
-function shallowClone<T extends object>(obj: T | null | undefined): T | null {
-  if (!obj || typeof obj !== "object") {
-    return null;
-  }
-  const out: any = Array.isArray(obj) ? [] : {};
-  for (const k of Object.keys(obj)) {
-    out[k] = (obj as any)[k];
-  }
-  return out;
-}
-
-function cloneList(list: any[]) {
-  return list.map((e) => ({ ...e, edge: e?.edge ? { ...e.edge } : undefined }));
-}
-
-/** Mutates the entry in place when found; inserts at start/end if not. */
-function upsertEntry(state: any, entry: { key: string; cursor: string | null; edge?: any }, position: "start" | "end") {
-  const idx = state.list.findIndex((e: any) => e.key === entry.key);
-
-  if (idx >= 0) {
-    const prev = state.list[idx];
-
-    if (prev.cursor !== entry.cursor) {
-      prev.cursor = entry.cursor;
-    }
-
-    if (entry.edge) {
-      const merged = { ...(prev.edge || {}) };
-      for (const k of Object.keys(entry.edge)) {
-        merged[k] = entry.edge[k];
-      }
-      prev.edge = Object.keys(merged).length ? merged : undefined;
-    }
-
-  } else {
-    if (position === "start") {
-      state.list.unshift({ key: entry.key, cursor: entry.cursor, edge: entry.edge });
-    } else {
-      state.list.push({ key: entry.key, cursor: entry.cursor, edge: entry.edge });
-    }
-  }
-
-  state.keySet.add(entry.key);
-}
-
-function edgeMetaShallow(edge: any, nodeFieldName: string): Record<string, any> | undefined {
-  if (!edge || typeof edge !== "object") {
-    return undefined;
-  }
-  const out: any = {};
-  let has = false;
-
-  for (const k of Object.keys(edge)) {
-    if (k === "cursor" || k === nodeFieldName || k === "__typename") {
-      continue;
-    }
-    out[k] = edge[k];
-    has = true;
-  }
-
-  return has ? out : undefined;
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
- * Layer engine (cumulative reverts)
- *  - Every modifyOptimistic call creates a layer and applies immediately
- *  - commit(): registers the layer in the committed stack
- *  - revert(): removes the layer and rebuilds base + remaining layers
- * ──────────────────────────────────────────────────────────────────────────── */
 
 type EntityOp =
   | { type: "entityWrite"; obj: any; policy: "merge" | "replace" }
@@ -181,20 +79,14 @@ type Layer = {
   connOps: ConnOp[];
 };
 
+type ConnectionsArgs = {
+  parent: "Query" | { __typename: string; id?: any; _id?: any } | string;
+  field: string;
+  variables?: Record<string, any>;
+};
+
 export function createModifyOptimistic(deps: Deps) {
-  const {
-    entityStore,
-    ensureConnectionState,
-    buildConnectionKey,
-    parentEntityKeyFor,
-    getRelayOptionsByType,
-    putEntity,
-    idOf,
-    markConnectionDirty,
-    markEntityDirty,
-    touchConnectionsForEntityKey,
-    bumpEntitiesTick,
-  } = deps;
+  const { graph, views, getRelayOptionsByType } = deps;
 
   // Committed layers (in order) + currently pending (not yet committed)
   const committed: Layer[] = [];
@@ -211,66 +103,66 @@ export function createModifyOptimistic(deps: Deps) {
     if (baseEntitySnap.has(key)) {
       return;
     }
-    const existed = entityStore.has(key);
-    baseEntitySnap.set(key, existed ? { ...(entityStore.get(key) as any) } : null);
+    const existed = graph.entityStore.has(key);
+    baseEntitySnap.set(key, existed ? { ...(graph.entityStore.get(key) as any) } : null);
   }
 
   function captureConnBase(key: string) {
     if (baseConnSnap.has(key)) {
       return;
     }
-    const st = ensureConnectionState(key);
+    const state = graph.ensureReactiveConnection(key);
     baseConnSnap.set(key, {
-      list: cloneList(st.list),
-      pageInfo: shallowClone(st.pageInfo) || {},
-      meta: shallowClone(st.meta) || {},
+      list: cloneList(state.list),
+      pageInfo: shallowClone(state.pageInfo) || {},
+      meta: shallowClone(state.meta) || {},
     });
   }
 
   function applyEntityWrite(obj: any, policy: "merge" | "replace") {
-    const key = idOf(obj);
+    const key = graph.identify(obj);
     if (!key) {
       return;
     }
     captureEntityBase(key);
-    putEntity(obj, policy);
-    markEntityDirty(key);
-    touchConnectionsForEntityKey(key);
+    const entity = { ...obj };
+    const ek = graph.putEntity(entity, policy);
+    views.markEntityDirty(ek);
+    views.touchConnectionsForEntityKey(ek);
   }
 
   function applyEntityDelete(key: string) {
     captureEntityBase(key);
 
-    const existed = entityStore.has(key);
+    const existed = graph.entityStore.has(key);
     if (existed) {
-      entityStore.delete(key);
-      bumpEntitiesTick();
+      graph.entityStore.delete(key);
+      views.markEntityDirty(key);
+      views.touchConnectionsForEntityKey(key);
+      graph.bumpEntitiesTick();
     }
-
-    markEntityDirty(key);
-    touchConnectionsForEntityKey(key);
   }
 
   function applyConnOp(op: ConnOp) {
-    const st = ensureConnectionState(op.key);
+    const state = graph.ensureReactiveConnection(op.key);
     captureConnBase(op.key);
 
     if (op.type === "connAdd") {
-      upsertEntry(st, op.entry, op.position);
+      upsertEntry(state, op.entry, op.position);
     } else if (op.type === "connRemove") {
-      const idx = st.list.findIndex((e: any) => e.key === op.entryKey);
+      const idx = state.list.findIndex((e: any) => e.key === op.entryKey);
       if (idx >= 0) {
-        st.list.splice(idx, 1);
-        st.keySet.delete(op.entryKey);
+        state.list.splice(idx, 1);
+        state.keySet.delete(op.entryKey);
       }
     } else if (op.type === "connPageInfo") {
-      const pi = st.pageInfo as any;
+      const pi = state.pageInfo as any;
       for (const k of Object.keys(op.patch)) {
         pi[k] = op.patch[k];
       }
     }
 
-    markConnectionDirty(st);
+    views.markConnectionDirty(state);
   }
 
   /** Reset stores to base snapshots, preserving array/object identity where possible. */
@@ -278,22 +170,23 @@ export function createModifyOptimistic(deps: Deps) {
     // Entities
     for (const [key, snap] of baseEntitySnap) {
       if (snap === null) {
-        const existed = entityStore.has(key);
-        entityStore.delete(key);
+        const existed = graph.entityStore.has(key);
+        const { typename } = parseEntityKey(key);
         if (existed) {
-          bumpEntitiesTick();
+          graph.entityStore.delete(key);
+          views.markEntityDirty(key);
+          views.touchConnectionsForEntityKey(key);
+          graph.bumpEntitiesTick();
         }
-        markEntityDirty(key);
       } else {
-        entityStore.set(key, { ...snap });
-        markEntityDirty(key);
+        graph.entityStore.set(key, { ...snap });
+        views.markEntityDirty(key);
       }
-      touchConnectionsForEntityKey(key);
     }
 
     // Connections (preserve array identity)
     for (const [key, snap] of baseConnSnap) {
-      const st = ensureConnectionState(key);
+      const st = graph.ensureReactiveConnection(key);
 
       // replace list contents, keep reference
       st.list.splice(0, st.list.length, ...cloneList(snap.list));
@@ -317,7 +210,7 @@ export function createModifyOptimistic(deps: Deps) {
       }
 
       st.keySet = new Set<string>(st.list.map((e: any) => e.key));
-      markConnectionDirty(st);
+      views.markConnectionDirty(st);
     }
   }
 
@@ -381,7 +274,7 @@ export function createModifyOptimistic(deps: Deps) {
     // API used by the builder; applies immediately
     const apiForBuilder = {
       patch(entity: any, policy: "merge" | "replace" = "merge") {
-        const key = deps.idOf(entity);
+        const key = graph.identify(entity);
         if (!key) {
           return;
         }
@@ -397,20 +290,19 @@ export function createModifyOptimistic(deps: Deps) {
       },
 
       connections(args: ConnectionsArgs) {
-        const parentKey = normalizeParentKey(args.parent as any, deps.parentEntityKeyFor);
-        const variables = args.variables || {};
-        const parentTypename =
-          typeof args.parent === "string"
-            ? (args.parent === "Query" ? "Query" : "Query")
-            : ((args.parent as any)?.__typename || "Query");
+        const parentTypename = typeof args.parent === "string"
+            ? args.parent
+            : ((args.parent as any)?.__typename || null);
+        const parentId = (args.parent as any)?.id ?? (args.parent as any)?._id;
+        const parentKey = graph.getEntityParentKey(parentTypename, parentId) || "Query";
 
-        const relay = deps.getRelayOptionsByType(parentTypename, args.field);
+        const relay = getRelayOptionsByType(parentTypename, args.field);
         if (!relay) {
           const noop = { addNode() { }, removeNode() { }, patch() { }, key: "" } as const;
           return [noop] as const;
         }
 
-        const key = deps.buildConnectionKey(parentKey, args.field, relay as any, variables);
+        const connKey = buildConnectionKey(parentKey, args.field, relay as any, args.variables || {});
 
         const handle = {
           addNode: (node: any, opts: { cursor?: string | null; position?: "start" | "end"; edge?: any } = {}) => {
@@ -428,7 +320,7 @@ export function createModifyOptimistic(deps: Deps) {
             // Connection entry upsert
             const op: ConnOp = {
               type: "connAdd",
-              key,
+              key: connKey,
               entry: { key: nodeKey, cursor, edge: meta },
               position: opts.position === "start" ? "start" : "end",
             };
@@ -442,7 +334,7 @@ export function createModifyOptimistic(deps: Deps) {
             if (!nodeKey) {
               return;
             }
-            const op: ConnOp = { type: "connRemove", key, entryKey: nodeKey };
+            const op: ConnOp = { type: "connRemove", key: connKey, entryKey: nodeKey };
             layer.connOps.push(op);
             applyConnOp(op);
           },
@@ -451,12 +343,13 @@ export function createModifyOptimistic(deps: Deps) {
             if (!pi || typeof pi !== "object") {
               return;
             }
-            const op: ConnOp = { type: "connPageInfo", key, patch: { ...pi } };
+            const patch = { ...pi };
+            const op: ConnOp = { type: "connPageInfo", key: connKey, patch };
             layer.connOps.push(op);
             applyConnOp(op);
           },
 
-          key,
+          key: connKey,
         } as const;
 
         return [handle] as const;

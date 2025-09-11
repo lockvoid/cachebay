@@ -22,21 +22,7 @@ export function createViews(
     trackNonRelayResults?: boolean;
   },
   dependencies: {
-    // from graph.ts
-    entityStore: Map<EntityKey, any>;
-    connectionStore: Map<string, ConnectionState>;
-    ensureConnectionState: (key: string) => ConnectionState;
-
-    // entity helpers
-    materializeEntity: (key: EntityKey) => any;
-    makeEntityProxy: (base: any) => any;
-    putEntity?: (obj: any) => EntityKey | null;
-
-    // for id + proxies
-    idOf: (o: any) => EntityKey | null;
-
-    // for relay connections
-    getEntityParentKey?: (typename: string, id: any) => EntityKey | null;
+    graph: any;
     typenameKey?: string;
   }
 ) {
@@ -45,14 +31,7 @@ export function createViews(
   } = options;
   
   const {
-    entityStore,
-    connectionStore,
-    ensureConnectionState,
-    materializeEntity,
-    makeEntityProxy,
-    putEntity,
-    idOf,
-    getEntityParentKey,
+    graph,
     typenameKey = '__typename',
   } = dependencies;
 
@@ -61,34 +40,49 @@ export function createViews(
    * ────────────────────────────────────────────────────────────────────────── */
   const entityViews = new Map<EntityKey, Set<any>>();
 
+  function getOrCreateEntityViews(key: EntityKey) {
+    let views = entityViews.get(key);
+    if (!views) {
+      views = new Set<any>();
+      entityViews.set(key, views);
+    }
+    return views;
+  }
+
   function isValidEntityView(obj: any) {
     return !!(obj && typeof obj === "object");
   }
 
   function registerEntityView(key: EntityKey, obj: any) {
-    if (!isValidEntityView(obj)) return;
-    let set = entityViews.get(key);
-    if (!set) {
-      set = new Set<any>();
-      entityViews.set(key, set);
+    if (!isValidEntityView(obj)) {
+      return;
     }
-    const proxy = isReactive(obj) ? obj : makeEntityProxy(obj);
-    set.add(proxy);
+    const views = getOrCreateEntityViews(key);
+    views.add(obj);
   }
 
   function synchronizeEntityViews(key: EntityKey) {
-    const snap = entityStore.get(key);
-    if (!snap) return;
-
     const views = entityViews.get(key);
-    if (!views || views.size === 0) return;
+    if (!views) return;
 
-    const fields = Object.keys(snap);
+    const entity = graph.materializeEntity(key);
+    if (!entity) {
+      // Entity was deleted - clear all views
+      views.forEach(view => {
+        for (const k of Object.keys(view)) {
+          delete view[k];
+        }
+      });
+      entityViews.delete(key);
+      return;
+    }
+
+    const fields = Object.keys(entity);
     views.forEach((obj) => {
       for (let i = 0; i < fields.length; i++) {
         const k = fields[i];
-        if ((obj as any)[k] !== (snap as any)[k]) {
-          (obj as any)[k] = (snap as any)[k];
+        if ((obj as any)[k] !== (entity as any)[k]) {
+          (obj as any)[k] = (entity as any)[k];
         }
       }
     });
@@ -189,8 +183,7 @@ export function createViews(
       }
       if (existing.edges === view.edges) {
         if (view.limit != null) {
-          const prev = (existing as any).limit ?? 0;
-          if (view.limit > prev) (existing as any).limit = view.limit;
+          if (view.limit > (existing as any).limit) (existing as any).limit = view.limit;
         }
         if ((view as any).pinned) (existing as any).pinned = true;
         return;
@@ -240,6 +233,7 @@ export function createViews(
         if (edgesArray.length > desiredLength) edgesArray.splice(desiredLength);
 
         for (let i = oldLen; i < desiredLength; i++) {
+          const lastC = state.list[state.list.length - 1]?.cursor;
           const entry = state.list[i];
           let edgeObject = edgesArray[i] as any;
           if (!edgeObject || typeof edgeObject !== "object" || !isReactive(edgeObject)) {
@@ -274,7 +268,7 @@ export function createViews(
             edgeObject.node = proxyForEntityKey(entry.key);
             linkEntityToConnection(entry.key, state);
           } else {
-            const snap = entityStore.get(entry.key);
+            const snap = graph.materializeEntity(entry.key);
             if (snap) {
               const sk = Object.keys(snap);
               for (let j = 0; j < sk.length; j++) {
@@ -310,9 +304,9 @@ export function createViews(
    * Proxies for entity keys (registers as entity views)
    * ────────────────────────────────────────────────────────────────────────── */
   function proxyForEntityKey(key: EntityKey) {
-    // Always base off the materialized object to keep identity for sync
-    const base = materializeEntity(key);
-    const proxy = isReactive(base) ? base : makeEntityProxy(base);
+    const entity = graph.materializeEntity(key);
+    if (!entity) return undefined;
+    const proxy = graph.getReactiveEntity(entity);
     registerEntityView(key, proxy);
     return proxy;
   }
@@ -330,8 +324,8 @@ export function createViews(
       if (Object.prototype.hasOwnProperty.call(cur, "node")) {
         const n = cur.node;
         if (n && typeof n === "object") {
-          const key = idOf(n);
-          if (key) cur.node = proxyForEntityKey(key);
+          const nodeKey = graph.identify(n);
+          if (nodeKey) cur.node = proxyForEntityKey(nodeKey);
         }
       }
       for (const k of Object.keys(cur)) {
@@ -345,17 +339,13 @@ export function createViews(
    * GC of connection states
    * ────────────────────────────────────────────────────────────────────────── */
   function gcConnections(predicate?: (key: string, state: ConnectionState) => boolean) {
-    connectionStore.forEach((state, key) => {
-      const shouldDelete = predicate ? predicate(key, state) : state.list.length === 0 && state.views.size === 0;
-      if (shouldDelete) {
-        for (const entry of state.list) {
-          const set = entityToConnectionStates.get(entry.key);
-          if (set) {
-            set.delete(state);
-            if (!set.size) entityToConnectionStates.delete(entry.key);
-          }
+    graph.connectionStore.forEach((state: any, key: string) => {
+      if (state.views.size === 0) {
+        // No views = can be removed
+        const shouldRemove = predicate ? predicate(key, state) : true;
+        if (shouldRemove) {
+          graph.connectionStore.delete(key);
         }
-        connectionStore.delete(key);
       }
     });
   }
@@ -382,9 +372,9 @@ export function createViews(
         if (spec && value && typeof value === "object") {
           // Resolve key/state
           const parentId = (obj as any)?.id ?? (obj as any)?._id;
-          const parentKey = getEntityParentKey ? getEntityParentKey(pt!, parentId) : null || "Query";
+          const parentKey = graph.getEntityParentKey ? graph.getEntityParentKey(pt!, parentId) : null || "Query";
           const connKey = buildConnectionKey(parentKey!, field, spec as any, variables);
-          const state = ensureConnectionState(connKey);
+          const state = graph.ensureReactiveConnection(connKey);
 
           // Extract parts
           const edgesArr = readPathValue(value, spec.segs.edges);
@@ -496,9 +486,9 @@ export function createViews(
       const typename = (current as any)[typenameKey];
 
       if (typename) {
-        const ek = idOf(current);
-        if (ek && putEntity) {
-          putEntity(current);
+        const ek = graph.identify(current);
+        if (ek && graph.putEntity) {
+          graph.putEntity(current);
           if (trackNonRelayResults) registerEntityView(ek, current);
           touchedKeys.add(ek);
         }
@@ -525,11 +515,11 @@ export function createViews(
               const node = hasPath ? readPathValue(edge, opts.segs.node) : (edge as any)[nodeField];
               if (!node || typeof node !== "object") continue;
 
-              const key = idOf(node);
+              const key = graph.identify(node);
               if (!key) continue;
 
-              if (putEntity) {
-                putEntity(node);
+              if (graph.putEntity) {
+                graph.putEntity(node);
                 touchedKeys.add(key);
               }
             }

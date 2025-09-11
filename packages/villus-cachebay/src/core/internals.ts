@@ -121,14 +121,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   const views = createViews({
     trackNonRelayResults,
   }, {
-    entityStore: graph.entityStore,
-    connectionStore: graph.connectionStore,
-    ensureConnectionState: graph.ensureReactiveConnection,
-    materializeEntity: graph.materializeEntity,
-    makeEntityProxy: graph.getReactiveEntity,
-    putEntity: graph.putEntity,
-    idOf: graph.identify,
-    getEntityParentKey: graph.getEntityParentKey,
+    graph,
     typenameKey: "__typename",
   });
 
@@ -198,17 +191,10 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
 
   // SSR features
   const ssr = createSSR({
-    entityStore: graph.entityStore,
-    connectionStore: graph.connectionStore,
-    operationCache: graph.operationStore,
-    ensureConnectionState: graph.ensureReactiveConnection,
-    linkEntityToConnection: views.linkEntityToConnection,
+    graph,
+    views,
     shallowReactive,
-    registerViewsFromResult: views.registerViewsFromResult,
-    resetRuntime: views.resetRuntime,
     applyResolversOnGraph,
-    collectEntities: views.collectEntities,
-    materializeResult: views.materializeResult,
   });
 
   // Build plugin
@@ -223,52 +209,19 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   }) as unknown) as CachebayInstance;
 
   // Create fragments
-  const fragments = createFragments({}, {
-    entityStore: graph.entityStore,
-    identify: graph.identify,
-    resolveEntityKey: graph.resolveEntityKey,
-    materializeEntity: graph.materializeEntity,
-    bumpEntitiesTick: graph.bumpEntitiesTick,
-    isInterfaceType: graph.isInterfaceType,
-    getInterfaceTypes: graph.getInterfaceTypes,
-    proxyForEntityKey: views.proxyForEntityKey,
-    markEntityDirty: views.markEntityDirty,
-    touchConnectionsForEntityKey: views.touchConnectionsForEntityKey,
-  });
+  const fragments = createFragments({}, { graph, views });
 
   // Create optimistic features
   const modifyOptimistic = createModifyOptimistic({
-    entityStore: graph.entityStore,
-    connectionStore: graph.connectionStore,
-    ensureConnectionState: graph.ensureReactiveConnection,
-    buildConnectionKey,
-    parentEntityKeyFor: graph.getEntityParentKey,
+    graph,
+    views,
     getRelayOptionsByType,
-    parseEntityKey,
-    resolveConcreteEntityKey: graph.resolveEntityKey,
-    doesEntityKeyMatch: graph.areEntityKeysEqual,
-    putEntity: graph.putEntity,
-    idOf: graph.identify,
-    markConnectionDirty: views.markConnectionDirty,
-    touchConnectionsForEntityKey: views.touchConnectionsForEntityKey,
-    markEntityDirty: views.markEntityDirty,
-    bumpEntitiesTick: graph.bumpEntitiesTick,
-    isInterfaceTypename: graph.isInterfaceType,
-    getImplementationsFor: graph.getInterfaceTypes,
-    stableIdentityExcluding,
   });
 
   // Create debug/inspect features
   const inspect = createInspect({
-    entityStore: graph.entityStore,
-    connectionStore: graph.connectionStore,
-    operationCache: graph.operationStore,
-    ensureConnectionState: graph.ensureReactiveConnection,
-    materializeEntity: graph.materializeEntity,
-    areEntityKeysEqual: graph.areEntityKeysEqual,
-    isInterfaceType: graph.isInterfaceType,
-    getInterfaceTypes: graph.getInterfaceTypes,
-    stableIdentityExcluding,
+    graph,
+    views,
   });
 
   // Attach additional methods to instance
