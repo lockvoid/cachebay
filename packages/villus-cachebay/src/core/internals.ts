@@ -48,7 +48,7 @@ import {
   relayResolverIndex,
   relayResolverIndexByType,
 } from "./resolvers";
-import { createFragmentsAPI } from "./fragments";
+import { createFragments } from "./fragments";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Public instance type
@@ -94,54 +94,45 @@ export type CachebayInstance = ClientPlugin & {
  * ──────────────────────────────────────────────────────────────────────────── */
 export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Config
-  const TYPENAME_KEY = options.typenameKey || "__typename";
-  const DEFAULT_WRITE_POLICY = options.writePolicy || "replace";
-  const typeKeyFactories =
+  const writePolicy = options.writePolicy || "replace";
+  const keys =
     typeof options.keys === "function" ? options.keys() : options.keys ? options.keys : ({} as NonNullable<KeysConfig>);
-  const customIdFromObject = options.idFromObject || null;
   const shouldAddTypename = options.addTypename !== false;
 
-  const interfaceMap: Record<string, string[]> =
+  const interfaces: Record<string, string[]> =
     typeof options.interfaces === "function"
       ? options.interfaces()
       : options.interfaces
         ? (options.interfaces as Record<string, string[]>)
         : {};
 
-  const useShallowEntities = options.entityShallow === true;
+  const reactiveMode = options.entityShallow === true ? "shallow" : "deep";
   const trackNonRelayResults = options.trackNonRelayResults !== false;
-  const OP_CACHE_MAX =
-    typeof options.lruOperationCacheSize === "number"
-      ? Math.max(1, options.lruOperationCacheSize)
-      : 200;
 
   // Build raw graph (stores + helpers)
   const graph = createGraph({
-    TYPENAME_KEY,
-    DEFAULT_WRITE_POLICY,
-    interfaceMap,
-    useShallowEntities,
-    customIdFromObject,
-    typeKeyFactories,
-    operationCacheMax: OP_CACHE_MAX,
+    writePolicy,
+    interfaces,
+    reactiveMode,
+    keys,
   });
 
   // Views (entity/connection views & proxy registration)
   const views = createViews({
     entityStore: graph.entityStore,
     connectionStore: graph.connectionStore,
-    ensureConnectionState: graph.ensureConnectionState,
+    ensureConnectionState: graph.getOrCreateConnection,
     materializeEntity: graph.materializeEntity,
-    makeEntityProxy: graph.makeEntityProxy,
-    idOf: graph.idOf,
+    makeEntityProxy: graph.makeReactive,
+    idOf: graph.identify,
   });
 
   /* ───────────────────────────────────────────────────────────────────────────
    * Internals object (exposed to resolvers & plugin)
    * ────────────────────────────────────────────────────────────────────────── */
   const internals: CachebayInternals = {
-    TYPENAME_KEY,
-    DEFAULT_WRITE_POLICY,
+    TYPENAME_KEY: "__typename",
+    DEFAULT_WRITE_POLICY: writePolicy,
     entityStore: graph.entityStore,
     connectionStore: graph.connectionStore,
     relayResolverIndex,
@@ -151,9 +142,9 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     operationCache: graph.operationCache,
     putEntity: graph.putEntity,
     materializeEntity: graph.materializeEntity,
-    ensureConnectionState: graph.ensureConnectionState,
+    ensureConnectionState: graph.getOrCreateConnection,
     synchronizeConnectionViews: views.synchronizeConnectionViews,
-    parentEntityKeyFor: graph.parentEntityKeyFor,
+    parentEntityKeyFor: graph.getEntityParentKey,
     buildConnectionKey,
     readPathValue,
     markConnectionDirty: views.markConnectionDirty,
@@ -164,7 +155,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     isReactive,
     reactive,
     shallowReactive,
-    writeOpCache: graph.writeOpCache,
+    writeOperationCache: graph.putOperation,
     // filled below:
     applyFieldResolvers: () => { },
   };
@@ -194,7 +185,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
       variables: vars,
       hint,
       FIELD_RESOLVERS,
-      TYPENAME_KEY,
+      TYPENAME_KEY: typenameKey,
     });
   }
 
@@ -220,7 +211,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
         if (spec && value && typeof value === "object") {
           // Resolve key/state
           const parentId = (obj as any)?.id ?? (obj as any)?._id;
-          const parentKey = graph.parentEntityKeyFor(pt!, parentId) || "Query";
+          const parentKey = graph.getEntityParentKey(pt!, parentId) || "Query";
           const connKey = buildConnectionKey(parentKey!, field, spec as any, variables);
           const state = graph.ensureConnectionState(connKey);
 
@@ -388,7 +379,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     entityStore: graph.entityStore,
     connectionStore: graph.connectionStore,
     operationCache: graph.operationCache,
-    ensureConnectionState: graph.ensureConnectionState,
+    ensureConnectionState: graph.getOrCreateConnection,
     linkEntityToConnection: views.linkEntityToConnection,
     shallowReactive,
     registerViewsFromResult,
@@ -401,7 +392,6 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Build plugin
   const instance = (buildCachebayPlugin(internals, {
     shouldAddTypename,
-    opCacheMax: OP_CACHE_MAX,
     isHydrating: ssr.isHydrating,
     hydrateOperationTicket: ssr.hydrateOperationTicket,
     applyResolversOnGraph,
@@ -410,15 +400,15 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   }) as unknown) as CachebayInstance;
 
   // Fragments API
-  const fragments = createFragmentsAPI({
-    TYPENAME_KEY,
+  const fragments = createFragments({
+    TYPENAME_KEY: "__typename",
     entityStore: graph.entityStore,
-    idOf: graph.idOf,
-    resolveConcreteEntityKey: graph.resolveConcreteEntityKey,
+    idOf: graph.identify,
+    resolveConcreteEntityKey: graph.resolveEntityKey,
     materializeEntity: graph.materializeEntity,
     bumpEntitiesTick: graph.bumpEntitiesTick,
-    isInterfaceTypename: graph.isInterfaceTypename,
-    getImplementationsFor: graph.getImplementationsFor,
+    isInterfaceTypename: graph.isInterfaceType,
+    getImplementationsFor: graph.getInterfaceTypes,
     proxyForEntityKey: views.proxyForEntityKey,
     markEntityDirty: views.markEntityDirty,
     touchConnectionsForEntityKey: views.touchConnectionsForEntityKey,
@@ -439,18 +429,18 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
       entityStore: graph.entityStore,
       connectionStore: graph.connectionStore,
 
-      ensureConnectionState: graph.ensureConnectionState,
+      ensureConnectionState: graph.getOrCreateConnection,
       buildConnectionKey,
-      parentEntityKeyFor: graph.parentEntityKeyFor,
+      parentEntityKeyFor: graph.getEntityParentKey,
       getRelayOptionsByType,
 
       parseEntityKey,
-      resolveConcreteEntityKey: graph.resolveConcreteEntityKey,
-      doesEntityKeyMatch: graph.doesEntityKeyMatch,
+      resolveConcreteEntityKey: graph.resolveEntityKey,
+      doesEntityKeyMatch: graph.areKeysEqual,
       linkEntityToConnection: views.linkEntityToConnection,
       unlinkEntityFromConnection: views.unlinkEntityFromConnection,
       putEntity: graph.putEntity,
-      idOf: graph.idOf,
+      idOf: graph.identify,
 
       markConnectionDirty: views.markConnectionDirty,
       touchConnectionsForEntityKey: views.touchConnectionsForEntityKey,
@@ -458,7 +448,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
       bumpEntitiesTick: graph.bumpEntitiesTick,
 
       isInterfaceTypename: (t) => graph.isInterfaceTypename(t),
-      getImplementationsFor: (t) => graph.getImplementationsFor(t),
+      getImplementationsFor: (t) => graph.getInterfaceTypes(t),
       stableIdentityExcluding,
     },
     {
@@ -481,7 +471,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   (instance as any).listEntityKeys = (selector: string | string[]) => {
     const types = new Set(
       (Array.isArray(selector) ? selector : [selector]).flatMap((t) =>
-        graph.isInterfaceTypename(t) ? graph.getImplementationsFor(t) : [t]
+        graph.isInterfaceTypename(t) ? graph.getInterfaceTypes(t) : [t]
       )
     );
     const keys: string[] = [];
@@ -496,18 +486,14 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     const keys = (instance as any).listEntityKeys(selector) as string[];
     if (!materialized) {
       return keys.map((k) => {
-        const resolved = graph.resolveConcreteEntityKey(k) || k;
+        const resolved = graph.resolveEntityKey(k) || k;
         return graph.entityStore.get(resolved);
       });
     }
-    return keys.map((k) => views.proxyForEntityKey(k));
+    return keys.map((k) => graph.materializeEntity(k));
   };
 
-  (instance as any).__entitiesTick = graph.__entitiesTick;
-
-  (instance as any).install = (app: App) => {
-    provideCachebay(app, instance);
-  };
+  (instance as any).__entitiesTick = graph.entitiesTick;
 
   (instance as any).gc = {
     connections(predicate?: (key: string, state: ConnectionState) => boolean) {

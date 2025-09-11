@@ -10,7 +10,8 @@ import {
 } from "vue";
 
 import type { EntityKey, ConnectionState } from "./types";
-import { parseEntityKey } from "./utils";
+import { parseEntityKey, unwrapShallow } from "./utils";
+import { TYPENAME_FIELD, QUERY_ROOT, DEFAULT_OPERATION_CACHE_LIMIT } from "./constants";
 
 /**
  * Graph-layer: owns the raw stores and entity helpers.
@@ -19,58 +20,51 @@ import { parseEntityKey } from "./utils";
 
 export type GraphAPI = ReturnType<typeof createGraph>;
 
-export function createGraph(config: {
-  TYPENAME_KEY: string;
-  DEFAULT_WRITE_POLICY: "replace" | "merge";
-  interfaceMap: Record<string, string[]>;
-  useShallowEntities: boolean;
-  // id helpers
-  customIdFromObject: ((o: any) => EntityKey | null) | null;
-  typeKeyFactories: Record<string, (obj: any) => string | null>;
-  // op-cache capacity
-  operationCacheMax: number;
-}) {
+/* ───────────────────────────────────────────────────────────────────────────
+ * Stateless helper functions
+ * ────────────────────────────────────────────────────────────────────────── */
+
+export const getEntityParentKey = (typename: string, id?: any): EntityKey | null => {
+  return typename === QUERY_ROOT ? QUERY_ROOT : id == null ? null : (typename + ":" + String(id)) as EntityKey;
+};
+
+export const createGraph = (config: {
+  writePolicy: "replace" | "merge";
+  interfaces: Record<string, string[]>;
+  reactiveMode: "shallow" | "deep";
+  keys: Record<string, (obj: any) => string | null>;
+}) => {
   const {
-    TYPENAME_KEY,
-    DEFAULT_WRITE_POLICY,
-    interfaceMap,
-    useShallowEntities,
-    customIdFromObject,
-    typeKeyFactories,
-    operationCacheMax,
+    writePolicy,
+    interfaces,
+    reactiveMode,
+    keys,
   } = config;
 
   // Stores
   const entityStore = new Map<EntityKey, any>();
   const connectionStore = new Map<string, ConnectionState>();
-  const operationCache = new Map<string, { data: any; variables: Record<string, any> }>();
+  const operationStore = new Map<string, { data: any; variables: Record<string, any> }>();
 
   /* ───────────────────────────────────────────────────────────────────────────
    * Entity id helpers
    * ────────────────────────────────────────────────────────────────────────── */
-  function idOf(o: any): EntityKey | null {
-    if (customIdFromObject) return customIdFromObject(o);
-    const t = o && (o as any)[TYPENAME_KEY];
+  const identify = (o: any): EntityKey | null => {
+    const t = o && (o as any)[TYPENAME_FIELD];
     if (!t) return null;
-    const perType = (typeKeyFactories as Record<string, (obj: any) => string | null>)[t];
+    const perType = keys[t];
     if (perType) {
       const idp = perType(o);
       return idp == null ? null : (t + ":" + String(idp)) as EntityKey;
     }
     const id = (o as any)?.id;
-    if (id != null) return (t + ":" + String(id)) as EntityKey;
-    const _id = (o as any)?._id;
-    return _id != null ? ((t + ":" + String(_id)) as EntityKey) : null;
-  }
-
-  function parentEntityKeyFor(typename: string, id?: any) {
-    return typename === "Query" ? "Query" : id == null ? null : (typename + ":" + String(id)) as EntityKey;
-  }
+    return id != null ? (t + ":" + String(id)) as EntityKey : null;
+  };
 
   /* ───────────────────────────────────────────────────────────────────────────
-   * Connection state allocator
+   * Connection state management
    * ────────────────────────────────────────────────────────────────────────── */
-  function ensureConnectionState(key: string): ConnectionState {
+  const ensureReactiveConnection = (key: string): ConnectionState => {
     let state = connectionStore.get(key);
     if (!state) {
       state = {
@@ -86,23 +80,23 @@ export function createGraph(config: {
       connectionStore.set(key, state);
     }
     return state;
-  }
+  };
 
   /* ───────────────────────────────────────────────────────────────────────────
    * Entity write/read
    * ────────────────────────────────────────────────────────────────────────── */
-  function putEntity(obj: any, override?: "replace" | "merge"): EntityKey | null {
-    const key = idOf(obj);
+  const putEntity = (obj: any, override?: "replace" | "merge"): EntityKey | null => {
+    const key = identify(obj);
     if (!key) return null;
     const wasExisting = entityStore.has(key);
-    const mode = override || DEFAULT_WRITE_POLICY;
+    const mode = override || writePolicy;
 
     if (mode === "replace") {
       const snapshot: any = Object.create(null);
       const kk = Object.keys(obj);
       for (let i = 0; i < kk.length; i++) {
         const k = kk[i];
-        if (k === TYPENAME_KEY || k === "id" || k === "_id") continue;
+        if (k === TYPENAME_FIELD || k === "id" || k === "_id") continue;
         snapshot[k] = (obj as any)[k];
       }
       entityStore.set(key, snapshot);
@@ -111,7 +105,7 @@ export function createGraph(config: {
       const kk = Object.keys(obj);
       for (let i = 0; i < kk.length; i++) {
         const k = kk[i];
-        if (k === TYPENAME_KEY || k === "id" || k === "_id") continue;
+        if (k === TYPENAME_FIELD || k === "id" || k === "_id") continue;
         (destination as any)[k] = (obj as any)[k];
       }
       entityStore.set(key, destination);
@@ -119,35 +113,40 @@ export function createGraph(config: {
 
     if (!wasExisting) bumpEntitiesTick();
     return key;
-  }
+  };
+
+  const getReactiveEntity = (key: EntityKey): any => {
+    const entity = entityStore.get(key);
+    return entity ? makeReactive(entity) : undefined;
+  };
 
   /* ───────────────────────────────────────────────────────────────────────────
    * Interface helpers (for abstract keys)
    * ────────────────────────────────────────────────────────────────────────── */
-  function isInterfaceTypename(t: string | null) { return !!(t && interfaceMap[t]); }
-  function getImplementationsFor(t: string) { return interfaceMap[t] || []; }
+  const isInterfaceType = (t: string | null) => !!(t && interfaces[t]);
+  const getInterfaceTypes = (t: string) => interfaces[t] || [];
 
-  function resolveConcreteEntityKey(abstractKey: EntityKey): EntityKey | null {
+  const resolveEntityKey = (abstractKey: EntityKey): EntityKey | null => {
     const { typename, id } = parseEntityKey(abstractKey);
-    if (!typename || !id || !isInterfaceTypename(typename)) return abstractKey;
-    const impls = interfaceMap[typename];
+    if (!typename || !id || !isInterfaceType(typename)) return abstractKey;
+    const impls = interfaces[typename];
     for (let i = 0; i < impls.length; i++) {
       const candidate = (impls[i] + ":" + id) as EntityKey;
       if (entityStore.has(candidate)) return candidate;
     }
     return null;
-  }
+  };
 
-  function doesEntityKeyMatch(maybeAbstract: EntityKey, candidate: EntityKey) {
+  const areEntityKeysEqual = (maybeAbstract: EntityKey, candidate: EntityKey) => {
     if (maybeAbstract === candidate) return true;
     const a = parseEntityKey(maybeAbstract);
     const b = parseEntityKey(candidate);
     if (!a.typename || !a.id || !b.typename || !b.id) return false;
     if (a.id !== b.id) return false;
     if (a.typename === b.typename) return true;
-    if (isInterfaceTypename(a.typename) && getImplementationsFor(a.typename).includes(b.typename!)) return true;
+    if (isInterfaceType(a.typename) && getInterfaceTypes(a.typename).includes(b.typename!)) return true;
     return false;
-  }
+  };
 
   /* ───────────────────────────────────────────────────────────────────────────
    * Materialization
@@ -155,7 +154,7 @@ export function createGraph(config: {
   const HAS_WEAKREF = typeof (globalThis as any).WeakRef !== "undefined";
   const MATERIALIZED_CACHE_REF: Map<EntityKey, any> | null = HAS_WEAKREF ? new Map<EntityKey, WeakRef<any>>() : null;
 
-  function materializeEntity(key: EntityKey) {
+  const materializeEntity = (key: EntityKey) => {
     if (HAS_WEAKREF && MATERIALIZED_CACHE_REF) {
       const wr = MATERIALIZED_CACHE_REF.get(key) as WeakRef<any> | undefined;
       const cached = (wr && (wr as any).deref) ? (wr as any).deref() : undefined;
@@ -174,7 +173,7 @@ export function createGraph(config: {
       const typename = idx === -1 ? key : key.slice(0, idx);
       const id = idx === -1 ? undefined : key.slice(idx + 1);
       const src = entityStore.get(key);
-      const out: any = { [TYPENAME_KEY]: typename };
+      const out: any = { [TYPENAME_FIELD]: typename };
       if (id != null) out.id = id;
       if (src) {
         const kk = Object.keys(src);
@@ -184,32 +183,25 @@ export function createGraph(config: {
       return out;
     }
 
-    const idx = key.indexOf(":");
-    const typename = idx === -1 ? key : key.slice(0, idx);
-    const id = idx === -1 ? undefined : key.slice(idx + 1);
+    const { typename, id } = parseEntityKey(key);
     const src = entityStore.get(key);
-    const out: any = { [TYPENAME_KEY]: typename };
+    const out: any = { [TYPENAME_FIELD]: typename };
     if (id != null) out.id = id;
     if (src) {
       const kk = Object.keys(src);
       for (let i = 0; i < kk.length; i++) out[kk[i]] = (src as any)[kk[i]];
     }
     return out;
-  }
+  };
 
-  function makeEntityProxy(base: any) {
-    return useShallowEntities ? shallowReactive(base) : reactive(base);
-  }
+  const makeReactive = (base: any) => {
+    return reactiveMode === "shallow" ? shallowReactive(base) : reactive(base);
+  };
 
   /* ───────────────────────────────────────────────────────────────────────────
    * Op-cache writer (fast, proxy-safe)
    * ────────────────────────────────────────────────────────────────────────── */
-  function unwrapShallow<T = any>(v: any): T {
-    const base = isRef(v) ? v.value : v;
-    return (isReactive(base) ? toRaw(base) : base) as T;
-  }
-
-  function sanitizeForOpCache<T = any>(data: any): T {
+  const sanitizeForOpCache = <T = any>(data: any): T => {
     const root = unwrapShallow(data);
     if (!root || typeof root !== "object") return root as T;
     if (Array.isArray(root)) {
@@ -221,58 +213,60 @@ export function createGraph(config: {
     const keys = Object.keys(root);
     for (let i = 0; i < keys.length; i++) out[keys[i]] = unwrapShallow((root as any)[keys[i]]);
     return out;
-  }
+  };
 
-  function writeOpCache(opKey: string, payload: { data: any; variables: Record<string, any> }) {
+  const putOperation = (opKey: string, payload: { data: any; variables: Record<string, any> }) => {
     const plainData = sanitizeForOpCache(payload.data);
     const plainVars = sanitizeForOpCache(payload.variables || {});
-    operationCache.set(opKey, { data: plainData, variables: plainVars });
-    if (operationCache.size > operationCacheMax) {
-      const oldest = operationCache.keys().next().value as string | undefined;
-      if (oldest) operationCache.delete(oldest);
+    operationStore.set(opKey, { data: plainData, variables: plainVars });
+    if (operationStore.size > DEFAULT_OPERATION_CACHE_LIMIT) {
+      const oldest = operationStore.keys().next().value as string | undefined;
+      if (oldest) operationStore.delete(oldest);
     }
-  }
+  };
 
-  /* ───────────────────────────────────────────────────────────────────────────
+  const getOperation = (opKey: string): { data: any; variables: Record<string, any> } | undefined => {
+    return operationStore.get(opKey);
+  };
+
+  /* ───────────────────────────────────────────────────────────────────────────────
    * Entities tick
    * ────────────────────────────────────────────────────────────────────────── */
-  const entityAddedRemovedTick = ref(0);
-  function bumpEntitiesTick() {
-    entityAddedRemovedTick.value++;
-  }
+  const entitiesTick = ref(0);
+  const bumpEntitiesTick = () => {
+    entitiesTick.value++;
+  };
 
   return {
-    // config & interface info
-    TYPENAME_KEY,
-    DEFAULT_WRITE_POLICY,
-    interfaceMap,
-    isInterfaceTypename,
-    getImplementationsFor,
+    // interface helpers
+    isInterfaceType,
+    getInterfaceTypes,
 
     // stores
     entityStore,
     connectionStore,
-    operationCache,
+    operationStore,
 
-    // connection allocation
-    ensureConnectionState,
+    // connection management
+    ensureReactiveConnection,
 
     // entity helpers
-    idOf,
-    parentEntityKeyFor,
+    identify,
+    getEntityParentKey,
+    getReactiveEntity,
     putEntity,
-    resolveConcreteEntityKey,
-    doesEntityKeyMatch,
+    resolveEntityKey,
+    areEntityKeysEqual,
 
-    // materialization & proxy factory
+    // materialization
     materializeEntity,
-    makeEntityProxy,
 
-    // op cache helpers
-    writeOpCache,
+    // operation cache
+    getOperation,
+    putOperation,
 
     // entities tick
     bumpEntitiesTick,
-    __entitiesTick: entityAddedRemovedTick,
+    entitiesTick,
   };
-}
+};

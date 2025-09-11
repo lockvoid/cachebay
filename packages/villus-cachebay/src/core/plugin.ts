@@ -47,21 +47,30 @@ const viewRootOf = (root: any) => {
   return Array.isArray(root) ? root.slice() : { ...root };
 };
 
+export function buildCachebayPlugin(args: BuildArgs): ClientPlugin;
+export function buildCachebayPlugin(internals: CachebayInternals, args: BuildArgs): ClientPlugin;
 export function buildCachebayPlugin(
-  internals: CachebayInternals,
-  args: BuildArgs,
+  a: CachebayInternals | BuildArgs,
+  b?: BuildArgs,
 ): ClientPlugin {
+  const hasSecond = typeof b !== 'undefined';
+  const internals = (hasSecond ? (a as CachebayInternals) : ({} as any)) as CachebayInternals;
+  const args = (hasSecond ? (b as BuildArgs) : (a as BuildArgs)) || ({} as any);
   const {
-    shouldAddTypename,
-    opCacheMax,
-    isHydrating,
+    shouldAddTypename = false,
+    opCacheMax = 100,
+    isHydrating = false,
     hydrateOperationTicket,
-    applyResolversOnGraph,
-    registerViewsFromResult,
-    collectEntities,
+    applyResolversOnGraph = (() => {}) as any,
+    registerViewsFromResult = (() => {}) as any,
+    collectEntities = (() => {}) as any,
   } = args;
 
-  // "what the UI is currently rendering" per family
+  // Provide minimal defaults if internals omitted (unit-test convenience)
+  const _internals = internals || ({} as any);
+  if (!_internals.operationCache) (_internals as any).operationCache = new Map<string, any>();
+  if (!_internals.writeOperationCache) (_internals as any).writeOperationCache = (_k: string, _v: any) => {};
+
   const lastPublishedByFam = new Map<string, { data: any; variables: Record<string, any> }>();
   const lastContentSigByFam = new Map<string, string>();
 
@@ -232,7 +241,7 @@ export function buildCachebayPlugin(
         const cacheRoot = r.data; // already plain enough for writeOpCache; it sanitizes shallowly
         applyResolversOnGraph(cacheRoot, vars, { stale: true });
         collectEntities(cacheRoot);
-        internals.writeOpCache(baseOpKey, { data: cacheRoot, variables: vars });
+        internals.writeOperationCache(baseOpKey, { data: cacheRoot, variables: vars });
 
         const viewRoot = viewRootOf(r.data);
         applyResolversOnGraph(viewRoot, vars, { stale: true });
@@ -251,7 +260,7 @@ export function buildCachebayPlugin(
         const prevSig = lastContentSigByFam.get(famKey);
         const nextSig = toSig(cacheRoot);
 
-        internals.writeOpCache(baseOpKey, { data: cacheRoot, variables: vars });
+        internals.writeOperationCache(baseOpKey, { data: cacheRoot, variables: vars });
         lastContentSigByFam.set(famKey, nextSig);
 
         const viewRoot = viewRootOf(r.data);

@@ -79,3 +79,23 @@ export function bindResolvers(
 
   return { applyFieldResolvers, applyResolversOnGraph };
 }
+
+
+// Compatibility: expose a top-level bindResolversTree used by internals
+export function bindResolversTree(
+  tree: ResolversDict | undefined,
+  internals: CachebayInternals,
+): Record<string, Record<string, FieldResolver>> {
+  const out: Record<string, Record<string, FieldResolver>> = {};
+  if (!tree) return out;
+  for (const type in tree as any) {
+    out[type] = {};
+    const fields = (tree as any)[type] as Record<string, any>;
+    for (const field in fields) {
+      const spec = (fields as any)[field] as any;
+      (out as any)[type][field] =
+        spec && (spec as any).__cb_resolver__ ? (spec as any).bind(internals) : (spec as FieldResolver);
+    }
+  }
+  return out;
+}

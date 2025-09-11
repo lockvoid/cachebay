@@ -1,5 +1,6 @@
 import objectHash from 'object-hash';
 import { visit, Kind, parse, print, type DocumentNode } from "graphql";
+import { isRef, isReactive, toRaw } from "vue";
 import type { RelayOptions } from "./types";
 
 const TYPENAME_FIELD_NODE = {
@@ -223,6 +224,15 @@ export const viewRootOf = (root: any) => {
 // NOTE: op-cache entries must be PLAIN (no Vue proxies). Network payloads are
 // usually plain already; to be safe against accidental reactive wrapping upstream,
 // normalize deeply only for JSON-safe trees via fast JSON fallback.
-export const toPlainDeep = (x: any) => {
-  try { return JSON.parse(JSON.stringify(x)); } catch { return x; }
+export function toPlainDeep(x: any) {
+  try {
+    return JSON.parse(JSON.stringify(x));
+  } catch {
+    return x;
+  }
+}
+
+export function unwrapShallow<T = any>(v: any): T {
+  const base = isRef(v) ? v.value : v;
+  return (isReactive(base) ? toRaw(base) : base) as T;
 };

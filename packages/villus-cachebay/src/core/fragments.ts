@@ -3,9 +3,9 @@
 import type { EntityKey } from "./types";
 import { parseEntityKey } from "./utils";
 
-export type FragmentsAPI = ReturnType<typeof createFragmentsAPI>;
+export type Fragments = ReturnType<typeof createFragments>;
 
-export function createFragmentsAPI(args: {
+export function createFragments(args: {
   // graph
   TYPENAME_KEY: string;
   entityStore: Map<EntityKey, any>;
