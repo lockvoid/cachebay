@@ -79,29 +79,33 @@ describe('core/views', () => {
 
   describe('proxyForEntityKey', () => {
     it('returns materialized entity wrapped in proxy when not already reactive', () => {
+      const entity = { id: 1, name: 'Test' };
+      const reactiveEntity = reactive(entity);
       const mockGraph = createMockGraph({
-        materializeEntity: vi.fn(() => ({ id: 1, name: 'Test' })),
-        getReactiveEntity: vi.fn((obj) => reactive(obj))
+        materializeEntity: vi.fn(() => entity),
+        getReactiveEntity: vi.fn((key) => reactiveEntity)
       });
       const views = createViews({}, { graph: mockGraph });
       const result = views.proxyForEntityKey('User:1');
 
       expect(mockGraph.materializeEntity).toHaveBeenCalledWith('User:1');
-      expect(mockGraph.getReactiveEntity).toHaveBeenCalled();
+      expect(mockGraph.getReactiveEntity).toHaveBeenCalledWith('User:1');
       expect(isReactive(result)).toBe(true);
+      expect(result).toBe(reactiveEntity);
     });
 
     it('returns existing reactive object without re-wrapping', () => {
-      const reactiveObj = reactive({ id: 1, name: 'Test' });
+      const entity = { id: 1, name: 'Test' };
+      const reactiveObj = reactive(entity);
       const mockGraph = createMockGraph({
-        materializeEntity: vi.fn(() => reactiveObj),
-        getReactiveEntity: vi.fn((obj) => obj)
+        materializeEntity: vi.fn(() => entity),
+        getReactiveEntity: vi.fn((key) => reactiveObj)
       });
       const views = createViews({}, { graph: mockGraph });
       const result = views.proxyForEntityKey('User:1');
 
       expect(mockGraph.materializeEntity).toHaveBeenCalledWith('User:1');
-      expect(mockGraph.getReactiveEntity).toHaveBeenCalled();
+      expect(mockGraph.getReactiveEntity).toHaveBeenCalledWith('User:1');
       expect(result).toBe(reactiveObj);
     });
   });
