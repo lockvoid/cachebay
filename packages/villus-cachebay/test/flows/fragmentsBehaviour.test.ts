@@ -5,7 +5,6 @@ import { createCache } from '@/src';
 import { tick, delay, type Route } from '@/test/helpers';
 import { mountWithClient } from '@/test/helpers/integration';
 import { useCache, useFragment, useFragments } from '@/src';
-import { CACHEBAY_KEY } from '@/src/core/plugin';
 
 describe('Integration • Fragments Behavior', () => {
   const restores: Array<() => void> = [];
