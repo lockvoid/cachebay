@@ -15,7 +15,7 @@ describe('plugin — provideCachebay', () => {
       hasFragment: () => true,
       listEntities: () => [],
       inspect: () => ({}),
-      __entitiesTick: () => { },
+      entitiesTick: () => { },
     };
 
     provideCachebay(app, instance);
@@ -28,7 +28,7 @@ describe('plugin — provideCachebay', () => {
     expect(typeof provided.value.hasFragment).toBe('function');
     expect(typeof provided.value.listEntities).toBe('function');
     expect(typeof provided.value.inspect).toBe('function');
-    expect(typeof provided.value.__entitiesTick).toBe('function');
+    expect(typeof provided.value.entitiesTick).toBe('function');
   });
 });
 

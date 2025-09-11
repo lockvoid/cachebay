@@ -57,7 +57,7 @@ type RelayOptionsLite = {
 type Deps = {
   graph: any;
   views: any;
-  getRelayOptionsByType: (parentTypename: string | null, field: string) => RelayOptionsLite | undefined;
+  resolvers: any;
 };
 
 type PublicAPI = {
@@ -86,7 +86,8 @@ type ConnectionsArgs = {
 };
 
 export function createModifyOptimistic(deps: Deps) {
-  const { graph, views, getRelayOptionsByType } = deps;
+  const { graph, views, resolvers } = deps;
+  const { getRelayOptionsByType } = resolvers;
 
   // Committed layers (in order) + currently pending (not yet committed)
   const committed: Layer[] = [];

@@ -29,7 +29,7 @@ export function useCache(): {
   hasFragment: (refOrKey: string | { __typename: string; id?: any; _id?: any }) => boolean;
   listEntityKeys: (selector: string | string[]) => string[];
   listEntities: (selector: string | string[], materialized?: boolean) => any[];
-  __entitiesTick: Ref<number>;
+  entitiesTick: Ref<number>;
 } {
   const api = inject<any>(CACHEBAY_KEY, null);
   if (!api) throw new Error("[cachebay] useCache() called before provideCachebay()");

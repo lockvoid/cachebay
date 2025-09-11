@@ -16,10 +16,11 @@ import { createInspect } from "../features/inspect";
 
 import type {
   CachebayOptions,
+  WritePolicy,
+  ReactiveMode,
+  InterfacesConfig,
   KeysConfig,
-  ResolversFactory,
   ResolversDict,
-  FieldResolver,
 } from "../types";
 import type {
   CachebayInternals,
@@ -27,6 +28,7 @@ import type {
   ConnectionState,
   RelayOptions,
 } from "./types";
+
 
 import {
   stableIdentityExcluding,
@@ -90,7 +92,7 @@ export type CachebayInstance = ClientPlugin & {
 /* ─────────────────────────────────────────────────────────────────────────────
  * Factory
  * ──────────────────────────────────────────────────────────────────────────── */
-export function createCache(options: CachebayOptions = {}): CachebayInstance {
+export function createCache(options: CachebayOptions = {}) {
   // Config
   const addTypename = options.addTypename ?? true;
 
@@ -116,24 +118,16 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
    * ────────────────────────────────────────────────────────────────────────── */
 
   // Prepare resolvers
-  const boundResolvers = createResolvers({ resolvers: options.resolvers as ResolversDict }, {
+  const resolvers = createResolvers({ resolvers: options.resolvers }, {
     graph,
     views,
-    relay,
-    relayResolverIndex,
-    relayResolverIndexByType,
-    getRelayOptionsByType,
-    setRelayOptionsByType,
   });
-
-  const { applyResolversOnGraph } = boundResolvers;
-
 
   // SSR features
   const ssr = createSSR({
     graph,
     views,
-    resolvers: boundResolvers,
+    resolvers,
   });
 
   // Build plugin
@@ -145,7 +139,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
       graph,
       views,
       ssr,
-      resolvers: boundResolvers,
+      resolvers,
     }
   ) as unknown) as CachebayInstance;
 
@@ -156,7 +150,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   const modifyOptimistic = createModifyOptimistic({
     graph,
     views,
-    getRelayOptionsByType,
+    resolvers,
   });
 
   // Create debug/inspect features

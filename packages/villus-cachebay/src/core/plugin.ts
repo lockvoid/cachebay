@@ -289,7 +289,7 @@ export function provideCachebay(app: App, instance: any) {
     listEntityKeys: (instance as any).listEntityKeys,
     listEntities: (instance as any).listEntities,
     inspect: (instance as any).inspect,
-    __entitiesTick: (instance as any).__entitiesTick,
+    entitiesTick: (instance as any).entitiesTick,
   };
   app.provide(CACHEBAY_KEY, api);
 }

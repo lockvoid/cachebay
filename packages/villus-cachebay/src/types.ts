@@ -58,18 +58,12 @@ export type InterfacesConfig = Record<string, string[]>;
 
 export type KeysConfig = Record<string, (obj: any, parent?: any) => string | null>;
 
-export type ResolversFactory = ({
-  relay,
-}: {
-  relay: (opts?: RelayOptsPartial) => ResolverSpec;
-}) => ResolversDict;
-
 export type CachebayOptions = {
   addTypename?: boolean;
   keys?: KeysConfig;
   writePolicy?: WritePolicy;
   reactiveMode?: ReactiveMode;
-  resolvers?: ResolversFactory | ResolversDict;
+  resolvers?: ResolversDict;
   interfaces?: InterfacesConfig;
   /** Track non-Relay results as reactive views (default: true). */
   trackNonRelayResults?: boolean;

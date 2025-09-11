@@ -1,5 +1,5 @@
 // src/core/resolvers.ts
-import type { FieldResolver, ResolversDict, ResolversFactory } from "../types";
+import type { FieldResolver, ResolversDict } from "../types";
 import type { CachebayInternals } from "./types";
 import { stableIdentityExcluding, buildConnectionKey } from "./utils";
 import { RESOLVE_SIGNATURE } from "./constants";
@@ -35,15 +35,24 @@ export function createResolvers(
   dependencies: {
     graph: any;
     views: any;
-    relay: any;
-    relayResolverIndex: any;
-    relayResolverIndexByType: any;
-    getRelayOptionsByType: any;
-    setRelayOptionsByType: any;
   }
 ) {
   const { resolvers: resolverSpecs } = options;
-  const { graph, views, relay, relayResolverIndex, relayResolverIndexByType, getRelayOptionsByType, setRelayOptionsByType } = dependencies;
+  const { graph, views } = dependencies;
+
+  // Relay-related state that resolvers need
+  const relayOptionsByType = new Map<string, Map<string, any>>();
+  
+  const setRelayOptionsByType = (typename: string, field: string, opts: any) => {
+    if (!relayOptionsByType.has(typename)) {
+      relayOptionsByType.set(typename, new Map());
+    }
+    relayOptionsByType.get(typename)!.set(field, opts);
+  };
+  
+  const getRelayOptionsByType = (typename: string, field: string) => {
+    return relayOptionsByType.get(typename)?.get(field);
+  };
 
   function bindResolversTree(
     tree: ResolversDict | undefined,
@@ -59,6 +68,7 @@ export function createResolvers(
         if (spec && typeof spec === 'object' && spec.__cb_resolver__ === true && typeof spec.bind === 'function') {
           // Create an internals object with the required dependencies
           const internals = {
+            TYPENAME_KEY: '__typename',
             isReactive: (obj: any) => isReactive(obj),
             reactive: (obj: any) => reactive(obj),
             markConnectionDirty: (state: any) => views.markConnectionDirty(state),
@@ -72,6 +82,28 @@ export function createResolvers(
             putEntity: (entity: any, policy?: string) => graph.putEntity(entity, policy),
             linkEntityToConnection: (key: string, state: any) => views.linkEntityToConnection(key, state),
             identify: (obj: any) => graph.identify(obj),
+            applyFieldResolvers: (typename: string, obj: any, vars: Record<string, any>, hint?: { stale?: boolean }) => {
+              // Apply field resolvers using the bound resolvers
+              const map = FIELD_RESOLVERS[typename];
+              if (!map) return;
+              const sig = (hint?.stale ? "S|" : "F|") + stableIdentityExcluding(vars || {}, []);
+              if ((obj as any)[RESOLVE_SIGNATURE] === sig) return;
+              for (const field in map) {
+                const resolver = map[field];
+                if (!resolver) continue;
+                const val = (obj as any)[field];
+                resolver({
+                  parentTypename: typename,
+                  field,
+                  parent: obj,
+                  value: val,
+                  variables: vars,
+                  hint,
+                  set: (nv) => { (obj as any)[field] = nv; },
+                });
+              }
+              (obj as any)[RESOLVE_SIGNATURE] = sig;
+            },
             readPathValue: (obj: any, path: string) => {
               if (!obj || !path) return undefined;
               const parts = path.split('.');
@@ -141,7 +173,7 @@ export function createResolvers(
     }
   }
 
-  return { applyFieldResolvers, applyResolversOnGraph, FIELD_RESOLVERS };
+  return { applyFieldResolvers, applyResolversOnGraph, FIELD_RESOLVERS, getRelayOptionsByType };
 }
 
 // Export makeApplyFieldResolvers for compatibility
