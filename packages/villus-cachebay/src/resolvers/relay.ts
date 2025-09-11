@@ -200,14 +200,11 @@ export const relay = defineResolver((opts?: RelayOptsPartial) => {
     const connectionObject = isReactive(ctx.value) ? ctx.value : reactive(ctx.value);
     if (connectionObject !== ctx.value) ctx.set(connectionObject);
 
-    if (
-      !Array.isArray(connectionObject[edgesFieldName]) ||
-      !isReactive(connectionObject[edgesFieldName])
-    ) {
-      connectionObject[edgesFieldName] = reactive(
-        Array.isArray(connectionObject[edgesFieldName]) ? connectionObject[edgesFieldName] : [],
-      );
+    // Ensure edges array is reactive and empty for population from connection state
+    if (!connectionObject[edgesFieldName] || !isReactive(connectionObject[edgesFieldName])) {
+      connectionObject[edgesFieldName] = reactive([]);
     }
+    
     if (!isReactive(connectionObject[pageInfoFieldName])) {
       connectionObject[pageInfoFieldName] = reactive(connectionObject[pageInfoFieldName] || {});
     }
@@ -229,7 +226,8 @@ export const relay = defineResolver((opts?: RelayOptsPartial) => {
       if (writeMode === "replace") {
         view.limit = growBy;
       } else {
-        view.limit = (view.limit ?? 0) + growBy;
+        // For append/prepend, set limit to total size of connection
+        view.limit = connectionState.list.length;
       }
     });
 

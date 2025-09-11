@@ -44,7 +44,7 @@ function harnessAnyEdges(
     props: { after: String, before: String, first: Number, last: Number },
     setup(props) {
       const vars = computed(() => ({
-        first: props.first,
+        first: props.first || 2,
         after: props.after,
         last: props.last,
         before: props.before,
@@ -94,7 +94,7 @@ describe('Integration • Relay flows (spec coverage) • Posts', () => {
 
   /* 3) Modes — append/prepend/replace behavior & view sizing (by visible edges) */
 
-  it.only('append mode: adds at end, bumps visible by page size', async () => {
+  it('append mode: adds at end, bumps visible by page size', async () => {
     const routes: Route[] = [
       {
         when: ({ variables }) => {
@@ -145,7 +145,8 @@ describe('Integration • Relay flows (spec coverage) • Posts', () => {
     expect(liText(wrapper)).toEqual(['A1', 'A2']);
 
     await wrapper.setProps({ first: 2, after: 'c2' });
-    await delay(7); await tick(6);
+    await delay(7);
+    await tick(10); // Extra ticks to ensure microtask for markConnectionDirty runs
 
     console.log('s', cache.inspect.connection('Query', 'posts'));
 
@@ -156,7 +157,7 @@ describe('Integration • Relay flows (spec coverage) • Posts', () => {
     const routes: Route[] = [
       // page 1 (baseline)
       {
-        when: ({ variables }) => !variables.after && variables.first === 2,
+        when: ({ variables }) => !variables.before && variables.first === 2,
         delay: 5,
         respond: () => ({
           data: {
@@ -200,11 +201,15 @@ describe('Integration • Relay flows (spec coverage) • Posts', () => {
     expect(liText(wrapper)).toEqual(['A1', 'A2']);
 
     await wrapper.setProps({ last: 2, before: 'c1' });
-    await delay(7); await tick(6);
+    await delay(7); await tick(10);
+
+    console.log('prepend connection:', cache.inspect.connection('Query', 'posts'));
+    console.log('prepend view:', liText(wrapper));
+
     expect(liText(wrapper)).toEqual(['A0', 'A0.5', 'A1', 'A2']); // bumped in front
   });
 
-  it('replace mode: clears list, then shows only the latest page', async () => {
+  it.only('replace mode: clears list, then shows only the latest page', async () => {
     const routes: Route[] = [
       // page 1
       {
@@ -698,7 +703,7 @@ describe('Integration • Proxy shape invariants & identity (Posts)', () => {
     // edges & pageInfo containers are reactive
     expect(isReactive(conn.edges)).toBe(true);
     expect(isReactive(conn.pageInfo)).toBe(true);
-
+    await tick(12)
     // node is a materialized entity proxy
     const node = conn.edges[0].node;
     expect(node.__typename).toBe('Post');
@@ -707,6 +712,8 @@ describe('Integration • Proxy shape invariants & identity (Posts)', () => {
 
     // readFragment returns the exact same proxy object
     const same = (cacheInst as any).readFragment(`Post:${node.id}`);
+
+    console.log('s', same);
     expect(node).toBe(same);
 
     await fx.waitAll(); fx.restore();
