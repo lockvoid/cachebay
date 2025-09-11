@@ -240,10 +240,22 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   const modifyOptimistic = createModifyOptimistic({
     entityStore: graph.entityStore,
     connectionStore: graph.connectionStore,
-    materializeEntity: graph.materializeEntity,
-    bumpEntitiesTick: graph.bumpEntitiesTick,
+    ensureConnectionState: graph.ensureReactiveConnection,
+    buildConnectionKey,
+    parentEntityKeyFor: graph.getEntityParentKey,
+    getRelayOptionsByType,
+    parseEntityKey,
+    resolveConcreteEntityKey: graph.resolveEntityKey,
+    doesEntityKeyMatch: graph.areEntityKeysEqual,
+    putEntity: graph.putEntity,
+    idOf: graph.identify,
+    markConnectionDirty: views.markConnectionDirty,
     touchConnectionsForEntityKey: views.touchConnectionsForEntityKey,
     markEntityDirty: views.markEntityDirty,
+    bumpEntitiesTick: graph.bumpEntitiesTick,
+    isInterfaceTypename: graph.isInterfaceType,
+    getImplementationsFor: graph.getInterfaceTypes,
+    stableIdentityExcluding,
   });
 
   // Create debug/inspect features

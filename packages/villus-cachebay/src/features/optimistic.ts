@@ -181,7 +181,7 @@ type Layer = {
   connOps: ConnOp[];
 };
 
-export function createModifyOptimistic(deps: Deps, _api: PublicAPI) {
+export function createModifyOptimistic(deps: Deps) {
   const {
     entityStore,
     ensureConnectionState,

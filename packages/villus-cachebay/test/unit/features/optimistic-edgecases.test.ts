@@ -36,7 +36,7 @@ describe('features/optimistic — edge cases', () => {
     const keys = (cache as any).listEntityKeys('Color');
     expect(keys).toEqual(['Color:1']);
     // Snapshot should be updated (merge policy)
-    expect((cache as any).readFragment('Color:1')?.name).toBe('Black v2');
+    expect((cache as any).readFragment('Color:1', false)?.name).toBe('Black v2');
   });
 
   it('removeNode is a no-op when entity missing and works by id+typename', async () => {
@@ -134,6 +134,6 @@ describe('features/optimistic — edge cases', () => {
 
     const keys = (cache as any).listEntityKeys('Color');
     expect(keys).toEqual(['Color:1']);
-    expect((cache as any).readFragment('Color:1')?.name).toBe('Black again');
+    expect((cache as any).readFragment('Color:1', false)?.name).toBe('Black again');
   });
 });
