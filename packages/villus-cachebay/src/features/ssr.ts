@@ -100,10 +100,12 @@ export function createSSR(deps: Deps) {
       if (doMaterialize) {
         graph.operationStore.forEach(({ data, variables }: any) => {
           const vars = variables || {};
-          applyResolversOnGraph?.(data, vars, { stale: false });
-          views.registerViewsFromResult(data, vars);
-          views.collectEntities(data);
-          views.materializeResult(data);
+          // Clone data to avoid mutating the stored operation
+          const clonedData = cloneData(data);
+          applyResolversOnGraph?.(clonedData, vars, { stale: false });
+          views.registerViewsFromResult(clonedData, vars);
+          views.collectEntities(clonedData);
+          views.materializeResult(clonedData);
         });
       }
     };
