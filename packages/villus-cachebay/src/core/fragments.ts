@@ -90,7 +90,7 @@ export function createFragments(options: {}, dependencies: { graph: any; views: 
       if (selector.endsWith(':*')) {
         // Get all entities of a type
         const typename = selector.slice(0, -2);
-        const keys = graph.getEntityKeys(typename);
+        const keys = graph.getEntityKeys(typename + ':');
         for (const key of keys) {
           const result = readFragment(key, materialized);
           if (result) results.push(result);

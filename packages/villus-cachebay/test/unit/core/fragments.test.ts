@@ -26,6 +26,7 @@ describe('core/fragments', () => {
       expect(fragments).toHaveProperty('readFragment');
       expect(fragments).toHaveProperty('hasFragment');
       expect(fragments).toHaveProperty('writeFragment');
+      expect(fragments).toHaveProperty('readFragments');
     });
   });
 
@@ -190,6 +191,181 @@ describe('core/fragments', () => {
       expect(mockGraph.bumpEntitiesTick).toHaveBeenCalled();
       expect(mockViews.markEntityDirty).toHaveBeenCalledWith('User:1');
       expect(mockViews.touchConnectionsForEntityKey).toHaveBeenCalledWith('User:1');
+    });
+  });
+
+  describe('readFragments', () => {
+    it('reads multiple fragments by pattern with :* selector', () => {
+      const entityStore = new Map([
+        ['User:1', { __typename: 'User', id: 1, name: 'John' }],
+        ['User:2', { __typename: 'User', id: 2, name: 'Jane' }],
+        ['Post:1', { __typename: 'Post', id: 1, title: 'Hello' }],
+      ]);
+      const mockGraph = {
+        entityStore,
+        identify: vi.fn(),
+        resolveEntityKey: vi.fn((key) => key),
+        materializeEntity: vi.fn(),
+        bumpEntitiesTick: vi.fn(),
+        isInterfaceType: vi.fn(),
+        getInterfaceTypes: vi.fn(),
+        getEntityKeys: vi.fn((pattern) => {
+          if (pattern === 'User:') return ['User:1', 'User:2'];
+          if (pattern === 'Post:') return ['Post:1'];
+          return [];
+        }),
+      };
+      const mockViews = {
+        proxyForEntityKey: vi.fn((key) => entityStore.get(key)),
+        markEntityDirty: vi.fn(),
+        touchConnectionsForEntityKey: vi.fn(),
+      };
+
+      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
+      const result = fragments.readFragments('User:*');
+
+      expect(mockGraph.getEntityKeys).toHaveBeenCalledWith('User:');
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({ __typename: 'User', id: 1, name: 'John' });
+      expect(result[1]).toEqual({ __typename: 'User', id: 2, name: 'Jane' });
+    });
+
+    it('reads single fragment by exact key', () => {
+      const entityStore = new Map([
+        ['User:1', { __typename: 'User', id: 1, name: 'John' }],
+      ]);
+      const mockGraph = {
+        entityStore,
+        identify: vi.fn(),
+        resolveEntityKey: vi.fn((key) => key),
+        materializeEntity: vi.fn(),
+        bumpEntitiesTick: vi.fn(),
+        isInterfaceType: vi.fn(),
+        getInterfaceTypes: vi.fn(),
+        getEntityKeys: vi.fn(),
+      };
+      const mockViews = {
+        proxyForEntityKey: vi.fn((key) => entityStore.get(key)),
+        markEntityDirty: vi.fn(),
+        touchConnectionsForEntityKey: vi.fn(),
+      };
+
+      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
+      const result = fragments.readFragments('User:1');
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({ __typename: 'User', id: 1, name: 'John' });
+    });
+
+    it('handles multiple patterns in array', () => {
+      const entityStore = new Map([
+        ['User:1', { __typename: 'User', id: 1, name: 'John' }],
+        ['Post:1', { __typename: 'Post', id: 1, title: 'Hello' }],
+      ]);
+      const mockGraph = {
+        entityStore,
+        identify: vi.fn(),
+        resolveEntityKey: vi.fn((key) => key),
+        materializeEntity: vi.fn(),
+        bumpEntitiesTick: vi.fn(),
+        isInterfaceType: vi.fn(),
+        getInterfaceTypes: vi.fn(),
+        getEntityKeys: vi.fn((pattern) => {
+          if (pattern === 'User:') return ['User:1'];
+          if (pattern === 'Post:') return ['Post:1'];
+          return [];
+        }),
+      };
+      const mockViews = {
+        proxyForEntityKey: vi.fn((key) => entityStore.get(key)),
+        markEntityDirty: vi.fn(),
+        touchConnectionsForEntityKey: vi.fn(),
+      };
+
+      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
+      const result = fragments.readFragments(['User:*', 'Post:*']);
+
+      expect(result).toHaveLength(2);
+      expect(result.find(r => r.__typename === 'User')).toEqual({ __typename: 'User', id: 1, name: 'John' });
+      expect(result.find(r => r.__typename === 'Post')).toEqual({ __typename: 'Post', id: 1, title: 'Hello' });
+    });
+
+    it('returns raw entities when materialized=false', () => {
+      const entityStore = new Map([
+        ['User:1', { __typename: 'User', id: 1, name: 'John' }],
+      ]);
+      const mockGraph = {
+        entityStore,
+        identify: vi.fn(),
+        resolveEntityKey: vi.fn((key) => key),
+        materializeEntity: vi.fn(),
+        bumpEntitiesTick: vi.fn(),
+        isInterfaceType: vi.fn(),
+        getInterfaceTypes: vi.fn(),
+        getEntityKeys: vi.fn(() => ['User:1']),
+      };
+      const mockViews = {
+        proxyForEntityKey: vi.fn(),
+        markEntityDirty: vi.fn(),
+        touchConnectionsForEntityKey: vi.fn(),
+      };
+
+      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
+      const result = fragments.readFragments('User:*', { materialized: false });
+
+      expect(mockViews.proxyForEntityKey).not.toHaveBeenCalled();
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({ __typename: 'User', id: 1, name: 'John' });
+    });
+
+    it('filters out null/undefined results', () => {
+      const entityStore = new Map([
+        ['User:1', { __typename: 'User', id: 1, name: 'John' }],
+      ]);
+      const mockGraph = {
+        entityStore,
+        identify: vi.fn(),
+        resolveEntityKey: vi.fn((key) => key),
+        materializeEntity: vi.fn(),
+        bumpEntitiesTick: vi.fn(),
+        isInterfaceType: vi.fn(),
+        getInterfaceTypes: vi.fn(),
+        getEntityKeys: vi.fn(() => ['User:1', 'User:2']), // User:2 doesn't exist
+      };
+      const mockViews = {
+        proxyForEntityKey: vi.fn((key) => entityStore.get(key)), // returns undefined for User:2
+        markEntityDirty: vi.fn(),
+        touchConnectionsForEntityKey: vi.fn(),
+      };
+
+      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
+      const result = fragments.readFragments('User:*');
+
+      expect(result).toHaveLength(1); // Only User:1 should be returned
+      expect(result[0]).toEqual({ __typename: 'User', id: 1, name: 'John' });
+    });
+
+    it('returns empty array when no matches found', () => {
+      const mockGraph = {
+        entityStore: new Map(),
+        identify: vi.fn(),
+        resolveEntityKey: vi.fn((key) => key),
+        materializeEntity: vi.fn(),
+        bumpEntitiesTick: vi.fn(),
+        isInterfaceType: vi.fn(),
+        getInterfaceTypes: vi.fn(),
+        getEntityKeys: vi.fn(() => []),
+      };
+      const mockViews = {
+        proxyForEntityKey: vi.fn(),
+        markEntityDirty: vi.fn(),
+        touchConnectionsForEntityKey: vi.fn(),
+      };
+
+      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
+      const result = fragments.readFragments('User:*');
+
+      expect(result).toEqual([]);
     });
   });
 });

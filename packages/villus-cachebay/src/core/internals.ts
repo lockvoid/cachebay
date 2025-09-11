@@ -180,6 +180,9 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     },
   };
 
+  // Attach cache instance methods
+  (instance as any).__entitiesTick = graph.entitiesTick;
+
   // Attach SSR methods
   (instance as any).dehydrate = ssr.dehydrate;
   (instance as any).hydrate = ssr.hydrate;
