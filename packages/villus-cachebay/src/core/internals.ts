@@ -40,7 +40,7 @@ import {
 import { createGraph } from "./graph";
 import { createViews } from "./views";
 import {
-  bindResolversTree,
+  createResolvers,
   makeApplyFieldResolvers,
   applyResolversOnGraph as applyResolversOnGraphImpl,
   getRelayOptionsByType,
@@ -169,23 +169,24 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
       ? (resolverSource as ResolversFactory)({ relay })
       : (resolverSource as ResolversDict | undefined);
 
-  let FIELD_RESOLVERS: Record<string, Record<string, FieldResolver>> =
-    bindResolversTree(resolverSpecs, internals);
+  const resolvers = createResolvers({}, {
+    internals,
+    resolverSpecs,
+  });
+  
+  let FIELD_RESOLVERS = resolvers.FIELD_RESOLVERS;
 
   const applyFieldResolvers = makeApplyFieldResolvers({
-    TYPENAME_KEY,
+    TYPENAME_KEY: internals.TYPENAME_KEY,
     FIELD_RESOLVERS,
   });
 
   internals.applyFieldResolvers = applyFieldResolvers;
 
   function applyResolversOnGraph(root: any, vars: Record<string, any>, hint: { stale?: boolean }) {
-    applyResolversOnGraphImpl({
-      root,
-      variables: vars,
-      hint,
+    applyResolversOnGraphImpl(root, vars, hint, {
+      TYPENAME_KEY: internals.TYPENAME_KEY,
       FIELD_RESOLVERS,
-      TYPENAME_KEY: typenameKey,
     });
   }
 
@@ -200,7 +201,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
       const { obj, parentTypename } = stack.pop()!;
       if (!obj || typeof obj !== "object") continue;
 
-      const pt = (obj as any)[TYPENAME_KEY] || parentTypename;
+      const pt = (obj as any)[internals.TYPENAME_KEY] || parentTypename;
       const keys = Object.keys(obj);
       for (let i = 0; i < keys.length; i++) {
         const field = keys[i];
@@ -322,10 +323,10 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
       if (visited.has(current as object)) continue;
       visited.add(current as object);
 
-      const typename = (current as any)[TYPENAME_KEY];
+      const typename = (current as any)[internals.TYPENAME_KEY];
 
       if (typename) {
-        const ek = graph.idOf(current);
+        const ek = graph.identify(current);
         if (ek) {
           graph.putEntity(current);
           if (trackNonRelayResults) views.registerEntityView(ek, current);
@@ -399,87 +400,63 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     collectEntities,
   }) as unknown) as CachebayInstance;
 
-  // Fragments API
-  const fragments = createFragments({
-    TYPENAME_KEY: "__typename",
+  // Create fragments
+  const fragments = createFragments({}, {
     entityStore: graph.entityStore,
-    idOf: graph.identify,
-    resolveConcreteEntityKey: graph.resolveEntityKey,
+    identify: graph.identify,
+    resolveEntityKey: graph.resolveEntityKey,
     materializeEntity: graph.materializeEntity,
     bumpEntitiesTick: graph.bumpEntitiesTick,
-    isInterfaceTypename: graph.isInterfaceType,
-    getImplementationsFor: graph.getInterfaceTypes,
+    isInterfaceType: graph.isInterfaceType,
+    getInterfaceTypes: graph.getInterfaceTypes,
     proxyForEntityKey: views.proxyForEntityKey,
     markEntityDirty: views.markEntityDirty,
     touchConnectionsForEntityKey: views.touchConnectionsForEntityKey,
   });
 
-  // Wire public API
-  (instance as any).dehydrate = ssr.dehydrate;
-  (instance as any).hydrate = ssr.hydrate;
+  // Create optimistic features
+  const modifyOptimistic = createModifyOptimistic({
+    entityStore: graph.entityStore,
+    connectionStore: graph.connectionStore,
+    materializeEntity: graph.materializeEntity,
+    bumpEntitiesTick: graph.bumpEntitiesTick,
+    touchConnectionsForEntityKey: views.touchConnectionsForEntityKey,
+    markEntityDirty: views.markEntityDirty,
+  });
 
+  // Create debug/inspect features
+  const inspect = createInspect({
+    entityStore: graph.entityStore,
+    connectionStore: graph.connectionStore,
+    operationCache: graph.operationStore,
+    ensureConnectionState: graph.ensureReactiveConnection,
+    materializeEntity: graph.materializeEntity,
+    areEntityKeysEqual: graph.areEntityKeysEqual,
+    isInterfaceType: graph.isInterfaceType,
+    getInterfaceTypes: graph.getInterfaceTypes,
+    stableIdentityExcluding,
+  });
+
+  // Attach additional methods to instance
   (instance as any).identify = fragments.identify;
-
   (instance as any).readFragment = fragments.readFragment;
   (instance as any).hasFragment = fragments.hasFragment;
   (instance as any).writeFragment = fragments.writeFragment;
-
-  const modifyOptimistic = createModifyOptimistic(
-    {
-      entityStore: graph.entityStore,
-      connectionStore: graph.connectionStore,
-
-      ensureConnectionState: graph.getOrCreateConnection,
-      buildConnectionKey,
-      parentEntityKeyFor: graph.getEntityParentKey,
-      getRelayOptionsByType,
-
-      parseEntityKey,
-      resolveConcreteEntityKey: graph.resolveEntityKey,
-      doesEntityKeyMatch: graph.areKeysEqual,
-      linkEntityToConnection: views.linkEntityToConnection,
-      unlinkEntityFromConnection: views.unlinkEntityFromConnection,
-      putEntity: graph.putEntity,
-      idOf: graph.identify,
-
-      markConnectionDirty: views.markConnectionDirty,
-      touchConnectionsForEntityKey: views.touchConnectionsForEntityKey,
-      markEntityDirty: views.markEntityDirty,
-      bumpEntitiesTick: graph.bumpEntitiesTick,
-
-      isInterfaceTypename: (t) => graph.isInterfaceTypename(t),
-      getImplementationsFor: (t) => graph.getInterfaceTypes(t),
-      stableIdentityExcluding,
-    },
-    {
-      identify: fragments.identify,
-      readFragment: fragments.readFragment,
-      hasFragment: fragments.hasFragment,
-      writeFragment: fragments.writeFragment,
-    },
-  );
-
   (instance as any).modifyOptimistic = modifyOptimistic;
-
-  (instance as any).inspect = createInspect({
-    entityStore: graph.entityStore,
-    connectionStore: graph.connectionStore,
-    stableIdentityExcluding,
-    operationCache: graph.operationCache, // helpful for debugging
-  });
+  (instance as any).inspect = inspect;
 
   (instance as any).listEntityKeys = (selector: string | string[]) => {
-    const types = new Set(
-      (Array.isArray(selector) ? selector : [selector]).flatMap((t) =>
-        graph.isInterfaceTypename(t) ? graph.getInterfaceTypes(t) : [t]
-      )
-    );
-    const keys: string[] = [];
-    graph.entityStore.forEach((_v, k) => {
-      const { typename } = parseEntityKey(k);
-      if (typename && types.has(typename)) keys.push(k);
-    });
-    return keys;
+    const patterns = Array.isArray(selector) ? selector : [selector];
+    const keys = new Set<string>();
+    for (const [key] of Array.from(graph.entityStore)) {
+      for (const pattern of patterns) {
+        if (key.startsWith(pattern)) {
+          keys.add(key);
+          break;
+        }
+      }
+    }
+    return Array.from(keys);
   };
 
   (instance as any).listEntities = (selector: string | string[], materialized = true) => {

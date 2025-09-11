@@ -2,44 +2,45 @@
 
 import type { EntityKey } from "./types";
 import { parseEntityKey } from "./utils";
+import { TYPENAME_FIELD } from "./constants";
 
 export type Fragments = ReturnType<typeof createFragments>;
 
-export function createFragments(args: {
-  // graph
-  TYPENAME_KEY: string;
-  entityStore: Map<EntityKey, any>;
-  idOf: (o: any) => EntityKey | null;
-  resolveConcreteEntityKey: (k: EntityKey) => EntityKey | null;
-  materializeEntity: (k: EntityKey) => any;
-  bumpEntitiesTick: () => void;
-  isInterfaceTypename: (t: string | null) => boolean;
-  getImplementationsFor: (t: string) => string[];
+export function createFragments(
+  options: {},
+  dependencies: {
+    // graph dependencies
+    entityStore: Map<EntityKey, any>;
+    identify: (o: any) => EntityKey | null;
+    resolveEntityKey: (k: EntityKey) => EntityKey | null;
+    materializeEntity: (k: EntityKey) => any;
+    bumpEntitiesTick: () => void;
+    isInterfaceType: (t: string | null) => boolean;
+    getInterfaceTypes: (t: string) => string[];
 
-  // views
-  proxyForEntityKey: (k: EntityKey) => any;
-  markEntityDirty: (k: EntityKey) => void;
-  touchConnectionsForEntityKey: (k: EntityKey) => void;
-}) {
+    // views dependencies
+    proxyForEntityKey: (k: EntityKey) => any;
+    markEntityDirty: (k: EntityKey) => void;
+    touchConnectionsForEntityKey: (k: EntityKey) => void;
+  }
+) {
   const {
-    TYPENAME_KEY,
     entityStore,
-    idOf,
-    resolveConcreteEntityKey,
+    identify,
+    resolveEntityKey,
     materializeEntity,
     bumpEntitiesTick,
-    isInterfaceTypename,
-    getImplementationsFor,
+    isInterfaceType,
+    getInterfaceTypes,
     proxyForEntityKey,
     markEntityDirty,
     touchConnectionsForEntityKey,
-  } = args;
+  } = dependencies;
 
-  const identify = (obj: any): EntityKey | null => idOf(obj);
 
   function keyFromRefOrKey(refOrKey: EntityKey | { __typename: string; id?: any; _id?: any }): EntityKey | null {
     if (typeof refOrKey === "string") return refOrKey;
-    const t = (refOrKey as any) && (refOrKey as any)[TYPENAME_KEY];
+    const t = (refOrKey as any) && (refOrKey as any)[TYPENAME_FIELD];
     const id = (refOrKey as any)?.id ?? (refOrKey as any)?._id;
     return t && id != null ? (String(t) + ":" + String(id)) as EntityKey : null;
   }
@@ -49,8 +50,8 @@ export function createFragments(args: {
     if (!raw) return false;
     const { typename, id } = parseEntityKey(raw);
     if (!typename) return false;
-    if (isInterfaceTypename(typename) && id != null) {
-      const impls = getImplementationsFor(typename);
+    if (isInterfaceType(typename) && id != null) {
+      const impls = getInterfaceTypes(typename);
       for (let i = 0; i < impls.length; i++) {
         const k = (impls[i] + ":" + id) as EntityKey;
         if (entityStore.has(k)) return true;
@@ -65,26 +66,26 @@ export function createFragments(args: {
     if (!key) return undefined;
     if (!materialized) {
       const { typename, id } = parseEntityKey(key);
-      if (isInterfaceTypename(typename) && id != null) {
-        const impls = getImplementationsFor(typename) || [];
+      if (isInterfaceType(typename) && id != null) {
+        const impls = getInterfaceTypes(typename) || [];
         for (let i = 0; i < impls.length; i++) {
           const k = (impls[i] + ":" + id) as EntityKey;
           if (entityStore.has(k)) return entityStore.get(k);
         }
         return undefined;
       }
-      const k = (resolveConcreteEntityKey(key) || key) as EntityKey;
+      const k = (resolveEntityKey(key) || key) as EntityKey;
       return entityStore.get(k);
     }
     return proxyForEntityKey(key);
   }
 
   function writeFragment(obj: any) {
-    let key = idOf(obj);
+    let key = identify(obj);
     if (key) {
       const { typename } = parseEntityKey(key);
-      if (isInterfaceTypename(typename)) {
-        const resolved = resolveConcreteEntityKey(key);
+      if (isInterfaceType(typename)) {
+        const resolved = resolveEntityKey(key);
         if (!resolved) return { commit() { }, revert() { } };
         key = resolved;
       }
@@ -94,19 +95,19 @@ export function createFragments(args: {
     const previous = entityStore.get(key);
 
     // Ensure typename is present when re-writing the snapshot
-    const finalTypename = parseEntityKey(key).typename || (obj as any)[TYPENAME_KEY];
+    const finalTypename = parseEntityKey(key).typename || (obj as any)[TYPENAME_FIELD];
     const snapshot: any = Object.create(null);
     const kk = Object.keys(obj ?? {});
     for (let i = 0; i < kk.length; i++) {
       const kf = kk[i];
-      if (kf === TYPENAME_KEY || kf === "id" || kf === "_id") continue;
+      if (kf === TYPENAME_FIELD || kf === "id" || kf === "_id") continue;
       snapshot[kf] = (obj as any)[kf];
     }
     entityStore.set(key, snapshot);
     if (finalTypename) {
       // reflect typename + id in the materialized view
       const m = materializeEntity(key);
-      m[TYPENAME_KEY] = finalTypename;
+      m[TYPENAME_FIELD] = finalTypename;
     }
     touchConnectionsForEntityKey(key);
     markEntityDirty(key);

@@ -1,40 +1,190 @@
-import { describe, it, expect } from 'vitest';
-import { createCache } from '@/src';
-import { publish } from '@/test/helpers';
+import { describe, it, expect, vi } from 'vitest';
+import { createResolvers, makeApplyFieldResolvers, applyResolversOnGraph } from '@/src/core/resolvers';
 
-describe('core/resolvers — field transform with context.set', () => {
-  it('applies field resolver before publish (non-Relay field)', () => {
-    const cache = createCache({
-      addTypename: true,
-      resolvers: (_ctx: any) => ({
-        ProcessorManCook: {
-          metadata(resolverCtx: any) {
-            // Simulate camelize: foo_bar -> fooBar
-            const v = resolverCtx.value || {};
-            const out: any = {};
-            for (const k of Object.keys(v)) {
-              const parts = k.split('_');
-              out[parts[0] + parts.slice(1).map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join('')] = v[k];
+describe('core/resolvers', () => {
+  describe('createResolvers', () => {
+    it('creates resolver functions from specs', () => {
+      const mockInternals = {
+        TYPENAME_KEY: '__typename',
+        DEFAULT_WRITE_POLICY: 'replace',
+      } as any;
+
+      const resolverSpecs = {
+        User: {
+          name: vi.fn((ctx) => {
+            if (ctx.value === 'test') {
+              ctx.set('modified');
             }
-            resolverCtx.set(out);
-          },
+          }),
         },
-      }),
+      };
+
+      const result = createResolvers({}, {
+        internals: mockInternals,
+        resolverSpecs,
+      });
+
+      expect(result).toHaveProperty('applyFieldResolvers');
+      expect(result).toHaveProperty('applyResolversOnGraph');
+      expect(result).toHaveProperty('FIELD_RESOLVERS');
+      expect(result.FIELD_RESOLVERS.User).toBeDefined();
+      expect(result.FIELD_RESOLVERS.User.name).toBe(resolverSpecs.User.name);
     });
 
-    const query = /* GraphQL */ `
-      query Q { cook { __typename id metadata } }
-    `;
+    it('binds resolvers with __cb_resolver__ property', () => {
+      const mockInternals = {
+        TYPENAME_KEY: '__typename',
+        DEFAULT_WRITE_POLICY: 'replace',
+      } as any;
 
-    const published = publish(cache, {
-      __typename: 'Query',
-      cook: {
-        __typename: 'ProcessorManCook',
-        id: 1,
-        metadata: { foo_bar: 1, nested_key: 2 },
-      },
-    }, query);
+      const bindableResolver = {
+        __cb_resolver__: true as const,
+        bind: vi.fn((internals) => vi.fn()),
+      } as any;
 
-    expect(published?.data?.cook?.metadata).toEqual({ fooBar: 1, nestedKey: 2 });
+      const resolverSpecs = {
+        User: {
+          special: bindableResolver,
+        },
+      };
+
+      const result = createResolvers({}, {
+        internals: mockInternals,
+        resolverSpecs,
+      });
+
+      expect(bindableResolver.bind).toHaveBeenCalledWith(mockInternals);
+    });
+
+    it('handles undefined resolver specs', () => {
+      const mockInternals = {} as any;
+
+      const result = createResolvers({}, {
+        internals: mockInternals,
+        resolverSpecs: undefined,
+      });
+
+      expect(result.FIELD_RESOLVERS).toEqual({});
+    });
+  });
+
+  describe('makeApplyFieldResolvers', () => {
+    it('applies field resolvers with signature tracking', () => {
+      const resolver = vi.fn();
+      const FIELD_RESOLVERS = {
+        User: {
+          name: resolver,
+        },
+      };
+
+      const applyFieldResolvers = makeApplyFieldResolvers({
+        TYPENAME_KEY: '__typename',
+        FIELD_RESOLVERS,
+      });
+
+      const obj = { name: 'test' };
+      const vars = { id: 1 };
+
+      applyFieldResolvers('User', obj, vars);
+
+      expect(resolver).toHaveBeenCalledWith({
+        parentTypename: 'User',
+        field: 'name',
+        parent: obj,
+        value: 'test',
+        variables: vars,
+        hint: undefined,
+        set: expect.any(Function),
+      });
+
+      // Should not apply again with same signature
+      resolver.mockClear();
+      applyFieldResolvers('User', obj, vars);
+      expect(resolver).not.toHaveBeenCalled();
+    });
+
+    it('tracks stale hint in signature', () => {
+      const resolver = vi.fn();
+      const FIELD_RESOLVERS = {
+        User: {
+          name: resolver,
+        },
+      };
+
+      const applyFieldResolvers = makeApplyFieldResolvers({
+        TYPENAME_KEY: '__typename',
+        FIELD_RESOLVERS,
+      });
+
+      const obj = {};
+      const vars = {};
+
+      applyFieldResolvers('User', obj, vars, { stale: true });
+      expect(resolver).toHaveBeenCalled();
+
+      // Different hint should trigger new application
+      resolver.mockClear();
+      applyFieldResolvers('User', obj, vars, { stale: false });
+      expect(resolver).toHaveBeenCalled();
+    });
+  });
+
+  describe('applyResolversOnGraph', () => {
+    it('walks object graph and applies resolvers', () => {
+      const userResolver = vi.fn();
+      const postResolver = vi.fn();
+
+      const FIELD_RESOLVERS = {
+        User: {
+          name: userResolver,
+        },
+        Post: {
+          title: postResolver,
+        },
+      };
+
+      const root = {
+        __typename: 'Query',
+        user: {
+          __typename: 'User',
+          name: 'John',
+          posts: [
+            { __typename: 'Post', title: 'Post 1' },
+            { __typename: 'Post', title: 'Post 2' },
+          ],
+        },
+      };
+
+      applyResolversOnGraph(root, {}, { stale: false }, {
+        TYPENAME_KEY: '__typename',
+        FIELD_RESOLVERS,
+      });
+
+      expect(userResolver).toHaveBeenCalledTimes(1);
+      expect(postResolver).toHaveBeenCalledTimes(2);
+    });
+
+    it('handles nested objects and arrays', () => {
+      const resolver = vi.fn();
+      const FIELD_RESOLVERS = {
+        Item: {
+          value: resolver,
+        },
+      };
+
+      const root = {
+        items: [
+          { __typename: 'Item', value: 1 },
+          { nested: { __typename: 'Item', value: 2 } },
+        ],
+      };
+
+      applyResolversOnGraph(root, {}, { stale: false }, {
+        TYPENAME_KEY: '__typename',
+        FIELD_RESOLVERS,
+      });
+
+      expect(resolver).toHaveBeenCalledTimes(2);
+    });
   });
 });
