@@ -150,6 +150,12 @@ export function createModifyOptimistic(deps: Deps) {
 
     if (op.type === "connAdd") {
       upsertEntry(state, op.entry, op.position);
+      // Expand view limits to accommodate optimistically added items
+      state.views.forEach((view: any) => {
+        if (view.limit != null && view.limit < state.list.length) {
+          view.limit = state.list.length;
+        }
+      });
     } else if (op.type === "connRemove") {
       const idx = state.list.findIndex((e: any) => e.key === op.entryKey);
       if (idx >= 0) {

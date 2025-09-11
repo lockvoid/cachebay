@@ -44,24 +44,19 @@ export function createResolvers(
   const { resolvers: resolverSpecs } = options;
   const { graph, views } = dependencies;
 
-  // Relay-related state that resolvers need
-  const relayOptionsByType = new Map<string, Map<string, any>>();
-  
-  const setRelayOptionsByType = (typename: string, field: string, opts: any) => {
-    if (!relayOptionsByType.has(typename)) {
-      relayOptionsByType.set(typename, new Map());
-    }
-    relayOptionsByType.get(typename)!.set(field, opts);
+  // Use the global maps for relay options so they're accessible everywhere
+  const setRelayOptionsByTypeImpl = (typename: string, field: string, opts: any) => {
+    setRelayOptionsByType(typename, field, opts); // Use the global function
   };
   
-  const getRelayOptionsByType = (typename: string, field: string) => {
-    return relayOptionsByType.get(typename)?.get(field);
+  const getRelayOptionsByTypeImpl = (typename: string | null, field: string) => {
+    return getRelayOptionsByType(typename, field); // Use the global function
   };
 
   // Create utils object with helper functions
   const utils = {
     TYPENAME_KEY: '__typename',
-    setRelayOptionsByType,
+    setRelayOptionsByType: setRelayOptionsByTypeImpl,
     buildConnectionKey,
     readPathValue: (obj: any, path: string) => {
       if (!obj || !path) return undefined;
@@ -148,7 +143,7 @@ export function createResolvers(
     }
   }
 
-  return { applyFieldResolvers, applyResolversOnGraph, FIELD_RESOLVERS, getRelayOptionsByType };
+  return { applyFieldResolvers, applyResolversOnGraph, FIELD_RESOLVERS, getRelayOptionsByType: getRelayOptionsByTypeImpl };
 }
 
 // Export makeApplyFieldResolvers for compatibility

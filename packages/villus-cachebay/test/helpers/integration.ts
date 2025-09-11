@@ -1,7 +1,7 @@
 import { defineComponent, h, computed, watch, type Ref } from 'vue';
 import { mount } from '@vue/test-utils';
 import { createClient, type Client } from 'villus';
-import { createCache } from '@/src';
+import { createCache, relay } from '@/src';
 import { CACHEBAY_KEY } from '@/src/core/plugin';
 import { createFetchMock, type Route, tick, delay } from './index';
 
@@ -13,16 +13,19 @@ export const cacheConfigs = {
     addTypename: true,
   }),
   
-  withRelay: (resolverFn?: any) => createCache({
-    addTypename: true,
-    resolvers: ({ relay }: any) => ({
-      Query: {
-        posts: resolverFn || relay(),
-        comments: resolverFn || relay(),
-        users: resolverFn || relay(),
-      }
-    }),
-  }),
+  withRelay: (resolverFn?: any) => {
+    const cache = createCache({
+      addTypename: true,
+      resolvers: {
+        Query: {
+          posts: resolverFn || relay({}),
+          comments: resolverFn || relay({}),
+          users: resolverFn || relay({}),
+        }
+      },
+    });
+    return cache;
+  },
   
   withCustomKeys: (keys: Record<string, (o: any) => string | null>) => createCache({
     addTypename: true,
