@@ -21,8 +21,8 @@ const COLORS = /* GraphQL */ `
 function makeCache() {
   return createCache({
     addTypename: true,
-    resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
-    keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+    resolvers: ({ relay }: any) => ({ Query: { colors: relay() } },
+    keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
   });
 }
 
@@ -106,7 +106,7 @@ describe('Integration • Errors', () => {
       {
         when: ({ variables }) => variables.first === 2 && !variables.after,
         delay: 5,
-        respond: () => ({ error: new Error('Boom') }),
+        respond: () => ({ error: new Error('Boom') },
       },
     ];
     const cache = makeCache();
@@ -136,7 +136,7 @@ describe('Integration • Errors', () => {
       {
         when: ({ variables }) => variables.first === 2 && !variables.after,
         delay: 30,
-        respond: () => ({ error: new Error('Older error') }),
+        respond: () => ({ error: new Error('Older error') },
       },
       // Newer op (first=3) – fast data
       {
@@ -151,7 +151,7 @@ describe('Integration • Errors', () => {
               pageInfo: {},
             },
           },
-        }),
+        },
       },
     ];
     const cache = makeCache();
@@ -199,13 +199,13 @@ describe('Integration • Errors', () => {
               pageInfo: {},
             },
           },
-        }),
+        },
       },
       // Older cursor op (after='p1') slow error -> DROPPED
       {
         when: ({ variables }) => variables.after === 'p1' && variables.first === 2,
         delay: 30,
-        respond: () => ({ error: new Error('Cursor page failed') }),
+        respond: () => ({ error: new Error('Cursor page failed') },
       },
     ];
 
@@ -256,7 +256,7 @@ describe('Integration • Errors', () => {
               pageInfo: {},
             },
           },
-        }),
+        },
       },
       // O2: first=3 (fast error)
       { when: ({ variables }) => variables.first === 3 && !variables.after, delay: 5, respond: () => ({ error: new Error('O2 err') }) },
@@ -273,7 +273,7 @@ describe('Integration • Errors', () => {
               pageInfo: {},
             },
           },
-        }),
+        },
       },
     ];
 

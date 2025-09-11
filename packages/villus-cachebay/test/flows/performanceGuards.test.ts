@@ -38,7 +38,7 @@ function makeColorsCache(extra?: any) {
   return createCache({
     addTypename: true,
     resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
-    keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+    keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
     ...(extra || {}),
   });
 }
@@ -136,7 +136,7 @@ describe('Integration • Performance guards (cachebay only)', () => {
               pageInfo: { endCursor: 'c2', hasNextPage: true, startCursor: 'c1', hasPreviousPage: false }
             }
           },
-        }),
+        },
       },
       {
         when: ({ variables }) => variables.after === 'c2' && variables.first === 2,
@@ -153,7 +153,7 @@ describe('Integration • Performance guards (cachebay only)', () => {
               pageInfo: { endCursor: 'c4', hasNextPage: false, startCursor: 'c3', hasPreviousPage: true }
             }
           },
-        }),
+        },
       },
       {
         when: ({ variables }) => variables.after === 'c4' && variables.first === 1,
@@ -167,7 +167,7 @@ describe('Integration • Performance guards (cachebay only)', () => {
               pageInfo: { endCursor: 'c1b' }
             }
           },
-        }),
+        },
       },
     ];
 
@@ -206,11 +206,11 @@ describe('Integration • Performance guards (cachebay only)', () => {
   it('Interface reads: Node:* lists concrete implementors and materialized proxies', async () => {
     const cache = createCache({
       addTypename: true,
-      interfaces: () => ({ Node: ['Color', 'T'] }),
-      keys: () => ({
+      interfaces: { Node: ['Color', 'T'] },
+      keys: {
         Color: (o: any) => (o?.id != null ? String(o.id) : null),
         T: (o: any) => (o?.id != null ? String(o.id) : null),
-      }),
+      },
     });
 
     (cache as any).writeFragment({ __typename: 'Color', id: 1, name: 'C1' }).commit?.();

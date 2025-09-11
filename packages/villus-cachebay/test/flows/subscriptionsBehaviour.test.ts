@@ -28,7 +28,7 @@ describe('subscriptions • streaming frames', () => {
   it('applies frames non-terminating and writes entities', async () => {
     const cache = createCache({
       addTypename: true,
-      keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
     const plugin = cache as unknown as (ctx: any) => void;
 
@@ -67,7 +67,7 @@ describe('subscriptions • streaming frames', () => {
     const calls: any[] = [];
     const ctx = {
       operation: { type: 'subscription', query: 'subscription S { ping }', variables: {}, context: {} },
-      useResult: (payload: any, term?: boolean) => calls.push({ payload, term }),
+      useResult: (payload: any, term?: boolean) => calls.push({ payload, term },
       afterQuery: () => { },
     } as any;
 
@@ -88,7 +88,7 @@ describe('subscriptions • streaming frames', () => {
     const calls: any[] = [];
     const ctx = {
       operation: { type: 'subscription', query: 'subscription S { ping }', variables: {}, context: {} },
-      useResult: (payload: any, term?: boolean) => calls.push({ payload, term }),
+      useResult: (payload: any, term?: boolean) => calls.push({ payload, term },
       afterQuery: () => { },
     } as any;
 

@@ -20,7 +20,7 @@ describe('Resolvers Integration', () => {
               resolverCtx.set(out);
             },
           },
-        }),
+        },
       });
 
       const query = /* GraphQL */ `

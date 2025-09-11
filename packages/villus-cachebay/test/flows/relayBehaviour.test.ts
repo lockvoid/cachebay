@@ -84,7 +84,7 @@ function makeClientMode(mode: 'append' | 'prepend' | 'replace' | 'auto', routes:
     addTypename: true,
     resolvers: ({ relay }: any) => ({
       Query: { colors: relay({ paginationMode: mode }) },
-    }),
+    },
   });
   const fx = createFetchMock(routes);
   const client = createClient({ url: '/relay', use: [cache as any, fx.plugin] });
@@ -99,7 +99,7 @@ function makeClientCustomPaths(
     addTypename: true,
     resolvers: ({ relay }: any) => ({
       Query: { colors: relay({ paginationMode: 'append', ...opts }) },
-    }),
+    },
   });
   const fx = createFetchMock(routes);
   const client = createClient({ url: '/relay', use: [cache as any, fx.plugin] });
@@ -139,7 +139,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
               pageInfo: { endCursor: 'c2', hasNextPage: true, startCursor: 'c1', hasPreviousPage: false },
             },
           },
-        }),
+        },
       },
       {
         when: ({ variables }) => variables.after === 'c2' && variables.first === 2,
@@ -156,7 +156,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
               pageInfo: { endCursor: 'c4', hasNextPage: false, startCursor: 'c3', hasPreviousPage: true },
             },
           },
-        }),
+        },
       },
     ];
     const { client, fetchMock } = makeClientMode('append', routes);
@@ -190,7 +190,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
               pageInfo: { startCursor: 'c-1', hasPreviousPage: false },
             },
           },
-        }),
+        },
       },
       // page 1
       {
@@ -208,7 +208,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
               pageInfo: { startCursor: 'c1', hasPreviousPage: true },
             },
           },
-        }),
+        },
       },
     ];
     const { client, fetchMock } = makeClientMode('prepend', routes);
@@ -242,7 +242,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
               pageInfo: { endCursor: 'c2', hasNextPage: true },
             },
           },
-        }),
+        },
       },
       // page 2
       {
@@ -260,7 +260,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
               pageInfo: { endCursor: 'c4', hasNextPage: false },
             },
           },
-        }),
+        },
       },
     ];
     const { client, fetchMock } = makeClientMode('replace', routes);
@@ -295,7 +295,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
               pageInfo: { endCursor: 'c2', hasNextPage: true },
             },
           },
-        }),
+        },
       },
       // Update node 1 (duplicate) with new cursor + edge meta; should not add a duplicate
       {
@@ -312,7 +312,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
               pageInfo: { endCursor: 'c1b', hasNextPage: true },
             },
           },
-        }),
+        },
       },
     ];
     const { client, fetchMock } = makeClientMode('append', routes);
@@ -347,7 +347,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
               meta: { endCursor: 'x1', hasNextPage: false },
             },
           },
-        }),
+        },
       },
     ];
     const { client, fetchMock } = makeClientCustomPaths(
@@ -382,7 +382,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
               pageInfo: { endCursor: 'p2', hasNextPage: true, startCursor: 'p1', hasPreviousPage: false },
             },
           },
-        }),
+        },
       },
       // append (after present)
       {
@@ -400,7 +400,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
               pageInfo: { endCursor: 'p4', hasNextPage: false },
             },
           },
-        }),
+        },
       },
       // prepend (before present)
       {
@@ -418,7 +418,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
               pageInfo: { startCursor: 'p-1', hasPreviousPage: false },
             },
           },
-        }),
+        },
       },
     ];
 
@@ -462,7 +462,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
               pageInfo: {},
             },
           },
-        }),
+        },
       },
       // older cursor page (after='n1')
       {
@@ -477,7 +477,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
               pageInfo: {},
             },
           },
-        }),
+        },
       },
     ];
 
@@ -547,7 +547,7 @@ function SuspenseColorsHarness(cachePolicy: 'cache-first' | 'cache-and-network' 
     setup(props) {
       return () =>
         h(Suspense, {}, {
-          default: () => h(Child, { t: props.t, first: props.first, after: props.after }),
+          default: () => h(Child, { t: props.t, first: props.first, after: props.after },
           fallback: () => h('div', { class: 'fallback' }, 'loading…'),
         })
     },
@@ -557,8 +557,8 @@ function SuspenseColorsHarness(cachePolicy: 'cache-first' | 'cache-and-network' 
 function makeCache() {
   return createCache({
     addTypename: true,
-    resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
-    keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+    resolvers: ({ relay }: any) => ({ Query: { colors: relay() } },
+    keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
   })
 }
 
@@ -598,7 +598,7 @@ describe('Integration • Relay pagination reset & append from cache — extende
               pageInfo: { endCursor: 'a2', hasNextPage: true },
             }
           }
-        }),
+        },
       },
       // A p2
       {
@@ -615,7 +615,7 @@ describe('Integration • Relay pagination reset & append from cache — extende
               pageInfo: { endCursor: 'a4', hasNextPage: true },
             }
           }
-        }),
+        },
       },
       // A p3
       {
@@ -632,7 +632,7 @@ describe('Integration • Relay pagination reset & append from cache — extende
               pageInfo: { endCursor: 'a6', hasNextPage: true },
             }
           }
-        }),
+        },
       },
       // B p1
       {
@@ -649,7 +649,7 @@ describe('Integration • Relay pagination reset & append from cache — extende
               pageInfo: { endCursor: 'b2', hasNextPage: false },
             }
           }
-        }),
+        },
       },
     ]
     const fxFast = createFetchMock(fastRoutes)
@@ -693,7 +693,7 @@ describe('Integration • Relay pagination reset & append from cache — extende
               pageInfo: { endCursor: 'a2', hasNextPage: true },
             }
           }
-        }),
+        },
       },
       // A p2 (slow)
       {
@@ -710,7 +710,7 @@ describe('Integration • Relay pagination reset & append from cache — extende
               pageInfo: { endCursor: 'a4', hasNextPage: true },
             }
           }
-        }),
+        },
       },
       // A p3 (slow)
       {
@@ -727,7 +727,7 @@ describe('Integration • Relay pagination reset & append from cache — extende
               pageInfo: { endCursor: 'a6', hasNextPage: true },
             }
           }
-        }),
+        },
       },
       // A p4 (slow) — new page to verify post-return pagination
       {
@@ -744,7 +744,7 @@ describe('Integration • Relay pagination reset & append from cache — extende
               pageInfo: { endCursor: 'a8', hasNextPage: false },
             }
           }
-        }),
+        },
       },
       // B p1 (slow)
       {
@@ -761,7 +761,7 @@ describe('Integration • Relay pagination reset & append from cache — extende
               pageInfo: { endCursor: 'b2', hasNextPage: false },
             }
           }
-        }),
+        },
       },
     ]
     const fxSlow = createFetchMock(slowRoutes)
@@ -991,7 +991,7 @@ describe('Concurrent views over the same connection keep independent windows', (
               pageInfo: { endCursor: 'a2', hasNextPage: true },
             },
           },
-        }),
+        },
       },
       // page 2 (after a2)
       {
@@ -1009,7 +1009,7 @@ describe('Concurrent views over the same connection keep independent windows', (
               pageInfo: { endCursor: 'a4', hasNextPage: false },
             },
           },
-        }),
+        },
       },
     ];
 
@@ -1074,7 +1074,7 @@ describe.only('Unit • Proxy shape & identity (no components)', () => {
               pageInfo: { endCursor: 'a2', hasNextPage: true },
             },
           },
-        }),
+        },
       },
     ]
 
@@ -1133,7 +1133,7 @@ describe.only('Unit • Proxy shape & identity (no components)', () => {
               pageInfo: { endCursor: 'a2', hasNextPage: true },
             },
           },
-        }),
+        },
       },
     ]
     const fx = createFetchMock(routes)

@@ -34,7 +34,7 @@ describe('Integration • Policies behavior (cachebay only)', () => {
   it('cache-only: hit emits cached and terminates; miss yields CacheOnlyMiss', async () => {
     const cache = createCache({
       addTypename: true,
-      resolvers: ({ relay }: any) => ({ Query: { assets: relay() } }),
+      resolvers: ({ relay }: any) => ({ Query: { assets: relay() } },
     });
 
     // Seed cached HIT (warm client cache; helper uses rabbit:false)
@@ -93,7 +93,7 @@ describe('Integration • Policies behavior (cachebay only)', () => {
   it('cache-first: hit emits cached and terminates; miss emits nothing here', async () => {
     const cache = createCache({
       addTypename: true,
-      resolvers: ({ relay }: any) => ({ Query: { assets: relay() } }),
+      resolvers: ({ relay }: any) => ({ Query: { assets: relay() } },
     });
 
     await seedCache(cache, {
@@ -151,7 +151,7 @@ describe('Integration • Policies behavior (cachebay only)', () => {
   it('cache-and-network: identical network as cache → single render; different network → two renders; miss → one render', async () => {
     const cache = createCache({
       addTypename: true,
-      resolvers: ({ relay }: any) => ({ Query: { assets: relay() } }),
+      resolvers: ({ relay }: any) => ({ Query: { assets: relay() } },
     });
 
     // Seed cached X0
@@ -170,7 +170,7 @@ describe('Integration • Policies behavior (cachebay only)', () => {
       const fx = createFetchMock([{
         when: ({ variables }) => variables.t === 'HIT',
         delay: 10,
-        respond: () => ({ data: cachedEnvelope }),
+        respond: () => ({ data: cachedEnvelope },
       }]);
       const client = createClient({ url: '/cn-ident', use: [cache as any, fx.plugin] });
 
@@ -208,7 +208,7 @@ describe('Integration • Policies behavior (cachebay only)', () => {
               pageInfo: {},
             },
           },
-        }),
+        },
       }]);
       const client = createClient({ url: '/cn-diff', use: [cache as any, fx.plugin] });
 
@@ -252,7 +252,7 @@ describe('Integration • Policies behavior (cachebay only)', () => {
               pageInfo: {},
             },
           },
-        }),
+        },
       }]);
       const client = createClient({ url: '/cn-miss', use: [cache as any, fx.plugin] });
 
@@ -279,7 +279,7 @@ describe('Integration • Policies behavior (cachebay only)', () => {
   it('cursor replay publishes terminally (append/prepend/replace via relay resolver)', async () => {
     const cache = createCache({
       addTypename: true,
-      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
+      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } },
     });
 
     const fx = createFetchMock([{
@@ -297,7 +297,7 @@ describe('Integration • Policies behavior (cachebay only)', () => {
             pageInfo: { startCursor: 'c3', endCursor: 'c4', hasNextPage: false, hasPreviousPage: true },
           },
         },
-      }),
+      },
     }]);
     const client = createClient({ url: '/cursor', use: [cache as any, fx.plugin] });
 

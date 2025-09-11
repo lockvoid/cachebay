@@ -7,10 +7,10 @@ import { tick } from '@/test/helpers';
 function makeCache() {
   return createCache({
     addTypename: true,
-    keys: () => ({
+    keys: {
       Color: (o: any) => (o?.id != null ? String(o.id) : null),
       T: (o: any) => (o?.id != null ? String(o.id) : null),
-    }),
+    },
   });
 }
 

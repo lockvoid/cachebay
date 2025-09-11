@@ -6,7 +6,7 @@ import { tick } from '@/test/helpers';
 describe('Fragments Integration', () => {
   it('identify returns normalized key', () => {
     const cache = createCache({
-      keys: () => ({ User: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     const key = (cache as any).identify({ __typename: 'User', id: 1, name: 'A' });
@@ -15,7 +15,7 @@ describe('Fragments Integration', () => {
 
   it('writeFragment -> commit and revert work; hasFragment checks presence', async () => {
     const cache = createCache({
-      keys: () => ({ User: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     const tx = (cache as any).writeFragment({ __typename: 'User', id: 1, name: 'Ann' });
@@ -38,7 +38,7 @@ describe('Fragments Integration', () => {
 
   it('readFragment can return raw snapshot when materialized=false', async () => {
     const cache = createCache({
-      keys: () => ({ User: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     const tx = (cache as any).writeFragment({ __typename: 'User', id: 2, name: 'Bob' });
@@ -53,7 +53,7 @@ describe('Fragments Integration', () => {
 
   it('readFragment returns reactive proxy by default (materialized=true)', async () => {
     const cache = createCache({
-      keys: () => ({ User: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     const tx = (cache as any).writeFragment({ __typename: 'User', id: 3, name: 'Charlie' });

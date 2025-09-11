@@ -26,7 +26,7 @@ async function seedRelayOptions(cache: any) {
         __typename: 'Query',
         colors: { __typename: 'ColorConnection', edges: [], pageInfo: {} },
       },
-    }),
+    },
   }];
 
   const fx = createFetchMock(routes);
@@ -63,7 +63,7 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
 
   it('Entity: patch+commit, then revert restores previous snapshot', async () => {
     const cache = createCache({
-      keys: () => ({ T: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      keys: { T: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     expect((cache as any).hasFragment('T:1')).toBe(false);
@@ -82,7 +82,7 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
 
   it('Entity layering (order: T1 -> T2 -> revert T1 -> revert T2)', async () => {
     const cache = createCache({
-      keys: () => ({ T: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      keys: { T: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     const T1 = (cache as any).modifyOptimistic((c: any) => {
@@ -104,7 +104,7 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
 
   it('Entity layering (order: T1 -> T2 -> revert T2 -> revert T1) returns baseline', async () => {
     const cache = createCache({
-      keys: () => ({ T: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      keys: { T: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     const T1 = (cache as any).modifyOptimistic((c: any) => {
@@ -129,8 +129,8 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
   it('Connection: addNode at end/start, removeNode, patch', async () => {
     const cache = createCache({
       addTypename: true,
-      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
-      keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } },
+      keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     await seedRelayOptions(cache);
@@ -162,8 +162,8 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
   it('Connection: dedup on add; re-add after remove inserts at specified position', async () => {
     const cache = createCache({
       addTypename: true,
-      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
-      keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } },
+      keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     await seedRelayOptions(cache);
@@ -208,8 +208,8 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
   it('Connection: invalid nodes (missing id/__typename) are ignored safely', async () => {
     const cache = createCache({
       addTypename: true,
-      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
-      keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } },
+      keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     await seedRelayOptions(cache);
@@ -228,8 +228,8 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
   it('Connection layering: T1 adds, T2 adds; revert T1 preserves T2; revert T2 returns to baseline', async () => {
     const cache = createCache({
       addTypename: true,
-      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
-      keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } },
+      keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     await seedRelayOptions(cache);

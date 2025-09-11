@@ -16,7 +16,7 @@ describe('SSR dehydrate/hydrate', () => {
     const cacheA = createCache({
       addTypename: true,
       resolvers: { Query: { colors: relay({}) } },
-      keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     runQuery(
@@ -38,7 +38,7 @@ describe('SSR dehydrate/hydrate', () => {
     const cacheB = createCache({
       addTypename: true,
       resolvers: { Query: { colors: relay({}) } },
-      keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     (cacheB as any).hydrate(snap);
@@ -48,7 +48,7 @@ describe('SSR dehydrate/hydrate', () => {
   });
 
   it('hydrate accepts a function and is idempotent', () => {
-    const cache = createCache({ keys: () => ({ T: (o: any) => (o?.id != null ? String(o.id) : null) }) });
+    const cache = createCache({ keys: { T: (o: any) => (o?.id != null ? String(o.id) : null) }) });
     (cache as any).writeFragment({ __typename: 'T', id: 1, v: 1 }).commit?.();
 
     const snap = (cache as any).dehydrate();

@@ -12,7 +12,7 @@ import type { ClientPlugin } from "villus";
 import { buildCachebayPlugin, provideCachebay } from "./plugin";
 import { createModifyOptimistic } from "../features/optimistic";
 import { createSSR } from "../features/ssr";
-import { createInspect } from "../features/debug";
+import { createInspect } from "../features/inspect";
 
 import type {
   CachebayOptions,
@@ -69,7 +69,7 @@ export type CachebayInstance = ClientPlugin & {
 
   inspect: {
     entities: (typename?: string) => string[];
-    get: (key: string) => any;
+    entity: (key: string) => any;
     connections: () => string[];
     connection: (
       parent: "Query" | { __typename: string; id?: any; _id?: any },
@@ -92,27 +92,16 @@ export type CachebayInstance = ClientPlugin & {
  * ──────────────────────────────────────────────────────────────────────────── */
 export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Config
-  const writePolicy = options.writePolicy || "replace";
-  const keys =
-    typeof options.keys === "function" ? options.keys() : options.keys ? options.keys : ({} as NonNullable<KeysConfig>);
   const addTypename = options.addTypename ?? true;
 
-  const interfaces: Record<string, string[]> =
-    typeof options.interfaces === "function"
-      ? options.interfaces()
-      : options.interfaces
-        ? (options.interfaces as Record<string, string[]>)
-        : {};
-
-  const reactiveMode = options.entityShallow === true ? "shallow" : "deep";
   const trackNonRelayResults = options.trackNonRelayResults !== false;
 
   // Build raw graph (stores + helpers)
   const graph = createGraph({
-    writePolicy,
-    interfaces,
-    reactiveMode,
-    keys,
+    writePolicy: options.writePolicy || "replace",
+    reactiveMode: options.reactiveMode || "shallow",
+    interfaces: options.interfaces || {},
+    keys: options.keys || {},
   });
 
   // Views (entity/connection views & proxy registration)
@@ -184,8 +173,6 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   (instance as any).writeFragment = fragments.writeFragment;
   (instance as any).modifyOptimistic = modifyOptimistic;
   (instance as any).inspect = inspect;
-  (instance as any).listEntityKeys = graph.getEntityKeys;
-  (instance as any).__entitiesTick = graph.entitiesTick;
 
   (instance as any).gc = {
     connections(predicate?: (key: string, state: ConnectionState) => boolean) {

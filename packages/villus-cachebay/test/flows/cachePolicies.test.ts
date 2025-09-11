@@ -44,7 +44,7 @@ function Harness(
 function makeClient(routes: Route[]) {
   const cache = createCache({
     addTypename: true,
-    resolvers: ({ relay }: any) => ({ Query: { assets: relay() } }),
+    resolvers: ({ relay }: any) => ({ Query: { assets: relay() } },
   });
   const fx = createFetchMock(routes);
   const client = createClient({ url: '/test', use: [cache as any, fx.plugin] });
@@ -68,7 +68,7 @@ describe('Integration • cache policies', () => {
             pageInfo: { endCursor: 'a1', hasNextPage: false },
           },
         },
-      }),
+      },
     }];
 
     const { client, fetchMock } = makeClient(routes);
@@ -112,7 +112,7 @@ describe('Integration • cache policies', () => {
             pageInfo: { endCursor: 'c1', hasNextPage: false },
           },
         },
-      }),
+      },
     }];
 
     const fx = createFetchMock(routes);
@@ -144,7 +144,7 @@ describe('Integration • cache policies', () => {
             pageInfo: { endCursor: 'n1', hasNextPage: false },
           },
         },
-      }),
+      },
     }];
 
     const { client, fetchMock } = makeClient(routes);

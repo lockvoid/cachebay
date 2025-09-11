@@ -15,7 +15,7 @@ describe('core/resolvers', () => {
             if (ctx.value === 'test') {
               ctx.set('modified');
             }
-          }),
+          },
         },
       };
 

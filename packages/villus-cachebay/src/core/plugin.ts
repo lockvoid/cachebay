@@ -52,9 +52,7 @@ export function buildCachebayPlugin(
   } = options;
 
   const { graph, views, ssr, resolvers } = dependencies;
-  const applyResolversOnGraph = resolvers?.applyResolversOnGraph || (() => {});
   const operationCache = graph.operationStore || new Map<string, any>();
-  const writeOperationCache = graph.putOperation || ((_k: string, _v: any) => { });
 
   const lastPublishedByFam = new Map<string, { data: any; variables: Record<string, any> }>();
   const lastContentSigByFam = new Map<string, string>();
@@ -84,7 +82,7 @@ export function buildCachebayPlugin(
         if (r && "data" in r && r.data) {
           const vars = operation.variables || {};
           const view = viewRootOf(r.data);
-          applyResolversOnGraph(view, vars, { stale: false });
+          resolvers.applyResolversOnGraph(view, vars, { stale: false });
           views.registerViewsFromResult(view, vars);
           views.collectEntities(r.data);
           originalUseResult(r, false);
@@ -130,7 +128,7 @@ export function buildCachebayPlugin(
         const vars = operation.variables || entry.variables || {};
         const viewRoot = viewRootOf(entry.data);
         lastContentSigByFam.set(famKey, toSig(viewRoot));
-        applyResolversOnGraph(viewRoot, vars, { stale: false });
+        resolvers.applyResolversOnGraph(viewRoot, vars, { stale: false });
         views.collectEntities(viewRoot);
         views.registerViewsFromResult(viewRoot, vars);
         lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
@@ -154,7 +152,7 @@ export function buildCachebayPlugin(
         const vars = operation.variables || entry.variables || {};
         const viewRoot = viewRootOf(entry.data);
         lastContentSigByFam.set(famKey, toSig(viewRoot));
-        applyResolversOnGraph(viewRoot, vars, { stale: false });
+        resolvers.applyResolversOnGraph(viewRoot, vars, { stale: false });
         views.collectEntities(viewRoot);
         views.registerViewsFromResult(viewRoot, vars);
         lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
@@ -179,7 +177,7 @@ export function buildCachebayPlugin(
         if (hadTicket || hydratingNow) {
           const viewRoot = viewRootOf(entry.data);
           lastContentSigByFam.set(famKey, toSig(viewRoot));
-          applyResolversOnGraph(viewRoot, vars, { stale: false });
+          resolvers.applyResolversOnGraph(viewRoot, vars, { stale: false });
           views.collectEntities(viewRoot);
           views.registerViewsFromResult(viewRoot, vars);
           lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
@@ -190,7 +188,7 @@ export function buildCachebayPlugin(
         // Normal CN cached reveal: bind views on a view clone
         const viewRoot = viewRootOf(entry.data);
         lastContentSigByFam.set(famKey, toSig(viewRoot));
-        applyResolversOnGraph(viewRoot, vars, { stale: false });
+        resolvers.applyResolversOnGraph(viewRoot, vars, { stale: false });
         views.collectEntities(viewRoot);
         views.registerViewsFromResult(viewRoot, vars);
         lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
@@ -223,12 +221,12 @@ export function buildCachebayPlugin(
       // CURSOR PAGES — terminal publish; keep op-cache RAW & PLAIN
       if (isCursorPage && hasData) {
         const cacheRoot = r.data; // already plain enough for writeOpCache; it sanitizes shallowly
-        applyResolversOnGraph(cacheRoot, vars, { stale: true });
+        resolvers.applyResolversOnGraph(cacheRoot, vars, { stale: true });
         views.collectEntities(cacheRoot);
-        writeOperationCache(baseOpKey, { data: cacheRoot, variables: vars });
+        graph.putOperation(baseOpKey, { data: cacheRoot, variables: vars });
 
         const viewRoot = viewRootOf(r.data);
-        applyResolversOnGraph(viewRoot, vars, { stale: true });
+        resolvers.applyResolversOnGraph(viewRoot, vars, { stale: true });
         views.collectEntities(viewRoot);
         views.registerViewsFromResult(viewRoot, vars);
         lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
@@ -238,17 +236,17 @@ export function buildCachebayPlugin(
       // WINNER (baseline) with duplicate suppression
       if (hasData) {
         const cacheRoot = r.data;
-        applyResolversOnGraph(cacheRoot, vars, { stale: false });
+        resolvers.applyResolversOnGraph(cacheRoot, vars, { stale: false });
         views.collectEntities(cacheRoot);
 
         const prevSig = lastContentSigByFam.get(famKey);
         const nextSig = toSig(cacheRoot);
 
-        writeOperationCache(baseOpKey, { data: cacheRoot, variables: vars });
+        graph.putOperation(baseOpKey, { data: cacheRoot, variables: vars });
         lastContentSigByFam.set(famKey, nextSig);
 
         const viewRoot = viewRootOf(r.data);
-        applyResolversOnGraph(viewRoot, vars, { stale: false });
+        resolvers.applyResolversOnGraph(viewRoot, vars, { stale: false });
         views.collectEntities(viewRoot);
         views.registerViewsFromResult(viewRoot, vars);
 

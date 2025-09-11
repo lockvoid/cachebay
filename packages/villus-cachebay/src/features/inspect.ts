@@ -110,7 +110,7 @@ export function createInspect(deps: InspectDeps) {
       });
       return out;
     },
-    get(key: EntityKey) {
+    entity(key: EntityKey) {
       return graph.entityStore.get(key);
     },
 

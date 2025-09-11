@@ -17,7 +17,7 @@ describe('features/optimistic — edge cases', () => {
     const cache = createCache({
       addTypename: true,
       resolvers: { Query: { colors: relay({}) } },
-      keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     seedRelay(cache, { field: 'colors', connectionTypename: 'ColorConnection', query: QUERY });
@@ -44,7 +44,7 @@ describe('features/optimistic — edge cases', () => {
     const cache = createCache({
       addTypename: true,
       resolvers: { Query: { colors: relay({}) } },
-      keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     seedRelay(cache, { field: 'colors', connectionTypename: 'ColorConnection', query: QUERY });
@@ -62,15 +62,15 @@ describe('features/optimistic — edge cases', () => {
     t.commit?.();
     await tick();
 
-    const keys = (cache as any).listEntityKeys('Color');
-    expect(keys.length === 0 || Array.isArray(keys)).toBe(true);
+    const fragments = (cache as any).readFragments('Color:*');
+    expect(fragments.length === 0 || Array.isArray(fragments)).toBe(true);
   });
 
   it('default addNode position is end; explicit start inserts at the front', async () => {
     const cache = createCache({
       addTypename: true,
       resolvers: { Query: { colors: relay({}) } },
-      keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     seedRelay(cache, { field: 'colors', connectionTypename: 'ColorConnection', query: QUERY });
@@ -88,15 +88,15 @@ describe('features/optimistic — edge cases', () => {
     await tick();
 
     // We can't inspect the internal connection list easily; instead, verify entity set
-    const keys = (cache as any).listEntityKeys('Color');
-    expect(keys).toEqual(['Color:0', 'Color:1', 'Color:2']);
+    const fragments = (cache as any).readFragments('Color:*');
+    expect(fragments.map((f: any) => `Color:${f.id}`).sort()).toEqual(['Color:0', 'Color:1', 'Color:2']);
   });
 
   it('ignores invalid nodes (missing __typename or id)', async () => {
     const cache = createCache({
       addTypename: true,
       resolvers: { Query: { colors: relay({}) } },
-      keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     seedRelay(cache, { field: 'colors', connectionTypename: 'ColorConnection', query: QUERY });
@@ -110,15 +110,15 @@ describe('features/optimistic — edge cases', () => {
     t.commit?.();
     await tick();
 
-    const keys = (cache as any).listEntityKeys('Color');
-    expect(keys.length === 0 || Array.isArray(keys)).toBe(true);
+    const fragments = (cache as any).readFragments('Color:*');
+    expect(fragments.length === 0 || Array.isArray(fragments)).toBe(true);
   });
 
   it('re-adding after removal places the node according to the latest position hint', async () => {
     const cache = createCache({
       addTypename: true,
       resolvers: { Query: { colors: relay({}) } },
-      keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     seedRelay(cache, { field: 'colors', connectionTypename: 'ColorConnection', query: QUERY });

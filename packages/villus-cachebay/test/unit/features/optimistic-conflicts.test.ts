@@ -17,7 +17,7 @@ describe('features/optimistic — conflict & ordering semantics', () => {
     const cache = createCache({
       addTypename: true,
       resolvers: { Query: { colors: relay({}) } },
-      keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     seedRelay(cache, { field: 'colors', connectionTypename: 'ColorConnection', query: QUERY });
@@ -54,7 +54,7 @@ describe('features/optimistic — conflict & ordering semantics', () => {
     const cache = createCache({
       addTypename: true,
       resolvers: { Query: { colors: relay({}) } },
-      keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
+      keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
     seedRelay(cache, { field: 'colors', connectionTypename: 'ColorConnection', query: QUERY });

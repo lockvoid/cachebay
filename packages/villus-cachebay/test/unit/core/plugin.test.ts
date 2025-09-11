@@ -7,15 +7,15 @@ describe('plugin — provideCachebay', () => {
     const app: any = { provide: (k: any, v: any) => { provided.key = k; provided.value = v; } };
 
     const instance: any = {
-      readFragment: () => ({}),
-      writeFragment: (_: any) => ({ commit: () => { } }),
+      readFragment: () => ({},
+      writeFragment: (_: any) => ({ commit: () => { } },
       identify: (_: any) => 'X:1',
       modifyOptimistic: () => { },
       // optional passthroughs
       hasFragment: () => true,
       listEntityKeys: () => [],
       listEntities: () => [],
-      inspect: () => ({}),
+      inspect: () => ({},
       __entitiesTick: () => { },
     };
 
