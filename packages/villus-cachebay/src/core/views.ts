@@ -7,8 +7,9 @@ import {
 } from "vue";
 
 import type { EntityKey, ConnectionState } from "./types";
-import { readPathValue, buildConnectionKey } from "./utils";
 import { getRelayOptionsByType } from "./resolvers";
+import { buildConnectionKey, readPathValue } from "./utils";
+import { TYPENAME_FIELD } from "./constants";
 
 /**
  * View-layer utilities that sit on top of the raw graph (stores + entity helpers).
@@ -23,17 +24,14 @@ export function createViews(
   },
   dependencies: {
     graph: any;
-    typenameKey?: string;
   }
 ) {
   const {
     trackNonRelayResults = true,
   } = options;
   
-  const {
-    graph,
-    typenameKey = '__typename',
-  } = dependencies;
+  const { graph } = dependencies;
+  const typenameKey = TYPENAME_FIELD;
 
   /* ───────────────────────────────────────────────────────────────────────────
    * Entity views: registration & synchronization

@@ -28,13 +28,15 @@ export function setRelayOptionsByType(typename: string, field: string, options: 
 }
 
 export function createResolvers(
-  options: {},
+  options: {
+    resolvers?: ResolversDict;
+  },
   dependencies: {
     internals: CachebayInternals;
-    resolverSpecs: ResolversDict | undefined;
   }
 ) {
-  const { internals, resolverSpecs } = dependencies;
+  const { resolvers: resolverSpecs } = options;
+  const { internals } = dependencies;
 
   function bindResolversTree(
     tree: ResolversDict | undefined,

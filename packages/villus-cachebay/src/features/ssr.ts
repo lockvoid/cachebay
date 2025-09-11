@@ -1,10 +1,9 @@
 import type { EntityKey, ConnectionState } from "../core/types";
-import { isReactive } from "vue";
+import { isReactive, shallowReactive } from "vue";
 
 type Deps = {
   graph: any;
   views: any;
-  shallowReactive: <T extends object>(obj: T) => T;
   applyResolversOnGraph?: (root: any, vars: Record<string, any>, hint: { stale?: boolean }) => void;
 };
 
@@ -13,7 +12,7 @@ function cloneData(data: any): any {
 }
 
 export function createSSR(deps: Deps) {
-  const { graph, views, shallowReactive, applyResolversOnGraph } = deps;
+  const { graph, views, applyResolversOnGraph } = deps;
 
   // Used by cache plugin to allow CN cached+terminate on first mount after hydrate
   const hydrateOperationTicket = new Set<string>();

@@ -19,9 +19,8 @@ describe('core/resolvers', () => {
         },
       };
 
-      const result = createResolvers({}, {
+      const result = createResolvers({ resolvers: resolverSpecs }, {
         internals: mockInternals,
-        resolverSpecs,
       });
 
       expect(result).toHaveProperty('applyFieldResolvers');
@@ -48,9 +47,8 @@ describe('core/resolvers', () => {
         },
       };
 
-      const result = createResolvers({}, {
+      const result = createResolvers({ resolvers: resolverSpecs }, {
         internals: mockInternals,
-        resolverSpecs,
       });
 
       expect(bindableResolver.bind).toHaveBeenCalledWith(mockInternals);
@@ -59,9 +57,8 @@ describe('core/resolvers', () => {
     it('handles undefined resolver specs', () => {
       const mockInternals = {} as any;
 
-      const result = createResolvers({}, {
+      const result = createResolvers({ resolvers: undefined }, {
         internals: mockInternals,
-        resolverSpecs: undefined,
       });
 
       expect(result.FIELD_RESOLVERS).toEqual({});

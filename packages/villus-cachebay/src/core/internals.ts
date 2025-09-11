@@ -41,7 +41,6 @@ import { createGraph } from "./graph";
 import { createViews } from "./views";
 import {
   createResolvers,
-  makeApplyFieldResolvers,
   applyResolversOnGraph as applyResolversOnGraphImpl,
   getRelayOptionsByType,
   setRelayOptionsByType,
@@ -122,7 +121,6 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     trackNonRelayResults,
   }, {
     graph,
-    typenameKey: "__typename",
   });
 
   /* ───────────────────────────────────────────────────────────────────────────
@@ -161,39 +159,21 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   /* ───────────────────────────────────────────────────────────────────────────
    * Resolvers binding + application on graph
    * ────────────────────────────────────────────────────────────────────────── */
-  const resolverSource = options.resolvers;
-  const resolverSpecs: ResolversDict | undefined =
-    typeof resolverSource === "function"
-      ? (resolverSource as ResolversFactory)({ relay })
-      : (resolverSource as ResolversDict | undefined);
-
-  const resolvers = createResolvers({}, {
+  const resolvers = options.resolvers;
+  const resolverSpecs = typeof resolvers === "function" ? resolvers(internals) : resolvers;
+  const boundResolvers = createResolvers({ resolvers: resolverSpecs }, {
     internals,
-    resolverSpecs,
   });
 
-  let FIELD_RESOLVERS = resolvers.FIELD_RESOLVERS;
-
-  const applyFieldResolvers = makeApplyFieldResolvers({
-    TYPENAME_KEY: internals.TYPENAME_KEY,
-    FIELD_RESOLVERS,
-  });
+  const { FIELD_RESOLVERS, applyFieldResolvers, applyResolversOnGraph } = boundResolvers;
 
   internals.applyFieldResolvers = applyFieldResolvers;
-
-  function applyResolversOnGraph(root: any, vars: Record<string, any>, hint: { stale?: boolean }) {
-    applyResolversOnGraphImpl(root, vars, hint, {
-      TYPENAME_KEY: internals.TYPENAME_KEY,
-      FIELD_RESOLVERS,
-    });
-  }
 
 
   // SSR features
   const ssr = createSSR({
     graph,
     views,
-    shallowReactive,
     applyResolversOnGraph,
   });
 
