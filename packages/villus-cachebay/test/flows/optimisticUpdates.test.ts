@@ -150,7 +150,7 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
     expect(wrapper.find('.pageInfo').text()).toContain('"hasNextPage":false');
   });
 
-  it.skip('Connection: dedup on add; re-add after remove inserts at specified position', async () => {
+  it('Connection: dedup on add; re-add after remove inserts at specified position', async () => {
     const cache = cacheConfigs.withRelay();
 
     // Component that renders posts from the cache
@@ -262,7 +262,7 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
     expect(getListItems(wrapper)).toEqual([]);
   });
 
-  it.skip('Connection layering: T1 adds, T2 adds; revert T1 preserves T2; revert T2 returns to baseline', async () => {
+  it('Connection layering: T1 adds, T2 adds; revert T1 preserves T2; revert T2 returns to baseline', async () => {
     const cache = cacheConfigs.withRelay();
 
     // Component that renders posts from the cache
@@ -317,10 +317,11 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
     await delay(10);
     expect(getListItems(wrapper)).toEqual(['Post 3']);
 
-    // Revert T2 -> baseline
+    // Revert T2 -> baseline (should return to initial server state)
     T2.revert?.();
     await delay(10);
     expect(getListItems(wrapper)).toEqual([]);
-    expect(wrapper.find('.pageInfo').text()).toBe('{}');
+    // Initial empty response from server has pageInfo with null/false values, not empty object
+    expect(wrapper.find('.pageInfo').text()).toBe('{"endCursor":null,"hasNextPage":false}');
   });
 });
