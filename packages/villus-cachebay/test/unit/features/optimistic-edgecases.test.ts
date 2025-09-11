@@ -37,7 +37,7 @@ describe('features/optimistic — edge cases', () => {
     // Check that the entity exists in the cache
     expect((cache as any).hasFragment('Color:1')).toBe(true);
     // Snapshot should be updated (merge policy)
-    expect((cache as any).readFragment('Color:1', false)?.name).toBe('Black v2');
+    expect((cache as any).readFragment('Color:1', { materialized: false })?.name).toBe('Black v2');
   });
 
   it('removeNode is a no-op when entity missing and works by id+typename', async () => {
@@ -137,6 +137,6 @@ describe('features/optimistic — edge cases', () => {
 
     // Check that the entity exists in the cache
     expect((cache as any).hasFragment('Color:1')).toBe(true);
-    expect((cache as any).readFragment('Color:1', false)?.name).toBe('Black again');
+    expect((cache as any).readFragment('Color:1', { materialized: false })?.name).toBe('Black again');
   });
 });

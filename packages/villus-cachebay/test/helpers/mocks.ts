@@ -4,13 +4,14 @@ import { vi } from 'vitest';
  * Creates a minimal mock graph object for testing
  */
 export function createMockGraph(overrides?: Partial<any>) {
+  const entityStore = overrides?.entityStore || new Map();
   return {
-    entityStore: new Map(),
+    entityStore,
     connectionStore: new Map(),
     operationStore: new Map(),
     identify: vi.fn((obj: any) => obj?.__typename && obj?.id ? `${obj.__typename}:${obj.id}` : null),
     resolveEntityKey: vi.fn((key: string) => key),
-    materializeEntity: vi.fn(),
+    materializeEntity: vi.fn((key: string) => entityStore.get(key)),
     bumpEntitiesTick: vi.fn(),
     isInterfaceType: vi.fn(() => false),
     getInterfaceTypes: vi.fn(() => []),

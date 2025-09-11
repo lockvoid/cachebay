@@ -307,7 +307,7 @@ export function createViews(
   function proxyForEntityKey(key: EntityKey) {
     const entity = graph.materializeEntity(key);
     if (!entity) return undefined;
-    const proxy = graph.getReactiveEntity(entity);
+    const proxy = graph.getReactiveEntity(key);
     registerEntityView(key, proxy);
     return proxy;
   }

@@ -39,49 +39,51 @@ export function createFragments(options: {}, dependencies: FragmentsDependencies
     return graph.entityStore.has(raw);
   }
 
-  function readFragment(refOrKey: EntityKey | { __typename: string; id?: any; _id?: any }, materialized = true) {
-    const key = keyFromRefOrKey(refOrKey);
-    if (!key) return undefined;
-    if (!materialized) {
-      const { typename, id } = parseEntityKey(key);
-      if (graph.isInterfaceType(typename) && id != null) {
-        const impls = graph.getInterfaceTypes(typename) || [];
-        for (let i = 0; i < impls.length; i++) {
-          const k = (impls[i] + ":" + id) as EntityKey;
-          if (graph.entityStore.has(k)) return graph.entityStore.get(k);
-        }
-        return undefined;
-      }
-      const k = (graph.resolveEntityKey(key) || key) as EntityKey;
-      return graph.entityStore.get(k);
-    }
-    return views.proxyForEntityKey(key);
+  function readFragment(refOrKey: EntityKey | { __typename: string; id?: any; _id?: any }, { materialized = true } = {}) {
+    const key = typeof refOrKey === "string"
+      ? refOrKey
+      : graph.identify(refOrKey);
+
+    if (!key) return null;
+
+    const entity = graph.entityStore.get(key);
+    if (!entity) return null;
+
+    return materialized
+      ? views.proxyForEntityKey(key)
+      : graph.materializeEntity(key);
   }
 
   function writeFragment(obj: any) {
-    let key = graph.identify(obj);
+    const key = graph.identify(obj);
     if (!key) return { commit: null, revert: null };
 
-    const prev = graph.entityStore.get(key);
+    // Capture the previous state before any modifications
+    const prevEntity = graph.entityStore.get(key);
+    const prev = prevEntity ? { ...prevEntity } : undefined;
     const next = { ...prev, ...obj };
-
-    graph.entityStore.set(key, next);
-    views.markEntityDirty(key);
-    views.touchConnectionsForEntityKey(key);
-    graph.bumpEntitiesTick();
+    let committed = false;
 
     function commit() {
-      // Already in store
+      if (committed) return; // Prevent double commit
+      committed = true;
+      graph.entityStore.set(key, next);
+      views.markEntityDirty(key);
+      views.touchConnectionsForEntityKey(key);
+      graph.bumpEntitiesTick();
     }
 
     function revert() {
+      if (!committed) return; // Can only revert if committed
+      committed = false;
+      
       if (prev === undefined) {
-        graph.entityStore.delete(key!);
+        graph.entityStore.delete(key);
       } else {
-        graph.entityStore.set(key!, prev);
+        graph.entityStore.set(key, prev);
       }
-      views.markEntityDirty(key!);
-      views.touchConnectionsForEntityKey(key!);
+      views.markEntityDirty(key);
+      views.touchConnectionsForEntityKey(key);
       graph.bumpEntitiesTick();
     }
 
@@ -89,26 +91,25 @@ export function createFragments(options: {}, dependencies: FragmentsDependencies
   }
 
   function readFragments(pattern: string | string[], opts: { materialized?: boolean } = {}) {
-    const materialized = opts.materialized !== false;
     const selectors = Array.isArray(pattern) ? pattern : [pattern];
     const results: any[] = [];
-    
+
     for (const selector of selectors) {
       if (selector.endsWith(':*')) {
         // Get all entities of a type
         const typename = selector.slice(0, -2);
         const keys = graph.getEntityKeys(typename + ':');
         for (const key of keys) {
-          const result = readFragment(key, materialized);
+          const result = readFragment(key, opts);
           if (result) results.push(result);
         }
       } else {
         // Single entity
-        const result = readFragment(selector, materialized);
+        const result = readFragment(selector, opts);
         if (result) results.push(result);
       }
     }
-    
+
     return results;
   }
 

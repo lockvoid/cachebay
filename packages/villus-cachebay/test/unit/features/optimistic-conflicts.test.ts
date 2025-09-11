@@ -37,12 +37,12 @@ describe('features/optimistic — conflict & ordering semantics', () => {
     t2.commit?.();
     await tick();
 
-    expect((cache as any).readFragment('Color:1', false)?.name).toBe('B');
+    expect((cache as any).readFragment('Color:1', { materialized: false })?.name).toBe('B');
 
     // Revert T2 -> back to A
     t2.revert?.();
     await tick();
-    expect((cache as any).readFragment('Color:1', false)?.name).toBe('A');
+    expect((cache as any).readFragment('Color:1', { materialized: false })?.name).toBe('A');
 
     // Revert T1 -> removed altogether
     t1.revert?.();
@@ -70,6 +70,6 @@ describe('features/optimistic — conflict & ordering semantics', () => {
     await tick();
 
     expect((cache as any).hasFragment('Color:1')).toBe(true);
-    expect((cache as any).readFragment('Color:1', false)?.name).toBe('A-final');
+    expect((cache as any).readFragment('Color:1', { materialized: false })?.name).toBe('A-final');
   });
 });
