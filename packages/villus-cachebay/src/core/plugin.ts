@@ -190,7 +190,7 @@ export function buildCachebayPlugin(
           collectEntities(viewRoot);
           registerViewsFromResult(viewRoot, vars);
           lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
-          originalUseResult({ data: viewRoot }, true);
+          originalUseResult({ data: viewRoot }, false);
           return;
         }
 

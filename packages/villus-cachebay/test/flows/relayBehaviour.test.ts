@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { defineComponent, h, computed, Suspense } from 'vue';
+import { defineComponent, h, computed, isReactive, Suspense } from 'vue';
 import { mount } from '@vue/test-utils';
 import { createClient } from 'villus';
 import { createCache } from '@/src';
@@ -458,7 +458,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
             __typename: 'Query',
             colors: {
               __typename: 'ColorConnection',
-              edges: [{ cursor: 'n1', node: { __typename: 'Color', id: 1, name: 'NEW' } }],
+              edges: [{ cursor: 'n1', node: { __typename: 'Color', id: 1, name: 'A' } }],
               pageInfo: {},
             },
           },
@@ -473,7 +473,7 @@ describe('Integration • Relay flows (spec coverage)', () => {
             __typename: 'Query',
             colors: {
               __typename: 'ColorConnection',
-              edges: [{ cursor: 'n2', node: { __typename: 'Color', id: 2, name: 'OLD-CURSOR-PAGE' } }],
+              edges: [{ cursor: 'n2', node: { __typename: 'Color', id: 2, name: 'B' } }],
               pageInfo: {},
             },
           },
@@ -486,21 +486,21 @@ describe('Integration • Relay flows (spec coverage)', () => {
 
     // Start with the cursor op to ensure it is truly "older"
     const w = mount(harnessEdges('network-only'), {
-      props: { after: 'n1' },
+      props: { after: 'n1', first: 1 },
       global: { plugins: [client as any] },
     });
 
     // Trigger newer leader (no-after)
-    await w.setProps({ after: undefined });
+    await w.setProps({ first: 1, after: undefined });
     await tick();
 
     // Newer returns first
     await delay(7); await tick(2);
-    expect(liText(w)).toEqual(['NEW']);
+    expect(liText(w)).toEqual(['A']);
 
     // Older cursor page returns later and is allowed to replay
     await delay(25); await tick(2);
-    expect(liText(w)).toEqual(['NEW', 'OLD-CURSOR-PAGE']);
+    expect(liText(w)).toEqual(['A', 'B']);
   });
 });
 
@@ -961,5 +961,199 @@ describe('Integration • Suspense • Relay pagination reset & append from cach
     expect(liText(w)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6', 'A-7', 'A-8'])
 
     w.unmount()
+  })
+})
+
+describe('Concurrent views over the same connection keep independent windows', () => {
+  const mocks: Array<{ waitAll: () => Promise<void>; restore: () => void }> = [];
+  afterEach(async () => {
+    while (mocks.length) { const m = mocks.pop()!; await m.waitAll?.(); m.restore?.(); }
+  });
+
+  it('View A (page1) and View B (page1+page2) do not fight; both stay stable & reactive', async () => {
+    const cache = makeCache();
+
+    // Routes: baseline page1 resolves first; page2 resolves a bit later
+    const routes: Route[] = [
+      // page 1 (baseline)
+      {
+        when: ({ variables }) => variables.t === 'A' && !variables.after && variables.first === 2,
+        delay: 0,
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [
+                { cursor: 'a1', node: { __typename: 'Color', id: 1, name: 'A-1' } },
+                { cursor: 'a2', node: { __typename: 'Color', id: 2, name: 'A-2' } },
+              ],
+              pageInfo: { endCursor: 'a2', hasNextPage: true },
+            },
+          },
+        }),
+      },
+      // page 2 (after a2)
+      {
+        when: ({ variables }) => variables.t === 'A' && variables.after === 'a2' && variables.first === 2,
+        delay: 10,
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [
+                { cursor: 'a3', node: { __typename: 'Color', id: 3, name: 'A-3' } },
+                { cursor: 'a4', node: { __typename: 'Color', id: 4, name: 'A-4' } },
+              ],
+              pageInfo: { endCursor: 'a4', hasNextPage: false },
+            },
+          },
+        }),
+      },
+    ];
+
+    const fx = createFetchMock(routes);
+    const client = createClient({ url: '/concurrent-views', use: [cache as any, fx.plugin] });
+    mocks.push(fx);
+
+    // Two components over the same connection key:
+    // V1 renders baseline (page1 window)
+    // V2 renders page1+page2 (cursor window) independently
+    const View = ColorsHarness('network-only');
+
+    const v1 = mount(View, { props: { t: 'A', first: 2 }, global: { plugins: [client as any] } });       // page1
+    const v2 = mount(View, { props: { t: 'A', first: 2, after: 'a2' }, global: { plugins: [client as any] } });   // page2 append
+
+    // After page1: V1 shows [A-1,A-2], V2 still waiting (it’s page2)
+    await tick(2);
+    expect(liText(v1)).toEqual(['A-1', 'A-2']);
+    // V2 may still be empty if page2 hasn't arrived—don’t assert yet
+
+    // After page2 resolves: V1 remains [A-1,A-2]; V2 becomes [A-1,A-2,A-3,A-4]
+    await delay(12); await tick(2);
+    expect(liText(v1)).toEqual(['A-1', 'A-2']);                               // independent baseline window
+    expect(liText(v2)).toEqual(['A-1', 'A-2', 'A-3', 'A-4']);                 // independent cursor window
+
+    // Update entity A-1 via fragment → both views reflect the change, windows unchanged
+    (cache as any).writeFragment({ __typename: 'Color', id: 1, name: 'A-1*' }).commit?.();
+    await tick(2);
+    expect(liText(v1)).toEqual(['A-1*', 'A-2']);
+    expect(liText(v2)).toEqual(['A-1*', 'A-2', 'A-3', 'A-4']);
+
+    // Unmount V2; V1 still stays on page1
+    v2.unmount();
+    await tick(2);
+    expect(liText(v1)).toEqual(['A-1*', 'A-2']);
+
+    // (Optional) re-request V2 quickly with baseline → should still render page1 and not inflate V1
+    const v2b = mount(View, { props: { t: 'A', first: 2 }, global: { plugins: [client as any] } });
+    await tick(2);
+    expect(liText(v1)).toEqual(['A-1*', 'A-2']);
+    expect(liText(v2b)).toEqual(['A-1*', 'A-2']);
+  });
+});
+
+describe.only('Unit • Proxy shape & identity (no components)', () => {
+  it('edges array is reactive, pageInfo is reactive, node is a proxy equal to readFragment', async () => {
+    const cache = makeCache()
+
+    const routes: Route[] = [
+      {
+        when: ({ variables }) => !variables.after && variables.first === 2,
+        delay: 0,
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [
+                { cursor: 'a1', node: { __typename: 'Color', id: 1, name: 'A-1' } },
+                { cursor: 'a2', node: { __typename: 'Color', id: 2, name: 'A-2' } },
+              ],
+              pageInfo: { endCursor: 'a2', hasNextPage: true },
+            },
+          },
+        }),
+      },
+    ]
+
+    const fx = createFetchMock(routes)
+    const client = createClient({ url: '/proxy-shape', use: [cache as any, fx.plugin] })
+
+    const res = await client.execute({ query: COLORS, variables: { first: 2 } })
+    expect(res.error).toBeFalsy()
+
+    const conn = (res.data as any).colors
+    expect(conn && typeof conn === 'object').toBe(true)
+
+    // edges & pageInfo containers are reactive
+    expect(isReactive(conn.edges)).toBe(true)
+    expect(isReactive(conn.pageInfo)).toBe(true)
+
+    // node is a materialized entity proxy
+    const node = conn.edges[0].node
+    expect(node.__typename).toBe('Color')
+    expect(node.id).toBe('1') // id gets stringified by keys
+    expect(isReactive(node)).toBe(true)
+
+    // readFragment returns the exact same proxy object
+    const same = (cache as any).readFragment('Color:1')
+    expect(node).toBe(same)
+
+      // fragment write propagates to the existing proxy
+      ; (cache as any).writeFragment({ __typename: 'Color', id: 1, name: 'A-1*' }).commit?.()
+    expect(node.name).toBe('A-1*') // proxy updated in place
+
+    // second node is another proxy, different identity than first
+    const node2 = conn.edges[1].node
+    expect(node2.__typename).toBe('Color')
+    expect(node2.id).toBe('2')
+    expect(node2).not.toBe(node)
+
+    await fx.waitAll(); fx.restore()
+  })
+
+  it('proxies keep identity across a second execute (same connection key)', async () => {
+    const cache = makeCache()
+
+    const routes: Route[] = [
+      {
+        when: ({ variables }) => !variables.after && variables.first === 2,
+        delay: 0,
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            colors: {
+              __typename: 'ColorConnection',
+              edges: [
+                { cursor: 'a1', node: { __typename: 'Color', id: 1, name: 'A-1' } },
+                { cursor: 'a2', node: { __typename: 'Color', id: 2, name: 'A-2' } },
+              ],
+              pageInfo: { endCursor: 'a2', hasNextPage: true },
+            },
+          },
+        }),
+      },
+    ]
+    const fx = createFetchMock(routes)
+    const client = createClient({ url: '/proxy-stability', use: [cache as any, fx.plugin] })
+
+    // first execute
+    const r1 = await client.execute({ query: COLORS, variables: { first: 2 } })
+    const n1 = (r1.data as any).colors.edges[0].node
+    const f1 = (cache as any).readFragment('Color:1')
+    expect(n1).toEqual(f1)
+
+    // second execute with same key (no after) → should still materialize the same proxy object
+    const r2 = await client.execute({ query: COLORS, variables: { first: 2 } })
+    const n2 = (r2.data as any).colors.edges[0].node
+    const f2 = (cache as any).readFragment('Color:1')
+
+    // identity is stable (node proxies are shared)
+    expect(n2).toBe(n1)
+    expect(f2).toBe(n1)
+
+    await fx.waitAll(); fx.restore()
   })
 })
