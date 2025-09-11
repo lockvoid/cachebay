@@ -10,7 +10,7 @@ import {
 } from "vue";
 
 import type { EntityKey, ConnectionState } from "./types";
-import { parseEntityKey, unwrapShallow } from "./utils";
+import { parseEntityKey, unwrapShallow, getEntityParentKey } from "./utils";
 import { TYPENAME_FIELD, QUERY_ROOT, DEFAULT_OPERATION_CACHE_LIMIT } from "./constants";
 
 /**
@@ -18,27 +18,21 @@ import { TYPENAME_FIELD, QUERY_ROOT, DEFAULT_OPERATION_CACHE_LIMIT } from "./con
  * This module is intentionally "dumb" about resolvers and views.
  */
 
-export type GraphAPI = ReturnType<typeof createGraph>;
-
-/* ───────────────────────────────────────────────────────────────────────────
- * Stateless helper functions
- * ────────────────────────────────────────────────────────────────────────── */
-
-export const getEntityParentKey = (typename: string, id?: any): EntityKey | null => {
-  return typename === QUERY_ROOT ? QUERY_ROOT : id == null ? null : (typename + ":" + String(id)) as EntityKey;
-};
-
-export const createGraph = (config: {
+export type GraphConfig = {
   writePolicy: "replace" | "merge";
-  interfaces: Record<string, string[]>;
   reactiveMode: "shallow" | "deep";
   keys: Record<string, (obj: any) => string | null>;
-}) => {
+  interfaces: Record<string, string[]>;
+};
+
+export type GraphAPI = ReturnType<typeof createGraph>;
+
+export const createGraph = (config: GraphConfig) => {
   const {
     writePolicy,
-    interfaces,
     reactiveMode,
     keys,
+    interfaces,
   } = config;
 
   // Stores
@@ -123,8 +117,13 @@ export const createGraph = (config: {
   /* ───────────────────────────────────────────────────────────────────────────
    * Interface helpers (for abstract keys)
    * ────────────────────────────────────────────────────────────────────────── */
-  const isInterfaceType = (t: string | null) => !!(t && interfaces[t]);
-  const getInterfaceTypes = (t: string) => interfaces[t] || [];
+  const isInterfaceType = (t: string | null) => {
+    return !!(t && interfaces[t]);
+  }
+
+  const getInterfaceTypes = (t: string) => {
+    return interfaces[t] || [];
+  }
 
   const resolveEntityKey = (abstractKey: EntityKey): EntityKey | null => {
     const { typename, id } = parseEntityKey(abstractKey);

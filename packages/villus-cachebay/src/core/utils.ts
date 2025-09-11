@@ -1,7 +1,8 @@
 import objectHash from 'object-hash';
 import { visit, Kind, parse, print, type DocumentNode } from "graphql";
 import { isRef, isReactive, toRaw } from "vue";
-import type { RelayOptions } from "./types";
+import type { EntityKey, RelayOptions } from "./types";
+import { QUERY_ROOT } from "./constants";
 
 const TYPENAME_FIELD_NODE = {
   kind: Kind.FIELD,
@@ -232,7 +233,10 @@ export function toPlainDeep(x: any) {
   }
 }
 
-export function unwrapShallow<T = any>(v: any): T {
-  const base = isRef(v) ? v.value : v;
-  return (isReactive(base) ? toRaw(base) : base) as T;
+export const unwrapShallow = (value: any): any => {
+  return isRef(value) || isReactive(value) ? toRaw(value) : value;
+};
+
+export const getEntityParentKey = (typename: string, id?: any): EntityKey | null => {
+  return typename === QUERY_ROOT ? QUERY_ROOT : id == null ? null : (typename + ":" + String(id)) as EntityKey;
 };

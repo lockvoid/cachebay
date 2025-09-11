@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { isReactive, isRef } from 'vue';
 import { createGraph } from '@/src/core/graph';
 import { createCache } from '@/src';
 import { tick } from '@/test/helpers';
@@ -148,6 +149,10 @@ describe('createGraph - Unit Tests', () => {
       expect(state.initialized).toBe(false);
       expect((state as any).window).toBe(0);
       expect(state.__key).toBe('Query.users');
+      
+      // Check reactivity
+      expect(isReactive(state.pageInfo)).toBe(true);
+      expect(isReactive(state.meta)).toBe(true);
     });
 
     it('should return existing connection state', () => {
@@ -157,6 +162,10 @@ describe('createGraph - Unit Tests', () => {
       const state2 = graph.ensureReactiveConnection('Query.posts');
       expect(state2).toBe(state1);
       expect(state2.initialized).toBe(true);
+      
+      // Check reactivity is preserved
+      expect(isReactive(state2.pageInfo)).toBe(true);
+      expect(isReactive(state2.meta)).toBe(true);
     });
   });
 
@@ -301,6 +310,65 @@ describe('createGraph - Unit Tests', () => {
     });
   });
 
+  describe('getReactiveEntity', () => {
+    it('should return reactive entity data', () => {
+      const entityData = { __typename: 'User', id: '1', name: 'Alice', age: 30 };
+      graph.putEntity(entityData);
+      
+      const reactiveEntity = graph.getReactiveEntity('User:1');
+      
+      // getReactiveEntity returns stored fields (excluding __typename and id)
+      expect(reactiveEntity).toEqual({ name: 'Alice', age: 30 });
+      expect(isReactive(reactiveEntity)).toBe(true);
+    });
+
+    it('should return undefined for non-existent entities', () => {
+      const result = graph.getReactiveEntity('User:999');
+      expect(result).toBeUndefined();
+    });
+
+    it('should return reactive nested objects in deep mode', () => {
+      const entityData = {
+        __typename: 'User',
+        id: '1',
+        profile: { name: 'Alice', settings: { theme: 'dark' } }
+      };
+      graph.putEntity(entityData);
+      
+      const reactiveEntity = graph.getReactiveEntity('User:1');
+      
+      // Should return stored fields only
+      expect(reactiveEntity).toEqual({ profile: { name: 'Alice', settings: { theme: 'dark' } } });
+      expect(isReactive(reactiveEntity)).toBe(true);
+      expect(isReactive(reactiveEntity.profile)).toBe(true);
+      expect(isReactive(reactiveEntity.profile.settings)).toBe(true);
+    });
+
+    it('should use shallow reactivity when configured', () => {
+      // Create graph with shallow reactivity
+      const shallowGraph = createGraph({
+        writePolicy: 'replace',
+        interfaces: {},
+        reactiveMode: 'shallow',
+        keys: {}
+      });
+      
+      const entityData = {
+        __typename: 'User',
+        id: '1',
+        profile: { name: 'Alice', settings: { theme: 'dark' } }
+      };
+      shallowGraph.putEntity(entityData);
+      
+      const reactiveEntity = shallowGraph.getReactiveEntity('User:1');
+      
+      // Should return stored fields only
+      expect(reactiveEntity).toEqual({ profile: { name: 'Alice', settings: { theme: 'dark' } } });
+      expect(isReactive(reactiveEntity)).toBe(true);
+      expect(isReactive(reactiveEntity.profile)).toBe(false); // Should be shallow
+    });
+  });
+
 
   describe('putOperation', () => {
     it('should write operation to cache', () => {
@@ -348,6 +416,10 @@ describe('createGraph - Unit Tests', () => {
       
       graph.bumpEntitiesTick();
       expect(graph.entitiesTick.value).toBe(initial + 2);
+    });
+    
+    it('should have reactive entitiesTick', () => {
+      expect(isRef(graph.entitiesTick)).toBe(true);
     });
   });
 
