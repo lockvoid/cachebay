@@ -84,7 +84,7 @@ export function buildCachebayPlugin(
           const view = viewRootOf(r.data);
           resolvers.applyResolversOnGraph(view, vars, { stale: false });
           views.registerViewsFromResult(view, vars);
-          views.collectEntities(r.data);
+          views.collectEntities(view); // Collect entities AFTER resolvers
           originalUseResult(r, false);
         } else {
           originalUseResult(r, false);
@@ -129,7 +129,7 @@ export function buildCachebayPlugin(
         const viewRoot = viewRootOf(entry.data);
         lastContentSigByFam.set(famKey, toSig(viewRoot));
         resolvers.applyResolversOnGraph(viewRoot, vars, { stale: false });
-        views.collectEntities(viewRoot);
+        views.collectEntities(viewRoot); // Collect entities AFTER resolvers
         views.registerViewsFromResult(viewRoot, vars);
         lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
         originalUseResult({ data: viewRoot }, true);
@@ -178,7 +178,7 @@ export function buildCachebayPlugin(
           const viewRoot = viewRootOf(entry.data);
           lastContentSigByFam.set(famKey, toSig(viewRoot));
           resolvers.applyResolversOnGraph(viewRoot, vars, { stale: false });
-          views.collectEntities(viewRoot);
+          views.collectEntities(viewRoot); // Collect entities AFTER resolvers
           views.registerViewsFromResult(viewRoot, vars);
           lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
           originalUseResult({ data: viewRoot }, false);
@@ -189,7 +189,7 @@ export function buildCachebayPlugin(
         const viewRoot = viewRootOf(entry.data);
         lastContentSigByFam.set(famKey, toSig(viewRoot));
         resolvers.applyResolversOnGraph(viewRoot, vars, { stale: false });
-        views.collectEntities(viewRoot);
+        views.collectEntities(viewRoot); // Collect entities AFTER resolvers
         views.registerViewsFromResult(viewRoot, vars);
         lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
 
@@ -221,13 +221,11 @@ export function buildCachebayPlugin(
       // CURSOR PAGES — terminal publish; keep op-cache RAW & PLAIN
       if (isCursorPage && hasData) {
         const cacheRoot = r.data; // already plain enough for writeOpCache; it sanitizes shallowly
-        resolvers.applyResolversOnGraph(cacheRoot, vars, { stale: true });
-        views.collectEntities(cacheRoot);
         graph.putOperation(baseOpKey, { data: cacheRoot, variables: vars });
 
         const viewRoot = viewRootOf(r.data);
         resolvers.applyResolversOnGraph(viewRoot, vars, { stale: true });
-        views.collectEntities(viewRoot);
+        views.collectEntities(viewRoot); // Collect entities AFTER resolvers
         views.registerViewsFromResult(viewRoot, vars);
         lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
         return originalUseResult({ data: viewRoot }, true);
@@ -236,18 +234,18 @@ export function buildCachebayPlugin(
       // WINNER (baseline) with duplicate suppression
       if (hasData) {
         const cacheRoot = r.data;
-        resolvers.applyResolversOnGraph(cacheRoot, vars, { stale: false });
-        views.collectEntities(cacheRoot);
 
         const prevSig = lastContentSigByFam.get(famKey);
         const nextSig = toSig(cacheRoot);
 
+        // Store raw data in operation cache
         graph.putOperation(baseOpKey, { data: cacheRoot, variables: vars });
         lastContentSigByFam.set(famKey, nextSig);
 
+        // Apply resolvers and collect entities from transformed data
         const viewRoot = viewRootOf(r.data);
         resolvers.applyResolversOnGraph(viewRoot, vars, { stale: false });
-        views.collectEntities(viewRoot);
+        views.collectEntities(viewRoot); // Collect entities AFTER resolvers
         views.registerViewsFromResult(viewRoot, vars);
 
         if (prevSig && nextSig === prevSig) {
