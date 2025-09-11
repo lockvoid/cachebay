@@ -37,10 +37,26 @@ export function useFragment<T = any>(
 
   if (!dynamic) {
     const input = unref(source) as any;
-    const proxy = input ? (readFragment(input, materialized) as any as T) : undefined;
-    if (opts.asObject) return proxy;
-    const out = shallowRef<T | undefined>(proxy);
+    const result = input ? (readFragment(input, { materialized }) as any as T) : undefined;
+    
+    // If not materialized, return a deep clone to ensure it's a true snapshot
+    if (!materialized) {
+      return result ? JSON.parse(JSON.stringify(result)) : result;
+    }
+    
+    // If asObject, return reactive object directly
+    if (opts.asObject) return result;
+    
+    // Default: return reactive Ref
+    const out = shallowRef<T | undefined>(result);
     return out;
+  }
+
+  // Dynamic mode (source is reactive)
+  if (!materialized) {
+    // For dynamic non-materialized, capture initial snapshot
+    const input = unref(source) as any;
+    return input ? (readFragment(input, { materialized: false }) as any as T) : undefined;
   }
 
   const out = shallowRef<T | undefined>(undefined);
@@ -52,7 +68,7 @@ export function useFragment<T = any>(
       const sig = keySig(val);
       if (sig !== last) {
         last = sig;
-        out.value = val ? (readFragment(val, materialized) as any as T) : undefined;
+        out.value = val ? (readFragment(val, { materialized: true }) as any as T) : undefined;
       }
     },
     { immediate: true },

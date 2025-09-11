@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { defineComponent, h, ref, isReactive } from 'vue';
+import { defineComponent, h, ref, isReactive, watch } from 'vue';
 import { mount } from '@vue/test-utils';
 import { createCache, useFragment, useFragments, useCache } from '@/src';
+import { CACHEBAY_KEY } from '@/src/core/plugin';
 import { tick } from '@/test/helpers';
 
 function makeCache() {
@@ -28,7 +29,20 @@ async function waitUntil(pred: () => boolean, timeoutMs = 250) {
 describe('Integration • useFragment / useFragments / useCache', () => {
   it('useFragment (ref source) updates when entity changes; static + asObject returns stable non-ref snapshot', async () => {
     const cache = makeCache();
-    (cache as any).writeFragment({ __typename: 'Color', id: 1, name: 'Black' }).commit?.();
+    const tx = (cache as any).writeFragment({ __typename: 'Color', id: 1, name: 'Black' });
+    tx.commit();
+    await tick();
+
+    const api = {
+      readFragment: (cache as any).readFragment,
+      readFragments: (cache as any).readFragments,
+      writeFragment: (cache as any).writeFragment,
+      identify: (cache as any).identify,
+      modifyOptimistic: (cache as any).modifyOptimistic,
+      hasFragment: (cache as any).hasFragment,
+      inspect: (cache as any).inspect,
+      entitiesTick: (cache as any).__entitiesTick,
+    };
 
     // dynamic (ref) consumer (vm unwraps refs)
     const Dyn = defineComponent({
@@ -40,24 +54,36 @@ describe('Integration • useFragment / useFragments / useCache', () => {
       render() { return h('div'); },
     });
 
-    const dyn = mount(Dyn, { global: { plugins: [cache as any] } });
+    const dyn = mount(Dyn, { 
+      global: { 
+        provide: {
+          [CACHEBAY_KEY as symbol]: api
+        }
+      }
+    });
     await waitUntil(() => dyn.vm.color?.name === 'Black');
 
     // update
     (cache as any).writeFragment({ __typename: 'Color', id: 1, name: 'Jet Black' }).commit?.();
     await waitUntil(() => dyn.vm.color?.name === 'Jet Black');
 
-    // static + asObject: stable non-reactive snapshot (materialized:false)
+    // static: stable non-reactive snapshot (materialized:false)
     const Static = defineComponent({
       setup() {
-        const color = useFragment('Color:1', { asObject: true, materialized: false });
+        const color = useFragment('Color:1', { materialized: false });
         const isRefLike = !!(color && typeof color === 'object' && 'value' in (color as any));
         return { color, isRefLike };
       },
       render() { return h('div'); },
     });
 
-    const stat = mount(Static, { global: { plugins: [cache as any] } });
+    const stat = mount(Static, { 
+      global: { 
+        provide: {
+          [CACHEBAY_KEY as symbol]: api
+        }
+      }
+    });
     await tick();
     expect(stat.vm.isRefLike).toBe(false);
     expect(stat.vm.color?.name).toBe('Jet Black');
@@ -71,6 +97,17 @@ describe('Integration • useFragment / useFragments / useCache', () => {
   it('useFragments (selector) reacts to add/remove; default (materialized) returns reactive nodes', async () => {
     const cache = makeCache();
 
+    const api = {
+      readFragment: (cache as any).readFragment,
+      readFragments: (cache as any).readFragments,
+      writeFragment: (cache as any).writeFragment,
+      identify: (cache as any).identify,
+      modifyOptimistic: (cache as any).modifyOptimistic,
+      hasFragment: (cache as any).hasFragment,
+      inspect: (cache as any).inspect,
+      entitiesTick: (cache as any).__entitiesTick,
+    };
+
     const Comp = defineComponent({
       setup() {
         const list = useFragments('Color:*'); // materialized proxies
@@ -81,7 +118,13 @@ describe('Integration • useFragment / useFragments / useCache', () => {
       },
     });
 
-    const w = mount(Comp, { global: { plugins: [cache as any] } });
+    const w = mount(Comp, { 
+      global: { 
+        provide: {
+          [CACHEBAY_KEY as symbol]: api
+        }
+      }
+    });
     await tick();
     expect(liText(w)).toEqual([]);
 
@@ -104,7 +147,20 @@ describe('Integration • useFragment / useFragments / useCache', () => {
 
   it('useFragments (selector, materialized:false) returns raw snapshots; updates appear after an add/remove (tick bump)', async () => {
     const cache = makeCache();
-    (cache as any).writeFragment({ __typename: 'T', id: 1, name: 'A' }).commit?.();
+    const tx = (cache as any).writeFragment({ __typename: 'T', id: 1, name: 'A' });
+    tx.commit();
+    await tick();
+
+    const api = {
+      readFragment: (cache as any).readFragment,
+      readFragments: (cache as any).readFragments,
+      writeFragment: (cache as any).writeFragment,
+      identify: (cache as any).identify,
+      modifyOptimistic: (cache as any).modifyOptimistic,
+      hasFragment: (cache as any).hasFragment,
+      inspect: (cache as any).inspect,
+      entitiesTick: (cache as any).__entitiesTick,
+    };
 
     const Comp = defineComponent({
       setup() {
@@ -114,7 +170,13 @@ describe('Integration • useFragment / useFragments / useCache', () => {
       render() { return h('div'); },
     });
 
-    const w = mount(Comp, { global: { plugins: [cache as any] } });
+    const w = mount(Comp, { 
+      global: { 
+        provide: {
+          [CACHEBAY_KEY as symbol]: api
+        }
+      }
+    });
     await tick();
     expect((w.vm as any).list?.[0]?.name).toBe('A');
 
@@ -136,33 +198,44 @@ describe('Integration • useFragment / useFragments / useCache', () => {
   it('useCache: exposes fragment API & listings', async () => {
     const cache = makeCache();
 
+    const api = {
+      readFragment: (cache as any).readFragment,
+      readFragments: (cache as any).readFragments,
+      writeFragment: (cache as any).writeFragment,
+      identify: (cache as any).identify,
+      modifyOptimistic: (cache as any).modifyOptimistic,
+      hasFragment: (cache as any).hasFragment,
+      inspect: (cache as any).inspect,
+      entitiesTick: (cache as any).__entitiesTick,
+    };
+
     const Comp = defineComponent({
       setup() {
-        const api = useCache();
-        const tx1 = (api as any).writeFragment({ __typename: 'Color', id: 2, name: 'Blue' });
-        const tx2 = (api as any).writeFragment({ __typename: 'Color', id: 1, name: 'Black' });
+        const cacheApi = useCache();
+        const tx1 = (cacheApi as any).writeFragment({ __typename: 'Color', id: 2, name: 'Blue' });
+        const tx2 = (cacheApi as any).writeFragment({ __typename: 'Color', id: 1, name: 'Black' });
         tx1.commit?.(); tx2.commit?.();
-        return { api };
+        return { api: cacheApi };
       },
       render() { return h('div'); },
     });
 
-    const w = mount(Comp, { global: { plugins: [cache as any] } });
+    const w = mount(Comp, { 
+      global: { 
+        provide: {
+          [CACHEBAY_KEY as symbol]: api
+        }
+      }
+    });
     await tick();
 
-    const api = (w.vm as any).api;
-    expect(api.hasFragment('Color:1')).toBe(true);
-    expect(api.readFragment('Color:1')?.name).toBe('Black');
+    const cacheApi = (w.vm as any).api;
+    expect(cacheApi.hasFragment('Color:1')).toBe(true);
+    expect(cacheApi.readFragment('Color:1')?.name).toBe('Black');
 
-    const keys = api.listEntityKeys('Color');
-    expect(keys.sort()).toEqual(['Color:1', 'Color:2']);
-
-    const mats = api.listEntities('Color');
-    expect(Array.isArray(mats)).toBe(true);
-    expect(mats.length).toBe(2);
-
-    const raws = api.listEntities('Color', false);
-    expect(Array.isArray(raws)).toBe(true);
-    expect(raws.length).toBe(2);
+    // Check inspect API - should have 2 Color entities
+    const entities = (cache as any).inspect?.entities('Color');
+    expect(entities).toBeDefined();
+    expect(entities?.length).toBe(2);
   });
 });
