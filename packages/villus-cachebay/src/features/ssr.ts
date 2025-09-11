@@ -4,7 +4,7 @@ import { isReactive, shallowReactive } from "vue";
 type Deps = {
   graph: any;
   views: any;
-  applyResolversOnGraph?: (root: any, vars: Record<string, any>, hint: { stale?: boolean }) => void;
+  resolvers?: any;
 };
 
 function cloneData(data: any): any {
@@ -12,7 +12,8 @@ function cloneData(data: any): any {
 }
 
 export function createSSR(deps: Deps) {
-  const { graph, views, applyResolversOnGraph } = deps;
+  const { graph, views, resolvers } = deps;
+  const applyResolversOnGraph = resolvers?.applyResolversOnGraph;
 
   // Used by cache plugin to allow CN cached+terminate on first mount after hydrate
   const hydrateOperationTicket = new Set<string>();

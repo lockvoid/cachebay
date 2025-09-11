@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createCache } from '@/src';
-import { publish } from '@/test/helpers';
+import { publish, seedCache } from '../../helpers';
+import { relay } from '@/src/resolvers/relay';
 
 function runQuery(cache: any, data: any, query: string) {
   return publish(cache, data, query);
@@ -14,7 +15,7 @@ describe('SSR dehydrate/hydrate', () => {
 
     const cacheA = createCache({
       addTypename: true,
-      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
+      resolvers: { Query: { colors: relay({}) } },
       keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
     });
 
@@ -36,7 +37,7 @@ describe('SSR dehydrate/hydrate', () => {
 
     const cacheB = createCache({
       addTypename: true,
-      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
+      resolvers: { Query: { colors: relay({}) } },
       keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
     });
 

@@ -1,6 +1,5 @@
 import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus";
 import { CombinedError } from "villus";
-import type { CachebayInternals } from "./types";
 import {
   ensureDocumentHasTypenameSmart,
   getFamilyKey,
@@ -9,18 +8,15 @@ import {
 } from "./utils";
 import type { App } from "vue";
 
-type BuildArgs = {
-  shouldAddTypename: boolean;
-  opCacheMax: number;
+type PluginOptions = {
+  addTypename: boolean;
+};
 
-  // Hydration (optional)
-  isHydrating?: () => boolean;
-  hydrateOperationTicket?: Set<string>;
-
-  // Core graph/materialization
-  applyResolversOnGraph: (root: any, vars: Record<string, any>, hint: { stale?: boolean }) => void;
-  registerViewsFromResult: (root: any, variables: Record<string, any>) => void;
-  collectEntities: (root: any) => void;
+type PluginDependencies = {
+  graph: any;
+  views: any;
+  ssr: any;
+  resolvers: any;
 };
 
 type ResultShape = { data?: any; error?: any };
@@ -47,29 +43,18 @@ const viewRootOf = (root: any) => {
   return Array.isArray(root) ? root.slice() : { ...root };
 };
 
-export function buildCachebayPlugin(args: BuildArgs): ClientPlugin;
-export function buildCachebayPlugin(internals: CachebayInternals, args: BuildArgs): ClientPlugin;
 export function buildCachebayPlugin(
-  a: CachebayInternals | BuildArgs,
-  b?: BuildArgs,
+  options: PluginOptions,
+  dependencies: PluginDependencies,
 ): ClientPlugin {
-  const hasSecond = typeof b !== 'undefined';
-  const internals = (hasSecond ? (a as CachebayInternals) : ({} as any)) as CachebayInternals;
-  const args = (hasSecond ? (b as BuildArgs) : (a as BuildArgs)) || ({} as any);
   const {
-    shouldAddTypename = false,
-    opCacheMax = 100,
-    isHydrating = false,
-    hydrateOperationTicket,
-    applyResolversOnGraph = (() => {}) as any,
-    registerViewsFromResult = (() => {}) as any,
-    collectEntities = (() => {}) as any,
-  } = args;
+    addTypename = true,
+  } = options;
 
-  // Provide minimal defaults if internals omitted (unit-test convenience)
-  const _internals = internals || ({} as any);
-  if (!_internals.operationCache) (_internals as any).operationCache = new Map<string, any>();
-  if (!_internals.writeOperationCache) (_internals as any).writeOperationCache = (_k: string, _v: any) => {};
+  const { graph, views, ssr, resolvers } = dependencies;
+  const applyResolversOnGraph = resolvers?.applyResolversOnGraph || (() => {});
+  const operationCache = graph.operationStore || new Map<string, any>();
+  const writeOperationCache = graph.putOperation || ((_k: string, _v: any) => { });
 
   const lastPublishedByFam = new Map<string, { data: any; variables: Record<string, any> }>();
   const lastContentSigByFam = new Map<string, string>();
@@ -81,7 +66,7 @@ export function buildCachebayPlugin(
     const famKey = getFamilyKey(operation);
     const baseOpKey = getOperationKey(operation);
 
-    if (shouldAddTypename && operation.query) {
+    if (addTypename && operation.query) {
       operation.query = ensureDocumentHasTypenameSmart(operation.query as any);
     }
 
@@ -89,7 +74,7 @@ export function buildCachebayPlugin(
     // SUBSCRIPTIONS
     // ─────────────────────────────────────────────────────────────────────────
     if (operation.type === "subscription") {
-      if (shouldAddTypename && operation.query) {
+      if (addTypename && operation.query) {
         operation.query = ensureDocumentHasTypenameSmart(operation.query as any);
       }
       ctx.useResult = (incoming: any, _terminate?: boolean) => {
@@ -98,15 +83,14 @@ export function buildCachebayPlugin(
         const r = incoming as OperationResult<any>;
         if (r && "data" in r && r.data) {
           const vars = operation.variables || {};
-          const viewRoot = viewRootOf(r.data);
-          applyResolversOnGraph(viewRoot, vars, { stale: false });
-          collectEntities(viewRoot);
-          registerViewsFromResult(viewRoot, vars);
-          lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
-          return originalUseResult({ data: viewRoot }, false);
+          const view = viewRootOf(r.data);
+          applyResolversOnGraph(view, vars, { stale: false });
+          views.registerViewsFromResult(view, vars);
+          views.collectEntities(r.data);
+          originalUseResult(r, false);
+        } else {
+          originalUseResult(r, false);
         }
-        // still call, keep stream open
-        return originalUseResult(incoming as any, false);
       };
       return;
     }
@@ -119,7 +103,7 @@ export function buildCachebayPlugin(
       operation.cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
 
     const lookupCached = () => {
-      const byBase = internals.operationCache.get(baseOpKey);
+      const byBase = operationCache.get(baseOpKey);
       if (byBase) return { key: baseOpKey, entry: byBase };
 
       const cleaned = cleanVars(operation.variables);
@@ -134,7 +118,7 @@ export function buildCachebayPlugin(
         variables: cleaned,
         context: operation.context
       } as any);
-      const byAlt = internals.operationCache.get(altKey);
+      const byAlt = operationCache.get(altKey);
       return byAlt ? { key: altKey, entry: byAlt } : null;
     };
 
@@ -147,8 +131,8 @@ export function buildCachebayPlugin(
         const viewRoot = viewRootOf(entry.data);
         lastContentSigByFam.set(famKey, toSig(viewRoot));
         applyResolversOnGraph(viewRoot, vars, { stale: false });
-        collectEntities(viewRoot);
-        registerViewsFromResult(viewRoot, vars);
+        views.collectEntities(viewRoot);
+        views.registerViewsFromResult(viewRoot, vars);
         lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
         originalUseResult({ data: viewRoot }, true);
       } else {
@@ -171,8 +155,8 @@ export function buildCachebayPlugin(
         const viewRoot = viewRootOf(entry.data);
         lastContentSigByFam.set(famKey, toSig(viewRoot));
         applyResolversOnGraph(viewRoot, vars, { stale: false });
-        collectEntities(viewRoot);
-        registerViewsFromResult(viewRoot, vars);
+        views.collectEntities(viewRoot);
+        views.registerViewsFromResult(viewRoot, vars);
         lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
         originalUseResult({ data: viewRoot }, true);
         return;
@@ -187,17 +171,17 @@ export function buildCachebayPlugin(
         const { entry } = hit;
         const vars = operation.variables || entry.variables || {};
 
-        const hadTicket = !!(hydrateOperationTicket && hydrateOperationTicket.has(hit.key));
-        const hydratingNow = !!(isHydrating && isHydrating());
-        if (hadTicket) hydrateOperationTicket!.delete(hit.key);
+        const hadTicket = !!(ssr.hydrateOperationTicket && ssr.hydrateOperationTicket.has(hit.key));
+        const hydratingNow = !!(ssr.isHydrating && ssr.isHydrating());
+        if (hadTicket) ssr.hydrateOperationTicket!.delete(hit.key);
 
         // SSR ticket / hydrating → terminal cached (resolve Suspense immediately)
         if (hadTicket || hydratingNow) {
           const viewRoot = viewRootOf(entry.data);
           lastContentSigByFam.set(famKey, toSig(viewRoot));
           applyResolversOnGraph(viewRoot, vars, { stale: false });
-          collectEntities(viewRoot);
-          registerViewsFromResult(viewRoot, vars);
+          views.collectEntities(viewRoot);
+          views.registerViewsFromResult(viewRoot, vars);
           lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
           originalUseResult({ data: viewRoot }, false);
           return;
@@ -207,8 +191,8 @@ export function buildCachebayPlugin(
         const viewRoot = viewRootOf(entry.data);
         lastContentSigByFam.set(famKey, toSig(viewRoot));
         applyResolversOnGraph(viewRoot, vars, { stale: false });
-        collectEntities(viewRoot);
-        registerViewsFromResult(viewRoot, vars);
+        views.collectEntities(viewRoot);
+        views.registerViewsFromResult(viewRoot, vars);
         lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
 
         // Non-terminating: UI updates instantly; fetch still runs
@@ -240,13 +224,13 @@ export function buildCachebayPlugin(
       if (isCursorPage && hasData) {
         const cacheRoot = r.data; // already plain enough for writeOpCache; it sanitizes shallowly
         applyResolversOnGraph(cacheRoot, vars, { stale: true });
-        collectEntities(cacheRoot);
-        internals.writeOperationCache(baseOpKey, { data: cacheRoot, variables: vars });
+        views.collectEntities(cacheRoot);
+        writeOperationCache(baseOpKey, { data: cacheRoot, variables: vars });
 
         const viewRoot = viewRootOf(r.data);
         applyResolversOnGraph(viewRoot, vars, { stale: true });
-        collectEntities(viewRoot);
-        registerViewsFromResult(viewRoot, vars);
+        views.collectEntities(viewRoot);
+        views.registerViewsFromResult(viewRoot, vars);
         lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
         return originalUseResult({ data: viewRoot }, true);
       }
@@ -255,18 +239,18 @@ export function buildCachebayPlugin(
       if (hasData) {
         const cacheRoot = r.data;
         applyResolversOnGraph(cacheRoot, vars, { stale: false });
-        collectEntities(cacheRoot);
+        views.collectEntities(cacheRoot);
 
         const prevSig = lastContentSigByFam.get(famKey);
         const nextSig = toSig(cacheRoot);
 
-        internals.writeOperationCache(baseOpKey, { data: cacheRoot, variables: vars });
+        writeOperationCache(baseOpKey, { data: cacheRoot, variables: vars });
         lastContentSigByFam.set(famKey, nextSig);
 
         const viewRoot = viewRootOf(r.data);
         applyResolversOnGraph(viewRoot, vars, { stale: false });
-        collectEntities(viewRoot);
-        registerViewsFromResult(viewRoot, vars);
+        views.collectEntities(viewRoot);
+        views.registerViewsFromResult(viewRoot, vars);
 
         if (prevSig && nextSig === prevSig) {
           const last = lastPublishedByFam.get(famKey);

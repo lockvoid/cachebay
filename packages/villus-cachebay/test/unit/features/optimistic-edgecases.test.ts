@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createCache } from '@/src';
-import { tick, seedRelay } from '@/test/helpers';
+import { seedRelay, tick } from '../../helpers';
+import { relay } from '@/src/resolvers/relay';
 
 const QUERY = /* GraphQL */ `
   query Colors {
@@ -15,7 +16,7 @@ describe('features/optimistic — edge cases', () => {
   it('deduplicates nodes by entity key and updates cursor/edge in place', async () => {
     const cache = createCache({
       addTypename: true,
-      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
+      resolvers: { Query: { colors: relay({}) } },
       keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
     });
 
@@ -42,7 +43,7 @@ describe('features/optimistic — edge cases', () => {
   it('removeNode is a no-op when entity missing and works by id+typename', async () => {
     const cache = createCache({
       addTypename: true,
-      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
+      resolvers: { Query: { colors: relay({}) } },
       keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
     });
 
@@ -68,7 +69,7 @@ describe('features/optimistic — edge cases', () => {
   it('default addNode position is end; explicit start inserts at the front', async () => {
     const cache = createCache({
       addTypename: true,
-      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
+      resolvers: { Query: { colors: relay({}) } },
       keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
     });
 
@@ -87,14 +88,14 @@ describe('features/optimistic — edge cases', () => {
     await tick();
 
     // We can't inspect the internal connection list easily; instead, verify entity set
-    const keys = (cache as any).listEntityKeys('Color').sort();
+    const keys = (cache as any).listEntityKeys('Color');
     expect(keys).toEqual(['Color:0', 'Color:1', 'Color:2']);
   });
 
   it('ignores invalid nodes (missing __typename or id)', async () => {
     const cache = createCache({
       addTypename: true,
-      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
+      resolvers: { Query: { colors: relay({}) } },
       keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
     });
 
@@ -116,7 +117,7 @@ describe('features/optimistic — edge cases', () => {
   it('re-adding after removal places the node according to the latest position hint', async () => {
     const cache = createCache({
       addTypename: true,
-      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
+      resolvers: { Query: { colors: relay({}) } },
       keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
     });
 

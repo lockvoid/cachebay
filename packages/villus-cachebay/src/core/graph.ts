@@ -11,7 +11,7 @@ import {
 
 import type { EntityKey, ConnectionState } from "./types";
 import { parseEntityKey, unwrapShallow, getEntityParentKey } from "./utils";
-import { TYPENAME_FIELD, QUERY_ROOT, DEFAULT_OPERATION_CACHE_LIMIT } from "./constants";
+import { TYPENAME_FIELD, QUERY_ROOT, OPERATION_CACHE_LIMIT } from "./constants";
 
 /**
  * Graph-layer: owns the raw stores and entity helpers.
@@ -226,7 +226,7 @@ export const createGraph = (config: GraphConfig) => {
     const plainData = sanitizeForOpCache(payload.data);
     const plainVars = sanitizeForOpCache(payload.variables || {});
     operationStore.set(opKey, { data: plainData, variables: plainVars });
-    if (operationStore.size > DEFAULT_OPERATION_CACHE_LIMIT) {
+    if (operationStore.size > OPERATION_CACHE_LIMIT) {
       const oldest = operationStore.keys().next().value as string | undefined;
       if (oldest) operationStore.delete(oldest);
     }

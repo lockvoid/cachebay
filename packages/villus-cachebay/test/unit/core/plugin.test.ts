@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { CACHEBAY_KEY, provideCachebay, buildCachebayPlugin } from '@/src/core/plugin';
 
 describe('plugin — provideCachebay', () => {
@@ -8,15 +8,15 @@ describe('plugin — provideCachebay', () => {
 
     const instance: any = {
       readFragment: () => ({}),
-      writeFragment: (_: any) => ({ commit: () => {} }),
+      writeFragment: (_: any) => ({ commit: () => { } }),
       identify: (_: any) => 'X:1',
-      modifyOptimistic: () => {},
+      modifyOptimistic: () => { },
       // optional passthroughs
       hasFragment: () => true,
       listEntityKeys: () => [],
       listEntities: () => [],
       inspect: () => ({}),
-      __entitiesTick: () => {},
+      __entitiesTick: () => { },
     };
 
     provideCachebay(app, instance);
@@ -36,10 +36,29 @@ describe('plugin — provideCachebay', () => {
 
 describe('plugin — buildCachebayPlugin', () => {
   it('returns a villus-compatible plugin function', () => {
-    const plugin = buildCachebayPlugin({
-      shouldAddTypename: true,
-      opCacheMax: 100,
-    } as any);
+    const mockGraph = {
+      operationStore: new Map(),
+      putOperation: vi.fn(),
+    };
+    const mockViews = {
+      collectEntities: vi.fn(),
+      registerViewsFromResult: vi.fn(),
+    };
+    const mockSsr = {
+      isHydrating: vi.fn(() => false),
+      hydrateOperationTicket: new Set(),
+    };
+    const plugin = buildCachebayPlugin(
+      {
+        addTypename: true,
+      },
+      {
+        graph: mockGraph,
+        views: mockViews,
+        ssr: mockSsr,
+        applyResolversOnGraph: vi.fn(),
+      }
+    );
     expect(typeof plugin).toBe('function');
   });
 });

@@ -6,12 +6,7 @@ import { TYPENAME_FIELD } from "./constants";
 
 export type Fragments = ReturnType<typeof createFragments>;
 
-type Deps = {
-  graph: any;
-  views: any;
-}
-
-export function createFragments(options: {}, dependencies: Deps) {
+export function createFragments(options: {}, dependencies: { graph: any; views: any }) {
   const { graph, views } = dependencies;
 
   function keyFromRefOrKey(refOrKey: EntityKey | { __typename: string; id?: any; _id?: any }): EntityKey | null {
@@ -86,10 +81,35 @@ export function createFragments(options: {}, dependencies: Deps) {
     return { commit, revert };
   }
 
+  function readFragments(pattern: string | string[], opts: { materialized?: boolean } = {}) {
+    const materialized = opts.materialized !== false;
+    const selectors = Array.isArray(pattern) ? pattern : [pattern];
+    const results: any[] = [];
+    
+    for (const selector of selectors) {
+      if (selector.endsWith(':*')) {
+        // Get all entities of a type
+        const typename = selector.slice(0, -2);
+        const keys = graph.getEntityKeys(typename);
+        for (const key of keys) {
+          const result = readFragment(key, materialized);
+          if (result) results.push(result);
+        }
+      } else {
+        // Single entity
+        const result = readFragment(selector, materialized);
+        if (result) results.push(result);
+      }
+    }
+    
+    return results;
+  }
+
   return {
     identify: graph.identify,
     hasFragment,
     readFragment,
     writeFragment,
+    readFragments,
   };
 }

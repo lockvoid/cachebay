@@ -1,8 +1,9 @@
 // src/core/resolvers.ts
 import type { FieldResolver, ResolversDict, ResolversFactory } from "../types";
 import type { CachebayInternals } from "./types";
-import { stableIdentityExcluding } from "./utils";
+import { stableIdentityExcluding, buildConnectionKey } from "./utils";
 import { RESOLVE_SIGNATURE } from "./constants";
+import { isReactive, reactive } from "vue";
 
 // Re-export your existing relay resolver (unchanged)
 export { relay } from "../resolvers/relay";
@@ -32,15 +33,21 @@ export function createResolvers(
     resolvers?: ResolversDict;
   },
   dependencies: {
-    internals: CachebayInternals;
+    graph: any;
+    views: any;
+    relay: any;
+    relayResolverIndex: any;
+    relayResolverIndexByType: any;
+    getRelayOptionsByType: any;
+    setRelayOptionsByType: any;
   }
 ) {
   const { resolvers: resolverSpecs } = options;
-  const { internals } = dependencies;
+  const { graph, views, relay, relayResolverIndex, relayResolverIndexByType, getRelayOptionsByType, setRelayOptionsByType } = dependencies;
 
   function bindResolversTree(
     tree: ResolversDict | undefined,
-    inst: CachebayInternals
+    inst: any
   ): Record<string, Record<string, FieldResolver>> {
     const out: Record<string, Record<string, FieldResolver>> = {};
     if (!tree) return out;
@@ -48,14 +55,45 @@ export function createResolvers(
       out[type] = {};
       for (const field in tree[type]) {
         const spec = (tree[type] as any)[field];
-        out[type][field] =
-          spec && (spec as any).__cb_resolver__ ? (spec as any).bind(inst) : (spec as FieldResolver);
+        // Check if it's a resolver spec that needs binding
+        if (spec && typeof spec === 'object' && spec.__cb_resolver__ === true && typeof spec.bind === 'function') {
+          // Create an internals object with the required dependencies
+          const internals = {
+            isReactive: (obj: any) => isReactive(obj),
+            reactive: (obj: any) => reactive(obj),
+            markConnectionDirty: (state: any) => views.markConnectionDirty(state),
+            addStrongView: (state: any, view: any) => views.addStrongView(state, view),
+            setRelayOptionsByType,
+            parentEntityKeyFor: (typename: string, id: any) => graph.getEntityParentKey(typename, id),
+            buildConnectionKey: (parentKey: string, field: string, relayOpts: any, vars: any) => buildConnectionKey(parentKey, field, relayOpts, vars),
+            ensureConnectionState: (key: string) => graph.ensureReactiveConnection(key),
+            synchronizeConnectionViews: (state: any) => views.synchronizeConnectionViews(state),
+            unlinkEntityFromConnection: (key: string, state: any) => views.unlinkEntityFromConnection(key, state),
+            putEntity: (entity: any, policy?: string) => graph.putEntity(entity, policy),
+            linkEntityToConnection: (key: string, state: any) => views.linkEntityToConnection(key, state),
+            identify: (obj: any) => graph.identify(obj),
+            readPathValue: (obj: any, path: string) => {
+              if (!obj || !path) return undefined;
+              const parts = path.split('.');
+              let current = obj;
+              for (const part of parts) {
+                if (current == null) return undefined;
+                current = current[part];
+              }
+              return current;
+            },
+          };
+          out[type][field] = spec.bind(internals);
+        } else {
+          // Regular resolver function
+          out[type][field] = spec as FieldResolver;
+        }
       }
     }
     return out;
   }
 
-  const FIELD_RESOLVERS = bindResolversTree(resolverSpecs, internals);
+  const FIELD_RESOLVERS = bindResolversTree(resolverSpecs, null);
 
   function applyFieldResolvers(typename: string, obj: any, vars: Record<string, any>, hint?: { stale?: boolean }) {
     const map = FIELD_RESOLVERS[typename];

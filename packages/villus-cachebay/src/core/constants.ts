@@ -10,4 +10,4 @@ export const QUERY_ROOT = "Query";
 
 export const DEFAULT_WRITE_POLICY = "replace";
 
-export const DEFAULT_OPERATION_CACHE_LIMIT = 200;
+export const OPERATION_CACHE_LIMIT = 200;

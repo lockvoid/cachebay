@@ -79,8 +79,7 @@ export type CachebayInstance = ClientPlugin & {
     operations?: () => Array<{ key: string; variables: Record<string, any>; data: any }>;
   };
 
-  listEntityKeys: (selector: string | string[]) => string[];
-  listEntities: (selector: string | string[], materialized?: boolean) => any[];
+  readFragments: (pattern: string | string[], opts?: { materialized?: boolean }) => any[];
   __entitiesTick: ReturnType<typeof ref<number>>;
 
   gc?: { connections: (predicate?: (key: string, state: ConnectionState) => boolean) => void };
@@ -96,7 +95,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   const writePolicy = options.writePolicy || "replace";
   const keys =
     typeof options.keys === "function" ? options.keys() : options.keys ? options.keys : ({} as NonNullable<KeysConfig>);
-  const shouldAddTypename = options.addTypename !== false;
+  const addTypename = options.addTypename ?? true;
 
   const interfaces: Record<string, string[]> =
     typeof options.interfaces === "function"
@@ -124,70 +123,42 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   });
 
   /* ───────────────────────────────────────────────────────────────────────────
-   * Internals object (exposed to resolvers & plugin)
+   * Resolvers preparation
    * ────────────────────────────────────────────────────────────────────────── */
-  const internals: CachebayInternals = {
-    TYPENAME_KEY: "__typename",
-    DEFAULT_WRITE_POLICY: writePolicy,
-    entityStore: graph.entityStore,
-    connectionStore: graph.connectionStore,
+
+  // Prepare resolvers
+  const boundResolvers = createResolvers({ resolvers: options.resolvers as ResolversDict }, {
+    graph,
+    views,
+    relay,
     relayResolverIndex,
     relayResolverIndexByType,
     getRelayOptionsByType,
     setRelayOptionsByType,
-    relay,
-    operationCache: graph.operationStore,
-    putEntity: graph.putEntity,
-    materializeEntity: graph.materializeEntity,
-    ensureConnectionState: graph.ensureReactiveConnection,
-    synchronizeConnectionViews: views.synchronizeConnectionViews,
-    parentEntityKeyFor: graph.getEntityParentKey,
-    buildConnectionKey,
-    readPathValue,
-    markConnectionDirty: views.markConnectionDirty,
-    linkEntityToConnection: views.linkEntityToConnection,
-    unlinkEntityFromConnection: views.unlinkEntityFromConnection,
-    touchConnectionsForEntityKey: views.touchConnectionsForEntityKey,
-    addStrongView: views.addStrongView,
-    isReactive,
-    reactive,
-    shallowReactive,
-    writeOperationCache: graph.putOperation,
-    // filled below:
-    applyFieldResolvers: () => { },
-  };
-
-  /* ───────────────────────────────────────────────────────────────────────────
-   * Resolvers binding + application on graph
-   * ────────────────────────────────────────────────────────────────────────── */
-  const resolvers = options.resolvers;
-  const resolverSpecs = typeof resolvers === "function" ? resolvers(internals) : resolvers;
-  const boundResolvers = createResolvers({ resolvers: resolverSpecs }, {
-    internals,
   });
 
-  const { FIELD_RESOLVERS, applyFieldResolvers, applyResolversOnGraph } = boundResolvers;
-
-  internals.applyFieldResolvers = applyFieldResolvers;
+  const { applyResolversOnGraph } = boundResolvers;
 
 
   // SSR features
   const ssr = createSSR({
     graph,
     views,
-    applyResolversOnGraph,
+    resolvers: boundResolvers,
   });
 
   // Build plugin
-  const instance = (buildCachebayPlugin(internals, {
-    shouldAddTypename,
-    isHydrating: ssr.isHydrating,
-    hydrateOperationTicket: ssr.hydrateOperationTicket,
-    applyResolversOnGraph,
-    registerViewsFromResult: views.registerViewsFromResult,
-    collectEntities: views.collectEntities,
-    opCacheMax: options.opCacheMax || 25,
-  }) as unknown) as CachebayInstance;
+  const instance = (buildCachebayPlugin(
+    {
+      addTypename,
+    },
+    {
+      graph,
+      views,
+      ssr,
+      resolvers: boundResolvers,
+    }
+  ) as unknown) as CachebayInstance;
 
   // Create fragments
   const fragments = createFragments({}, { graph, views });
@@ -208,16 +179,12 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Attach additional methods to instance
   (instance as any).identify = fragments.identify;
   (instance as any).readFragment = fragments.readFragment;
+  (instance as any).readFragments = fragments.readFragments;
   (instance as any).hasFragment = fragments.hasFragment;
   (instance as any).writeFragment = fragments.writeFragment;
   (instance as any).modifyOptimistic = modifyOptimistic;
   (instance as any).inspect = inspect;
-
   (instance as any).listEntityKeys = graph.getEntityKeys;
-  (instance as any).listEntities = (selector: string | string[], materialized = true) => {
-    return materialized ? graph.materializeEntities(selector) : graph.getEntities(selector);
-  };
-
   (instance as any).__entitiesTick = graph.entitiesTick;
 
   (instance as any).gc = {

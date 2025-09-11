@@ -19,9 +19,32 @@ describe('core/resolvers', () => {
         },
       };
 
-      const result = createResolvers({ resolvers: resolverSpecs }, {
-        internals: mockInternals,
-      });
+      const mockDeps = {
+        graph: {
+          entityStore: new Map(),
+          connectionStore: new Map(),
+          operationStore: new Map(),
+          putEntity: vi.fn(),
+          materializeEntity: vi.fn(),
+          ensureReactiveConnection: vi.fn(),
+          getEntityParentKey: vi.fn(),
+          putOperation: vi.fn(),
+        },
+        views: {
+          synchronizeConnectionViews: vi.fn(),
+          markConnectionDirty: vi.fn(),
+          linkEntityToConnection: vi.fn(),
+          unlinkEntityFromConnection: vi.fn(),
+          addStrongView: vi.fn(),
+        },
+        relay: vi.fn(),
+        relayResolverIndex: new Map(),
+        relayResolverIndexByType: new Map(),
+        getRelayOptionsByType: vi.fn(),
+        setRelayOptionsByType: vi.fn(),
+      };
+      
+      const result = createResolvers({ resolvers: resolverSpecs }, mockDeps);
 
       expect(result).toHaveProperty('applyFieldResolvers');
       expect(result).toHaveProperty('applyResolversOnGraph');
@@ -30,15 +53,11 @@ describe('core/resolvers', () => {
       expect(result.FIELD_RESOLVERS.User.name).toBe(resolverSpecs.User.name);
     });
 
-    it('binds resolvers with __cb_resolver__ property', () => {
-      const mockInternals = {
-        TYPENAME_KEY: '__typename',
-        DEFAULT_WRITE_POLICY: 'replace',
-      } as any;
-
+    it('handles resolvers with __cb_resolver__ property', () => {
+      const mockResolver = vi.fn();
       const bindableResolver = {
         __cb_resolver__: true as const,
-        bind: vi.fn((internals) => vi.fn()),
+        bind: vi.fn(() => mockResolver),
       } as any;
 
       const resolverSpecs = {
@@ -47,19 +66,66 @@ describe('core/resolvers', () => {
         },
       };
 
-      const result = createResolvers({ resolvers: resolverSpecs }, {
-        internals: mockInternals,
-      });
+      const mockDeps = {
+        graph: {
+          entityStore: new Map(),
+          connectionStore: new Map(),
+          operationStore: new Map(),
+          putEntity: vi.fn(),
+          materializeEntity: vi.fn(),
+          ensureReactiveConnection: vi.fn(),
+          getEntityParentKey: vi.fn(),
+          putOperation: vi.fn(),
+        },
+        views: {
+          synchronizeConnectionViews: vi.fn(),
+          markConnectionDirty: vi.fn(),
+          linkEntityToConnection: vi.fn(),
+          unlinkEntityFromConnection: vi.fn(),
+          addStrongView: vi.fn(),
+        },
+        relay: vi.fn(),
+        relayResolverIndex: new Map(),
+        relayResolverIndexByType: new Map(),
+        getRelayOptionsByType: vi.fn(),
+        setRelayOptionsByType: vi.fn(),
+      };
+      
+      const result = createResolvers({ resolvers: resolverSpecs }, mockDeps);
 
-      expect(bindableResolver.bind).toHaveBeenCalledWith(mockInternals);
+      // Bindable resolvers are now bound and return a function
+      expect(typeof result.FIELD_RESOLVERS.User.special).toBe('function');
     });
 
     it('handles undefined resolver specs', () => {
       const mockInternals = {} as any;
 
-      const result = createResolvers({ resolvers: undefined }, {
-        internals: mockInternals,
-      });
+      const mockDeps = {
+        graph: {
+          entityStore: new Map(),
+          connectionStore: new Map(),
+          operationStore: new Map(),
+          putEntity: vi.fn(),
+          materializeEntity: vi.fn(),
+          ensureReactiveConnection: vi.fn(),
+          getEntityParentKey: vi.fn(),
+          putOperation: vi.fn(),
+        },
+        views: {
+          synchronizeConnectionViews: vi.fn(),
+          markConnectionDirty: vi.fn(),
+          linkEntityToConnection: vi.fn(),
+          unlinkEntityFromConnection: vi.fn(),
+          addStrongView: vi.fn(),
+        },
+        relay: vi.fn(),
+        relayResolverIndex: new Map(),
+        relayResolverIndexByType: new Map(),
+        getRelayOptionsByType: vi.fn(),
+        setRelayOptionsByType: vi.fn(),
+      };
+      
+      const result = createResolvers({ resolvers: undefined }, mockDeps);
 
       expect(result.FIELD_RESOLVERS).toEqual({});
     });

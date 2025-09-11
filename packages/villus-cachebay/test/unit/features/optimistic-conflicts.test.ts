@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createCache } from '@/src';
-import { seedRelay, tick } from '@/test/helpers';
+import { seedRelay, tick } from '../../helpers';
+import { relay } from '@/src/resolvers/relay';
 
 const QUERY = /* GraphQL */ `
   query Colors {
@@ -15,7 +16,7 @@ describe('features/optimistic — conflict & ordering semantics', () => {
   it('later optimistic write wins for same entity; revert restores previous snapshot', async () => {
     const cache = createCache({
       addTypename: true,
-      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
+      resolvers: { Query: { colors: relay({}) } },
       keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
     });
 
@@ -52,7 +53,7 @@ describe('features/optimistic — conflict & ordering semantics', () => {
   it('remove then re-add within the same optimistic layer respects final instruction', async () => {
     const cache = createCache({
       addTypename: true,
-      resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
+      resolvers: { Query: { colors: relay({}) } },
       keys: () => ({ Color: (o: any) => (o?.id != null ? String(o.id) : null) }),
     });
 
