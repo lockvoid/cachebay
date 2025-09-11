@@ -41,6 +41,14 @@ export const createGraph = (config: GraphConfig) => {
   const operationStore = new Map<string, { data: any; variables: Record<string, any> }>();
 
   /* ───────────────────────────────────────────────────────────────────────────
+   * Entities tick (for reactivity tracking)
+   * ────────────────────────────────────────────────────────────────────────── */
+  const entitiesTick = ref(0);
+  const bumpEntitiesTick = () => {
+    entitiesTick.value++;
+  };
+
+  /* ───────────────────────────────────────────────────────────────────────────
    * Entity id helpers
    * ────────────────────────────────────────────────────────────────────────── */
   const identify = (o: any): EntityKey | null => {
@@ -229,11 +237,33 @@ export const createGraph = (config: GraphConfig) => {
   };
 
   /* ───────────────────────────────────────────────────────────────────────────────
-   * Entities tick
+   * Entity queries
    * ────────────────────────────────────────────────────────────────────────── */
-  const entitiesTick = ref(0);
-  const bumpEntitiesTick = () => {
-    entitiesTick.value++;
+  const getEntityKeys = (selector: string | string[]): string[] => {
+    const patterns = Array.isArray(selector) ? selector : [selector];
+    const keys = new Set<string>();
+    for (const [key] of Array.from(entityStore)) {
+      for (const pattern of patterns) {
+        if (key.startsWith(pattern)) {
+          keys.add(key);
+          break;
+        }
+      }
+    }
+    return Array.from(keys);
+  };
+
+  const getEntities = (selector: string | string[]): any[] => {
+    const keys = getEntityKeys(selector);
+    return keys.map((k) => {
+      const resolved = resolveEntityKey(k) || k;
+      return entityStore.get(resolved);
+    });
+  };
+
+  const materializeEntities = (selector: string | string[]): any[] => {
+    const keys = getEntityKeys(selector);
+    return keys.map((k) => materializeEntity(k));
   };
 
   return {
@@ -263,6 +293,11 @@ export const createGraph = (config: GraphConfig) => {
     // operation cache
     getOperation,
     putOperation,
+
+    // entity queries
+    getEntityKeys,
+    getEntities,
+    materializeEntities,
 
     // entities tick
     bumpEntitiesTick,

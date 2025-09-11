@@ -7,7 +7,8 @@ import {
 } from "vue";
 
 import type { EntityKey, ConnectionState } from "./types";
-import { readPathValue } from "./utils";
+import { readPathValue, buildConnectionKey } from "./utils";
+import { getRelayOptionsByType } from "./resolvers";
 
 /**
  * View-layer utilities that sit on top of the raw graph (stores + entity helpers).
@@ -30,6 +31,10 @@ export function createViews(
 
     // for id + proxies
     idOf: (o: any) => EntityKey | null;
+
+    // for relay connections
+    getEntityParentKey?: (typename: string, id: any) => EntityKey | null;
+    typenameKey?: string;
   }
 ) {
   const {
@@ -39,6 +44,8 @@ export function createViews(
     materializeEntity,
     makeEntityProxy,
     idOf,
+    getEntityParentKey,
+    typenameKey = '__typename',
   } = dependencies;
 
   /* ───────────────────────────────────────────────────────────────────────────
@@ -345,6 +352,125 @@ export function createViews(
     });
   }
 
+  /* ───────────────────────────────────────────────────────────────────────────
+   * Register views from result (Relay connections)
+   * ────────────────────────────────────────────────────────────────────────── */
+  const registerViewsFromResult = (root: any, variables: Record<string, any>) => {
+    // Re-using the walker from resolvers implementation would create cycles,
+    // so we do a light traversal here tailored for Relay connections.
+    const stack: Array<{ obj: any; parentTypename: string | null }> = [{ obj: root, parentTypename: "Query" }];
+    while (stack.length) {
+      const { obj, parentTypename } = stack.pop()!;
+      if (!obj || typeof obj !== "object") continue;
+
+      const pt = (obj as any)[typenameKey] || parentTypename;
+      const keys = Object.keys(obj);
+      for (let i = 0; i < keys.length; i++) {
+        const field = keys[i];
+        const value = (obj as any)[field];
+
+        // Relay connection spec present?
+        const spec = getRelayOptionsByType(pt || null, field);
+        if (spec && value && typeof value === "object") {
+          // Resolve key/state
+          const parentId = (obj as any)?.id ?? (obj as any)?._id;
+          const parentKey = getEntityParentKey ? getEntityParentKey(pt!, parentId) : null || "Query";
+          const connKey = buildConnectionKey(parentKey!, field, spec as any, variables);
+          const state = ensureConnectionState(connKey);
+
+          // Extract parts
+          const edgesArr = readPathValue(value, spec.segs.edges);
+          const pageInfoObj = readPathValue(value, spec.segs.pageInfo);
+          if (!edgesArr || !pageInfoObj) continue;
+
+          const edgesField = spec.names.edges;
+          const pageInfoField = spec.names.pageInfo;
+
+          const isCursorPage =
+            (variables as any)?.after != null || (variables as any)?.before != null;
+
+          // Requested "page" size from variables (fallback to payload size once)
+          const pageSize =
+            typeof (variables as any)?.first === "number"
+              ? (variables as any).first
+              : (Array.isArray(edgesArr) ? edgesArr.length : 0);
+
+          // Prepare/reuse parent view container
+          let viewObj: any = (obj as any)[field];
+          const invalid =
+            !viewObj ||
+            typeof viewObj !== "object" ||
+            !Array.isArray((viewObj as any)[edgesField]) ||
+            !(viewObj as any)[pageInfoField];
+
+          if (invalid) {
+            viewObj = Object.create(null);
+            viewObj.__typename = (value as any)?.__typename ?? "Connection";
+            (obj as any)[field] = viewObj;
+          }
+          if (!isReactive(viewObj[edgesField])) viewObj[edgesField] = reactive(viewObj[edgesField] || []);
+          if (!isReactive(viewObj[pageInfoField])) viewObj[pageInfoField] = shallowReactive(viewObj[pageInfoField] || {});
+
+          // Merge connection-level meta
+          const exclude = new Set([edgesField, spec.paths.pageInfo, "__typename"]);
+          if (value && typeof value === "object") {
+            const vk = Object.keys(value);
+            for (let vi = 0; vi < vk.length; vi++) {
+              const k = vk[vi];
+              if (!exclude.has(k)) (state.meta as any)[k] = (value as any)[k];
+            }
+          }
+
+          // ---- CANONICAL WINDOW: update exactly once per bind ----
+          if (!state.initialized) {
+            state.window = pageSize;  // first bind = one page
+          } else if (isCursorPage) {
+            state.window = Math.min(state.list.length, (state.window || 0) + pageSize);
+          } else {
+            state.window = pageSize;  // baseline reset back to one page
+          }
+
+          // Keep exactly one canonical view for this connection key
+          state.views.clear();
+
+          addStrongView(state, {
+            edges: viewObj[edgesField],
+            pageInfo: viewObj[pageInfoField],
+            root: viewObj,
+            edgesKey: edgesField,
+            pageInfoKey: pageInfoField,
+            pinned: false,
+            limit: state.window,       // <- single source of truth
+          });
+
+          // Sync so UI renders now with the right window
+          synchronizeConnectionViews(state);
+
+          if (!state.initialized) state.initialized = true;
+
+          // DEBUG
+          // eslint-disable-next-line no-console
+          console.debug("sdcsc", variables);
+          // eslint-disable-next-line no-console
+          console.debug("Connection key:", connKey);
+          // eslint-disable-next-line no-console
+          console.debug("[views]", Array.from(state.views).map(v => v.limit));
+        }
+
+        // Traverse deeper
+        const v = (obj as any)[field];
+        if (Array.isArray(v)) {
+          for (let j = 0; j < (v as any[]).length; j++) {
+            const x = (v as any[])[j];
+            if (x && typeof x === "object") stack.push({ obj: x, parentTypename: pt || null });
+          }
+        } else if (v && typeof v === "object") {
+          stack.push({ obj: v, parentTypename: pt || null });
+        }
+      }
+    }
+  };
+
   return {
     // entity views
     registerEntityView,
@@ -360,6 +486,9 @@ export function createViews(
     addStrongView,
     synchronizeConnectionViews,
     markConnectionDirty,
+
+    // relay connections
+    registerViewsFromResult,
 
     // runtime
     resetRuntime,
