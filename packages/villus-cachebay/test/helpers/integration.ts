@@ -264,16 +264,16 @@ export const testQueries = {
  * Standard mock responses for testing
  */
 export const mockResponses = {
-  posts: (titles: string[]) => ({
+  posts: (titles: string[], { fromId = 1 } = {}) => ({
     data: {
       __typename: 'Query',
       posts: {
         __typename: 'PostConnection',
         edges: titles.map((title, i) => ({
-          cursor: `c${i + 1}`,
+          cursor: `c${fromId + i}`,
           node: {
             __typename: 'Post',
-            id: String(i + 1),
+            id: String(fromId + i),
             title,
             content: `Content for ${title}`,
             authorId: '1',
@@ -287,16 +287,16 @@ export const mockResponses = {
     },
   }),
 
-  comments: (texts: string[], postId = '1') => ({
+  comments: (texts: string[], { postId = '1', fromId = 1 } = {}) => ({
     data: {
       __typename: 'Query',
       comments: {
         __typename: 'CommentConnection',
         edges: texts.map((text, i) => ({
-          cursor: `c${i + 1}`,
+          cursor: `c${fromId + i}`,
           node: {
             __typename: 'Comment',
-            id: String(i + 1),
+            id: String(fromId + i),
             text,
             postId,
             authorId: '1',
