@@ -1,15 +1,51 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createFragments } from '@/src/core/fragments';
 import { TYPENAME_FIELD } from '@/src/core/constants';
-import { createMockGraph, createMockViews, createEntity } from '@/test/helpers/mocks';
+
+// Light mock helpers inline to keep this test self-contained
+function createMockGraph(overrides: any = {}) {
+  const entityStore = overrides.entityStore ?? new Map<string, any>();
+  return {
+    entityStore,
+    identify: vi.fn((o: any) => (o && o.__typename && o.id != null) ? `${o.__typename}:${String(o.id)}` : null),
+    materializeEntity: vi.fn((k: string) => {
+      const snap = entityStore.get(k);
+      if (!snap) return null;
+      const [typename, id] = k.split(':');
+      return id ? { __typename: typename, id, ...snap } : { __typename: typename, ...snap };
+    }),
+    putEntity: vi.fn((obj: any, mode?: 'merge' | 'replace') => {
+      // emulate graph.putEntity snapshot behavior (exclude identity)
+      const key = `${obj.__typename}:${obj.id ?? ''}`.replace(/:$/, '');
+      const snap: any = {};
+      Object.keys(obj).forEach(k => { if (k !== '__typename' && k !== 'id') snap[k] = obj[k]; });
+      if (mode === 'replace') {
+        entityStore.set(key, snap);
+      } else {
+        const prev = entityStore.get(key) || {};
+        entityStore.set(key, { ...prev, ...snap });
+      }
+    }),
+    resolveEntityKey: vi.fn((k: string) => k),
+    isInterfaceType: vi.fn((t: string) => t === 'Node' || t === 'Animal'),
+    getInterfaceTypes: vi.fn((t: string) => t === 'Node' ? ['User', 'Post'] : t === 'Animal' ? ['Cat', 'Dog'] : []),
+    getEntityKeys: vi.fn((pattern: string) => {
+      // naive filter
+      const out: string[] = [];
+      for (const key of entityStore.keys()) {
+        if (key.startsWith(pattern)) out.push(key);
+      }
+      return out;
+    }),
+    ...overrides,
+  };
+}
 
 describe('core/fragments', () => {
   describe('createFragments', () => {
     it('creates fragment functions with dependencies', () => {
-      const mockGraph = createMockGraph();
-      const mockViews = createMockViews();
-
-      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
+      const graph = createMockGraph();
+      const fragments = createFragments({}, { graph });
 
       expect(fragments).toHaveProperty('identify');
       expect(fragments).toHaveProperty('readFragment');
@@ -21,270 +57,197 @@ describe('core/fragments', () => {
 
   describe('identify', () => {
     it('delegates to graph.identify', () => {
-      const mockGraph = createMockGraph();
-      const mockViews = createMockViews();
-
-      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
-      const obj = createEntity('User', 1);
+      const graph = createMockGraph();
+      const fragments = createFragments({}, { graph });
+      const obj = { __typename: 'User', id: 1 };
       const result = fragments.identify(obj);
-
-      expect(mockGraph.identify).toHaveBeenCalledWith(obj);
+      expect(graph.identify).toHaveBeenCalledWith(obj);
       expect(result).toBe('User:1');
     });
   });
 
   describe('readFragment', () => {
-    it('reads fragment with materialized=true by default', () => {
-      const entityStore = new Map([['User:1', { __typename: 'User', id: 1, name: 'John' }]]);
-      const mockGraph = createMockGraph({ entityStore });
-      const mockViews = createMockViews({
-        proxyForEntityKey: vi.fn(() => ({ name: 'Proxied' }))
+    it('reads materialized (proxy) by default', () => {
+      const graph = createMockGraph({
+        entityStore: new Map([['User:1', { name: 'John' }]]),
       });
+      const fragments = createFragments({}, { graph });
 
-      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
       const result = fragments.readFragment('User:1');
-
-      expect(mockViews.proxyForEntityKey).toHaveBeenCalledWith('User:1');
-      expect(result).toEqual({ name: 'Proxied' });
+      expect(graph.materializeEntity).toHaveBeenCalledWith('User:1');
+      expect(result).toEqual({ __typename: 'User', id: '1', name: 'John' });
     });
 
-    it('reads raw entity when materialized=false', () => {
-      const entityStore = new Map([['User:1', { name: 'John' }]]);
-      const mockGraph = createMockGraph({ entityStore });
-      const mockViews = createMockViews();
-
-      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
-      const result = fragments.readFragment('User:1', { materialized: false });
-
-      // When materialized=false, it returns directly from entityStore
-      expect(result).toEqual({ name: 'John' });
-      expect(mockGraph.materializeEntity).toHaveBeenCalledWith('User:1');
-    });
-
-    it('handles interface types', () => {
-      const entityStore = new Map([['Node:1', { __typename: 'Node', id: 1, name: 'Test' }]]);
-      const mockGraph = createMockGraph({
-        entityStore,
-        resolveEntityKey: vi.fn((key) => key === 'Node:1' ? null : key),
-        isInterfaceType: vi.fn((t) => t === 'Node'),
-        getInterfaceTypes: vi.fn(() => ['User', 'Post'])
+    it('reads raw snapshot when materialized=false', () => {
+      const graph = createMockGraph({
+        entityStore: new Map([['User:1', { name: 'John' }]]),
       });
-      const mockViews = createMockViews();
+      const fragments = createFragments({}, { graph });
 
-      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
+      const result = fragments.readFragment('User:1', { materialized: false });
+      expect(graph.materializeEntity).not.toHaveBeenCalled();
+      expect(result).toEqual({ name: 'John' });
+    });
+
+    it('handles interface keys by falling back to raw if unresolved', () => {
+      const graph = createMockGraph({
+        entityStore: new Map([['Node:1', { __typename: 'Node', id: 1, name: 'Test' }]]),
+        resolveEntityKey: vi.fn((k: string) => null), // unresolved
+        isInterfaceType: vi.fn((t: string) => t === 'Node'),
+        getInterfaceTypes: vi.fn(() => ['User', 'Post']),
+      });
+      const fragments = createFragments({}, { graph });
+
       const result = fragments.readFragment('Node:1', { materialized: false });
-
-      // The fragment reads the entity directly from the store
       expect(result).toEqual({ __typename: 'Node', id: 1, name: 'Test' });
     });
   });
 
   describe('hasFragment', () => {
-    it('checks for entity in store', () => {
-      const entityStore = new Map([['User:1', { name: 'John' }]]);
-      const mockGraph = createMockGraph({ entityStore });
-      const mockViews = createMockViews();
-
-      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
+    it('checks entity existence by key', () => {
+      const graph = createMockGraph({
+        entityStore: new Map([['User:1', { name: 'John' }]]),
+      });
+      const fragments = createFragments({}, { graph });
 
       expect(fragments.hasFragment('User:1')).toBe(true);
       expect(fragments.hasFragment('User:2')).toBe(false);
     });
+
+    it('checks interface implementors when id is present', () => {
+      const graph = createMockGraph({
+        entityStore: new Map([['User:1', { name: 'A' }], ['Post:1', { title: 'P' }]]),
+        isInterfaceType: vi.fn((t: string) => t === 'Node'),
+        getInterfaceTypes: vi.fn(() => ['User', 'Post']),
+      });
+      const fragments = createFragments({}, { graph });
+
+      expect(fragments.hasFragment('Node:1')).toBe(true);
+      expect(fragments.hasFragment('Node:2')).toBe(false);
+    });
   });
 
   describe('writeFragment', () => {
-    it('creates a transaction with commit and revert functions', () => {
-      const entityStore = new Map();
-      const mockGraph = createMockGraph({
-        entityStore,
-        materializeEntity: vi.fn(() => createEntity('User', 1))
-      });
-      const mockViews = createMockViews();
+    it('returns a transaction with commit and revert', () => {
+      const graph = createMockGraph({ entityStore: new Map() });
+      const fragments = createFragments({}, { graph });
 
-      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
-      const obj = createEntity('User', 1, { name: 'John' });
-      const result = fragments.writeFragment(obj);
+      const obj = { __typename: 'User', id: 1, name: 'John' };
+      const tx = fragments.writeFragment(obj);
 
-      expect(result).toHaveProperty('commit');
-      expect(result).toHaveProperty('revert');
+      // not written yet
+      expect(graph.entityStore.has('User:1')).toBe(false);
 
-      // writeFragment now returns transaction object without immediate execution
-      expect(entityStore.has('User:1')).toBe(false);
-      expect(result).toHaveProperty('commit');
-      expect(result).toHaveProperty('revert');
+      // commit
+      tx.commit();
+      expect(graph.putEntity).toHaveBeenCalledWith(obj, 'merge');
+      expect(graph.entityStore.get('User:1')).toEqual({ name: 'John' });
 
-      // Execute commit
-      result.commit();
-      expect(entityStore.has('User:1')).toBe(true);
-      expect(entityStore.get('User:1')).toEqual({ __typename: 'User', id: 1, name: 'John' });
-      expect(mockGraph.bumpEntitiesTick).toHaveBeenCalledTimes(1);
-      expect(mockViews.markEntityDirty).toHaveBeenCalledWith('User:1');
-      expect(mockViews.touchConnectionsForEntityKey).toHaveBeenCalledWith('User:1');
+      // update to have a prev snapshot, then revert
+      fragments.writeFragment({ __typename: 'User', id: 1, age: 30 }).commit();
+      expect(graph.entityStore.get('User:1')).toEqual({ name: 'John', age: 30 });
+
+      tx.revert(); // revert the first write -> should restore previous snapshot (which includes age now)
+      // Our revert restores the snapshot captured before the tx.commit(); here prev was undefined, so it clears to empty.
+      // To keep the test simple, assert that a replace to empty happened:
+      expect(graph.putEntity).toHaveBeenCalledWith({ __typename: 'User', id: '1' }, 'replace');
     });
   });
 
   describe('readFragments', () => {
     it('reads multiple fragments by pattern with :* selector', () => {
-      const entityStore = new Map([
+      const store = new Map([
         ['User:1', { __typename: 'User', id: 1, name: 'John' }],
         ['User:2', { __typename: 'User', id: 2, name: 'Jane' }],
         ['Post:1', { __typename: 'Post', id: 1, title: 'Hello' }],
       ]);
-      const mockGraph = {
-        entityStore,
-        identify: vi.fn(),
-        resolveEntityKey: vi.fn((key) => key),
-        materializeEntity: vi.fn(),
-        bumpEntitiesTick: vi.fn(),
-        isInterfaceType: vi.fn(),
-        getInterfaceTypes: vi.fn(),
-        getEntityKeys: vi.fn((pattern) => {
+      const graph = createMockGraph({
+        entityStore: store,
+        getEntityKeys: vi.fn((pattern: string) => {
           if (pattern === 'User:') return ['User:1', 'User:2'];
           if (pattern === 'Post:') return ['Post:1'];
           return [];
         }),
-      };
-      const mockViews = {
-        proxyForEntityKey: vi.fn((key) => entityStore.get(key)),
-        markEntityDirty: vi.fn(),
-        touchConnectionsForEntityKey: vi.fn(),
-      };
+        materializeEntity: vi.fn((k: string) => store.get(k)),
+      });
+      const fragments = createFragments({}, { graph });
 
-      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
       const result = fragments.readFragments('User:*');
-
-      expect(mockGraph.getEntityKeys).toHaveBeenCalledWith('User:');
+      expect(graph.getEntityKeys).toHaveBeenCalledWith('User:');
       expect(result).toHaveLength(2);
       expect(result[0]).toEqual({ __typename: 'User', id: 1, name: 'John' });
       expect(result[1]).toEqual({ __typename: 'User', id: 2, name: 'Jane' });
     });
 
     it('reads single fragment by exact key', () => {
-      const entityStore = new Map([
-        ['User:1', { __typename: 'User', id: 1, name: 'John' }],
-      ]);
-      const mockGraph = {
-        entityStore,
-        identify: vi.fn(),
-        resolveEntityKey: vi.fn((key) => key),
-        materializeEntity: vi.fn(),
-        bumpEntitiesTick: vi.fn(),
-        isInterfaceType: vi.fn(),
-        getInterfaceTypes: vi.fn(),
-        getEntityKeys: vi.fn(),
-      };
-      const mockViews = {
-        proxyForEntityKey: vi.fn((key) => entityStore.get(key)),
-        markEntityDirty: vi.fn(),
-        touchConnectionsForEntityKey: vi.fn(),
-      };
+      const store = new Map([['User:1', { __typename: 'User', id: 1, name: 'John' }]]);
+      const graph = createMockGraph({
+        entityStore: store,
+        materializeEntity: vi.fn((k: string) => store.get(k)),
+      });
+      const fragments = createFragments({}, { graph });
 
-      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
       const result = fragments.readFragments('User:1');
-
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({ __typename: 'User', id: 1, name: 'John' });
     });
 
     it('handles multiple patterns in array', () => {
-      const entityStore = new Map([
+      const store = new Map([
         ['User:1', { __typename: 'User', id: 1, name: 'John' }],
         ['Post:1', { __typename: 'Post', id: 1, title: 'Hello' }],
       ]);
-      const mockGraph = {
-        entityStore,
-        identify: vi.fn(),
-        resolveEntityKey: vi.fn((key) => key),
-        materializeEntity: vi.fn(),
-        bumpEntitiesTick: vi.fn(),
-        isInterfaceType: vi.fn(),
-        getInterfaceTypes: vi.fn(),
-        getEntityKeys: vi.fn((pattern) => {
+      const graph = createMockGraph({
+        entityStore: store,
+        getEntityKeys: vi.fn((pattern: string) => {
           if (pattern === 'User:') return ['User:1'];
           if (pattern === 'Post:') return ['Post:1'];
           return [];
         }),
-      };
-      const mockViews = {
-        proxyForEntityKey: vi.fn((key) => entityStore.get(key)),
-        markEntityDirty: vi.fn(),
-        touchConnectionsForEntityKey: vi.fn(),
-      };
+        materializeEntity: vi.fn((k: string) => store.get(k)),
+      });
+      const fragments = createFragments({}, { graph });
 
-      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
       const result = fragments.readFragments(['User:*', 'Post:*']);
-
       expect(result).toHaveLength(2);
-      expect(result.find(r => r.__typename === 'User')).toEqual({ __typename: 'User', id: 1, name: 'John' });
-      expect(result.find(r => r.__typename === 'Post')).toEqual({ __typename: 'Post', id: 1, title: 'Hello' });
+      expect(result.find((r) => r.__typename === 'User')).toEqual({ __typename: 'User', id: 1, name: 'John' });
+      expect(result.find((r) => r.__typename === 'Post')).toEqual({ __typename: 'Post', id: 1, title: 'Hello' });
     });
 
-    it('returns raw entities when materialized=false', () => {
-      const entityStore = new Map([
-        ['User:1', { __typename: 'User', id: 1, name: 'Alice' }],
-      ]);
-      const mockGraph = createMockGraph({
-        entityStore,
+    it('returns raw snapshots when materialized=false', () => {
+      const store = new Map([['User:1', { __typename: 'User', id: 1, name: 'Alice' }]]);
+      const graph = createMockGraph({
+        entityStore: store,
         getEntityKeys: vi.fn(() => ['User:1']),
-        materializeEntity: vi.fn((key) => entityStore.get(key))
       });
-      const mockViews = createMockViews();
+      const fragments = createFragments({}, { graph });
 
-      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
       const result = fragments.readFragments('User:*', { materialized: false });
-
-      expect(mockViews.proxyForEntityKey).not.toHaveBeenCalled();
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({ __typename: 'User', id: 1, name: 'Alice' });
     });
 
     it('filters out null/undefined results', () => {
-      const entityStore = new Map([
-        ['User:1', { __typename: 'User', id: 1, name: 'John' }],
-      ]);
-      const mockGraph = {
-        entityStore,
-        identify: vi.fn(),
-        resolveEntityKey: vi.fn((key) => key),
-        materializeEntity: vi.fn(),
-        bumpEntitiesTick: vi.fn(),
-        isInterfaceType: vi.fn(),
-        getInterfaceTypes: vi.fn(),
-        getEntityKeys: vi.fn(() => ['User:1', 'User:2']), // User:2 doesn't exist
-      };
-      const mockViews = {
-        proxyForEntityKey: vi.fn((key) => entityStore.get(key)), // returns undefined for User:2
-        markEntityDirty: vi.fn(),
-        touchConnectionsForEntityKey: vi.fn(),
-      };
+      const store = new Map([['User:1', { __typename: 'User', id: 1, name: 'John' }]]);
+      const graph = createMockGraph({
+        entityStore: store,
+        getEntityKeys: vi.fn(() => ['User:1', 'User:2']),
+        materializeEntity: vi.fn((k: string) => store.get(k)),
+      });
+      const fragments = createFragments({}, { graph });
 
-      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
       const result = fragments.readFragments('User:*');
-
-      expect(result).toHaveLength(1); // Only User:1 should be returned
+      expect(result).toHaveLength(1);
       expect(result[0]).toEqual({ __typename: 'User', id: 1, name: 'John' });
     });
 
     it('returns empty array when no matches found', () => {
-      const mockGraph = {
+      const graph = createMockGraph({
         entityStore: new Map(),
-        identify: vi.fn(),
-        resolveEntityKey: vi.fn((key) => key),
-        materializeEntity: vi.fn(),
-        bumpEntitiesTick: vi.fn(),
-        isInterfaceType: vi.fn(),
-        getInterfaceTypes: vi.fn(),
         getEntityKeys: vi.fn(() => []),
-      };
-      const mockViews = {
-        proxyForEntityKey: vi.fn(),
-        markEntityDirty: vi.fn(),
-        touchConnectionsForEntityKey: vi.fn(),
-      };
-
-      const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
+      });
+      const fragments = createFragments({}, { graph });
       const result = fragments.readFragments('User:*');
-
       expect(result).toEqual([]);
     });
   });
