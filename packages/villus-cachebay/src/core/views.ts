@@ -59,12 +59,6 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
     _syncedVersion?: number;
   };
 
-  /**
-   * Create and attach a connection view to a connection state.
-   * - edges: shallow-reactive array (we mutate indices/length)
-   * - pageInfo: shallow-reactive object (we update fields in place)
-   * - limit: how many edges the view wants to keep in sync (window)
-   */
   function createConnectionView(
     state: ConnectionState,
     opts: {
@@ -103,13 +97,6 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
     view.limit = Math.max(0, limit | 0);
   }
 
-  /**
-   * Synchronize a whole connection (all attached views) to the canonical state.
-   * - Keeps view.edges length at most view.limit, pulls from state.list
-   * - edge objects stay plain; edge.node is a reactive proxy (materialized)
-   * - pageInfo fields are copied field-by-field
-   * - Skips work when BOTH the connection version and the view’s lastLen match
-   */
   function synchronizeConnectionViews(state: ConnectionState) {
     if (!state || !state.views || state.views.size === 0) return;
 
@@ -117,25 +104,19 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
 
     for (const rawView of state.views) {
       const view = rawView as ConnectionView;
-
-      // compute desired FIRST so we can skip only when limit/len ALSO match
       const desired = Math.min(state.list.length, view.limit ?? state.list.length);
 
-      // :important: don’t skip if limit changed (desired differs from lastLen)
       if (view._syncedVersion === sv && view._lastLen === desired) continue;
 
-      // ensure correct container shapes
       if (!isReactive(view.edges)) (view as any).edges = shallowReactive(view.edges || []);
       if (!isReactive(view.pageInfo)) view.pageInfo = shallowReactive(view.pageInfo || {});
 
       const edgesArr = view.edges as any[];
 
-      // shrink if needed
       if (edgesArr.length > desired) edgesArr.splice(desired);
 
-      // fill/update items
       for (let i = 0; i < desired; i++) {
-        const entry = (state.list as any[])[i]; // { cursor, key, edge? }
+        const entry = (state.list as any[])[i];
         let edgeObj = edgesArr[i];
 
         if (!edgeObj || typeof edgeObj !== "object") {
@@ -145,7 +126,6 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
 
         if (edgeObj.cursor !== entry.cursor) edgeObj.cursor = entry.cursor;
 
-        // Copy custom edge metadata (except cursor/node)
         const meta = entry.edge;
         if (meta && typeof meta === "object") {
           for (const k of Object.keys(meta)) {
@@ -154,18 +134,15 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
               if (edgeObj[k] !== nv) edgeObj[k] = nv;
             }
           }
-          // remove stale meta fields
           for (const k of Object.keys(edgeObj)) {
             if (k !== "cursor" && k !== "node" && !(k in meta)) delete edgeObj[k];
           }
         } else {
-          // no meta → keep only cursor/node
           for (const k of Object.keys(edgeObj)) {
             if (k !== "cursor" && k !== "node") delete edgeObj[k];
           }
         }
 
-        // Node proxy: update when key changes
         const oldKey =
           edgeObj.node &&
             edgeObj.node.__typename &&
@@ -178,10 +155,8 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
         }
       }
 
-      // record the synced window size for skip guard
       view._lastLen = desired;
 
-      // pageInfo: copy fields from state.pageInfo
       const srcPI = state.pageInfo as any;
       const dstPI = view.pageInfo as any;
       for (const k of Object.keys(srcPI)) {
@@ -189,12 +164,10 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
         if (dstPI[k] !== nv) dstPI[k] = nv;
       }
 
-      // mark sync as up-to-date for this view
       view._syncedVersion = sv;
     }
   }
 
-  // Simple GC: drop connection states that have no attached views
   function gcConnections(
     predicate?: (key: string, state: ConnectionState) => boolean
   ) {
@@ -206,7 +179,6 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
     }
   }
 
-  // For symmetry with prior code, but now it just clears connection views for all states
   function resetRuntime() {
     for (const [, state] of (graph.connectionStore as Map<string, ConnectionState>).entries()) {
       state.views.clear();
@@ -214,10 +186,9 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // Per-useQuery session: scan payload, attach per-instance views, size & sync
+  // Per-useQuery session
   // ────────────────────────────────────────────────────────────────────────────
 
-  /** Build a connection key that ignores cursor args (after/before/first/last). */
   function buildConnKey(parentKey: string, field: string, vars: Record<string, any>) {
     const filtered: Record<string, any> = { ...vars };
     delete filtered.after; delete filtered.before; delete filtered.first; delete filtered.last;
@@ -228,16 +199,13 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
     return `${parentKey}.${field}(${id})`;
   }
 
-  /**
-   * A scoped helper for a single `useQuery` instance.
-   * It owns a map of connKey → view, wires connections on a result payload,
-   * sizes per-instance windows, and syncs them.
-   */
   function createViewSession() {
     const viewByConnKey = new Map<string, ConnectionView>();
 
     function wireConnections(root: any, vars: Record<string, any>) {
       if (!root || typeof root !== "object") return;
+
+      const fromCache = !!(root as any).__fromCache;
 
       const stack: Array<{ node: any; parentType: string | null }> = [{ node: root, parentType: "Query" }];
       while (stack.length) {
@@ -250,7 +218,6 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
           const val = (node as any)[field];
           if (!val || typeof val !== "object") continue;
 
-          // canonical connection: edges[] + pageInfo{}
           const edges = (val as any).edges;
           const pageInfo = (val as any).pageInfo;
           if (Array.isArray(edges) && pageInfo && typeof pageInfo === "object") {
@@ -258,7 +225,6 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
             const connKey = buildConnKey(parentKey, field, vars);
             const state = graph.ensureConnection(connKey);
 
-            // create/reuse a per-session view
             let view = viewByConnKey.get(connKey);
             if (!view) {
               view = createConnectionView(state, {
@@ -275,20 +241,22 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
             (val as any).edges = view.edges;
             (val as any).pageInfo = view.pageInfo;
 
-            // size per instance: baseline → payload edges; cursor → union
+            // Sizing: cached frames honor payload window, network cursor pages use union
             const hasAfter = vars.after != null;
             const hasBefore = vars.before != null;
-            if (!hasAfter && !hasBefore) {
-              setViewLimit(view, edges.length);
+            const payloadCount = Array.isArray(edges) ? edges.length : 0;
+
+            if (fromCache) {
+              setViewLimit(view, payloadCount);
+            } else if (!hasAfter && !hasBefore) {
+              setViewLimit(view, payloadCount);
             } else {
               setViewLimit(view, state.list.length);
             }
 
-            // sync now so UI renders immediately
             synchronizeConnectionViews(state);
           }
 
-          // traverse deeper
           if (Array.isArray(val)) {
             for (const it of val) if (it && typeof it === "object") stack.push({ node: it, parentType: t });
           } else {

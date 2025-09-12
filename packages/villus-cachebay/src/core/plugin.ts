@@ -4,18 +4,13 @@ import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus"
 import { CombinedError } from "villus";
 import { ensureDocumentHasTypenameSmart, getOperationKey } from "./utils";
 
-type PluginOptions = {
-  addTypename?: boolean;
-};
+type PluginOptions = { addTypename?: boolean };
 
 type PluginDependencies = {
   graph: {
     operationStore: Map<string, any>;
     putOperation: (key: string, payload: { data: any; variables: Record<string, any> }) => void;
     lookupOperation: (op: any) => { key: string; entry: { data: any; variables: any } } | null;
-    getEntityParentKey: (typename: string, id?: any) => string | null;
-    ensureConnection: (key: string) => any;
-    identify?: (obj: any) => string | null;
   };
   views: {
     createViewSession: () => {
@@ -24,7 +19,7 @@ type PluginDependencies = {
     };
   };
   resolvers: {
-    // IMPORTANT: runs BEFORE views wiring; merges relay pages into connection state
+    // Used only for *network* results to normalize into the graph.
     applyResolversOnGraph: (root: any, vars: Record<string, any>, hint?: { stale?: boolean }) => void;
   };
   ssr?: {
@@ -33,10 +28,15 @@ type PluginDependencies = {
   };
 };
 
-// cheap shallow clone so we don't mutate op-cache payloads when wiring containers
 function shallowClone<T>(root: T): T {
   if (!root || typeof root !== "object") return root;
   return Array.isArray(root) ? (root.slice() as any) : ({ ...(root as any) } as any);
+}
+
+/** Take a plain snapshot of the wired payload (remove reactivity/proxies). */
+function snapshotForOpCache<T = any>(wired: T): T {
+  // Payload is JSON-safe (edges/node/pageInfo), so this is sufficient and fast.
+  return JSON.parse(JSON.stringify(wired));
 }
 
 export const CACHEBAY_KEY: unique symbol = Symbol("CACHEBAY_KEY");
@@ -48,11 +48,8 @@ export function buildCachebayPlugin(
   const { addTypename = true } = options;
   const { graph, views, resolvers, ssr } = deps;
 
-  // one view-session per mounted useQuery (ctx.operation.key)
-  const sessionByOp = new Map<
-    number,
-    { wire: (root: any, vars: Record<string, any>) => void; destroy: () => void }
-  >();
+  // one session per mounted useQuery (operation.key)
+  const sessionByOp = new Map<number, { wire: (root: any, vars: Record<string, any>) => void; destroy: () => void }>();
 
   const plugin: ClientPlugin = (ctx: ClientPluginContext) => {
     const { operation } = ctx;
@@ -61,7 +58,6 @@ export function buildCachebayPlugin(
       operation.query = ensureDocumentHasTypenameSmart(operation.query as any);
     }
 
-    // create/reuse session
     let session = sessionByOp.get(operation.key);
     if (!session) {
       const s = views.createViewSession();
@@ -69,92 +65,103 @@ export function buildCachebayPlugin(
       sessionByOp.set(operation.key, session);
     }
 
-    const policy =
-      (operation as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
+    const publish = (payload: OperationResult, terminal: boolean) => ctx.useResult(payload, terminal);
+    const policy = (operation as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
 
-    // --------------------------- CACHE-ONLY ---------------------------
+    // ─────────────────────────────────────────────────────────────────────
+    // CACHE-ONLY
+    // ─────────────────────────────────────────────────────────────────────
     if (policy === "cache-only") {
       const hit = graph.lookupOperation(operation);
       if (hit) {
         const vars = operation.variables || hit.entry.variables || {};
-        const data = shallowClone(hit.entry.data);
-        resolvers.applyResolversOnGraph(data, vars, { stale: false });
-        session.wire(data, vars);
-        return ctx.useResult({ data }, true);
+        const normalized = shallowClone(hit.entry.data);
+        (normalized as any).__fromCache = true;     // hint for view sizing
+        session.wire(normalized, vars);
+        delete (normalized as any).__fromCache;     // keep user payload clean
+        return publish({ data: normalized }, true);
       }
       const err = new CombinedError({
         networkError: Object.assign(new Error("CACHE_ONLY_MISS"), { name: "CacheOnlyMiss" }),
         graphqlErrors: [],
         response: undefined,
       });
-      return ctx.useResult({ error: err }, true);
+      return publish({ error: err }, true);
     }
 
-    // -------------------------- CACHE-FIRST --------------------------
+    // ─────────────────────────────────────────────────────────────────────
+    // CACHE-FIRST
+    // ─────────────────────────────────────────────────────────────────────
     if (policy === "cache-first") {
       const hit = graph.lookupOperation(operation);
       if (hit) {
         const vars = operation.variables || hit.entry.variables || {};
-        const data = shallowClone(hit.entry.data);
-        resolvers.applyResolversOnGraph(data, vars, { stale: false });
-        session.wire(data, vars);
-        return ctx.useResult({ data }, true);
+        const normalized = shallowClone(hit.entry.data);
+        (normalized as any).__fromCache = true;
+        session.wire(normalized, vars);
+        delete (normalized as any).__fromCache;
+        return publish({ data: normalized }, true);
       }
-      // miss -> let network continue, handled in overridden useResult
+      // miss → fallthrough to network
     }
 
-    // ---------------------- CACHE-AND-NETWORK ------------------------
+    // ─────────────────────────────────────────────────────────────────────
+    // CACHE-AND-NETWORK
+    // ─────────────────────────────────────────────────────────────────────
     if (policy === "cache-and-network") {
       const hit = graph.lookupOperation(operation);
-
-      console.log('Check', JSON.stringify(operation));
       if (hit) {
-        console.log("Cache hit!!!!", hit);
         const vars = operation.variables || hit.entry.variables || {};
-        const data = shallowClone(hit.entry.data);
-        console.dir("CCHED DATA", graph.operationStore)
-        console.log('///')
-        resolvers.applyResolversOnGraph(data, vars, { stale: false });
+        const normalized = shallowClone(hit.entry.data);
 
-        // SSR hydrate ticket gate (optional): still ctx.useResult as non-terminal
-        const keyFromHit = hit.key;
-        const hadTicket = !!ssr?.hydrateOperationTicket?.has(keyFromHit);
-        if (hadTicket) ssr!.hydrateOperationTicket!.delete(keyFromHit);
+        //console.log('Cache hit', normalized);
 
-        // CRITICAL: do NOT write op-cache on the cached path
-        // (writing here can poison cursor-keys with baseline pages)
+        (normalized as any).__fromCache = true;
+        // No resolvers here: we *trust* the stored normalized snapshot.
+        session.wire(normalized, vars);
+        delete (normalized as any).__fromCache;
 
-        session.wire(data, vars);
-        ctx.useResult({ data }, false);
+        // SSR gating (optional)
+        const hadTicket = !!ssr?.hydrateOperationTicket?.has(hit.key);
+        if (hadTicket) ssr!.hydrateOperationTicket!.delete(hit.key);
+
+        // Non-terminal cached publish; network will arrive later.
+        publish({ data: normalized }, false);
       }
-      // network frame will be handled below
+      // network result handled below
     }
 
-    // ------------------------ NETWORK RESULT -------------------------
+    // ─────────────────────────────────────────────────────────────────────
+    // NETWORK RESULT PATH
+    // ─────────────────────────────────────────────────────────────────────
+    // Pin the request signature now (avoid using live ctx.operation later).
+    const sentQuery = operation.query;
+    const sentVars = operation.variables || {};
+    const sentKey = getOperationKey({ query: sentQuery, variables: sentVars } as any);
+
     const originalUseResult = ctx.useResult;
     ctx.useResult = (incoming: OperationResult, terminal?: boolean) => {
       const r: any = incoming;
       const hasData = r && "data" in r && r.data != null;
       const hasError = r && "error" in r && r.error != null;
 
-      // keep op open for non-terminal placeholders
       if (!hasData && !hasError) return originalUseResult(incoming, false);
-
       if (hasError) return originalUseResult(incoming, true);
 
-      // winner (or only) – write-time transforms first
-      const vars = operation.variables || {};
-      const data = shallowClone(r.data);
+      // 1) Normalize into the graph (relay resolver merges into canonical lists)
+      const payload = shallowClone(r.data);
+      resolvers.applyResolversOnGraph(payload, sentVars, { stale: false });
 
-      resolvers.applyResolversOnGraph(data, vars, { stale: false });
+      // 2) Wire views for *this* op (so edges show the correct window)
+      session!.wire(payload, sentVars);
 
-      // Store post-resolver data under the exact op key
-      const opKey = getOperationKey(operation);
-      graph.putOperation(opKey, { data, variables: vars });
+      // 3) Store the *normalized snapshot for this operation signature*
+      //    (edges limited to the window that was just wired for this op)
+      const opSnapshot = snapshotForOpCache(payload);
+      graph.putOperation(sentKey, { data: opSnapshot, variables: sentVars });
 
-      // Wire this useQuery instance and ctx.useResult terminally
-      session!.wire(data, vars);
-      return originalUseResult({ data }, true);
+      // 4) Publish terminal frame
+      return originalUseResult({ data: payload }, true);
     };
   };
 
