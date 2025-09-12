@@ -17,11 +17,13 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
   // Entity helpers
   // ────────────────────────────────────────────────────────────────────────────
 
+  /** Return the graph-level reactive snapshot object (no identity fields). */
   function proxyForEntityKey(key: EntityKey) {
-    graph.materializeEntity(key);
-    return graph.getEntity(key);
+    graph.materializeEntity(key);    // ensure proxy overlay is current
+    return graph.getEntity(key);     // reactive snapshot for UI
   }
 
+  /** Walk result tree and replace any `node` objects with live proxies. */
   function materializeResult(root: any) {
     if (!root || typeof root !== "object") return;
     const stack: any[] = [root];
@@ -54,8 +56,15 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
     limit: number;
     pinned?: boolean;
     _lastLen?: number;
+    _syncedVersion?: number;
   };
 
+  /**
+   * Create and attach a connection view to a connection state.
+   * - edges: shallow-reactive array (we mutate indices/length)
+   * - pageInfo: shallow-reactive object (we update fields in place)
+   * - limit: how many edges the view wants to keep in sync (window)
+   */
   function createConnectionView(
     state: ConnectionState,
     opts: {
@@ -79,6 +88,7 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
       limit,
       pinned: !!opts.pinned,
       _lastLen: 0,
+      _syncedVersion: -1,
     };
 
     state.views.add(view as any);
@@ -93,22 +103,39 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
     view.limit = Math.max(0, limit | 0);
   }
 
+  /**
+   * Synchronize a whole connection (all attached views) to the canonical state.
+   * - Keeps view.edges length at most view.limit, pulls from state.list
+   * - edge objects stay plain; edge.node is a reactive proxy (materialized)
+   * - pageInfo fields are copied field-by-field
+   * - Skips work when BOTH the connection version and the view’s lastLen match
+   */
   function synchronizeConnectionViews(state: ConnectionState) {
     if (!state || !state.views || state.views.size === 0) return;
+
+    const sv = ((state as any)._version | 0);
 
     for (const rawView of state.views) {
       const view = rawView as ConnectionView;
 
+      // compute desired FIRST so we can skip only when limit/len ALSO match
+      const desired = Math.min(state.list.length, view.limit ?? state.list.length);
+
+      // :important: don’t skip if limit changed (desired differs from lastLen)
+      if (view._syncedVersion === sv && view._lastLen === desired) continue;
+
+      // ensure correct container shapes
       if (!isReactive(view.edges)) (view as any).edges = shallowReactive(view.edges || []);
       if (!isReactive(view.pageInfo)) view.pageInfo = shallowReactive(view.pageInfo || {});
 
-      const desired = Math.min(state.list.length, view.limit ?? state.list.length);
       const edgesArr = view.edges as any[];
 
+      // shrink if needed
       if (edgesArr.length > desired) edgesArr.splice(desired);
 
+      // fill/update items
       for (let i = 0; i < desired; i++) {
-        const entry = (state.list as any[])[i];
+        const entry = (state.list as any[])[i]; // { cursor, key, edge? }
         let edgeObj = edgesArr[i];
 
         if (!edgeObj || typeof edgeObj !== "object") {
@@ -118,22 +145,27 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
 
         if (edgeObj.cursor !== entry.cursor) edgeObj.cursor = entry.cursor;
 
+        // Copy custom edge metadata (except cursor/node)
         const meta = entry.edge;
         if (meta && typeof meta === "object") {
           for (const k of Object.keys(meta)) {
             if (k !== "cursor" && k !== "node") {
-              if (edgeObj[k] !== (meta as any)[k]) edgeObj[k] = (meta as any)[k];
+              const nv = (meta as any)[k];
+              if (edgeObj[k] !== nv) edgeObj[k] = nv;
             }
           }
+          // remove stale meta fields
           for (const k of Object.keys(edgeObj)) {
             if (k !== "cursor" && k !== "node" && !(k in meta)) delete edgeObj[k];
           }
         } else {
+          // no meta → keep only cursor/node
           for (const k of Object.keys(edgeObj)) {
             if (k !== "cursor" && k !== "node") delete edgeObj[k];
           }
         }
 
+        // Node proxy: update when key changes
         const oldKey =
           edgeObj.node &&
             edgeObj.node.__typename &&
@@ -146,17 +178,26 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
         }
       }
 
+      // record the synced window size for skip guard
       view._lastLen = desired;
 
+      // pageInfo: copy fields from state.pageInfo
       const srcPI = state.pageInfo as any;
       const dstPI = view.pageInfo as any;
       for (const k of Object.keys(srcPI)) {
-        if (dstPI[k] !== srcPI[k]) dstPI[k] = srcPI[k];
+        const nv = srcPI[k];
+        if (dstPI[k] !== nv) dstPI[k] = nv;
       }
+
+      // mark sync as up-to-date for this view
+      view._syncedVersion = sv;
     }
   }
 
-  function gcConnections(predicate?: (key: string, state: ConnectionState) => boolean) {
+  // Simple GC: drop connection states that have no attached views
+  function gcConnections(
+    predicate?: (key: string, state: ConnectionState) => boolean
+  ) {
     for (const [key, state] of (graph.connectionStore as Map<string, ConnectionState>).entries()) {
       if (!state.views || state.views.size === 0) {
         const ok = predicate ? predicate(key, state) : true;
@@ -165,6 +206,7 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
     }
   }
 
+  // For symmetry with prior code, but now it just clears connection views for all states
   function resetRuntime() {
     for (const [, state] of (graph.connectionStore as Map<string, ConnectionState>).entries()) {
       state.views.clear();
@@ -172,9 +214,10 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // Per-useQuery session
+  // Per-useQuery session: scan payload, attach per-instance views, size & sync
   // ────────────────────────────────────────────────────────────────────────────
 
+  /** Build a connection key that ignores cursor args (after/before/first/last). */
   function buildConnKey(parentKey: string, field: string, vars: Record<string, any>) {
     const filtered: Record<string, any> = { ...vars };
     delete filtered.after; delete filtered.before; delete filtered.first; delete filtered.last;
@@ -185,6 +228,11 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
     return `${parentKey}.${field}(${id})`;
   }
 
+  /**
+   * A scoped helper for a single `useQuery` instance.
+   * It owns a map of connKey → view, wires connections on a result payload,
+   * sizes per-instance windows, and syncs them.
+   */
   function createViewSession() {
     const viewByConnKey = new Map<string, ConnectionView>();
 
@@ -202,6 +250,7 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
           const val = (node as any)[field];
           if (!val || typeof val !== "object") continue;
 
+          // canonical connection: edges[] + pageInfo{}
           const edges = (val as any).edges;
           const pageInfo = (val as any).pageInfo;
           if (Array.isArray(edges) && pageInfo && typeof pageInfo === "object") {
@@ -209,6 +258,7 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
             const connKey = buildConnKey(parentKey, field, vars);
             const state = graph.ensureConnection(connKey);
 
+            // create/reuse a per-session view
             let view = viewByConnKey.get(connKey);
             if (!view) {
               view = createConnectionView(state, {
@@ -221,9 +271,11 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
               viewByConnKey.set(connKey, view);
             }
 
+            // attach reactive containers back to payload
             (val as any).edges = view.edges;
             (val as any).pageInfo = view.pageInfo;
 
+            // size per instance: baseline → payload edges; cursor → union
             const hasAfter = vars.after != null;
             const hasBefore = vars.before != null;
             if (!hasAfter && !hasBefore) {
@@ -232,9 +284,11 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
               setViewLimit(view, state.list.length);
             }
 
+            // sync now so UI renders immediately
             synchronizeConnectionViews(state);
           }
 
+          // traverse deeper
           if (Array.isArray(val)) {
             for (const it of val) if (it && typeof it === "object") stack.push({ node: it, parentType: t });
           } else {
@@ -252,17 +306,21 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
   }
 
   return {
+    // Entity helpers
     proxyForEntityKey,
     materializeResult,
 
+    // Connection view lifecycle
     createConnectionView,
     removeConnectionView,
     setViewLimit,
     synchronizeConnectionViews,
 
+    // GC / runtime
     gcConnections,
     resetRuntime,
 
+    // Per-useQuery session
     createViewSession,
   };
 }

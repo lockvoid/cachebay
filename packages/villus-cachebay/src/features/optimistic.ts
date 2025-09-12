@@ -142,7 +142,7 @@ export function createModifyOptimistic(deps: Deps) {
     captureEntityBase(key);
     if (!graph.entityStore.has(key)) return;
 
-    // Optional watcher bump via identity-only replace (so any entity watchers see a change)
+    // Optional bump: identity-only replace (so entity watchers see a change)
     const idx = key.indexOf(':');
     const typename = idx === -1 ? key : key.slice(0, idx);
     const id = idx === -1 ? null : key.slice(idx + 1);
@@ -175,21 +175,32 @@ export function createModifyOptimistic(deps: Deps) {
     }
   }
 
+  function bumpVersion(state: any) {
+    state._version = ((state._version | 0) + 1);
+  }
+
   function applyConnOp(op: ConnOp) {
     const state = graph.ensureConnection(op.key);
     captureConnBase(op.key);
 
     if (op.type === "connAdd") {
       upsertEntry(state, op.entry, op.position);
+      bumpVersion(state);
     } else if (op.type === "connRemove") {
       const idx = state.list.findIndex((e: any) => e.key === op.entryKey);
       if (idx >= 0) {
         state.list.splice(idx, 1);
         state.keySet.delete(op.entryKey);
+        bumpVersion(state);
       }
     } else if (op.type === "connPageInfo") {
       const pi = state.pageInfo as any;
-      for (const k of Object.keys(op.patch)) pi[k] = op.patch[k];
+      let changed = false;
+      for (const k of Object.keys(op.patch)) {
+        const nv = op.patch[k];
+        if (pi[k] !== nv) { pi[k] = nv; changed = true; }
+      }
+      if (changed) bumpVersion(state);
     }
 
     // Reveal all items in all attached views after optimistic ops
@@ -230,7 +241,8 @@ export function createModifyOptimistic(deps: Deps) {
       st.keySet = new Set<string>(st.list.map((e: any) => e.key));
       st.initialized = !!snap.initialized;
 
-      // 🔑 ensure views will be synced even if no ops are re-applied
+      // bump version so views will sync even if no ops are re-applied
+      bumpVersion(st);
       noteTouched(st);
     }
   }
@@ -365,11 +377,10 @@ export function createModifyOptimistic(deps: Deps) {
         if (idx >= 0) revertedCommitted.add(layer.id);
 
         // Rebuild: base → committed non-reverted → pending
-        // Start a fresh "touched set" so resets get flushed
-        touchedConnections.clear();
-        resetToBase();           // <- will noteTouched() every reset connection
-        reapplyLayers();         // <- may add more touches
-        flushTouched();          // <- sync once for all touched
+        touchedConnections.clear();   // collect touches from reset/reapply
+        resetToBase();
+        reapplyLayers();
+        flushTouched();
 
         maybeCleanupSnapshots();
       },
