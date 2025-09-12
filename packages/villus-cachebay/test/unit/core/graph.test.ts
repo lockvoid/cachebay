@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { isReactive } from 'vue';
 import { createGraph } from '@/src/core/graph';
 import { tick } from '@/test/helpers';
+import { getOperationKey } from '@/src/core/utils';
 
 describe('createGraph - Unit Tests (refactor)', () => {
   let graph: ReturnType<typeof createGraph>;
@@ -362,6 +363,93 @@ describe('createGraph - Unit Tests (refactor)', () => {
 
       graph.unregisterWatcher(w1);
       graph.unregisterWatcher(w2);
+    });
+  });
+
+  describe('lookupOperation', () => {
+    const DUMMY_QUERY = 'query Test { __typename }';
+
+    function makeGraph() {
+      return createGraph({
+        writePolicy: 'replace',
+        reactiveMode: 'deep',
+        interfaces: {},
+        keys: {},
+      });
+    }
+
+    it('returns a base-key hit for an exact operation signature', () => {
+      const graph = makeGraph();
+
+      const op = { type: 'query', query: DUMMY_QUERY, variables: { a: 1, b: 2 } };
+      const key = getOperationKey(op);
+
+      graph.putOperation(key, { data: { ok: true }, variables: op.variables });
+
+      const hit = (graph as any).lookupOperation(op);
+      expect(hit).toBeTruthy();
+      expect(hit!.key).toBe(key);
+      expect(hit!.entry.data).toEqual({ ok: true });
+      expect(hit!.entry.variables).toEqual({ a: 1, b: 2 });
+    });
+
+    it('ignores undefined values in variables when computing the lookup key', () => {
+      const graph = makeGraph();
+
+      // Seed using cleaned variables { a: 1 }
+      const seeded = { type: 'query', query: DUMMY_QUERY, variables: { a: 1 } };
+      const seededKey = getOperationKey(seeded);
+      graph.putOperation(seededKey, { data: { hit: true }, variables: seeded.variables });
+
+      // Lookup with { a: 1, b: undefined } should still hit the same entry
+      const lookupOp = { type: 'query', query: DUMMY_QUERY, variables: { a: 1, b: undefined as any } };
+      const hit = (graph as any).lookupOperation(lookupOp);
+
+      expect(hit).toBeTruthy();
+      expect(hit!.key).toBe(seededKey);
+      expect(hit!.entry.data).toEqual({ hit: true });
+      expect(hit!.entry.variables).toEqual({ a: 1 });
+    });
+
+    it('returns null when there is no matching cache entry', () => {
+      const graph = makeGraph();
+
+      const missOp = { type: 'query', query: DUMMY_QUERY, variables: { z: 9 } };
+      const hit = (graph as any).lookupOperation(missOp);
+
+      expect(hit).toBeNull();
+    });
+
+    it('does not mutate the operationStore size during lookup', () => {
+      const graph = makeGraph();
+
+      const op = { type: 'query', query: DUMMY_QUERY, variables: { a: 1 } };
+      const key = getOperationKey(op);
+      graph.putOperation(key, { data: { ok: true }, variables: op.variables });
+
+      const sizeBefore = graph.operationStore.size;
+      const hit = (graph as any).lookupOperation(op);
+      const sizeAfter = graph.operationStore.size;
+
+      expect(hit).toBeTruthy();
+      expect(sizeAfter).toBe(sizeBefore);
+    });
+
+    it('handles empty/undefined variables consistently', () => {
+      const graph = makeGraph();
+
+      // Seed with no variables
+      const seeded = { type: 'query', query: DUMMY_QUERY, variables: {} as Record<string, any> };
+      const seededKey = getOperationKey(seeded);
+      graph.putOperation(seededKey, { data: { ok: 'empty' }, variables: {} });
+
+      // Lookup with undefined variables
+      const lookupOp = { type: 'query', query: DUMMY_QUERY, variables: undefined as any };
+      const hit = (graph as any).lookupOperation(lookupOp);
+
+      expect(hit).toBeTruthy();
+      expect(hit!.key).toBe(seededKey);
+      expect(hit!.entry.data).toEqual({ ok: 'empty' });
     });
   });
 });

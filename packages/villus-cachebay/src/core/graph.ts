@@ -6,7 +6,7 @@ import {
 } from "vue";
 
 import type { EntityKey, ConnectionState } from "./types";
-import { parseEntityKey, unwrapShallow, getEntityParentKey } from "./utils";
+import { parseEntityKey, unwrapShallow, getEntityParentKey, getOperationKey, cleanVars } from "./utils";
 import { TYPENAME_FIELD, OPERATION_CACHE_LIMIT } from "./constants";
 
 /**
@@ -342,6 +342,23 @@ export const createGraph = (config: GraphConfig) => {
     return operationStore.get(opKey);
   };
 
+  function lookupOperation(operation: { type: string; query: any; variables?: Record<string, any>; context?: any }) {
+    const baseKey = getOperationKey(operation as any);
+    const byBase = operationStore.get(baseKey);
+    if (byBase) return { key: baseKey, entry: byBase };
+
+    // try cleaned vars key (strip undefined)
+    const cleaned = cleanVars(operation.variables);
+    const sameShape =
+      operation.variables &&
+      Object.keys(operation.variables!).every(k => operation.variables![k] !== undefined);
+    if (sameShape) return null;
+
+    const altKey = getOperationKey({ ...operation, variables: cleaned } as any);
+    const byAlt = operationStore.get(altKey);
+    return byAlt ? { key: altKey, entry: byAlt } : null;
+  }
+
   // ────────────────────────────────────────────────────────────────────────────
   // Fast entity queries (using typeIndex)
   // ────────────────────────────────────────────────────────────────────────────
@@ -418,6 +435,7 @@ export const createGraph = (config: GraphConfig) => {
     // operation cache
     getOperation,
     putOperation,
+    lookupOperation,
 
     // fast queries
     getEntityKeys,

@@ -14,18 +14,18 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
   const { graph } = dependencies;
 
   // ────────────────────────────────────────────────────────────────────────────
-  // Entity: just return the graph-level reactive object (proxy/snapshot)
+  // Entity helpers
   // ────────────────────────────────────────────────────────────────────────────
+
+  /** Return the graph-level reactive snapshot object (no identity fields). */
   function proxyForEntityKey(key: EntityKey) {
-    // ensure proxy is up to date
-    graph.materializeEntity(key);
-    // return reactive snapshot object for UI (no identity in it)
-    return graph.getEntity(key);
+    graph.materializeEntity(key);    // ensure proxy is up to date
+    return graph.getEntity(key);     // reactive snapshot for UI
   }
 
   /**
-   * Walk a result tree and replace any "node" objects (that look like entities)
-   * with live proxies from the graph (materialized).
+   * Walk a result tree and replace any "node" objects with live entity proxies.
+   * Useful when you want to materialize ad-hoc results.
    */
   function materializeResult(root: any) {
     if (!root || typeof root !== "object") return;
@@ -35,11 +35,8 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
       if (!cur || typeof cur !== "object") continue;
 
       if ("node" in cur && cur.node && typeof cur.node === "object") {
-        const key = graph.identify(cur.node);
-        if (key) {
-          // Use the proxy with identity (__typename/id) for node
-          cur.node = graph.materializeEntity(key);
-        }
+        const key = graph.identify?.(cur.node);
+        if (key) cur.node = graph.materializeEntity(key);
       }
 
       for (const k of Object.keys(cur)) {
@@ -169,9 +166,7 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
             : null;
 
         if (oldKey !== entry.key) {
-          // use identity-bearing proxy for nodes
-          const nodeProxy = graph.materializeEntity(entry.key);
-          edgeObj.node = nodeProxy;
+          edgeObj.node = graph.materializeEntity(entry.key);
         }
       }
 
@@ -205,6 +200,98 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
     }
   }
 
+  // ────────────────────────────────────────────────────────────────────────────
+  // Per-useQuery session: scan payload, attach per-instance views, size & sync
+  // ────────────────────────────────────────────────────────────────────────────
+
+  /** Build a connection key that ignores cursor args (after/before/first/last). */
+  function buildConnKey(parentKey: string, field: string, vars: Record<string, any>) {
+    const filtered: Record<string, any> = { ...vars };
+    delete filtered.after; delete filtered.before; delete filtered.first; delete filtered.last;
+    const id = Object.keys(filtered)
+      .sort()
+      .map((k) => `${k}:${JSON.stringify(filtered[k])}`)
+      .join("|");
+    return `${parentKey}.${field}(${id})`;
+  }
+
+  /**
+   * A scoped helper for a single `useQuery` instance.
+   * It owns a map of connKey → view, wires connections on a result payload,
+   * sizes per-instance windows, and syncs them.
+   */
+  function createViewSession() {
+    const viewByConnKey = new Map<string, ConnectionView>();
+
+    function wireConnections(root: any, vars: Record<string, any>) {
+      if (!root || typeof root !== "object") return;
+
+      const stack: Array<{ node: any; parentType: string | null }> = [{ node: root, parentType: "Query" }];
+      while (stack.length) {
+        const { node, parentType } = stack.pop()!;
+        if (!node || typeof node !== "object") continue;
+
+        const t = (node as any).__typename ?? parentType;
+
+        for (const field of Object.keys(node)) {
+          const val = (node as any)[field];
+          if (!val || typeof val !== "object") continue;
+
+          // canonical connection: edges[] + pageInfo{}
+          const edges = (val as any).edges;
+          const pageInfo = (val as any).pageInfo;
+          if (Array.isArray(edges) && pageInfo && typeof pageInfo === "object") {
+            const parentKey = graph.getEntityParentKey(t!, graph.identify?.(node)) ?? "Query";
+            const connKey = buildConnKey(parentKey, field, vars);
+            const state = graph.ensureConnection(connKey);
+
+            // create/reuse a per-session view
+            let view = viewByConnKey.get(connKey);
+            if (!view) {
+              view = createConnectionView(state, {
+                edgesKey: "edges",
+                pageInfoKey: "pageInfo",
+                root: val,
+                limit: 0,
+                pinned: true,
+              });
+              viewByConnKey.set(connKey, view);
+            }
+
+            // attach reactive containers back to payload
+            (val as any).edges = view.edges;
+            (val as any).pageInfo = view.pageInfo;
+
+            // size per instance: baseline → payload edges; cursor → union
+            const hasAfter = vars.after != null;
+            const hasBefore = vars.before != null;
+            if (!hasAfter && !hasBefore) {
+              setViewLimit(view, edges.length);
+            } else {
+              setViewLimit(view, state.list.length);
+            }
+
+            // sync now so UI renders immediately
+            syncConnection(state);
+          }
+
+          // traverse deeper
+          if (Array.isArray(val)) {
+            for (const it of val) if (it && typeof it === "object") stack.push({ node: it, parentType: t });
+          } else {
+            stack.push({ node: val, parentType: t });
+          }
+        }
+      }
+    }
+
+    function destroy() {
+      viewByConnKey.clear();
+    }
+
+    return { wireConnections, destroy };
+  }
+
   return {
     // Entity helpers
     proxyForEntityKey,
@@ -219,5 +306,8 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
     // GC / runtime
     gcConnections,
     resetRuntime,
+
+    // Per-useQuery session
+    createViewSession,
   };
 }
