@@ -10,9 +10,9 @@ export type CacheAPI = {
   identify: (obj: any) => string | null;
 
   // graph watcher API (NEW)
-  registerWatcher: (run: () => void) => number;
-  unregisterWatcher: (id: number) => void;
-  trackEntityDependency: (watcherId: number, entityKey: string) => void;
+  registerEntityWatcher: (run: () => void) => number;
+  unregisterEntityWatcher: (id: number) => void;
+  trackEntity: (watcherId: number, entityKey: string) => void;
 
   // optionally: other Core API your app exposes via provideCachebay
   modifyOptimistic?: (fn: (draft: any) => void) => void;

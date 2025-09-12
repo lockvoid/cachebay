@@ -109,13 +109,13 @@ describe('useFragments with graph watchers', () => {
       }),
 
       // Key-level watcher API
-      registerWatcher: vi.fn((run: () => void) => {
+      registerEntityWatcher: vi.fn((run: () => void) => {
         const wid = nextWid++;
         watchers.set(wid, { run });
         return wid;
       }),
-      unregisterWatcher: vi.fn((wid: number) => watchers.delete(wid)),
-      trackEntityDependency: vi.fn((_wid: number, _key: string) => { /* no reverse index in this mock */ }),
+      unregisterEntityWatcher: vi.fn((wid: number) => watchers.delete(wid)),
+      trackEntity: vi.fn((_wid: number, _key: string) => { /* no reverse index in this mock */ }),
 
       // Type-level watcher API (NEW)
       registerTypeWatcher: vi.fn((typename: string, run: () => void) => {

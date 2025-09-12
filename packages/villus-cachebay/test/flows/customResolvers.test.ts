@@ -8,10 +8,10 @@ describe('Resolvers', () => {
   it('transforms nested object to string through resolver', async () => {
     const cache = createCache({
       addTypename: true,
-
       resolvers: {
         User: {
           fullName({ value, set }) {
+            // value is an object { firstName, lastName } from the server payload
             set(`${value.firstName} ${value.lastName}`);
           },
         },
@@ -20,14 +20,13 @@ describe('Resolvers', () => {
 
     const routes: Route[] = [{
       when: () => true,
-
       respond: () => ({
         data: {
+          __typename: 'Query',
           user: {
             __typename: 'User',
             id: '42',
             email: 'john@example.com',
-
             fullName: {
               firstName: 'John',
               lastName: 'Doe',
@@ -38,21 +37,17 @@ describe('Resolvers', () => {
     }];
 
     const Component = defineComponent({
+      name: 'UserFullName',
       setup() {
         const { useQuery } = require('villus');
-
-        const { data, isFetching } = useQuery({ query: '{ user { id fullName email } }' });
-
-        return () => {
-          if (isFetching.value) {
-            return h('div', 'Loading...');
-          }
-
-          return h('div', {}, [
-            h('div', { class: 'fullname' }, data.value.user.fullName),
-            h('div', { class: 'email' }, data.value.user.email),
-          ]);
-        };
+        const { data, isFetching } = useQuery({ query: '{ user { __typename id fullName email } }' });
+        return () =>
+          isFetching.value
+            ? h('div', 'Loading...')
+            : h('div', {}, [
+              h('div', { class: 'fullname' }, data.value.user.fullName),
+              h('div', { class: 'email' }, data.value.user.email),
+            ]);
       },
     });
 
@@ -62,13 +57,13 @@ describe('Resolvers', () => {
     expect(wrapper.find('.fullname').text()).toBe('John Doe');
   });
 
-  it('transforms array of objects to array of strings through resolver', async () => {
+  it('transforms array of objects to a string through resolver', async () => {
     const cache = createCache({
       addTypename: true,
-
       resolvers: {
         Post: {
           tags({ value, set }) {
+            // value is an array of { id, name }
             set(value.map((tag: any) => tag.name).join(', '));
           },
         },
@@ -77,27 +72,26 @@ describe('Resolvers', () => {
 
     const routes: Route[] = [{
       when: () => true,
-
       respond: () => ({
         data: {
+          __typename: 'Query',
           posts: [
             {
               __typename: 'Post',
               id: '1',
               title: 'Backend',
               tags: [
-                { id: 1, name: 'Rails' },
-                { id: 2, name: 'Laravel' },
+                { __typename: 'Tag', id: 1, name: 'Rails' },
+                { __typename: 'Tag', id: 2, name: 'Laravel' },
               ],
             },
-
             {
               __typename: 'Post',
               id: '2',
               title: 'Frontend',
               tags: [
-                { id: 3, name: 'Vue' },
-                { id: 4, name: 'React' },
+                { __typename: 'Tag', id: 3, name: 'Vue' },
+                { __typename: 'Tag', id: 4, name: 'React' },
               ],
             },
           ],
@@ -106,48 +100,44 @@ describe('Resolvers', () => {
     }];
 
     const Component = defineComponent({
+      name: 'PostTags',
       setup() {
         const { useQuery } = require('villus');
-
         const { data, isFetching } = useQuery({ query: '{ posts { __typename id title tags } }' });
-
-        return () => {
-          if (isFetching.value) {
-            return h('div', 'Loading...');
-          }
-
-          return h('div', {}, data.value.posts.map((post: any) =>
-            h('div', { id: `post-${post.id}`, key: post.id }, [
-              h('div', { class: 'title' }, post.title),
-              h('div', { class: 'tags' }, post.tags),
-            ]),
-          ));
-        };
+        return () =>
+          isFetching.value
+            ? h('div', 'Loading...')
+            : h('div', {},
+              data.value.posts.map((post: any) =>
+                h('div', { id: `post-${post.id}`, key: post.id }, [
+                  h('div', { class: 'title' }, post.title),
+                  h('div', { class: 'tags' }, post.tags),
+                ]),
+              ),
+            );
       },
     });
 
     const { wrapper } = await mountWithClient(Component, routes, cache);
     await tick(2);
 
-    expect(wrapper.find('#post-1').find('.title').text()).toBe('Backend');
-    expect(wrapper.find('#post-1').find('.tags').text()).toBe('Rails, Laravel');
+    expect(wrapper.find('#post-1 .title').text()).toBe('Backend');
+    expect(wrapper.find('#post-1 .tags').text()).toBe('Rails, Laravel');
 
-    expect(wrapper.find('#post-2').find('.title').text()).toBe('Frontend');
-    expect(wrapper.find('#post-2').find('.tags').text()).toBe('Vue, React');
+    expect(wrapper.find('#post-2 .title').text()).toBe('Frontend');
+    expect(wrapper.find('#post-2 .tags').text()).toBe('Vue, React');
   });
 
-  it('applies multiple resolvers to same entity', async () => {
+  it('applies multiple resolvers to the same entity (price + categories)', async () => {
     const cache = createCache({
       addTypename: true,
-
       resolvers: {
         Product: {
           price({ value, set }) {
-            set(`$${value.toFixed(2)}`);
+            set(`$${Number(value).toFixed(2)}`);
           },
-
           categories({ value, set }) {
-            set(value.map((category: any) => category.name).join(' > '));
+            set(value.map((c: any) => c.name).join(' > '));
           },
         },
       },
@@ -155,19 +145,18 @@ describe('Resolvers', () => {
 
     const routes: Route[] = [{
       when: () => true,
-
       respond: () => ({
         data: {
+          __typename: 'Query',
           product: {
             __typename: 'Product',
             id: '1',
             name: 'Laptop',
             price: 1299.99,
-
             categories: [
-              { id: 1, name: 'Electronics' },
-              { id: 2, name: 'Computers' },
-              { id: 3, name: 'Laptops' },
+              { __typename: 'Category', id: 1, name: 'Electronics' },
+              { __typename: 'Category', id: 2, name: 'Computers' },
+              { __typename: 'Category', id: 3, name: 'Laptops' },
             ],
           },
         },
@@ -175,22 +164,19 @@ describe('Resolvers', () => {
     }];
 
     const Component = defineComponent({
+      name: 'ProductView',
       setup() {
         const { useQuery } = require('villus');
-
-        const { data, isFetching } = useQuery({ query: '{ product { __typename id name displayPrice categories } }' });
-
-        return () => {
-          if (isFetching.value) {
-            return h('div', {}, 'Loading...');
-          }
-
-          return h('div', {}, [
-            h('div', { class: 'name' }, data.value.product.name),
-            h('div', { class: 'price' }, data.value.product.price),
-            h('div', { class: 'categories' }, data.value.product.categories),
-          ]);
-        }
+        // Note: select "price" (resolved), not "displayPrice"
+        const { data, isFetching } = useQuery({ query: '{ product { __typename id name price categories } }' });
+        return () =>
+          isFetching.value
+            ? h('div', {}, 'Loading...')
+            : h('div', {}, [
+              h('div', { class: 'name' }, data.value.product.name),
+              h('div', { class: 'price' }, data.value.product.price),
+              h('div', { class: 'categories' }, data.value.product.categories),
+            ]);
       },
     });
 

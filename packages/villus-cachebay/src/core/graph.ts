@@ -104,18 +104,18 @@ export const createGraph = (config: GraphConfig) => {
     }
   };
 
-  const registerWatcher = (run: () => void): WatcherId => {
+  const registerEntityWatcher = (run: () => void): WatcherId => {
     const id = nextWatcherId++;
     watchers.set(id, { seen: new Map(), run });
     return id;
   };
 
-  const unregisterWatcher = (id: WatcherId) => {
+  const unregisterEntityWatcher = (id: WatcherId) => {
     watchers.delete(id);
     for (const set of depIndex.values()) set.delete(id);
   };
 
-  const trackEntityDependency = (watcherId: WatcherId, key: EntityKey) => {
+  const trackEntity = (watcherId: WatcherId, key: EntityKey) => {
     let s = depIndex.get(key);
     if (!s) depIndex.set(key, (s = new Set()));
     s.add(watcherId);
@@ -518,9 +518,9 @@ export const createGraph = (config: GraphConfig) => {
     getEntities,
 
     // watchers (granular)
-    registerWatcher,
-    unregisterWatcher,
-    trackEntityDependency,
+    registerEntityWatcher,
+    unregisterEntityWatcher,
+    trackEntity,
 
     // type watchers (wildcards)
     registerTypeWatcher,      // NEW

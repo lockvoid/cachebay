@@ -348,11 +348,11 @@ describe('createGraph - Unit Tests (refactor)', () => {
       let calls1 = 0;
       let calls2 = 0;
 
-      const w1 = graph.registerWatcher(() => { calls1++; });
-      const w2 = graph.registerWatcher(() => { calls2++; });
+      const w1 = graph.registerEntityWatcher(() => { calls1++; });
+      const w2 = graph.registerEntityWatcher(() => { calls2++; });
 
-      graph.trackEntityDependency(w1, 'User:1');
-      graph.trackEntityDependency(w2, 'User:2');
+      graph.trackEntity(w1, 'User:1');
+      graph.trackEntity(w2, 'User:2');
 
       graph.putEntity({ __typename: 'User', id: '1', name: 'A1' }, 'merge');
 
@@ -361,8 +361,8 @@ describe('createGraph - Unit Tests (refactor)', () => {
       expect(calls1).toBe(1);
       expect(calls2).toBe(0);
 
-      graph.unregisterWatcher(w1);
-      graph.unregisterWatcher(w2);
+      graph.unregisterEntityWatcher(w1);
+      graph.unregisterEntityWatcher(w2);
     });
   });
 

@@ -162,9 +162,9 @@ export function provideCachebay(app: App, instance: any) {
     listEntityKeys: (instance as any).listEntityKeys,
     listEntities: (instance as any).listEntities,
     inspect: (instance as any).inspect,
-    registerWatcher: instance.registerWatcher,
-    unregisterWatcher: instance.unregisterWatcher,
-    trackEntityDependency: instance.trackEntityDependency,
+    registerEntityWatcher: instance.registerEntityWatcher,
+    unregisterEntityWatcher: instance.unregisterEntityWatcher,
+    trackEntity: instance.trackEntity,
     registerTypeWatcher: instance.registerTypeWatcher,
     unregisterTypeWatcher: instance.unregisterTypeWatcher,
   };

@@ -71,15 +71,15 @@ describe('useFragment with graph watchers', () => {
         }
         return { ...snap };
       }),
-      registerWatcher: vi.fn((run: () => void) => {
+      registerEntityWatcher: vi.fn((run: () => void) => {
         const wid = nextWid++;
         watchers.set(wid, { run });
         return wid;
       }),
-      unregisterWatcher: vi.fn((wid: number) => {
+      unregisterEntityWatcher: vi.fn((wid: number) => {
         watchers.delete(wid);
       }),
-      trackEntityDependency: vi.fn((_wid: number, _key: string) => { }),
+      trackEntity: vi.fn((_wid: number, _key: string) => { }),
     };
 
     (Vue as any).__setInjectedApi(api);

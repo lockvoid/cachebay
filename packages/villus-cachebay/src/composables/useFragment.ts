@@ -26,7 +26,7 @@ export function useFragment<T = any>(
     | Ref<string | { __typename: string; id?: any } | null | undefined>,
   opts: UseFragmentOpts = {},
 ): Ref<T | undefined> | T | undefined {
-  const { readFragment, registerWatcher, unregisterWatcher, trackEntityDependency } = useCache();
+  const { readFragment, registerEntityWatcher, unregisterEntityWatcher, trackEntity } = useCache();
   const materialized = opts.materialized !== false;
   const mode: UseFragmentMode = opts.mode ?? "auto";
   const dynamic = mode === "dynamic" || (mode === "auto" && isRef(source));
@@ -58,13 +58,13 @@ export function useFragment<T = any>(
 
         if (!materialized) {
           if (wid == null) {
-            wid = registerWatcher(() => {
+            wid = registerEntityWatcher(() => {
               if (!trackedKey) return;
               const snap = val ? (readFragment(val, { materialized: false }) as any as T) : undefined;
               out.value = snap ? structuredClone(snap) : snap;
             });
           }
-          if (trackedKey) trackEntityDependency(wid, trackedKey);
+          if (trackedKey) trackEntity(wid, trackedKey);
         }
 
         if (materialized) {
@@ -82,7 +82,7 @@ export function useFragment<T = any>(
   if (getCurrentScope()) {
     onScopeDispose(() => {
       stop();
-      if (wid != null) unregisterWatcher(wid);
+      if (wid != null) unregisterEntityWatcher(wid);
     });
   }
 

@@ -1,47 +1,12 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { defineComponent, h, computed, watch } from 'vue';
-import { createFetchMock, type Route, tick, delay } from '@/test/helpers';
-import { mountWithClient } from '@/test/helpers/integration';
-import { createCache } from '@/src';
+import { mountWithClient, testQueries, mockResponses, cacheConfigs, cleanVars } from '@/test/helpers/integration';
+import { type Route, tick, delay } from '@/test/helpers';
 
 /* -----------------------------------------------------------------------------
- * Shared Relay query & cache factory
+ * Harness: records non-empty renders and error events
  * -------------------------------------------------------------------------- */
 
-const COLORS = /* GraphQL */ `
-  query Colors($first:Int,$after:String) {
-    colors(first:$first, after:$after) {
-      edges { cursor node { __typename id name } }
-      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
-    }
-  }
-`;
-
-function makeCache() {
-  return createCache({
-    addTypename: true,
-    resolvers: ({ relay }: any) => ({ Query: { colors: relay() } }),
-    keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
-  });
-}
-
-/* -----------------------------------------------------------------------------
- * Small helpers
- * -------------------------------------------------------------------------- */
-
-const liText = (w: any) => w.findAll('li').map((li: any) => li.text());
-
-/** Clean nullish keys for stable op keys */
-function cleanVars(v: Record<string, any>) {
-  const out: Record<string, any> = {};
-  for (const k of Object.keys(v)) {
-    const val = v[k];
-    if (val !== undefined && val !== null) out[k] = val;
-  }
-  return out;
-}
-
-/** Harness that records non-empty renders and error events; never records "empty" for undefined payloads */
 function MakeHarness(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-network') {
   return defineComponent({
     props: {
@@ -55,16 +20,16 @@ function MakeHarness(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-ne
     setup(props) {
       const { useQuery } = require('villus');
       const vars = computed(() => cleanVars({ first: props.first, after: props.after }));
-      const { data, error } = useQuery({ query: COLORS, variables: vars, cachePolicy });
+      const { data, error } = useQuery({ query: testQueries.POSTS, variables: vars, cachePolicy });
 
-      // Record only meaningful payloads: edges with items, or explicit empty edges array.
+      // Record meaningful payloads: edges with items, or explicit empty edges array
       watch(
         () => data.value,
         (v) => {
-          const edges = v?.colors?.edges;
+          const edges = v?.posts?.edges;
           if (Array.isArray(edges) && edges.length > 0) {
-            (props.renders as any[]).push(edges.map((e: any) => e?.node?.name || ''));
-          } else if (v && v.colors && Array.isArray(v.colors.edges) && v.colors.edges.length === 0) {
+            (props.renders as any[]).push(edges.map((e: any) => e?.node?.title || ''));
+          } else if (v && v.posts && Array.isArray(v.posts.edges) && v.posts.edges.length === 0) {
             (props.empties as any[]).push('empty');
           }
         },
@@ -79,7 +44,7 @@ function MakeHarness(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-ne
       );
 
       return () =>
-        h('ul', {}, (data?.value?.colors?.edges ?? []).map((e: any) => h('li', {}, e?.node?.name || '')));
+        h('ul', {}, (data?.value?.posts?.edges ?? []).map((e: any) => h('li', {}, e?.node?.title || '')));
     },
   });
 }
@@ -88,11 +53,10 @@ function MakeHarness(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-ne
  * Tests
  * -------------------------------------------------------------------------- */
 
-describe('Integration • Errors', () => {
+describe('Integration • Errors (Posts connection)', () => {
   const mocks: Array<{ waitAll: () => Promise<void>, restore: () => void }> = [];
 
   afterEach(async () => {
-    // Drain timers for all mocks, then restore fetch to avoid “result was not set” noise.
     while (mocks.length) {
       const m = mocks.pop()!;
       await m.waitAll?.();
@@ -108,7 +72,8 @@ describe('Integration • Errors', () => {
         respond: () => ({ error: new Error('Boom') }),
       },
     ];
-    const cache = makeCache();
+
+    const cache = cacheConfigs.withRelay();
 
     const renders: string[][] = [];
     const errors: string[] = [];
@@ -144,19 +109,10 @@ describe('Integration • Errors', () => {
       {
         when: ({ variables }) => variables.first === 3 && !variables.after,
         delay: 5,
-        respond: () => ({
-          data: {
-            __typename: 'Query',
-            colors: {
-              __typename: 'ColorConnection',
-              edges: [{ cursor: 'n', node: { __typename: 'Color', id: 9, name: 'NEW' } }],
-              pageInfo: {},
-            },
-          },
-        }),
+        respond: () => mockResponses.posts(['NEW']),
       },
     ];
-    const cache = makeCache();
+    const cache = cacheConfigs.withRelay();
 
     const renders: string[][] = [];
     const errors: string[] = [];
@@ -175,7 +131,7 @@ describe('Integration • Errors', () => {
     );
     mocks.push(fx);
 
-    // Newer leader
+    // Newer leader (first=3)
     await wrapper.setProps({ first: 3 }); await tick();
 
     await delay(10); await tick();
@@ -190,22 +146,12 @@ describe('Integration • Errors', () => {
   });
 
   it('Cursor-page error is dropped (no replay); latest success remains', async () => {
-    // Core drops older cursor-page errors.
     const routes: Route[] = [
       // Newer (no cursor) fast success
       {
         when: ({ variables }) => !variables.after && variables.first === 2,
         delay: 5,
-        respond: () => ({
-          data: {
-            __typename: 'Query',
-            colors: {
-              __typename: 'ColorConnection',
-              edges: [{ cursor: 'p1', node: { __typename: 'Color', id: 1, name: 'NEW' } }],
-              pageInfo: {},
-            },
-          },
-        }),
+        respond: () => mockResponses.posts(['NEW']),
       },
       // Older cursor op (after='p1') slow error -> DROPPED
       {
@@ -215,7 +161,7 @@ describe('Integration • Errors', () => {
       },
     ];
 
-    const cache = makeCache();
+    const cache = cacheConfigs.withRelay();
 
     const renders: string[][] = [];
     const errors: string[] = [];
@@ -258,16 +204,7 @@ describe('Integration • Errors', () => {
       {
         when: ({ variables }) => variables.first === 2 && !variables.after,
         delay: 50,
-        respond: () => ({
-          data: {
-            __typename: 'Query',
-            colors: {
-              __typename: 'ColorConnection',
-              edges: [{ cursor: 'o1', node: { __typename: 'Color', id: 1, name: 'O1' } }],
-              pageInfo: {},
-            },
-          },
-        }),
+        respond: () => mockResponses.posts(['O1']),
       },
       // O2: first=3 (fast error)
       { when: ({ variables }) => variables.first === 3 && !variables.after, delay: 5, respond: () => ({ error: new Error('O2 err') }) },
@@ -275,20 +212,11 @@ describe('Integration • Errors', () => {
       {
         when: ({ variables }) => variables.first === 4 && !variables.after,
         delay: 20,
-        respond: () => ({
-          data: {
-            __typename: 'Query',
-            colors: {
-              __typename: 'ColorConnection',
-              edges: [{ cursor: 'o3', node: { __typename: 'Color', id: 3, name: 'O3' } }],
-              pageInfo: {},
-            },
-          },
-        }),
+        respond: () => mockResponses.posts(['O3']),
       },
     ];
 
-    const cache = makeCache();
+    const cache = cacheConfigs.withRelay();
 
     const renders: string[][] = [];
     const errors: string[] = [];

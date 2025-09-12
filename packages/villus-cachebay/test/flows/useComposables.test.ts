@@ -141,7 +141,6 @@ describe('Integration • useFragment / useFragments / useCache', () => {
     (cache as any).writeFragment({ __typename: 'Post', id: '1', title: 'Updated' }).commit?.();
     await tick(2);
 
-    console.log(cache.__internals.graph.entityStore)
     // now snapshots rebuild and reflect latest for tracked members
     expect((wrapper.vm as any).list?.[0]?.title).toBe('Updated');
 

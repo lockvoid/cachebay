@@ -5,7 +5,7 @@ export function useFragments<T = any>(
   pattern: string | string[],
   opts: { materialized?: boolean } = {}
 ) {
-  const { readFragments, registerWatcher, unregisterWatcher, trackEntityDependency,
+  const { readFragments, registerEntityWatcher, unregisterEntityWatcher, trackEntity,
     registerTypeWatcher, unregisterTypeWatcher } = useCache() as any;
 
   const materialized = opts.materialized !== false;
@@ -37,9 +37,9 @@ export function useFragments<T = any>(
 
     // (re)register key watcher for entity content changes
     if (wid == null) {
-      wid = registerWatcher(() => compute());
+      wid = registerEntityWatcher(() => compute());
     }
-    keys.forEach((k) => trackEntityDependency(wid!, k));
+    keys.forEach((k) => trackEntity(wid!, k));
 
     // ensure type watchers registered once
     if (typeWids.length === 0 && wildcardTypes.length) {
@@ -67,7 +67,7 @@ export function useFragments<T = any>(
 
   if (getCurrentScope()) {
     onScopeDispose(() => {
-      if (wid != null) unregisterWatcher(wid);
+      if (wid != null) unregisterEntityWatcher(wid);
       for (const { t, id } of typeWids) unregisterTypeWatcher(t, id);
     });
   }

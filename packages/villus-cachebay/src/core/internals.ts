@@ -116,9 +116,9 @@ export type CachebayInstance = ClientPlugin & {
   };
 
   // Graph watchers (entity-level)
-  registerWatcher: (run: () => void) => number;
-  unregisterWatcher: (id: number) => void;
-  trackEntityDependency: (watcherId: number, entityKey: string) => void;
+  registerEntityWatcher: (run: () => void) => number;
+  unregisterEntityWatcher: (id: number) => void;
+  trackEntity: (watcherId: number, entityKey: string) => void;
 
   // Type watchers (wildcard/membership-level)
   registerTypeWatcher: (typename: string, run: () => void) => number;
@@ -209,9 +209,9 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   (instance as any).writeFragment = fragments.writeFragment;
   (instance as any).modifyOptimistic = modifyOptimistic;
   (instance as any).inspect = inspect;
-  (instance as any).registerWatcher = graph.registerWatcher;
-  (instance as any).unregisterWatcher = graph.unregisterWatcher;
-  (instance as any).trackEntityDependency = graph.trackEntityDependency;
+  (instance as any).registerEntityWatcher = graph.registerEntityWatcher;
+  (instance as any).unregisterEntityWatcher = graph.unregisterEntityWatcher;
+  (instance as any).trackEntity = graph.trackEntity;
   (instance as any).registerTypeWatcher = graph.registerTypeWatcher;
   (instance as any).unregisterTypeWatcher = graph.unregisterTypeWatcher;
   (instance as any).notifyTypeChanged = graph.notifyTypeChanged;
