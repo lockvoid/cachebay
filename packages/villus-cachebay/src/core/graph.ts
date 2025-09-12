@@ -209,10 +209,21 @@ export const createGraph = (config: GraphConfig) => {
 
   const overlaySnapshotIntoProxy = (proxy: any, key: EntityKey) => {
     const src = entityStore.get(key);
-    if (!src) return;
-    const kk = Object.keys(src);
-    for (let i = 0; i < kk.length; i++) {
-      const k = kk[i];
+    if (!src) {
+      for (const k of Object.keys(proxy)) {
+        if (k !== TYPENAME_FIELD && k !== 'id') delete proxy[k];
+      }
+      return;
+    }
+    const srcKeys = Object.keys(src);
+    // remove stale fields
+    for (const k of Object.keys(proxy)) {
+      if (k === TYPENAME_FIELD || k === 'id') continue;
+      if (!(k in (src as any))) delete proxy[k];
+    }
+    // overlay current fields
+    for (let i = 0; i < srcKeys.length; i++) {
+      const k = srcKeys[i];
       if (proxy[k] !== (src as any)[k]) proxy[k] = (src as any)[k];
     }
   };

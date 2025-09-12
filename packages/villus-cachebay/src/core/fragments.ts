@@ -152,14 +152,20 @@ export function createFragments(_options: {}, dependencies: FragmentsDependencie
           for (const impl of implementors) {
             const keys = graph.getEntityKeys(impl + ":");
             for (const k of keys) {
-              const v = materialized ? graph.materializeEntity(k as EntityKey) : graph.entityStore.get(k);
+              if (!graph.entityStore.has(k)) continue;  // ⬅️ only return real snapshots
+              const v = materialized
+                ? graph.materializeEntity(k as EntityKey)
+                : graph.entityStore.get(k);
               if (v != null) results.push(v);
             }
           }
         } else {
           const keys = graph.getEntityKeys(typename + ":");
           for (const k of keys) {
-            const v = materialized ? graph.materializeEntity(k as EntityKey) : graph.entityStore.get(k);
+            if (!graph.entityStore.has(k)) continue;  // ⬅️ only return real snapshots
+            const v = materialized
+              ? graph.materializeEntity(k as EntityKey)
+              : graph.entityStore.get(k);
             if (v != null) results.push(v);
           }
         }

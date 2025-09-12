@@ -133,8 +133,20 @@ export function createModifyOptimistic(deps: Deps) {
 
   function applyEntityDelete(key: string) {
     captureEntityBase(key);
+
     if (graph.entityStore.has(key)) {
+      // Notify watchers for this key before removing
+      const idx = key.indexOf(':');
+      const typename = idx === -1 ? key : key.slice(0, idx);
+      const id = idx === -1 ? null : key.slice(idx + 1);
+
+      if (typename && id != null) {
+        // identity-only replace to trigger watchers
+        graph.putEntity({ __typename: typename, id }, "replace");
+      }
+      // now remove the snapshot
       graph.entityStore.delete(key);
+      console.log('Delete', graph.entityStore)
     }
   }
 
