@@ -3,7 +3,6 @@
 import {
   reactive,
   shallowReactive,
-  ref,
 } from "vue";
 
 import type { EntityKey, ConnectionState } from "./types";
@@ -48,14 +47,6 @@ export const createGraph = (config: GraphConfig) => {
     let set = typeIndex.get(typename);
     if (!set) typeIndex.set(typename, (set = new Set()));
     set.add(key);
-  };
-
-  const removeFromTypeIndex = (key: EntityKey) => {
-    const { typename } = parseEntityKey(key);
-    if (!typename) return;
-    const set = typeIndex.get(typename);
-    set?.delete(key);
-    if (set && set.size === 0) typeIndex.delete(typename);
   };
 
   // Materialized entity proxies (modern browsers assumed)
@@ -191,16 +182,17 @@ export const createGraph = (config: GraphConfig) => {
   // ────────────────────────────────────────────────────────────────────────────
   // Connection state management
   // ────────────────────────────────────────────────────────────────────────────
-  const ensureReactiveConnection = (key: string): ConnectionState => {
+  const ensureConnection = (key: string): ConnectionState => {
     let state = connectionStore.get(key);
     if (!state) {
       state = {
-        list: shallowReactive([]),
+        list: shallowReactive([] as any[]), // list is shallow-reactive
         pageInfo: shallowReactive({}),
         meta: shallowReactive({}),
         views: new Set(),
         keySet: new Set(),
         initialized: false,
+        window: 0,
       } as ConnectionState;
 
       (state as any).__key = key;
@@ -236,6 +228,7 @@ export const createGraph = (config: GraphConfig) => {
     if (typename) raw[TYPENAME_FIELD] = typename;
     if (id != null) raw.id = String(id);
 
+    // Seed identity from the key (works for id-less keys like 'Query')
     const snap = entityStore.get(key);
     if (snap) {
       const kk = Object.keys(snap);
@@ -249,22 +242,20 @@ export const createGraph = (config: GraphConfig) => {
 
   const materializeEntity = (key: EntityKey) => {
     const resolved = resolveEntityKey(key) || key;
-
-    // build or reuse proxy
     const proxy = getOrCreateProxy(resolved);
 
-    // 1) overlay current snapshot fields (if any)
+    // Reflect latest snapshot
     overlaySnapshotIntoProxy(proxy, resolved);
 
-    // 2) ensure identity is always present on the proxy
+    // Ensure identity is always present on the proxy (fixes 'Query' case)
     const { typename, id } = parseEntityKey(resolved);
+
     if (typename && proxy[TYPENAME_FIELD] !== typename) proxy[TYPENAME_FIELD] = typename;
     if (id != null) {
       const sid = String(id);
       if (proxy.id !== sid) proxy.id = sid;
-    } else {
-      // no id → make sure we *don’t* leave a stale id behind
-      if ('id' in proxy) delete proxy.id;
+    } else if ("id" in proxy) {
+      delete proxy.id;
     }
 
     return proxy;
@@ -279,19 +270,14 @@ export const createGraph = (config: GraphConfig) => {
   };
 
   // ────────────────────────────────────────────────────────────────────────────
-  // Entity write
-  //   - entityStore keeps ONLY fields (no __typename/id/_id).
-  //   - "replace" => delete keys not present in payload.
-  //   - "merge"   => shallow-assign payload fields.
-  //   - On first put, add to typeIndex.
-  //   - Overlay any existing materialized proxy to keep it up to date.
+  // Entity write (snapshots exclude identity)
   // ────────────────────────────────────────────────────────────────────────────
-  const putEntity = (obj: any, override?: "replace" | "merge"): EntityKey | null => {
+  const putEntity = (obj: any, writeMode?: "replace" | "merge"): EntityKey | null => {
     const key = identify(obj);
     if (!key) return null;
 
     const wasExisting = entityStore.has(key);
-    const mode = override || writePolicy;
+    const mode = writeMode || writePolicy;
 
     if (mode === "replace") {
       const snapshot: any = Object.create(null);
@@ -320,7 +306,7 @@ export const createGraph = (config: GraphConfig) => {
     const hit = wr?.deref?.();
     if (hit) overlaySnapshotIntoProxy(hit, key);
 
-    // Mark changed (granular watchers)
+    // Notify watchers
     markEntityChanged(key);
     return key;
   };
@@ -415,7 +401,7 @@ export const createGraph = (config: GraphConfig) => {
     operationStore,
 
     // connection management
-    ensureReactiveConnection,
+    ensureConnection,
 
     // entity helpers
     identify,

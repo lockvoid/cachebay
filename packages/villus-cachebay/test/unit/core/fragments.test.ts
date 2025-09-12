@@ -86,7 +86,7 @@ describe('core/fragments', () => {
       const mockViews = createMockViews();
 
       const fragments = createFragments({}, { graph: mockGraph, views: mockViews });
-      
+
       expect(fragments.hasFragment('User:1')).toBe(true);
       expect(fragments.hasFragment('User:2')).toBe(false);
     });
@@ -112,7 +112,7 @@ describe('core/fragments', () => {
       expect(entityStore.has('User:1')).toBe(false);
       expect(result).toHaveProperty('commit');
       expect(result).toHaveProperty('revert');
-      
+
       // Execute commit
       result.commit();
       expect(entityStore.has('User:1')).toBe(true);

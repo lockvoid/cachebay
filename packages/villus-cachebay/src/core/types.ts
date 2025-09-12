@@ -53,7 +53,7 @@ export type CachebayInternals = {
   operationCache: Map<string, { data: any; variables: Record<string, any> }>;
   writeOperationCache: (k: string, v: { data: any; variables: Record<string, any> }) => void;
 
-  putEntity: (obj: any, override?: WritePolicy) => string | null;
+  putEntity: (obj: any, writeMode?: WritePolicy) => string | null;
   materializeEntity: (key: string) => any;
   ensureConnectionState: (key: string) => ConnectionState;
   synchronizeConnectionViews: (state: ConnectionState) => void;

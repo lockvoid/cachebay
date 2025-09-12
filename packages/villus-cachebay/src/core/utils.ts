@@ -122,13 +122,27 @@ export function readPathValue(obj: any, path: string | string[]) {
   return current;
 }
 
-/** Parse "Type:id" keys. */
 export function parseEntityKey(
   key: string,
 ): { typename: string | null; id: string | null } {
+  if (!key) return { typename: null, id: null };
+
   const idx = key.indexOf(":");
-  if (idx <= 0) return { typename: null, id: null };
-  return { typename: key.slice(0, idx), id: key.slice(idx + 1) };
+
+  if (idx === -1) {
+    // No colon → id-less key (e.g. "Query")
+    return { typename: key, id: null };
+  }
+
+  if (idx === 0) {
+    // Malformed (":id") → no typename
+    const id = key.slice(1);
+    return { typename: null, id: id || null };
+  }
+
+  const typename = key.slice(0, idx);
+  const idPart = key.slice(idx + 1);
+  return { typename, id: idPart || null };
 }
 
 /** Build a connection storage key from parent/field/relay options/variables. */

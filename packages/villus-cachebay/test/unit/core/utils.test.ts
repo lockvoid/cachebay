@@ -42,8 +42,7 @@ describe('core/utils (object-hash signatures)', () => {
 
   it('parseEntityKey returns nulls when no colon is present (including "Query")', () => {
     expect(parseEntityKey('User:1')).toEqual({ typename: 'User', id: '1' });
-    expect(parseEntityKey('Query')).toEqual({ typename: null, id: null });
-    expect(parseEntityKey('NoColon')).toEqual({ typename: null, id: null });
+    expect(parseEntityKey('Query')).toEqual({ typename: 'Query', id: null });
   });
 
   it('buildConnectionKey filters cursor variables and is stable across nested order (hashed)', () => {

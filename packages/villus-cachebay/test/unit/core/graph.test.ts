@@ -24,6 +24,11 @@ describe('createGraph - Unit Tests (refactor)', () => {
       expect(graph.identify(obj)).toBe('Product:123');
     });
 
+    it('should return null if only _id is present (no longer supported)', () => {
+      const obj = { __typename: 'Product', _id: '456' };
+      expect(graph.identify(obj)).toBe(null);
+    });
+
     it('should use custom key factory for specific types', () => {
       const user = { __typename: 'User', userId: 'u1', id: 'ignored' };
       expect(graph.identify(user)).toBe('User:u1');
@@ -91,9 +96,9 @@ describe('createGraph - Unit Tests (refactor)', () => {
     });
   });
 
-  describe('ensureReactiveConnection', () => {
+  describe('ensureConnection', () => {
     it('should create new connection state if not exists', () => {
-      const state = graph.ensureReactiveConnection('Query.users');
+      const state = graph.ensureConnection('Query.users');
       expect(state).toBeDefined();
       expect(state.list).toEqual([]);
       expect(state.pageInfo).toBeDefined();
@@ -101,6 +106,7 @@ describe('createGraph - Unit Tests (refactor)', () => {
       expect(state.views).toBeInstanceOf(Set);
       expect(state.keySet).toBeInstanceOf(Set);
       expect(state.initialized).toBe(false);
+      expect((state as any).window).toBe(0);
       expect((state as any).__key).toBe('Query.users');
 
       // Reactivity checks
@@ -110,9 +116,9 @@ describe('createGraph - Unit Tests (refactor)', () => {
     });
 
     it('should return existing connection state', () => {
-      const state1 = graph.ensureReactiveConnection('Query.posts');
+      const state1 = graph.ensureConnection('Query.posts');
       state1.initialized = true;
-      const state2 = graph.ensureReactiveConnection('Query.posts');
+      const state2 = graph.ensureConnection('Query.posts');
       expect(state2).toBe(state1);
       expect(state2.initialized).toBe(true);
       expect(isReactive(state2.list)).toBe(true);
@@ -335,7 +341,6 @@ describe('createGraph - Unit Tests (refactor)', () => {
 
   describe('Watchers (granular tick)', () => {
     it('should notify only watchers of changed entities (microtask flush)', async () => {
-      // create two entities
       graph.putEntity({ __typename: 'User', id: '1', name: 'A' });
       graph.putEntity({ __typename: 'User', id: '2', name: 'B' });
 
@@ -345,14 +350,11 @@ describe('createGraph - Unit Tests (refactor)', () => {
       const w1 = graph.registerWatcher(() => { calls1++; });
       const w2 = graph.registerWatcher(() => { calls2++; });
 
-      // Track deps
       graph.trackEntityDependency(w1, 'User:1');
       graph.trackEntityDependency(w2, 'User:2');
 
-      // Update only User:1
       graph.putEntity({ __typename: 'User', id: '1', name: 'A1' }, 'merge');
 
-      // let the microtask flush
       await tick();
 
       expect(calls1).toBe(1);
