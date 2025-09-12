@@ -37,6 +37,8 @@ function shallowClone(root: any) {
   return Array.isArray(root) ? root.slice() : { ...root };
 }
 
+export const CACHEBAY_KEY = Symbol("CACHEBAY_KEY");
+
 export function buildCachebayPlugin(
   options: PluginOptions,
   deps: PluginDependencies,
@@ -147,4 +149,24 @@ export function buildCachebayPlugin(
   };
 
   return plugin;
+}
+
+export function provideCachebay(app: App, instance: any) {
+  const api: any = {
+    readFragment: instance.readFragment,
+    readFragments: instance.readFragments,      // make sure it’s here too
+    writeFragment: instance.writeFragment,
+    identify: instance.identify,
+    modifyOptimistic: instance.modifyOptimistic,
+    hasFragment: (instance as any).hasFragment,
+    listEntityKeys: (instance as any).listEntityKeys,
+    listEntities: (instance as any).listEntities,
+    inspect: (instance as any).inspect,
+
+    // NEW: watcher API used by useFragment/useFragments
+    registerWatcher: instance.registerWatcher,
+    unregisterWatcher: instance.unregisterWatcher,
+    trackEntityDependency: instance.trackEntityDependency,
+  };
+  app.provide(CACHEBAY_KEY, api);
 }

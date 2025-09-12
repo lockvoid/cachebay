@@ -2,7 +2,7 @@ import { defineComponent, h, computed, watch, type Ref } from 'vue';
 import { mount } from '@vue/test-utils';
 import { createClient, type Client } from 'villus';
 import { createCache, relay } from '@/src';
-import { CACHEBAY_KEY } from '@/src/core/plugin';
+import { CACHEBAY_KEY, provideCachebay } from '@/src/core/plugin'; // ⟵ import provideCachebay
 import { createFetchMock, type Route, tick, delay } from './index';
 
 /**
@@ -12,7 +12,7 @@ export const cacheConfigs = {
   basic: () => createCache({
     addTypename: true,
   }),
-  
+
   withRelay: (resolverFn?: any) => {
     const cache = createCache({
       addTypename: true,
@@ -26,7 +26,7 @@ export const cacheConfigs = {
     });
     return cache;
   },
-  
+
   withCustomKeys: (keys: Record<string, (o: any) => string | null>) => createCache({
     addTypename: true,
     keys,
@@ -39,9 +39,9 @@ export const cacheConfigs = {
 export function createTestClient(routes: Route[], cacheConfig?: any) {
   const cache = cacheConfig || cacheConfigs.basic();
   const fx = createFetchMock(routes);
-  const client = createClient({ 
-    url: '/test', 
-    use: [cache as any, fx.plugin] 
+  const client = createClient({
+    url: '/test',
+    use: [cache as any, fx.plugin]
   });
   return { client, cache, fx };
 }
@@ -60,16 +60,17 @@ export function createListComponent(
   } = {}
 ) {
   const { cachePolicy, dataPath = 'posts', itemPath = 'edges', keyPath = 'node.title' } = options;
-  
+
   return defineComponent({
+    name: 'TestList',
     setup() {
       const { useQuery } = require('villus');
-      const { data } = useQuery({ 
-        query, 
-        variables, 
-        cachePolicy 
+      const { data } = useQuery({
+        query,
+        variables,
+        cachePolicy
       });
-      
+
       return () => {
         const items = data?.value?.[dataPath]?.[itemPath] ?? [];
         return h(
@@ -77,7 +78,7 @@ export function createListComponent(
           {},
           items.map((item: any) => {
             const value = keyPath.split('.').reduce(
-              (obj, key) => obj?.[key], 
+              (obj, key) => obj?.[key],
               item
             );
             return h('li', {}, value || '');
@@ -101,29 +102,30 @@ export function createWatcherComponent(
   } = {}
 ) {
   return defineComponent({
+    name: 'TestWatcher',
     setup() {
       const { useQuery } = require('villus');
-      const { data, error } = useQuery({ 
-        query, 
-        variables, 
-        cachePolicy: options.cachePolicy 
+      const { data, error } = useQuery({
+        query,
+        variables,
+        cachePolicy: options.cachePolicy
       });
-      
+
       const renders: any[] = [];
-      
+
       watch(data, (newData) => {
         if (newData && options.onData) {
           options.onData(newData);
         }
         renders.push(newData);
       }, { immediate: true });
-      
+
       watch(error, (newError) => {
         if (newError && options.onError) {
           options.onError(newError);
         }
       }, { immediate: true });
-      
+
       return () => h('div', {}, JSON.stringify(data.value));
     },
   });
@@ -138,49 +140,37 @@ export async function mountWithClient(
   cacheConfig?: any
 ) {
   const { client, cache, fx } = createTestClient(routes, cacheConfig);
-  
-  // Prepare cache API for provide/inject
-  const cacheApi = {
-    readFragment: (cache as any).readFragment,
-    readFragments: (cache as any).readFragments,
-    writeFragment: (cache as any).writeFragment,
-    identify: (cache as any).identify,
-    modifyOptimistic: (cache as any).modifyOptimistic,
-    hasFragment: (cache as any).hasFragment,
-    inspect: (cache as any).inspect,
-    entitiesTick: (cache as any).__entitiesTick,
-  };
-  
+
   const wrapper = mount(component, {
     global: {
-      plugins: [client as any],
-      provide: {
-        [CACHEBAY_KEY]: cacheApi,
-      },
+      plugins: [
+        client as any,
+        // use a tiny plugin to call provideCachebay with the *actual* cache instance
+        {
+          install(app) {
+            provideCachebay(app as any, cache);
+          }
+        }
+      ],
+      // ⚠️ remove manual provide of CACHEBAY_KEY — provideCachebay handles it
     },
   });
-  
+
   return { wrapper, client, cache, fx };
 }
 
-/**
- * Helper to extract list text from wrapper
- */
+/** Helper to extract list text from wrapper */
 export function getListItems(wrapper: any): string[] {
   return wrapper.findAll('li').map((li: any) => li.text());
 }
 
-/**
- * Helper to wait for data and return list items
- */
+/** Helper to wait for data and return list items */
 export async function waitForList(wrapper: any, delayMs: number = 10): Promise<string[]> {
   await delay(delayMs);
   return getListItems(wrapper);
 }
 
-/**
- * Clean variables by removing null/undefined
- */
+/** Clean variables by removing null/undefined */
 export function cleanVars(v: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = {};
   for (const k of Object.keys(v)) {
@@ -197,47 +187,47 @@ export const testQueries = {
   POSTS: /* GraphQL */ `
     query Posts($filter: String, $first: Int, $after: String) {
       posts(filter: $filter, first: $first, after: $after) {
-        edges { 
-          cursor 
-          node { 
-            __typename 
-            id 
+        edges {
+          cursor
+          node {
+            __typename
+            id
             title
             content
             authorId
-          } 
+          }
         }
-        pageInfo { 
-          endCursor 
-          hasNextPage 
+        pageInfo {
+          endCursor
+          hasNextPage
         }
       }
     }
   `,
-  
+
   COMMENTS: /* GraphQL */ `
     query Comments($postId: ID, $first: Int, $after: String) {
       comments(postId: $postId, first: $first, after: $after) {
-        edges { 
-          cursor 
-          node { 
-            __typename 
-            id 
+        edges {
+          cursor
+          node {
+            __typename
+            id
             text
             postId
             authorId
-          } 
+          }
         }
-        pageInfo { 
-          startCursor 
-          endCursor 
-          hasNextPage 
-          hasPreviousPage 
+        pageInfo {
+          startCursor
+          endCursor
+          hasNextPage
+          hasPreviousPage
         }
       }
     }
   `,
-  
+
   USERS: /* GraphQL */ `
     query Users($first: Int, $after: String) {
       users(first: $first, after: $after) {
@@ -257,7 +247,7 @@ export const testQueries = {
       }
     }
   `,
-  
+
   SIMPLE_POSTS: /* GraphQL */ `
     query SimplePosts {
       posts {
@@ -296,7 +286,7 @@ export const mockResponses = {
       },
     },
   }),
-  
+
   comments: (texts: string[], postId = '1') => ({
     data: {
       __typename: 'Query',
@@ -321,7 +311,7 @@ export const mockResponses = {
       },
     },
   }),
-  
+
   users: (names: string[]) => ({
     data: {
       __typename: 'Query',
@@ -343,7 +333,7 @@ export const mockResponses = {
       },
     },
   }),
-  
+
   simplePosts: (items: Array<{ id: string; title: string; content?: string }>) => ({
     data: {
       __typename: 'Query',

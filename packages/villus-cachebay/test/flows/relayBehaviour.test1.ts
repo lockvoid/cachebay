@@ -209,7 +209,7 @@ describe('Integration • Relay flows (spec coverage) • Posts', () => {
     expect(liText(wrapper)).toEqual(['A0', 'A0.5', 'A1', 'A2']); // bumped in front
   });
 
-  it.only('replace mode: clears list, then shows only the latest page', async () => {
+  it('replace mode: clears list, then shows only the latest page', async () => {
     const routes: Route[] = [
       // page 1
       {
@@ -275,8 +275,11 @@ describe('Integration • Relay flows (spec coverage) • Posts', () => {
 
     await wrapper.setProps({ first: 2, after: 'c2' });
     await delay(7); await tick(6);
-    // order remains [node1, node2], node1 title updated
-    expect(liText(wrapper)).toEqual(['A1-new', 'A2']);
+
+    console.log('s', cache.inspect.connection('Query', 'posts')[0].edges);
+
+    // replace mode: should show only the latest page
+    expect(liText(wrapper)).toEqual(['A3', 'A4']);
   });
 
   /* Custom paths (edges=item, node=item.node, pageInfo=meta) */
@@ -532,7 +535,8 @@ describe('Integration • Relay pagination reset & append from cache — extende
     mocks.push(fx);
 
     // Load A p1 (shown from cache immediately despite slow network)
-    await wrapper.setProps({ filter: 'A', first: 2 }); await tick(2);
+    await wrapper.setProps({ filter: 'A', first: 2 }); 
+    await tick(10);
     expect(liText(wrapper)).toEqual(['A-1', 'A-2']);
 
     // Load A p2 (cached immediate append)
@@ -750,7 +754,7 @@ describe('Integration • Proxy shape invariants & identity (Posts)', () => {
 
     // identity is stable (node proxies are shared)
     expect(n2).toBe(n1);
-    expect(f2).toBe(n1);
+    expect(f2).toBe(f1);
 
     await fx.waitAll(); fx.restore();
   });

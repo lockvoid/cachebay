@@ -21,9 +21,10 @@ describe('Integration • useFragment / useFragments / useCache', () => {
 
     // dynamic (ref) consumer (vm unwraps refs)
     const Dyn = defineComponent({
+      name: 'DynPost',
       setup() {
         const source = ref('Post:1');
-        const post = useFragment(source);
+        const post = useFragment(source); // dynamic via ref source
         return { post };
       },
       render() { return h('div'); },
@@ -40,6 +41,7 @@ describe('Integration • useFragment / useFragments / useCache', () => {
 
     // static: stable non-reactive snapshot (materialized:false)
     const Static = defineComponent({
+      name: 'StaticPost',
       setup() {
         const post = useFragment('Post:1', { materialized: false });
         const isRefLike = !!(post && typeof post === 'object' && 'value' in (post as any));
@@ -69,8 +71,9 @@ describe('Integration • useFragment / useFragments / useCache', () => {
     });
 
     const Comp = defineComponent({
+      name: 'PostList',
       setup() {
-        const list = useFragments('Post:*'); // materialized proxies
+        const list = useFragments('Post:*'); // materialized proxies, wildcard pattern
         return { list };
       },
       render() {
@@ -101,7 +104,7 @@ describe('Integration • useFragment / useFragments / useCache', () => {
     }
   });
 
-  it('useFragments (selector, materialized:false) returns raw snapshots; updates appear after an add/remove (tick bump)', async () => {
+  it('useFragments (selector, materialized:false) returns raw snapshots; updates appear after an add/remove (membership change)', async () => {
     const routes: Route[] = [];
     const cache = createCache({
       addTypename: true,
@@ -115,6 +118,7 @@ describe('Integration • useFragment / useFragments / useCache', () => {
     await tick();
 
     const Comp = defineComponent({
+      name: 'SnapshotPostList',
       setup() {
         const list = useFragments('Post:*', { materialized: false }); // raw snapshots refresh on add/remove
         return { list };
@@ -131,14 +135,15 @@ describe('Integration • useFragment / useFragments / useCache', () => {
     await tick(); await tick();
     expect((wrapper.vm as any).list?.[0]?.title).toBe('Initial');
 
-    // bump entitiesTick with a tiny add/remove cycle, then it reflects latest snapshot
+    // membership change → snapshots rebuilt and reflect latest
     (cache as any).writeFragment({ __typename: 'Post', id: '2', title: 'New Post' }).commit?.();
     await tick();
     expect((wrapper.vm as any).list?.[0]?.title).toBe('Updated');
 
-    // cleanup (optional)
+    // cleanup
     const t = (cache as any).modifyOptimistic((c: any) => { c.delete('Post:2'); });
-    t.commit?.(); await tick();
+    t.commit?.();
+    await tick();
   });
 
   it('useCache: exposes fragment API & listings', async () => {
@@ -151,6 +156,7 @@ describe('Integration • useFragment / useFragments / useCache', () => {
     });
 
     const Comp = defineComponent({
+      name: 'CacheApiSmoke',
       setup() {
         const cacheApi = useCache();
         const tx1 = (cacheApi as any).writeFragment({ __typename: 'Post', id: '2', title: 'Second Post' });

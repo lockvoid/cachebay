@@ -94,15 +94,15 @@ export function createFragments(_options: {}, dependencies: FragmentsDependencie
     const key = graph.identify(obj);
     if (!key) return { commit: () => { }, revert: () => { } };
 
-    // capture previous snapshot (store contains snapshot only, no identity)
-    const prevSnap = graph.entityStore.get(key);
+    // capture previous snapshot from entityStore (no identity fields in store)
+    const prevSnap = structuredClone(graph.entityStore.get(key));
     let committed = false;
 
     function commit() {
       if (committed) return;
       committed = true;
-      // use graph.putEntity to ensure watchers/proxies update
-      graph.putEntity(obj, "merge");
+      // write via graph.putEntity so materialized proxy overlays in place
+      graph.putEntity(obj, "merge");   // or override policy if needed
     }
 
     function revert() {
@@ -110,16 +110,17 @@ export function createFragments(_options: {}, dependencies: FragmentsDependencie
       committed = false;
 
       const { typename, id } = parseEntityKey(key);
-      if (prevSnap) {
-        // restore previous snapshot (replace)
-        graph.putEntity(
-          { [TYPENAME_FIELD]: typename!, id, ...prevSnap },
-          "replace",
-        );
+
+      if (!prevSnap) {
+        // restore to empty (entity didn’t exist previously)
+        graph.putEntity({ __typename: typename!, id }, "replace");
       } else {
-        // clear snapshot (replace with empty)
-        graph.putEntity({ [TYPENAME_FIELD]: typename!, id }, "replace");
+        // restore previous snapshot (replace)
+        graph.putEntity({ __typename: typename!, id, ...prevSnap }, "replace");
       }
+
+      // ensure any cached materialized proxy reflects the restored snapshot
+      graph.materializeEntity(key);
     }
 
     return { commit, revert };

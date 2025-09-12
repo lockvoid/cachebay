@@ -196,7 +196,9 @@ describe('Integration • Fragments Behavior', () => {
 
       const Component = defineComponent({
         setup() {
-          const user = useFragment('User:1');
+          // Force dynamic mode (Ref key) so useFragment returns a Ref for watch()
+          const key = ref('User:1');
+          const user = useFragment(key, { mode: 'dynamic' });
 
           watch(() => user.value?.name, (name) => {
             if (name) renders.push(name);
@@ -236,7 +238,8 @@ describe('Integration • Fragments Behavior', () => {
 
       const Component1 = defineComponent({
         setup() {
-          const user = useFragment('User:1');
+          const key = ref('User:1');
+          const user = useFragment(key, { mode: 'dynamic' });
 
           watch(() => user.value?.name, (name) => {
             if (name) renders1.push(`C1:${name}`);
@@ -248,7 +251,8 @@ describe('Integration • Fragments Behavior', () => {
 
       const Component2 = defineComponent({
         setup() {
-          const user = useFragment('User:1');
+          const key = ref('User:1');
+          const user = useFragment(key, { mode: 'dynamic' });
 
           watch(() => user.value?.name, (name) => {
             if (name) renders2.push(`C2:${name}`);
@@ -351,7 +355,8 @@ describe('Integration • Fragments Behavior', () => {
 
       const UserComponent = defineComponent({
         setup() {
-          const user = useFragment('User:1');
+          const key = ref('User:1');
+          const user = useFragment(key, { mode: 'dynamic' });
 
           watch(() => user.value?.name, (name) => {
             if (name) userRenders.push(name);
@@ -363,7 +368,8 @@ describe('Integration • Fragments Behavior', () => {
 
       const PostComponent = defineComponent({
         setup() {
-          const post = useFragment('Post:1');
+          const key = ref('Post:1');
+          const post = useFragment(key, { mode: 'dynamic' });
 
           watch(() => post.value?.title, (title) => {
             if (title) postRenders.push(title);

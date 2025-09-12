@@ -16,6 +16,7 @@ import { tick, delay, seedCache, type Route } from '@/test/helpers';
 
 describe('Integration • Cache Policies Behavior', () => {
   const restores: Array<() => void> = [];
+
   afterEach(() => {
     while (restores.length) (restores.pop()!)();
   });
