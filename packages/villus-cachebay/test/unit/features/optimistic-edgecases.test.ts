@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createCache } from '@/src';
 import { seedRelay, tick } from '../../helpers';
 import { relay } from '@/src/resolvers/relay';
+import { createModifyOptimistic } from '@/src/features/optimistic';
 
 const QUERY = /* GraphQL */ `
   query Colors {
@@ -138,5 +139,44 @@ describe('features/optimistic — edge cases', () => {
     // Check that the entity exists in the cache
     expect((cache as any).hasFragment('Color:1')).toBe(true);
     expect((cache as any).readFragment('Color:1', { materialized: false })?.name).toBe('Black again');
+  });
+
+  it('adds and removes nodes and patches pageInfo', () => {
+    const graph = {
+      entityStore: new Map(),
+      connectionStore: new Map(),
+      ensureConnection: (key: string) => {
+        let st = graph.connectionStore.get(key);
+        if (!st) {
+          st = { list: [], pageInfo: {}, meta: {}, views: new Set(), keySet: new Set(), initialized: false };
+          graph.connectionStore.set(key, st);
+        }
+        return st;
+      },
+      putEntity: (obj: any) => {
+        const k = `${obj.__typename}:${String(obj.id)}`;
+        const dst = graph.entityStore.get(k) || {};
+        Object.assign(dst, obj);
+        graph.entityStore.set(k, dst);
+        return k;
+      },
+      identify: (o: any) => o?.__typename && o?.id != null ? `${o.__typename}:${String(o.id)}` : null,
+      getEntityParentKey: (t: string, id?: any) => (t === 'Query' ? 'Query' : id != null ? `${t}:${id}` : null),
+    } as any;
+
+    const modifyOptimistic = createModifyOptimistic({ graph });
+
+    const t = modifyOptimistic((c) => {
+      const [conn] = c.connections({ parent: 'Query', field: 'colors', variables: { first: 2 } });
+      conn.addNode({ __typename: 'Color', id: 1, name: 'A' }, { cursor: 'c1' });
+      conn.patch({ endCursor: 'c1', hasNextPage: true });
+      conn.removeNode({ __typename: 'Color', id: 1 });
+    });
+
+    t.commit?.();
+
+    const st = graph.connectionStore.values().next().value;
+    expect(st.pageInfo).toEqual({ endCursor: 'c1', hasNextPage: true });
+    expect(st.list.length).toBe(0);
   });
 });
