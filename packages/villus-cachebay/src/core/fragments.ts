@@ -76,7 +76,7 @@ export function createFragments(options: {}, dependencies: FragmentsDependencies
     function revert() {
       if (!committed) return; // Can only revert if committed
       committed = false;
-      
+
       if (prev === undefined) {
         graph.entityStore.delete(key);
       } else {
@@ -98,7 +98,7 @@ export function createFragments(options: {}, dependencies: FragmentsDependencies
       if (selector.endsWith(':*')) {
         // Get all entities of a type or interface
         const typename = selector.slice(0, -2);
-        
+
         // Check if it's an interface
         const implementors = graph.getInterfaceTypes(typename);
         if (implementors && implementors.length > 0) {

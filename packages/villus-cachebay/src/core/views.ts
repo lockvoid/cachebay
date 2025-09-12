@@ -32,7 +32,7 @@ export function createViews(
   const {
     trackNonRelayResults = true,
   } = options;
-  
+
   const { graph } = dependencies;
   const typenameKey = TYPENAME_FIELD;
 
@@ -308,7 +308,7 @@ export function createViews(
   function proxyForEntityKey(key: EntityKey) {
     const entity = graph.materializeEntity(key);
     if (!entity) return undefined;
-    const proxy = graph.getReactiveEntity(key);
+    const proxy = graph.getEntity(key);
     registerEntityView(key, proxy);
     return proxy;
   }

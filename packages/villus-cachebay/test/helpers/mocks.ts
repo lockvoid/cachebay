@@ -15,12 +15,12 @@ export function createMockGraph(overrides?: Partial<any>) {
     bumpEntitiesTick: vi.fn(),
     isInterfaceType: vi.fn(() => false),
     getInterfaceTypes: vi.fn(() => []),
-    getEntityParentKey: vi.fn((typename: string, id?: any) => 
+    getEntityParentKey: vi.fn((typename: string, id?: any) =>
       typename === 'Query' ? 'Query' : id ? `${typename}:${id}` : null
     ),
     putEntity: vi.fn((obj: any) => obj?.__typename && obj?.id ? `${obj.__typename}:${obj.id}` : null),
     ensureReactiveConnection: vi.fn(),
-    getReactiveEntity: vi.fn((obj: any) => obj),
+    getEntity: vi.fn((obj: any) => obj),
     putOperation: vi.fn(),
     getEntityKeys: vi.fn(() => []),
     ...overrides,
