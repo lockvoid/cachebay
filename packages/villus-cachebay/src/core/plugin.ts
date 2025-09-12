@@ -33,10 +33,9 @@ function shallowClone<T>(root: T): T {
   return Array.isArray(root) ? (root.slice() as any) : ({ ...(root as any) } as any);
 }
 
-/** Take a plain snapshot of the wired payload (remove reactivity/proxies). */
-function snapshotForOpCache<T = any>(wired: T): T {
-  // Payload is JSON-safe (edges/node/pageInfo), so this is sufficient and fast.
-  return JSON.parse(JSON.stringify(wired));
+/** Take a plain deep snapshot (no shared nested refs, proxy-free). */
+function deepSnapshot<T = any>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
 }
 
 export const CACHEBAY_KEY: unique symbol = Symbol("CACHEBAY_KEY");
@@ -75,11 +74,12 @@ export function buildCachebayPlugin(
       const hit = graph.lookupOperation(operation);
       if (hit) {
         const vars = operation.variables || hit.entry.variables || {};
-        const normalized = shallowClone(hit.entry.data);
-        (normalized as any).__fromCache = true;     // hint for view sizing
-        session.wire(normalized, vars);
-        delete (normalized as any).__fromCache;     // keep user payload clean
-        return publish({ data: normalized }, true);
+        // Publish a deep snapshot so nested refs don't get swapped by wiring.
+        const toPublish = deepSnapshot(hit.entry.data);
+        // Wire on a separate clone so views are attached/sized for this op.
+        const forWiring = shallowClone(hit.entry.data);
+        session.wire(forWiring, vars);
+        return publish({ data: toPublish }, true);
       }
       const err = new CombinedError({
         networkError: Object.assign(new Error("CACHE_ONLY_MISS"), { name: "CacheOnlyMiss" }),
@@ -96,11 +96,10 @@ export function buildCachebayPlugin(
       const hit = graph.lookupOperation(operation);
       if (hit) {
         const vars = operation.variables || hit.entry.variables || {};
-        const normalized = shallowClone(hit.entry.data);
-        (normalized as any).__fromCache = true;
-        session.wire(normalized, vars);
-        delete (normalized as any).__fromCache;
-        return publish({ data: normalized }, true);
+        const toPublish = deepSnapshot(hit.entry.data);
+        const forWiring = shallowClone(hit.entry.data);
+        session.wire(forWiring, vars);
+        return publish({ data: toPublish }, true);
       }
       // miss → fallthrough to network
     }
@@ -112,21 +111,15 @@ export function buildCachebayPlugin(
       const hit = graph.lookupOperation(operation);
       if (hit) {
         const vars = operation.variables || hit.entry.variables || {};
-        const normalized = shallowClone(hit.entry.data);
+        const toPublish = deepSnapshot(hit.entry.data);
+        const forWiring = shallowClone(hit.entry.data);
+        session.wire(forWiring, vars);
 
-        //console.log('Cache hit', normalized);
-
-        (normalized as any).__fromCache = true;
-        // No resolvers here: we *trust* the stored normalized snapshot.
-        session.wire(normalized, vars);
-        delete (normalized as any).__fromCache;
-
-        // SSR gating (optional)
         const hadTicket = !!ssr?.hydrateOperationTicket?.has(hit.key);
         if (hadTicket) ssr!.hydrateOperationTicket!.delete(hit.key);
 
-        // Non-terminal cached publish; network will arrive later.
-        publish({ data: normalized }, false);
+        // non-terminal cache frame; network will follow
+        publish({ data: toPublish }, false);
       }
       // network result handled below
     }
@@ -134,7 +127,7 @@ export function buildCachebayPlugin(
     // ─────────────────────────────────────────────────────────────────────
     // NETWORK RESULT PATH
     // ─────────────────────────────────────────────────────────────────────
-    // Pin the request signature now (avoid using live ctx.operation later).
+    // Pin request signature now (avoid using a mutated ctx.operation later)
     const sentQuery = operation.query;
     const sentVars = operation.variables || {};
     const sentKey = getOperationKey({ query: sentQuery, variables: sentVars } as any);
@@ -148,17 +141,15 @@ export function buildCachebayPlugin(
       if (!hasData && !hasError) return originalUseResult(incoming, false);
       if (hasError) return originalUseResult(incoming, true);
 
-      // 1) Normalize into the graph (relay resolver merges into canonical lists)
+      // 1) Normalize into the graph (e.g., relay merges into canonical lists)
       const payload = shallowClone(r.data);
       resolvers.applyResolversOnGraph(payload, sentVars, { stale: false });
 
-      // 2) Wire views for *this* op (so edges show the correct window)
+      // 2) Wire views for *this* op so edges reflect the correct window
       session!.wire(payload, sentVars);
 
-      // 3) Store the *normalized snapshot for this operation signature*
-      //    (edges limited to the window that was just wired for this op)
-      const opSnapshot = snapshotForOpCache(payload);
-      graph.putOperation(sentKey, { data: opSnapshot, variables: sentVars });
+      // 3) Store the normalized snapshot for this exact op signature
+      graph.putOperation(sentKey, { data: deepSnapshot(payload), variables: sentVars });
 
       // 4) Publish terminal frame
       return originalUseResult({ data: payload }, true);

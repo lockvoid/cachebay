@@ -374,31 +374,16 @@ describe.only('Integration • Relay pagination reset & append from cache — ex
       wrapper.unmount();
     }
 
-    /*
-        // Seed cached pages for A p2/p3 and B p1
-        await seedCache(cache, {
-          query: testQueries.POSTS,
+    // Seed cache
 
-          variables: { filter: 'A', first: 2, after: 'c2' },
+    await seedCache(cache, {
+      query: testQueries.POSTS,
 
-          data: mockResponses.posts(['A-3', 'A-4'], { fromId: 3 }).data
-        });
+      variables: { filter: 'A', first: 2, after: 'c2' }, // <- was 'a2'
 
-        await seedCache(cache, {
-          query: testQueries.POSTS,
+      data: mockResponses.posts(['A-3', 'A-4'], { fromId: 3 }).data,
+    });
 
-          variables: { filter: 'A', first: 2, after: 'a4' },
-
-          data: mockResponses.posts(['A-5', 'A-6'], { fromId: 5 }).data
-        });
-        await seedCache(cache, {
-          query: testQueries.POSTS,
-
-          variables: { filter: 'B', first: 2 },
-
-          data: mockResponses.posts(['B-1', 'B-2'], { fromId: 100 }).data
-        });
-     */
     // Slow routes for revalidate
     const slowRoutes: Route[] = [
       {
@@ -473,47 +458,39 @@ describe.only('Integration • Relay pagination reset & append from cache — ex
     const { wrapper, fx } = await mountWithClient(App, slowRoutes, cache);
     mocks.push(fx);
 
-    // immediate cached A p1
     await wrapper.setProps({ filter: 'A', first: 2 });
     await delay(51);
     expect(liText(wrapper)).toEqual(['A-1', 'A-2']);
 
-    // cached A p2
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c2' });
-    await delay(51);
+    await tick(2);
     expect(liText(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4']);
 
-    // cached A p3
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c4' });
     await delay(51);
     expect(liText(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
 
-    // switch to B, show cached B p1
     await wrapper.setProps({ filter: 'B', first: 2, after: undefined } as any);
     await delay(51);
     expect(liText(wrapper)).toEqual(['B-1', 'B-2']);
 
-    // back to A baseline
     await wrapper.setProps({ filter: 'A', first: 2, after: undefined } as any);
     await tick(2);
     expect(liText(wrapper)).toEqual(['A-1', 'A-2']);
 
-    // cached p2, p3 again
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c2' });
-    await delay(10);
+    await tick(2);
     expect(liText(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4']);
 
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c4' });
-    await delay(10);
+    await tick(2);
     expect(liText(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
 
-    // cached p4 soon + slow revalidate
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c6' });
-    await delay(10);
-    // immediate cached append might still be p1+p2+p3; slow p4 later
+
+    await tick(2);
     expect(liText(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
 
-    // when revalidate returns, p4 appears
     await delay(51);
     expect(liText(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6', 'A-7', 'A-8']);
 
