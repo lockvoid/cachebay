@@ -162,11 +162,11 @@ export function provideCachebay(app: App, instance: any) {
     listEntityKeys: (instance as any).listEntityKeys,
     listEntities: (instance as any).listEntities,
     inspect: (instance as any).inspect,
-
-    // NEW: watcher API used by useFragment/useFragments
     registerWatcher: instance.registerWatcher,
     unregisterWatcher: instance.unregisterWatcher,
     trackEntityDependency: instance.trackEntityDependency,
+    registerTypeWatcher: instance.registerTypeWatcher,
+    unregisterTypeWatcher: instance.unregisterTypeWatcher,
   };
   app.provide(CACHEBAY_KEY, api);
 }

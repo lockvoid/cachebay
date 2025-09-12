@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// Mock 'vue' so we can control inject(); keep real reactivity
 vi.mock('vue', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue')>();
   let _api: any = null;
@@ -17,8 +18,26 @@ describe('useFragments with graph watchers', () => {
   const store = new Map<string, any>();
   const watchers = new Map<number, { run: () => void }>();
   const proxyByKey = new Map<string, any>();
-  let nextWid = 1;
 
+  // Type-level watchers: typename -> (wid -> run)
+  const typeWatchers = new Map<string, Map<number, () => void>>();
+
+  let nextWid = 1;
+  let nextTypeWid = 10000;
+
+  function runAllEntityWatchers() {
+    for (const { run } of watchers.values()) run();
+  }
+
+  function runTypeWatchersForTypes(types: Set<string>) {
+    for (const t of types) {
+      const map = typeWatchers.get(t);
+      if (!map) continue;
+      for (const run of map.values()) run();
+    }
+  }
+
+  /** Simulate a “graph flush”: overlay latest snaps into proxies, then run both entity + type watchers. */
   function bumpAll() {
     // overlay newest snapshots into proxies
     for (const [key, proxy] of proxyByKey.entries()) {
@@ -30,14 +49,27 @@ describe('useFragments with graph watchers', () => {
       }
       for (const k of Object.keys(snap)) (proxy as any)[k] = snap[k];
     }
-    for (const { run } of watchers.values()) run();
+
+    // 1) entity watchers (for content changes on tracked keys)
+    runAllEntityWatchers();
+
+    // 2) type watchers (for membership changes on wildcards)
+    const typesPresent = new Set<string>();
+    for (const key of store.keys()) {
+      const idx = key.indexOf(':');
+      const t = idx === -1 ? key : key.slice(0, idx);
+      typesPresent.add(t);
+    }
+    runTypeWatchersForTypes(typesPresent);
   }
 
   beforeEach(() => {
     store.clear();
     watchers.clear();
     proxyByKey.clear();
+    typeWatchers.clear();
     nextWid = 1;
+    nextTypeWid = 10000;
 
     const api = {
       readFragments: vi.fn((pattern: string | string[], { materialized = true } = {}) => {
@@ -75,30 +107,46 @@ describe('useFragments with graph watchers', () => {
           })
           .filter(Boolean) as any[];
       }),
+
+      // Key-level watcher API
       registerWatcher: vi.fn((run: () => void) => {
         const wid = nextWid++;
         watchers.set(wid, { run });
         return wid;
       }),
       unregisterWatcher: vi.fn((wid: number) => watchers.delete(wid)),
-      trackEntityDependency: vi.fn((_wid: number, _key: string) => { }),
+      trackEntityDependency: vi.fn((_wid: number, _key: string) => { /* no reverse index in this mock */ }),
+
+      // Type-level watcher API (NEW)
+      registerTypeWatcher: vi.fn((typename: string, run: () => void) => {
+        let map = typeWatchers.get(typename);
+        if (!map) typeWatchers.set(typename, (map = new Map()));
+        const id = nextTypeWid++;
+        map.set(id, run);
+        return id;
+      }),
+      unregisterTypeWatcher: vi.fn((typename: string, wid: number) => {
+        typeWatchers.get(typename)?.delete(wid);
+      }),
     };
 
     (Vue as any).__setInjectedApi(api);
   });
 
-  it('materialized=true: recomputes list when entities change', async () => {
+  it('materialized=true: recomputes list when entities/membership change', async () => {
     store.set('Post:1', { title: 'A' });
     store.set('Post:2', { title: 'B' });
 
     const listRef = useFragments<any>('Post:*', { materialized: true });
     expect(listRef.value.length).toBe(2);
 
+    // Add a new member → type watchers should recompute
     store.set('Post:3', { title: 'C' });
     bumpAll();
     await Vue.nextTick();
     expect(listRef.value.length).toBe(3);
 
+    // Update an existing member → entity watcher should recompute, proxies update
     store.set('Post:2', { title: 'B!' });
     bumpAll();
     await Vue.nextTick();
@@ -113,6 +161,7 @@ describe('useFragments with graph watchers', () => {
     const initial = listRef.value;
     expect(initial.length).toBe(2);
 
+    // Change a member → recompute snapshots
     store.set('Post:1', { title: 'A!' });
     bumpAll();
     await Vue.nextTick();
@@ -120,6 +169,7 @@ describe('useFragments with graph watchers', () => {
     expect(updated).not.toBe(initial);
     expect(updated.find((p: any) => p.title === 'A!')).toBeTruthy();
 
+    // Membership add → type watcher fires → recompute snapshots
     store.set('Post:3', { title: 'C' });
     bumpAll();
     await Vue.nextTick();

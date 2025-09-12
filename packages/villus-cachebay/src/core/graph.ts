@@ -48,6 +48,12 @@ export const createGraph = (config: GraphConfig) => {
     if (!set) typeIndex.set(typename, (set = new Set()));
     set.add(key);
   };
+  const removeFromTypeIndex = (key: EntityKey) => {
+    const { typename } = parseEntityKey(key);
+    if (!typename) return;
+    const set = typeIndex.get(typename);
+    if (set) set.delete(key);
+  };
 
   // Materialized entity proxies (modern browsers assumed)
   const MATERIALIZED = new Map<EntityKey, WeakRef<any>>();
@@ -121,6 +127,33 @@ export const createGraph = (config: GraphConfig) => {
     entityVersion.set(key, (entityVersion.get(key) ?? 0) + 1);
     changedEntities.add(key);
     scheduleFlush();
+  };
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Type-level watchers (wildcard/membership)
+  // ────────────────────────────────────────────────────────────────────────────
+  const typeWatchers = new Map<string, Set<number>>();
+  const watcherFns = new Map<number, () => void>(); // reuse ids namespace or separate
+  let nextTypeWatcherId = 100000; // separate id range
+
+  const notifyTypeChanged = (typename: string) => {
+    const set = typeWatchers.get(typename);
+    if (!set) return;
+    for (const wid of set) watcherFns.get(wid)?.();
+  };
+
+  const registerTypeWatcher = (typename: string, run: () => void): number => {
+    const wid = nextTypeWatcherId++;
+    let set = typeWatchers.get(typename);
+    if (!set) typeWatchers.set(typename, (set = new Set()));
+    set.add(wid);
+    watcherFns.set(wid, run);
+    return wid;
+  };
+
+  const unregisterTypeWatcher = (typename: string, wid: number) => {
+    typeWatchers.get(typename)?.delete(wid);
+    watcherFns.delete(wid);
   };
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -317,9 +350,40 @@ export const createGraph = (config: GraphConfig) => {
     const hit = wr?.deref?.();
     if (hit) overlaySnapshotIntoProxy(hit, key);
 
-    // Notify watchers
+    // Notify entity watchers
     markEntityChanged(key);
+
+    // Notify type watchers on first add
+    if (!wasExisting) {
+      const { typename } = parseEntityKey(key);
+      if (typename) notifyTypeChanged(typename);
+    }
+
     return key;
+  };
+
+  /** Remove an entity snapshot and notify both entity- and type-level watchers. */
+  const removeEntity = (key: EntityKey): boolean => {
+    const existed = entityStore.has(key);
+    if (!existed) return false;
+
+    // purge store snapshot
+    entityStore.delete(key);
+    removeFromTypeIndex(key);
+
+    // purge proxy fields if a proxy exists
+    const wr = MATERIALIZED.get(key);
+    const proxy = wr?.deref?.();
+    if (proxy) overlaySnapshotIntoProxy(proxy, key);
+
+    // Notify entity watchers for this key
+    markEntityChanged(key);
+
+    // Notify type watchers for wildcard lists
+    const { typename } = parseEntityKey(key);
+    if (typename) notifyTypeChanged(typename);
+
+    return true;
   };
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -436,6 +500,7 @@ export const createGraph = (config: GraphConfig) => {
     getEntityParentKey,
     getEntity,
     putEntity,
+    removeEntity,             // NEW
     resolveEntityKey,
     areEntityKeysEqual,
 
@@ -456,5 +521,10 @@ export const createGraph = (config: GraphConfig) => {
     registerWatcher,
     unregisterWatcher,
     trackEntityDependency,
+
+    // type watchers (wildcards)
+    registerTypeWatcher,      // NEW
+    unregisterTypeWatcher,    // NEW
+    notifyTypeChanged,        // (exported for advanced uses/tests)
   };
 };

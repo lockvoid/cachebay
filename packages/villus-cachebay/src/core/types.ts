@@ -36,37 +36,3 @@ export type RelayOptions = {
   write?: WritePolicy;
   mode?: "append" | "prepend" | "replace" | "auto";
 };
-
-export type CachebayInternals = {
-  TYPENAME_KEY: string;
-  DEFAULT_WRITE_POLICY: WritePolicy;
-
-  entityStore: Map<string, any>;
-  connectionStore: Map<string, ConnectionState>;
-
-  relayResolverIndex: Map<string, RelayOptions>;
-  relayResolverIndexByType: Map<string, Map<string, RelayOptions>>;
-  getRelayOptionsByType: (parentTypename: string | null, field: string) => RelayOptions | undefined;
-  setRelayOptionsByType: (parentTypename: string, field: string, opts: RelayOptions) => void;
-  relay: (opts?: any) => any;
-
-  operationCache: Map<string, { data: any; variables: Record<string, any> }>;
-  writeOperationCache: (k: string, v: { data: any; variables: Record<string, any> }) => void;
-
-  putEntity: (obj: any, writeMode?: WritePolicy) => string | null;
-  materializeEntity: (key: string) => any;
-  ensureConnectionState: (key: string) => ConnectionState;
-  synchronizeConnectionViews: (state: ConnectionState) => void;
-  parentEntityKeyFor: (typename: string, id?: any) => string | null;
-  buildConnectionKey: (parent: string, field: string, opts: RelayOptions, vars: Record<string, any>) => string;
-  readPathValue: (obj: any, path: string | string[]) => any;
-  markConnectionDirty: (state: ConnectionState) => void;
-  linkEntityToConnection: (key: string, state: ConnectionState) => void;
-  unlinkEntityFromConnection: (key: string, state: ConnectionState) => void;
-  addStrongView: (state: ConnectionState, v: ConnectionView) => void;
-  isReactive: typeof isReactive;
-  reactive: typeof reactive;
-  shallowReactive?: typeof shallowReactive;
-
-  applyFieldResolvers?: (typename: string, obj: any, vars: Record<string, any>, hint: any) => void;
-};

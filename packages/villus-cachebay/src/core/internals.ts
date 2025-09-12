@@ -23,7 +23,6 @@ import type {
   ResolversDict,
 } from "../types";
 import type {
-  CachebayInternals,
   EntityKey,
   ConnectionState,
   RelayOptions,
@@ -47,44 +46,95 @@ import { createResolvers, type ResolversDependencies, applyResolversOnGraph as a
  * Public instance type
  * ──────────────────────────────────────────────────────────────────────────── */
 export type CachebayInstance = ClientPlugin & {
+  // SSR
   dehydrate: () => any;
   hydrate: (
     input: any | ((hydrate: (snapshot: any) => void) => void),
     opts?: { materialize?: boolean; rabbit?: boolean }
   ) => void;
 
+  // Identity
   identify: (obj: any) => string | null;
 
-  readFragment: (refOrKey: string | { __typename: string; id?: any; _id?: any }, materialized?: boolean) => any;
-  hasFragment: (refOrKey: string | { __typename: string; id?: any; _id?: any }) => boolean;
-  writeFragment: (obj: any) => { commit(): void; revert(): void };
+  // Fragment APIs
+  readFragment: (
+    refOrKey: string | { __typename: string; id?: any },
+    opts?: { materialized?: boolean }
+  ) => any;
 
-  modifyOptimistic: (build: (cache: any) => void) => { commit(): void; revert(): void };
+  readFragments: (
+    pattern: string | string[],
+    opts?: { materialized?: boolean }
+  ) => any[];
 
+  hasFragment: (
+    refOrKey: string | { __typename: string; id?: any }
+  ) => boolean;
+
+  writeFragment: (obj: any) => {
+    commit(): void;
+    revert(): void;
+  };
+
+  // Optimistic
+  modifyOptimistic: (
+    build: (c: {
+      patch: (entity: any, policy?: "merge" | "replace") => void;
+      delete: (key: string) => void;
+      connections: (args: {
+        parent: "Query" | { __typename: string; id?: any } | string;
+        field: string;
+        variables?: Record<string, any>;
+      }) => Readonly<[
+        {
+          addNode: (
+            node: any,
+            opts?: { cursor?: string | null; position?: "start" | "end"; edge?: any }
+          ) => void;
+          removeNode: (ref: { __typename: string; id?: any }) => void;
+          patch: (pi: Record<string, any>) => void;
+          key: string;
+        }
+      ]>;
+    }) => void
+  ) => {
+    commit(): void;
+    revert(): void;
+  };
+
+  // Introspection
   inspect: {
     entities: (typename?: string) => string[];
     entity: (key: string) => any;
     connections: () => string[];
     connection: (
-      parent: "Query" | { __typename: string; id?: any; _id?: any },
+      parent: "Query" | { __typename: string; id?: any },
       field: string,
-      variables?: Record<string, any>,
+      variables?: Record<string, any>
     ) => any;
     operations?: () => Array<{ key: string; variables: Record<string, any>; data: any }>;
   };
 
-  readFragments: (pattern: string | string[], opts?: { materialized?: boolean }) => any[];
-  __entitiesTick: ReturnType<typeof ref<number>>;
+  // Graph watchers (entity-level)
+  registerWatcher: (run: () => void) => number;
+  unregisterWatcher: (id: number) => void;
+  trackEntityDependency: (watcherId: number, entityKey: string) => void;
 
+  // Type watchers (wildcard/membership-level)
+  registerTypeWatcher: (typename: string, run: () => void) => number;
+  unregisterTypeWatcher: (typename: string, id: number) => void;
+
+  // Optional GC helpers
   gc?: { connections: (predicate?: (key: string, state: ConnectionState) => boolean) => void };
 
+  // Vue plugin
   install: (app: App) => void;
 };
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Factory
  * ──────────────────────────────────────────────────────────────────────────── */
-export function createCache(options: CachebayOptions = {}) {
+export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Config
   const addTypename = options.addTypename ?? true;
 
@@ -162,6 +212,9 @@ export function createCache(options: CachebayOptions = {}) {
   (instance as any).registerWatcher = graph.registerWatcher;
   (instance as any).unregisterWatcher = graph.unregisterWatcher;
   (instance as any).trackEntityDependency = graph.trackEntityDependency;
+  (instance as any).registerTypeWatcher = graph.registerTypeWatcher;
+  (instance as any).unregisterTypeWatcher = graph.unregisterTypeWatcher;
+  (instance as any).notifyTypeChanged = graph.notifyTypeChanged;
 
   (instance as any).gc = {
     connections(predicate?: (key: string, state: ConnectionState) => boolean) {

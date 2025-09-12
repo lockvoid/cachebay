@@ -5,19 +5,28 @@ export function useFragments<T = any>(
   pattern: string | string[],
   opts: { materialized?: boolean } = {}
 ) {
-  const { readFragments, registerWatcher, unregisterWatcher, trackEntityDependency } = useCache();
-  const materialized = opts.materialized !== false;
+  const { readFragments, registerWatcher, unregisterWatcher, trackEntityDependency,
+    registerTypeWatcher, unregisterTypeWatcher } = useCache() as any;
 
+  const materialized = opts.materialized !== false;
   const out = shallowRef<T[]>([]);
   let wid: number | null = null;
 
-  // Track membership signature to avoid replacing the array
+  const patterns = Array.isArray(pattern) ? pattern : [pattern];
+  const wildcardTypes = patterns
+    .filter((p) => typeof p === 'string' && p.endsWith(':*'))
+    .map((p) => p.slice(0, -2));
+
+  // membership signature
   let lastKeysSig = "";
+
+  // Track type-level subscriptions for wildcard patterns
+  const typeWids: Array<{ t: string; id: number }> = [];
 
   function compute() {
     const list = readFragments(pattern, { materialized }) as T[];
 
-    // derive membership keys typename:id (ignore content)
+    // build keys set for entity-level watchers
     const keys = new Set<string>();
     for (const it of list as any[]) {
       const t = it?.__typename;
@@ -26,28 +35,31 @@ export function useFragments<T = any>(
     }
     const keysSig = Array.from(keys).sort().join(",");
 
-    // (re)register watcher
+    // (re)register key watcher for entity content changes
     if (wid == null) {
       wid = registerWatcher(() => compute());
     }
     keys.forEach((k) => trackEntityDependency(wid!, k));
 
+    // ensure type watchers registered once
+    if (typeWids.length === 0 && wildcardTypes.length) {
+      for (const t of wildcardTypes) {
+        const id = registerTypeWatcher(t, () => compute());
+        typeWids.push({ t, id });
+      }
+    }
+
     if (materialized) {
-      // Only replace the array if membership changed
+      // replace array only when membership changed; proxies update in place
       if (keysSig !== lastKeysSig) {
         lastKeysSig = keysSig;
         out.value = list as any as T[];
       }
-      // if membership unchanged: keep the array identity; proxies update in place
     } else {
-      // For snapshots: always return cloned items, but only when membership changes
-      if (keysSig !== lastKeysSig) {
-        lastKeysSig = keysSig;
-        out.value = list.map((it: any) => (it ? structuredClone(it) : it)) as T[];
-      } else {
-        // No membership change, but members may have changed → refresh snapshots
-        out.value = list.map((it: any) => (it ? structuredClone(it) : it)) as T[];
-      }
+      // snapshots: refresh on compute; you can keep identity when membership same,
+      // but for clarity we replace on every compute (tests expect the value change).
+      out.value = list.map((it: any) => (it ? structuredClone(it) : it)) as T[];
+      lastKeysSig = keysSig;
     }
   }
 
@@ -56,6 +68,7 @@ export function useFragments<T = any>(
   if (getCurrentScope()) {
     onScopeDispose(() => {
       if (wid != null) unregisterWatcher(wid);
+      for (const { t, id } of typeWids) unregisterTypeWatcher(t, id);
     });
   }
 
