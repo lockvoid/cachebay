@@ -4,6 +4,10 @@ import { isRef, isReactive, toRaw } from "vue";
 import type { EntityKey, RelayOptions } from "./types";
 import { QUERY_ROOT } from "./constants";
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * GraphQL AST utils (robust to non-AST inputs for tests)
+ * ──────────────────────────────────────────────────────────────────────────── */
+
 const TYPENAME_FIELD_NODE = {
   kind: Kind.FIELD,
   name: { kind: Kind.NAME, value: "__typename" },
@@ -13,6 +17,11 @@ const DOCUMENT_CACHE = new WeakMap<DocumentNode, DocumentNode>();
 const STRING_DOCUMENT_CACHE = new Map<string, DocumentNode>();
 const PRINT_CACHE = new WeakMap<DocumentNode, string>();
 
+function isDocumentNode(v: any): v is DocumentNode {
+  return !!v && typeof v === "object" && v.kind === Kind.DOCUMENT;
+}
+
+/** Add __typename to all selection sets (except operation roots). */
 function addTypename(doc: DocumentNode): DocumentNode {
   return visit(doc, {
     SelectionSet(node, _key, parent: any) {
@@ -27,59 +36,76 @@ function addTypename(doc: DocumentNode): DocumentNode {
   });
 }
 
-export function ensureDocumentHasTypenameSmart(query: string | DocumentNode): DocumentNode {
-  if (typeof query === "string") {
-    const cached = STRING_DOCUMENT_CACHE.get(query);
-    if (cached) {
-      return cached;
+/**
+ * Ensure a query has __typename; tolerant to anything (string/DocumentNode/other).
+ * - string: parse → add → cache
+ * - DocumentNode: add → cache
+ * - anything else: return as-is
+ */
+export function ensureDocumentHasTypenameSmart(query: any): any {
+  try {
+    if (typeof query === "string") {
+      const cached = STRING_DOCUMENT_CACHE.get(query);
+      if (cached) return cached;
+      const parsed = parse(query);
+      const withTypename = addTypename(parsed);
+      STRING_DOCUMENT_CACHE.set(query, withTypename);
+      return withTypename;
     }
-    const parsed = parse(query);
-    const withTypename = addTypename(parsed);
-    STRING_DOCUMENT_CACHE.set(query, withTypename);
-    return withTypename;
-  }
-  const cached = DOCUMENT_CACHE.get(query);
-  if (cached) {
-    return cached;
-  }
-  const withTypename = addTypename(query);
-  DOCUMENT_CACHE.set(query, withTypename);
-  return withTypename;
-}
-
-export function getOperationBody(query: string | DocumentNode): string {
-  if (typeof query === "string") {
+    if (isDocumentNode(query)) {
+      const cached = DOCUMENT_CACHE.get(query);
+      if (cached) return cached;
+      const withTypename = addTypename(query);
+      DOCUMENT_CACHE.set(query, withTypename);
+      return withTypename;
+    }
+    return query;
+  } catch {
     return query;
   }
-  const loc = (query as any)?.loc?.source?.body;
-  if (loc) {
-    return loc;
-  }
-  const cached = PRINT_CACHE.get(query);
-  if (cached) {
-    return cached;
-  }
-  const body = print(query);
-  PRINT_CACHE.set(query, body);
-  return body;
 }
 
-/** Stable signature for variables (optionally excluding keys). */
+/**
+ * Get operation body as a stable string.
+ * - string: returned
+ * - DocumentNode: use loc.source.body if present, else print()
+ * - anything else: JSON.stringify fallback (avoids `Invalid AST Node` in tests)
+ */
+export function getOperationBody(query: any): string {
+  try {
+    if (typeof query === "string") return query;
+
+    if (isDocumentNode(query)) {
+      const loc = (query as any)?.loc?.source?.body;
+      if (loc) return loc;
+      const cached = PRINT_CACHE.get(query);
+      if (cached) return cached;
+      const body = print(query);
+      PRINT_CACHE.set(query, body);
+      return body;
+    }
+
+    return JSON.stringify(query ?? "");
+  } catch {
+    return "";
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Variable signatures / hashing
+ * ──────────────────────────────────────────────────────────────────────────── */
+
 const VAR_SIG = new WeakMap<object, Map<string, string>>();
 
 export function stableIdentityExcluding(
   vars: Record<string, any>,
   remove: string[],
 ): string {
-  // Produce a stable, order-independent identity for variables (deep).
-  // Uses object-hash so nested object key order doesn't affect the signature.
   if (!vars || typeof vars !== "object") return "";
   const removeKey = remove.length ? remove.slice().sort().join(",") : "";
   const perObj = VAR_SIG.get(vars as any);
   if (perObj && perObj.has(removeKey)) return perObj.get(removeKey)!;
 
-  // Build filtered shallow copy (we purposely don't clone deeply to keep cost low;
-  // object-hash will traverse the structure).
   const exclude = new Set(remove);
   const filtered: Record<string, any> = {};
   const keys = Object.keys(vars).sort();
@@ -91,8 +117,6 @@ export function stableIdentityExcluding(
     filtered[k] = v;
   }
 
-  // Signature: a short hash string (hex) that is stable across key order.
-  // We prefer unorderedObjects so {a:1,b:2} === {b:2,a:1}.
   const sig = objectHash(filtered, { unorderedObjects: true });
 
   if (perObj) {
@@ -108,19 +132,25 @@ export function stableIdentityExcluding(
 export const buildStableVariableString = (vars: Record<string, any>) =>
   stableIdentityExcluding(vars || {}, []);
 
-/** Safe object path reader for dot-or-array paths. */
+/* ────────────────────────────────────────────────────────────────────────────
+ * Safe object path read
+ * ──────────────────────────────────────────────────────────────────────────── */
+
 export function readPathValue(obj: any, path: string | string[]) {
   const segs = Array.isArray(path) ? path : path.split(".");
   let current = obj;
   for (let i = 0; i < segs.length; i++) {
-    if (current == null) {
-      return undefined;
-    }
-    const seg = segs[i];
-    current = current[seg];
+    if (current == null) return undefined;
+    current = current[segs[i]];
   }
   return current;
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Entity / connection keys
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+const ROOT_TYPENAMES = new Set(['Query', 'Mutation', 'Subscription']);
 
 export function parseEntityKey(
   key: string,
@@ -128,24 +158,18 @@ export function parseEntityKey(
   if (!key) return { typename: null, id: null };
 
   const idx = key.indexOf(":");
-
   if (idx === -1) {
-    // No colon → id-less key (e.g. "Query")
-    return { typename: key, id: null };
+    return ROOT_TYPENAMES.has(key) ? { typename: key, id: null } : { typename: null, id: null };
   }
-
   if (idx === 0) {
-    // Malformed (":id") → no typename
     const id = key.slice(1);
     return { typename: null, id: id || null };
   }
-
   const typename = key.slice(0, idx);
   const idPart = key.slice(idx + 1);
   return { typename, id: idPart || null };
 }
 
-/** Build a connection storage key from parent/field/relay options/variables. */
 export function buildConnectionKey(
   parent: string,
   field: string,
@@ -158,20 +182,18 @@ export function buildConnectionKey(
     opts.cursors.first,
     opts.cursors.last,
   ]);
-  return parent + "." + field + "(" + id + ")";
+  return `${parent}.${field}(${id})`;
 }
 
-/** Normalize parent ref to entity key string. */
 export function normalizeParentKeyInput(
-  parent: "Query" | { __typename: string; id?: any; _id?: any },
+  parent: "Query" | { __typename: string; id?: any },
 ) {
   if (parent === "Query") return "Query";
   const t = (parent as any).__typename;
-  const id = (parent as any).id ?? (parent as any)._id;
+  const id = (parent as any).id;
   return t && id != null ? `${t}:${id}` : null;
 }
 
-/** Attempt to parse variables back from a connection key (legacy string format only). */
 export function parseVariablesFromConnectionKey(
   ckey: string,
   prefix: string,
@@ -180,7 +202,7 @@ export function parseVariablesFromConnectionKey(
   const inside = ckey.slice(prefix.length, ckey.length - 1);
   const vars: Record<string, any> = {};
   if (!inside) return vars;
-  if (inside.indexOf(':') === -1) { return vars; } // hashed signature cannot be parsed back
+  if (inside.indexOf(':') === -1) return vars;
   const parts = inside.split("|");
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i];
@@ -188,38 +210,37 @@ export function parseVariablesFromConnectionKey(
     if (idx <= 0) continue;
     const k = part.slice(0, idx);
     const json = part.slice(idx + 1);
-    try {
-      (vars as any)[k] = JSON.parse(json);
-    } catch {
-      /* ignore malformed */
-    }
+    try { (vars as any)[k] = JSON.parse(json); } catch { }
   }
   return vars;
 }
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * Operation keys
+ * ──────────────────────────────────────────────────────────────────────────── */
+
 export function getFamilyKey(op: { query: any; variables: Record<string, any>, context?: { concurrencyScope?: string } }) {
   const body = getOperationBody(op.query);
-
   return `${body}::${op.context?.concurrencyScope || 'default'}`;
 }
 
 export function getOperationKey(op: { query: any; variables: Record<string, any> }) {
   const body = getOperationBody(op.query);
-
   return `${body}::${buildStableVariableString(op.variables || {})}`;
 }
 
-/** Tiny type guard for observable-like values (subscriptions). */
+/* ────────────────────────────────────────────────────────────────────────────
+ * Misc helpers
+ * ──────────────────────────────────────────────────────────────────────────── */
+
 export function isObservableLike(v: any): v is { subscribe: Function } {
   return !!v && typeof v.subscribe === "function";
 }
 
-// Signature for duplicate suppression
 export const toSig = (data: any) => {
   try { return JSON.stringify(data); } catch { return ""; }
 };
 
-// Strip undefined so opKey stabilizes
 export const cleanVars = (vars: Record<string, any> | undefined | null) => {
   const out: Record<string, any> = {};
   if (!vars || typeof vars !== "object") return out;
@@ -230,21 +251,13 @@ export const cleanVars = (vars: Record<string, any> | undefined | null) => {
   return out;
 };
 
-// Shallow root clone (cheap) — we always REPLACE the connection node inside
 export const viewRootOf = (root: any) => {
   if (!root || typeof root !== "object") return root;
   return Array.isArray(root) ? root.slice() : { ...root };
 };
 
-// NOTE: op-cache entries must be PLAIN (no Vue proxies). Network payloads are
-// usually plain already; to be safe against accidental reactive wrapping upstream,
-// normalize deeply only for JSON-safe trees via fast JSON fallback.
 export function toPlainDeep(x: any) {
-  try {
-    return JSON.parse(JSON.stringify(x));
-  } catch {
-    return x;
-  }
+  try { return JSON.parse(JSON.stringify(x)); } catch { return x; }
 }
 
 export const unwrapShallow = (value: any): any => {

@@ -1,151 +1,140 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createViews } from '@/src/core/views';
 import { reactive, isReactive } from 'vue';
-import { createMockGraph } from '@/test/helpers/mocks';
+import { createViews } from '@/src/core/views';
+
+// Minimal mock of GraphAPI used by views
+function createMockGraph(overrides: any = {}) {
+  const store = overrides.entityStore ?? new Map<string, any>();
+  return {
+    entityStore: store,
+    connectionStore: overrides.connectionStore ?? new Map<string, any>(),
+    // identify: typename + id (stringify id)
+    identify: vi.fn((o: any) =>
+      o && o.__typename && o.id != null ? `${o.__typename}:${String(o.id)}` : null
+    ),
+    // materialize returns a proxy with identity + snapshot
+    materializeEntity: vi.fn((key: string) => {
+      const [t, id] = key.includes(':') ? key.split(':') : [key, undefined];
+      const snap = store.get(key) || {};
+      return reactive({ __typename: t, ...(id ? { id } : {}), ...snap });
+    }),
+    // getEntity returns a reactive snapshot (no identity) for UI reads
+    getEntity: vi.fn((key: string) => {
+      const snap = store.get(key) || {};
+      return reactive({ ...snap });
+    }),
+    ensureConnection: vi.fn((key: string) => {
+      const existing = (overrides.connectionStore ?? new Map()).get(key);
+      return existing || null;
+    }),
+    ...overrides,
+  };
+}
 
 describe('core/views', () => {
   describe('createViews', () => {
-    it('creates view functions with dependencies', () => {
-      const mockGraph = createMockGraph();
-      const views = createViews({}, { graph: mockGraph });
-
-      expect(views).toHaveProperty('registerEntityView');
-      expect(views).toHaveProperty('synchronizeEntityViews');
-      expect(views).toHaveProperty('markEntityDirty');
+    it('exposes view helpers', () => {
+      const graph = createMockGraph();
+      const views = createViews({}, { graph });
       expect(views).toHaveProperty('proxyForEntityKey');
       expect(views).toHaveProperty('materializeResult');
-    });
-  });
-
-  describe('entity views', () => {
-    it('registerEntityView registers valid entity views', () => {
-      const mockGraph = createMockGraph({
-        getEntity: vi.fn((obj) => obj)
-      });
-      const views = createViews({}, { graph: mockGraph });
-      const entity = { id: 1, name: 'Test' };
-      const key = 'Entity:1';
-
-      views.registerEntityView(key, entity);
-
-      // Entity views are stored internally
-      // We can't directly test the internal Map, but we verify no errors
-    });
-
-    it('synchronizeEntityViews updates all views for an entity', () => {
-      const entityStore = new Map([['User:1', { name: 'Updated' }]]);
-      const mockGraph = createMockGraph({
-        entityStore,
-        materializeEntity: vi.fn(() => ({ id: 1, name: 'Updated' })),
-        getEntity: vi.fn((obj) => obj)
-      });
-      const views = createViews({}, { graph: mockGraph });
-      const view1 = { id: 1, name: 'Old' };
-      const view2 = { id: 1, name: 'Old' };
-
-      // Manually register views for testing
-      views.registerEntityView('User:1', view1);
-      views.registerEntityView('User:1', view2);
-
-      views.synchronizeEntityViews('User:1');
-
-      // Both views should be updated
-      expect(view1.name).toBe('Updated');
-      expect(view2.name).toBe('Updated');
-    });
-
-    it('markEntityDirty schedules entity synchronization', () => {
-      const entityStore = new Map([['User:1', { name: 'Test' }]]);
-      const mockGraph = createMockGraph({
-        entityStore,
-        materializeEntity: vi.fn(() => ({ id: 1, name: 'Test' })),
-        getEntity: vi.fn((obj) => obj)
-      });
-      const views = createViews({}, { graph: mockGraph });
-      const entity = { name: 'Old' };
-
-      // Register a view to be synchronized
-      views.registerEntityView('User:1', entity);
-
-      // Mark dirty should schedule synchronization
-      views.markEntityDirty('User:1');
-
-      // After flush (happens async), entity should be updated
-      // Note: In real implementation this is scheduled via Promise.resolve
-      // For unit test, we're verifying the dirty set tracking
-      expect(entity.name).toBe('Old'); // Not updated yet (scheduled)
+      expect(views).toHaveProperty('createConnectionView');
+      expect(views).toHaveProperty('setViewLimit');
+      expect(views).toHaveProperty('syncConnection');
+      expect(views).toHaveProperty('gcConnections');
     });
   });
 
   describe('proxyForEntityKey', () => {
-    it('returns materialized entity wrapped in proxy when not already reactive', () => {
-      const entity = { id: 1, name: 'Test' };
-      const reactiveEntity = reactive(entity);
-      const mockGraph = createMockGraph({
-        materializeEntity: vi.fn(() => entity),
-        getEntity: vi.fn((key) => reactiveEntity)
-      });
-      const views = createViews({}, { graph: mockGraph });
-      const result = views.proxyForEntityKey('User:1');
+    it('returns a reactive object for an entity key', () => {
+      const store = new Map([['User:1', { name: 'Test' }]]);
+      const graph = createMockGraph({ entityStore: store });
+      const views = createViews({}, { graph });
 
-      expect(mockGraph.materializeEntity).toHaveBeenCalledWith('User:1');
-      expect(mockGraph.getEntity).toHaveBeenCalledWith('User:1');
-      expect(isReactive(result)).toBe(true);
-      expect(result).toBe(reactiveEntity);
+      const res = views.proxyForEntityKey('User:1');
+      expect(graph.materializeEntity).toHaveBeenCalledWith('User:1');
+      expect(graph.getEntity).toHaveBeenCalledWith('User:1');
+      expect(isReactive(res)).toBe(true);
+      expect(res).toEqual({ name: 'Test' });
     });
+  });
 
-    it('returns existing reactive object without re-wrapping', () => {
-      const entity = { id: 1, name: 'Test' };
-      const reactiveObj = reactive(entity);
-      const mockGraph = createMockGraph({
-        materializeEntity: vi.fn(() => entity),
-        getEntity: vi.fn((key) => reactiveObj)
-      });
-      const views = createViews({}, { graph: mockGraph });
-      const result = views.proxyForEntityKey('User:1');
+  describe('materializeResult', () => {
+    it('replaces node objects with materialized proxies', () => {
+      const store = new Map([['User:1', { name: 'A' }]]);
+      const graph = createMockGraph({ entityStore: store });
+      const views = createViews({}, { graph });
 
-      expect(mockGraph.materializeEntity).toHaveBeenCalledWith('User:1');
-      expect(mockGraph.getEntity).toHaveBeenCalledWith('User:1');
-      expect(result).toBe(reactiveObj);
+      const root = {
+        edges: [{ node: { __typename: 'User', id: 1 } }],
+      };
+      views.materializeResult(root);
+      expect(root.edges[0].node.__typename).toBe('User');
+      expect(root.edges[0].node.id).toBe('1');
+      expect(root.edges[0].node.name).toBe('A');
     });
   });
 
   describe('connection views', () => {
-    it('addStrongView adds a view to connection state', () => {
+    it('createConnectionView attaches a view and syncConnection populates edges/nodes', () => {
+      // Prepare a connection state and entity snapshots
       const connectionState = {
+        list: [
+          { cursor: 'c1', key: 'User:1' },
+          { cursor: 'c2', key: 'User:2' },
+        ],
+        pageInfo: reactive({ endCursor: 'c2', hasNextPage: true }),
+        meta: reactive({}),
         views: new Set(),
-        list: [],
-      };
-      const mockGraph = createMockGraph();
-      const views = createViews({}, { graph: mockGraph });
-      const view = {
-        edges: [],
-        pageInfo: {},
-        root: {},
-        edgesKey: 'edges',
-        pageInfoKey: 'pageInfo',
-        pinned: false,
-        limit: 10,
-      };
+        keySet: new Set(),
+        initialized: true,
+        window: 0,
+      } as any;
 
-      views.addStrongView(connectionState as any, view);
+      const store = new Map([
+        ['User:1', { name: 'A' }],
+        ['User:2', { name: 'B' }],
+      ]);
 
-      expect(connectionState.views.has(view)).toBe(true);
+      const graph = createMockGraph({ entityStore: store });
+      const views = createViews({}, { graph });
+
+      // Create a view limited to 1 item
+      const view = views.createConnectionView(connectionState, { limit: 1 });
+
+      // Sync connection to view
+      views.syncConnection(connectionState);
+
+      expect(Array.isArray(view.edges)).toBe(true);
+      expect(view.edges.length).toBe(1);
+      expect(view.edges[0].cursor).toBe('c1');
+      expect(view.edges[0].node.__typename).toBe('User');
+      expect(view.edges[0].node.id).toBe('1');
+      expect(view.edges[0].node.name).toBe('A');
+
+      // Increase limit and sync again
+      views.setViewLimit(view, 2);
+      views.syncConnection(connectionState);
+      expect(view.edges.length).toBe(2);
+      expect(view.edges[1].cursor).toBe('c2');
+      expect(view.edges[1].node.name).toBe('B');
+
+      // pageInfo copied
+      expect(view.pageInfo.endCursor).toBe('c2');
+      expect(view.pageInfo.hasNextPage).toBe(true);
     });
 
-    it('gcConnections removes connections with no views', () => {
-      const view1 = { edges: [], pageInfo: {} };
-      const connectionStore = new Map([
-        ['conn1', { list: [], views: new Set(), pageInfo: {}, meta: {}, keySet: new Set(), initialized: false } as any],
-        ['conn2', { list: [{ key: 'User:1' }], views: new Set([view1]), pageInfo: {}, meta: {}, keySet: new Set(), initialized: false } as any],
+    it('gcConnections removes entries with no views', () => {
+      const connectionStore = new Map<string, any>([
+        ['conn1', { list: [], views: new Set(), pageInfo: {}, meta: {}, keySet: new Set(), initialized: false }],
+        ['conn2', { list: [], views: new Set([{}]), pageInfo: {}, meta: {}, keySet: new Set(), initialized: false }],
       ]);
-      const mockGraph = createMockGraph({ connectionStore });
-      const views = createViews({}, { graph: mockGraph });
+      const graph = createMockGraph({ connectionStore });
+      const views = createViews({}, { graph });
+
       views.gcConnections();
 
-      // Should remove connection with no views
       expect(connectionStore.has('conn1')).toBe(false);
-      // Should keep connection with views
       expect(connectionStore.has('conn2')).toBe(true);
     });
   });

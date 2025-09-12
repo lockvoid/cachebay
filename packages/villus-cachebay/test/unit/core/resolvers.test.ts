@@ -1,210 +1,96 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createResolvers, makeApplyFieldResolvers, applyResolversOnGraph } from '@/src/core/resolvers';
+import { createResolvers } from '@/src/core/resolvers';
 
 describe('core/resolvers', () => {
   describe('createResolvers', () => {
     it('creates resolver functions from specs', () => {
-      const mockInternals = {
-        TYPENAME_KEY: '__typename',
-        DEFAULT_WRITE_POLICY: 'replace',
-      } as any;
-
       const resolverSpecs = {
         User: {
           name: vi.fn((ctx) => {
-            if (ctx.value === 'test') {
-              ctx.set('modified');
-            }
+            if (ctx.value === 'test') ctx.set('modified');
           }),
         },
       };
 
-      const mockDeps = {
+      const deps = {
         graph: {
           entityStore: new Map(),
           connectionStore: new Map(),
           operationStore: new Map(),
           putEntity: vi.fn(),
           materializeEntity: vi.fn(),
-          ensureReactiveConnection: vi.fn(),
+          ensureConnection: vi.fn(),
           getEntityParentKey: vi.fn(),
           putOperation: vi.fn(),
+          identify: vi.fn(),
+          isInterfaceType: vi.fn(),
+          getInterfaceTypes: vi.fn(),
+          getEntityKeys: vi.fn(),
+          resolveEntityKey: vi.fn(),
         },
-        views: {
-          synchronizeConnectionViews: vi.fn(),
-          markConnectionDirty: vi.fn(),
-          linkEntityToConnection: vi.fn(),
-          unlinkEntityFromConnection: vi.fn(),
-          addStrongView: vi.fn(),
-        },
-        relay: vi.fn(),
-        relayResolverIndex: new Map(),
-        relayResolverIndexByType: new Map(),
-        getRelayOptionsByType: vi.fn(),
-        setRelayOptionsByType: vi.fn(),
-      };
-      
-      const result = createResolvers({ resolvers: resolverSpecs }, mockDeps);
-
-      expect(result).toHaveProperty('applyFieldResolvers');
-      expect(result).toHaveProperty('applyResolversOnGraph');
-      expect(result).toHaveProperty('FIELD_RESOLVERS');
-      expect(result.FIELD_RESOLVERS.User).toBeDefined();
-      expect(result.FIELD_RESOLVERS.User.name).toBe(resolverSpecs.User.name);
-    });
-
-    it('handles resolvers with __cb_resolver__ property', () => {
-      const mockResolver = vi.fn();
-      const bindableResolver = {
-        __cb_resolver__: true as const,
-        bind: vi.fn(() => mockResolver),
       } as any;
 
-      const resolverSpecs = {
-        User: {
-          special: bindableResolver,
-        },
-      };
+      const res = createResolvers({ resolvers: resolverSpecs }, deps);
+      expect(res).toHaveProperty('applyFieldResolvers');
+      expect(res).toHaveProperty('applyResolversOnGraph');
+      expect(res).toHaveProperty('FIELD_RESOLVERS');
+      expect(res.FIELD_RESOLVERS.User).toBeDefined();
+      expect(res.FIELD_RESOLVERS.User.name).toBe(resolverSpecs.User.name);
+    });
 
-      const mockDeps = {
-        graph: {
-          entityStore: new Map(),
-          connectionStore: new Map(),
-          operationStore: new Map(),
-          putEntity: vi.fn(),
-          materializeEntity: vi.fn(),
-          ensureReactiveConnection: vi.fn(),
-          getEntityParentKey: vi.fn(),
-          putOperation: vi.fn(),
-        },
-        views: {
-          synchronizeConnectionViews: vi.fn(),
-          markConnectionDirty: vi.fn(),
-          linkEntityToConnection: vi.fn(),
-          unlinkEntityFromConnection: vi.fn(),
-          addStrongView: vi.fn(),
-        },
-        relay: vi.fn(),
-        relayResolverIndex: new Map(),
-        relayResolverIndexByType: new Map(),
-        getRelayOptionsByType: vi.fn(),
-        setRelayOptionsByType: vi.fn(),
-      };
-      
-      const result = createResolvers({ resolvers: resolverSpecs }, mockDeps);
+    it('binds __cb_resolver__ specs', () => {
+      const impl = vi.fn();
+      const bindable = { __cb_resolver__: true as const, bind: vi.fn(() => impl) } as any;
 
-      // Bindable resolvers are now bound and return a function
-      expect(typeof result.FIELD_RESOLVERS.User.special).toBe('function');
+      const resolverSpecs = { Product: { price: bindable } };
+      const deps = { graph: {} } as any;
+
+      const res = createResolvers({ resolvers: resolverSpecs }, deps);
+      expect(typeof res.FIELD_RESOLVERS.Product.price).toBe('function');
+      expect(bindable.bind).toHaveBeenCalled();
     });
 
     it('handles undefined resolver specs', () => {
-      const mockInternals = {} as any;
-
-      const mockDeps = {
-        graph: {
-          entityStore: new Map(),
-          connectionStore: new Map(),
-          operationStore: new Map(),
-          putEntity: vi.fn(),
-          materializeEntity: vi.fn(),
-          ensureReactiveConnection: vi.fn(),
-          getEntityParentKey: vi.fn(),
-          putOperation: vi.fn(),
-        },
-        views: {
-          synchronizeConnectionViews: vi.fn(),
-          markConnectionDirty: vi.fn(),
-          linkEntityToConnection: vi.fn(),
-          unlinkEntityFromConnection: vi.fn(),
-          addStrongView: vi.fn(),
-        },
-        relay: vi.fn(),
-        relayResolverIndex: new Map(),
-        relayResolverIndexByType: new Map(),
-        getRelayOptionsByType: vi.fn(),
-        setRelayOptionsByType: vi.fn(),
-      };
-      
-      const result = createResolvers({ resolvers: undefined }, mockDeps);
-
-      expect(result.FIELD_RESOLVERS).toEqual({});
+      const deps = { graph: {} } as any;
+      const res = createResolvers({ resolvers: undefined }, deps);
+      expect(res.FIELD_RESOLVERS).toEqual({});
     });
   });
 
-  describe('makeApplyFieldResolvers', () => {
-    it('applies field resolvers with signature tracking', () => {
-      const resolver = vi.fn();
-      const FIELD_RESOLVERS = {
-        User: {
-          name: resolver,
-        },
-      };
+  describe('applyFieldResolvers (signature tracking)', () => {
+    it('applies once per vars/hint signature', () => {
+      const spy = vi.fn();
+      const resolverSpecs = { User: { name: spy } };
+      const res = createResolvers({ resolvers: resolverSpecs }, { graph: {} as any });
 
-      const applyFieldResolvers = makeApplyFieldResolvers({
-        TYPENAME_KEY: '__typename',
-        FIELD_RESOLVERS,
-      });
-
-      const obj = { name: 'test' };
+      const obj: any = { name: 'test' };
       const vars = { id: 1 };
 
-      applyFieldResolvers('User', obj, vars);
+      res.applyFieldResolvers('User', obj, vars);
+      expect(spy).toHaveBeenCalledTimes(1);
 
-      expect(resolver).toHaveBeenCalledWith({
-        parentTypename: 'User',
-        field: 'name',
-        parent: obj,
-        value: 'test',
-        variables: vars,
-        hint: undefined,
-        set: expect.any(Function),
-      });
+      // same vars -> no-op
+      spy.mockClear();
+      res.applyFieldResolvers('User', obj, vars);
+      expect(spy).not.toHaveBeenCalled();
 
-      // Should not apply again with same signature
-      resolver.mockClear();
-      applyFieldResolvers('User', obj, vars);
-      expect(resolver).not.toHaveBeenCalled();
-    });
-
-    it('tracks stale hint in signature', () => {
-      const resolver = vi.fn();
-      const FIELD_RESOLVERS = {
-        User: {
-          name: resolver,
-        },
-      };
-
-      const applyFieldResolvers = makeApplyFieldResolvers({
-        TYPENAME_KEY: '__typename',
-        FIELD_RESOLVERS,
-      });
-
-      const obj = {};
-      const vars = {};
-
-      applyFieldResolvers('User', obj, vars, { stale: true });
-      expect(resolver).toHaveBeenCalled();
-
-      // Different hint should trigger new application
-      resolver.mockClear();
-      applyFieldResolvers('User', obj, vars, { stale: false });
-      expect(resolver).toHaveBeenCalled();
+      // different hint -> re-apply
+      res.applyFieldResolvers('User', obj, vars, { stale: true });
+      expect(spy).toHaveBeenCalledTimes(1);
     });
   });
 
-  describe('applyResolversOnGraph', () => {
-    it('walks object graph and applies resolvers', () => {
-      const userResolver = vi.fn();
-      const postResolver = vi.fn();
+  describe('applyResolversOnGraph (walk)', () => {
+    it('walks object graph and applies resolvers per typename', () => {
+      const userName = vi.fn();
+      const postTitle = vi.fn();
 
-      const FIELD_RESOLVERS = {
-        User: {
-          name: userResolver,
-        },
-        Post: {
-          title: postResolver,
-        },
+      const resolverSpecs = {
+        User: { name: userName },
+        Post: { title: postTitle },
       };
+
+      const res = createResolvers({ resolvers: resolverSpecs }, { graph: {} as any });
 
       const root = {
         __typename: 'Query',
@@ -212,28 +98,22 @@ describe('core/resolvers', () => {
           __typename: 'User',
           name: 'John',
           posts: [
-            { __typename: 'Post', title: 'Post 1' },
-            { __typename: 'Post', title: 'Post 2' },
+            { __typename: 'Post', title: 'P1' },
+            { __typename: 'Post', title: 'P2' },
           ],
         },
       };
 
-      applyResolversOnGraph(root, {}, { stale: false }, {
-        TYPENAME_KEY: '__typename',
-        FIELD_RESOLVERS,
-      });
+      res.applyResolversOnGraph(root, {}, { stale: false });
 
-      expect(userResolver).toHaveBeenCalledTimes(1);
-      expect(postResolver).toHaveBeenCalledTimes(2);
+      expect(userName).toHaveBeenCalledTimes(1);
+      expect(postTitle).toHaveBeenCalledTimes(2);
     });
 
-    it('handles nested objects and arrays', () => {
-      const resolver = vi.fn();
-      const FIELD_RESOLVERS = {
-        Item: {
-          value: resolver,
-        },
-      };
+    it('handles nested arrays/objects without typenames at the root', () => {
+      const itemVal = vi.fn();
+      const resolverSpecs = { Item: { value: itemVal } };
+      const res = createResolvers({ resolvers: resolverSpecs }, { graph: {} as any });
 
       const root = {
         items: [
@@ -242,12 +122,8 @@ describe('core/resolvers', () => {
         ],
       };
 
-      applyResolversOnGraph(root, {}, { stale: false }, {
-        TYPENAME_KEY: '__typename',
-        FIELD_RESOLVERS,
-      });
-
-      expect(resolver).toHaveBeenCalledTimes(2);
+      res.applyResolversOnGraph(root, {}, { stale: false });
+      expect(itemVal).toHaveBeenCalledTimes(2);
     });
   });
 });

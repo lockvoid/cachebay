@@ -16,59 +16,6 @@ import {
   stableIdentityExcluding,
 } from "../core/utils";
 
-/* ────────────────────────────── LOGGING ────────────────────────────── */
-
-export type CachebayDebugger = {
-  group(label: string, key?: string): void;
-  end(): void;
-  log(keyOrMsg?: string, ...args: any[]): void;
-  warn(keyOrMsg?: string, ...args: any[]): void;
-  error(keyOrMsg?: string, ...args: any[]): void;
-  setEnabled(v: boolean): void;
-  enabled(): boolean;
-  setFilter(f?: string): void;
-  getFilter(): string | undefined;
-};
-
-function getWin(): any | undefined {
-  try { return typeof window !== "undefined" ? (window as any) : undefined; } catch { return undefined; }
-}
-
-export function createDebug(): CachebayDebugger {
-  const w = getWin();
-  let on = w ? Boolean(w.__CB_DEBUG) : false;
-  let filter: string | undefined = w ? (w.__CB_DEBUG_FILTER as any) : undefined;
-
-  if (w) {
-    try {
-      Object.defineProperty(w, "__CB_DEBUG", {
-        get() { return on; },
-        set(v) { on = Boolean(v); },
-      });
-      Object.defineProperty(w, "__CB_DEBUG_FILTER", {
-        get() { return filter; },
-        set(v) { filter = v != null ? String(v) : undefined; },
-      });
-    } catch { /* ignore strict envs */ }
-  }
-
-  const match = (key?: string) => (!filter ? true : !!key && String(key).includes(String(filter)));
-
-  return {
-    group(label: string, key?: string) { if (on && match(key)) console.groupCollapsed(`[cachebay] ${label}`); },
-    end() { if (on) console.groupEnd(); },
-    log(key?: string, ...args: any[]) { if (on && match(key)) console.log(...args); },
-    warn(key?: string, ...args: any[]) { if (on && match(key)) console.warn(...args); },
-    error(key?: string, ...args: any[]) { if (on && match(key)) console.error(...args); },
-    setEnabled(v: boolean) { on = !!v; },
-    enabled() { return on; },
-    setFilter(f?: string) { filter = f ? String(f) : undefined; },
-    getFilter() { return filter; },
-  };
-}
-
-export const Debug = createDebug();
-
 /* ────────────────────────────── INSPECT ────────────────────────────── */
 
 export type InspectDeps = {

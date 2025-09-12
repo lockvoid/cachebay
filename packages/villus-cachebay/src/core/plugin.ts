@@ -2,32 +2,24 @@ import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus"
 import { CombinedError } from "villus";
 import {
   ensureDocumentHasTypenameSmart,
-  getFamilyKey,
   getOperationKey,
   isObservableLike,
 } from "./utils";
-import type { App } from "vue";
 
-type PluginOptions = {
-  addTypename: boolean;
-};
+/* ────────────────────────────────────────────────────────────────────────────
+ * Helpers
+ * ──────────────────────────────────────────────────────────────────────────── */
 
-type PluginDependencies = {
-  graph: any;
-  views: any;
-  ssr: any;
-  resolvers: any;
-};
+// Build a connection key that ignores cursor args (after/before/first/last)
+function buildConnectionKey(parent: string, field: string, vars: Record<string, any>) {
+  const filtered: Record<string, any> = { ...vars };
+  delete filtered.after; delete filtered.before; delete filtered.first; delete filtered.last;
+  const id = Object.keys(filtered).sort().map(k => `${k}:${JSON.stringify(filtered[k])}`).join("|");
+  return `${parent}.${field}(${id})`;
+}
 
-type ResultShape = { data?: any; error?: any };
-
-// Signature for duplicate suppression
-const toSig = (data: any) => {
-  try { return JSON.stringify(data); } catch { return ""; }
-};
-
-// Strip undefined so opKey stabilizes
-const cleanVars = (vars: Record<string, any> | undefined | null) => {
+// Strip undefined so alternate opKey stabilizes
+function cleanVars(vars: Record<string, any> | undefined | null) {
   const out: Record<string, any> = {};
   if (!vars || typeof vars !== "object") return out;
   for (const k of Object.keys(vars)) {
@@ -35,237 +27,273 @@ const cleanVars = (vars: Record<string, any> | undefined | null) => {
     if (v !== undefined) out[k] = v;
   }
   return out;
-};
+}
 
-// Shallow root clone — we always REPLACE the connection node inside
-const viewRootOf = (root: any) => {
+// Shallow root clone — we REPLACE connection nodes inside
+function shallowClone(root: any) {
   if (!root || typeof root !== "object") return root;
   return Array.isArray(root) ? root.slice() : { ...root };
+}
+
+type PluginOptions = {
+  addTypename?: boolean;
 };
 
+type PluginDependencies = {
+  graph: {
+    operationStore: Map<string, any>;
+    putOperation: (key: string, payload: { data: any; variables: Record<string, any> }) => void;
+    getEntityParentKey: (typename: string, id?: any) => string | null;
+    ensureConnection: (key: string) => any;
+    identify?: (obj: any) => string | null;
+  };
+  views: {
+    createConnectionView: (
+      state: any,
+      opts?: { edgesKey?: string; pageInfoKey?: string; limit?: number; root?: any; pinned?: boolean }
+    ) => any;
+    setViewLimit: (view: any, limit: number) => void;
+    syncConnection: (state: any) => void;
+  };
+  resolvers: {
+    applyResolversOnGraph: (root: any, vars: Record<string, any>, hint?: { stale?: boolean }) => void;
+  };
+  ssr?: {
+    hydrateOperationTicket?: Set<string>;
+    isHydrating?: () => boolean;
+  };
+};
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Plugin factory
+ * ──────────────────────────────────────────────────────────────────────────── */
 export function buildCachebayPlugin(
   options: PluginOptions,
-  dependencies: PluginDependencies,
+  deps: PluginDependencies,
 ): ClientPlugin {
-  const {
-    addTypename = true,
-  } = options;
+  const { addTypename = true } = options;
+  const { graph, views, resolvers, ssr } = deps;
+  const opCache = graph.operationStore || new Map<string, any>();
 
-  const { graph, views, ssr, resolvers } = dependencies;
-  const operationCache = graph.operationStore || new Map<string, any>();
+  // Per-operation (per mounted useQuery) instance state: opKey → { connKey → view }
+  const instanceViews: Map<string, Map<string, any>> = new Map();
 
-  const lastPublishedByFam = new Map<string, { data: any; variables: Record<string, any> }>();
-  const lastContentSigByFam = new Map<string, string>();
+  /** Traverse a post-resolver payload, create/reuse per-instance views, size & sync them. */
+  function wireViewsForConnections(root: any, vars: Record<string, any>, opKey: string) {
+    if (!root || typeof root !== "object") return;
+
+    let viewMap = instanceViews.get(opKey);
+    if (!viewMap) {
+      viewMap = new Map();
+      instanceViews.set(opKey, viewMap);
+    }
+
+    const stack: Array<{ node: any; parentType: string | null }> = [{ node: root, parentType: "Query" }];
+    while (stack.length) {
+      const { node, parentType } = stack.pop()!;
+      if (!node || typeof node !== "object") continue;
+
+      const t = (node as any).__typename ?? parentType;
+
+      for (const field of Object.keys(node)) {
+        const val = (node as any)[field];
+        if (!val || typeof val !== "object") continue;
+
+        // Canonical connection: edges[] + pageInfo{}
+        const edges = (val as any).edges;
+        const pageInfo = (val as any).pageInfo;
+        if (Array.isArray(edges) && pageInfo && typeof pageInfo === "object") {
+          const parentKey = graph.getEntityParentKey(t!, graph.identify?.(node)) ?? "Query";
+          const connKey = buildConnectionKey(parentKey, field, vars);
+          const state = graph.ensureConnection(connKey);
+
+          // create or reuse per-instance view
+          let view = viewMap.get(connKey);
+          if (!view) {
+            view = views.createConnectionView(state, {
+              edgesKey: "edges",
+              pageInfoKey: "pageInfo",
+              root: val,
+              limit: 0,
+              pinned: true,
+            });
+            viewMap.set(connKey, view);
+          }
+
+          // attach the view’s reactive containers to the payload
+          (val as any).edges = view.edges;
+          (val as any).pageInfo = view.pageInfo;
+
+          // size per instance: baseline → page size; cursor page → union size
+          const hasAfter = vars.after != null;
+          const hasBefore = vars.before != null;
+          if (!hasAfter && !hasBefore) {
+            // Baseline: reflect exactly what this payload shows right now
+            views.setViewLimit(view, edges.length);
+          } else {
+            // Cursor pages: reveal the union we’ve merged so far
+            views.setViewLimit(view, state.list.length);
+          }
+
+          // sync now so UI displays immediately
+          views.syncConnection(state);
+        }
+
+        // traverse deeper
+        if (Array.isArray(val)) {
+          for (const it of val) if (it && typeof it === "object") stack.push({ node: it, parentType: t });
+        } else {
+          stack.push({ node: val, parentType: t });
+        }
+      }
+    }
+  }
+
+  /** Lookup cached entry by exact opKey and by cleaned-var variant. */
+  function lookupCached(operation: any) {
+    const baseKey = getOperationKey(operation);
+    const byBase = opCache.get(baseKey);
+    if (byBase) return { key: baseKey, entry: byBase };
+
+    // Try a "cleaned variables" alt key (undefined stripped)
+    const cleaned = cleanVars(operation.variables);
+    const sameShape =
+      operation.variables &&
+      Object.keys(operation.variables).every((k) => operation.variables![k] !== undefined);
+    if (sameShape) return null;
+
+    const altKey = getOperationKey({
+      type: operation.type,
+      query: operation.query,
+      variables: cleaned,
+      context: operation.context,
+    } as any);
+    const byAlt = opCache.get(altKey);
+    return byAlt ? { key: altKey, entry: byAlt } : null;
+  }
 
   const plugin: ClientPlugin = (ctx: ClientPluginContext) => {
     const { operation } = ctx;
-    const originalUseResult = ctx.useResult;
-
-    const famKey = getFamilyKey(operation);
-    const baseOpKey = getOperationKey(operation);
 
     if (addTypename && operation.query) {
       operation.query = ensureDocumentHasTypenameSmart(operation.query as any);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // SUBSCRIPTIONS
-    // ─────────────────────────────────────────────────────────────────────────
-    if (operation.type === "subscription") {
-      if (addTypename && operation.query) {
-        operation.query = ensureDocumentHasTypenameSmart(operation.query as any);
-      }
-      ctx.useResult = (incoming: any, _terminate?: boolean) => {
-        if (isObservableLike(incoming)) return originalUseResult(incoming, true);
+    const publish = (payload: OperationResult, terminate: boolean) => ctx.useResult(payload, terminate);
 
+    // SUBSCRIPTIONS: apply resolvers and wire views; pass through
+    if (operation.type === "subscription") {
+      const original = ctx.useResult;
+      ctx.useResult = (incoming: any, terminate?: boolean) => {
+        if (isObservableLike(incoming)) return original(incoming, true);
         const r = incoming as OperationResult<any>;
-        if (r && "data" in r && r.data) {
+        if (r && r.data) {
+          const data = shallowClone(r.data);
           const vars = operation.variables || {};
-          const view = viewRootOf(r.data);
-          resolvers.applyResolversOnGraph(view, vars, { stale: false });
-          views.registerViewsFromResult(view, vars);
-          views.collectEntities(view); // Collect entities AFTER resolvers
-          originalUseResult(r, false);
-        } else {
-          originalUseResult(r, false);
+          resolvers.applyResolversOnGraph(data, vars, { stale: false });
+          graph.putOperation(getOperationKey(operation), { data, variables: vars });
+          wireViewsForConnections(data, vars, getOperationKey(operation));
+          return original({ data }, Boolean(terminate));
         }
+        return original(r, Boolean(terminate));
       };
       return;
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // QUERIES / MUTATIONS
-    // ─────────────────────────────────────────────────────────────────────────
+    // CACHE POLICIES
+    const policy = (operation as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
 
-    const cachePolicy =
-      operation.cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
-
-    const lookupCached = () => {
-      const byBase = operationCache.get(baseOpKey);
-      if (byBase) return { key: baseOpKey, entry: byBase };
-
-      const cleaned = cleanVars(operation.variables);
-      const sameShape =
-        operation.variables &&
-        Object.keys(operation.variables).every(k => operation.variables![k] !== undefined);
-      if (sameShape) return null;
-
-      const altKey = getOperationKey({
-        type: operation.type,
-        query: operation.query,
-        variables: cleaned,
-        context: operation.context
-      } as any);
-      const byAlt = operationCache.get(altKey);
-      return byAlt ? { key: altKey, entry: byAlt } : null;
-    };
-
-    // ------------------------------ CACHE-ONLY ------------------------------
-    if (cachePolicy === "cache-only") {
-      const hit = lookupCached();
+    // CACHE-ONLY
+    if (policy === "cache-only") {
+      const hit = lookupCached(operation);
       if (hit) {
-        const { entry } = hit;
-        const vars = operation.variables || entry.variables || {};
-        const viewRoot = viewRootOf(entry.data);
-        lastContentSigByFam.set(famKey, toSig(viewRoot));
-        resolvers.applyResolversOnGraph(viewRoot, vars, { stale: false });
-        views.collectEntities(viewRoot); // Collect entities AFTER resolvers
-        views.registerViewsFromResult(viewRoot, vars);
-        lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
-        originalUseResult({ data: viewRoot }, true);
+        const vars = operation.variables || hit.entry.variables || {};
+        const data = shallowClone(hit.entry.data);
+        resolvers.applyResolversOnGraph(data, vars, { stale: false });
+        wireViewsForConnections(data, vars, hit.key);
+        return publish({ data }, true);
       } else {
         const error = new CombinedError({
           networkError: Object.assign(new Error("CACHE_ONLY_MISS"), { name: "CacheOnlyMiss" }),
           graphqlErrors: [],
           response: undefined,
         });
-        originalUseResult({ error }, true);
+        return publish({ error }, true);
       }
-      return;
     }
 
-    // ------------------------------ CACHE-FIRST -----------------------------
-    if (cachePolicy === "cache-first") {
-      const hit = lookupCached();
+    // CACHE-FIRST
+    if (policy === "cache-first") {
+      const hit = lookupCached(operation);
       if (hit) {
-        const { entry } = hit;
-        const vars = operation.variables || entry.variables || {};
-        const viewRoot = viewRootOf(entry.data);
-        lastContentSigByFam.set(famKey, toSig(viewRoot));
-        resolvers.applyResolversOnGraph(viewRoot, vars, { stale: false });
-        views.collectEntities(viewRoot); // Collect entities AFTER resolvers
-        views.registerViewsFromResult(viewRoot, vars);
-        lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
-        originalUseResult({ data: viewRoot }, true);
-        return;
+        const vars = operation.variables || hit.entry.variables || {};
+        const data = shallowClone(hit.entry.data);
+        resolvers.applyResolversOnGraph(data, vars, { stale: false });
+        wireViewsForConnections(data, vars, hit.key);
+        return publish({ data }, true);
       }
-      // miss → fetch plugin will call useResult later
+      // miss → transport will deliver later
     }
 
-    // ------------------------- CACHE-AND-NETWORK HIT ------------------------
-    if (cachePolicy === "cache-and-network") {
-      const hit = lookupCached();
+    // CACHE-AND-NETWORK
+    if (policy === "cache-and-network") {
+      const hit = lookupCached(operation);
       if (hit) {
-        const { entry } = hit;
-        const vars = operation.variables || entry.variables || {};
+        const vars = operation.variables || hit.entry.variables || {};
+        const data = shallowClone(hit.entry.data);
+        resolvers.applyResolversOnGraph(data, vars, { stale: false });
 
-        const hadTicket = !!(ssr.hydrateOperationTicket && ssr.hydrateOperationTicket.has(hit.key));
-        const hydratingNow = !!(ssr.isHydrating && ssr.isHydrating());
-        if (hadTicket) ssr.hydrateOperationTicket!.delete(hit.key);
+        // SSR hydration logic
+        const key = hit.key;
+        const hadTicket = !!ssr?.hydrateOperationTicket?.has(key);
+        const hydrating = !!ssr?.isHydrating?.();
 
-        // SSR ticket / hydrating → terminal cached (resolve Suspense immediately)
-        if (hadTicket || hydratingNow) {
-          const viewRoot = viewRootOf(entry.data);
-          lastContentSigByFam.set(famKey, toSig(viewRoot));
-          resolvers.applyResolversOnGraph(viewRoot, vars, { stale: false });
-          views.collectEntities(viewRoot); // Collect entities AFTER resolvers
-          views.registerViewsFromResult(viewRoot, vars);
-          lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
-          originalUseResult({ data: viewRoot }, false);
-          return;
+        if (hadTicket) ssr!.hydrateOperationTicket!.delete(key);
+
+        // If hydrating or ticketed: publish terminal cached to resolve Suspense
+        if (hadTicket || hydrating) {
+          wireViewsForConnections(data, vars, key);
+          return publish({ data }, false); // allow network to follow, but cached resolves suspense
         }
 
-        // Normal CN cached reveal: bind views on a view clone
-        const viewRoot = viewRootOf(entry.data);
-        lastContentSigByFam.set(famKey, toSig(viewRoot));
-        resolvers.applyResolversOnGraph(viewRoot, vars, { stale: false });
-        views.collectEntities(viewRoot); // Collect entities AFTER resolvers
-        views.registerViewsFromResult(viewRoot, vars);
-        lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
-
-        // Non-terminating: UI updates instantly; fetch still runs
-        originalUseResult({ data: viewRoot }, false);
+        // Normal CN: publish non-terminal cached now; network will follow
+        wireViewsForConnections(data, vars, key);
+        publish({ data }, false);
       }
-      // no cached hit → fetch plugin will emit later
+      // No cached hit → transport will deliver later
     }
 
-    // ----------------------------- RESULT PATH ------------------------------
-    ctx.useResult = (result: OperationResult, terminate?: boolean) => {
-      const r: any = result;
+    // NETWORK RESULT PATH
+    const originalUseResult = ctx.useResult;
+    ctx.useResult = (incoming: OperationResult, terminate?: boolean) => {
+      const r: any = incoming;
       const hasData = r && "data" in r && r.data != null;
       const hasError = r && "error" in r && r.error != null;
 
-      const vars = operation.variables || {};
-      const isCursorPage = vars && (vars.after != null || vars.before != null);
-
-      // Placeholder frames: forward, but keep op open
+      // Pass through placeholders/non-data frames
       if (!hasData && !hasError) {
-        return originalUseResult(result as any, false);
+        return originalUseResult(incoming, false);
       }
 
-      // Non-terminating frames: pass through
-      if (terminate === false && hasData) {
-        return originalUseResult(result, false);
-      }
-
-      // CURSOR PAGES — terminal publish; keep op-cache RAW & PLAIN
-      if (isCursorPage && hasData) {
-        const cacheRoot = r.data; // already plain enough for writeOpCache; it sanitizes shallowly
-        graph.putOperation(baseOpKey, { data: cacheRoot, variables: vars });
-
-        const viewRoot = viewRootOf(r.data);
-        resolvers.applyResolversOnGraph(viewRoot, vars, { stale: true });
-        views.collectEntities(viewRoot); // Collect entities AFTER resolvers
-        views.registerViewsFromResult(viewRoot, vars);
-        lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
-        return originalUseResult({ data: viewRoot }, true);
-      }
-
-      // WINNER (baseline) with duplicate suppression
-      if (hasData) {
-        const cacheRoot = r.data;
-
-        const prevSig = lastContentSigByFam.get(famKey);
-        const nextSig = toSig(cacheRoot);
-
-        // Store raw data in operation cache
-        graph.putOperation(baseOpKey, { data: cacheRoot, variables: vars });
-        lastContentSigByFam.set(famKey, nextSig);
-
-        // Apply resolvers and collect entities from transformed data
-        const viewRoot = viewRootOf(r.data);
-        resolvers.applyResolversOnGraph(viewRoot, vars, { stale: false });
-        views.collectEntities(viewRoot); // Collect entities AFTER resolvers
-        views.registerViewsFromResult(viewRoot, vars);
-
-        if (prevSig && nextSig === prevSig) {
-          const last = lastPublishedByFam.get(famKey);
-          const sameRef = last?.data ?? viewRoot;
-          lastPublishedByFam.set(famKey, { data: sameRef, variables: vars });
-          return originalUseResult({ data: sameRef }, true);
-        }
-
-        lastPublishedByFam.set(famKey, { data: viewRoot, variables: vars });
-        return originalUseResult({ data: viewRoot }, true);
-      }
-
-      // Errors: forward terminally
       if (hasError) {
-        return originalUseResult(result, true);
+        return originalUseResult(incoming, true);
       }
 
-      // Fallback
-      return originalUseResult(result, terminate);
+      // Terminal publish: apply resolvers, store post-resolver raw, wire views
+      const vars = operation.variables || {};
+      const data = shallowClone(r.data);
+
+      // Apply write-time resolvers (relay merges into ConnectionState)
+      resolvers.applyResolversOnGraph(data, vars, { stale: false });
+
+      // Store post-resolver raw into op-cache
+      const key = getOperationKey(operation);
+      graph.putOperation(key, { data, variables: vars });
+
+      // Wire views
+      wireViewsForConnections(data, vars, key);
+
+      return originalUseResult({ data }, true);
     };
   };
 
@@ -273,8 +301,9 @@ export function buildCachebayPlugin(
 }
 
 /* ----------------------------------------------------------------------------
- * Vue provide/inject helper
+ * Vue provide/inject helper (unchanged)
  * ---------------------------------------------------------------------------- */
+import type { App } from "vue";
 export const CACHEBAY_KEY: symbol = Symbol("villus-cachebay");
 
 export function provideCachebay(app: App, instance: any) {
@@ -284,8 +313,6 @@ export function provideCachebay(app: App, instance: any) {
     identify: instance.identify,
     modifyOptimistic: instance.modifyOptimistic,
     hasFragment: (instance as any).hasFragment,
-    listEntityKeys: (instance as any).listEntityKeys,
-    listEntities: (instance as any).listEntities,
     inspect: (instance as any).inspect,
     entitiesTick: (instance as any).entitiesTick,
   };

@@ -1,62 +1,338 @@
 import { describe, it, expect, vi } from 'vitest';
-import { CACHEBAY_KEY, provideCachebay, buildCachebayPlugin } from '@/src/core/plugin';
+import { buildCachebayPlugin } from '@/src/core/plugin';
+import { CombinedError } from 'villus';
+import { getOperationKey } from '@/src/core/utils';
 
-describe('plugin — provideCachebay', () => {
-  it('provides a minimal public API under CACHEBAY_KEY', () => {
-    const provided: any = {};
-    const app: any = { provide: (k: any, v: any) => { provided.key = k; provided.value = v; } };
+// Minimal mocks for graph / views / resolvers
+function createGraphMock() {
+  const operationStore = new Map<string, any>();
+  const connectionStore = new Map<string, any>();
 
-    const instance: any = {
-      readFragment: () => ({}),
-      writeFragment: (_: any) => ({ commit: () => { } }),
-      identify: (_: any) => 'X:1',
-      modifyOptimistic: () => { },
-      // optional passthroughs
-      hasFragment: () => true,
-      listEntities: () => [],
-      inspect: () => ({}),
-      entitiesTick: () => { },
+  function ensureConnection(key: string) {
+    let st = connectionStore.get(key);
+    if (!st) {
+      st = {
+        list: [] as Array<{ key: string; cursor: string | null }>,
+        pageInfo: {} as Record<string, any>,
+        meta: {} as Record<string, any>,
+        views: new Set<any>(),
+        keySet: new Set<string>(),
+        initialized: false,
+      };
+      connectionStore.set(key, st);
+    }
+    return st;
+  }
+
+  function getEntityParentKey(typename: string, id?: any) {
+    return typename === 'Query' ? 'Query' : (id == null ? null : `${typename}:${id}`);
+  }
+
+  return {
+    operationStore,
+    connectionStore,
+    ensureConnection,
+    getEntityParentKey,
+    putOperation: vi.fn((key: string, payload: any) => operationStore.set(key, payload)),
+    identify: (o: any) => (o && o.id != null ? String(o.id) : null),
+  };
+}
+
+function createViewsMock() {
+  function createConnectionView(state: any, opts: any = {}) {
+    const view = {
+      edges: [] as any[],
+      pageInfo: {} as Record<string, any>,
+      edgesKey: opts.edgesKey ?? 'edges',
+      pageInfoKey: opts.pageInfoKey ?? 'pageInfo',
+      limit: Math.max(0, opts.limit ?? 0),
+      root: opts.root ?? {},
+      pinned: !!opts.pinned,
     };
-
-    provideCachebay(app, instance);
-
-    expect(provided.key).toBe(CACHEBAY_KEY);
-    expect(typeof provided.value.readFragment).toBe('function');
-    expect(typeof provided.value.writeFragment).toBe('function');
-    expect(typeof provided.value.identify).toBe('function');
-    expect(typeof provided.value.modifyOptimistic).toBe('function');
-    expect(typeof provided.value.hasFragment).toBe('function');
-    expect(typeof provided.value.listEntities).toBe('function');
-    expect(typeof provided.value.inspect).toBe('function');
-    expect(typeof provided.value.entitiesTick).toBe('function');
-  });
-});
-
-describe('plugin — buildCachebayPlugin', () => {
-  it('returns a villus-compatible plugin function', () => {
-    const mockGraph = {
-      operationStore: new Map(),
-      putOperation: vi.fn(),
-    };
-    const mockViews = {
-      collectEntities: vi.fn(),
-      registerViewsFromResult: vi.fn(),
-    };
-    const mockSsr = {
-      isHydrating: vi.fn(() => false),
-      hydrateOperationTicket: new Set(),
-    };
-    const plugin = buildCachebayPlugin(
-      {
-        addTypename: true,
-      },
-      {
-        graph: mockGraph,
-        views: mockViews,
-        ssr: mockSsr,
-        resolvers: {},
+    state.views.add(view);
+    return view;
+  }
+  function setViewLimit(view: any, n: number) { view.limit = Math.max(0, n | 0); }
+  function syncConnection(state: any) {
+    for (const v of state.views) {
+      const len = Math.min(state.list.length, v.limit);
+      while (v.edges.length < len) v.edges.push({});
+      if (v.edges.length > len) v.edges.splice(len);
+      for (let i = 0; i < len; i++) {
+        const entry = state.list[i];
+        v.edges[i].cursor = entry.cursor;
+        v.edges[i].node ||= {};
       }
-    );
-    expect(typeof plugin).toBe('function');
+      Object.assign(v.pageInfo, state.pageInfo);
+    }
+  }
+  return { createConnectionView, setViewLimit, syncConnection };
+}
+
+// A tiny write-time resolver that simulates relay merge into graph
+function createResolversMock(graph: any) {
+  return {
+    applyResolversOnGraph: vi.fn((root: any, vars: Record<string, any>) => {
+      const stack = [{ node: root, parent: 'Query' as string | null }];
+      while (stack.length) {
+        const { node, parent } = stack.pop()!;
+        const t = node?.__typename ?? parent;
+        for (const f of Object.keys(node || {})) {
+          const val = (node as any)[f];
+          if (!val || typeof val !== 'object') continue;
+
+          if (Array.isArray(val.edges) && val.pageInfo && typeof val.pageInfo === 'object') {
+            // merge into state
+            const parentKey = graph.getEntityParentKey(t!, graph.identify?.(node)) ?? 'Query';
+            const filtered = { ...vars }; delete filtered.after; delete filtered.before; delete filtered.first; delete filtered.last;
+            const id = Object.keys(filtered).sort().map(k => `${k}:${JSON.stringify(filtered[k])}`).join('|');
+            const connKey = `${parentKey}.${f}(${id})`;
+            const state = graph.ensureConnection(connKey);
+
+            if (!(vars.after != null || vars.before != null)) {
+              state.list.length = 0; state.keySet.clear(); // baseline replaces
+            }
+
+            for (const e of val.edges) {
+              const k = `${e.node.__typename}:${e.node.id}`;
+              if (!state.keySet.has(k)) {
+                state.list.push({ key: k, cursor: e.cursor });
+                state.keySet.add(k);
+              }
+            }
+            Object.assign(state.pageInfo, val.pageInfo);
+            continue;
+          }
+
+          if (Array.isArray(val)) {
+            for (const it of val) if (it && typeof it === 'object') stack.push({ node: it, parent: t });
+          } else {
+            stack.push({ node: val, parent: t });
+          }
+        }
+      }
+    }),
+  };
+}
+function makeCtx(variables: any = {}, type: 'query' | 'mutation' | 'subscription' = 'query') {
+  const DUMMY_QUERY = 'query Test { __typename }';
+  const op: any = { type, variables, query: DUMMY_QUERY, key: Math.floor(Math.random() * 1e9) };
+  const published: any[] = [];
+  const ctx: any = {
+    operation: op,
+    useResult: (r: any, term?: boolean) => { published.push({ r, term }); },
+    get _published() { return published; }
+  };
+  return ctx;
+}
+
+describe('cachebay plugin — cache policies + SSR + views wiring', () => {
+  it('cache-only miss → CacheOnlyMiss error', () => {
+    const graph = createGraphMock();
+    const views = createViewsMock();
+    const resolvers = createResolversMock(graph);
+    const plugin = buildCachebayPlugin({ addTypename: false }, { graph, views, resolvers });
+
+    const ctx = makeCtx({}, 'query');
+    ctx.operation.cachePolicy = 'cache-only';
+    plugin(ctx); // publishes immediately
+
+    expect(ctx._published.length).toBe(1);
+    expect(ctx._published[0].r.error).toBeInstanceOf(CombinedError);
+    expect(ctx._published[0].r.error.networkError.name).toBe('CacheOnlyMiss');
+  });
+
+  it('cache-only hit → resolves from op-cache and wires views', () => {
+    const graph = createGraphMock();
+    const views = createViewsMock();
+    const resolvers = createResolversMock(graph);
+    const plugin = buildCachebayPlugin({ addTypename: false }, { graph, views, resolvers });
+
+    const ctx = makeCtx({ first: 2 });
+    const key = getOperationKey(ctx.operation);
+    const cached = {
+      data: {
+        __typename: 'Query',
+        posts: {
+          edges: [
+            { cursor: 'c1', node: { __typename: 'Post', id: '1' } },
+            { cursor: 'c2', node: { __typename: 'Post', id: '2' } },
+          ],
+          pageInfo: { endCursor: 'c2', hasNextPage: true },
+        },
+      },
+      variables: ctx.operation.variables,
+    };
+    graph.operationStore.set(key, cached);
+
+    ctx.operation.cachePolicy = 'cache-only';
+    plugin(ctx);
+
+    const pub = ctx._published[0].r.data;
+    expect(pub.posts.edges.length).toBe(2);
+
+    const state = graph.connectionStore.values().next().value;
+    const view = Array.from(state.views)[0];
+    expect(view.limit).toBe(2);
+  });
+
+  it('cache-first hit → terminal cached publish', () => {
+    const graph = createGraphMock();
+    const views = createViewsMock();
+    const resolvers = createResolversMock(graph);
+    const plugin = buildCachebayPlugin({ addTypename: false }, { graph, views, resolvers });
+
+    const ctx = makeCtx({ first: 1 });
+    const key = getOperationKey(ctx.operation);
+    graph.operationStore.set(key, {
+      data: {
+        __typename: 'Query',
+        posts: {
+          edges: [{ cursor: 'c1', node: { __typename: 'Post', id: '1' } }],
+          pageInfo: { endCursor: 'c1', hasNextPage: true },
+        },
+      },
+      variables: ctx.operation.variables,
+    });
+
+    ctx.operation.cachePolicy = 'cache-first';
+    plugin(ctx);
+    expect(ctx._published.length).toBe(1);
+    expect(ctx._published[0].term).toBe(true);
+  });
+
+  it('cache-and-network hit (no SSR) → non-terminal cached, then terminal network result', () => {
+    const graph = createGraphMock();
+    const views = createViewsMock();
+    const resolvers = createResolversMock(graph);
+    const plugin = buildCachebayPlugin({ addTypename: false }, { graph, views, resolvers });
+
+    const ctx = makeCtx({ first: 1 });
+    const key = getOperationKey(ctx.operation);
+    graph.operationStore.set(key, {
+      data: {
+        __typename: 'Query',
+        posts: {
+          edges: [{ cursor: 'c1', node: { __typename: 'Post', id: '1' } }],
+          pageInfo: { endCursor: 'c1', hasNextPage: true },
+        },
+      },
+      variables: ctx.operation.variables,
+    });
+
+    ctx.operation.cachePolicy = 'cache-and-network';
+    plugin(ctx);
+
+    expect(ctx._published.length).toBe(1);
+    expect(ctx._published[0].term).toBe(false);
+
+    // simulate network
+    ctx.useResult({
+      data: {
+        __typename: 'Query',
+        posts: {
+          edges: [
+            { cursor: 'c1', node: { __typename: 'Post', id: '1' } },
+            { cursor: 'c2', node: { __typename: 'Post', id: '2' } },
+          ],
+          pageInfo: { endCursor: 'c2', hasNextPage: true },
+        },
+      }
+    } as any, true);
+
+    expect(ctx._published.length).toBe(2);
+    expect(ctx._published[1].term).toBe(true);
+
+    const state = graph.connectionStore.values().next().value;
+    const view = Array.from(state.views)[0];
+    expect(view.edges.length).toBe(2);
+  });
+
+  it('cache-and-network hit (SSR ticket) → terminal cached publish', () => {
+    const graph = createGraphMock();
+    const views = createViewsMock();
+    const resolvers = createResolversMock(graph);
+    const ssr = { hydrateOperationTicket: new Set<string>(), isHydrating: vi.fn(() => false) };
+    const plugin = buildCachebayPlugin({ addTypename: false }, { graph, views, resolvers, ssr });
+
+    const ctx = makeCtx({ first: 1 });
+    const key = getOperationKey(ctx.operation);
+    graph.operationStore.set(key, {
+      data: {
+        __typename: 'Query',
+        posts: {
+          edges: [{ cursor: 'c1', node: { __typename: 'Post', id: '1' } }],
+          pageInfo: { endCursor: 'c1', hasNextPage: true },
+        },
+      },
+      variables: ctx.operation.variables,
+    });
+    ssr.hydrateOperationTicket!.add(key);
+
+    ctx.operation.cachePolicy = 'cache-and-network';
+    plugin(ctx);
+
+    expect(ctx._published.length).toBe(1);
+    expect(ctx._published[0].term).toBe(false);
+    expect(ssr.hydrateOperationTicket!.has(key)).toBe(false);
+  });
+
+  it('network result path stores post-resolver raw and wires views', () => {
+    const graph = createGraphMock();
+    const views = createViewsMock();
+    const resolvers = createResolversMock(graph);
+    const plugin = buildCachebayPlugin({ addTypename: false }, { graph, views, resolvers });
+
+    const ctx = makeCtx({ first: 2 });
+    plugin(ctx);
+
+    const payload = {
+      data: {
+        __typename: 'Query',
+        posts: {
+          edges: [
+            { cursor: 'c1', node: { __typename: 'Post', id: '1' } },
+            { cursor: 'c2', node: { __typename: 'Post', id: '2' } },
+          ],
+          pageInfo: { endCursor: 'c2', hasNextPage: true },
+        },
+      }
+    };
+
+    ctx.useResult(payload as any, true);
+
+    const key = getOperationKey(ctx.operation);
+    const cached = graph.operationStore.get(key);
+    expect(cached?.data).toEqual(payload.data);
+
+    const state = graph.connectionStore.values().next().value;
+    const view = Array.from(state.views)[0];
+    expect(view.limit).toBe(2);
+    expect(view.edges.length).toBe(2);
+  });
+
+  it('subscriptions: applies resolvers and wires views on each frame', () => {
+    const graph = createGraphMock();
+    const views = createViewsMock();
+    const resolvers = createResolversMock(graph);
+    const plugin = buildCachebayPlugin({ addTypename: false }, { graph, views, resolvers });
+
+    const ctx = makeCtx({ first: 1 }, 'subscription');
+    plugin(ctx);
+
+    ctx.useResult({
+      data: {
+        __typename: 'Query',
+        posts: {
+          edges: [{ cursor: 'c1', node: { __typename: 'Post', id: '1' } }],
+          pageInfo: { endCursor: 'c1', hasNextPage: true },
+        },
+      }
+    } as any, false);
+
+    expect(ctx._published.length).toBe(1);
+    const state = graph.connectionStore.values().next().value;
+    const view = Array.from(state.views)[0];
+    expect(view.edges.length).toBe(1);
   });
 });

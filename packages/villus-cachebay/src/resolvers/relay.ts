@@ -1,5 +1,4 @@
 // src/resolvers/relay.ts
-import { shallowReactive, reactive, isReactive } from "vue";
 import { defineResolver, type RelayOptsPartial } from "../types";
 import type { RelayOptions } from "../core/types";
 
@@ -25,218 +24,174 @@ function normalizeRelayOptions(opts?: RelayOptsPartial): RelayOptions {
       last: opts?.last ?? "last",
     },
     hasNodePath: node.includes("."),
-    writePolicy: opts?.writePolicy,
-    paginationMode: opts?.paginationMode ?? "auto",
+    writePolicy: opts?.writePolicy,                  // 'merge' | 'replace' | undefined
+    paginationMode: opts?.paginationMode ?? "auto",  // 'append' | 'prepend' | 'replace' | 'auto'
   } as RelayOptions;
 }
 
+function readPathValue(obj: any, path: string) {
+  if (!obj || !path) return undefined;
+  let cur: any = obj;
+  for (const seg of path.split(".")) {
+    if (cur == null) return undefined;
+    cur = cur[seg];
+  }
+  return cur;
+}
+
+// Stable connection key (ignore cursor args)
+function buildConnectionKey(
+  parentKey: string,
+  field: string,
+  vars: Record<string, any>
+) {
+  const filtered: Record<string, any> = { ...vars };
+  delete filtered.after; delete filtered.before; delete filtered.first; delete filtered.last;
+  const id = Object.keys(filtered)
+    .sort()
+    .map((k) => `${k}:${JSON.stringify(filtered[k])}`)
+    .join("|");
+  return `${parentKey}.${field}(${id})`;
+}
+
 /**
- * Relay resolver (latest interface)
- * - Visibility is driven by `paginationMode` only:
- *   - append/prepend: view.limit += pageSize
- *   - replace:        view.limit  = pageSize (destructive)
+ * Relay resolver — view-agnostic, runs BEFORE normalization finishes.
+ * - Merges edge pages into a single ConnectionState per (parent, field, non-cursor vars).
+ * - Updates state.list (dedup by entity key), state.pageInfo, and state.meta.
+ * - Does NOT create/resize views (plugin/UI should do that).
  */
 export const relay = defineResolver((opts?: RelayOptsPartial) => {
-  const relayOptions = normalizeRelayOptions(opts);
+  const RELAY = normalizeRelayOptions(opts);
 
-  return (deps: { graph: any; views: any; utils: any }) => (ctx: any) => {
-    const { graph, views, utils } = deps;
-    const v = ctx.variables || {};
-    if (v[relayOptions.cursors.after] != null || v[relayOptions.cursors.before] != null) {
-      ctx.hint.allowReplayOnStale = true;
-    }
+  return (deps: {
+    graph: {
+      ensureConnection: (key: string) => any;
+      putEntity: (node: any, policy?: "merge" | "replace") => string | null;
+      getEntityParentKey: (typename: string, id?: any) => string | null;
+      identify?: (obj: any) => string | null;
+    };
+    utils?: {
+      TYPENAME_KEY?: string;
+      applyFieldResolvers?: (typename: string, obj: any, vars: Record<string, any>, hint?: any) => void;
+    };
+  }) => (ctx: {
+    parentTypename: string;
+    parent: any;
+    field: string;
+    value: any;                // server connection object
+    variables: Record<string, any>;
+    hint?: { stale?: boolean; allowReplayOnStale?: boolean };
+    set: (next: any) => void;  // not used (view-agnostic)
+  }) => {
+      const { graph, utils } = deps;
 
-    const parentTypename = ctx.parentTypename;
-    const fieldName = ctx.field;
+      const vars = ctx.variables || {};
+      const hasAfter = vars[RELAY.cursors.after] != null;
+      const hasBefore = vars[RELAY.cursors.before] != null;
 
-    // Persist per-field options for later usage (e.g., view registration)
-    utils.setRelayOptionsByType(parentTypename, fieldName, relayOptions);
-
-    const parentKey = graph.getEntityParentKey(
-      parentTypename,
-      graph.identify?.(ctx.parent),
-    );
-    const connectionKey = utils.buildConnectionKey(
-      parentKey!,
-      fieldName,
-      relayOptions,
-      ctx.variables,
-    );
-    const connectionState = graph.ensureReactiveConnection(connectionKey);
-
-    const variables = ctx.variables || {};
-    const afterVal = variables[relayOptions.cursors.after];
-    const beforeVal = variables[relayOptions.cursors.before];
-
-    // paginationMode: explicit > infer by cursors
-    const configured = relayOptions.paginationMode;
-    const writeMode: "append" | "prepend" | "replace" =
-      configured !== "auto"
-        ? (configured as any)
-        : afterVal != null
-          ? "append"
-          : beforeVal != null
-            ? "prepend"
-            : "replace";
-
-    // Destructive clear for replace
-    if (writeMode === "replace") {
-      for (let i = 0, n = connectionState.list.length; i < n; i++) {
-        views.unlinkEntityFromConnection(connectionState.list[i].key, connectionState);
-      }
-      connectionState.list.length = 0;
-      connectionState.keySet.clear();
-    }
-
-    // Read edges/pageInfo using string paths
-    const edgesArray = utils.readPathValue(ctx.value, relayOptions.paths.edges);
-    const edgesCount = Array.isArray(edgesArray) ? edgesArray.length : 0;
-
-    if (Array.isArray(edgesArray)) {
-      const hasNodePath = relayOptions.hasNodePath;
-      const nodeFieldName = relayOptions.names.nodeField;
-
-      // Always iterate forward to maintain order
-      const start = 0;
-      const end = edgesArray.length;
-      const step = 1;
-
-      const toUnlink: any[] = [];
-      const nextEntries: any[] = [];
-
-      for (let i = start; i !== end; i += step) {
-        const edge = edgesArray[i];
-        if (!edge || typeof edge !== "object") continue;
-
-        let node = relayOptions.hasNodePath
-          ? utils.readPathValue(edge, relayOptions.paths.node)
-          : edge[nodeFieldName];
-        if (!node) continue;
-
-        const nodeTypename = node[utils.TYPENAME_KEY];
-        if (nodeTypename && utils.applyFieldResolvers) {
-          utils.applyFieldResolvers(nodeTypename, node, ctx.variables || {}, ctx.hint);
-        }
-
-        const entityKey = graph.putEntity(node, relayOptions.writePolicy);
-        if (!entityKey) continue;
-
-        const cursor = (edge as any).cursor != null ? (edge as any).cursor : null;
-
-        // Gather edge meta (excluding cursor and the node field when simple path)
-        let edgeMeta: Record<string, any> | undefined;
-        const ek = Object.keys(edge as any);
-        for (let j = 0; j < ek.length; j++) {
-          const k = ek[j];
-          if (k === "cursor") continue;
-          if (!hasNodePath && k === nodeFieldName) continue;
-          (edgeMeta ??= Object.create(null))[k] = (edge as any)[k];
-        }
-
-        if (connectionState.keySet.has(entityKey)) {
-          // Update in place (dedup by entity key)
-          for (let j = 0, m = connectionState.list.length; j < m; j++) {
-            if (connectionState.list[j].key === entityKey) {
-              connectionState.list[j] = {
-                key: entityKey,
-                cursor,
-                edge: edgeMeta ?? connectionState.list[j].edge,
-              };
-              views.linkEntityToConnection(entityKey, connectionState);
-              break;
-            }
-          }
-        } else {
-          nextEntries.push({ key: entityKey, cursor, edge: shallowReactive({}) });
-        }
+      // Allow replay on stale when paging by cursor
+      if (hasAfter || hasBefore) {
+        (ctx.hint ??= {}).allowReplayOnStale = true;
       }
 
-      // unlink orphaned nodes
-      for (const entry of toUnlink) {
-        views.unlinkEntityFromConnection(entry.key, connectionState);
-      }
+      // Decide write mode
+      const writeMode: "append" | "prepend" | "replace" =
+        RELAY.paginationMode !== "auto"
+          ? (RELAY.paginationMode as any)
+          : hasAfter
+            ? "append"
+            : hasBefore
+              ? "prepend"
+              : "replace";
 
-      if (writeMode === "prepend") {
-        connectionState.list.unshift(...nextEntries);
-      } else {
-        connectionState.list.push(...nextEntries);
-      }
-      connectionState.keySet.add(...nextEntries.map((entry) => entry.key));
-      nextEntries.forEach((entry) => views.linkEntityToConnection(entry.key, connectionState));
-    }
+      // Resolve connection identity and state
+      const parentKey =
+        graph.getEntityParentKey(ctx.parentTypename, graph.identify?.(ctx.parent)) ?? "Query";
+      const connKey = buildConnectionKey(parentKey, ctx.field, vars);
+      const state = graph.ensureConnection(connKey);
 
-    // Merge pageInfo
-    const pageInfoFromServer = utils.readPathValue(ctx.value, relayOptions.paths.pageInfo);
-    if (pageInfoFromServer && typeof pageInfoFromServer === "object") {
-      const pik = Object.keys(pageInfoFromServer as any);
-      for (let i = 0; i < pik.length; i++) {
-        const k = pik[i];
-        const nextValue = (pageInfoFromServer as any)[k];
-        if ((connectionState.pageInfo as any)[k] !== nextValue) {
-          (connectionState.pageInfo as any)[k] = nextValue;
-        }
-      }
-    }
-
-    // Merge connection-level meta (exclude edges/pageInfo/__typename)
-    const edgesFieldName = relayOptions.names.edges;
-    const pageInfoFieldName = relayOptions.names.pageInfo;
-
-    if (ctx.value && typeof ctx.value === "object") {
-      const exclude = new Set([edgesFieldName, pageInfoFieldName, "__typename"]);
-      const ck = Object.keys(ctx.value as any);
-      for (let i = 0; i < ck.length; i++) {
-        const k = ck[i];
-        const nextValue = (ctx.value as any)[k];
-        if (!exclude.has(k)) {
-          if ((connectionState.meta as any)[k] !== nextValue) {
-            (connectionState.meta as any)[k] = nextValue;
-          }
-        }
-      }
-    }
-
-    // Ensure reactive connection surface
-    const connectionObject = isReactive(ctx.value) ? ctx.value : reactive(ctx.value);
-    if (connectionObject !== ctx.value) ctx.set(connectionObject);
-
-    // Ensure edges array is reactive and empty for population from connection state
-    if (!connectionObject[edgesFieldName] || !isReactive(connectionObject[edgesFieldName])) {
-      connectionObject[edgesFieldName] = reactive([]);
-    }
-    
-    if (!isReactive(connectionObject[pageInfoFieldName])) {
-      connectionObject[pageInfoFieldName] = reactive(connectionObject[pageInfoFieldName] || {});
-    }
-
-    // Register a strong view for this edges array
-    views.addStrongView(connectionState, {
-      edges: connectionObject[edgesFieldName],
-      pageInfo: connectionObject[pageInfoFieldName],
-      root: connectionObject,
-      edgesKey: edgesFieldName,
-      pageInfoKey: pageInfoFieldName,
-      pinned: true,
-    });
-
-    // Mode-driven view sizing across ALL views of this connection
-    const growBy = edgesCount;
-    connectionState.views.forEach((view: any) => {
-      if (!view || !Array.isArray(view.edges) || !view.pageInfo) return;
+      // 'replace' clears the canonical list before merging
       if (writeMode === "replace") {
-        view.limit = growBy;
-      } else {
-        // For append/prepend, set limit to total size of connection
-        view.limit = connectionState.list.length;
+        state.list.length = 0;
+        state.keySet.clear();
       }
-    });
 
-    // Sync or schedule
-    if (!connectionState.initialized) {
-      views.synchronizeConnectionViews?.(connectionState);
-      connectionState.initialized = true;
-    } else {
-      views.markConnectionDirty(connectionState);
-    }
-  };
+      // Extract edges/pageInfo from the payload
+      const edgesArray = readPathValue(ctx.value, RELAY.paths.edges);
+      const pageInfoObj = readPathValue(ctx.value, RELAY.paths.pageInfo);
+
+      // Merge edges (dedup by entity key)
+      if (Array.isArray(edgesArray)) {
+        const nodeField = RELAY.names.nodeField;
+        const newEntries: Array<{ key: string; cursor: string | null; edge?: Record<string, any> }> = [];
+
+        for (let i = 0; i < edgesArray.length; i++) {
+          const edge = edgesArray[i];
+          if (!edge || typeof edge !== "object") continue;
+
+          const node = RELAY.hasNodePath ? readPathValue(edge, RELAY.paths.node) : edge[nodeField];
+          if (!node || typeof node !== "object") continue;
+
+          const tKey = utils?.TYPENAME_KEY ?? "__typename";
+          const tn = node[tKey];
+          if (tn && typeof utils?.applyFieldResolvers === "function") {
+            utils.applyFieldResolvers(tn, node, vars, ctx.hint);
+          }
+
+          const ek = graph.putEntity(node, RELAY.writePolicy);
+          if (!ek) continue;
+
+          const cursor = edge.cursor != null ? edge.cursor : null;
+
+          // Gather edge meta (excluding cursor and node field for simple path)
+          let meta: Record<string, any> | undefined;
+          for (const k of Object.keys(edge)) {
+            if (k === "cursor") continue;
+            if (!RELAY.hasNodePath && k === nodeField) continue;
+            (meta ??= Object.create(null))[k] = (edge as any)[k];
+          }
+
+          if (state.keySet.has(ek)) {
+            // Update existing entry in place (keep ordering)
+            for (let j = 0; j < state.list.length; j++) {
+              if (state.list[j].key === ek) {
+                state.list[j] = { key: ek, cursor, edge: meta ?? state.list[j].edge };
+                break;
+              }
+            }
+          } else {
+            newEntries.push({ key: ek, cursor, edge: meta });
+          }
+        }
+
+        if (writeMode === "prepend") state.list.unshift(...newEntries);
+        else state.list.push(...newEntries);
+
+        for (let i = 0; i < newEntries.length; i++) state.keySet.add(newEntries[i].key);
+      }
+
+      // Merge pageInfo in place
+      if (pageInfoObj && typeof pageInfoObj === "object") {
+        for (const k of Object.keys(pageInfoObj)) {
+          const nv = (pageInfoObj as any)[k];
+          if (state.pageInfo[k] !== nv) state.pageInfo[k] = nv;
+        }
+      }
+
+      // Merge connection-level meta (exclude edges/pageInfo/__typename)
+      const edgesField = RELAY.names.edges;
+      const pageInfoField = RELAY.names.pageInfo;
+      if (ctx.value && typeof ctx.value === "object") {
+        for (const k of Object.keys(ctx.value)) {
+          if (k === edgesField || k === pageInfoField || k === "__typename") continue;
+          const nv = (ctx.value as any)[k];
+          if (state.meta[k] !== nv) state.meta[k] = nv;
+        }
+      }
+
+      // Mark initialized
+      if (!state.initialized) {
+        state.initialized = true;
+      }
+    };
 });
