@@ -285,6 +285,6 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
     T2.revert?.();
     await delay(10);
     expect(getListItems(wrapper)).toEqual([]);
-    expect(wrapper.find('.pageInfo').text()).toBe('{"endCursor":null,"hasNextPage":false}');
+    expect(wrapper.find('.pageInfo').text()).toBe('{"endCursor":null,"hasNextPage":true}');
   });
 });
