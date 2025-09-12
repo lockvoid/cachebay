@@ -1,11 +1,16 @@
 /* src/features/optimistic.ts */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { stableIdentityExcluding } from "../core/utils";
+/**
+ * Transactional optimistic updates:
+ * - Graph-first: mutate entity snapshots & connection lists/pageInfo.
+ * - Batch view resync once per transaction (and once after revert()).
+ * - Uses the same connection key format as views/session (string-based, filtered vars).
+ */
 
-/** Local helpers */
 type EntityKey = string;
 
+/** Shallow clone helpers (keep array/object identity where required) */
 function cloneList(list: any[]): any[] {
   return list.map(e => ({ ...e, edge: e.edge ? { ...e.edge } : undefined }));
 }
@@ -29,7 +34,7 @@ function upsertEntry(
   }
 }
 
-/** Only support __typename + id (no _id in new system). */
+/** Only support __typename + id (no _id in the new system). */
 function identifyNodeKey(obj: any): EntityKey | null {
   if (!obj || typeof obj !== "object") return null;
   const typename = obj.__typename;
@@ -37,7 +42,7 @@ function identifyNodeKey(obj: any): EntityKey | null {
   return typename && id != null ? `${typename}:${String(id)}` : null;
 }
 
-/** Edge meta = shallow copy of user-provided meta (ignore cursor). */
+/** Shallow copy of user-provided edge meta (ignore cursor/node). */
 function edgeMetaShallow(meta: any): any {
   if (!meta || typeof meta !== "object") return undefined;
   const out: any = {};
@@ -48,13 +53,18 @@ function edgeMetaShallow(meta: any): any {
   return Object.keys(out).length ? out : undefined;
 }
 
-/** Build a connection key that ignores cursor args. */
+/** Build a connection key that ignores cursor args (must match views/session). */
 function buildConnKey(parentKey: string, field: string, vars: Record<string, any> | undefined) {
-  const id = stableIdentityExcluding(vars || {}, ["after", "before", "first", "last"]);
+  const filtered: Record<string, any> = { ...(vars || {}) };
+  delete filtered.after; delete filtered.before; delete filtered.first; delete filtered.last;
+  const id = Object.keys(filtered)
+    .sort()
+    .map((k) => `${k}:${JSON.stringify(filtered[k])}`)
+    .join("|");
   return `${parentKey}.${field}(${id})`;
 }
 
-/** Deps we need from the environment */
+/** Deps from environment */
 type Deps = {
   graph: {
     entityStore: Map<string, any>;
@@ -63,6 +73,10 @@ type Deps = {
     putEntity: (obj: any, policy: "merge" | "replace") => string | null;
     getEntityParentKey: (typename: string, id?: any) => string | null;
     ensureConnection: (key: string) => any;
+  };
+  views?: {
+    /** Immediate rebuild of per-instance connection views (edges/pageInfo) */
+    synchronizeConnectionViews?: (state: any) => void;
   };
 };
 
@@ -87,20 +101,13 @@ type ConnectionsArgs = {
   variables?: Record<string, any>;
 };
 
-/**
- * createModifyOptimistic
- * - Builds a transactional optimistic writer.
- * - No view calls or back-compat; directly mutates graph entities & connections.
- * - Revert rewinds to base snapshots and reapplies committed/pending layers.
- */
 export function createModifyOptimistic(deps: Deps) {
-  const { graph } = deps;
+  const { graph, views } = deps;
 
   // Committed layers (in order) + currently pending (not yet committed)
   const committed: Layer[] = [];
   const pending = new Set<Layer>();
   const revertedCommitted = new Set<number>();
-
   let nextId = 1;
 
   // Base snapshots captured lazily (first touch across all layers)
@@ -133,39 +140,63 @@ export function createModifyOptimistic(deps: Deps) {
 
   function applyEntityDelete(key: string) {
     captureEntityBase(key);
+    if (!graph.entityStore.has(key)) return;
 
-    if (graph.entityStore.has(key)) {
-      // Notify watchers for this key before removing
-      const idx = key.indexOf(':');
-      const typename = idx === -1 ? key : key.slice(0, idx);
-      const id = idx === -1 ? null : key.slice(idx + 1);
+    // Optional watcher bump via identity-only replace (so any entity watchers see a change)
+    const idx = key.indexOf(':');
+    const typename = idx === -1 ? key : key.slice(0, idx);
+    const id = idx === -1 ? null : key.slice(idx + 1);
+    if (typename && id != null) {
+      graph.putEntity({ __typename: typename, id }, "replace");
+    }
+    // Then actually remove the snapshot
+    graph.entityStore.delete(key);
+  }
 
-      if (typename && id != null) {
-        // identity-only replace to trigger watchers
-        graph.putEntity({ __typename: typename, id }, "replace");
+  /** QoL batching: record which connections were touched; sync once per txn. */
+  const touchedConnections = new Set<any>();
+  const noteTouched = (state: any) => { touchedConnections.add(state); };
+  const flushTouched = () => {
+    if (!views?.synchronizeConnectionViews) { touchedConnections.clear(); return; }
+    for (const st of touchedConnections) views.synchronizeConnectionViews(st);
+    touchedConnections.clear();
+  };
+
+  /** Ensure attached views reveal all items after optimistic changes. */
+  function expandViewLimits(state: any) {
+    if (!state || !state.views) return;
+    const size = state.list.length | 0;
+    for (const v of state.views) {
+      if (v && typeof v === "object") {
+        if ((v as any).limit == null || (v as any).limit < size) {
+          (v as any).limit = size;
+        }
       }
-      // now remove the snapshot
-      graph.entityStore.delete(key);
-      console.log('Delete', graph.entityStore)
     }
   }
 
   function applyConnOp(op: ConnOp) {
-    const st = graph.ensureConnection(op.key);
+    const state = graph.ensureConnection(op.key);
     captureConnBase(op.key);
 
     if (op.type === "connAdd") {
-      upsertEntry(st, op.entry, op.position);
+      upsertEntry(state, op.entry, op.position);
     } else if (op.type === "connRemove") {
-      const idx = st.list.findIndex((e: any) => e.key === op.entryKey);
+      const idx = state.list.findIndex((e: any) => e.key === op.entryKey);
       if (idx >= 0) {
-        st.list.splice(idx, 1);
-        st.keySet.delete(op.entryKey);
+        state.list.splice(idx, 1);
+        state.keySet.delete(op.entryKey);
       }
     } else if (op.type === "connPageInfo") {
-      const pi = st.pageInfo as any;
+      const pi = state.pageInfo as any;
       for (const k of Object.keys(op.patch)) pi[k] = op.patch[k];
     }
+
+    // Reveal all items in all attached views after optimistic ops
+    expandViewLimits(state);
+
+    // Batch view sync at the end of the transaction
+    noteTouched(state);
   }
 
   /** Reset graph stores to base snapshots. */
@@ -198,6 +229,9 @@ export function createModifyOptimistic(deps: Deps) {
 
       st.keySet = new Set<string>(st.list.map((e: any) => e.key));
       st.initialized = !!snap.initialized;
+
+      // 🔑 ensure views will be synced even if no ops are re-applied
+      noteTouched(st);
     }
   }
 
@@ -256,10 +290,8 @@ export function createModifyOptimistic(deps: Deps) {
       },
 
       connections(args: ConnectionsArgs) {
-        // parent key
-        const parentTypename = typeof args.parent === "string"
-          ? args.parent
-          : ((args.parent as any)?.__typename || null);
+        const parentTypename =
+          typeof args.parent === "string" ? args.parent : ((args.parent as any)?.__typename || null);
         const parentId = (args.parent as any)?.id;
         const parentKey = graph.getEntityParentKey(parentTypename!, parentId) || "Query";
 
@@ -270,7 +302,7 @@ export function createModifyOptimistic(deps: Deps) {
             const nodeKey = identifyNodeKey(node);
             if (!nodeKey) return;
 
-            // ensure entity snapshot is written
+            // ensure entity snapshot exists
             layer.entityOps.push({ type: "entityWrite", obj: node, policy: "merge" });
             applyEntityWrite(node, "merge");
 
@@ -311,8 +343,12 @@ export function createModifyOptimistic(deps: Deps) {
       },
     };
 
+    // Build + apply immediately
     pending.add(layer);
     build(apiForBuilder);
+
+    // QoL: perform one sync per touched connection for this transaction
+    flushTouched();
 
     return {
       commit() {
@@ -323,14 +359,18 @@ export function createModifyOptimistic(deps: Deps) {
       },
 
       revert() {
-        // Remove/persist flags
+        // If pending, drop it; if committed, mark as reverted
         if (pending.has(layer)) pending.delete(layer);
         const idx = committed.findIndex(L => L.id === layer.id);
         if (idx >= 0) revertedCommitted.add(layer.id);
 
         // Rebuild: base → committed non-reverted → pending
-        resetToBase();
-        reapplyLayers();
+        // Start a fresh "touched set" so resets get flushed
+        touchedConnections.clear();
+        resetToBase();           // <- will noteTouched() every reset connection
+        reapplyLayers();         // <- may add more touches
+        flushTouched();          // <- sync once for all touched
+
         maybeCleanupSnapshots();
       },
     };

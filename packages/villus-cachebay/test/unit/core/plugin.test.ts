@@ -80,7 +80,7 @@ function createViewsMock(graph: ReturnType<typeof createGraphMock>) {
     return view;
   }
   function setViewLimit(view: any, n: number) { view.limit = Math.max(0, n | 0); }
-  function syncConnection(state: any) {
+  function synchronizeConnectionViews(state: any) {
     for (const v of state.views) {
       const len = Math.min(state.list.length, v.limit);
       while (v.edges.length < len) v.edges.push({});
@@ -144,7 +144,7 @@ function createViewsMock(graph: ReturnType<typeof createGraphMock>) {
               setViewLimit(view, state.list.length);          // cursor page → union
             }
 
-            syncConnection(state);
+            synchronizeConnectionViews(state);
           }
 
           if (Array.isArray(val)) {
@@ -161,7 +161,7 @@ function createViewsMock(graph: ReturnType<typeof createGraphMock>) {
     return { wireConnections, destroy };
   }
 
-  return { createViewSession, createConnectionView, setViewLimit, syncConnection };
+  return { createViewSession, createConnectionView, setViewLimit, synchronizeConnectionViews };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

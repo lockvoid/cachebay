@@ -40,7 +40,6 @@ export function createMockViews(overrides?: Partial<any>) {
     linkEntityToConnection: vi.fn(),
     unlinkEntityFromConnection: vi.fn(),
     addStrongView: vi.fn(),
-    markConnectionDirty: vi.fn(),
     synchronizeConnectionViews: vi.fn(),
     materializeResult: vi.fn(),
     gcConnections: vi.fn(),

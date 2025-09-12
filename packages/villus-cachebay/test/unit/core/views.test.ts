@@ -92,7 +92,7 @@ describe('core/views', () => {
       expect(views).toHaveProperty('materializeResult');
       expect(views).toHaveProperty('createConnectionView');
       expect(views).toHaveProperty('setViewLimit');
-      expect(views).toHaveProperty('syncConnection');
+      expect(views).toHaveProperty('synchronizeConnectionViews');
       expect(views).toHaveProperty('gcConnections');
     });
   });
@@ -128,7 +128,7 @@ describe('core/views', () => {
   });
 
   describe('connection views', () => {
-    it('createConnectionView attaches a view and syncConnection populates edges/nodes', () => {
+    it('createConnectionView attaches a view and synchronizeConnectionViews populates edges/nodes', () => {
       // Prepare a connection state and entity snapshots
       const connectionState = {
         list: [
@@ -155,7 +155,7 @@ describe('core/views', () => {
       const view = views.createConnectionView(connectionState, { limit: 1 });
 
       // Sync connection to view
-      views.syncConnection(connectionState);
+      views.synchronizeConnectionViews(connectionState);
 
       expect(Array.isArray(view.edges)).toBe(true);
       expect(view.edges.length).toBe(1);
@@ -166,7 +166,7 @@ describe('core/views', () => {
 
       // Increase limit and sync again
       views.setViewLimit(view, 2);
-      views.syncConnection(connectionState);
+      views.synchronizeConnectionViews(connectionState);
       expect(view.edges.length).toBe(2);
       expect(view.edges[1].cursor).toBe('c2');
       expect(view.edges[1].node.name).toBe('B');
