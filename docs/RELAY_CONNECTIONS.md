@@ -1,3 +1,4 @@
+
 # Relay connections — deep guide
 
 Relay-style pagination in Cachebay gives you **stable, reactive lists** with:
@@ -196,6 +197,97 @@ tx.commit?.()
   (The key is: request-management first, cache second, transport last.)
 - For strict “one window” pagination, use **`replace`** semantics in the resolver (or expose a per-query switch via context and check for it in a small wrapper).
 - In tests, remember updates are **microtask-batched**; `await tick()` after a write to observe changes.
+
+Here’s a drop-in **“Recipes”** section you can append to your `RELAY_CONNECTIONS.md`. It documents the **viewKey** pattern and a **per-request pagination override via context** (named `paginationMode`), plus a couple of gotchas your integration surfaced.
+
+> Paste below the “Examples” section (or wherever you prefer).  [oai_citation:0‡RELAY_CONNECTIONS.md](file-service://file-GqYv9XeS2NszRCg5HxRAw5)
+
+---
+
+## Recipes
+
+### Two components, different pagination behavior (append vs replace)
+
+When two components need **independent paging** on the same field, give each one an **isolated connection state** with a `viewKey` (included in context). Then, select the **pagination behavior per request** via **operation context**:
+
+- `paginationMode: 'append' | 'prepend' | 'replace'` (context-only, not a GraphQL var)
+- `viewKey` (context-only, not a GraphQL var)
+
+**Usage**
+
+```ts
+// Component A — infinite list (append union)
+useQuery(POSTS, {
+  variables: { filter: 'A', first: 2 },
+  context:   { paginationMode: 'append', viewKey: 'A' }, // default anyway; explicit for clarity
+});
+
+// Component B — “just the page I asked for” (replace)
+useQuery(POSTS, {
+  variables: { filter: 'A', first: 2, after: 'c2' },
+  context:   { paginationMode: 'replace', viewKey: 'B'  }, // clears that viewKey’s list then inserts
+});
+```
+
+**How it works**
+
+- `viewKey` is part of the connection identity, so A and B get **separate** `ConnectionState`s.
+- The resolver infers a write mode from cursors (`after` → append, `before` → prepend, otherwise replace), **but you can override it per request** via `context.paginationMode`.
+
+---
+
+### Show only the page you fetched (but keep data isolated)
+
+If a surface should *only* ever show the last fetched page (and not accumulate older pages), isolate it with `viewKey` and use `context.paginationMode = 'replace'` on those requests:
+
+```ts
+useQuery(POSTS, {
+  variables: { first: 2, after: 'c2' },
+  context:   { paginationMode: 'replace', viewKey: 'X' }, // for this viewKey only
+});
+```
+
+Because `viewKey` is different, this **won’t affect** other components that are using `append`.
+
+---
+
+### Testing pitfall: ID collisions across pages
+
+When your page-2 items accidentally reuse page-1 IDs, the resolver correctly de-dups and **the list won’t grow**. Ensure page-2 has distinct IDs/cursors:
+
+```ts
+export const mockResponses = {
+  posts: (titles: string[], { fromId = 1 } = {}) => ({
+    data: {
+      __typename: 'Query',
+      posts: {
+        __typename: 'PostConnection',
+        edges: titles.map((title, i) => {
+          const idNum = fromId + i;
+          return {
+            cursor: `c${idNum}`,
+            node: { __typename: 'Post', id: String(idNum), title, content: `Content for ${title}` }
+          };
+        }),
+        pageInfo: {
+          endCursor: titles.length ? `c${fromId + titles.length - 1}` : null,
+          hasNextPage: false,
+        },
+      },
+    },
+  }),
+};
+```
+
+Also double-check your route matchers: if page-1 produces `endCursor: 'c2'`, your page-2 route should match `variables.after === 'c2'` (not `'a2'`).
+
+---
+
+### Why containers differ but nodes don’t
+
+Each `useQuery` has a **per-operation view** (containers: `edges[]`, `pageInfo{}`), synced from the same canonical `ConnectionState`. Two components get **different container arrays**, but **node proxies are globally shared**—`readFragment('Post:1')` returns the same proxy object you see under `edges[i].node`.
+
+This avoids container fights across components while still delivering stable identity for entities
 
 ---
 
