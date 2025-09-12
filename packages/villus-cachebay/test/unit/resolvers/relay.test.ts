@@ -302,4 +302,40 @@ describe('relay resolver (view-agnostic)', () => {
     const state = deps.graph.connectionStore.values().next().value;
     expect(state.list.map((e: any) => e.key)).toEqual(['Asset:1']);
   });
+
+  it('append with colliding IDs does not grow list (dedup by entity key)', () => {
+    const deps = createDepsMock(); // your existing deps mock in relay unit tests
+    const spec = relay({ paginationMode: 'append' });
+    const fn = spec.bind(deps);
+
+    // page 1: ids 1,2
+    fn(makeCtx({
+      connectionValue: {
+        edges: [
+          { cursor: 'c1', node: { __typename: 'Asset', id: '1', name: 'A1' } },
+          { cursor: 'c2', node: { __typename: 'Asset', id: '2', name: 'A2' } },
+        ],
+        pageInfo: { endCursor: 'c2', hasNextPage: true },
+      },
+    }));
+
+    // page 2: WRONG: ids collide (1,2) => list stays size 2
+    fn(makeCtx({
+      connectionValue: {
+        edges: [
+          { cursor: 'c1b', node: { __typename: 'Asset', id: '1', name: 'A1-new' } },
+          { cursor: 'c2b', node: { __typename: 'Asset', id: '2', name: 'A2-new' } },
+        ],
+        pageInfo: { endCursor: 'c2b', hasNextPage: false },
+      },
+      variables: { after: 'c2', first: 2 },
+    }));
+
+    const st = deps.graph.connectionStore.values().next().value;
+    expect(st.list.length).toBe(2);
+    expect(st.list.map((e: any) => e.key)).toEqual(['Asset:1', 'Asset:2']);
+    // titles updated in place but still two items
+    expect(deps.graph.entityStore.get('Asset:1').name).toBe('A1-new');
+    expect(deps.graph.entityStore.get('Asset:2').name).toBe('A2-new');
+  });
 });
