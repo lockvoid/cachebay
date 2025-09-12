@@ -1,33 +1,48 @@
-// fragments.ts - everything related to fragments
+// fragments.ts - everything related to fragments (views-free version)
 
 import type { EntityKey } from "./types";
 import { parseEntityKey } from "./utils";
 import { TYPENAME_FIELD } from "./constants";
 import type { GraphAPI } from "./graph";
-import type { ViewsAPI } from "./views";
 
 export type Fragments = ReturnType<typeof createFragments>;
 
 export type FragmentsDependencies = {
   graph: GraphAPI;
-  views: ViewsAPI;
 };
 
-export function createFragments(options: {}, dependencies: FragmentsDependencies) {
-  const { graph, views } = dependencies;
+export function createFragments(_options: {}, dependencies: FragmentsDependencies) {
+  const { graph } = dependencies;
 
-  function keyFromRefOrKey(refOrKey: EntityKey | { __typename: string; id?: any; _id?: any }): EntityKey | null {
-    if (typeof refOrKey === "string") return refOrKey;
-    const t = (refOrKey as any) && (refOrKey as any)[TYPENAME_FIELD];
-    const id = (refOrKey as any)?.id ?? (refOrKey as any)?._id;
+  // ────────────────────────────────────────────────────────────────────────────
+  // Helpers
+  // ────────────────────────────────────────────────────────────────────────────
+
+  function identify(obj: any): EntityKey | null {
+    return graph.identify(obj);
+  }
+
+  function keyFromRefOrKey(
+    refOrKey: EntityKey | { __typename: string; id?: any }
+  ): EntityKey | null {
+    if (typeof refOrKey === "string") return refOrKey as EntityKey;
+    const t = (refOrKey as any)?.[TYPENAME_FIELD];
+    const id = (refOrKey as any)?.id; // _id not supported
     return t && id != null ? (String(t) + ":" + String(id)) as EntityKey : null;
   }
 
-  function hasFragment(refOrKey: EntityKey | { __typename: string; id?: any; _id?: any }) {
+  // ────────────────────────────────────────────────────────────────────────────
+  // Exposed API
+  // ────────────────────────────────────────────────────────────────────────────
+
+  function hasFragment(refOrKey: EntityKey | { __typename: string; id?: any }) {
     const raw = keyFromRefOrKey(refOrKey);
     if (!raw) return false;
+
     const { typename, id } = parseEntityKey(raw);
     if (!typename) return false;
+
+    // Resolve interface → concrete if needed
     if (graph.isInterfaceType(typename) && id != null) {
       const impls = graph.getInterfaceTypes(typename);
       for (let i = 0; i < impls.length; i++) {
@@ -36,92 +51,121 @@ export function createFragments(options: {}, dependencies: FragmentsDependencies
       }
       return false;
     }
-    return graph.entityStore.has(raw);
+
+    // Try resolved key if graph can resolve, else raw
+    const resolved = (graph as any).resolveEntityKey
+      ? (graph as any).resolveEntityKey(raw) || raw
+      : raw;
+
+    return graph.entityStore.has(resolved);
   }
 
-  function readFragment(refOrKey: EntityKey | { __typename: string; id?: any; _id?: any }, { materialized = true } = {}) {
-    const key = typeof refOrKey === "string"
-      ? refOrKey
-      : graph.identify(refOrKey);
+  /**
+   * Read a fragment by key or ref.
+   * - materialized=true (default): returns a reactive materialized proxy (identity + snapshot).
+   * - materialized=false: returns the raw snapshot stored in entityStore (no identity fields).
+   */
+  function readFragment(
+    refOrKey: EntityKey | { __typename: string; id?: any },
+    { materialized = true }: { materialized?: boolean } = {},
+  ) {
+    const key =
+      typeof refOrKey === "string" ? (refOrKey as EntityKey) : graph.identify(refOrKey);
 
     if (!key) return null;
 
-    const entity = graph.entityStore.get(key);
-    if (!entity) return null;
+    const resolved = (graph as any).resolveEntityKey
+      ? (graph as any).resolveEntityKey(key) || key
+      : key;
+
+    if (!graph.entityStore.has(resolved)) return null;
 
     return materialized
-      ? views.proxyForEntityKey(key)
-      : graph.materializeEntity(key);
+      ? graph.materializeEntity(resolved)
+      : graph.entityStore.get(resolved);
   }
 
+  /**
+   * Transactional write:
+   * - commit(): writes via graph.putEntity (merge by default, honoring graph.writePolicy)
+   * - revert(): restores previous snapshot via 'replace' (if existed), or clears snapshot.
+   */
   function writeFragment(obj: any) {
     const key = graph.identify(obj);
-    if (!key) return { commit: null, revert: null };
+    if (!key) return { commit: () => { }, revert: () => { } };
 
-    // Capture the previous state before any modifications
-    const prevEntity = graph.entityStore.get(key);
-    const prev = prevEntity ? { ...prevEntity } : undefined;
-    const next = { ...prev, ...obj };
+    // capture previous snapshot (store contains snapshot only, no identity)
+    const prevSnap = graph.entityStore.get(key);
     let committed = false;
 
     function commit() {
-      if (committed) return; // Prevent double commit
+      if (committed) return;
       committed = true;
-      graph.entityStore.set(key, next);
-      views.markEntityDirty(key);
-      views.touchConnectionsForEntityKey(key);
-      graph.bumpEntitiesTick();
+      // use graph.putEntity to ensure watchers/proxies update
+      graph.putEntity(obj, "merge");
     }
 
     function revert() {
-      if (!committed) return; // Can only revert if committed
+      if (!committed) return;
       committed = false;
 
-      if (prev === undefined) {
-        graph.entityStore.delete(key);
+      const { typename, id } = parseEntityKey(key);
+      if (prevSnap) {
+        // restore previous snapshot (replace)
+        graph.putEntity(
+          { [TYPENAME_FIELD]: typename!, id, ...prevSnap },
+          "replace",
+        );
       } else {
-        graph.entityStore.set(key, prev);
+        // clear snapshot (replace with empty)
+        graph.putEntity({ [TYPENAME_FIELD]: typename!, id }, "replace");
       }
-      views.markEntityDirty(key);
-      views.touchConnectionsForEntityKey(key);
-      graph.bumpEntitiesTick();
     }
 
     return { commit, revert };
   }
 
-  function readFragments(pattern: string | string[], opts: { materialized?: boolean } = {}) {
+  /**
+   * Read multiple fragments by pattern(s).
+   * Supports:
+   *  - "Type:*" → expands to all keys "Type:" via graph.getEntityKeys
+   *  - "Type:123" → exact key
+   *  - ["Type:*", "Other:*", "Type:1"] → union
+   */
+  function readFragments(
+    pattern: string | string[],
+    opts: { materialized?: boolean } = {},
+  ) {
     const selectors = Array.isArray(pattern) ? pattern : [pattern];
+    const materialized = opts.materialized !== false; // default true
+
     const results: any[] = [];
 
     for (const selector of selectors) {
-      if (selector.endsWith(':*')) {
-        // Get all entities of a type or interface
-        const typename = selector.slice(0, -2);
-
-        // Check if it's an interface
+      // Wildcard: Type:* → use graph.getEntityKeys("Type:")
+      if (selector.endsWith(":*")) {
+        const typename = selector.slice(0, -2); // "Type"
+        // If interface, expand implementors
         const implementors = graph.getInterfaceTypes(typename);
         if (implementors && implementors.length > 0) {
-          // It's an interface - get all entities of types that implement it
-          for (const implementor of implementors) {
-            const keys = graph.getEntityKeys(implementor + ':');
-            for (const key of keys) {
-              const result = readFragment(key, opts);
-              if (result) results.push(result);
+          for (const impl of implementors) {
+            const keys = graph.getEntityKeys(impl + ":");
+            for (const k of keys) {
+              const v = materialized ? graph.materializeEntity(k as EntityKey) : graph.entityStore.get(k);
+              if (v != null) results.push(v);
             }
           }
         } else {
-          // Regular type - get all entities of this type
-          const keys = graph.getEntityKeys(typename + ':');
-          for (const key of keys) {
-            const result = readFragment(key, opts);
-            if (result) results.push(result);
+          const keys = graph.getEntityKeys(typename + ":");
+          for (const k of keys) {
+            const v = materialized ? graph.materializeEntity(k as EntityKey) : graph.entityStore.get(k);
+            if (v != null) results.push(v);
           }
         }
       } else {
-        // Single entity
-        const result = readFragment(selector, opts);
-        if (result) results.push(result);
+        // Exact key or free-form (we trust caller)
+        const v = readFragment(selector as EntityKey, { materialized });
+        if (v != null) results.push(v);
       }
     }
 
@@ -129,7 +173,8 @@ export function createFragments(options: {}, dependencies: FragmentsDependencies
   }
 
   return {
-    identify: graph.identify,
+    // exposed
+    identify,
     hasFragment,
     readFragment,
     writeFragment,
