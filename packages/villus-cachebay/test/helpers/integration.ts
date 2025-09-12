@@ -281,7 +281,7 @@ export const mockResponses = {
         })),
         pageInfo: {
           endCursor: titles.length > 0 ? `c${titles.length}` : null,
-          hasNextPage: false,
+          hasNextPage: true,
         },
       },
     },

@@ -451,5 +451,59 @@ describe('createGraph - Unit Tests (refactor)', () => {
       expect(hit!.key).toBe(seededKey);
       expect(hit!.entry.data).toEqual({ ok: 'empty' });
     });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Cursor-aware tests (guard against fallback to baseline for pages)
+    // ─────────────────────────────────────────────────────────────────────
+    it('does NOT fall back to baseline for {after}', () => {
+      const graph = makeGraph();
+
+      const CURSOR_QUERY = `
+        query Posts($filter: String, $first:Int, $after:String){
+          posts(filter:$filter, first:$first, after:$after){
+            edges { cursor node { __typename id title } }
+            pageInfo { endCursor }
+          }
+        }
+      `;
+
+      // store only baseline (no cursor)
+      const baseOp = { type: 'query', query: CURSOR_QUERY, variables: { filter: 'A', first: 2 } };
+      const baseKey = getOperationKey(baseOp as any);
+      graph.putOperation(baseKey, {
+        data: { __typename: 'Query', posts: { __typename: 'PostConnection', edges: [], pageInfo: {} } },
+        variables: baseOp.variables,
+      });
+
+      // lookup with after -> must **not** return the baseline
+      const cursorOp = { type: 'query', query: CURSOR_QUERY, variables: { filter: 'A', first: 2, after: 'c2' } };
+      const hit = (graph as any).lookupOperation(cursorOp);
+      expect(hit).toBeNull();
+    });
+
+    it('still returns the exact hit when the exact cursor page is cached', () => {
+      const graph = makeGraph();
+
+      const CURSOR_QUERY = `
+        query Posts($filter: String, $first:Int, $after:String){
+          posts(filter:$filter, first:$first, after:$after){
+            edges { cursor node { __typename id title } }
+            pageInfo { endCursor }
+          }
+        }
+      `;
+
+      const cursorOp = { type: 'query', query: CURSOR_QUERY, variables: { filter: 'A', first: 2, after: 'c2' } };
+      const cursorKey = getOperationKey(cursorOp as any);
+
+      graph.putOperation(cursorKey, {
+        data: { __typename: 'Query', posts: { __typename: 'PostConnection', edges: [], pageInfo: { endCursor: 'c2' } } },
+        variables: cursorOp.variables,
+      });
+
+      const hit = (graph as any).lookupOperation(cursorOp);
+      expect(hit).not.toBeNull();
+      expect(hit!.key).toBe(cursorKey);
+    });
   });
 });

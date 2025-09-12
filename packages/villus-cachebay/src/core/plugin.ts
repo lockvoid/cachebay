@@ -1,9 +1,8 @@
+// src/core/plugin.ts
+import type { App } from "vue";
 import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus";
 import { CombinedError } from "villus";
-import {
-  ensureDocumentHasTypenameSmart,
-  getOperationKey,
-} from "./utils";
+import { ensureDocumentHasTypenameSmart, getOperationKey } from "./utils";
 
 type PluginOptions = {
   addTypename?: boolean;
@@ -19,9 +18,13 @@ type PluginDependencies = {
     identify?: (obj: any) => string | null;
   };
   views: {
-    createViewSession: () => { wireConnections: (root: any, vars: Record<string, any>) => void; destroy: () => void };
+    createViewSession: () => {
+      wireConnections: (root: any, vars: Record<string, any>) => void;
+      destroy: () => void;
+    };
   };
   resolvers: {
+    // IMPORTANT: runs BEFORE views wiring; merges relay pages into connection state
     applyResolversOnGraph: (root: any, vars: Record<string, any>, hint?: { stale?: boolean }) => void;
   };
   ssr?: {
@@ -30,24 +33,26 @@ type PluginDependencies = {
   };
 };
 
-// Shallow root clone; the plugin returns the same data shape but with
-// connection fields replaced by the view’s reactive containers.
-function shallowClone(root: any) {
+// cheap shallow clone so we don't mutate op-cache payloads when wiring containers
+function shallowClone<T>(root: T): T {
   if (!root || typeof root !== "object") return root;
-  return Array.isArray(root) ? root.slice() : { ...root };
+  return Array.isArray(root) ? (root.slice() as any) : ({ ...(root as any) } as any);
 }
 
-export const CACHEBAY_KEY = Symbol("CACHEBAY_KEY");
+export const CACHEBAY_KEY: unique symbol = Symbol("CACHEBAY_KEY");
 
 export function buildCachebayPlugin(
   options: PluginOptions,
-  deps: PluginDependencies,
+  deps: PluginDependencies
 ): ClientPlugin {
   const { addTypename = true } = options;
   const { graph, views, resolvers, ssr } = deps;
 
-  // Per-operation (per mounted useQuery) session: operation.key -> session
-  const sessionByOp = new Map<number, { wire: (root: any, vars: any) => void; destroy: () => void }>();
+  // one view-session per mounted useQuery (ctx.operation.key)
+  const sessionByOp = new Map<
+    number,
+    { wire: (root: any, vars: Record<string, any>) => void; destroy: () => void }
+  >();
 
   const plugin: ClientPlugin = (ctx: ClientPluginContext) => {
     const { operation } = ctx;
@@ -56,7 +61,7 @@ export function buildCachebayPlugin(
       operation.query = ensureDocumentHasTypenameSmart(operation.query as any);
     }
 
-    // Create/reuse a per-op view session
+    // create/reuse session
     let session = sessionByOp.get(operation.key);
     if (!session) {
       const s = views.createViewSession();
@@ -64,13 +69,10 @@ export function buildCachebayPlugin(
       sessionByOp.set(operation.key, session);
     }
 
-    // Publish helper
-    const publish = (payload: OperationResult, term: boolean) => ctx.useResult(payload, term);
+    const policy =
+      (operation as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
 
-    // Cache policies
-    const policy = (operation as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
-
-    // CACHE-ONLY
+    // --------------------------- CACHE-ONLY ---------------------------
     if (policy === "cache-only") {
       const hit = graph.lookupOperation(operation);
       if (hit) {
@@ -78,18 +80,17 @@ export function buildCachebayPlugin(
         const data = shallowClone(hit.entry.data);
         resolvers.applyResolversOnGraph(data, vars, { stale: false });
         session.wire(data, vars);
-        return publish({ data }, true);
-      } else {
-        const error = new CombinedError({
-          networkError: Object.assign(new Error("CACHE_ONLY_MISS"), { name: "CacheOnlyMiss" }),
-          graphqlErrors: [],
-          response: undefined,
-        });
-        return publish({ error }, true);
+        return ctx.useResult({ data }, true);
       }
+      const err = new CombinedError({
+        networkError: Object.assign(new Error("CACHE_ONLY_MISS"), { name: "CacheOnlyMiss" }),
+        graphqlErrors: [],
+        response: undefined,
+      });
+      return ctx.useResult({ error: err }, true);
     }
 
-    // CACHE-FIRST
+    // -------------------------- CACHE-FIRST --------------------------
     if (policy === "cache-first") {
       const hit = graph.lookupOperation(operation);
       if (hit) {
@@ -97,52 +98,61 @@ export function buildCachebayPlugin(
         const data = shallowClone(hit.entry.data);
         resolvers.applyResolversOnGraph(data, vars, { stale: false });
         session.wire(data, vars);
-        return publish({ data }, true);
+        return ctx.useResult({ data }, true);
       }
-      // miss → fallthrough to network
+      // miss -> let network continue, handled in overridden useResult
     }
 
-    // CACHE-AND-NETWORK
+    // ---------------------- CACHE-AND-NETWORK ------------------------
     if (policy === "cache-and-network") {
       const hit = graph.lookupOperation(operation);
+
+      console.log('Check', JSON.stringify(operation));
       if (hit) {
+        console.log("Cache hit!!!!", hit);
         const vars = operation.variables || hit.entry.variables || {};
         const data = shallowClone(hit.entry.data);
+        console.dir("CCHED DATA", graph.operationStore)
+        console.log('///')
         resolvers.applyResolversOnGraph(data, vars, { stale: false });
 
-        const key = hit.key;
-        const hadTicket = !!ssr?.hydrateOperationTicket?.has(key);
-        const hydrating = !!ssr?.isHydrating?.();
-        if (hadTicket) ssr!.hydrateOperationTicket!.delete(key);
+        // SSR hydrate ticket gate (optional): still ctx.useResult as non-terminal
+        const keyFromHit = hit.key;
+        const hadTicket = !!ssr?.hydrateOperationTicket?.has(keyFromHit);
+        if (hadTicket) ssr!.hydrateOperationTicket!.delete(keyFromHit);
 
-        // Wire views and publish non-terminal cached frame
+        // CRITICAL: do NOT write op-cache on the cached path
+        // (writing here can poison cursor-keys with baseline pages)
+
         session.wire(data, vars);
-        publish({ data }, false);
+        ctx.useResult({ data }, false);
       }
-      // transport will deliver the network frame, handled below
+      // network frame will be handled below
     }
 
-    // NETWORK RESULT PATH
+    // ------------------------ NETWORK RESULT -------------------------
     const originalUseResult = ctx.useResult;
-    ctx.useResult = (incoming: OperationResult, terminate?: boolean) => {
+    ctx.useResult = (incoming: OperationResult, terminal?: boolean) => {
       const r: any = incoming;
       const hasData = r && "data" in r && r.data != null;
       const hasError = r && "error" in r && r.error != null;
 
+      // keep op open for non-terminal placeholders
       if (!hasData && !hasError) return originalUseResult(incoming, false);
+
       if (hasError) return originalUseResult(incoming, true);
 
+      // winner (or only) – write-time transforms first
       const vars = operation.variables || {};
       const data = shallowClone(r.data);
 
-      // Apply write-time resolvers (relay merges into ConnectionState)
       resolvers.applyResolversOnGraph(data, vars, { stale: false });
 
-      // Store post-resolver raw into op-cache
-      const key = getOperationKey(operation);
-      graph.putOperation(key, { data, variables: vars });
+      // Store post-resolver data under the exact op key
+      const opKey = getOperationKey(operation);
+      graph.putOperation(opKey, { data, variables: vars });
 
-      // Wire views on this instance and publish terminal
+      // Wire this useQuery instance and ctx.useResult terminally
       session!.wire(data, vars);
       return originalUseResult({ data }, true);
     };
@@ -154,7 +164,7 @@ export function buildCachebayPlugin(
 export function provideCachebay(app: App, instance: any) {
   const api: any = {
     readFragment: instance.readFragment,
-    readFragments: instance.readFragments,      // make sure it’s here too
+    readFragments: instance.readFragments,
     writeFragment: instance.writeFragment,
     identify: instance.identify,
     modifyOptimistic: instance.modifyOptimistic,

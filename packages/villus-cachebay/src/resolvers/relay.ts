@@ -104,6 +104,7 @@ export const relay = defineResolver((opts?: RelayOptsPartial) => {
               ? "prepend"
               : "replace";
 
+
       // Resolve connection identity and state
       const parentKey =
         graph.getEntityParentKey(ctx.parentTypename, graph.identify?.(ctx.parent)) ?? "Query";
@@ -127,6 +128,9 @@ export const relay = defineResolver((opts?: RelayOptsPartial) => {
 
         for (let i = 0; i < edgesArray.length; i++) {
           const edge = edgesArray[i];
+
+          console.log('edge:', edge);
+
           if (!edge || typeof edge !== "object") continue;
 
           const node = RELAY.hasNodePath ? readPathValue(edge, RELAY.paths.node) : edge[nodeField];
@@ -188,6 +192,9 @@ export const relay = defineResolver((opts?: RelayOptsPartial) => {
           if (state.meta[k] !== nv) state.meta[k] = nv;
         }
       }
+
+      console.log('newEntries:', state.list);
+      console.log('newEntries:', state);
 
       // Mark initialized
       if (!state.initialized) {

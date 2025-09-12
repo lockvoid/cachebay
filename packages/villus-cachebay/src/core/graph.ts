@@ -417,21 +417,48 @@ export const createGraph = (config: GraphConfig) => {
     return operationStore.get(opKey);
   };
 
-  function lookupOperation(operation: { type: string; query: any; variables?: Record<string, any>; context?: any }) {
-    const baseKey = getOperationKey(operation as any);
-    const byBase = operationStore.get(baseKey);
-    if (byBase) return { key: baseKey, entry: byBase };
+  // src/core/graph.ts (inside createGraph)
+  function lookupOperation(operation: {
+    type: string;
+    query: any;
+    variables?: Record<string, any>;
+    context?: any;
+  }) {
+    console.dir('DATADATA')
+    console.dir(operationStore.values(), { depth: 5 });
+    // Exact key first.
+    const exactKey = getOperationKey(operation as any);
+    const exact = operationStore.get(exactKey);
+    if (exact) {
+      // Guard: if the request is cursor’d, stored entry must match cursor exactly.
+      const v = operation.variables || {};
+      if (v.after != null && exact.variables?.after !== v.after) return null;
+      if (v.before != null && exact.variables?.before !== v.before) return null;
+      return { key: exactKey, entry: exact };
+    }
 
-    // try cleaned vars key (strip undefined)
-    const cleaned = cleanVars(operation.variables);
+    // If request is cursor’d: never fall back to baseline.
+    const v = operation.variables || {};
+    if (
+      v.after != null ||
+      v.before != null ||
+      v.first != null ||
+      v.last != null
+    ) {
+      return null;
+    }
+
+    // Fallback only for non-cursor ops with undefined-stripped shapes.
+    const cleaned = cleanVars(v);
     const sameShape =
       operation.variables &&
-      Object.keys(operation.variables!).every(k => operation.variables![k] !== undefined);
+      Object.keys(operation.variables!).every((k) => operation.variables![k] !== undefined);
     if (sameShape) return null;
 
     const altKey = getOperationKey({ ...operation, variables: cleaned } as any);
-    const byAlt = operationStore.get(altKey);
-    return byAlt ? { key: altKey, entry: byAlt } : null;
+    const alt = operationStore.get(altKey);
+
+    return alt ? { key: altKey, entry: alt } : null;
   }
 
   // ────────────────────────────────────────────────────────────────────────────
