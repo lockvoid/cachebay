@@ -1,29 +1,47 @@
-import type { EntityKey, ConnectionState } from "../core/types";
-import { isReactive, shallowReactive } from "vue";
+// features/ssr.ts — SSR de/hydration for the new (view-agnostic) pipeline
 
 type Deps = {
-  graph: any;
-  views: any;
-  resolvers?: any;
+  graph: {
+    entityStore: Map<string, any>;
+    connectionStore: Map<string, any>;
+    operationStore: Map<string, { data: any; variables: Record<string, any> }>;
+    ensureConnection: (key: string) => any;
+  };
+  resolvers?: {
+    applyResolversOnGraph?: (root: any, vars: Record<string, any>, hint?: { stale?: boolean }) => void;
+  };
 };
 
-function cloneData(data: any): any {
-  return JSON.parse(JSON.stringify(data));
+/** JSON-only deep clone; fine for op-cache & snapshots. */
+function cloneData<T>(data: T): T {
+  try {
+    return JSON.parse(JSON.stringify(data));
+  } catch {
+    return data;
+  }
 }
 
 export function createSSR(deps: Deps) {
-  const { graph, views, resolvers } = deps;
+  const { graph, resolvers } = deps;
   const applyResolversOnGraph = resolvers?.applyResolversOnGraph;
 
-  // Used by cache plugin to allow CN cached+terminate on first mount after hydrate
+  // Used by the cache plugin to allow CN cached+resolve on first mount after hydrate
   const hydrateOperationTicket = new Set<string>();
+
+  // Hydration flag — set true during hydrate() and flipped to false on microtask
   let hydrating = false;
 
+  /** Serialize graph stores (entities, connections, operations). */
   const dehydrate = () => ({
     ent: Array.from(graph.entityStore.entries()),
-    conn: Array.from(graph.connectionStore.entries()).map(([k, st]) => [
-      k,
-      { list: st.list, pageInfo: st.pageInfo, meta: st.meta },
+    conn: Array.from(graph.connectionStore.entries()).map(([key, st]) => [
+      key,
+      {
+        list: st.list,
+        pageInfo: st.pageInfo,
+        meta: st.meta,
+        initialized: !!st.initialized,
+      },
     ]),
     op: Array.from(graph.operationStore.entries()).map(([k, v]) => [
       k,
@@ -32,80 +50,70 @@ export function createSSR(deps: Deps) {
   });
 
   /**
-   * Hydrate a snapshot.
-   * opts.materialize — rebuilds views/entities from op-cache so UI renders immediately.
-   * opts.rabbit — drops a "hydrate ticket" for each op-key so CN may emit cached once & terminate (Suspense-friendly).
+   * Hydrate a snapshot into the graph.
+   * - input: snapshot object or a function receiving a (hydrate) callback
+   * - opts.materialize: (default false) apply resolvers to post-resolver ops to rebuild connection state for immediate UI
+   * - opts.rabbit: (default true) drop a hydrate ticket per op key, so cache-and-network can publish cached immediately
    */
   const hydrate = (
     input: any | ((hydrate: (snapshot: any) => void) => void),
     opts?: { materialize?: boolean; rabbit?: boolean }
   ) => {
     const doMaterialize = !!opts?.materialize;
-    const rabbit = opts?.rabbit !== false; // default true
+    const withTickets = opts?.rabbit !== false; // default true
 
     const run = (snapshot: any) => {
       if (!snapshot) return;
 
-      // reset stores & runtime
+      // Reset stores
       graph.entityStore.clear();
       graph.connectionStore.clear();
       graph.operationStore.clear();
-      views.resetRuntime();
 
-      // restore entities
+      // Restore entities (snapshot.ent is [key, snapshot][])
       if (Array.isArray(snapshot.ent)) {
         for (const [key, snap] of snapshot.ent) {
           graph.entityStore.set(key, snap);
         }
       }
 
-      // restore connections
+      // Restore connections (~ConnectionState sans views/keySet)
       if (Array.isArray(snapshot.conn)) {
         for (const [key, { list, pageInfo, meta, initialized }] of snapshot.conn) {
-          const state = graph.ensureReactiveConnection(key);
-          state.list.splice(0, state.list.length, ...list);
-          // pageInfo in place
-          const curPI = state.pageInfo;
-          for (const k of Object.keys(curPI)) delete curPI[k];
-          for (const k of Object.keys(pageInfo)) (curPI as any)[k] = pageInfo[k];
-          // meta in place
-          const curMeta = state.meta;
-          for (const k of Object.keys(curMeta)) delete curMeta[k];
-          for (const k of Object.keys(meta)) (curMeta as any)[k] = meta[k];
-          // keySet
-          state.keySet = new Set<string>(state.list.map((e: any) => e.key));
-          state.initialized = initialized;
-          // make list + pageInfo reactive if not already
-          if (!isReactive(state.list)) {
-            const rlist = shallowReactive(state.list);
-            state.list.splice(0, state.list.length, ...rlist);
-          }
-          if (!isReactive(state.pageInfo)) state.pageInfo = shallowReactive(state.pageInfo);
-          // Link entities to connection
-          for (const entry of state.list) {
-            views.linkEntityToConnection(entry.key, state);
-          }
+          const st = graph.ensureConnection(key);
+          // list
+          st.list.length = 0;
+          for (let i = 0; i < list.length; i++) st.list.push(list[i]);
+          // pageInfo
+          const pi = st.pageInfo;
+          for (const k of Object.keys(pi)) delete pi[k];
+          for (const k of Object.keys(pageInfo)) pi[k] = pageInfo[k];
+          // meta
+          const mt = st.meta;
+          for (const k of Object.keys(mt)) delete mt[k];
+          for (const k of Object.keys(meta)) mt[k] = meta[k];
+
+          // keySet from list
+          st.keySet = new Set<string>(st.list.map((e: any) => e.key));
+          st.initialized = !!initialized;
         }
       }
 
-      // restore op-cache (+ optional “rabbit” tickets)
+      // Restore operation cache (+ hydrate tickets)
       if (Array.isArray(snapshot.op)) {
-        for (const [key, { data, variables }] of snapshot.op || []) {
+        for (const [key, { data, variables }] of snapshot.op) {
           graph.operationStore.set(key, { data: cloneData(data), variables });
-          hydrateOperationTicket.add(key);
+          if (withTickets) hydrateOperationTicket.add(key);
         }
       }
 
-      // Optional materialization pass from op-cache
-      if (doMaterialize) {
+      // Optional: materialize from op-cache — build canonical connection state by applying resolvers
+      if (doMaterialize && typeof applyResolversOnGraph === "function") {
         graph.operationStore.forEach(({ data, variables }: any) => {
           const vars = variables || {};
-          // Clone data to avoid mutating the stored operation
-          const clonedData = cloneData(data);
-          applyResolversOnGraph?.(clonedData, vars, { stale: false });
-          views.registerViewsFromResult(clonedData, vars);
-          views.collectEntities(clonedData);
-          views.materializeResult(clonedData);
+          const cloned = cloneData(data);
+          applyResolversOnGraph(cloned, vars, { stale: false });
+          // Note: We do NOT wire views here; plugin will wire per-instance views on first publish.
         });
       }
     };
@@ -115,8 +123,10 @@ export function createSSR(deps: Deps) {
       if (typeof input === "function") input((s) => run(s));
       else run(input);
     } finally {
-      // keep microtask flip (tests can await tick(2) if needed)
-      queueMicrotask(() => { hydrating = false; });
+      // Flip to false on microtask so tests can await a tick if needed.
+      queueMicrotask(() => {
+        hydrating = false;
+      });
     }
   };
 
