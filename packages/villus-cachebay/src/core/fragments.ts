@@ -173,7 +173,6 @@ export function createFragments(_options: {}, dependencies: FragmentsDependencie
   }
 
   return {
-    // exposed
     identify,
     hasFragment,
     readFragment,

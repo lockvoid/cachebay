@@ -159,6 +159,9 @@ export function createCache(options: CachebayOptions = {}) {
   (instance as any).writeFragment = fragments.writeFragment;
   (instance as any).modifyOptimistic = modifyOptimistic;
   (instance as any).inspect = inspect;
+  (instance as any).registerWatcher = graph.registerWatcher;
+  (instance as any).unregisterWatcher = graph.unregisterWatcher;
+  (instance as any).trackEntityDependency = graph.trackEntityDependency;
 
   (instance as any).gc = {
     connections(predicate?: (key: string, state: ConnectionState) => boolean) {
@@ -172,7 +175,7 @@ export function createCache(options: CachebayOptions = {}) {
   // Attach SSR methods
   (instance as any).dehydrate = ssr.dehydrate;
   (instance as any).hydrate = ssr.hydrate;
-  
+
   // Attach internals for testing/debugging
   (instance as any).__internals = {
     graph,

@@ -1,37 +1,36 @@
-import {
-  inject,
-  shallowRef,
-  isRef,
-  watch,
-  computed,
-  unref,
-  type Ref,
-} from "vue";
-import type { CachebayInstance } from "../core/internals";
+import { inject, type Ref } from "vue";
 import { CACHEBAY_KEY } from "../core/plugin";
-export { provideCachebay } from "../core/plugin";
 
-export function useCache(): {
-  readFragment: CachebayInstance["readFragment"];
-  readFragments: CachebayInstance["readFragments"];
-  writeFragment: CachebayInstance["writeFragment"];
-  identify: CachebayInstance["identify"];
-  modifyOptimistic: CachebayInstance["modifyOptimistic"];
-  inspect: {
-    entities: (typename?: string) => string[];
-    entity: (key: string) => any;
-    connections: () => string[];
-    connection: (
-      parent: "Query" | { __typename: string; id?: any; _id?: any },
-      field: string,
-      variables?: Record<string, any>,
-    ) => any;
-    operations: () => string[];
+export type CacheAPI = {
+  // fragments API
+  readFragment: (refOrKey: string | { __typename: string; id?: any }, opts?: { materialized?: boolean }) => any;
+  readFragments: (pattern: string | string[], opts?: { materialized?: boolean }) => any[];
+
+  writeFragment: (obj: any) => { commit: () => void; revert: () => void } | any;
+  identify: (obj: any) => string | null;
+
+  // graph watcher API (NEW)
+  registerWatcher: (run: () => void) => number;
+  unregisterWatcher: (id: number) => void;
+  trackEntityDependency: (watcherId: number, entityKey: string) => void;
+
+  // optionally: other Core API your app exposes via provideCachebay
+  modifyOptimistic?: (fn: (draft: any) => void) => void;
+  inspect?: {
+    entities?: (typename?: string) => string[];
+    entity?: (key: string) => any;
+    connections?: () => string[];
+    connection?: (parent: "Query" | { __typename: string; id?: any }, field: string, variables?: Record<string, any>) => any;
+    operations?: () => string[];
   };
-  hasFragment: (refOrKey: string | { __typename: string; id?: any; _id?: any }) => boolean;
-  entitiesTick: Ref<number>;
-} {
-  const api = inject<any>(CACHEBAY_KEY, null);
+};
+
+/**
+ * Access the Cachebay API (must be provided via provideCachebay()).
+ * Exposes watcher methods so hooks can subscribe to specific entity changes.
+ */
+export function useCache(): CacheAPI {
+  const api = inject<CacheAPI | null>(CACHEBAY_KEY, null);
   if (!api) throw new Error("[cachebay] useCache() called before provideCachebay()");
   return api;
 }

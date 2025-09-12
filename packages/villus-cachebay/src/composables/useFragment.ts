@@ -1,76 +1,90 @@
-import {
-  inject,
-  shallowRef,
-  isRef,
-  watch,
-  computed,
-  unref,
-  type Ref,
-  type App,
-} from "vue";
+import { shallowRef, isRef, watch, unref, onScopeDispose, getCurrentScope, type Ref } from "vue";
 import { useCache } from "./useCache";
 
-
-/** useFragment… (unchanged) */
 type UseFragmentMode = "auto" | "static" | "dynamic";
-type UseFragmentOpts = { materialized?: boolean; mode?: UseFragmentMode; };
+type UseFragmentOpts = { materialized?: boolean; mode?: UseFragmentMode };
 
+function keyOf(input: any): string | null {
+  if (!input) return null;
+  if (typeof input === "string") return input;
+  const t = input.__typename;
+  const id = input.id;
+  return t && id != null ? `${t}:${String(id)}` : null;
+}
 function keySig(v: any): string {
   if (!v) return "";
   if (typeof v === "string") return v;
   const t = v.__typename;
-  const id = v.id ?? v._id;
+  const id = v.id;
   return t && id != null ? `${t}:${id}` : JSON.stringify(v);
 }
 
 export function useFragment<T = any>(
   source:
     | string
-    | { __typename: string; id?: any; _id?: any }
-    | Ref<string | { __typename: string; id?: any; _id?: any } | null | undefined>,
+    | { __typename: string; id?: any }
+    | Ref<string | { __typename: string; id?: any } | null | undefined>,
   opts: UseFragmentOpts = {},
 ): Ref<T | undefined> | T | undefined {
-  const { readFragment } = useCache();
+  const { readFragment, registerWatcher, unregisterWatcher, trackEntityDependency } = useCache();
   const materialized = opts.materialized !== false;
   const mode: UseFragmentMode = opts.mode ?? "auto";
   const dynamic = mode === "dynamic" || (mode === "auto" && isRef(source));
 
   if (!dynamic) {
     const input = unref(source) as any;
-    const result = input ? (readFragment(input, { materialized }) as any as T) : undefined;
-    
-    // If not materialized, return a deep clone to ensure it's a true snapshot
-    // This is needed because materializeEntity uses a WeakRef cache that gets mutated in place
-    if (!materialized) {
-      return result ? structuredClone(result) : result;
+    if (!input) return undefined;
+    if (materialized) {
+      return readFragment(input, { materialized: true }) as T;
     }
-    
-    // Default: return reactive Ref
-    const out = shallowRef<T | undefined>(result);
-    return out;
-  }
-
-  // Dynamic mode (source is reactive)
-  if (!materialized) {
-    // For dynamic non-materialized, capture initial snapshot
-    const input = unref(source) as any;
-    return input ? (readFragment(input, { materialized: false }) as any as T) : undefined;
+    const snap = readFragment(input, { materialized: false }) as T;
+    return snap ? structuredClone(snap) : snap;
   }
 
   const out = shallowRef<T | undefined>(undefined);
-  let last = "";
+  let lastSig = "";
+  let wid: number | null = null;
+  let trackedKey: string | null = null;
 
-  watch(
+  const stop = watch(
     () => unref(source) as any,
     (val) => {
       const sig = keySig(val);
-      if (sig !== last) {
-        last = sig;
-        out.value = val ? (readFragment(val, { materialized: true }) as any as T) : undefined;
+      if (sig !== lastSig) {
+        lastSig = sig;
+
+        const k = keyOf(val);
+        trackedKey = k;
+
+        if (!materialized) {
+          if (wid == null) {
+            wid = registerWatcher(() => {
+              if (!trackedKey) return;
+              const snap = val ? (readFragment(val, { materialized: false }) as any as T) : undefined;
+              out.value = snap ? structuredClone(snap) : snap;
+            });
+          }
+          if (trackedKey) trackEntityDependency(wid, trackedKey);
+        }
+
+        if (materialized) {
+          out.value = val ? (readFragment(val, { materialized: true }) as any as T) : undefined;
+        } else {
+          const snap = val ? (readFragment(val, { materialized: false }) as any as T) : undefined;
+          out.value = snap ? structuredClone(snap) : snap;
+        }
       }
     },
-    { immediate: true },
+    { immediate: true }
   );
 
-  return out;
+  // only register disposal if there is an active Vue scope (avoids test warnings)
+  if (getCurrentScope()) {
+    onScopeDispose(() => {
+      stop();
+      if (wid != null) unregisterWatcher(wid);
+    });
+  }
+
+  return out as Ref<T | undefined>;
 }
