@@ -93,7 +93,7 @@ function createResolversMock(graph: ReturnType<typeof createGraphMock>) {
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 describe('SSR dehydrate/hydrate (new system)', () => {
-  it('dehydrate returns entities, connections and op-cache snapshots', () => {
+  it('dehydrate returns entities, connections and operations-cache snapshots', () => {
     const graph = createGraphMock();
 
     // seed entity
@@ -122,13 +122,13 @@ describe('SSR dehydrate/hydrate (new system)', () => {
     const ssr = createSSR({ graph });
     const snap = ssr.dehydrate();
 
-    expect(Array.isArray(snap.ent)).toBe(true);
-    expect(Array.isArray(snap.conn)).toBe(true);
-    expect(Array.isArray(snap.op)).toBe(true);
-    expect(snap.conn[0][0]).toBe('Query.colors()');
+    expect(Array.isArray(snap.entities)).toBe(true);
+    expect(Array.isArray(snap.connections)).toBe(true);
+    expect(Array.isArray(snap.operations)).toBe(true);
+    expect(snap.connections[0][0]).toBe('Query.colors()');
   });
 
-  it('hydrate restores entities, connections and op-cache', () => {
+  it('hydrate restores entities, connections and operations-cache', () => {
     const graphA = createGraphMock();
 
     // prior cache state
@@ -168,16 +168,16 @@ describe('SSR dehydrate/hydrate (new system)', () => {
     expect(graphB.operationStore.get('opKey')?.variables).toEqual({ first: 1 });
   });
 
-  it('hydrate({ materialize:true }) applies resolvers to rebuild connection state from op-cache', async () => {
+  it('hydrate({ materialize:true }) applies resolvers to rebuild connection state from operations-cache', async () => {
     const graph = createGraphMock();
     const resolvers = createResolversMock(graph);
     const ssr = createSSR({ graph, resolvers });
 
-    // snapshot with only op-cache (no prebuilt connections)
+    // snapshot with only operations-cache (no prebuilt connections)
     const snap = {
-      ent: [] as any[],
-      conn: [] as any[],
-      op: [
+      entities: [] as any[],
+      connections: [] as any[],
+      operations: [
         [
           'opKey',
           {
@@ -210,9 +210,9 @@ describe('SSR dehydrate/hydrate (new system)', () => {
     const ssr = createSSR({ graph });
 
     const snap = {
-      ent: [],
-      conn: [],
-      op: [
+      entities: [],
+      connections: [],
+      operations: [
         ['k1', { data: { d: 1 }, variables: {} }],
         ['k2', { data: { d: 2 }, variables: {} }],
       ],
@@ -232,7 +232,7 @@ describe('SSR dehydrate/hydrate (new system)', () => {
     const graph = createGraphMock();
     const ssr = createSSR({ graph });
 
-    const snap = { ent: [], conn: [], op: [] };
+    const snap = { entities: [], connections: [], operations: [] };
     ssr.hydrate(snap);
     expect(ssr.isHydrating()).toBe(true);
 
@@ -247,9 +247,9 @@ describe('SSR dehydrate/hydrate (new system)', () => {
 
     // seed a snapshot with one entity
     const snap = {
-      ent: [['T:1', { v: 1 }]],
-      conn: [],
-      op: [],
+      entities: [['T:1', { v: 1 }]],
+      connections: [],
+      operations: [],
     };
 
     ssr.hydrate((hydrate: any) => hydrate(snap));

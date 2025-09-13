@@ -1,4 +1,3 @@
-import objectHash from 'object-hash';
 import { visit, Kind, parse, print, type DocumentNode } from "graphql";
 import { isRef, isReactive, toRaw } from "vue";
 import type { EntityKey, RelayOptions } from "./types";
@@ -16,6 +15,24 @@ const TYPENAME_FIELD_NODE = {
 const DOCUMENT_CACHE = new WeakMap<DocumentNode, DocumentNode>();
 const STRING_DOCUMENT_CACHE = new Map<string, DocumentNode>();
 const PRINT_CACHE = new WeakMap<DocumentNode, string>();
+
+function stableStringify(value: any): string {
+  const seen = new WeakSet();
+  const walk = (v: any): any => {
+    if (v === null || typeof v !== 'object') return v;
+    if (seen.has(v)) return '[Circular]';
+    seen.add(v);
+    if (Array.isArray(v)) return v.map(walk);
+    const out: Record<string, any> = {};
+    for (const k of Object.keys(v).sort()) {
+      const vv = (v as any)[k];
+      if (vv === undefined) continue;
+      out[k] = walk(vv);
+    }
+    return out;
+  };
+  try { return JSON.stringify(walk(value)); } catch { return ''; }
+}
 
 function isDocumentNode(v: any): v is DocumentNode {
   return !!v && typeof v === "object" && v.kind === Kind.DOCUMENT;
@@ -42,7 +59,7 @@ function addTypename(doc: DocumentNode): DocumentNode {
  * - DocumentNode: add → cache
  * - anything else: return as-is
  */
-export function ensureDocumentHasTypenameSmart(query: any): any {
+export function ensureDocumentHasTypenames(query: any): any {
   try {
     if (typeof query === "string") {
       const cached = STRING_DOCUMENT_CACHE.get(query);
@@ -117,7 +134,7 @@ export function stableIdentityExcluding(
     filtered[k] = v;
   }
 
-  const sig = objectHash(filtered, { unorderedObjects: true });
+  const sig = stableStringify(filtered, { unorderedObjects: true });
 
   if (perObj) {
     perObj.set(removeKey, sig);

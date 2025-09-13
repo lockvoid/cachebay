@@ -276,18 +276,6 @@ describe('relay resolver (view-agnostic)', () => {
     expect(state.pageInfo).toEqual({ endCursor: 'x', hasNextPage: false });
   });
 
-  it('sets allowReplayOnStale when after/before is present', () => {
-    const deps = createDepsMock();
-    const fn = relay({ paginationMode: 'append' }).bind(deps as any);
-
-    const ctx = makeCtx({
-      connectionValue: { edges: [], pageInfo: {} },
-      variables: { after: 'c2' },
-    });
-    fn(ctx);
-    expect(ctx.hint.allowReplayOnStale).toBe(true);
-  });
-
   it('supports nested node path (e.g., "item.node")', () => {
     const deps = createDepsMock();
     const fn = relay({ paginationMode: 'replace', node: 'item.node' } as any).bind(deps as any);

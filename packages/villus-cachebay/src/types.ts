@@ -17,7 +17,6 @@ export type RelayOptsPartial = {
 };
 
 type PublishHint = {
-  allowReplayOnStale?: boolean;
   stale?: boolean;
   relayView?: "windowed" | "cumulative";
   relayMode?: "append" | "prepend" | "replace" | "auto";

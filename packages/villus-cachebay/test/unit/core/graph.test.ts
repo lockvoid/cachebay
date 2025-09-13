@@ -107,7 +107,6 @@ describe('createGraph - Unit Tests (refactor)', () => {
       expect(state.views).toBeInstanceOf(Set);
       expect(state.keySet).toBeInstanceOf(Set);
       expect(state.initialized).toBe(false);
-      expect((state as any).window).toBe(0);
       expect((state as any).__key).toBe('Query.users');
 
       // Reactivity checks

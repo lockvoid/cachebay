@@ -2,9 +2,14 @@
 import type { App } from "vue";
 import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus";
 import { CombinedError } from "villus";
-import { ensureDocumentHasTypenameSmart, getOperationKey } from "./utils";
+import { ensureDocumentHasTypenames, getOperationKey } from "./utils";
 
 type PluginOptions = { addTypename?: boolean };
+
+type CachebayCtx = {
+  viewKey?: string;
+  paginationMode?: "auto" | "append" | "prepend" | "replace";
+};
 
 type PluginDependencies = {
   graph: {
@@ -14,13 +19,19 @@ type PluginDependencies = {
   };
   views: {
     createViewSession: () => {
-      wireConnections: (root: any, vars: Record<string, any>) => void;
+      // now accepts optional cachebay options (viewKey/paginationMode)
+      wireConnections: (root: any, vars: Record<string, any>, opts?: CachebayCtx) => void;
       destroy: () => void;
     };
   };
   resolvers: {
     // Used only for *network* results to normalize into the graph.
-    applyResolversOnGraph: (root: any, vars: Record<string, any>, hint?: { stale?: boolean }) => void;
+    // pass-through of cachebay hint is harmless if resolvers ignore it
+    applyResolversOnGraph: (
+      root: any,
+      vars: Record<string, any>,
+      hint?: { stale?: boolean; viewKey?: string; paginationMode?: CachebayCtx["paginationMode"] }
+    ) => void;
   };
   ssr?: {
     hydrateOperationTicket?: Set<string>;
@@ -48,13 +59,16 @@ export function buildCachebayPlugin(
   const { graph, views, resolvers, ssr } = deps;
 
   // one session per mounted useQuery (operation.key)
-  const sessionByOp = new Map<number, { wire: (root: any, vars: Record<string, any>) => void; destroy: () => void }>();
+  const sessionByOp = new Map<
+    number,
+    { wire: (root: any, vars: Record<string, any>, opts?: CachebayCtx) => void; destroy: () => void }
+  >();
 
   const plugin: ClientPlugin = (ctx: ClientPluginContext) => {
     const { operation } = ctx;
 
     if (addTypename && operation.query) {
-      operation.query = ensureDocumentHasTypenameSmart(operation.query as any);
+      operation.query = ensureDocumentHasTypenames(operation.query as any);
     }
 
     let session = sessionByOp.get(operation.key);
@@ -67,6 +81,9 @@ export function buildCachebayPlugin(
     const publish = (payload: OperationResult, terminal: boolean) => ctx.useResult(payload, terminal);
     const policy = (operation as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
 
+    // pull per-op view/window hints from villus context
+    const cachebay: CachebayCtx = ((operation as any).context?.cachebay) || {};
+
     // ─────────────────────────────────────────────────────────────────────
     // CACHE-ONLY
     // ─────────────────────────────────────────────────────────────────────
@@ -78,7 +95,7 @@ export function buildCachebayPlugin(
         const toPublish = deepSnapshot(hit.entry.data);
         // Wire on a separate clone so views are attached/sized for this op.
         const forWiring = shallowClone(hit.entry.data);
-        session.wire(forWiring, vars);
+        session.wire(forWiring, vars, cachebay);
         return publish({ data: toPublish }, true);
       }
       const err = new CombinedError({
@@ -98,7 +115,7 @@ export function buildCachebayPlugin(
         const vars = operation.variables || hit.entry.variables || {};
         const toPublish = deepSnapshot(hit.entry.data);
         const forWiring = shallowClone(hit.entry.data);
-        session.wire(forWiring, vars);
+        session.wire(forWiring, vars, cachebay);
         return publish({ data: toPublish }, true);
       }
       // miss → fallthrough to network
@@ -113,7 +130,7 @@ export function buildCachebayPlugin(
         const vars = operation.variables || hit.entry.variables || {};
         const toPublish = deepSnapshot(hit.entry.data);
         const forWiring = shallowClone(hit.entry.data);
-        session.wire(forWiring, vars);
+        session.wire(forWiring, vars, cachebay);
 
         const hadTicket = !!ssr?.hydrateOperationTicket?.has(hit.key);
         if (hadTicket) ssr!.hydrateOperationTicket!.delete(hit.key);
@@ -143,10 +160,10 @@ export function buildCachebayPlugin(
 
       // 1) Normalize into the graph (e.g., relay merges into canonical lists)
       const payload = shallowClone(r.data);
-      resolvers.applyResolversOnGraph(payload, sentVars, { stale: false });
+      resolvers.applyResolversOnGraph(payload, sentVars, { stale: false, ...cachebay });
 
       // 2) Wire views for *this* op so edges reflect the correct window
-      session!.wire(payload, sentVars);
+      session!.wire(payload, sentVars, cachebay);
 
       // 3) Store the normalized snapshot for this exact op signature
       graph.putOperation(sentKey, { data: deepSnapshot(payload), variables: sentVars });

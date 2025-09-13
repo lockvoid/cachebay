@@ -140,7 +140,6 @@ describe('core/views', () => {
         views: new Set(),
         keySet: new Set(),
         initialized: true,
-        window: 0,
       } as any;
 
       const store = new Map([

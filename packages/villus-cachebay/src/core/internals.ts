@@ -201,6 +201,10 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     views,
   });
 
+  (instance as any).install = (app: App) => {
+    provideCachebay(app, instance);
+  };
+
   // Attach additional methods to instance
   (instance as any).identify = fragments.identify;
   (instance as any).readFragment = fragments.readFragment;

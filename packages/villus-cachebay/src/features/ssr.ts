@@ -12,7 +12,7 @@ type Deps = {
   };
 };
 
-/** JSON-only deep clone; fine for op-cache & snapshots. */
+/** JSON-only deep clone; fine for operations-cache & snapshots. */
 function cloneData<T>(data: T): T {
   try {
     return JSON.parse(JSON.stringify(data));
@@ -33,8 +33,8 @@ export function createSSR(deps: Deps) {
 
   /** Serialize graph stores (entities, connections, operations). */
   const dehydrate = () => ({
-    ent: Array.from(graph.entityStore.entries()),
-    conn: Array.from(graph.connectionStore.entries()).map(([key, st]) => [
+    entities: Array.from(graph.entityStore.entries()),
+    connections: Array.from(graph.connectionStore.entries()).map(([key, st]) => [
       key,
       {
         list: st.list,
@@ -43,7 +43,7 @@ export function createSSR(deps: Deps) {
         initialized: !!st.initialized,
       },
     ]),
-    op: Array.from(graph.operationStore.entries()).map(([k, v]) => [
+    operations: Array.from(graph.operationStore.entries()).map(([k, v]) => [
       k,
       { data: v.data, variables: v.variables },
     ]),
@@ -53,7 +53,7 @@ export function createSSR(deps: Deps) {
    * Hydrate a snapshot into the graph.
    * - input: snapshot object or a function receiving a (hydrate) callback
    * - opts.materialize: (default false) apply resolvers to post-resolver ops to rebuild connection state for immediate UI
-   * - opts.rabbit: (default true) drop a hydrate ticket per op key, so cache-and-network can publish cached immediately
+   * - opts.rabbit: (default true) drop a hydrate ticket per operations key, so cache-and-network can publish cached immediately
    */
   const hydrate = (
     input: any | ((hydrate: (snapshot: any) => void) => void),
@@ -70,16 +70,16 @@ export function createSSR(deps: Deps) {
       graph.connectionStore.clear();
       graph.operationStore.clear();
 
-      // Restore entities (snapshot.ent is [key, snapshot][])
-      if (Array.isArray(snapshot.ent)) {
-        for (const [key, snap] of snapshot.ent) {
+      // Restore entities (snapshot.entities is [key, snapshot][])
+      if (Array.isArray(snapshot.entities)) {
+        for (const [key, snap] of snapshot.entities) {
           graph.entityStore.set(key, snap);
         }
       }
 
       // Restore connections (~ConnectionState sans views/keySet)
-      if (Array.isArray(snapshot.conn)) {
-        for (const [key, { list, pageInfo, meta, initialized }] of snapshot.conn) {
+      if (Array.isArray(snapshot.connections)) {
+        for (const [key, { list, pageInfo, meta, initialized }] of snapshot.connections) {
           const st = graph.ensureConnection(key);
           // list
           st.list.length = 0;
@@ -100,14 +100,14 @@ export function createSSR(deps: Deps) {
       }
 
       // Restore operation cache (+ hydrate tickets)
-      if (Array.isArray(snapshot.op)) {
-        for (const [key, { data, variables }] of snapshot.op) {
+      if (Array.isArray(snapshot.operations)) {
+        for (const [key, { data, variables }] of snapshot.operations) {
           graph.operationStore.set(key, { data: cloneData(data), variables });
           if (withTickets) hydrateOperationTicket.add(key);
         }
       }
 
-      // Optional: materialize from op-cache — build canonical connection state by applying resolvers
+      // Optional: materialize from operations-cache — build canonical connection state by applying resolvers
       if (doMaterialize && typeof applyResolversOnGraph === "function") {
         graph.operationStore.forEach(({ data, variables }: any) => {
           const vars = variables || {};

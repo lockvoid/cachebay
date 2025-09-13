@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parse, print } from 'graphql';
 import {
-  ensureDocumentHasTypenameSmart,
+  ensureDocumentHasTypenames,
   getOperationBody,
   readPathValue,
   parseEntityKey,
@@ -13,17 +13,17 @@ import {
 } from '@/src/core/utils';
 
 describe('core/utils (object-hash signatures)', () => {
-  it('ensureDocumentHasTypenameSmart adds __typename where missing', () => {
+  it('ensureDocumentHasTypenames adds __typename where missing', () => {
     const src = parse(`
       query Q {
         colors { id name }
         me { id username }
       }
     `);
-    const withTypename = ensureDocumentHasTypenameSmart(src);
+    const withTypename = ensureDocumentHasTypenames(src);
     const body = print(withTypename);
     expect(body).toMatch(/__typename/);
-    const again = ensureDocumentHasTypenameSmart(withTypename);
+    const again = ensureDocumentHasTypenames(withTypename);
     expect(again).toBe(withTypename);
   });
 

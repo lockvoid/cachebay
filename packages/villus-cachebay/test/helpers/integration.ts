@@ -4,6 +4,36 @@ import { createClient, type Client } from 'villus';
 import { createCache, relay } from '@/src';
 import { CACHEBAY_KEY, provideCachebay } from '@/src/core/plugin'; // ⟵ import provideCachebay
 import { createFetchMock, type Route, tick, delay } from './index';
+import { getOperationKey, ensureDocumentHasTypenames } from '@/src/core/utils';
+
+export async function seedCache(
+  cache: any,
+  {
+    query,
+    variables = {},
+    data,
+    materialize = true,
+  }: {
+    query: any;
+    variables?: Record<string, any>;
+    data: any;
+    materialize?: boolean;
+  }
+) {
+  const queryWithTypenames = ensureDocumentHasTypenames(query);
+  const operationKey = getOperationKey({ type: "query", query: queryWithTypenames, variables, context: {} } as any);
+
+  cache.hydrate(
+    {
+      operations: [[operationKey, { data, variables }]],
+    },
+
+    {
+      materialize,
+    },
+  );
+}
+
 
 /**
  * Common cache configurations for integration tests

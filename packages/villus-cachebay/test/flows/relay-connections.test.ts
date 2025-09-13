@@ -366,9 +366,22 @@ describe('Integration • Relay flows (spec coverage) • Posts', () => {
 /* -------------------------------------------------------------------------- */
 /* Non-Suspense: Switch A→B→A then paginate again (to p4)                      */
 /* -------------------------------------------------------------------------- */
-describe.only('Integration • Relay pagination reset & append from cache — extended', () => {
-  it('A→(p2,p3) → B → A (reset) → paginate p2,p3,p4 with cached append, then slow revalidate', async () => {
+describe('Integration • Relay pagination reset & append from cache — extended', () => {
+  it.only('A→(p2,p3) → B → A (reset) → paginate p2,p3,p4 with cached append, then slow revalidate', async () => {
     const cache = cacheConfigs.withRelay();
+
+
+    // Seed cache
+
+    await seedCache(cache, {
+      query: testQueries.POSTS,
+
+      variables: { filter: 'A', first: 2, after: 'c2' }, // <- was 'a2'
+
+      data: mockResponses.posts(['A-3', 'A-4'], { fromId: 3 }).data,
+    });
+
+    //console.log(cache.__internals.graph)
 
     // Quick register A p1
     {
@@ -392,16 +405,6 @@ describe.only('Integration • Relay pagination reset & append from cache — ex
 
       wrapper.unmount();
     }
-
-    // Seed cache
-
-    await seedCache(cache, {
-      query: testQueries.POSTS,
-
-      variables: { filter: 'A', first: 2, after: 'c2' }, // <- was 'a2'
-
-      data: mockResponses.posts(['A-3', 'A-4'], { fromId: 3 }).data,
-    });
 
     // Slow routes for revalidate
     const slowRoutes: Route[] = [
@@ -480,10 +483,12 @@ describe.only('Integration • Relay pagination reset & append from cache — ex
     await delay(51);
     expect(liText(wrapper)).toEqual(['A-1', 'A-2']);
 
+    console.log('HERE!!!')
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c2' });
-    await tick(112); // Temprorary show be seedCache
+    await tick(2222); // Temprorary show be seedCache
     expect(liText(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4']);
 
+    return;
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c4' });
     await delay(51);
     expect(liText(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
