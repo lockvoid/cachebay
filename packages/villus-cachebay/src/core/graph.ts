@@ -225,7 +225,6 @@ export const createGraph = (config: GraphConfig) => {
         views: new Set(),
         keySet: new Set(),
         initialized: false,
-        window: 0,
       } as ConnectionState;
 
       (state as any).__key = key;
@@ -424,8 +423,6 @@ export const createGraph = (config: GraphConfig) => {
     variables?: Record<string, any>;
     context?: any;
   }) {
-    console.dir('DATADATA')
-    console.dir(operationStore.values(), { depth: 5 });
     // Exact key first.
     const exactKey = getOperationKey(operation as any);
     const exact = operationStore.get(exactKey);

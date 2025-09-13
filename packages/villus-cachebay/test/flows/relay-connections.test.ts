@@ -379,6 +379,8 @@ describe('Integration • Relay pagination reset & append from cache — extende
       variables: { filter: 'A', first: 2, after: 'c2' }, // <- was 'a2'
 
       data: mockResponses.posts(['A-3', 'A-4'], { fromId: 3 }).data,
+    }, {
+      materialize: false
     });
 
     //console.log(cache.__internals.graph)
@@ -485,13 +487,16 @@ describe('Integration • Relay pagination reset & append from cache — extende
 
     console.log('HERE!!!')
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c2' });
-    await tick(2222); // Temprorary show be seedCache
+    await tick(52); // Temprorary show be seedCache
     expect(liText(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4']);
-
-    return;
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c4' });
     await delay(51);
     expect(liText(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
+
+    console.log('123HERE!!!')
+    console.log([...cache.__internals.graph.connectionStore][0])
+    return;
+
 
     await wrapper.setProps({ filter: 'B', first: 2, after: undefined } as any);
     await delay(51);

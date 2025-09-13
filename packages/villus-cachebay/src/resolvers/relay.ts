@@ -117,6 +117,8 @@ export const relay = defineResolver((opts?: RelayOptsPartial) => {
         state.keySet.clear();
       }
 
+      console.log('state:', state);
+
       // Extract edges/pageInfo from the payload
       const edgesArray = readPathValue(ctx.value, RELAY.paths.edges);
       const pageInfoObj = readPathValue(ctx.value, RELAY.paths.pageInfo);

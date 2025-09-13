@@ -34,7 +34,6 @@ export async function seedCache(
   );
 }
 
-
 /**
  * Common cache configurations for integration tests
  */
@@ -49,8 +48,8 @@ export const cacheConfigs = {
       resolvers: {
         Query: {
           posts: resolverFn || relay({}),
-          comments: resolverFn || relay({}),
-          users: resolverFn || relay({}),
+          // comments: resolverFn || relay({}),
+          // users: resolverFn || relay({}),
         }
       },
     });

@@ -205,8 +205,6 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
     function wireConnections(root: any, vars: Record<string, any>) {
       if (!root || typeof root !== "object") return;
 
-      const fromCache = !!(root as any).__fromCache;
-
       const stack: Array<{ node: any; parentType: string | null }> = [{ node: root, parentType: "Query" }];
       while (stack.length) {
         const { node, parentType } = stack.pop()!;
@@ -246,9 +244,7 @@ export function createViews(_options: {}, dependencies: ViewsDependencies) {
             const hasBefore = vars.before != null;
             const payloadCount = Array.isArray(edges) ? edges.length : 0;
 
-            if (fromCache) {
-              setViewLimit(view, payloadCount);
-            } else if (!hasAfter && !hasBefore) {
+            if (!hasAfter && !hasBefore) {
               setViewLimit(view, payloadCount);
             } else {
               setViewLimit(view, state.list.length);
