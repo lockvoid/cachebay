@@ -16,7 +16,7 @@ const DOCUMENT_CACHE = new WeakMap<DocumentNode, DocumentNode>();
 const STRING_DOCUMENT_CACHE = new Map<string, DocumentNode>();
 const PRINT_CACHE = new WeakMap<DocumentNode, string>();
 
-function stableStringify(value: any): string {
+export function stableStringify(value: any): string {
   const seen = new WeakSet();
   const walk = (v: any): any => {
     if (v === null || typeof v !== 'object') return v;

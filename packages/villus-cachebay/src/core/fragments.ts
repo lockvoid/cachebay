@@ -1,189 +1,179 @@
-// fragments.ts - everything related to fragments (views-free version)
+// src/core/fragments.ts
+import type { GraphAPI } from './graph';
+import type { SelectionsAPI } from './selections';
+import {
+  parse,
+  Kind,
+  type FragmentDefinitionNode,
+  type SelectionNode,
+  type FieldNode,
+  type ValueNode,
+} from 'graphql';
 
-import type { EntityKey } from "./types";
-import { parseEntityKey } from "./utils";
-import { TYPENAME_FIELD } from "./constants";
-import type { GraphAPI } from "./graph";
+export type FragmentsConfig = Record<string, never>;
 
-export type Fragments = ReturnType<typeof createFragments>;
-
-export type FragmentsDependencies = {
+export type FragmentsDeps = {
   graph: GraphAPI;
+  selections: SelectionsAPI;
 };
 
-export function createFragments(_options: {}, dependencies: FragmentsDependencies) {
-  const { graph } = dependencies;
+export type CreateFragmentsArgs = {
+  config?: FragmentsConfig;
+  dependencies: FragmentsDeps;
+};
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // Helpers
-  // ────────────────────────────────────────────────────────────────────────────
+export type ReadFragmentArgs = {
+  id: string;                 // canonical entity key, e.g. "User:1" or "Post:42"
+  fragment: string;           // GraphQL fragment source (string)
+  variables?: Record<string, any>;
+};
 
-  function identify(obj: any): EntityKey | null {
-    return graph.identify(obj);
+export type WriteFragmentArgs = {
+  id: string;                 // canonical entity key to write to (root entity)
+  fragment: string;           // GraphQL fragment source (string)
+  data: any;                  // payload for the fragment (root + any nested fields-with-args)
+  variables?: Record<string, any>;
+};
+
+export function createFragments({ dependencies }: CreateFragmentsArgs) {
+  const { graph, selections } = dependencies;
+
+  function parseSingleFragment(source: string): FragmentDefinitionNode {
+    const doc = parse(source);
+    const frag = doc.definitions.find(
+      (d): d is FragmentDefinitionNode => d.kind === Kind.FRAGMENT_DEFINITION
+    );
+    if (!frag) {
+      throw new Error(`fragments.read/write: expected a single fragment definition`);
+    }
+    return frag;
   }
 
-  function keyFromRefOrKey(
-    refOrKey: EntityKey | { __typename: string; id?: any }
-  ): EntityKey | null {
-    if (typeof refOrKey === "string") return refOrKey as EntityKey;
-    const t = (refOrKey as any)?.[TYPENAME_FIELD];
-    const id = (refOrKey as any)?.id; // _id not supported
-    return t && id != null ? (String(t) + ":" + String(id)) as EntityKey : null;
+  function fieldOutputKey(node: FieldNode): string {
+    return node.alias?.value ?? node.name.value;
   }
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // Exposed API
-  // ────────────────────────────────────────────────────────────────────────────
-
-  function hasFragment(refOrKey: EntityKey | { __typename: string; id?: any }) {
-    const raw = keyFromRefOrKey(refOrKey);
-    if (!raw) return false;
-
-    const { typename, id } = parseEntityKey(raw);
-    if (!typename) return false;
-
-    // Resolve interface → concrete if needed
-    if (graph.isInterfaceType(typename) && id != null) {
-      const impls = graph.getInterfaceTypes(typename);
-      for (let i = 0; i < impls.length; i++) {
-        const k = (impls[i] + ":" + id) as EntityKey;
-        if (graph.entityStore.has(k)) return true;
+  function valueNodeToJS(node: ValueNode, vars?: Record<string, any>): any {
+    switch (node.kind) {
+      case Kind.NULL:
+        return null;
+      case Kind.INT:
+        return Number(node.value);
+      case Kind.FLOAT:
+        return Number(node.value);
+      case Kind.STRING:
+        return node.value;
+      case Kind.BOOLEAN:
+        return node.value;
+      case Kind.ENUM:
+        return node.value;
+      case Kind.LIST:
+        return node.values.map(v => valueNodeToJS(v, vars));
+      case Kind.OBJECT: {
+        const o: Record<string, any> = {};
+        for (const f of node.fields) {
+          o[f.name.value] = valueNodeToJS(f.value, vars);
+        }
+        return o;
       }
-      return false;
+      case Kind.VARIABLE: {
+        return vars ? vars[node.name.value] : undefined;
+      }
+      default:
+        return undefined;
     }
-
-    // Try resolved key if graph can resolve, else raw
-    const resolved = (graph as any).resolveEntityKey
-      ? (graph as any).resolveEntityKey(raw) || raw
-      : raw;
-
-    return graph.entityStore.has(resolved);
   }
 
-  /**
-   * Read a fragment by key or ref.
-   * - materialized=true (default): returns a reactive materialized proxy (identity + snapshot).
-   * - materialized=false: returns the raw snapshot stored in entityStore (no identity fields).
-   */
-  function readFragment(
-    refOrKey: EntityKey | { __typename: string; id?: any },
-    { materialized = true }: { materialized?: boolean } = {},
-  ) {
-    const key =
-      typeof refOrKey === "string" ? (refOrKey as EntityKey) : graph.identify(refOrKey);
-
-    if (!key) return null;
-
-    const resolved = (graph as any).resolveEntityKey
-      ? (graph as any).resolveEntityKey(key) || key
-      : key;
-
-    if (!graph.entityStore.has(resolved)) return null;
-
-    return materialized
-      ? graph.materializeEntity(resolved)
-      : graph.entityStore.get(resolved);
+  function argsToObject(field: FieldNode, vars?: Record<string, any>): Record<string, any> | undefined {
+    if (!field.arguments || field.arguments.length === 0) return undefined;
+    const out: Record<string, any> = {};
+    for (const arg of field.arguments) {
+      out[arg.name.value] = valueNodeToJS(arg.value, vars);
+    }
+    return out;
   }
 
-  /**
-   * Transactional write:
-   * - commit(): writes via graph.putEntity (merge by default, honoring graph.writePolicy)
-   * - revert(): restores previous snapshot via 'replace' (if existed), or clears snapshot.
-   */
-  function writeFragment(obj: any) {
-    const key = graph.identify(obj);
-    if (!key) return { commit: () => { }, revert: () => { } };
+  /** READ **/
+  function readFragment({ id, fragment, variables }: ReadFragmentArgs): any {
+    const frag = parseSingleFragment(fragment);
 
-    // capture previous snapshot from entityStore (no identity fields in store)
-    const prevSnap = structuredClone(graph.entityStore.get(key));
-    let committed = false;
+    // Root proxy (reactive, includes latest implementor typename)
+    const proxy = graph.materializeEntity(id);
 
-    function commit() {
-      if (committed) return;
-      committed = true;
-      // write via graph.putEntity so materialized proxy overlays in place
-      graph.putEntity(obj, "merge");   // or override policy if needed
-    }
+    // Build the shape requested by the fragment
+    const out: Record<string, any> = {};
 
-    function revert() {
-      if (!committed) return;
-      committed = false;
+    for (const sel of frag.selectionSet.selections) {
+      if (sel.kind !== Kind.FIELD) continue;
 
-      const { typename, id } = parseEntityKey(key);
+      const key = fieldOutputKey(sel);
+      const hasArgs = !!(sel.arguments && sel.arguments.length);
 
-      if (!prevSnap) {
-        // restore to empty (entity didn’t exist previously)
-        graph.putEntity({ __typename: typename!, id }, "replace");
+      if (hasArgs) {
+        // This is a field with arguments → a selection (e.g., posts(first: 10))
+        const argObj = argsToObject(sel, variables);
+        const fieldKey = selections.buildFieldSelectionKey(id, sel.name.value, argObj || {});
+        // materialize the selection tree from selections store
+        out[key] = selections.materializeSelection(fieldKey);
       } else {
-        // restore previous snapshot (replace)
-        graph.putEntity({ __typename: typename!, id, ...prevSnap }, "replace");
+        // Plain entity field → read from the reactive proxy
+        // (this includes nested objects; graph.materializeEntity already materializes refs)
+        out[key] = (proxy as any)[key];
       }
-
-      // ensure any cached materialized proxy reflects the restored snapshot
-      graph.materializeEntity(key);
     }
 
-    return { commit, revert };
+    // Always ensure __typename is present on the returned object
+    if (proxy && typeof proxy === 'object' && (proxy as any).__typename && !('__typename' in out)) {
+      out.__typename = (proxy as any).__typename;
+    }
+
+    return out;
   }
 
-  /**
-   * Read multiple fragments by pattern(s).
-   * Supports:
-   *  - "Type:*" → expands to all keys "Type:" via graph.getEntityKeys
-   *  - "Type:123" → exact key
-   *  - ["Type:*", "Other:*", "Type:1"] → union
-   */
-  function readFragments(
-    pattern: string | string[],
-    opts: { materialized?: boolean } = {},
-  ) {
-    const selectors = Array.isArray(pattern) ? pattern : [pattern];
-    const materialized = opts.materialized !== false; // default true
+  /** WRITE **/
+  function writeFragment({ id, fragment, data, variables }: WriteFragmentArgs): void {
+    const frag = parseSingleFragment(fragment);
 
-    const results: any[] = [];
+    // First, ensure implementor mapping + merge entity fields at the root.
+    // If caller provided a full root object under `data`, use it directly;
+    // otherwise, synthesize a minimal identity payload to ensure the entity exists.
+    const rootData = data && data.__typename ? data : { __typename: inferTypenameFromFragment(frag), id: id.split(':')[1] };
+    if (rootData && rootData.__typename) {
+      graph.putEntity(rootData);
+    }
 
-    for (const selector of selectors) {
-      // Wildcard: Type:* → use graph.getEntityKeys("Type:")
-      if (selector.endsWith(":*")) {
-        const typename = selector.slice(0, -2); // "Type"
-        // If interface, expand implementors
-        const implementors = graph.getInterfaceTypes(typename);
-        if (implementors && implementors.length > 0) {
-          for (const impl of implementors) {
-            const keys = graph.getEntityKeys(impl + ":");
-            for (const k of keys) {
-              if (!graph.entityStore.has(k)) continue;  // ⬅️ only return real snapshots
-              const v = materialized
-                ? graph.materializeEntity(k as EntityKey)
-                : graph.entityStore.get(k);
-              if (v != null) results.push(v);
-            }
-          }
-        } else {
-          const keys = graph.getEntityKeys(typename + ":");
-          for (const k of keys) {
-            if (!graph.entityStore.has(k)) continue;  // ⬅️ only return real snapshots
-            const v = materialized
-              ? graph.materializeEntity(k as EntityKey)
-              : graph.entityStore.get(k);
-            if (v != null) results.push(v);
-          }
+    for (const sel of frag.selectionSet.selections) {
+      if (sel.kind !== Kind.FIELD) continue;
+
+      const outKey = fieldOutputKey(sel);
+      const hasArgs = !!(sel.arguments && sel.arguments.length);
+
+      if (hasArgs) {
+        // Nested field with arguments → selection write
+        const argObj = argsToObject(sel, variables) || {};
+        const fieldKey = selections.buildFieldSelectionKey(id, sel.name.value, argObj);
+        const subtree = data ? (data as any)[outKey] : undefined;
+        if (subtree !== undefined) {
+          selections.writeSelection(fieldKey, subtree);
         }
       } else {
-        // Exact key or free-form (we trust caller)
-        const v = readFragment(selector as EntityKey, { materialized });
-        if (v != null) results.push(v);
+        // Plain entity field.
+        // If the fragment provides a subset object for the root, merge via putEntity.
+        // We reuse `data` here since callers typically pass root fields + any nested selections.
+        if (data && data.__typename) {
+          graph.putEntity(data);
+        }
       }
     }
+  }
 
-    return results;
+  // Helper: if user didn’t include __typename in `data`, try using fragment type condition
+  function inferTypenameFromFragment(frag: FragmentDefinitionNode): string | undefined {
+    return frag.typeCondition?.name?.value;
   }
 
   return {
-    identify,
-    hasFragment,
     readFragment,
     writeFragment,
-    readFragments,
   };
 }

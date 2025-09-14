@@ -1,554 +1,368 @@
-// graph.ts - raw cache
+// src/core/graph.ts
+import { shallowReactive } from "vue";
+import { stableStringify } from './utils';
 
-import {
-  reactive,
-  shallowReactive,
-} from "vue";
-
-import type { EntityKey, ConnectionState } from "./types";
-import { parseEntityKey, unwrapShallow, getEntityParentKey, getOperationKey, cleanVars } from "./utils";
-import { TYPENAME_FIELD, OPERATION_CACHE_LIMIT } from "./constants";
-
-/**
- * Graph-layer: owns the raw stores and entity helpers.
- * This module is intentionally "dumb" about resolvers and views.
- */
-
+/** Public config */
 export type GraphConfig = {
-  writePolicy: "replace" | "merge";
-  reactiveMode: "shallow" | "deep";
+  reactiveMode?: "shallow" | "deep"; // currently shallow used for all containers
   keys: Record<string, (obj: any) => string | null>;
   /**
-   * interfaces: map of InterfaceName -> array of concrete type names that implement it.
-   * Example: { Node: ["User", "Post"] }
+   * Interface map: interfaceName -> concrete implementors.
+   * Example: { Post: ['AudioPost', 'VideoPost'] }
+   * Entities of those implementors will be keyed under the interface, e.g. AudioPost{id:1} → "Post:1".
    */
-  interfaces: Record<string, string[]>;
+  interfaces?: Record<string, string[]>;
 };
 
 export type GraphAPI = ReturnType<typeof createGraph>;
 
-export const createGraph = (config: GraphConfig) => {
-  const { writePolicy, reactiveMode, keys, interfaces } = config;
+/** Is object shaped like a GraphQL entity (typename+id)? */
+function isEntityLike(o: any): boolean {
+  return !!(o && typeof o === "object" && typeof o.__typename === "string" && o.id != null);
+}
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // Stores
-  // ────────────────────────────────────────────────────────────────────────────
-  // entityStore keeps ONLY snapshot fields (no __typename/id).
-  const entityStore = new Map<EntityKey, Record<string, any>>();
-  const connectionStore = new Map<string, ConnectionState>();
-  const operationStore = new Map<string, { data: any; variables: Record<string, any> }>();
+/** Recursively normalize value (entities -> {__ref}, arrays/objects walk) */
+function normalizeValue(
+  value: any,
+  putEntity: (obj: any) => string | null
+): any {
+  if (Array.isArray(value)) {
+    const out: any[] = new Array(value.length);
+    for (let i = 0; i < value.length; i++) out[i] = normalizeValue(value[i], putEntity);
+    return out;
+  }
+  if (value && typeof value === "object") {
+    if ("__ref" in value && typeof value.__ref === "string") return value;
+    if (isEntityLike(value)) {
+      const k = putEntity(value);
+      return k ? { __ref: k } : null;
+    }
+    const out: any = {};
+    for (const k of Object.keys(value)) out[k] = normalizeValue(value[k], putEntity);
+    return out;
+  }
+  return value;
+}
 
-  // Fast read index: typename -> Set(keys)
-  const typeIndex = new Map<string, Set<EntityKey>>();
+/** Overlay normalized snapshot into a shallow reactive proxy, resolving refs on the fly */
+function overlayEntitySnapshotInto(
+  proxy: any,
+  snapshot: any,
+  materializeEntity: (key: string) => any
+) {
+  // remove stale
+  for (const k of Object.keys(proxy)) {
+    if (k === "__typename" || k === "id") continue;
+    if (!(k in snapshot)) delete proxy[k];
+  }
+  // overlay current
+  for (const k of Object.keys(snapshot)) {
+    const v = snapshot[k];
+    proxy[k] = denormalizeValue(v, materializeEntity);
+  }
+}
 
-  const addToTypeIndex = (key: EntityKey) => {
-    const { typename } = parseEntityKey(key);
-    if (!typename) return;
-    let set = typeIndex.get(typename);
-    if (!set) typeIndex.set(typename, (set = new Set()));
-    set.add(key);
-  };
-  const removeFromTypeIndex = (key: EntityKey) => {
-    const { typename } = parseEntityKey(key);
-    if (!typename) return;
-    const set = typeIndex.get(typename);
-    if (set) set.delete(key);
-  };
+function denormalizeValue(
+  value: any,
+  materializeEntity: (key: string) => any
+): any {
+  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    const arr = shallowReactive([]) as any[];
+    for (let i = 0; i < value.length; i++) arr[i] = denormalizeValue(value[i], materializeEntity);
+    return arr;
+  }
+  if (value.__ref && typeof value.__ref === "string") {
+    return materializeEntity(value.__ref);
+  }
+  // shallow object
+  const obj = shallowReactive({} as Record<string, any>);
+  for (const k of Object.keys(value)) {
+    obj[k] = denormalizeValue(value[k], materializeEntity);
+  }
+  return obj;
+}
 
-  // Materialized entity proxies (modern browsers assumed)
-  const MATERIALIZED = new Map<EntityKey, WeakRef<any>>();
-
-  // ────────────────────────────────────────────────────────────────────────────
-  // Reverse dep-index + versions (granular watchers)
-  // ────────────────────────────────────────────────────────────────────────────
-  type WatcherId = number;
-  const entityVersion = new Map<EntityKey, number>();
-  const depIndex = new Map<EntityKey, Set<WatcherId>>();
-  const watchers = new Map<
-    WatcherId,
-    { seen: Map<EntityKey, number>; run: () => void }
-  >();
-  const changedEntities = new Set<EntityKey>();
-  let tickScheduled = false;
-  let nextWatcherId = 1;
-
-  const scheduleFlush = () => {
-    if (tickScheduled) return;
-    tickScheduled = true;
-    queueMicrotask(flushEntityChanges);
-  };
-
-  const flushEntityChanges = () => {
-    tickScheduled = false;
-    if (changedEntities.size === 0) return;
-
-    const toNotify = new Set<WatcherId>();
-    for (const key of changedEntities) {
-      const deps = depIndex.get(key);
-      if (!deps) continue;
-      const v = entityVersion.get(key) ?? 0;
-      for (const wid of deps) {
-        const w = watchers.get(wid);
-        if (!w) continue;
-        const prev = w.seen.get(key) ?? -1;
-        if (prev !== v) {
-          w.seen.set(key, v);
-          toNotify.add(wid);
-        }
+export function createGraph(config: GraphConfig) {
+  // interface implementor → interface (canonical)
+  const canonicalByImpl = new Map<string, string>();
+  if (config.interfaces) {
+    for (const iface of Object.keys(config.interfaces)) {
+      for (const impl of config.interfaces[iface] || []) {
+        if (!canonicalByImpl.has(impl)) canonicalByImpl.set(impl, iface);
       }
     }
-    changedEntities.clear();
+  }
 
-    for (const wid of toNotify) {
-      try { watchers.get(wid)?.run(); } catch { /* noop */ }
-    }
-  };
+  /** Entities: key -> snapshot (fields only; refs stored as {__ref}) */
+  const entityStore = new Map<string, Record<string, any>>();
+  /** Last seen concrete typename for a canonical entity key */
+  const entityConcreteTypename = new Map<string, string>();
+  /** Selections (query skeletons): selectionKey -> skeleton with {__ref} */
+  const selectionStore = new Map<string, any>();
 
-  const registerEntityWatcher = (run: () => void): WatcherId => {
-    const id = nextWatcherId++;
-    watchers.set(id, { seen: new Map(), run });
-    return id;
-  };
+  /** Weak caches for materialized shallow-reactive objects */
+  const materializedEntity = new Map<string, WeakRef<any>>();
+  const materializedSelection = new Map<string, WeakRef<any>>();
 
-  const unregisterEntityWatcher = (id: WatcherId) => {
-    watchers.delete(id);
-    for (const set of depIndex.values()) set.delete(id);
-  };
-
-  const trackEntity = (watcherId: WatcherId, key: EntityKey) => {
-    let s = depIndex.get(key);
-    if (!s) depIndex.set(key, (s = new Set()));
-    s.add(watcherId);
-    const v = entityVersion.get(key) ?? 0;
-    watchers.get(watcherId)?.seen.set(key, v);
-  };
-
-  const markEntityChanged = (key: EntityKey) => {
-    entityVersion.set(key, (entityVersion.get(key) ?? 0) + 1);
-    changedEntities.add(key);
-    scheduleFlush();
-  };
-
-  // ────────────────────────────────────────────────────────────────────────────
-  // Type-level watchers (wildcard/membership)
-  // ────────────────────────────────────────────────────────────────────────────
-  const typeWatchers = new Map<string, Set<number>>();
-  const watcherFns = new Map<number, () => void>(); // reuse ids namespace or separate
-  let nextTypeWatcherId = 100000; // separate id range
-
-  const notifyTypeChanged = (typename: string) => {
-    const set = typeWatchers.get(typename);
-    if (!set) return;
-    for (const wid of set) watcherFns.get(wid)?.();
-  };
-
-  const registerTypeWatcher = (typename: string, run: () => void): number => {
-    const wid = nextTypeWatcherId++;
-    let set = typeWatchers.get(typename);
-    if (!set) typeWatchers.set(typename, (set = new Set()));
-    set.add(wid);
-    watcherFns.set(wid, run);
-    return wid;
-  };
-
-  const unregisterTypeWatcher = (typename: string, wid: number) => {
-    typeWatchers.get(typename)?.delete(wid);
-    watcherFns.delete(wid);
-  };
-
-  // ────────────────────────────────────────────────────────────────────────────
-  // Interface helpers (precompute sets for speed)
-  // ────────────────────────────────────────────────────────────────────────────
-  const interfaceImpls = new Map<string, Set<string>>();
-  Object.keys(interfaces).forEach((iname) => {
-    interfaceImpls.set(iname, new Set(interfaces[iname] || []));
-  });
-
-  const isInterfaceType = (t: string | null) => !!(t && interfaceImpls.has(t));
-  const getInterfaceTypes = (t: string) => interfaces[t] || [];
-
-  // Given an abstract key "Node:123", find a concrete key if present.
-  const resolveEntityKey = (abstractKey: EntityKey): EntityKey | null => {
-    const { typename, id } = parseEntityKey(abstractKey);
-    if (!typename || !id || !isInterfaceType(typename)) return abstractKey;
-    const impls = interfaceImpls.get(typename)!;
-    for (const impl of impls) {
-      const candidate = (impl + ":" + id) as EntityKey;
-      if (entityStore.has(candidate)) return candidate;
-    }
-    return null;
-  };
-
-  const areEntityKeysEqual = (maybeAbstract: EntityKey, candidate: EntityKey) => {
-    if (maybeAbstract === candidate) return true;
-    const a = parseEntityKey(maybeAbstract);
-    const b = parseEntityKey(candidate);
-    if (!a.typename || !a.id || !b.typename || !b.id) return false;
-    if (a.id !== b.id) return false;
-    if (a.typename === b.typename) return true;
-    const impls = interfaceImpls.get(a.typename);
-    return !!(impls && impls.has(b.typename));
-  };
-
-  // ────────────────────────────────────────────────────────────────────────────
-  // Entity id helpers
-  // ────────────────────────────────────────────────────────────────────────────
-  const identify = (object: any): EntityKey | null => {
-    if (!object || typeof object !== "object") return null;
-    const typename: string | undefined = (object as any)[TYPENAME_FIELD];
+  function identify(obj: any): string | null {
+    if (!obj || typeof obj !== "object") return null;
+    const typename = obj.__typename;
     if (!typename) return null;
 
-    // Custom per-type keyer has priority
-    const customKeyer = keys[typename];
-    if (customKeyer) {
-      const idVal = customKeyer(object);
-      return idVal == null
-        ? null
-        : (typename + ":" + String(idVal)) as EntityKey;
-    }
+    const keyer = config.keys?.[typename];
+    const id = keyer ? keyer(obj) : obj.id ?? null;
+    if (id == null) return null;
 
-    // Default: ONLY `id` (no `_id` support)
-    const id = (object as any)?.id;
-    return id != null ? (typename + ":" + String(id)) as EntityKey : null;
-  };
+    // canonicalize implementors into interface key
+    const canonical = canonicalByImpl.get(typename) || typename;
+    return `${canonical}:${String(id)}`;
+  }
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // Connection state management
-  // ────────────────────────────────────────────────────────────────────────────
-  const ensureConnection = (key: string): ConnectionState => {
-    let state = connectionStore.get(key);
-    if (!state) {
-      state = {
-        list: shallowReactive([] as any[]), // list is shallow-reactive
-        pageInfo: shallowReactive({}),
-        meta: shallowReactive({}),
-        views: new Set(),
-        keySet: new Set(),
-        initialized: false,
-      } as ConnectionState;
-
-      (state as any).__key = key;
-      connectionStore.set(key, state);
-    }
-    return state;
-  };
-
-  // ────────────────────────────────────────────────────────────────────────────
-  // Materialization (one proxy per entity; includes __typename/id)
-  // ────────────────────────────────────────────────────────────────────────────
-  const makeReactive = (base: any) =>
-    reactiveMode === "shallow" ? shallowReactive(base) : reactive(base);
-
-  const overlaySnapshotIntoProxy = (proxy: any, key: EntityKey) => {
-    const src = entityStore.get(key);
-    if (!src) {
-      for (const k of Object.keys(proxy)) {
-        if (k !== TYPENAME_FIELD && k !== 'id') delete proxy[k];
-      }
-      return;
-    }
-    const srcKeys = Object.keys(src);
-    // remove stale fields
-    for (const k of Object.keys(proxy)) {
-      if (k === TYPENAME_FIELD || k === 'id') continue;
-      if (!(k in (src as any))) delete proxy[k];
-    }
-    // overlay current fields
-    for (let i = 0; i < srcKeys.length; i++) {
-      const k = srcKeys[i];
-      if (proxy[k] !== (src as any)[k]) proxy[k] = (src as any)[k];
-    }
-  };
-
-  const getOrCreateProxy = (key: EntityKey) => {
-    const wr = MATERIALIZED.get(key);
-    const hit = wr?.deref?.();
-    if (hit) return hit;
-
-    // Build materialized object: identity + snapshot fields
-    const { typename, id } = parseEntityKey(key);
-    const raw: any = Object.create(null);
-    if (typename) raw[TYPENAME_FIELD] = typename;
-    if (id != null) raw.id = String(id);
-
-    // Seed identity from the key (works for id-less keys like 'Query')
-    const snap = entityStore.get(key);
-    if (snap) {
-      const kk = Object.keys(snap);
-      for (let i = 0; i < kk.length; i++) raw[kk[i]] = (snap as any)[kk[i]];
-    }
-
-    const proxy = makeReactive(raw);
-    MATERIALIZED.set(key, new WeakRef(proxy));
-    return proxy;
-  };
-
-  const materializeEntity = (key: EntityKey) => {
-    const resolved = resolveEntityKey(key) || key;
-    const proxy = getOrCreateProxy(resolved);
-
-    // Reflect latest snapshot
-    overlaySnapshotIntoProxy(proxy, resolved);
-
-    // Ensure identity is always present on the proxy (fixes 'Query' case)
-    const { typename, id } = parseEntityKey(resolved);
-
-    if (typename && proxy[TYPENAME_FIELD] !== typename) proxy[TYPENAME_FIELD] = typename;
-    if (id != null) {
-      const sid = String(id);
-      if (proxy.id !== sid) proxy.id = sid;
-    } else if ("id" in proxy) {
-      delete proxy.id;
-    }
-
-    return proxy;
-  };
-
-  // Returns only the stored fields as a reactive object (no identity)
-  const getEntity = (key: EntityKey): any | undefined => {
-    const resolved = resolveEntityKey(key) || key;
-    const src = entityStore.get(resolved);
-    if (!src) return undefined;
-    return reactiveMode === "shallow" ? shallowReactive(src) : reactive(src);
-  };
-
-  // ────────────────────────────────────────────────────────────────────────────
-  // Entity write (snapshots exclude identity)
-  // ────────────────────────────────────────────────────────────────────────────
-  const putEntity = (obj: any, writeMode?: "replace" | "merge"): EntityKey | null => {
+  function putEntity(obj: any): string | null {
     const key = identify(obj);
     if (!key) return null;
 
-    const wasExisting = entityStore.has(key);
-    const mode = writeMode || writePolicy;
+    // remember concrete typename for materialization
+    if (obj.__typename) entityConcreteTypename.set(key, obj.__typename);
 
-    if (mode === "replace") {
-      const snapshot: any = Object.create(null);
-      const kk = Object.keys(obj);
-      for (let i = 0; i < kk.length; i++) {
-        const k = kk[i];
-        if (k === TYPENAME_FIELD || k === "id") continue;
-        snapshot[k] = (obj as any)[k];
-      }
-      entityStore.set(key, snapshot);
-      if (!wasExisting) addToTypeIndex(key);
+    // build normalized snapshot
+    const snap: any = {};
+    for (const k of Object.keys(obj)) {
+      if (k === "__typename" || k === "id") continue;
+      snap[k] = normalizeValue(obj[k], putEntity);
+    }
+
+    const existing = entityStore.get(key);
+    if (existing) {
+      // merge & prune
+      for (const k of Object.keys(snap)) existing[k] = snap[k];
+      for (const k of Object.keys(existing)) if (!(k in snap)) delete existing[k];
     } else {
-      const dest = entityStore.get(key) || Object.create(null);
-      const kk = Object.keys(obj);
-      for (let i = 0; i < kk.length; i++) {
-        const k = kk[i];
-        if (k === TYPENAME_FIELD || k === "id") continue;
-        (dest as any)[k] = (obj as any)[k];
-      }
-      entityStore.set(key, dest);
-      if (!wasExisting) addToTypeIndex(key);
+      entityStore.set(key, snap);
     }
 
-    // Overlay into cached proxy if any
-    const wr = MATERIALIZED.get(key);
-    const hit = wr?.deref?.();
-    if (hit) overlaySnapshotIntoProxy(hit, key);
-
-    // Notify entity watchers
-    markEntityChanged(key);
-
-    // Notify type watchers on first add
-    if (!wasExisting) {
-      const { typename } = parseEntityKey(key);
-      if (typename) notifyTypeChanged(typename);
-    }
+    // overlay into existing proxy
+    const wr = materializedEntity.get(key);
+    const proxy = wr?.deref?.();
+    if (proxy) overlayEntitySnapshotInto(proxy, entityStore.get(key)!, materializeEntity);
 
     return key;
-  };
-
-  /** Remove an entity snapshot and notify both entity- and type-level watchers. */
-  const removeEntity = (key: EntityKey): boolean => {
-    const existed = entityStore.has(key);
-    if (!existed) return false;
-
-    // purge store snapshot
-    entityStore.delete(key);
-    removeFromTypeIndex(key);
-
-    // purge proxy fields if a proxy exists
-    const wr = MATERIALIZED.get(key);
-    const proxy = wr?.deref?.();
-    if (proxy) overlaySnapshotIntoProxy(proxy, key);
-
-    // Notify entity watchers for this key
-    markEntityChanged(key);
-
-    // Notify type watchers for wildcard lists
-    const { typename } = parseEntityKey(key);
-    if (typename) notifyTypeChanged(typename);
-
-    return true;
-  };
-
-  // ────────────────────────────────────────────────────────────────────────────
-  // Op-cache writer (fast, proxy-safe)
-  // ────────────────────────────────────────────────────────────────────────────
-  const sanitizeForOpCache = <T = any>(data: any): T => {
-    const root = unwrapShallow(data);
-    if (!root || typeof root !== "object") return root as T;
-    if (Array.isArray(root)) {
-      const out = new Array(root.length);
-      for (let i = 0; i < root.length; i++) out[i] = unwrapShallow(root[i]);
-      return out as any;
-    }
-    const out: any = {};
-    const keys = Object.keys(root);
-    for (let i = 0; i < keys.length; i++) out[keys[i]] = unwrapShallow((root as any)[keys[i]]);
-    return out;
-  };
-
-  const putOperation = (opKey: string, payload: { data: any; variables: Record<string, any> }) => {
-    const plainData = sanitizeForOpCache(payload.data);
-    const plainVars = sanitizeForOpCache(payload.variables || {});
-    operationStore.set(opKey, { data: plainData, variables: plainVars });
-    if (operationStore.size > OPERATION_CACHE_LIMIT) {
-      const oldest = operationStore.keys().next().value as string | undefined;
-      if (oldest) operationStore.delete(oldest);
-    }
-  };
-
-  const getOperation = (opKey: string): { data: any; variables: Record<string, any> } | undefined => {
-    return operationStore.get(opKey);
-  };
-
-  // src/core/graph.ts (inside createGraph)
-  function lookupOperation(operation: {
-    type: string;
-    query: any;
-    variables?: Record<string, any>;
-    context?: any;
-  }) {
-    // Exact key first.
-    const exactKey = getOperationKey(operation as any);
-    const exact = operationStore.get(exactKey);
-    if (exact) {
-      // Guard: if the request is cursor’d, stored entry must match cursor exactly.
-      const v = operation.variables || {};
-      if (v.after != null && exact.variables?.after !== v.after) return null;
-      if (v.before != null && exact.variables?.before !== v.before) return null;
-      return { key: exactKey, entry: exact };
-    }
-
-    // If request is cursor’d: never fall back to baseline.
-    const v = operation.variables || {};
-    if (
-      v.after != null ||
-      v.before != null ||
-      v.first != null ||
-      v.last != null
-    ) {
-      return null;
-    }
-
-    // Fallback only for non-cursor ops with undefined-stripped shapes.
-    const cleaned = cleanVars(v);
-    const sameShape =
-      operation.variables &&
-      Object.keys(operation.variables!).every((k) => operation.variables![k] !== undefined);
-    if (sameShape) return null;
-
-    const altKey = getOperationKey({ ...operation, variables: cleaned } as any);
-    const alt = operationStore.get(altKey);
-
-    return alt ? { key: altKey, entry: alt } : null;
   }
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // Fast entity queries (using typeIndex)
-  // ────────────────────────────────────────────────────────────────────────────
-  const getEntityKeys = (selector: string | string[]): string[] => {
-    const patterns = Array.isArray(selector) ? selector : [selector];
-    const out = new Set<string>();
+  function getEntity(key: string): Record<string, any> | undefined {
+    return entityStore.get(key);
+  }
 
-    for (const pattern of patterns) {
-      // pattern may be "User", "User:", or "User:123"
-      const colon = pattern.indexOf(":");
-      const typename = colon === -1 ? pattern : pattern.slice(0, colon);
-      const prefix = pattern; // full prefix to match (startsWith)
-
-      const set = typeIndex.get(typename);
-      if (!set) continue;
-
-      // Fast path: "User" or "User:" — take all
-      if (prefix === typename || prefix === typename + ":") {
-        for (const key of set) out.add(key);
-      } else {
-        // Filter within the typename bucket
-        for (const key of set) {
-          if (key.startsWith(prefix)) out.add(key);
-        }
+  function removeEntity(key: string): boolean {
+    const existed = entityStore.delete(key);
+    entityConcreteTypename.delete(key);
+    const wr = materializedEntity.get(key);
+    const proxy = wr?.deref?.();
+    if (proxy) {
+      for (const k of Object.keys(proxy)) {
+        if (k !== "__typename" && k !== "id") delete proxy[k];
       }
     }
+    return existed;
+  }
 
-    return Array.from(out);
-  };
+  function materializeEntity(key: string): any {
+    const wr = materializedEntity.get(key);
+    const hit = wr?.deref?.();
+    const [typeFromKey, idFromKey] = key.split(":");
+    const concrete = entityConcreteTypename.get(key) || typeFromKey;
 
-  const getEntities = (selector: string | string[]): any[] => {
-    const keys = getEntityKeys(selector);
-    const out: any[] = new Array(keys.length);
-    for (let i = 0; i < keys.length; i++) {
-      out[i] = entityStore.get(keys[i])!;
+    if (hit) {
+      const snap = entityStore.get(key);
+      if (snap) overlayEntitySnapshotInto(hit, snap, materializeEntity);
+
+      // 🔧 Ensure identity is refreshed when implementor changes (AudioPost → VideoPost)
+      if (hit.__typename !== concrete) hit.__typename = concrete;
+      if (idFromKey != null) {
+        const sid = String(idFromKey);
+        if (hit.id !== sid) hit.id = sid;
+      } else if ("id" in hit) {
+        delete hit.id;
+      }
+      return hit;
     }
-    return out;
-  };
 
-  const materializeEntities = (selector: string | string[]): any[] => {
-    const keys = getEntityKeys(selector);
-    const out: any[] = new Array(keys.length);
-    for (let i = 0; i < keys.length; i++) {
-      out[i] = materializeEntity(keys[i] as EntityKey);
+    // create new proxy path (unchanged)
+    const proxy = shallowReactive({}) as any;
+    proxy.__typename = concrete;
+    if (idFromKey != null) proxy.id = String(idFromKey);
+
+    const snap = entityStore.get(key);
+    if (snap) overlayEntitySnapshotInto(proxy, snap, materializeEntity);
+
+    materializedEntity.set(key, new WeakRef(proxy));
+    return proxy;
+  }
+
+  // Selections (skeletons)
+  function putSelection(selectionKey: string, subtree: any): void {
+    const normalized = normalizeValue(subtree, putEntity);
+    selectionStore.set(selectionKey, normalized);
+
+    const wr = materializedSelection.get(selectionKey);
+    const proxy = wr?.deref?.();
+    if (proxy) overlaySelection(proxy, normalized);
+  }
+
+  function getSelection(selectionKey: string): any | undefined {
+    return selectionStore.get(selectionKey);
+  }
+
+  function removeSelection(selectionKey: string): boolean {
+    const existed = selectionStore.delete(selectionKey);
+    const wr = materializedSelection.get(selectionKey);
+    const proxy = wr?.deref?.();
+    if (proxy) {
+      for (const k of Object.keys(proxy)) delete proxy[k];
     }
-    return out;
-  };
+    return existed;
+  }
+
+  function materializeSelection(selectionKey: string): any {
+    const wr = materializedSelection.get(selectionKey);
+    const hit = wr?.deref?.();
+    const skel = selectionStore.get(selectionKey);
+    if (!skel) return undefined;
+
+    if (hit) {
+      overlaySelection(hit, skel);
+      return hit;
+    }
+
+    const proxy = materializeFromSkeleton(skel);
+    materializedSelection.set(selectionKey, new WeakRef(proxy));
+    return proxy;
+  }
+
+  function materializeFromSkeleton(skel: any): any {
+    if (skel && typeof skel === "object" && skel.__ref) {
+      return materializeEntity(skel.__ref);
+    }
+    if (Array.isArray(skel)) {
+      const arr = shallowReactive([]) as any[];
+      for (let i = 0; i < skel.length; i++) arr[i] = materializeFromSkeleton(skel[i]);
+      return arr;
+    }
+    if (skel && typeof skel === "object") {
+      const obj = shallowReactive({} as Record<string, any>);
+      for (const k of Object.keys(skel)) {
+        const v = skel[k];
+        if (k === "edges" && Array.isArray(v)) {
+          const edges = shallowReactive([]) as any[];
+          for (let i = 0; i < v.length; i++) {
+            const edgeSkel = v[i];
+            const edge = shallowReactive({} as Record<string, any>);
+            for (const ek of Object.keys(edgeSkel)) {
+              const ev = edgeSkel[ek];
+              if (ek === "node" && ev?.__ref) edge.node = materializeEntity(ev.__ref);
+              else edge[ek] = materializeFromSkeleton(ev);
+            }
+            edges[i] = edge;
+          }
+          obj[k] = edges;
+        } else {
+          obj[k] = materializeFromSkeleton(v);
+        }
+      }
+      return obj;
+    }
+    return skel;
+  }
+
+  function overlaySelection(target: any, skel: any) {
+    if (skel && skel.__ref) {
+      const ent = materializeEntity(skel.__ref);
+      if (target !== ent) {
+        for (const k of Object.keys(target)) delete target[k];
+        for (const k of Object.keys(ent)) target[k] = ent[k];
+      }
+      return;
+    }
+
+    if (Array.isArray(skel)) {
+      if (!Array.isArray(target)) return;
+      if (target.length > skel.length) target.splice(skel.length);
+      for (let i = 0; i < skel.length; i++) {
+        const sv = skel[i];
+        const tv = target[i];
+        if (tv && typeof tv === "object") overlaySelection(tv, sv);
+        else target[i] = materializeFromSkeleton(sv);
+      }
+      return;
+    }
+
+    if (skel && typeof skel === "object") {
+      for (const k of Object.keys(target)) if (!(k in skel)) delete target[k];
+      for (const k of Object.keys(skel)) {
+        const sv = skel[k];
+        const tv = target[k];
+        if (k === "edges" && Array.isArray(sv)) {
+          if (!Array.isArray(tv)) target[k] = materializeFromSkeleton(sv);
+          else {
+            if (tv.length > sv.length) tv.splice(sv.length);
+            for (let i = 0; i < sv.length; i++) {
+              const se = sv[i];
+              const te = tv[i];
+              if (!te || typeof te !== "object") tv[i] = materializeFromSkeleton(se);
+              else {
+                for (const ek of Object.keys(se)) {
+                  const sev = se[ek];
+                  if (ek === "node" && sev?.__ref) te.node = materializeEntity(sev.__ref);
+                  else if (typeof sev === "object") {
+                    if (!te[ek] || typeof te[ek] !== "object") te[ek] = materializeFromSkeleton(sev);
+                    else overlaySelection(te[ek], sev);
+                  } else te[ek] = sev;
+                }
+                for (const ek of Object.keys(te)) if (!(ek in se)) delete te[ek];
+              }
+            }
+          }
+        } else if (sv && typeof sv === "object") {
+          if (!tv || typeof tv !== "object") target[k] = materializeFromSkeleton(sv);
+          else overlaySelection(tv, sv);
+        } else {
+          target[k] = sv;
+        }
+      }
+      return;
+    }
+    // primitive leaf
+  }
+
+  function inspect() {
+    return {
+      entities: Object.fromEntries(entityStore),
+      selections: Object.fromEntries(selectionStore),
+      config: {
+        keys: Object.keys(config.keys || {}),
+        interfaces: config.interfaces || {},
+      },
+    };
+  }
 
   return {
-    // interface helpers
-    isInterfaceType,
-    getInterfaceTypes,
-
-    // stores
-    entityStore,
-    connectionStore,
-    operationStore,
-
-    // connection management
-    ensureConnection,
-
-    // entity helpers
+    // identity
     identify,
-    getEntityParentKey,
-    getEntity,
+
+    // entity-level
     putEntity,
-    removeEntity,             // NEW
-    resolveEntityKey,
-    areEntityKeysEqual,
-
-    // materialization
+    getEntity,
+    removeEntity,
     materializeEntity,
-    materializeEntities,
 
-    // operation cache
-    getOperation,
-    putOperation,
-    lookupOperation,
+    // selections
+    putSelection,
+    getSelection,
+    removeSelection,
+    materializeSelection,
 
-    // fast queries
-    getEntityKeys,
-    getEntities,
-
-    // watchers (granular)
-    registerEntityWatcher,
-    unregisterEntityWatcher,
-    trackEntity,
-
-    // type watchers (wildcards)
-    registerTypeWatcher,      // NEW
-    unregisterTypeWatcher,    // NEW
-    notifyTypeChanged,        // (exported for advanced uses/tests)
+    // helpers
+    inspect,
   };
-};
+}
