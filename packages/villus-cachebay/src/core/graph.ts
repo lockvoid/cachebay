@@ -590,6 +590,11 @@ export const createGraph = (config: GraphConfig) => {
     removeSelection,
     materializeSelection,
 
+    listEntityKeys: () => Array.from(entityStore.keys()),
+    listSelectionKeys: () => Array.from(selectionStore.keys()),
+    clearAllEntities: () => { for (const k of entityStore.keys()) removeEntity(k); },
+    clearAllSelections: () => { for (const k of selectionStore.keys()) removeSelection(k); },
+
     // helpers
     inspect,
   };

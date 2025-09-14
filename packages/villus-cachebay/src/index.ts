@@ -7,7 +7,6 @@ export type { CachebayInstance } from "./core/internals";
 
 // Vue composables
 export { useCache } from "./composables/useCache";
-export { useFragments } from "./composables/useFragments";
 export { useFragment } from "./composables/useFragment";
 
 // Public types + helpers for user-land

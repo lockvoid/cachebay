@@ -1,14 +1,47 @@
+// test/unit/features/ssr.test.ts
 import { describe, it, expect } from "vitest";
 import { createSSR } from "@/src/features/ssr";
 
-const makeGraph = () => ({
-  entityStore: new Map<string, any>(),
-  selectionStore: new Map<string, any>(),
-});
+// Minimal graph stub that implements ONLY the public API SSR uses
+function makeGraph() {
+  const entityStore = new Map<string, any>();
+  const selectionStore = new Map<string, any>();
+
+  const graph = {
+    // entities
+    listEntityKeys: () => Array.from(entityStore.keys()),
+    getEntity: (key: string) => entityStore.get(key),
+    putEntity: (obj: any) => {
+      if (!obj || typeof obj !== "object" || !obj.__typename) return null;
+      const id = obj.id != null ? String(obj.id) : null;
+      if (id == null) return null;
+      const key = `${obj.__typename}:${id}`;
+      entityStore.set(key, JSON.parse(JSON.stringify(obj)));
+      return key;
+    },
+    removeEntity: (key: string) => entityStore.delete(key),
+    clearAllEntities: () => {
+      entityStore.clear();
+    },
+
+    // selections
+    listSelectionKeys: () => Array.from(selectionStore.keys()),
+    getSelection: (key: string) => selectionStore.get(key),
+    putSelection: (key: string, subtree: any) => {
+      selectionStore.set(key, JSON.parse(JSON.stringify(subtree)));
+    },
+    removeSelection: (key: string) => selectionStore.delete(key),
+    clearAllSelections: () => {
+      selectionStore.clear();
+    },
+  };
+
+  return graph;
+}
 
 // tiny helper to flush one microtask
 const waitMicrotask = async () =>
-  await new Promise<void>(resolve => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
 
 describe("features/ssr — entities + selections", () => {
   it("dehydrates empty stores", () => {
@@ -23,12 +56,12 @@ describe("features/ssr — entities + selections", () => {
   });
 
   it("round-trips entities and selections", async () => {
-    // Seed
+    // Seed (using public API)
     const graph1 = makeGraph();
-    graph1.entityStore.set("User:1", { __typename: "User", id: "1", name: "Ada" });
-    graph1.entityStore.set("Post:101", { __typename: "Post", id: "101", title: "Hello" });
-    graph1.selectionStore.set('user({"id":"1"})', { __ref: "User:1" });
-    graph1.selectionStore.set('User:1.posts({"first":2})', {
+    graph1.putEntity({ __typename: "User", id: "1", name: "Ada" });
+    graph1.putEntity({ __typename: "Post", id: "101", title: "Hello" });
+    graph1.putSelection('user({"id":"1"})', { __ref: "User:1" });
+    graph1.putSelection('User:1.posts({"first":2})', {
       __typename: "PostConnection",
       edges: [{ cursor: "c1", node: { __ref: "Post:101" } }],
       pageInfo: { endCursor: "c1", hasNextPage: true },
@@ -49,13 +82,21 @@ describe("features/ssr — entities + selections", () => {
     await waitMicrotask();
     expect(ssr2.isHydrating()).toBe(false);
 
-    // Entities restored
-    expect(graph2.entityStore.get("User:1")).toEqual({ __typename: "User", id: "1", name: "Ada" });
-    expect(graph2.entityStore.get("Post:101")).toEqual({ __typename: "Post", id: "101", title: "Hello" });
+    // Entities restored (public API)
+    expect(graph2.getEntity("User:1")).toEqual({
+      __typename: "User",
+      id: "1",
+      name: "Ada",
+    });
+    expect(graph2.getEntity("Post:101")).toEqual({
+      __typename: "Post",
+      id: "101",
+      title: "Hello",
+    });
 
-    // Selections restored
-    expect(graph2.selectionStore.get('user({"id":"1"})')).toEqual({ __ref: "User:1" });
-    expect(graph2.selectionStore.get('User:1.posts({"first":2})')).toEqual({
+    // Selections restored (public API)
+    expect(graph2.getSelection('user({"id":"1"})')).toEqual({ __ref: "User:1" });
+    expect(graph2.getSelection('User:1.posts({"first":2})')).toEqual({
       __typename: "PostConnection",
       edges: [{ cursor: "c1", node: { __ref: "Post:101" } }],
       pageInfo: { endCursor: "c1", hasNextPage: true },
@@ -81,14 +122,18 @@ describe("features/ssr — entities + selections", () => {
 
     await waitMicrotask();
 
-    expect(graph.entityStore.get("User:1")).toEqual({ __typename: "User", id: "1", name: "Ada" });
-    expect(graph.selectionStore.get('user({"id":"1"})')).toEqual({ __ref: "User:1" });
+    expect(graph.getEntity("User:1")).toEqual({
+      __typename: "User",
+      id: "1",
+      name: "Ada",
+    });
+    expect(graph.getSelection('user({"id":"1"})')).toEqual({ __ref: "User:1" });
     expect(ssr.hydrateSelectionTicket.size).toBe(0); // tickets disabled
   });
 
   it("materialize option warms selection clones with resolvers.applyOnObject (if provided)", async () => {
     const graph = makeGraph();
-    graph.selectionStore.set("stats({})", { __typename: "Stats", total: 1 });
+    graph.putSelection("stats({})", { __typename: "Stats", total: 1 });
 
     let calls = 0;
     const resolvers = {
@@ -108,7 +153,7 @@ describe("features/ssr — entities + selections", () => {
     await waitMicrotask();
 
     // Store is unchanged (warming happened on clones)
-    expect(graph.selectionStore.get("stats({})")).toEqual({ __typename: "Stats", total: 1 });
+    expect(graph.getSelection("stats({})")).toEqual({ __typename: "Stats", total: 1 });
     expect(calls).toBe(1);
   });
 });

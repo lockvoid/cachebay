@@ -11,6 +11,7 @@ import { createFragments } from "./fragments";
 import { createSSR } from "../features/ssr";
 import { createModifyOptimistic } from "../features/optimistic";
 import { createInspect } from "../features/inspect";
+import { createViews } from "./views";
 
 export type CachebayInstance = ClientPlugin & {
   // SSR
@@ -44,6 +45,7 @@ export type CachebayInstance = ClientPlugin & {
     fragments: ReturnType<typeof createFragments>;
     ssr: ReturnType<typeof createSSR>;
     inspect: ReturnType<typeof createInspect>;
+    views: ReturnType<typeof createViews>;
   };
 };
 
@@ -65,6 +67,9 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Selections helpers (stable keys, heuristic compiler)
   const selections = createSelections({ dependencies: { graph } });
 
+  // Views (short-lived sessions that mount selections/entities)
+  const views = createViews({ dependencies: { graph } });
+
   // Resolvers (field resolvers over plain objects / materialized trees)
   const resolvers = createResolvers({ resolvers: options.resolvers }, { graph });
 
@@ -80,7 +85,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Plugin (cache policies & subscriptions)
   const plugin = createPlugin(
     { addTypename: options.addTypename ?? true },
-    { graph, selections, resolvers, ssr }
+    { graph, selections, resolvers, ssr, views }
   ) as unknown as CachebayInstance;
 
   // Vue install
@@ -114,6 +119,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     fragments,
     ssr,
     inspect,
+    views,
   };
 
   return plugin as CachebayInstance;

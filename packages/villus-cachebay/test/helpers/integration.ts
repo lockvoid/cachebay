@@ -9,9 +9,9 @@ import { getOperationKey, ensureDocumentHasTypenames } from '@/src/core/utils';
 export async function seedCache(
   cache: any,
   {
-    query,
+    query,        // not used anymore (kept for API parity)
     variables = {},
-    data,
+    data,         // shape like mockResponses.posts(...).data
     materialize = true,
   }: {
     query: any;
@@ -20,18 +20,30 @@ export async function seedCache(
     materialize?: boolean;
   }
 ) {
-  const queryWithTypenames = ensureDocumentHasTypenames(query);
-  const operationKey = getOperationKey({ type: "query", query: queryWithTypenames, variables, context: {} } as any);
+  // pull public internals
+  const internals = (cache as any).__internals;
+  if (!internals) {
+    throw new Error("[seedCache] cache.__internals is missing");
+  }
+  const { graph, selections, resolvers } = internals;
 
-  cache.hydrate(
-    {
-      operations: [[operationKey, { data, variables }]],
-    },
+  // 1) make a mutable clone and (optionally) warm it with resolvers
+  const clone = JSON.parse(JSON.stringify(data?.data ?? data));
+  if (materialize && resolvers?.applyOnObject) {
+    // apply field resolvers the same way plugin does before writing selections
+    resolvers.applyOnObject(clone, variables, { stale: false });
+  }
 
-    {
-      materialize,
-    },
-  );
+  // 2) write each root field into the selections store using arg-shaped keys
+  //    (alias-free root, same policy the plugin uses)
+  if (!clone || typeof clone !== "object") return;
+
+  const root = clone.__typename ? clone : (clone.data || clone);
+  for (const field of Object.keys(root)) {
+    if (field === "__typename") continue;
+    const key = selections.buildRootSelectionKey(field, variables || {});
+    graph.putSelection(key, root[field]);
+  }
 }
 
 /**

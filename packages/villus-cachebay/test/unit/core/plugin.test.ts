@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildCachebayPlugin } from '@/src/core/plugin';
+import { createPlugin } from '@/src/core/plugin';
 import { CombinedError } from 'villus';
 import { parse } from 'graphql';
 
@@ -100,7 +100,7 @@ describe('cachebay plugin — cache policies (selection/graph based)', () => {
     const selections = createSelectionsMock();
     const resolvers = createResolversMock();
     const views = createViewsMock(graph);
-    const plugin = buildCachebayPlugin({ addTypename: false }, { graph, selections, resolvers, views });
+    const plugin = createPlugin({ addTypename: false }, { graph, selections, resolvers, views });
 
     const doc = queryDoc(gql`
       query Q($first:Int){
@@ -124,7 +124,7 @@ describe('cachebay plugin — cache policies (selection/graph based)', () => {
     const selections = createSelectionsMock();
     const resolvers = createResolversMock();
     const views = createViewsMock(graph);
-    const plugin = buildCachebayPlugin({ addTypename: false }, { graph, selections, resolvers, views });
+    const plugin = createPlugin({ addTypename: false }, { graph, selections, resolvers, views });
 
     const selKey = selections.buildRootSelectionKey('posts', { first: 2 });
     graph.putSelection(selKey, {
@@ -159,7 +159,7 @@ describe('cachebay plugin — cache policies (selection/graph based)', () => {
     const selections = createSelectionsMock();
     const resolvers = createResolversMock();
     const views = createViewsMock(graph);
-    const plugin = buildCachebayPlugin({ addTypename: false }, { graph, selections, resolvers, views });
+    const plugin = createPlugin({ addTypename: false }, { graph, selections, resolvers, views });
 
     const selKey = selections.buildRootSelectionKey('posts', { first: 1 });
     graph.putSelection(selKey, {
@@ -187,7 +187,7 @@ describe('cachebay plugin — cache policies (selection/graph based)', () => {
     const selections = createSelectionsMock();
     const resolvers = createResolversMock();
     const views = createViewsMock(graph);
-    const plugin = buildCachebayPlugin({ addTypename: false }, { graph, selections, resolvers, views });
+    const plugin = createPlugin({ addTypename: false }, { graph, selections, resolvers, views });
 
     // seed cached page (1 edge)
     const cachedKey = selections.buildRootSelectionKey('posts', { first: 1 });
@@ -251,7 +251,7 @@ describe('cachebay plugin — cache policies (selection/graph based)', () => {
     const selections = createSelectionsMock();
     const resolvers = createResolversMock();
     const views = createViewsMock(graph);
-    const plugin = buildCachebayPlugin({ addTypename: false }, { graph, selections, resolvers, views });
+    const plugin = createPlugin({ addTypename: false }, { graph, selections, resolvers, views });
 
     const doc = queryDoc(gql`
       subscription S {
@@ -276,5 +276,68 @@ describe('cachebay plugin — cache policies (selection/graph based)', () => {
     const postsKey = selections.buildRootSelectionKey('posts', {});
     const mat = graph.materializeSelection(postsKey);
     expect(mat && Array.isArray(mat.edges) ? mat.edges.length : 0).toBe(1);
+  });
+
+  it('cache-and-network hit → non-terminal cached; then network writes selections & publishes terminal', () => {
+    const graph = createGraphMock();
+    const selections = createSelectionsMock();
+    const resolvers = createResolversMock();
+    const views = createViewsMock(graph);
+    const plugin = createPlugin({ addTypename: false }, { graph, selections, resolvers, views });
+
+    // seed cached page (1 edge) under arg-key
+    const cachedKey = selections.buildRootSelectionKey('posts', { first: 1 });
+    graph.putSelection(cachedKey, {
+      edges: [{ cursor: 'c1', node: { __typename: 'Post', id: '1' } }],
+      pageInfo: { endCursor: 'c1', hasNextPage: true },
+    });
+
+    const doc = queryDoc(gql`
+      query Q($first:Int){
+        posts(first:$first){
+          edges{cursor node{__typename id}}
+          pageInfo{endCursor hasNextPage}
+        }
+      }`);
+    const ctx = makeCtx(doc, { first: 1 });
+
+    ctx.operation.cachePolicy = 'cache-and-network';
+    plugin(ctx);
+
+    // cached non-terminal
+    expect(ctx._published.length).toBe(1);
+    expect(ctx._published[0].term).toBe(false);
+
+    // network frame (2 edges)
+    const networkPayload = {
+      data: {
+        __typename: 'Query',
+        posts: {
+          edges: [
+            { cursor: 'c1', node: { __typename: 'Post', id: '1' } },
+            { cursor: 'c2', node: { __typename: 'Post', id: '2' } },
+          ],
+          pageInfo: { endCursor: 'c2', hasNextPage: true },
+        },
+      },
+    };
+    ctx.useResult(networkPayload as any, true);
+
+    // terminal publish
+    expect(ctx._published.length).toBe(2);
+    expect(ctx._published[1].term).toBe(true);
+
+    // ensure selections got updated by plugin
+    expect(graph.putSelection).toHaveBeenCalled();
+
+    // 1) Root (heuristic) key
+    const rootKey = selections.buildRootSelectionKey('posts', {});
+    const matRoot = graph.materializeSelection(rootKey);
+    expect(matRoot && Array.isArray(matRoot.edges) ? matRoot.edges.length : 0).toBe(2);
+
+    // 2) Arg-shaped key used by this operation
+    const argKey = selections.buildRootSelectionKey('posts', { first: 1 });
+    const matArg = graph.materializeSelection(argKey);
+    expect(matArg && Array.isArray(matArg.edges) ? matArg.edges.length : 0).toBe(2);
   });
 });
