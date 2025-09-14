@@ -48,7 +48,7 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
       },
     });
 
-    // read (plain object result)
+    // read (root is a plain snapshot, not reactive)
     const result = readFragment({
       id: 'User:1',
       fragment: /* GraphQL */ `
@@ -66,6 +66,7 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
       name: 'Ada',
       email: 'ada@example.com',
     });
+    expect(isReactive(result)).toBe(false);
 
     // entity proxy is reactive & reflects updates
     const userProxy = graph.materializeEntity('User:1');
@@ -84,7 +85,7 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
     });
     expect(userProxy.name).toBe('Ada Lovelace');
 
-    // read again
+    // read again (still plain snapshot)
     const again = readFragment({
       id: 'User:1',
       fragment: /* GraphQL */ `
@@ -101,6 +102,7 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
       name: 'Ada Lovelace',
       email: 'ada@example.com',
     });
+    expect(isReactive(again)).toBe(false);
   });
 
   it('handles interface implementors (AudioPost/VideoPost) → canonical Post:1; proxy is reactive', () => {
@@ -152,7 +154,7 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
     expect(postProxy.title).toBe('Video B');
     expect(postProxy.duration).toBe(120);
 
-    // reading as a Post fragment (works; __typename is concrete)
+    // reading as Post returns a plain snapshot with concrete __typename
     const readAsPost = readFragment({
       id: 'Post:1',
       fragment: /* GraphQL */ `
@@ -167,9 +169,10 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
       id: '1',
       title: 'Video B',
     });
+    expect(isReactive(readAsPost)).toBe(false);
   });
 
-  it('writes & reads a nested field with args (connection page) via fragment; selection wrappers are reactive', () => {
+  it('writes & reads a nested field with args (connection page) via fragment; selection subtree is a snapshot (not reactive)', () => {
     const graph = makeGraph();
     const selections = createSelections({ dependencies: { graph } });
     const { writeFragment, readFragment } = createFragments({
@@ -239,7 +242,15 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
       `,
     });
 
-    // data shape
+    // Entire subtree is a PLAIN snapshot
+    expect(isReactive(out)).toBe(false);
+    expect(isReactive(out.posts)).toBe(false);
+    expect(isReactive(out.posts.edges)).toBe(false);
+    expect(isReactive(out.posts.edges[0])).toBe(false);
+    expect(isReactive(out.posts.edges[0].node)).toBe(false);
+    expect(isReactive(out.posts.pageInfo)).toBe(false);
+
+    // data shape correct
     expect(out.posts.__typename).toBe('PostConnection');
     expect(out.posts.edges.map((e: any) => e.node.id)).toEqual(['101', '102']);
     expect(out.posts.pageInfo).toEqual({
@@ -248,12 +259,7 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
       endCursor: 'c2',
     });
 
-    // reactivity checks for selection wrappers
-    expect(isReactive(out.posts)).toBe(true);
-    expect(isReactive(out.posts.edges)).toBe(true);
-    expect(isReactive(out.posts.edges[0].node)).toBe(true);
-
-    // update an entity and ensure a fresh read sees it
+    // update an entity and ensure a fresh read sees it (snapshots change on re-read)
     graph.putEntity({ __typename: 'Post', id: '101', title: 'Hello (updated)' });
     const out2 = readFragment({
       id: 'User:1',
@@ -267,5 +273,6 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
       `,
     });
     expect(out2.posts.edges[0].node.title).toBe('Hello (updated)');
+    expect(isReactive(out2.posts)).toBe(false);
   });
 });

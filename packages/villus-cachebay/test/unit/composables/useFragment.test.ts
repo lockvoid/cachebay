@@ -1,160 +1,122 @@
+// test/unit/composables/useFragment.test.ts
 import { describe, it, expect, vi, afterEach } from "vitest";
 
-// hoisted mock for useCache — we’ll decide its return value per test
+// Hoisted mock for useCache — we control its return value per test
 const mockUseCache = vi.fn();
 vi.mock("@/src/composables/useCache", () => ({
   useCache: () => mockUseCache(),
 }));
 
-// import after mocks are set
-import { ref } from "vue";
+import { ref, reactive, isReactive } from "vue";
 import { useFragment } from "@/src/composables/useFragment";
 
 afterEach(() => {
   mockUseCache.mockReset();
 });
 
-describe("useFragment", () => {
-  it("reads immediately by default", () => {
-    const readFragment = vi.fn(() => ({
-      __typename: "User",
-      id: "1",
-      name: "Ada",
-    }));
-    const writeFragment = vi.fn();
-    mockUseCache.mockReturnValue({ readFragment, writeFragment });
-
-    const { data } = useFragment({
-      id: "User:1",
-      fragment: "fragment U on User { id name }",
+describe("useFragment (LIVE)", () => {
+  it("materializes and returns a reactive proxy; external writes flow through", () => {
+    // Fake cache.materializeEntity that returns a stable reactive proxy per key
+    const proxies = new Map<string, any>();
+    const materializeEntity = vi.fn((key: string) => {
+      let p = proxies.get(key);
+      if (!p) {
+        const [, id] = key.split(":");
+        p = reactive({ __typename: "Post", id, title: undefined });
+        proxies.set(key, p);
+      }
+      return p;
     });
 
-    expect(readFragment).toHaveBeenCalledWith({
-      id: "User:1",
-      fragment: "fragment U on User { id name }",
-      materialized: true,
-      variables: undefined,
+    mockUseCache.mockReturnValue({ materializeEntity });
+
+    const data = useFragment({
+      id: "Post:1",
+      fragment: /* GraphQL */ `fragment P on Post { id title }`,
     });
 
-    expect(data.value).toEqual({
-      __typename: "User",
-      id: "1",
-      name: "Ada",
-    });
+    // Immediately live
+    expect(materializeEntity).toHaveBeenCalledWith("Post:1");
+    expect(data.value).toBe(proxies.get("Post:1"));
+    expect(isReactive(data.value)).toBe(true);
+    expect(data.value.__typename).toBe("Post");
+    expect(data.value.id).toBe("1");
+
+    // Simulate a write into the live proxy → composable sees it
+    proxies.get("Post:1").title = "Hello";
+    expect(data.value.title).toBe("Hello");
+
+    // Never goes through readFragment (this composable is live-only)
+    expect((mockUseCache.mock.results[0].value as any).readFragment).toBeUndefined();
   });
 
-  it("supports lazy mode (immediate:false) and manual read()", () => {
-    const readFragment = vi.fn(() => ({ __typename: "User", id: "1", name: "A" }));
-    mockUseCache.mockReturnValue({ readFragment, writeFragment: vi.fn() });
-
-    const frag = useFragment({
-      id: "User:1",
-      fragment: "fragment U on User { id name }",
-      immediate: false,
+  it("reacts to id (Ref) changes by swapping the live proxy", () => {
+    const proxies = new Map<string, any>();
+    const materializeEntity = vi.fn((key: string) => {
+      let p = proxies.get(key);
+      if (!p) {
+        const [, id] = key.split(":");
+        p = reactive({ __typename: "User", id, name: `User-${id}` });
+        proxies.set(key, p);
+      }
+      return p;
     });
+    mockUseCache.mockReturnValue({ materializeEntity });
 
-    expect(readFragment).not.toHaveBeenCalled();
-    expect(frag.data.value).toBe(undefined);
-
-    frag.read();
-    expect(readFragment).toHaveBeenCalledTimes(1);
-    expect(frag.data.value).toMatchObject({ id: "1", name: "A" });
-  });
-
-  it("passes variables (including reactive Ref) to read/write", () => {
-    const vars = ref<{ locale?: string }>({ locale: "en" });
-
-    const readFragment = vi.fn(() => ({ __typename: "User", id: "1", name: "John" }));
-    const writeFragment = vi.fn();
-    mockUseCache.mockReturnValue({ readFragment, writeFragment });
-
-    const frag = useFragment({
-      id: ref("User:1"),
-      fragment: "fragment U on User { id name }",
-      variables: vars,
-    });
-
-    // initial read used { locale: 'en' }
-    expect(readFragment).toHaveBeenCalledWith({
-      id: "User:1",
-      fragment: "fragment U on User { id name }",
-      materialized: true,
-      variables: { locale: "en" },
-    });
-
-    // update variables and re-read
-    vars.value = { locale: "de" };
-    frag.read();
-    expect(readFragment).toHaveBeenLastCalledWith({
-      id: "User:1",
-      fragment: "fragment U on User { id name }",
-      materialized: true,
-      variables: { locale: "de" },
-    });
-
-    // write uses latest vars too
-    frag.write({ __typename: "User", id: "1", name: "Hans" });
-    expect(writeFragment).toHaveBeenCalledWith({
-      id: "User:1",
-      fragment: "fragment U on User { id name }",
-      data: { __typename: "User", id: "1", name: "Hans" },
-      variables: { locale: "de" },
-    });
-  });
-
-  it("works with changing id as a Ref", () => {
     const idRef = ref("User:1");
-    const readFragment = vi
-      .fn()
-      .mockReturnValueOnce({ __typename: "User", id: "1", name: "A" })
-      .mockReturnValueOnce({ __typename: "User", id: "2", name: "B" });
-
-    mockUseCache.mockReturnValue({ readFragment, writeFragment: vi.fn() });
-
-    const frag = useFragment({
+    const data = useFragment({
       id: idRef,
-      fragment: "fragment U on User { id name }",
-      immediate: false,
+      fragment: /* GraphQL */ `fragment U on User { id name }`,
     });
 
-    // first id
-    frag.read();
-    expect(readFragment).toHaveBeenCalledWith({
-      id: "User:1",
-      fragment: "fragment U on User { id name }",
-      materialized: true,
-      variables: undefined,
-    });
-    expect(frag.data.value).toMatchObject({ id: "1", name: "A" });
+    // First key
+    expect(data.value).toBe(proxies.get("User:1"));
+    expect(data.value.name).toBe("User-1");
 
-    // switch id
+    // Switch key → ref now points to the other proxy
     idRef.value = "User:2";
-    frag.read();
-    expect(readFragment).toHaveBeenLastCalledWith({
-      id: "User:2",
-      fragment: "fragment U on User { id name }",
-      materialized: true,
-      variables: undefined,
-    });
-    expect(frag.data.value).toMatchObject({ id: "2", name: "B" });
+    expect(materializeEntity).toHaveBeenLastCalledWith("User:2");
+    expect(data.value).toBe(proxies.get("User:2"));
+    expect(data.value.name).toBe("User-2");
   });
 
-  it("write() sends data straight through", () => {
-    const writeFragment = vi.fn();
-    mockUseCache.mockReturnValue({ readFragment: vi.fn(), writeFragment });
+  it("sets data to null when id is missing/invalid; resumes when id becomes valid", () => {
+    const materializeEntity = vi.fn((key: string) =>
+      reactive({ __typename: "Thing", id: key.split(":")[1] }),
+    );
+    mockUseCache.mockReturnValue({ materializeEntity });
 
-    const { write } = useFragment({
-      id: "User:1",
-      fragment: "fragment U on User { name }",
-      immediate: false,
+    const idRef = ref<string | undefined>(undefined);
+    const data = useFragment({
+      id: idRef as any,
+      fragment: /* GraphQL */ `fragment T on Thing { id }`,
     });
 
-    write({ __typename: "User", id: "1", name: "Zoe" });
-    expect(writeFragment).toHaveBeenCalledWith({
-      id: "User:1",
-      fragment: "fragment U on User { name }",
-      data: { __typename: "User", id: "1", name: "Zoe" },
-      variables: undefined,
-    });
+    // No id → null
+    expect(data.value).toBeNull();
+
+    // Becomes valid → materialized
+    idRef.value = "Thing:42";
+    expect(materializeEntity).toHaveBeenCalledWith("Thing:42");
+    expect(data.value?.id).toBe("42");
+  });
+
+  it("validates a single, non-empty fragment source", () => {
+    mockUseCache.mockReturnValue({ materializeEntity: vi.fn() });
+
+    // Empty string
+    expect(() =>
+      useFragment({ id: "X:1", fragment: "" }),
+    ).toThrowError(/fragment.*non-empty/i);
+
+    // No fragment definition inside
+    expect(() =>
+      useFragment({ id: "X:1", fragment: /* GraphQL */ `query Q { __typename }` }),
+    ).toThrowError(/single valid fragment definition/i);
+
+    // Correct single fragment → does not throw
+    expect(() =>
+      useFragment({ id: "X:1", fragment: /* GraphQL */ `fragment X on X { id }` }),
+    ).not.toThrow();
   });
 });

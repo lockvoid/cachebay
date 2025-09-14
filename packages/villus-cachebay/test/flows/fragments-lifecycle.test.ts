@@ -1,7 +1,8 @@
+// test/flows/fragments-lifecycle.test.ts
 import { describe, it, expect } from 'vitest';
 import { defineComponent, h, ref, isReactive } from 'vue';
-import { createCache, useFragment, useCache } from '@/src';
-import { tick, delay, type Route } from '@/test/helpers';
+import { createCache, useFragment } from '@/src';
+import { tick, type Route } from '@/test/helpers';
 import { mountWithClient } from '@/test/helpers/integration';
 
 describe('Integration • Fragments Behavior (selection-first, no readFragments)', () => {
@@ -18,37 +19,33 @@ describe('Integration • Fragments Behavior (selection-first, no readFragments)
     });
 
     (cache as any).writeFragment({
-      id: 'User:1', fragment: `
-      fragment U on User { id name }
-    `, data: { __typename: 'User', id: '1', name: 'Ann' }
+      id: 'User:1',
+      fragment: /* GraphQL */ `fragment U on User { id name }`,
+      data: { __typename: 'User', id: '1', name: 'Ann' }
     });
 
     const out = (cache as any).readFragment({
       id: 'User:1',
-      fragment: `fragment U on User { id name }`,
+      fragment: /* GraphQL */ `fragment U on User { id name }`,
     });
 
-    expect(out).toBeTruthy();
-    expect(out.id).toBe('1');
-    expect(out.name).toBe('Ann');
-    // readFragment returns a plain snapshot at the root (not a proxy)
-    expect(isReactive(out)).toBe(false);
+    expect(out).toEqual({ __typename: 'User', id: '1', name: 'Ann' });
+    expect(isReactive(out)).toBe(false); // snapshot, not proxy
   });
 
-  it('Fragment API Basics • readFragment with materialized=false returns raw snapshot (non-reactive)', async () => {
+  it('Fragment API Basics • readFragment returns raw snapshot (non-reactive)', async () => {
     const cache = createCache({
       keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
     (cache as any).writeFragment({
-      id: 'User:2', fragment: `
-      fragment U on User { id name }
-    `, data: { __typename: 'User', id: '2', name: 'Bob' }
+      id: 'User:2',
+      fragment: /* GraphQL */ `fragment U on User { id name }`,
+      data: { __typename: 'User', id: '2', name: 'Bob' }
     });
 
     const raw = (cache as any).readFragment({
       id: 'User:2',
-      fragment: `fragment U on User { id name }`,
-      materialized: false,
+      fragment: /* GraphQL */ `fragment U on User { id name }`,
     });
     expect(raw).toBeTruthy();
     expect(raw.name).toBe('Bob');
@@ -60,18 +57,20 @@ describe('Integration • Fragments Behavior (selection-first, no readFragments)
       keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
     (cache as any).writeFragment({
-      id: 'User:3', fragment: `
-      fragment U on User { id name }
-    `, data: { __typename: 'User', id: '3', name: 'Charlie' }
+      id: 'User:3',
+      fragment: /* GraphQL */ `fragment U on User { id name }`,
+      data: { __typename: 'User', id: '3', name: 'Charlie' }
     });
-
     (cache as any).writeFragment({
-      id: 'User:3', fragment: `
-      fragment U on User { id name }
-    `, data: { __typename: 'User', id: '3', name: 'Charles' }
+      id: 'User:3',
+      fragment: /* GraphQL */ `fragment U on User { id name }`,
+      data: { __typename: 'User', id: '3', name: 'Charles' }
     });
 
-    const out = (cache as any).readFragment({ id: 'User:3', fragment: `fragment U on User { id name }` });
+    const out = (cache as any).readFragment({
+      id: 'User:3',
+      fragment: /* GraphQL */ `fragment U on User { id name }`
+    });
     expect(out.name).toBe('Charles');
   });
 
@@ -82,9 +81,10 @@ describe('Integration • Fragments Behavior (selection-first, no readFragments)
         Post: (o: any) => (o?.id != null ? String(o.id) : null),
       },
     });
+
     (cache as any).writeFragment({
       id: 'User:1',
-      fragment: `
+      fragment: /* GraphQL */ `
         fragment UserPostsPage on User {
           posts(first: 2) {
             __typename
@@ -109,7 +109,7 @@ describe('Integration • Fragments Behavior (selection-first, no readFragments)
 
     const result = (cache as any).readFragment({
       id: 'User:1',
-      fragment: `
+      fragment: /* GraphQL */ `
         fragment UserPostsPage on User {
           posts(first: 2) {
             __typename
@@ -119,10 +119,12 @@ describe('Integration • Fragments Behavior (selection-first, no readFragments)
         }
       `,
     });
+
     expect(result.posts.__typename).toBe('PostConnection');
     expect(Array.isArray(result.posts.edges)).toBe(true);
     expect(result.posts.edges.map((e: any) => e.node.title)).toEqual(['Hello', 'World']);
     expect(result.posts.pageInfo).toEqual({ __typename: 'PageInfo', endCursor: 'c2', hasNextPage: true });
+    // snapshot path: no reactivity assertions here
   });
 
   it('Fragment Reactivity in Components (single, dynamic id) • component updates when a fragment changes', async () => {
@@ -131,33 +133,30 @@ describe('Integration • Fragments Behavior (selection-first, no readFragments)
       keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
     (cache as any).writeFragment({
-      id: 'User:1', fragment: `fragment U on User { id name }`,
+      id: 'User:1',
+      fragment: /* GraphQL */ `fragment U on User { id name }`,
       data: { __typename: 'User', id: '1', name: 'Initial Name' }
     });
-
-    const renders: string[] = [];
 
     const Comp = defineComponent({
       setup() {
         const id = ref('User:1');
-        const f = useFragment({ id, fragment: `fragment U on User { id name }` });
-        // record on read()
-        renders.push(f.data.value?.name ?? '');
-        return { f };
+        const live = useFragment({ id, fragment: /* GraphQL */ `fragment U on User { id name }` });
+        return { live };
       },
-      render() { return h('div', {}, this.f.data.value?.name || ''); }
+      render() { return h('div', {}, this.live?.name || ''); }
     });
 
     const { wrapper } = await mountWithClient(Comp, routes, cache);
     await tick();
-    expect(renders.at(-1)).toBe('Initial Name');
+    expect(wrapper.text()).toBe('Initial Name');
 
     (cache as any).writeFragment({
-      id: 'User:1', fragment: `fragment U on User { id name }`,
+      id: 'User:1',
+      fragment: /* GraphQL */ `fragment U on User { id name }`,
       data: { __typename: 'User', id: '1', name: 'Updated Name' }
     });
-    (wrapper.vm as any).f.read();
-    await tick();
+    await tick(); // live proxy flows through automatically
     expect(wrapper.text()).toBe('Updated Name');
   });
 
@@ -175,8 +174,7 @@ describe('Integration • Fragments Behavior (selection-first, no readFragments)
       .filter(Boolean);
 
     expect(items.map(u => u?.name)).toEqual(['Alice', 'Bob', 'Charlie']);
-    // root is a plain snapshot (not a proxy)
-    items.forEach(u => { if (u) expect(isReactive(u)).toBe(false); });
+    items.forEach(u => { if (u) expect(isReactive(u)).toBe(false); }); // snapshots
   });
 
   it('Multiple fragments (manual) • missing ones are simply undefined', () => {
@@ -190,7 +188,7 @@ describe('Integration • Fragments Behavior (selection-first, no readFragments)
       .map(k => (cache as any).readFragment({ id: k, fragment: `fragment U on User { id name }` }))
       .filter(Boolean);
 
-    expect(items.length).toBe(3);
+    expect(items.length).toBe(1);   // only existing one remains
     expect(items[0]?.name).toBe('Alice');
   });
 });
