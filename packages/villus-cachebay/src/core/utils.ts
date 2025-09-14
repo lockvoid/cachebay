@@ -7,6 +7,75 @@ import { QUERY_ROOT } from "./constants";
  * GraphQL AST utils (robust to non-AST inputs for tests)
  * ──────────────────────────────────────────────────────────────────────────── */
 
+// src/core/args.ts
+import { visit, Kind, type DocumentNode, type ValueNode } from 'graphql';
+
+const valueToJS = (node: ValueNode, vars: Record<string, any>): any => {
+  switch (node.kind) {
+    case Kind.VARIABLE: return vars[node.name.value];
+    case Kind.NULL: return null;
+    case Kind.INT:
+    case Kind.FLOAT: return Number(node.value);
+    case Kind.STRING: return node.value;
+    case Kind.BOOLEAN:
+    case Kind.ENUM: return node.value;
+    case Kind.LIST: return node.values.map(v => valueToJS(v, vars));
+    case Kind.OBJECT:
+      return Object.fromEntries(node.fields.map(f => [f.name.value, valueToJS(f.value, vars)]));
+    default: return undefined;
+  }
+};
+
+/**
+ * Build a path→args index from an operation AST + variables.
+ * Path uses the *runtime* segment name: alias if present, otherwise the field name.
+ * Example: "Query.user.posts" → { after:"c2", first:10 }
+ */
+export const buildArgsIndex = (
+  document: DocumentNode,
+  variables: Record<string, any>
+): Map<string, Record<string, any>> => {
+  const index = new Map<string, Record<string, any>>();
+  const path: string[] = [];
+
+  visit(document, {
+    OperationDefinition: {
+      enter(node) {
+        // Push the root operation type as the root segment (Query/Mutation/Subscription).
+        // GraphQL JS emits *operation* ('query'); we want a stable root like 'Query'.
+        const opRoot = node.operation === 'mutation'
+          ? 'Mutation'
+          : node.operation === 'subscription'
+            ? 'Subscription'
+            : 'Query';
+        path.push(opRoot);
+      },
+      leave() {
+        path.pop();
+      }
+    },
+    Field: {
+      enter(node) {
+        const seg = node.alias?.value ?? node.name.value;
+        path.push(seg);
+
+        if (node.arguments && node.arguments.length > 0) {
+          const args: Record<string, any> = {};
+          for (const a of node.arguments) {
+            args[a.name.value] = valueToJS(a.value, variables);
+          }
+          index.set(path.join('.'), args);
+        }
+      },
+      leave() {
+        path.pop();
+      }
+    }
+  });
+
+  return index;
+};
+
 const TYPENAME_FIELD_NODE = {
   kind: Kind.FIELD,
   name: { kind: Kind.NAME, value: "__typename" },

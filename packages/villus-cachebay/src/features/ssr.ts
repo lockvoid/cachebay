@@ -1,129 +1,104 @@
-// features/ssr.ts — SSR de/hydration for the new (view-agnostic) pipeline
+// src/features/ssr.ts — SSR de/hydration for the entities+selections model
 
 type Deps = {
   graph: {
     entityStore: Map<string, any>;
-    connectionStore: Map<string, any>;
-    operationStore: Map<string, { data: any; variables: Record<string, any> }>;
-    ensureConnection: (key: string) => any;
+    selectionStore: Map<string, any>;
   };
   resolvers?: {
-    applyResolversOnGraph?: (root: any, vars: Record<string, any>, hint?: { stale?: boolean }) => void;
+    /** Optional: run resolvers during hydrate on a *clone* of each selection skeleton (no wiring). */
+    applyOnObject?: (root: any, vars?: Record<string, any>, hint?: { stale?: boolean }) => void;
   };
 };
 
-/** JSON-only deep clone; fine for operations-cache & snapshots. */
-function cloneData<T>(data: T): T {
+/** JSON-only deep clone; fine for snapshots. */
+const cloneData = <T,>(data: T): T => {
   try {
     return JSON.parse(JSON.stringify(data));
   } catch {
     return data;
   }
-}
+};
 
-export function createSSR(deps: Deps) {
+export const createSSR = (deps: Deps) => {
   const { graph, resolvers } = deps;
-  const applyResolversOnGraph = resolvers?.applyResolversOnGraph;
 
-  // Used by the cache plugin to allow CN cached+resolve on first mount after hydrate
-  const hydrateOperationTicket = new Set<string>();
+  // Selection “tickets” — e.g. a plugin can use them to publish cached-first on first mount after hydrate.
+  const hydrateSelectionTicket = new Set<string>();
 
-  // Hydration flag — set true during hydrate() and flipped to false on microtask
+  // Hydration flag — true inside hydrate() until the next microtask.
   let hydrating = false;
 
-  /** Serialize graph stores (entities, connections, operations). */
+  /** Serialize graph stores (entities, selections). */
   const dehydrate = () => ({
     entities: Array.from(graph.entityStore.entries()),
-    connections: Array.from(graph.connectionStore.entries()).map(([key, st]) => [
-      key,
-      {
-        list: st.list,
-        pageInfo: st.pageInfo,
-        meta: st.meta,
-        initialized: !!st.initialized,
-      },
-    ]),
-    operations: Array.from(graph.operationStore.entries()).map(([k, v]) => [
-      k,
-      { data: v.data, variables: v.variables },
-    ]),
+    selections: Array.from(graph.selectionStore.entries()),
   });
 
   /**
    * Hydrate a snapshot into the graph.
-   * - input: snapshot object or a function receiving a (hydrate) callback
-   * - opts.materialize: (default false) apply resolvers to post-resolver ops to rebuild connection state for immediate UI
-   * - opts.rabbit: (default true) drop a hydrate ticket per operations key, so cache-and-network can publish cached immediately
+   * - input: snapshot object OR a function receiving a (hydrate) callback (streaming-friendly)
+   * - opts.materialize: (default false) run resolvers.applyOnObject on a *clone* of each selection skeleton
+   *                     (purely to warm derived fields—no wiring, no graph writes)
+   * - opts.tickets: (default true) drop a ticket per selection key so a plugin can do cached-first publish
    */
   const hydrate = (
     input: any | ((hydrate: (snapshot: any) => void) => void),
-    opts?: { materialize?: boolean; rabbit?: boolean }
+    opts?: { materialize?: boolean; tickets?: boolean }
   ) => {
     const doMaterialize = !!opts?.materialize;
-    const withTickets = opts?.rabbit !== false; // default true
+    const withTickets = opts?.tickets !== false; // default true
 
     const run = (snapshot: any) => {
-      if (!snapshot) return;
+      if (!snapshot) {
+        return;
+      }
 
       // Reset stores
       graph.entityStore.clear();
-      graph.connectionStore.clear();
-      graph.operationStore.clear();
+      graph.selectionStore.clear();
+      hydrateSelectionTicket.clear();
 
-      // Restore entities (snapshot.entities is [key, snapshot][])
+      // Restore entities: [key, snapshot][]
       if (Array.isArray(snapshot.entities)) {
-        for (const [key, snap] of snapshot.entities) {
-          graph.entityStore.set(key, snap);
+        for (let i = 0; i < snapshot.entities.length; i++) {
+          const [key, entitySnapshot] = snapshot.entities[i];
+          graph.entityStore.set(key, entitySnapshot);
         }
       }
 
-      // Restore connections (~ConnectionState sans views/keySet)
-      if (Array.isArray(snapshot.connections)) {
-        for (const [key, { list, pageInfo, meta, initialized }] of snapshot.connections) {
-          const st = graph.ensureConnection(key);
-          // list
-          st.list.length = 0;
-          for (let i = 0; i < list.length; i++) st.list.push(list[i]);
-          // pageInfo
-          const pi = st.pageInfo;
-          for (const k of Object.keys(pi)) delete pi[k];
-          for (const k of Object.keys(pageInfo)) pi[k] = pageInfo[k];
-          // meta
-          const mt = st.meta;
-          for (const k of Object.keys(mt)) delete mt[k];
-          for (const k of Object.keys(meta)) mt[k] = meta[k];
-
-          // keySet from list
-          st.keySet = new Set<string>(st.list.map((e: any) => e.key));
-          st.initialized = !!initialized;
+      // Restore selections: [key, skeleton][]
+      if (Array.isArray(snapshot.selections)) {
+        for (let i = 0; i < snapshot.selections.length; i++) {
+          const [key, skeleton] = snapshot.selections[i];
+          graph.selectionStore.set(key, skeleton);
+          if (withTickets) {
+            hydrateSelectionTicket.add(key);
+          }
         }
       }
 
-      // Restore operation cache (+ hydrate tickets)
-      if (Array.isArray(snapshot.operations)) {
-        for (const [key, { data, variables }] of snapshot.operations) {
-          graph.operationStore.set(key, { data: cloneData(data), variables });
-          if (withTickets) hydrateOperationTicket.add(key);
-        }
-      }
-
-      // Optional: materialize from operations-cache — build canonical connection state by applying resolvers
-      if (doMaterialize && typeof applyResolversOnGraph === "function") {
-        graph.operationStore.forEach(({ data, variables }: any) => {
-          const vars = variables || {};
-          const cloned = cloneData(data);
-          applyResolversOnGraph(cloned, vars, { stale: false });
-          // Note: We do NOT wire views here; plugin will wire per-instance views on first publish.
+      // Optional: warm any derived fields on a clone of each selection skeleton
+      if (doMaterialize && typeof resolvers?.applyOnObject === "function") {
+        graph.selectionStore.forEach((skeleton) => {
+          const clone = cloneData(skeleton);
+          try {
+            resolvers.applyOnObject!(clone, {}, { stale: false });
+          } catch {
+            // Best-effort; ignore resolver errors during SSR warm-up
+          }
         });
       }
     };
 
     hydrating = true;
     try {
-      if (typeof input === "function") input((s) => run(s));
-      else run(input);
+      if (typeof input === "function") {
+        input((s) => run(s));
+      } else {
+        run(input);
+      }
     } finally {
-      // Flip to false on microtask so tests can await a tick if needed.
       queueMicrotask(() => {
         hydrating = false;
       });
@@ -134,6 +109,6 @@ export function createSSR(deps: Deps) {
     dehydrate,
     hydrate,
     isHydrating: () => hydrating,
-    hydrateOperationTicket,
+    hydrateSelectionTicket,
   };
-}
+};

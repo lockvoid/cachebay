@@ -1,72 +1,47 @@
+// test/unit/resolvers/relay.test.ts
 import { describe, it, expect } from 'vitest';
 import { relay } from '@/src/resolvers/relay';
 
-// Minimal deps for the *view-agnostic* relay resolver.
-function createDepsMock() {
-  const TYPENAME_KEY = '__typename';
+// Minimal deps for relay (graph-only; views/resolvers optional)
+function createDeps() {
   const entityStore = new Map<string, any>();
-  const connectionStore = new Map<string, any>();
 
-  function getEntityParentKey(typename: string, id?: any) {
-    return typename === 'Query' ? 'Query' : (id == null ? null : `${typename}:${id}`);
-  }
-
-  function ensureConnection(key: string) {
-    let st = connectionStore.get(key);
-    if (!st) {
-      st = {
-        list: [] as Array<{ key: string; cursor: string | null; edge?: Record<string, any> }>,
-        pageInfo: {} as Record<string, any>,
-        meta: {} as Record<string, any>,
-        views: new Set<any>(), // unused here, but part of state shape
-        keySet: new Set<string>(),
-        initialized: false,
-      };
-      connectionStore.set(key, st);
-    }
-    return st;
-  }
-
-  function putEntity(node: any, writePolicy?: 'merge' | 'replace') {
-    const t = node?.[TYPENAME_KEY];
+  const putEntity = (node: any, writePolicy?: 'merge' | 'replace') => {
+    const t = node?.__typename;
     const id = node?.id;
     if (!t || id == null) return null;
     const key = `${t}:${id}`;
     if (writePolicy === 'replace') {
       const dst: any = {};
       for (const k of Object.keys(node)) {
-        if (k === TYPENAME_KEY || k === 'id') continue;
+        if (k === '__typename' || k === 'id') continue;
         dst[k] = node[k];
       }
       entityStore.set(key, dst);
     } else {
       const dst = entityStore.get(key) || {};
       for (const k of Object.keys(node)) {
-        if (k === TYPENAME_KEY || k === 'id') continue;
+        if (k === '__typename' || k === 'id') continue;
         dst[k] = node[k];
       }
       entityStore.set(key, dst);
     }
     return key;
-  }
+  };
 
   return {
-    graph: {
-      entityStore,
-      connectionStore,
-      getEntityParentKey,
-      ensureConnection,
-      putEntity,
-      identify: (obj: any) => (obj && obj.id != null ? String(obj.id) : null),
+    deps: {
+      graph: {
+        putEntity,
+        identify: (obj: any) =>
+          obj && obj.__typename === 'Query' ? null : (obj && obj.id != null ? `${obj.__typename}:${obj.id}` : null),
+      },
     },
-    utils: {
-      TYPENAME_KEY,
-      applyFieldResolvers: undefined,
-    },
+    entityStore,
   };
 }
 
-function makeCtx({
+const makeCtx = ({
   parentTypename = 'Query',
   field = 'assets',
   connectionValue,
@@ -76,7 +51,7 @@ function makeCtx({
   field?: string;
   connectionValue: any;
   variables?: Record<string, any>;
-}) {
+}) => {
   const hint: any = { stale: false };
   const holder = { v: connectionValue };
   return {
@@ -88,12 +63,12 @@ function makeCtx({
     set: (nv: any) => { holder.v = nv; },
     hint,
   };
-}
+};
 
 describe('relay resolver (view-agnostic)', () => {
   it('replace: initializes list with page 1', () => {
-    const deps = createDepsMock();
-    const fn = relay({ paginationMode: 'replace' }).bind(deps as any);
+    const { deps } = createDeps();
+    const fn = relay({ paginationMode: 'replace' }).bind(deps);
 
     fn(makeCtx({
       connectionValue: {
@@ -106,15 +81,17 @@ describe('relay resolver (view-agnostic)', () => {
       },
     }));
 
-    const state = deps.graph.connectionStore.values().next().value;
+    const dump = (fn as any).inspect() as Record<string, any>;
+    const key = Object.keys(dump)[0];
+    const state = dump[key];
     expect(state.list.map((e: any) => e.key)).toEqual(['Asset:1', 'Asset:2']);
     expect(state.pageInfo).toEqual({ endCursor: 'c2', hasNextPage: true });
     expect(state.initialized).toBe(true);
   });
 
   it('append: adds page 2 after page 1', () => {
-    const deps = createDepsMock();
-    const fn = relay({ paginationMode: 'append' }).bind(deps as any);
+    const { deps } = createDeps();
+    const fn = relay({ paginationMode: 'append' }).bind(deps);
 
     fn(makeCtx({
       connectionValue: {
@@ -137,13 +114,15 @@ describe('relay resolver (view-agnostic)', () => {
       variables: { after: 'c2', first: 2 },
     }));
 
-    const state = deps.graph.connectionStore.values().next().value;
+    const dump = (fn as any).inspect() as Record<string, any>;
+    const key = Object.keys(dump)[0];
+    const state = dump[key];
     expect(state.list.map((e: any) => e.key)).toEqual(['Asset:1', 'Asset:2', 'Asset:3', 'Asset:4']);
   });
 
   it('prepend: inserts page 0 before page 1', () => {
-    const deps = createDepsMock();
-    const fn = relay({ paginationMode: 'prepend' }).bind(deps as any);
+    const { deps } = createDeps();
+    const fn = relay({ paginationMode: 'prepend' }).bind(deps);
 
     fn(makeCtx({
       connectionValue: {
@@ -166,13 +145,15 @@ describe('relay resolver (view-agnostic)', () => {
       variables: { before: 'c1', last: 2 },
     }));
 
-    const state = deps.graph.connectionStore.values().next().value;
+    const dump = (fn as any).inspect() as Record<string, any>;
+    const key = Object.keys(dump)[0];
+    const state = dump[key];
     expect(state.list.map((e: any) => e.key)).toEqual(['Asset:0a', 'Asset:0b', 'Asset:1', 'Asset:2']);
   });
 
   it('replace is destructive: clears previous list before writing', () => {
-    const deps = createDepsMock();
-    const fn = relay({ paginationMode: 'replace' }).bind(deps as any);
+    const { deps } = createDeps();
+    const fn = relay({ paginationMode: 'replace' }).bind(deps);
 
     fn(makeCtx({
       connectionValue: {
@@ -195,13 +176,15 @@ describe('relay resolver (view-agnostic)', () => {
       variables: { after: 'c2', first: 2 },
     }));
 
-    const state = deps.graph.connectionStore.values().next().value;
+    const dump = (fn as any).inspect() as Record<string, any>;
+    const key = Object.keys(dump)[0];
+    const state = dump[key];
     expect(state.list.map((e: any) => e.key)).toEqual(['Asset:3', 'Asset:4']);
   });
 
   it('dedups nodes by key and updates edge meta in place', () => {
-    const deps = createDepsMock();
-    const fn = relay({ paginationMode: 'append' }).bind(deps as any);
+    const { deps, entityStore } = createDeps();
+    const fn = relay({ paginationMode: 'append' }).bind(deps);
 
     fn(makeCtx({
       connectionValue: {
@@ -223,20 +206,23 @@ describe('relay resolver (view-agnostic)', () => {
       variables: { after: 'c2', first: 1 },
     }));
 
-    const state = deps.graph.connectionStore.values().next().value;
+    const dump = (fn as any).inspect() as Record<string, any>;
+    const key = Object.keys(dump)[0];
+    const state = dump[key];
+
     expect(state.list.length).toBe(2);
 
     const entry = state.list.find((e: any) => e.key === 'Asset:1');
     expect(entry.cursor).toBe('c1b');
     expect(entry.edge?.score).toBe(99);
-    expect(deps.graph.entityStore.get('Asset:1').name).toBe('A1-new');
+    expect(entityStore.get('Asset:1').name).toBe('A1-new');
   });
 
   it('writePolicy=replace overwrites entity snapshot, merge keeps unknown fields', () => {
-    const deps = createDepsMock();
+    const { deps, entityStore } = createDeps();
 
     relay({ paginationMode: 'replace', writePolicy: 'merge' })
-      .bind(deps as any)(
+      .bind(deps)(
         makeCtx({
           connectionValue: {
             edges: [{ cursor: 'c1', node: { __typename: 'Asset', id: '1', foo: 1, bar: 2 } }],
@@ -244,10 +230,10 @@ describe('relay resolver (view-agnostic)', () => {
           },
         })
       );
-    expect(deps.graph.entityStore.get('Asset:1')).toEqual({ foo: 1, bar: 2 });
+    expect(entityStore.get('Asset:1')).toEqual({ foo: 1, bar: 2 });
 
     relay({ paginationMode: 'replace', writePolicy: 'replace' })
-      .bind(deps as any)(
+      .bind(deps)(
         makeCtx({
           connectionValue: {
             edges: [{ cursor: 'c1b', node: { __typename: 'Asset', id: '1', foo: 10 } }],
@@ -255,30 +241,36 @@ describe('relay resolver (view-agnostic)', () => {
           },
         })
       );
-    expect(deps.graph.entityStore.get('Asset:1')).toEqual({ foo: 10 });
+    expect(entityStore.get('Asset:1')).toEqual({ foo: 10 });
   });
 
   it('merges pageInfo properties', () => {
-    const deps = createDepsMock();
-    const fn = relay({ paginationMode: 'append' }).bind(deps as any);
+    const { deps } = createDeps();
+    const fn = relay({ paginationMode: 'append' }).bind(deps);
 
     fn(makeCtx({
       connectionValue: { edges: [], pageInfo: { endCursor: 'x', hasNextPage: true } },
     }));
 
-    const state = deps.graph.connectionStore.values().next().value;
+    let dump = (fn as any).inspect() as Record<string, any>;
+    let key = Object.keys(dump)[0];
+    let state = dump[key];
     expect(state.pageInfo).toEqual({ endCursor: 'x', hasNextPage: true });
 
     fn(makeCtx({
       connectionValue: { edges: [], pageInfo: { endCursor: 'x', hasNextPage: false } },
       variables: { after: 'x', first: 0 },
     }));
+
+    dump = (fn as any).inspect() as Record<string, any>;
+    key = Object.keys(dump)[0];
+    state = dump[key];
     expect(state.pageInfo).toEqual({ endCursor: 'x', hasNextPage: false });
   });
 
   it('supports nested node path (e.g., "item.node")', () => {
-    const deps = createDepsMock();
-    const fn = relay({ paginationMode: 'replace', node: 'item.node' } as any).bind(deps as any);
+    const { deps } = createDeps();
+    const fn = relay({ paginationMode: 'replace', node: 'item.node' }).bind(deps);
 
     fn(makeCtx({
       connectionValue: {
@@ -287,14 +279,15 @@ describe('relay resolver (view-agnostic)', () => {
       },
     }));
 
-    const state = deps.graph.connectionStore.values().next().value;
+    const dump = (fn as any).inspect() as Record<string, any>;
+    const key = Object.keys(dump)[0];
+    const state = dump[key];
     expect(state.list.map((e: any) => e.key)).toEqual(['Asset:1']);
   });
 
   it('append with colliding IDs does not grow list (dedup by entity key)', () => {
-    const deps = createDepsMock(); // your existing deps mock in relay unit tests
-    const spec = relay({ paginationMode: 'append' });
-    const fn = spec.bind(deps);
+    const { deps, entityStore } = createDeps();
+    const fn = relay({ paginationMode: 'append' }).bind(deps);
 
     // page 1: ids 1,2
     fn(makeCtx({
@@ -307,7 +300,7 @@ describe('relay resolver (view-agnostic)', () => {
       },
     }));
 
-    // page 2: WRONG: ids collide (1,2) => list stays size 2
+    // page 2: colliding ids (1,2) → dedup only updates in place, no growth
     fn(makeCtx({
       connectionValue: {
         edges: [
@@ -319,11 +312,13 @@ describe('relay resolver (view-agnostic)', () => {
       variables: { after: 'c2', first: 2 },
     }));
 
-    const st = deps.graph.connectionStore.values().next().value;
-    expect(st.list.length).toBe(2);
-    expect(st.list.map((e: any) => e.key)).toEqual(['Asset:1', 'Asset:2']);
-    // titles updated in place but still two items
-    expect(deps.graph.entityStore.get('Asset:1').name).toBe('A1-new');
-    expect(deps.graph.entityStore.get('Asset:2').name).toBe('A2-new');
+    const dump = (fn as any).inspect() as Record<string, any>;
+    const key = Object.keys(dump)[0];
+    const state = dump[key];
+
+    expect(state.list.length).toBe(2);
+    expect(state.list.map((e: any) => e.key)).toEqual(['Asset:1', 'Asset:2']);
+    expect(entityStore.get('Asset:1').name).toBe('A1-new');
+    expect(entityStore.get('Asset:2').name).toBe('A2-new');
   });
 });
