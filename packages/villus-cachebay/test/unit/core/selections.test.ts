@@ -2,38 +2,37 @@
 import { describe, it, expect } from "vitest";
 import { createSelections } from "@/src/core/selections";
 
-function stableStringify(v: any): string {
-  const S = (x: any): string => {
-    if (x === undefined) return "{}";
-    if (x === null || typeof x !== "object") return JSON.stringify(x);
-    if (Array.isArray(x)) return "[" + x.map(S).join(",") + "]";
-    const keys = Object.keys(x).filter(k => x[k] !== undefined).sort();
-    return "{" + keys.map(k => JSON.stringify(k) + ":" + S(x[k])).join(",") + "}";
-  };
-  return S(v);
-}
-
 describe("selections.ts — selection keys + heuristic compiler", () => {
-  const sel = createSelections({
+  // Minimal mock graph with identify()
+  const graph = {
+    identify: (o: any) =>
+      o && typeof o === "object" && typeof o.__typename === "string" && o.id != null
+        ? `${o.__typename}:${String(o.id)}`
+        : null,
+  };
+
+  const selections = createSelections({
     config: {},
-    dependencies: {
-      identify: (o: any) =>
-        o && o.__typename && o.id != null ? `${o.__typename}:${String(o.id)}` : null,
-      stableStringify,
-    },
+    dependencies: { graph },
   });
 
   it("buildRootSelectionKey/buildFieldSelectionKey are stable and drop undefined", () => {
-    const r = sel.buildRootSelectionKey("user", { id: "1", extra: undefined });
+    const r = selections.buildRootSelectionKey("user", { id: "1", extra: undefined });
     expect(r).toBe('user({"id":"1"})');
 
-    const f1 = sel.buildFieldSelectionKey("User:1", "posts", { first: 10, where: { a: 1, b: 2 } });
-    const f2 = sel.buildFieldSelectionKey("User:1", "posts", { where: { b: 2, a: 1 }, first: 10 });
+    const f1 = selections.buildFieldSelectionKey("User:1", "posts", {
+      first: 10,
+      where: { a: 1, b: 2 },
+    });
+    const f2 = selections.buildFieldSelectionKey("User:1", "posts", {
+      where: { b: 2, a: 1 },
+      first: 10,
+    });
     expect(f1).toBe(f2);
     expect(f1).toBe('User:1.posts({"first":10,"where":{"a":1,"b":2}})');
   });
 
-  it("compileSelections emits root key + nested connection keys", () => {
+  it("compileSelections emits a root key and nested connection keys for entity subtrees", () => {
     const data = {
       user: {
         __typename: "User",
@@ -47,15 +46,31 @@ describe("selections.ts — selection keys + heuristic compiler", () => {
           ],
           pageInfo: { hasNextPage: true, endCursor: "c2" },
         },
+        // unrelated nested object (not a connection) shouldn't emit extra keys
+        profile: {
+          __typename: "Profile",
+          id: "profile-1",
+          bio: "dev",
+        },
+      },
+      // non-entity root field still produces a root selection key
+      stats: {
+        totalUsers: 12,
       },
     };
 
-    const compiled = sel.compileSelections({ data });
+    const compiled = selections.compileSelections({ data });
     const keys = compiled.map((c) => c.key);
+
+    // root keys
     expect(keys).toContain('user({})');
+    expect(keys).toContain('stats({})');
+
+    // connection under User:1
     expect(keys).toContain('User:1.posts({})');
 
-    const connection = compiled.find(c => c.key === 'User:1.posts({})')!;
-    expect(connection.subtree.edges.length).toBe(2);
+    const conn = compiled.find((c) => c.key === 'User:1.posts({})')!;
+    expect(conn.subtree.edges.length).toBe(2);
+    expect(conn.subtree.pageInfo.hasNextPage).toBe(true);
   });
 });

@@ -1,23 +1,25 @@
-import { stableStringify } from './utils';
-
 // src/core/selections.ts
+import { stableStringify } from "./utils";
 
-type SelectionsConfig = {
-  // future options (e.g., key formatters) can go here
+export type SelectionsConfig = {
+  // reserved for future options (formatters, key policies, etc.)
 };
 
 type Deps = {
-  identify: (obj: any) => string | null;
-  stableStringify: (v: any) => string;
+  graph: {
+    identify: (obj: any) => string | null;
+  };
 };
 
 export type SelectionsAPI = ReturnType<typeof createSelections>;
 
 /**
- * Selection helpers: build stable selection keys and (optionally)
- * derive several selection entries from a payload subtree (heuristic).
+ * Selection helpers:
+ * - build stable selection keys for root fields and entity sub-fields
+ * - heuristically compile selection entries (skeletons) from a payload subtree
  *
- * NOTE: You can replace compileSelections with a real GraphQL AST compiler later.
+ * NOTE: This is a light heuristic. You can swap `compileSelections` with a
+ * real GraphQL AST compiler later without changing the public API here.
  */
 export function createSelections({
   config,
@@ -26,34 +28,46 @@ export function createSelections({
   config?: SelectionsConfig;
   dependencies: Deps;
 }) {
-  const { identify } = dependencies;
+  const { graph } = dependencies;
 
   function buildRootSelectionKey(field: string, args?: Record<string, any>): string {
     const a = args ? stableStringify(args) : "{}";
     return `${field}(${a})`;
   }
 
-  function buildFieldSelectionKey(parentEntityKey: string, field: string, args?: Record<string, any>): string {
+  function buildFieldSelectionKey(
+    parentEntityKey: string,
+    field: string,
+    args?: Record<string, any>
+  ): string {
     const a = args ? stableStringify(args) : "{}";
     return `${parentEntityKey}.${field}(${a})`;
   }
 
+  /**
+   * Heuristically emits:
+   * - one root selection key per top-level field in `data`
+   * - for every entity inside, any field shaped like a "connection"
+   *   (object containing `edges` array AND `pageInfo` object)
+   */
   function compileSelections(input: { data: any }): Array<{ key: string; subtree: any }> {
     const out: Array<{ key: string; subtree: any }> = [];
     const root = input.data;
     if (!root || typeof root !== "object") return out;
 
+    // 1) root fields
     for (const f of Object.keys(root)) {
-      const subtree = root[f];
+      const subtree = (root as any)[f];
       out.push({ key: buildRootSelectionKey(f, {}), subtree });
 
-      // walk subtree to emit "connection-like" selections tied to parent entities
+      // 2) nested “connection-like” fields keyed by parent entity
       traverse(subtree, (parent) => {
-        const pKey = identify(parent);
+        const pKey = graph.identify(parent);
         if (!pKey) return;
+
         for (const k of Object.keys(parent)) {
-          const v = parent[k];
-          if (v && typeof v === "object" && Array.isArray(v.edges) && v.pageInfo) {
+          const v = (parent as any)[k];
+          if (v && typeof v === "object" && Array.isArray((v as any).edges) && (v as any).pageInfo) {
             out.push({ key: buildFieldSelectionKey(pKey, k, {}), subtree: v });
           }
         }
@@ -66,10 +80,13 @@ export function createSelections({
     if (!node || typeof node !== "object") return;
     fn(node);
     for (const k of Object.keys(node)) {
-      const v = node[k];
+      const v = (node as any)[k];
       if (v && typeof v === "object") {
-        if (Array.isArray(v)) v.forEach((it) => traverse(it, fn));
-        else traverse(v, fn);
+        if (Array.isArray(v)) {
+          for (let i = 0; i < v.length; i++) traverse(v[i], fn);
+        } else {
+          traverse(v, fn);
+        }
       }
     }
   }

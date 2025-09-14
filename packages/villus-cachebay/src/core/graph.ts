@@ -1,6 +1,5 @@
 // src/core/graph.ts
 import { shallowReactive } from "vue";
-import { stableStringify } from './utils';
 
 /** Public config */
 export type GraphConfig = {
@@ -32,16 +31,37 @@ function normalizeValue(
     return out;
   }
   if (value && typeof value === "object") {
-    if ("__ref" in value && typeof value.__ref === "string") return value;
+    if ("__ref" in value && typeof (value as any).__ref === "string") return value;
     if (isEntityLike(value)) {
       const k = putEntity(value);
       return k ? { __ref: k } : null;
     }
     const out: any = {};
-    for (const k of Object.keys(value)) out[k] = normalizeValue(value[k], putEntity);
+    for (const k of Object.keys(value)) out[k] = normalizeValue((value as any)[k], putEntity);
     return out;
   }
   return value;
+}
+
+/** Denormalize: refs -> proxies, arrays/objects shallowReactive */
+function denormalizeValue(
+  value: any,
+  materializeEntity: (key: string) => any
+): any {
+  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    const arr = shallowReactive([]) as any[];
+    for (let i = 0; i < value.length; i++) arr[i] = denormalizeValue(value[i], materializeEntity);
+    return arr;
+  }
+  if ((value as any).__ref && typeof (value as any).__ref === "string") {
+    return materializeEntity((value as any).__ref);
+  }
+  const obj = shallowReactive({} as Record<string, any>);
+  for (const k of Object.keys(value)) {
+    obj[k] = denormalizeValue((value as any)[k], materializeEntity);
+  }
+  return obj;
 }
 
 /** Overlay normalized snapshot into a shallow reactive proxy, resolving refs on the fly */
@@ -62,25 +82,69 @@ function overlayEntitySnapshotInto(
   }
 }
 
-function denormalizeValue(
-  value: any,
+/** Materialize a selection (skeleton) into a reactive tree — generic (no connection special-cases) */
+function materializeFromSkeleton(
+  skel: any,
   materializeEntity: (key: string) => any
 ): any {
-  if (!value || typeof value !== "object") return value;
-  if (Array.isArray(value)) {
+  if (skel && typeof skel === "object" && (skel as any).__ref) {
+    return materializeEntity((skel as any).__ref);
+  }
+  if (Array.isArray(skel)) {
     const arr = shallowReactive([]) as any[];
-    for (let i = 0; i < value.length; i++) arr[i] = denormalizeValue(value[i], materializeEntity);
+    for (let i = 0; i < skel.length; i++) arr[i] = materializeFromSkeleton(skel[i], materializeEntity);
     return arr;
   }
-  if (value.__ref && typeof value.__ref === "string") {
-    return materializeEntity(value.__ref);
+  if (skel && typeof skel === "object") {
+    const obj = shallowReactive({} as Record<string, any>);
+    for (const k of Object.keys(skel)) {
+      obj[k] = materializeFromSkeleton((skel as any)[k], materializeEntity);
+    }
+    return obj;
   }
-  // shallow object
-  const obj = shallowReactive({} as Record<string, any>);
-  for (const k of Object.keys(value)) {
-    obj[k] = denormalizeValue(value[k], materializeEntity);
+  return skel;
+}
+
+/** Overlay selection skeleton onto an existing reactive tree — generic arrays/objects */
+function overlaySelection(
+  target: any,
+  skel: any,
+  materializeEntity: (key: string) => any
+) {
+  if (skel && skel.__ref) {
+    const ent = materializeEntity(skel.__ref);
+    if (target !== ent) {
+      for (const k of Object.keys(target)) delete target[k];
+      for (const k of Object.keys(ent)) target[k] = ent[k];
+    }
+    return;
   }
-  return obj;
+
+  if (Array.isArray(skel)) {
+    if (!Array.isArray(target)) return;
+    if (target.length > skel.length) target.splice(skel.length);
+    for (let i = 0; i < skel.length; i++) {
+      const sv = skel[i];
+      const tv = target[i];
+      if (tv && typeof tv === "object") overlaySelection(tv, sv, materializeEntity);
+      else target[i] = materializeFromSkeleton(sv, materializeEntity);
+    }
+    return;
+  }
+
+  if (skel && typeof skel === "object") {
+    for (const k of Object.keys(target)) if (!(k in skel)) delete target[k];
+    for (const k of Object.keys(skel)) {
+      const sv = skel[k];
+      const tv = target[k];
+      if (sv && typeof sv === "object") {
+        if (!tv || typeof tv !== "object") target[k] = materializeFromSkeleton(sv, materializeEntity);
+        else overlaySelection(tv, sv, materializeEntity);
+      } else {
+        target[k] = sv;
+      }
+    }
+  }
 }
 
 export function createGraph(config: GraphConfig) {
@@ -94,11 +158,11 @@ export function createGraph(config: GraphConfig) {
     }
   }
 
-  /** Entities: key -> snapshot (fields only; refs stored as {__ref}) */
+  /** Entities: key -> snapshot (fields only; refs as {__ref}) */
   const entityStore = new Map<string, Record<string, any>>();
   /** Last seen concrete typename for a canonical entity key */
   const entityConcreteTypename = new Map<string, string>();
-  /** Selections (query skeletons): selectionKey -> skeleton with {__ref} */
+  /** Selections (query/memoized subtrees): selectionKey -> skeleton with {__ref} */
   const selectionStore = new Map<string, any>();
 
   /** Weak caches for materialized shallow-reactive objects */
@@ -107,11 +171,11 @@ export function createGraph(config: GraphConfig) {
 
   function identify(obj: any): string | null {
     if (!obj || typeof obj !== "object") return null;
-    const typename = obj.__typename;
+    const typename: string | undefined = (obj as any).__typename;
     if (!typename) return null;
 
     const keyer = config.keys?.[typename];
-    const id = keyer ? keyer(obj) : obj.id ?? null;
+    const id = keyer ? keyer(obj) : (obj as any).id ?? null;
     if (id == null) return null;
 
     // canonicalize implementors into interface key
@@ -135,7 +199,7 @@ export function createGraph(config: GraphConfig) {
 
     const existing = entityStore.get(key);
     if (existing) {
-      // merge & prune
+      // replace semantics for provided fields + prune removed fields
       for (const k of Object.keys(snap)) existing[k] = snap[k];
       for (const k of Object.keys(existing)) if (!(k in snap)) delete existing[k];
     } else {
@@ -177,7 +241,7 @@ export function createGraph(config: GraphConfig) {
       const snap = entityStore.get(key);
       if (snap) overlayEntitySnapshotInto(hit, snap, materializeEntity);
 
-      // 🔧 Ensure identity is refreshed when implementor changes (AudioPost → VideoPost)
+      // ensure identity is refreshed when implementor changes (e.g., AudioPost → VideoPost)
       if (hit.__typename !== concrete) hit.__typename = concrete;
       if (idFromKey != null) {
         const sid = String(idFromKey);
@@ -188,7 +252,6 @@ export function createGraph(config: GraphConfig) {
       return hit;
     }
 
-    // create new proxy path (unchanged)
     const proxy = shallowReactive({}) as any;
     proxy.__typename = concrete;
     if (idFromKey != null) proxy.id = String(idFromKey);
@@ -207,7 +270,7 @@ export function createGraph(config: GraphConfig) {
 
     const wr = materializedSelection.get(selectionKey);
     const proxy = wr?.deref?.();
-    if (proxy) overlaySelection(proxy, normalized);
+    if (proxy) overlaySelection(proxy, normalized, materializeEntity);
   }
 
   function getSelection(selectionKey: string): any | undefined {
@@ -231,108 +294,13 @@ export function createGraph(config: GraphConfig) {
     if (!skel) return undefined;
 
     if (hit) {
-      overlaySelection(hit, skel);
+      overlaySelection(hit, skel, materializeEntity);
       return hit;
     }
 
-    const proxy = materializeFromSkeleton(skel);
+    const proxy = materializeFromSkeleton(skel, materializeEntity);
     materializedSelection.set(selectionKey, new WeakRef(proxy));
     return proxy;
-  }
-
-  function materializeFromSkeleton(skel: any): any {
-    if (skel && typeof skel === "object" && skel.__ref) {
-      return materializeEntity(skel.__ref);
-    }
-    if (Array.isArray(skel)) {
-      const arr = shallowReactive([]) as any[];
-      for (let i = 0; i < skel.length; i++) arr[i] = materializeFromSkeleton(skel[i]);
-      return arr;
-    }
-    if (skel && typeof skel === "object") {
-      const obj = shallowReactive({} as Record<string, any>);
-      for (const k of Object.keys(skel)) {
-        const v = skel[k];
-        if (k === "edges" && Array.isArray(v)) {
-          const edges = shallowReactive([]) as any[];
-          for (let i = 0; i < v.length; i++) {
-            const edgeSkel = v[i];
-            const edge = shallowReactive({} as Record<string, any>);
-            for (const ek of Object.keys(edgeSkel)) {
-              const ev = edgeSkel[ek];
-              if (ek === "node" && ev?.__ref) edge.node = materializeEntity(ev.__ref);
-              else edge[ek] = materializeFromSkeleton(ev);
-            }
-            edges[i] = edge;
-          }
-          obj[k] = edges;
-        } else {
-          obj[k] = materializeFromSkeleton(v);
-        }
-      }
-      return obj;
-    }
-    return skel;
-  }
-
-  function overlaySelection(target: any, skel: any) {
-    if (skel && skel.__ref) {
-      const ent = materializeEntity(skel.__ref);
-      if (target !== ent) {
-        for (const k of Object.keys(target)) delete target[k];
-        for (const k of Object.keys(ent)) target[k] = ent[k];
-      }
-      return;
-    }
-
-    if (Array.isArray(skel)) {
-      if (!Array.isArray(target)) return;
-      if (target.length > skel.length) target.splice(skel.length);
-      for (let i = 0; i < skel.length; i++) {
-        const sv = skel[i];
-        const tv = target[i];
-        if (tv && typeof tv === "object") overlaySelection(tv, sv);
-        else target[i] = materializeFromSkeleton(sv);
-      }
-      return;
-    }
-
-    if (skel && typeof skel === "object") {
-      for (const k of Object.keys(target)) if (!(k in skel)) delete target[k];
-      for (const k of Object.keys(skel)) {
-        const sv = skel[k];
-        const tv = target[k];
-        if (k === "edges" && Array.isArray(sv)) {
-          if (!Array.isArray(tv)) target[k] = materializeFromSkeleton(sv);
-          else {
-            if (tv.length > sv.length) tv.splice(sv.length);
-            for (let i = 0; i < sv.length; i++) {
-              const se = sv[i];
-              const te = tv[i];
-              if (!te || typeof te !== "object") tv[i] = materializeFromSkeleton(se);
-              else {
-                for (const ek of Object.keys(se)) {
-                  const sev = se[ek];
-                  if (ek === "node" && sev?.__ref) te.node = materializeEntity(sev.__ref);
-                  else if (typeof sev === "object") {
-                    if (!te[ek] || typeof te[ek] !== "object") te[ek] = materializeFromSkeleton(sev);
-                    else overlaySelection(te[ek], sev);
-                  } else te[ek] = sev;
-                }
-                for (const ek of Object.keys(te)) if (!(ek in se)) delete te[ek];
-              }
-            }
-          }
-        } else if (sv && typeof sv === "object") {
-          if (!tv || typeof tv !== "object") target[k] = materializeFromSkeleton(sv);
-          else overlaySelection(tv, sv);
-        } else {
-          target[k] = sv;
-        }
-      }
-      return;
-    }
-    // primitive leaf
   }
 
   function inspect() {
