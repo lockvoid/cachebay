@@ -21,6 +21,9 @@ describe('Integration • Cache Policies Behavior', () => {
     while (restores.length) (restores.pop()!)();
   });
 
+  // ────────────────────────────────────────────────────────────────────────────
+  // cache-first policy
+  // ────────────────────────────────────────────────────────────────────────────
   describe('cache-first policy', () => {
     it('miss → one network then render', async () => {
       const routes: Route[] = [{
@@ -63,8 +66,67 @@ describe('Integration • Cache Policies Behavior', () => {
       expect(getListItems(wrapper)).toEqual(['Cached Post']);
       expect(fx.calls.length).toBe(0);
     });
+
+    // 🔹 Single-object query: Post by id
+    it('single object • miss → one network then render', async () => {
+      const routes: Route[] = [{
+        when: ({ variables }) => variables.id === '42',
+        delay: 15,
+        respond: () => mockResponses.post('Answer', '42'),
+      }];
+
+      const Component = defineComponent({
+        setup() {
+          const { useQuery } = require('villus');
+          const { data } = useQuery({ query: testQueries.POST, variables: { id: '42' }, cachePolicy: 'cache-first' });
+          return () => h('div', {}, data.value?.post?.title || '');
+        }
+      });
+
+      const { wrapper, fx } = await mountWithClient(Component, routes, cacheConfigs.withRelay());
+      restores.push(fx.restore);
+
+      await tick();
+      expect(wrapper.text()).toBe('');        // no cached
+      expect(fx.calls.length).toBe(1);        // one network
+
+      await delay(20);
+      await tick();
+      expect(wrapper.text()).toBe('Answer');  // now rendered
+    });
+
+    it('single object • hit emits cached and terminates, no network', async () => {
+      const cache = cacheConfigs.withRelay();
+
+      await seedCache(cache, {
+        query: testQueries.POST,
+        variables: { id: '7' },
+        data: mockResponses.post('Cached Single', '7').data,
+        materialize: true,
+      });
+
+      await delay(5);
+
+      const Component = defineComponent({
+        setup() {
+          const { useQuery } = require('villus');
+          const { data } = useQuery({ query: testQueries.POST, variables: { id: '7' }, cachePolicy: 'cache-first' });
+          return () => h('div', {}, data.value?.post?.title || '');
+        }
+      });
+
+      const { wrapper, fx } = await mountWithClient(Component, [], cache);
+      restores.push(fx.restore);
+
+      await delay(10);
+      expect(wrapper.text()).toBe('Cached Single');
+      expect(fx.calls.length).toBe(0);
+    });
   });
 
+  // ────────────────────────────────────────────────────────────────────────────
+  // cache-and-network policy
+  // ────────────────────────────────────────────────────────────────────────────
   describe('cache-and-network policy', () => {
     it('hit → immediate cached render then network refresh once', async () => {
       const cache = cacheConfigs.withRelay();
@@ -209,8 +271,79 @@ describe('Integration • Cache Policies Behavior', () => {
       expect(getListItems(wrapper)).toEqual(['New Post']);
       expect(fx.calls.length).toBe(1);
     });
+
+    // 🔹 Single-object query variants
+    it('single object • hit → immediate cached render then network refresh once', async () => {
+      const cache = cacheConfigs.withRelay();
+
+      await seedCache(cache, {
+        query: testQueries.POST,
+        variables: { id: '88' },
+        data: mockResponses.post('Old Title', '88').data,
+        materialize: true,
+      });
+
+      await delay(5);
+
+      const routes: Route[] = [{
+        when: ({ variables }) => variables.id === '88',
+        delay: 10,
+        respond: () => mockResponses.post('Fresh Title', '88'),
+      }];
+
+      const Component = defineComponent({
+        setup() {
+          const { useQuery } = require('villus');
+          const { data } = useQuery({ query: testQueries.POST, variables: { id: '88' }, cachePolicy: 'cache-and-network' });
+          return () => h('div', {}, data.value?.post?.title || '');
+        }
+      });
+
+      const { wrapper, fx } = await mountWithClient(Component, routes, cache);
+      restores.push(fx.restore);
+
+      // cached frame
+      await delay(8);
+      expect(wrapper.text()).toBe('Old Title');
+
+      // network refresh
+      await delay(15);
+      await tick();
+      expect(wrapper.text()).toBe('Fresh Title');
+      expect(fx.calls.length).toBe(1);
+    });
+
+    it('single object • miss → one render on network response', async () => {
+      const routes: Route[] = [{
+        when: ({ variables }) => variables.id === '404',
+        delay: 5,
+        respond: () => mockResponses.post('Found Later', '404'),
+      }];
+
+      const Component = defineComponent({
+        setup() {
+          const { useQuery } = require('villus');
+          const { data } = useQuery({ query: testQueries.POST, variables: { id: '404' }, cachePolicy: 'cache-and-network' });
+          return () => h('div', {}, data.value?.post?.title || '');
+        }
+      });
+
+      const { wrapper, fx } = await mountWithClient(Component, routes, cacheConfigs.withRelay());
+      restores.push(fx.restore);
+
+      await tick();
+      expect(wrapper.text()).toBe('');        // no cached
+
+      await delay(10);
+      await tick();
+      expect(wrapper.text()).toBe('Found Later');
+      expect(fx.calls.length).toBe(1);
+    });
   });
 
+  // ────────────────────────────────────────────────────────────────────────────
+  // network-only policy
+  // ────────────────────────────────────────────────────────────────────────────
   describe('network-only policy', () => {
     it('no cache, renders only on network', async () => {
       const routes: Route[] = [{
@@ -230,8 +363,38 @@ describe('Integration • Cache Policies Behavior', () => {
       await delay(25);
       expect(getListItems(wrapper)).toEqual(['Network Post']);
     });
+
+    // 🔹 Single-object
+    it('single object • no cache, renders on network', async () => {
+      const routes: Route[] = [{
+        when: ({ variables }) => variables.id === '501',
+        delay: 15,
+        respond: () => mockResponses.post('Network Obj', '501'),
+      }];
+
+      const Component = defineComponent({
+        setup() {
+          const { useQuery } = require('villus');
+          const { data } = useQuery({ query: testQueries.POST, variables: { id: '501' }, cachePolicy: 'network-only' });
+          return () => h('div', {}, data.value?.post?.title || '');
+        }
+      });
+
+      const { wrapper, fx } = await mountWithClient(Component, routes, cacheConfigs.withRelay());
+      restores.push(fx.restore);
+
+      await tick();
+      expect(wrapper.text()).toBe('');
+      expect(fx.calls.length).toBe(1);
+
+      await delay(20);
+      expect(wrapper.text()).toBe('Network Obj');
+    });
   });
 
+  // ────────────────────────────────────────────────────────────────────────────
+  // cache-only policy
+  // ────────────────────────────────────────────────────────────────────────────
   describe('cache-only policy', () => {
     it('hit renders cached data, no network call', async () => {
       const cache = cacheConfigs.withRelay();
@@ -288,8 +451,57 @@ describe('Integration • Cache Policies Behavior', () => {
       expect(wrapper.text()).toContain('CacheOnlyMiss');
       expect(fx.calls.length).toBe(0);
     });
+
+    // 🔹 Single-object variants
+    it('single object • hit renders cached, no network', async () => {
+      const cache = cacheConfigs.withRelay();
+
+      await seedCache(cache, {
+        query: testQueries.POST,
+        variables: { id: '11' },
+        data: mockResponses.post('Cache Hit Single', '11').data,
+        materialize: true,
+      });
+
+      await delay(5);
+
+      const Component = defineComponent({
+        setup() {
+          const { useQuery } = require('villus');
+          const { data } = useQuery({ query: testQueries.POST, variables: { id: '11' }, cachePolicy: 'cache-only' });
+          return () => h('div', {}, data.value?.post?.title || '');
+        }
+      });
+
+      const { wrapper, fx } = await mountWithClient(Component, [], cache);
+      restores.push(fx.restore);
+
+      await delay(10);
+      expect(wrapper.text()).toBe('Cache Hit Single');
+      expect(fx.calls.length).toBe(0);
+    });
+
+    it('single object • miss shows nothing, no network; exposes CacheOnlyMiss', async () => {
+      const Component = defineComponent({
+        setup() {
+          const { useQuery } = require('villus');
+          const { data, error } = useQuery({ query: testQueries.POST, variables: { id: 'nope' }, cachePolicy: 'cache-only' });
+          return () => h('div', {}, error?.value?.networkError?.name || (data.value?.post?.title || ''));
+        }
+      });
+
+      const { wrapper, fx } = await mountWithClient(Component, [], cacheConfigs.withRelay());
+      restores.push(fx.restore);
+
+      await tick();
+      expect(wrapper.text()).toContain('CacheOnlyMiss');
+      expect(fx.calls.length).toBe(0);
+    });
   });
 
+  // ────────────────────────────────────────────────────────────────────────────
+  // cursor replay with relay resolver (unchanged)
+  // ────────────────────────────────────────────────────────────────────────────
   describe('cursor replay with relay resolver', () => {
     it('publishes terminally (append/prepend/replace)', async () => {
       const routes: Route[] = [{

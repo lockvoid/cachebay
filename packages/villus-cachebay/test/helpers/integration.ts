@@ -246,6 +246,19 @@ export const testQueries = {
     }
   `,
 
+  // 🔹 Single Post by id (object, not a connection)
+  POST: /* GraphQL */ `
+    query Post($id: ID!) {
+      post(id: $id) {
+        __typename
+        id
+        title
+        content
+        authorId
+      }
+    }
+  `,
+
   COMMENTS: /* GraphQL */ `
     query Comments($postId: ID, $first: Int, $after: String) {
       comments(postId: $postId, first: $first, after: $after) {
@@ -324,6 +337,20 @@ export const mockResponses = {
           endCursor: titles.length > 0 ? `c${titles.length}` : null,
           hasNextPage: true,
         },
+      },
+    },
+  }),
+
+  // 🔹 Single Post object
+  post: (title: string, id: string = '1') => ({
+    data: {
+      __typename: 'Query',
+      post: {
+        __typename: 'Post',
+        id,
+        title,
+        content: `Content for ${title}`,
+        authorId: '1',
       },
     },
   }),
