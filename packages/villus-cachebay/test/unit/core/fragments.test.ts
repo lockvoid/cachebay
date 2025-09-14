@@ -23,14 +23,14 @@ function makeGraph(): GraphAPI {
 }
 
 describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () => {
-  it('writes and reads a simple entity fragment (User)', async () => {
+  it('writes and reads a simple entity fragment (User) and entity proxy is reactive', async () => {
     const graph = makeGraph();
     const selections = createSelections({ dependencies: { graph } });
     const { writeFragment, readFragment } = createFragments({
       dependencies: { graph, selections },
     });
 
-    // seed minimal user via fragment write
+    // write
     writeFragment({
       id: 'User:1',
       fragment: /* GraphQL */ `
@@ -48,7 +48,7 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
       },
     });
 
-    // read it back
+    // read (plain object result)
     const result = readFragment({
       id: 'User:1',
       fragment: /* GraphQL */ `
@@ -67,12 +67,12 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
       email: 'ada@example.com',
     });
 
-    // materialize proxy and ensure it’s reactive and reflects updates
+    // entity proxy is reactive & reflects updates
     const userProxy = graph.materializeEntity('User:1');
     expect(isReactive(userProxy)).toBe(true);
     expect(userProxy.name).toBe('Ada');
 
-    // update via fragment write (partial)
+    // partial update via fragment
     writeFragment({
       id: 'User:1',
       fragment: /* GraphQL */ `
@@ -82,11 +82,9 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
       `,
       data: { __typename: 'User', id: '1', name: 'Ada Lovelace' },
     });
-
-    // proxy reflects change
     expect(userProxy.name).toBe('Ada Lovelace');
 
-    // read back with larger fragment still sees merged state
+    // read again
     const again = readFragment({
       id: 'User:1',
       fragment: /* GraphQL */ `
@@ -105,14 +103,14 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
     });
   });
 
-  it('handles interface implementors: AudioPost/VideoPost → canonical Post:1, latest implementor visible', () => {
+  it('handles interface implementors (AudioPost/VideoPost) → canonical Post:1; proxy is reactive', () => {
     const graph = makeGraph();
     const selections = createSelections({ dependencies: { graph } });
     const { writeFragment, readFragment } = createFragments({
       dependencies: { graph, selections },
     });
 
-    // First write: AudioPost → canonical key is Post:1
+    // first implementor
     writeFragment({
       id: 'Post:1',
       fragment: /* GraphQL */ `
@@ -130,7 +128,7 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
       },
     });
 
-    // Second write for same id but different implementor
+    // overwrite with another implementor (same canonical id)
     writeFragment({
       id: 'Post:1',
       fragment: /* GraphQL */ `
@@ -148,14 +146,13 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
       },
     });
 
-    // materialize shows the latest implementor shape
     const postProxy = graph.materializeEntity('Post:1');
     expect(isReactive(postProxy)).toBe(true);
     expect(postProxy.__typename).toBe('VideoPost');
     expect(postProxy.title).toBe('Video B');
     expect(postProxy.duration).toBe(120);
 
-    // read as a Post fragment (union-ish view)
+    // reading as a Post fragment (works; __typename is concrete)
     const readAsPost = readFragment({
       id: 'Post:1',
       fragment: /* GraphQL */ `
@@ -165,17 +162,21 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
         }
       `,
     });
-    expect(readAsPost).toMatchObject({ __typename: 'VideoPost', id: '1', title: 'Video B' });
+    expect(readAsPost).toMatchObject({
+      __typename: 'VideoPost',
+      id: '1',
+      title: 'Video B',
+    });
   });
 
-  it('writes & reads a nested field with args (connection page) via fragment', () => {
+  it('writes & reads a nested field with args (connection page) via fragment; selection wrappers are reactive', () => {
     const graph = makeGraph();
     const selections = createSelections({ dependencies: { graph } });
     const { writeFragment, readFragment } = createFragments({
       dependencies: { graph, selections },
     });
 
-    // seed the parent entity
+    // seed parent entity
     graph.putEntity({
       __typename: 'User',
       id: '1',
@@ -183,7 +184,7 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
       profile: { __typename: 'Profile', id: 'p1', bio: 'dev' },
     });
 
-    // write connection page (first: 2) as a fragment on User
+    // write connection page under User:1
     writeFragment({
       id: 'User:1',
       fragment: /* GraphQL */ `
@@ -213,23 +214,14 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
         posts: {
           __typename: 'PostConnection',
           edges: [
-            {
-              __typename: 'PostEdge',
-              cursor: 'c1',
-              node: { __typename: 'Post', id: '101', title: 'Hello' },
-            },
-            {
-              __typename: 'PostEdge',
-              cursor: 'c2',
-              node: { __typename: 'Post', id: '102', title: 'World' },
-            },
+            { __typename: 'PostEdge', cursor: 'c1', node: { __typename: 'Post', id: '101', title: 'Hello' } },
+            { __typename: 'PostEdge', cursor: 'c2', node: { __typename: 'Post', id: '102', title: 'World' } },
           ],
           pageInfo: { __typename: 'PageInfo', hasNextPage: true, endCursor: 'c2' },
         },
       },
     });
 
-    // read the same fragment back
     const out = readFragment({
       id: 'User:1',
       fragment: /* GraphQL */ `
@@ -239,23 +231,15 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
             edges {
               __typename
               cursor
-              node {
-                __typename
-                id
-                title
-              }
+              node { __typename id title }
             }
-            pageInfo {
-              __typename
-              hasNextPage
-              endCursor
-            }
+            pageInfo { __typename hasNextPage endCursor }
           }
         }
       `,
     });
 
-    // structure is returned, nodes are resolved from normalized store
+    // data shape
     expect(out.posts.__typename).toBe('PostConnection');
     expect(out.posts.edges.map((e: any) => e.node.id)).toEqual(['101', '102']);
     expect(out.posts.pageInfo).toEqual({
@@ -264,7 +248,12 @@ describe('fragments.ts — readFragment/writeFragment (GraphQL fragments)', () =
       endCursor: 'c2',
     });
 
-    // updating a post entity reflects in a fresh read
+    // reactivity checks for selection wrappers
+    expect(isReactive(out.posts)).toBe(true);
+    expect(isReactive(out.posts.edges)).toBe(true);
+    expect(isReactive(out.posts.edges[0].node)).toBe(true);
+
+    // update an entity and ensure a fresh read sees it
     graph.putEntity({ __typename: 'Post', id: '101', title: 'Hello (updated)' });
     const out2 = readFragment({
       id: 'User:1',

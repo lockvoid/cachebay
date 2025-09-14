@@ -1,14 +1,14 @@
 // src/core/fragments.ts
-import type { GraphAPI } from "./graph";
-import type { SelectionsAPI } from "./selections";
+import type { GraphAPI } from './graph';
+import type { SelectionsAPI } from './selections';
 import {
   parse,
   Kind,
-  type DocumentNode,
   type FragmentDefinitionNode,
+  type SelectionNode,
   type FieldNode,
   type ValueNode,
-} from "graphql";
+} from 'graphql';
 
 export type FragmentsConfig = Record<string, never>;
 
@@ -23,211 +23,160 @@ export type CreateFragmentsArgs = {
 };
 
 export type ReadFragmentArgs = {
-  /** Canonical entity key, e.g. "User:1" or "Post:42" */
-  id: string;
-  /** GraphQL fragment source as a string */
-  fragment: string;
-  /** When your document contains multiple fragments, pick one by name */
-  fragmentName?: string;
-  /** Values for $variables used in the fragment's field arguments */
+  id: string;                 // canonical entity key, e.g. "User:1"
+  fragment: string;           // GraphQL fragment source (string)
   variables?: Record<string, any>;
+  /** when false, return raw store snapshot for entity-only fragments */
+  materialized?: boolean;
 };
 
 export type WriteFragmentArgs = {
-  /** Canonical entity key to write into */
-  id: string;
-  /** GraphQL fragment source as a string */
-  fragment: string;
-  /** Payload for the fragment (root + any nested fields-with-args) */
-  data: any;
-  /** When your document contains multiple fragments, pick one by name */
-  fragmentName?: string;
-  /** Values for $variables used in the fragment's field arguments */
+  id: string;                 // canonical entity key to write to (root entity)
+  fragment: string;           // GraphQL fragment source (string)
+  data: any;                  // payload for the fragment (root + any nested fields-with-args)
   variables?: Record<string, any>;
 };
 
-export const createFragments = ({ dependencies }: CreateFragmentsArgs) => {
+// ──────────────────────────────────────────────
+// AST helpers
+// ──────────────────────────────────────────────
+function parseSingleFragment(source: string): FragmentDefinitionNode {
+  const doc = parse(source);
+  const frag = doc.definitions.find(
+    (d): d is FragmentDefinitionNode => d.kind === Kind.FRAGMENT_DEFINITION
+  );
+  if (!frag) throw new Error(`fragments.read/write: expected a single fragment definition`);
+  return frag;
+}
+
+function fieldOutputKey(node: FieldNode): string {
+  return node.alias?.value ?? node.name.value;
+}
+
+function valueNodeToJS(node: ValueNode, vars?: Record<string, any>): any {
+  switch (node.kind) {
+    case Kind.NULL: return null;
+    case Kind.INT:
+    case Kind.FLOAT: return Number(node.value);
+    case Kind.STRING: return node.value;
+    case Kind.BOOLEAN: return node.value;
+    case Kind.ENUM: return node.value;
+    case Kind.LIST: return node.values.map(v => valueNodeToJS(v, vars));
+    case Kind.OBJECT: {
+      const o: Record<string, any> = {};
+      for (const f of node.fields) o[f.name.value] = valueNodeToJS(f.value, vars);
+      return o;
+    }
+    case Kind.VARIABLE: return vars ? vars[node.name.value] : undefined;
+    default: return undefined;
+  }
+}
+
+function argsToObject(field: FieldNode, vars?: Record<string, any>): Record<string, any> | undefined {
+  if (!field.arguments || field.arguments.length === 0) return undefined;
+  const out: Record<string, any> = {};
+  for (const arg of field.arguments) out[arg.name.value] = valueNodeToJS(arg.value, vars);
+  return out;
+}
+const isArgdField = (f: FieldNode) => !!(f.arguments && f.arguments.length);
+
+// ──────────────────────────────────────────────
+// API
+// ─────────────────────────────────────────────-
+export function createFragments({ dependencies }: CreateFragmentsArgs) {
   const { graph, selections } = dependencies;
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // Small helpers
-  // ────────────────────────────────────────────────────────────────────────────
-
-  const pickFragment = (doc: DocumentNode, name?: string): FragmentDefinitionNode => {
-    const frags = doc.definitions.filter(
-      (d): d is FragmentDefinitionNode => d.kind === Kind.FRAGMENT_DEFINITION
-    );
-
-    if (name) {
-      const found = frags.find((f) => f.name?.value === name);
-      if (!found) {
-        throw new Error(`fragments.read/write: fragment "${name}" not found in document`);
-      }
-      return found;
+  /** READ — supports both new (object) and compat (id + options) forms */
+  function readFragment(a: ReadFragmentArgs | string, b?: { materialized?: boolean }): any {
+    // Compat form: readFragment("User:1", { materialized?: boolean })
+    if (typeof a === 'string') {
+      const id = a;
+      const materialized = b?.materialized !== false; // default true
+      const has = graph.getEntity(id);
+      if (!has) return undefined;
+      return materialized ? graph.materializeEntity(id) : graph.getEntity(id);
     }
 
-    if (frags.length !== 1) {
-      throw new Error(
-        `fragments.read/write: expected a single fragment in the document (or provide fragmentName)`
-      );
+    // New form
+    const { id, fragment, variables, materialized } = a;
+    const frag = parseSingleFragment(fragment);
+
+    // collect fields
+    const fields = frag.selectionSet.selections.filter((s): s is FieldNode => s.kind === Kind.FIELD);
+    const hasArgd = fields.some(isArgdField);
+
+    // If the entity is missing → undefined
+    const snapshot = graph.getEntity(id);
+    if (!snapshot) return undefined;
+
+    // Entity-only fragment
+    if (!hasArgd) {
+      if (materialized === false) {
+        // raw store snapshot (non-reactive)
+        return graph.getEntity(id);
+      }
+      // reactive proxy
+      return graph.materializeEntity(id);
     }
-    return frags[0];
-  };
 
-  const fieldOutputKey = (node: FieldNode): string => {
-    return node.alias?.value ?? node.name.value;
-  };
-
-  const valueNodeToJS = (node: ValueNode, vars?: Record<string, any>): any => {
-    switch (node.kind) {
-      case Kind.NULL: {
-        return null;
-      }
-      case Kind.INT:
-      case Kind.FLOAT: {
-        return Number(node.value);
-      }
-      case Kind.STRING:
-      case Kind.ENUM: {
-        return node.value;
-      }
-      case Kind.BOOLEAN: {
-        return node.value;
-      }
-      case Kind.LIST: {
-        return node.values.map((v) => valueNodeToJS(v, vars));
-      }
-      case Kind.OBJECT: {
-        const out: Record<string, any> = {};
-        for (const f of node.fields) {
-          out[f.name.value] = valueNodeToJS(f.value, vars);
-        }
-        return out;
-      }
-      case Kind.VARIABLE: {
-        return vars ? vars[node.name.value] : undefined;
-      }
-      default: {
-        return undefined;
-      }
-    }
-  };
-
-  const argsToObject = (
-    field: FieldNode,
-    vars?: Record<string, any>
-  ): Record<string, any> | undefined => {
-    if (!field.arguments || field.arguments.length === 0) {
-      return undefined;
-    }
-    const out: Record<string, any> = {};
-    for (const arg of field.arguments) {
-      out[arg.name.value] = valueNodeToJS(arg.value, vars);
-    }
-    return out;
-  };
-
-  const inferTypenameFromFragment = (frag: FragmentDefinitionNode): string | undefined => {
-    return frag.typeCondition?.name?.value;
-  };
-
-  // ────────────────────────────────────────────────────────────────────────────
-  // READ
-  // ────────────────────────────────────────────────────────────────────────────
-
-  const readFragment = ({ id, fragment, fragmentName, variables }: ReadFragmentArgs): any => {
-    const doc = parse(fragment);
-    const frag = pickFragment(doc, fragmentName);
-
-    // Reactive entity proxy; may reflect latest concrete implementor
+    // Arg-bearing fragment: build object with selection wrappers + identity
     const rootProxy = graph.materializeEntity(id);
+    const out: Record<string, any> = {
+      __typename: rootProxy.__typename,
+      id: rootProxy.id,
+    };
 
-    const out: Record<string, any> = {};
-    for (const sel of frag.selectionSet.selections) {
-      if (sel.kind !== Kind.FIELD) {
-        continue;
-      }
+    for (const sel of fields) {
+      const key = fieldOutputKey(sel);
+      const hasArgs = isArgdField(sel);
 
-      const outKey = fieldOutputKey(sel);
-      const hasArgs = !!(sel.arguments && sel.arguments.length);
-
-      if (hasArgs) {
-        // Field with arguments → look up / materialize a selection tree
-        const argObject = argsToObject(sel, variables) || {};
-        const selectionKey = selections.buildFieldSelectionKey(id, sel.name.value, argObject);
-        out[outKey] = graph.materializeSelection(selectionKey);
+      if (!hasArgs) {
+        // plain entity field read through proxy (keeps reactivity)
+        out[key] = (rootProxy as any)[key];
       } else {
-        // Plain entity field → read from the reactive root proxy
-        out[outKey] = (rootProxy as any)[outKey];
+        const argObj = argsToObject(sel, variables) || {};
+        const selectionKey = selections.buildFieldSelectionKey(id, sel.name.value, argObj);
+        out[key] = graph.materializeSelection(selectionKey);
       }
-    }
-
-    // Ensure __typename is present (tests expect it)
-    if (
-      rootProxy &&
-      typeof rootProxy === "object" &&
-      (rootProxy as any).__typename &&
-      !("__typename" in out)
-    ) {
-      out.__typename = (rootProxy as any).__typename;
     }
 
     return out;
-  };
+  }
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // WRITE
-  // ────────────────────────────────────────────────────────────────────────────
+  /** WRITE */
+  function writeFragment({ id, fragment, data, variables }: WriteFragmentArgs): void {
+    const frag = parseSingleFragment(fragment);
 
-  const writeFragment = ({
-    id,
-    fragment,
-    fragmentName,
-    data,
-    variables,
-  }: WriteFragmentArgs): void => {
-    const doc = parse(fragment);
-    const frag = pickFragment(doc, fragmentName);
-
-    // 1) Ensure/merge root entity (full or partial)
-    //    If caller didn't include __typename, derive from fragment condition.
-    const ensuredRoot =
-      data && data.__typename
-        ? data
-        : { __typename: inferTypenameFromFragment(frag), id: id.split(":")[1] };
-
-    if (ensuredRoot && ensuredRoot.__typename) {
-      graph.putEntity(ensuredRoot);
+    // If caller provided entity root data, ensure it exists & merge
+    const typename = data?.__typename;
+    const idFromKey = id.includes(':') ? id.split(':')[1] : undefined;
+    if (typename) {
+      graph.putEntity({ __typename: typename, id: idFromKey, ...data });
     }
 
-    // 2) Apply fragment selections
-    for (const sel of frag.selectionSet.selections) {
-      if (sel.kind !== Kind.FIELD) {
-        continue;
-      }
-
+    const fields = frag.selectionSet.selections.filter((s): s is FieldNode => s.kind === Kind.FIELD);
+    for (const sel of fields) {
       const outKey = fieldOutputKey(sel);
-      const hasArgs = !!(sel.arguments && sel.arguments.length);
+      const argObj = argsToObject(sel, variables) || undefined;
 
-      if (hasArgs) {
-        // Field with args → write selection subtree if provided
-        const argObject = argsToObject(sel, variables) || {};
-        const selectionKey = selections.buildFieldSelectionKey(id, sel.name.value, argObject);
+      if (argObj) {
+        // selection subtree
+        const selectionKey = selections.buildFieldSelectionKey(id, sel.name.value, argObj);
         const subtree = data ? (data as any)[outKey] : undefined;
         if (subtree !== undefined) {
           graph.putSelection(selectionKey, subtree);
         }
       } else {
-        // Plain entity subset merge if the caller provided root fields
+        // plain entity field: if provided, merge via putEntity
         if (data && data.__typename) {
           graph.putEntity(data);
         }
       }
     }
-  };
+  }
 
   return {
     readFragment,
     writeFragment,
   };
-};
+}
