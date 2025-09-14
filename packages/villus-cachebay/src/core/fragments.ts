@@ -5,22 +5,31 @@ import {
   type FragmentDefinitionNode,
   type FieldNode,
   type ValueNode,
-} from "graphql";
-import type { GraphAPI } from "./graph";
-import type { SelectionsAPI } from "./selections";
-
+  type DocumentNode,
+} from 'graphql';
+import type { GraphAPI } from './graph';
+import type { SelectionsAPI } from './selections';
+import { shallowReactive } from 'vue';
+export type FragmentsConfig = Record<string, never>;
 export type FragmentsDeps = { graph: GraphAPI; selections: SelectionsAPI };
 
 export type ReadFragmentArgs = {
-  id: string;                     // e.g. "User:1"
-  fragment: string;               // single GraphQL fragment source
+  id: string;
+  fragment: string;
   variables?: Record<string, any>;
+  // note: readFragment ALWAYS returns a snapshot (non-reactive). This flag is ignored by design.
 };
 
 export type WriteFragmentArgs = {
-  id: string;                     // root entity key
+  id: string;
   fragment: string;
-  data: any;                      // payload to write
+  data: any;
+  variables?: Record<string, any>;
+};
+
+export type WatchFragmentArgs = {
+  id: string;
+  fragment: string;
   variables?: Record<string, any>;
 };
 
@@ -28,33 +37,29 @@ export function createFragments({ dependencies }: { dependencies: FragmentsDeps 
   const { graph, selections } = dependencies;
 
   // ──────────────────────────────────────────────
-  // guards
+  // small helpers
   // ──────────────────────────────────────────────
-  const ensureString = (name: string, v: unknown) => {
-    if (typeof v !== "string" || v.trim() === "") {
+  const assertString = (name: string, val: unknown) => {
+    if (typeof val !== 'string' || val.trim() === '') {
       throw new Error(`[fragments] "${name}" must be a non-empty string`);
     }
   };
 
-  const ensureObject = (name: string, v: unknown) => {
-    if (!v || typeof v !== "object") {
+  const assertObject = (name: string, val: unknown) => {
+    if (!val || typeof val !== 'object') {
       throw new Error(`[fragments] "${name}" must be an object`);
     }
   };
 
-  // ──────────────────────────────────────────────
-  // AST helpers
-  // ──────────────────────────────────────────────
-  function parseSingleFragment(source: string): FragmentDefinitionNode {
+  const parseSingleFragment = (source: string): FragmentDefinitionNode => {
+    assertString('fragment', source);
     const doc = parse(source);
     const frag = doc.definitions.find(
       (d): d is FragmentDefinitionNode => d.kind === Kind.FRAGMENT_DEFINITION
     );
-    if (!frag) throw new Error("[fragments] expected a single fragment definition");
+    if (!frag) throw new Error('[fragments] Expected a single fragment definition');
     return frag;
-  }
-
-  const fieldKey = (node: FieldNode) => node.alias?.value ?? node.name.value;
+  };
 
   const valueNodeToJS = (node: ValueNode, vars?: Record<string, any>): any => {
     switch (node.kind) {
@@ -66,86 +71,97 @@ export function createFragments({ dependencies }: { dependencies: FragmentsDeps 
       case Kind.ENUM: return node.value;
       case Kind.LIST: return node.values.map(v => valueNodeToJS(v, vars));
       case Kind.OBJECT: {
-        const out: Record<string, any> = {};
-        for (const f of node.fields) out[f.name.value] = valueNodeToJS(f.value, vars);
-        return out;
+        const o: Record<string, any> = {};
+        for (const f of node.fields) o[f.name.value] = valueNodeToJS(f.value, vars);
+        return o;
       }
       case Kind.VARIABLE: return vars ? vars[node.name.value] : undefined;
       default: return undefined;
     }
   };
 
-  const argsToObject = (node: FieldNode, vars?: Record<string, any>) => {
-    if (!node.arguments || node.arguments.length === 0) return undefined;
+  const argsToObject = (field: FieldNode, vars?: Record<string, any>): Record<string, any> | undefined => {
+    if (!field.arguments || field.arguments.length === 0) return undefined;
     const out: Record<string, any> = {};
-    for (const a of node.arguments) out[a.name.value] = valueNodeToJS(a.value, vars);
+    for (const a of field.arguments) out[a.name.value] = valueNodeToJS(a.value, vars);
     return out;
   };
 
-  // ──────────────────────────────────────────────
-  // selection skeleton → plain snapshot
-  // ──────────────────────────────────────────────
-  const snapshotFromSelection = (skel: any): any => {
-    if (!skel || typeof skel !== "object") return skel;
+  const fieldOutputKey = (node: FieldNode) => node.alias?.value ?? node.name.value;
 
-    if (Array.isArray(skel)) {
-      const arr = new Array(skel.length);
-      for (let i = 0; i < skel.length; i++) arr[i] = snapshotFromSelection(skel[i]);
-      return arr;
+  /**
+   * Build a plain, non-reactive snapshot from a selection skeleton:
+   * - arrays copied
+   * - plain objects copied
+   * - { __ref: key } resolved to the current entity snapshot (deeply).
+   */
+  const plainFromSkeleton = (node: any): any => {
+    if (node == null || typeof node !== 'object') return node;
+
+    if (Array.isArray(node)) {
+      return node.map(plainFromSkeleton);
     }
 
-    if (typeof skel.__ref === "string") {
-      const snap = graph.getEntity(skel.__ref);
-      if (!snap) return undefined;
-
+    if ('__ref' in node && typeof node.__ref === 'string') {
+      const snap = graph.getEntity(node.__ref);
+      if (!snap || typeof snap !== 'object') return undefined;
       const out: Record<string, any> = {};
-      if (snap.__typename) out.__typename = snap.__typename;
-      if (snap.id != null) out.id = String(snap.id);
-
-      const keys = Object.keys(snap);
-      for (let i = 0; i < keys.length; i++) {
-        const k = keys[i];
-        if (k === "__typename" || k === "id") continue;
-        out[k] = snapshotFromSelection((snap as any)[k]);
+      for (const k of Object.keys(snap)) {
+        // entity snapshots are already normalized to plain scalars/objects/skeletons
+        out[k] = plainFromSkeleton((snap as any)[k]);
       }
       return out;
     }
 
+    // plain object
     const out: Record<string, any> = {};
-    const keys = Object.keys(skel);
-    for (let i = 0; i < keys.length; i++) out[keys[i]] = snapshotFromSelection(skel[keys[i]]);
+    for (const k of Object.keys(node)) {
+      out[k] = plainFromSkeleton(node[k]);
+    }
     return out;
   };
 
+  // For watchFragment: detect if the fragment contains any fields-with-args at top level.
+  const getTopLevelArgFields = (frag: FragmentDefinitionNode) =>
+    frag.selectionSet.selections.filter(
+      (s): s is FieldNode => s.kind === Kind.FIELD && !!(s.arguments && s.arguments.length)
+    );
+
   // ──────────────────────────────────────────────
-  // READ (snapshot)
+  // READ (always snapshot)
   // ──────────────────────────────────────────────
   function readFragment({ id, fragment, variables }: ReadFragmentArgs): any {
-    ensureString("id", id);
-    ensureString("fragment", fragment);
-
+    assertString('id', id);
     const frag = parseSingleFragment(fragment);
-    const root = graph.getEntity(id);
-    if (!root) return undefined;
+
+    // root entity snapshot (plain)
+    const rootSnap = graph.getEntity(id);
+    if (!rootSnap) return undefined;
 
     const out: Record<string, any> = {};
-
     for (const sel of frag.selectionSet.selections) {
       if (sel.kind !== Kind.FIELD) continue;
-      const key = fieldKey(sel);
+      const k = fieldOutputKey(sel);
       const hasArgs = !!(sel.arguments && sel.arguments.length);
 
       if (!hasArgs) {
-        out[key] = (root as any)[key];
+        // Copy the requested root field from the entity snapshot
+        out[k] = plainFromSkeleton((rootSnap as any)[k]);
       } else {
-        const args = argsToObject(sel, variables) || {};
-        const selKey = selections.buildFieldSelectionKey(id, sel.name.value, args);
-        const skel = graph.getSelection(selKey);
-        out[key] = skel ? snapshotFromSelection(skel) : undefined;
+        // Selection snapshot: denormalize skeleton at this key
+        const argObj = argsToObject(sel, variables) || {};
+        const selKey = selections.buildFieldSelectionKey(id, sel.name.value, argObj);
+        const skeleton = graph.getSelection(selKey);
+        out[k] = skeleton ? plainFromSkeleton(skeleton) : undefined;
       }
     }
 
-    if (root.__typename && !("__typename" in out)) out.__typename = root.__typename;
+    // Ensure top-level typename is present when available
+    const typename = (rootSnap as any)?.__typename;
+    if (typename && !('__typename' in out)) {
+      out.__typename = typename;
+    }
+
     return out;
   }
 
@@ -153,39 +169,87 @@ export function createFragments({ dependencies }: { dependencies: FragmentsDeps 
   // WRITE
   // ──────────────────────────────────────────────
   function writeFragment({ id, fragment, data, variables }: WriteFragmentArgs): void {
-    ensureString("id", id);
-    ensureString("fragment", fragment);
-    ensureObject("data", data);
+    assertString('id', id);
+    assertObject('data', data);
 
     const frag = parseSingleFragment(fragment);
 
-    // Write root entity if identifiable
-    if (data && typeof data === "object" && data.__typename) {
+    // Root entity write if present
+    if ((data as any).__typename) {
       graph.putEntity(data);
     }
 
-    // Arg’d top-level fields → store selection skeletons
+    // Each top-level field in the fragment: if it carries args, store as a selection.
     for (const sel of frag.selectionSet.selections) {
       if (sel.kind !== Kind.FIELD) continue;
 
-      const key = fieldKey(sel);
+      const k = fieldOutputKey(sel);
       const hasArgs = !!(sel.arguments && sel.arguments.length);
 
-      if (!hasArgs) {
-        const subtree = (data as any)[key];
-        if (subtree && subtree.__typename && subtree.id != null) {
-          graph.putEntity(subtree);
-        }
-      } else {
-        const args = argsToObject(sel, variables) || {};
-        const selKey = selections.buildFieldSelectionKey(id, sel.name.value, args);
-        const subtree = (data as any)[key];
+      if (hasArgs) {
+        const argObj = argsToObject(sel, variables) || {};
+        const selKey = selections.buildFieldSelectionKey(id, sel.name.value, argObj);
+        const subtree = (data as any)[k];
         if (subtree !== undefined) {
           graph.putSelection(selKey, subtree);
+        }
+      } else {
+        // Nested identifiable object written as entity (optional QoL)
+        const subtree = (data as any)[k];
+        if (subtree && typeof subtree === 'object' && (subtree as any).__typename && (subtree as any).id != null) {
+          graph.putEntity(subtree);
         }
       }
     }
   }
 
-  return { readFragment, writeFragment };
+  // ──────────────────────────────────────────────
+  // WATCH (live projection)
+  // ──────────────────────────────────────────────
+
+  function watchFragment({ id, fragment, variables }: WatchFragmentArgs) {
+    assertString('id', id);
+    const frag = parseSingleFragment(fragment);
+
+    const argFields = getTopLevelArgFields(frag);
+
+    // No arg fields → live entity proxy
+    if (argFields.length === 0) {
+      return { value: graph.materializeEntity(id) };
+    }
+
+    // Single arg field → live selection wrapper nested in a reactive root
+    if (argFields.length === 1) {
+      const sel = argFields[0]!;
+      const alias = fieldOutputKey(sel);                       // e.g. "posts"
+      const argObj = argsToObject(sel, variables) || {};
+      const selKey = selections.buildFieldSelectionKey(id, sel.name.value, argObj);
+
+      // Build a synthetic reactive root so root and nested "posts" are both reactive.
+      const root = shallowReactive({} as Record<string, any>);
+
+      // Preserve a helpful __typename if the entity exists (not required by tests, but nice to have)
+      const snap = graph.getEntity(id);
+      if (snap && typeof snap === 'object' && (snap as any).__typename) {
+        (root as any).__typename = (snap as any).__typename;
+      }
+
+      // Mount the live selection wrapper
+      (root as any)[alias] = graph.materializeSelection(selKey);
+
+      return { value: root };
+    }
+
+    // Multiple arg fields (optional): mount each selection wrapper under its alias in a reactive root
+    const multi = shallowReactive({} as Record<string, any>);
+    for (const f of argFields) {
+      const alias = fieldOutputKey(f);
+      const argObj = argsToObject(f, variables) || {};
+      const key = selections.buildFieldSelectionKey(id, f.name.value, argObj);
+      (multi as any)[alias] = graph.materializeSelection(key);
+    }
+    return { value: multi };
+  }
+
+  return { readFragment, writeFragment, watchFragment };
 }

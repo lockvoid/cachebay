@@ -99,6 +99,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Fragments API
   (plugin as any).readFragment = fragments.readFragment;
   (plugin as any).writeFragment = fragments.writeFragment;
+  (plugin as any).watchFragment = fragments.watchFragment;
 
   // Optimistic API
   (plugin as any).modifyOptimistic = modifyOptimistic;
