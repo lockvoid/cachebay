@@ -1,121 +1,155 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from "vitest";
 
-// mock 'vue' module to control inject; keep real reactivity
-vi.mock('vue', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('vue')>();
-  let _api: any = null;
-  return {
-    ...actual,
-    inject: () => _api,
-    __setInjectedApi: (api: any) => { _api = api; },
-  } as any;
+// hoisted mock for useCache — we’ll decide its return value per test
+const mockUseCache = vi.fn();
+vi.mock("@/src/composables/useCache", () => ({
+  useCache: () => mockUseCache(),
+}));
+
+// import after mocks are set
+import { ref } from "vue";
+import { useFragment } from "@/src/composables/useFragment";
+
+afterEach(() => {
+  mockUseCache.mockReset();
 });
 
-import * as Vue from 'vue';
-import { useFragment } from '@/src/composables/useFragment';
+describe("useFragment", () => {
+  it("reads immediately by default", () => {
+    const readFragment = vi.fn(() => ({
+      __typename: "User",
+      id: "1",
+      name: "Ada",
+    }));
+    const writeFragment = vi.fn();
+    mockUseCache.mockReturnValue({ readFragment, writeFragment });
 
-describe('useFragment with graph watchers', () => {
-  const store = new Map<string, any>();
-  const watchers = new Map<number, { run: () => void }>();
-  const proxyByKey = new Map<string, any>();
-  let nextWid = 1;
+    const { data } = useFragment({
+      id: "User:1",
+      fragment: "fragment U on User { id name }",
+    });
 
-  function bump(key: string, updated: any) {
-    // update raw snapshot
-    store.set(key, updated);
-    // overlay into materialized proxy if exists
-    const proxy = proxyByKey.get(key);
-    if (proxy) {
-      // remove missing fields
-      for (const k of Object.keys(proxy)) {
-        if (k === '__typename' || k === 'id') continue;
-        if (!(k in updated)) delete proxy[k];
-      }
-      for (const k of Object.keys(updated)) (proxy as any)[k] = updated[k];
-    }
-    // notify watchers (non-materialized snapshots)
-    for (const { run } of watchers.values()) run();
-  }
+    expect(readFragment).toHaveBeenCalledWith({
+      id: "User:1",
+      fragment: "fragment U on User { id name }",
+      variables: undefined,
+    });
 
-  beforeEach(() => {
-    store.clear();
-    watchers.clear();
-    proxyByKey.clear();
-    nextWid = 1;
-
-    const api = {
-      readFragment: vi.fn((refOrKey: any, { materialized = true } = {}) => {
-        const key =
-          typeof refOrKey === 'string'
-            ? refOrKey
-            : (refOrKey.__typename && refOrKey.id != null ? `${refOrKey.__typename}:${String(refOrKey.id)}` : null);
-        if (!key) return null;
-        const snap = store.get(key);
-        if (!snap) return null;
-
-        if (materialized) {
-          let proxy = proxyByKey.get(key);
-          if (!proxy) {
-            const [t, id] = key.split(':');
-            proxy = Vue.reactive({ __typename: t, id, ...snap });
-            proxyByKey.set(key, proxy);
-          } else {
-            // overlay newest snapshot into existing proxy
-            for (const k of Object.keys(proxy)) {
-              if (k === '__typename' || k === 'id') continue;
-              if (!(k in snap)) delete proxy[k];
-            }
-            for (const k of Object.keys(snap)) (proxy as any)[k] = snap[k];
-          }
-          return proxy;
-        }
-        return { ...snap };
-      }),
-      registerEntityWatcher: vi.fn((run: () => void) => {
-        const wid = nextWid++;
-        watchers.set(wid, { run });
-        return wid;
-      }),
-      unregisterEntityWatcher: vi.fn((wid: number) => {
-        watchers.delete(wid);
-      }),
-      trackEntity: vi.fn((_wid: number, _key: string) => { }),
-    };
-
-    (Vue as any).__setInjectedApi(api);
+    expect(data.value).toEqual({
+      __typename: "User",
+      id: "1",
+      name: "Ada",
+    });
   });
 
-  it('dynamic + non-materialized: updates snapshot when the entity changes (via watcher)', async () => {
-    const keyRef = Vue.ref<any>({ __typename: 'Post', id: '1' });
-    store.set('Post:1', { title: 'A' });
+  it("supports lazy mode (immediate:false) and manual read()", () => {
+    const readFragment = vi.fn(() => ({ __typename: "User", id: "1", name: "A" }));
+    mockUseCache.mockReturnValue({ readFragment, writeFragment: vi.fn() });
 
-    const out = useFragment<any>(keyRef, { materialized: false, mode: 'dynamic' }) as Vue.Ref<any>;
-    expect(out.value.title).toBe('A');
+    const frag = useFragment({
+      id: "User:1",
+      fragment: "fragment U on User { id name }",
+      immediate: false,
+    });
 
-    bump('Post:1', { title: 'A!' });
-    await Vue.nextTick();
-    expect(out.value.title).toBe('A!');
+    expect(readFragment).not.toHaveBeenCalled();
+    expect(frag.data.value).toBeNull();
 
-    store.set('Post:2', { title: 'B' });
-    keyRef.value = { __typename: 'Post', id: '2' };
-    await Vue.nextTick();
-    expect(out.value.title).toBe('B');
+    frag.read();
+    expect(readFragment).toHaveBeenCalledTimes(1);
+    expect(frag.data.value).toMatchObject({ id: "1", name: "A" });
   });
 
-  it('dynamic + materialized: swaps proxy on key change; proxy updates itself on entity change', async () => {
-    const keyRef = Vue.ref<any>('Post:1');
-    store.set('Post:1', { title: 'A' });
-    store.set('Post:2', { title: 'B' });
+  it("passes variables (including reactive Ref) to read/write", () => {
+    const vars = ref<{ locale?: string }>({ locale: "en" });
 
-    const out = useFragment<any>(keyRef, { materialized: true, mode: 'dynamic' }) as Vue.Ref<any>;
-    expect(out.value.title).toBe('A');
+    const readFragment = vi.fn(() => ({ __typename: "User", id: "1", name: "John" }));
+    const writeFragment = vi.fn();
+    mockUseCache.mockReturnValue({ readFragment, writeFragment });
 
-    keyRef.value = 'Post:2';
-    await Vue.nextTick();
-    expect(out.value.title).toBe('B');
+    const frag = useFragment({
+      id: ref("User:1"),
+      fragment: "fragment U on User { id name }",
+      variables: vars,
+    });
 
-    bump('Post:2', { title: 'B!' });
-    await Vue.nextTick();
-    expect(out.value.title).toBe('B!');
+    // initial read used { locale: 'en' }
+    expect(readFragment).toHaveBeenCalledWith({
+      id: "User:1",
+      fragment: "fragment U on User { id name }",
+      variables: { locale: "en" },
+    });
+
+    // update variables and re-read
+    vars.value = { locale: "de" };
+    frag.read();
+    expect(readFragment).toHaveBeenLastCalledWith({
+      id: "User:1",
+      fragment: "fragment U on User { id name }",
+      variables: { locale: "de" },
+    });
+
+    // write uses latest vars too
+    frag.write({ __typename: "User", id: "1", name: "Hans" });
+    expect(writeFragment).toHaveBeenCalledWith({
+      id: "User:1",
+      fragment: "fragment U on User { id name }",
+      data: { __typename: "User", id: "1", name: "Hans" },
+      variables: { locale: "de" },
+    });
+  });
+
+  it("works with changing id as a Ref", () => {
+    const idRef = ref("User:1");
+    const readFragment = vi
+      .fn()
+      .mockReturnValueOnce({ __typename: "User", id: "1", name: "A" })
+      .mockReturnValueOnce({ __typename: "User", id: "2", name: "B" });
+
+    mockUseCache.mockReturnValue({ readFragment, writeFragment: vi.fn() });
+
+    const frag = useFragment({
+      id: idRef,
+      fragment: "fragment U on User { id name }",
+      immediate: false,
+    });
+
+    // first id
+    frag.read();
+    expect(readFragment).toHaveBeenCalledWith({
+      id: "User:1",
+      fragment: "fragment U on User { id name }",
+      variables: undefined,
+    });
+    expect(frag.data.value).toMatchObject({ id: "1", name: "A" });
+
+    // switch id
+    idRef.value = "User:2";
+    frag.read();
+    expect(readFragment).toHaveBeenLastCalledWith({
+      id: "User:2",
+      fragment: "fragment U on User { id name }",
+      variables: undefined,
+    });
+    expect(frag.data.value).toMatchObject({ id: "2", name: "B" });
+  });
+
+  it("write() sends data straight through", () => {
+    const writeFragment = vi.fn();
+    mockUseCache.mockReturnValue({ readFragment: vi.fn(), writeFragment });
+
+    const { write } = useFragment({
+      id: "User:1",
+      fragment: "fragment U on User { name }",
+      immediate: false,
+    });
+
+    write({ __typename: "User", id: "1", name: "Zoe" });
+    expect(writeFragment).toHaveBeenCalledWith({
+      id: "User:1",
+      fragment: "fragment U on User { name }",
+      data: { __typename: "User", id: "1", name: "Zoe" },
+      variables: undefined,
+    });
   });
 });

@@ -1,50 +1,17 @@
-// internals.ts - entry point
-
-import {
-  reactive,
-  shallowReactive,
-  isReactive,
-  ref,
-  type App,
-} from "vue";
+// src/core/internals.ts
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { App } from "vue";
 import type { ClientPlugin } from "villus";
 
 import { createPlugin, provideCachebay } from "./plugin";
-import { createModifyOptimistic } from "../features/optimistic";
+import { createGraph, type GraphAPI } from "./graph";
+import { createSelections } from "./selections";
+import { createResolvers } from "./resolvers";
+import { createFragments } from "./fragments";
 import { createSSR } from "../features/ssr";
+import { createModifyOptimistic } from "../features/optimistic";
 import { createInspect } from "../features/inspect";
 
-import type {
-  CachebayOptions,
-  WritePolicy,
-  ReactiveMode,
-  InterfacesConfig,
-  KeysConfig,
-  ResolversDict,
-} from "../types";
-import type {
-  EntityKey,
-  ConnectionState,
-  RelayOptions,
-} from "./types";
-
-
-import {
-  stableIdentityExcluding,
-  readPathValue,
-  parseEntityKey,
-  buildConnectionKey,
-} from "./utils";
-
-// split modules
-import { createFragments, type FragmentsDependencies } from "./fragments";
-import { createViews, type ViewsDependencies } from "./views";
-import { createGraph, type GraphAPI } from "./graph";
-import { createResolvers, type ResolversDependencies, applyResolversOnGraph as applyResolversOnGraphImpl, getRelayOptionsByType, setRelayOptionsByType, relayResolverIndex, relayResolverIndexByType, relay } from "./resolvers";
-
-/* ─────────────────────────────────────────────────────────────────────────────
- * Public instance type
- * ──────────────────────────────────────────────────────────────────────────── */
 export type CachebayInstance = ClientPlugin & {
   // SSR
   dehydrate: () => any;
@@ -56,191 +23,98 @@ export type CachebayInstance = ClientPlugin & {
   // Identity
   identify: (obj: any) => string | null;
 
-  // Fragment APIs
-  readFragment: (
-    refOrKey: string | { __typename: string; id?: any },
-    opts?: { materialized?: boolean }
-  ) => any;
+  // Fragments
+  readFragment: (args: { id: string; fragment: string; variables?: Record<string, any> }) => any;
+  writeFragment: (args: { id: string; fragment: string; data: any; variables?: Record<string, any> }) => void;
 
-  readFragments: (
-    pattern: string | string[],
-    opts?: { materialized?: boolean }
-  ) => any[];
+  // Optimistic (selection-first)
+  modifyOptimistic: ReturnType<typeof createModifyOptimistic>;
 
-  hasFragment: (
-    refOrKey: string | { __typename: string; id?: any }
-  ) => boolean;
-
-  writeFragment: (obj: any) => {
-    commit(): void;
-    revert(): void;
-  };
-
-  // Optimistic
-  modifyOptimistic: (
-    build: (c: {
-      patch: (entity: any, policy?: "merge" | "replace") => void;
-      delete: (key: string) => void;
-      connections: (args: {
-        parent: "Query" | { __typename: string; id?: any } | string;
-        field: string;
-        variables?: Record<string, any>;
-      }) => Readonly<[
-        {
-          addNode: (
-            node: any,
-            opts?: { cursor?: string | null; position?: "start" | "end"; edge?: any }
-          ) => void;
-          removeNode: (ref: { __typename: string; id?: any }) => void;
-          patch: (pi: Record<string, any>) => void;
-          key: string;
-        }
-      ]>;
-    }) => void
-  ) => {
-    commit(): void;
-    revert(): void;
-  };
-
-  // Introspection
-  inspect: {
-    entities: (typename?: string) => string[];
-    entity: (key: string) => any;
-    connections: () => string[];
-    connection: (
-      parent: "Query" | { __typename: string; id?: any },
-      field: string,
-      variables?: Record<string, any>
-    ) => any;
-    operations?: () => Array<{ key: string; variables: Record<string, any>; data: any }>;
-  };
-
-  // Graph watchers (entity-level)
-  registerEntityWatcher: (run: () => void) => number;
-  unregisterEntityWatcher: (id: number) => void;
-  trackEntity: (watcherId: number, entityKey: string) => void;
-
-  // Type watchers (wildcard/membership-level)
-  registerTypeWatcher: (typename: string, run: () => void) => number;
-  unregisterTypeWatcher: (typename: string, id: number) => void;
-
-  // Optional GC helpers
-  gc?: { connections: (predicate?: (key: string, state: ConnectionState) => boolean) => void };
+  // Debug
+  inspect: ReturnType<typeof createInspect>;
 
   // Vue plugin
   install: (app: App) => void;
+
+  // internals for tests/debug
+  __internals: {
+    graph: GraphAPI;
+    selections: ReturnType<typeof createSelections>;
+    resolvers: ReturnType<typeof createResolvers>;
+    fragments: ReturnType<typeof createFragments>;
+    ssr: ReturnType<typeof createSSR>;
+    inspect: ReturnType<typeof createInspect>;
+  };
 };
 
-/* ─────────────────────────────────────────────────────────────────────────────
- * Factory
- * ──────────────────────────────────────────────────────────────────────────── */
+export type CachebayOptions = {
+  addTypename?: boolean;
+  keys?: Record<string, (obj: any) => string | null>;
+  interfaces?: Record<string, string[]>;
+  resolvers?: Record<string, Record<string, any>>;
+};
+
 export function createCache(options: CachebayOptions = {}): CachebayInstance {
-  // Config
-  const addTypename = options.addTypename ?? true;
-
-  const trackNonRelayResults = options.trackNonRelayResults !== false;
-
-  // Build raw graph (stores + helpers)
+  // Graph (selection-first)
   const graph = createGraph({
-    writePolicy: options.writePolicy || "replace",
-    reactiveMode: options.reactiveMode || "shallow",
-    interfaces: options.interfaces || {},
+    reactiveMode: "shallow",
     keys: options.keys || {},
+    interfaces: options.interfaces || {},
   });
 
-  // Views (entity/connection views & proxy registration)
-  const views = createViews({
-    trackNonRelayResults,
-  }, {
-    graph,
-  } satisfies ViewsDependencies);
+  // Selections helpers (stable keys, heuristic compiler)
+  const selections = createSelections({ dependencies: { graph } });
 
-  /* ───────────────────────────────────────────────────────────────────────────
-   * Resolvers preparation
-   * ────────────────────────────────────────────────────────────────────────── */
+  // Resolvers (field resolvers over plain objects / materialized trees)
+  const resolvers = createResolvers({ resolvers: options.resolvers }, { graph });
 
-  // Prepare resolvers
-  const resolvers = createResolvers({ resolvers: options.resolvers }, {
-    graph,
-    views,
-  } satisfies ResolversDependencies);
+  // Fragments (GraphQL fragment read/write using graph + selections)
+  const fragments = createFragments({ dependencies: { graph, selections } });
 
-  // SSR features
-  const ssr = createSSR({
-    graph,
-    views,
-    resolvers,
-  });
+  // SSR for entities + selections
+  const ssr = createSSR({ graph, resolvers });
 
-  // Build plugin
-  const instance = (createPlugin(
-    {
-      addTypename,
-    },
-    {
-      graph,
-      views,
-      ssr,
-      resolvers,
-    }
-  ) as unknown) as CachebayInstance;
+  // Optimistic (selection skeleton operations)
+  const modifyOptimistic = createModifyOptimistic({ graph });
 
-  // Create fragments
-  const fragments = createFragments({}, { graph, views } satisfies FragmentsDependencies);
+  // Plugin (cache policies & subscriptions)
+  const plugin = createPlugin(
+    { addTypename: options.addTypename ?? true },
+    { graph, selections, resolvers, ssr }
+  ) as unknown as CachebayInstance;
 
-  // Create optimistic features
-  const modifyOptimistic = createModifyOptimistic({
-    graph,
-    views,
-    resolvers,
-  });
-
-  // Create debug/inspect features
-  const inspect = createInspect({
-    graph,
-    views,
-  });
-
-  (instance as any).install = (app: App) => {
-    provideCachebay(app, instance);
+  // Vue install
+  (plugin as any).install = (app: App) => {
+    provideCachebay(app, plugin);
   };
 
-  // Attach additional methods to instance
-  (instance as any).identify = fragments.identify;
-  (instance as any).readFragment = fragments.readFragment;
-  (instance as any).readFragments = fragments.readFragments;
-  (instance as any).hasFragment = fragments.hasFragment;
-  (instance as any).writeFragment = fragments.writeFragment;
-  (instance as any).modifyOptimistic = modifyOptimistic;
-  (instance as any).inspect = inspect;
-  (instance as any).registerEntityWatcher = graph.registerEntityWatcher;
-  (instance as any).unregisterEntityWatcher = graph.unregisterEntityWatcher;
-  (instance as any).trackEntity = graph.trackEntity;
-  (instance as any).registerTypeWatcher = graph.registerTypeWatcher;
-  (instance as any).unregisterTypeWatcher = graph.unregisterTypeWatcher;
-  (instance as any).notifyTypeChanged = graph.notifyTypeChanged;
+  // Public identity
+  (plugin as any).identify = graph.identify;
 
-  (instance as any).gc = {
-    connections(predicate?: (key: string, state: ConnectionState) => boolean) {
-      views.gcConnections(predicate);
-    },
-  };
+  // Fragments API
+  (plugin as any).readFragment = fragments.readFragment;
+  (plugin as any).writeFragment = fragments.writeFragment;
 
-  // Attach cache instance methods
-  (instance as any).__entitiesTick = graph.entitiesTick;
+  // Optimistic API
+  (plugin as any).modifyOptimistic = modifyOptimistic;
 
-  // Attach SSR methods
-  (instance as any).dehydrate = ssr.dehydrate;
-  (instance as any).hydrate = ssr.hydrate;
+  // Inspect (debug)
+  const inspect = createInspect({ graph });
+  (plugin as any).inspect = inspect;
 
-  // Attach internals for testing/debugging
-  (instance as any).__internals = {
+  // SSR API
+  (plugin as any).dehydrate = ssr.dehydrate;
+  (plugin as any).hydrate = ssr.hydrate;
+
+  // Internals for tests
+  (plugin as any).__internals = {
     graph,
-    views,
-    ssr,
+    selections,
     resolvers,
     fragments,
+    ssr,
+    inspect,
   };
 
-  return instance;
+  return plugin as CachebayInstance;
 }
