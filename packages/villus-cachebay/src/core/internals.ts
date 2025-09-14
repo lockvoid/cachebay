@@ -9,7 +9,7 @@ import {
 } from "vue";
 import type { ClientPlugin } from "villus";
 
-import { buildCachebayPlugin, provideCachebay } from "./plugin";
+import { createPlugin, provideCachebay } from "./plugin";
 import { createModifyOptimistic } from "../features/optimistic";
 import { createSSR } from "../features/ssr";
 import { createInspect } from "../features/inspect";
@@ -173,7 +173,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   });
 
   // Build plugin
-  const instance = (buildCachebayPlugin(
+  const instance = (createPlugin(
     {
       addTypename,
     },

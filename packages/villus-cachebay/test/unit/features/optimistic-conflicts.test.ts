@@ -1,75 +1,62 @@
-import { describe, it, expect } from 'vitest';
-import { createCache } from '@/src';
-import { seedRelay, tick } from '../../helpers';
-import { relay } from '@/src/resolvers/relay';
+import { describe, it, expect } from "vitest";
+import { createGraph } from "@/src/core/graph";
+import { createModifyOptimistic } from "@/src/features/optimistic";
 
-const QUERY = /* GraphQL */ `
-  query Colors {
-    colors {
-      edges { cursor node { __typename id name } }
-      pageInfo { endCursor hasNextPage startCursor hasPreviousPage }
-    }
-  }
-`;
+const tick = () => Promise.resolve();
 
-describe('features/optimistic — conflict & ordering semantics', () => {
-  it('later optimistic write wins for same entity; revert restores previous snapshot', async () => {
-    const cache = createCache({
-      addTypename: true,
-      resolvers: { Query: { colors: relay({}) } },
-      keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
+describe("features/optimistic — conflict & ordering semantics (Posts)", () => {
+  it("later optimistic write wins for same entity; revert restores previous snapshot", async () => {
+    const graph = createGraph({
+      reactiveMode: "shallow",
+      keys: { Post: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
-    seedRelay(cache, { field: 'colors', connectionTypename: 'ColorConnection', query: QUERY });
+    const modifyOptimistic = createModifyOptimistic({ graph });
 
-    // T1 writes Color:1 name=A then T2 overwrites to name=B
-    const t1 = (cache as any).modifyOptimistic((c: any) => {
-      const [conn] = c.connections({ parent: 'Query', field: 'colors' });
-      conn.addNode({ __typename: 'Color', id: 1, name: 'A' }, { cursor: 'c1' });
+    const t1 = modifyOptimistic((tx) => {
+      const [conn] = tx.connections({ parent: "Query", field: "posts" });
+      conn.addNode({ __typename: "Post", id: 1, title: "A" }, { cursor: "c1" });
     });
 
-    const t2 = (cache as any).modifyOptimistic((c: any) => {
-      const [conn] = c.connections({ parent: 'Query', field: 'colors' });
-      conn.addNode({ __typename: 'Color', id: 1, name: 'B' }, { cursor: 'c1b' });
+    const t2 = modifyOptimistic((tx) => {
+      const [conn] = tx.connections({ parent: "Query", field: "posts" });
+      conn.addNode({ __typename: "Post", id: 1, title: "B" }, { cursor: "c1b" });
     });
 
     t1.commit?.();
     t2.commit?.();
     await tick();
 
-    expect((cache as any).readFragment('Color:1', { materialized: false })?.name).toBe('B');
+    expect(graph.getEntity("Post:1")?.title).toBe("B");
 
-    // Revert T2 -> back to A
     t2.revert?.();
     await tick();
-    expect((cache as any).readFragment('Color:1', { materialized: false })?.name).toBe('A');
+    expect(graph.getEntity("Post:1")?.title).toBe("A");
 
-    // Revert T1 -> removed altogether
     t1.revert?.();
     await tick();
-    expect((cache as any).hasFragment('Color:1')).toBe(false);
+    expect(graph.getEntity("Post:1")).toBeFalsy();
   });
 
-  it('remove then re-add within the same optimistic layer respects final instruction', async () => {
-    const cache = createCache({
-      addTypename: true,
-      resolvers: { Query: { colors: relay({}) } },
-      keys: { Color: (o: any) => (o?.id != null ? String(o.id) : null) },
+  it("remove then re-add within the same optimistic layer respects final instruction", async () => {
+    const graph = createGraph({
+      reactiveMode: "shallow",
+      keys: { Post: (o: any) => (o?.id != null ? String(o.id) : null) },
     });
 
-    seedRelay(cache, { field: 'colors', connectionTypename: 'ColorConnection', query: QUERY });
+    const modifyOptimistic = createModifyOptimistic({ graph });
 
-    const t = (cache as any).modifyOptimistic((c: any) => {
-      const [conn] = c.connections({ parent: 'Query', field: 'colors' });
-      conn.addNode({ __typename: 'Color', id: 1, name: 'A' }, { cursor: 'c1' });
-      conn.removeNode({ __typename: 'Color', id: 1 });
-      conn.addNode({ __typename: 'Color', id: 1, name: 'A-final' }, { cursor: 'c1z' });
+    const t = modifyOptimistic((tx) => {
+      const [conn] = tx.connections({ parent: "Query", field: "posts" });
+      conn.addNode({ __typename: "Post", id: 1, title: "A" }, { cursor: "c1" });
+      conn.removeNode({ __typename: "Post", id: 1 });
+      conn.addNode({ __typename: "Post", id: 1, title: "A-final" }, { cursor: "c1z" });
     });
 
     t.commit?.();
     await tick();
 
-    expect((cache as any).hasFragment('Color:1')).toBe(true);
-    expect((cache as any).readFragment('Color:1', { materialized: false })?.name).toBe('A-final');
+    expect(graph.getEntity("Post:1")).toBeTruthy();
+    expect(graph.getEntity("Post:1")?.title).toBe("A-final");
   });
 });

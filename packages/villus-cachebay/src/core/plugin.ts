@@ -51,7 +51,7 @@ function deepSnapshot<T = any>(value: T): T {
 
 export const CACHEBAY_KEY: unique symbol = Symbol("CACHEBAY_KEY");
 
-export function buildCachebayPlugin(
+export function createPlugin(
   options: PluginOptions,
   deps: PluginDependencies
 ): ClientPlugin {
