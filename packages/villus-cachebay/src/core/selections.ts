@@ -21,28 +21,28 @@ export type SelectionsAPI = ReturnType<typeof createSelections>;
  * NOTE: This is a light heuristic. You can swap `compileSelections` with a
  * real GraphQL AST compiler later without changing the public API here.
  */
-export function createSelections({
+export const createSelections = ({
   config,
   dependencies,
 }: {
   config?: SelectionsConfig;
   dependencies: Deps;
-}) {
+}) => {
   const { graph } = dependencies;
 
-  function buildRootSelectionKey(field: string, args?: Record<string, any>): string {
-    const a = args ? stableStringify(args) : "{}";
-    return `${field}(${a})`;
-  }
+  const buildRootSelectionKey = (field: string, args?: Record<string, any>): string => {
+    const argsString = args ? stableStringify(args) : "{}";
+    return `${field}(${argsString})`;
+  };
 
-  function buildFieldSelectionKey(
+  const buildFieldSelectionKey = (
     parentEntityKey: string,
     field: string,
     args?: Record<string, any>
-  ): string {
-    const a = args ? stableStringify(args) : "{}";
-    return `${parentEntityKey}.${field}(${a})`;
-  }
+  ): string => {
+    const argsString = args ? stableStringify(args) : "{}";
+    return `${parentEntityKey}.${field}(${argsString})`;
+  };
 
   /**
    * Heuristically emits:
@@ -50,50 +50,67 @@ export function createSelections({
    * - for every entity inside, any field shaped like a "connection"
    *   (object containing `edges` array AND `pageInfo` object)
    */
-  function compileSelections(input: { data: any }): Array<{ key: string; subtree: any }> {
+  const compileSelections = (input: { data: any }): Array<{ key: string; subtree: any }> => {
     const out: Array<{ key: string; subtree: any }> = [];
     const root = input.data;
-    if (!root || typeof root !== "object") return out;
+
+    if (!root || typeof root !== "object") {
+      return out;
+    }
 
     // 1) root fields
-    for (const f of Object.keys(root)) {
-      const subtree = (root as any)[f];
-      out.push({ key: buildRootSelectionKey(f, {}), subtree });
+    const rootKeys = Object.keys(root);
+    for (let i = 0; i < rootKeys.length; i++) {
+      const field = rootKeys[i];
+      const subtree = (root as any)[field];
+      out.push({ key: buildRootSelectionKey(field, {}), subtree });
 
       // 2) nested “connection-like” fields keyed by parent entity
       traverse(subtree, (parent) => {
-        const pKey = graph.identify(parent);
-        if (!pKey) return;
+        const parentKey = graph.identify(parent);
+        if (!parentKey) {
+          return;
+        }
 
-        for (const k of Object.keys(parent)) {
+        const parentFieldKeys = Object.keys(parent);
+        for (let j = 0; j < parentFieldKeys.length; j++) {
+          const k = parentFieldKeys[j];
           const v = (parent as any)[k];
           if (v && typeof v === "object" && Array.isArray((v as any).edges) && (v as any).pageInfo) {
-            out.push({ key: buildFieldSelectionKey(pKey, k, {}), subtree: v });
+            out.push({ key: buildFieldSelectionKey(parentKey, k, {}), subtree: v });
           }
         }
       });
     }
-    return out;
-  }
 
-  function traverse(node: any, fn: (obj: any) => void) {
-    if (!node || typeof node !== "object") return;
-    fn(node);
-    for (const k of Object.keys(node)) {
-      const v = (node as any)[k];
-      if (v && typeof v === "object") {
-        if (Array.isArray(v)) {
-          for (let i = 0; i < v.length; i++) traverse(v[i], fn);
+    return out;
+  };
+
+  const traverse = (node: any, visit: (obj: any) => void): void => {
+    if (!node || typeof node !== "object") {
+      return;
+    }
+
+    visit(node);
+
+    const keys = Object.keys(node);
+    for (let i = 0; i < keys.length; i++) {
+      const value = (node as any)[keys[i]];
+      if (value && typeof value === "object") {
+        if (Array.isArray(value)) {
+          for (let a = 0; a < value.length; a++) {
+            traverse(value[a], visit);
+          }
         } else {
-          traverse(v, fn);
+          traverse(value, visit);
         }
       }
     }
-  }
+  };
 
   return {
     buildRootSelectionKey,
     buildFieldSelectionKey,
     compileSelections,
   };
-}
+};
