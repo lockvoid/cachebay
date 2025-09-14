@@ -32,6 +32,7 @@ describe("useFragment", () => {
     expect(readFragment).toHaveBeenCalledWith({
       id: "User:1",
       fragment: "fragment U on User { id name }",
+      materialized: true,
       variables: undefined,
     });
 
@@ -53,7 +54,7 @@ describe("useFragment", () => {
     });
 
     expect(readFragment).not.toHaveBeenCalled();
-    expect(frag.data.value).toBeNull();
+    expect(frag.data.value).toBe(undefined);
 
     frag.read();
     expect(readFragment).toHaveBeenCalledTimes(1);
@@ -77,6 +78,7 @@ describe("useFragment", () => {
     expect(readFragment).toHaveBeenCalledWith({
       id: "User:1",
       fragment: "fragment U on User { id name }",
+      materialized: true,
       variables: { locale: "en" },
     });
 
@@ -86,6 +88,7 @@ describe("useFragment", () => {
     expect(readFragment).toHaveBeenLastCalledWith({
       id: "User:1",
       fragment: "fragment U on User { id name }",
+      materialized: true,
       variables: { locale: "de" },
     });
 
@@ -119,6 +122,7 @@ describe("useFragment", () => {
     expect(readFragment).toHaveBeenCalledWith({
       id: "User:1",
       fragment: "fragment U on User { id name }",
+      materialized: true,
       variables: undefined,
     });
     expect(frag.data.value).toMatchObject({ id: "1", name: "A" });
@@ -129,6 +133,7 @@ describe("useFragment", () => {
     expect(readFragment).toHaveBeenLastCalledWith({
       id: "User:2",
       fragment: "fragment U on User { id name }",
+      materialized: true,
       variables: undefined,
     });
     expect(frag.data.value).toMatchObject({ id: "2", name: "B" });

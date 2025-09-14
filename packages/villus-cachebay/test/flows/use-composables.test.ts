@@ -129,13 +129,25 @@ describe('Integration • useFragment / useCache', () => {
     });
 
     const A = defineComponent({
-      setup() { const f = useFragment({ id: 'Post:3', fragment: FRAG_POST }); return { f }; },
-      render() { return h('div', { class: 'a' }, this.f.data?.title || ''); },
+      setup() {
+        const f = useFragment({ id: 'Post:3', fragment: FRAG_POST });
+        return { f };
+      },
+      render() {
+        return h('div', { class: 'a' }, this.f.data.value?.title || '');
+      },
     });
+
     const B = defineComponent({
-      setup() { const f = useFragment({ id: 'Post:3', fragment: FRAG_POST }); return { f }; },
-      render() { return h('div', { class: 'b' }, this.f.data?.title || ''); },
+      setup() {
+        const f = useFragment({ id: 'Post:3', fragment: FRAG_POST });
+        return { f };
+      },
+      render() {
+        return h('div', { class: 'b' }, this.f.data.value?.title || '');
+      },
     });
+
     const Wrapper = defineComponent({
       render() { return h('div', {}, [h(A), h(B)]); }
     });
@@ -150,10 +162,12 @@ describe('Integration • useFragment / useCache', () => {
       fragment: FRAG_POST,
       data: { __typename: 'Post', id: '3', title: 'Shared++', content: '' }
     });
-    // re-read both (call through the controller)
+
+    // call the controllers to re-read
     (wrapper.findComponent(A).vm as any).f.read();
     (wrapper.findComponent(B).vm as any).f.read();
     await tick();
+
     expect(wrapper.find('.a').text()).toBe('Shared++');
     expect(wrapper.find('.b').text()).toBe('Shared++');
   });
