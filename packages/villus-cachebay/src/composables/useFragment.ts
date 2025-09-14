@@ -1,63 +1,49 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { ref, unref, type Ref } from "vue";
-import { useCache } from "./useCache";
+// useFragment.ts (core bits)
+import { ref, shallowRef, isRef, unref } from 'vue';
+import { useCache } from './useCache';
 
-export type UseFragmentParams = {
-  /** Canonical entity key like "User:1" (or a Ref of it) */
+type Params = {
   id: string | Ref<string>;
-  /** GraphQL fragment text (same string you pass to writeFragment/readFragment) */
   fragment: string;
-  /** Optional variables (or a Ref of variables) used in the fragment */
   variables?: Record<string, any> | Ref<Record<string, any> | undefined>;
-  /** If true, materialize proxies in the returned data (defaults to true) */
-  materialized?: boolean;
-  /** If false, don’t read immediately; call `read()` manually (defaults to true) */
-  immediate?: boolean;
+  materialized?: boolean;     // default true
+  immediate?: boolean;        // default true
 };
 
-export function useFragment<T = any>(params: UseFragmentParams) {
+export function useFragment(params: Params) {
   const cache = useCache();
 
-  const data = ref<T | null>(null);
+  const materialized = params.materialized !== false;  // default true
+  const immediate = params.immediate !== false;        // default true
+
+  const idRef = isRef(params.id) ? params.id : ref(params.id);
+  const varsRef = isRef(params.variables) ? params.variables : ref(params.variables);
+
+  // Keep the container as a Ref so callers can re-read (you’re already returning refs in tests)
+  const data = materialized ? ref<any>(undefined) : shallowRef<any>(undefined);
 
   const read = () => {
-    const key = unref(params.id);
-    const vars = params.variables ? unref(params.variables) : undefined;
-    const materialized = params.materialized !== false;
+    const id = unref(idRef);
+    if (!id) { data.value = undefined; return; }
 
     const result = cache.readFragment({
-      id: key,
+      id,
       fragment: params.fragment,
-      variables: vars,
+      variables: unref(varsRef),
+      materialized,               // ← IMPORTANT: forward the flag
     });
 
-    data.value = materialized ? (result as T) : (result as T);
-    return data.value;
+    data.value = result;
   };
 
-  const write = (payload: any) => {
-    const key = unref(params.id);
-    const vars = params.variables ? unref(params.variables) : undefined;
-
-    cache.writeFragment({
-      id: key,
-      fragment: params.fragment,
-      data: payload,
-      variables: vars,
-    });
-  };
-
-  if (params.immediate !== false) {
-    // fire a single sync read
-    read();
-  }
+  if (immediate) read();
 
   return {
-    /** current fragment view (reactive) */
-    data,
-    /** re-read the fragment (use if id/variables changed) */
-    read,
-    /** write a partial/subtree matching the fragment into the cache */
-    write,
+    data, read, write: (payload: any) => cache.writeFragment({
+      id: unref(idRef),
+      fragment: params.fragment,
+      data: payload,
+      variables: unref(varsRef),
+    })
   };
 }

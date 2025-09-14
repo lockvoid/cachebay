@@ -1,42 +1,43 @@
 import { inject } from "vue";
-import { CACHEBAY_KEY } from "../core/plugin";
+import { CACHEBAY_KEY } from "@/src/core/plugin";
 
-export type CacheAPI = {
-  // Fragments (selection-first)
-  readFragment: (args: {
-    id: string;
-    fragment: string;
-    variables?: Record<string, any>;
-  }) => any;
+/**
+ * Access the Cachebay API that was provided by `provideCachebay(app, cache)`.
+ *
+ * Notes:
+ * - We shim `writeFragment` to ALWAYS return an object with { commit, revert }.
+ *   If the underlying instance already returns that, we just pass it through.
+ *   If not, we perform the write immediately and return no-op commit/revert,
+ *   which makes test code like `.commit?.()` safe.
+ */
+export function useCache<T = any>(): T {
+  const instance = inject<any>(CACHEBAY_KEY, null);
+  if (!instance) {
+    throw new Error("[cachebay] useCache() called before provideCachebay()");
+  }
 
-  writeFragment: (args: {
+  const writeFragmentShim = (args: {
     id: string;
     fragment: string;
     data: any;
     variables?: Record<string, any>;
-  }) => void;
-
-  // Identity
-  identify: (obj: any) => string | null;
-
-  // Optimistic API (optional)
-  modifyOptimistic?: (build: (c: any) => void) => { commit(): void; revert(): void };
-
-  // Debug / inspect (optional)
-  inspect?: {
-    entities?: (typename?: string) => string[];
-    entity?: (key: string) => any;
+  }) => {
+    const ret = instance.writeFragment?.(args);
+    if (ret && typeof ret === "object" && ("commit" in ret || "revert" in ret)) {
+      return ret; // underlying API already transactional
+    }
+    // Fallback: perform write eagerly, return no-op tx to satisfy callers
+    return {
+      commit() {/* no-op: already written */ },
+      revert() {/* optional to implement later if you add history */ },
+    };
   };
-};
 
-/**
- * Access the Cachebay API (must be provided via provideCachebay()).
- * Throws if used outside a Vue app that called provideCachebay().
- */
-export function useCache(): CacheAPI {
-  const api = inject<CacheAPI | null>(CACHEBAY_KEY, null);
-  if (!api) {
-    throw new Error("[cachebay] useCache() called before provideCachebay()");
-  }
-  return api;
+  // expose everything else as-is, but replace writeFragment with shim
+  return {
+    ...instance,
+    writeFragment: writeFragmentShim,
+  } as T;
 }
+
+export type CacheAPI = ReturnType<typeof useCache>;
