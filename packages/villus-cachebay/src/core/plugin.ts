@@ -1,8 +1,12 @@
-// src/core/plugin.ts
 import type { App } from "vue";
 import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus";
 import { CombinedError } from "villus";
-import { ensureDocumentHasTypenames, getOperationKey } from "./utils";
+import { parse, Kind, type ValueNode, type FieldNode, type OperationDefinitionNode } from "graphql";
+import { ensureDocumentHasTypenames } from "./utils"; // your existing helper
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
 
 type PluginOptions = { addTypename?: boolean };
 
@@ -13,90 +17,160 @@ type CachebayCtx = {
 
 type PluginDependencies = {
   graph: {
-    operationStore: Map<string, any>;
-    putOperation: (key: string, payload: { data: any; variables: Record<string, any> }) => void;
-    lookupOperation: (op: any) => { key: string; entry: { data: any; variables: any } } | null;
+    // selections/entities API (new graph.ts)
+    putSelection: (key: string, subtree: any) => void;
+    getSelection: (key: string) => any | undefined;
+    materializeSelection: (key: string) => any;
   };
-  views: {
-    createViewSession: () => {
-      // now accepts optional cachebay options (viewKey/paginationMode)
-      wireConnections: (root: any, vars: Record<string, any>, opts?: CachebayCtx) => void;
-      destroy: () => void;
-    };
+  selections: {
+    buildRootSelectionKey: (field: string, args?: Record<string, any>) => string;
+    compileSelections: (input: { data: any }) => Array<{ key: string; subtree: any }>;
   };
   resolvers: {
-    // Used only for *network* results to normalize into the graph.
-    // pass-through of cachebay hint is harmless if resolvers ignore it
-    applyResolversOnGraph: (
+    // generic field resolvers (new resolvers.ts)
+    applyOnObject: (
       root: any,
-      vars: Record<string, any>,
+      variables: Record<string, any>,
       hint?: { stale?: boolean; viewKey?: string; paginationMode?: CachebayCtx["paginationMode"] }
     ) => void;
   };
+  views: {
+    createSession: () => {
+      mountSelection: (selectionKey: string) => any;
+      destroy: () => void;
+    };
+  };
   ssr?: {
+    // retained for symmetry (not used to gate cache publish without op-cache)
     hydrateOperationTicket?: Set<string>;
     isHydrating?: () => boolean;
   };
 };
 
-function shallowClone<T>(root: T): T {
-  if (!root || typeof root !== "object") return root;
-  return Array.isArray(root) ? (root.slice() as any) : ({ ...(root as any) } as any);
-}
-
-/** Take a plain deep snapshot (no shared nested refs, proxy-free). */
-function deepSnapshot<T = any>(value: T): T {
-  return JSON.parse(JSON.stringify(value));
-}
-
 export const CACHEBAY_KEY: unique symbol = Symbol("CACHEBAY_KEY");
 
-export function createPlugin(
-  options: PluginOptions,
-  deps: PluginDependencies
-): ClientPlugin {
-  const { addTypename = true } = options;
-  const { graph, views, resolvers, ssr } = deps;
+// ─────────────────────────────────────────────────────────────────────────────
+// Small GraphQL helpers (inline to avoid coupling)
+// ─────────────────────────────────────────────────────────────────────────────
 
-  // one session per mounted useQuery (operation.key)
-  const sessionByOp = new Map<
-    number,
-    { wire: (root: any, vars: Record<string, any>, opts?: CachebayCtx) => void; destroy: () => void }
-  >();
+const valueNodeToJS = (node: ValueNode, vars?: Record<string, any>): any => {
+  switch (node.kind) {
+    case Kind.NULL: return null;
+    case Kind.INT: return Number(node.value);
+    case Kind.FLOAT: return Number(node.value);
+    case Kind.STRING: return node.value;
+    case Kind.BOOLEAN: return node.value;
+    case Kind.ENUM: return node.value;
+    case Kind.LIST: return node.values.map(v => valueNodeToJS(v, vars));
+    case Kind.OBJECT: {
+      const o: Record<string, any> = {};
+      for (const f of node.fields) o[f.name.value] = valueNodeToJS(f.value, vars);
+      return o;
+    }
+    case Kind.VARIABLE: return vars ? vars[node.name.value] : undefined;
+    default: return undefined;
+  }
+};
+
+const fieldArgsObject = (field: FieldNode, vars?: Record<string, any>): Record<string, any> | undefined => {
+  if (!field.arguments || field.arguments.length === 0) return undefined;
+  const out: Record<string, any> = {};
+  for (const arg of field.arguments) out[arg.name.value] = valueNodeToJS(arg.value, vars);
+  return out;
+};
+
+const topLevelFieldsFromQuery = (document: any): FieldNode[] => {
+  const doc = typeof document === "string" ? parse(document) : document;
+  const op = doc.definitions.find(
+    (d: any): d is OperationDefinitionNode =>
+      d.kind === Kind.OPERATION_DEFINITION && d.operation === "query"
+  );
+  if (!op || !op.selectionSet) return [];
+  return op.selectionSet.selections.filter((s): s is FieldNode => s.kind === Kind.FIELD);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Core helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+const shallowClone = <T,>(value: T): T => {
+  if (!value || typeof value !== "object") return value;
+  return Array.isArray(value) ? (value.slice() as any) : ({ ...(value as any) } as any);
+};
+
+const deepSnapshot = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+
+/**
+ * Try to materialize a cache result for the given query/variables.
+ * We only look at top-level fields of the query:
+ *  - build root selection keys with selections.buildRootSelectionKey
+ *  - if ALL requested root fields have selection skeletons in graph, we assemble an object
+ *    with those materialized selections and return it (else return null).
+ */
+function tryReadFromCache(
+  deps: Pick<PluginDependencies, "graph" | "selections">,
+  queryDoc: any,
+  variables: Record<string, any>
+): any | null {
+  const fields = topLevelFieldsFromQuery(queryDoc);
+  if (fields.length === 0) return null;
+
+  const wanted: Array<{ outKey: string; selKey: string }> = [];
+
+  for (const f of fields) {
+    const outKey = f.alias?.value ?? f.name.value;
+    const argsObj = fieldArgsObject(f, variables) || {};
+    const selKey = deps.selections.buildRootSelectionKey(f.name.value, argsObj);
+    // if any top-level field is missing in cache → miss the whole op
+    if (!deps.graph.getSelection(selKey)) return null;
+    wanted.push({ outKey, selKey });
+  }
+
+  const result: Record<string, any> = { __typename: "Query" };
+  for (const { outKey, selKey } of wanted) {
+    result[outKey] = deps.graph.materializeSelection(selKey);
+  }
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Plugin factory
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function createPlugin(options: PluginOptions, deps: PluginDependencies): ClientPlugin {
+  const { addTypename = true } = options;
+  const { graph, selections, resolvers, views } = deps;
+
+  // one session per villus-operation
+  const sessionByOp = new Map<number, { mountSelection: (k: string) => any; destroy: () => void }>();
 
   const plugin: ClientPlugin = (ctx: ClientPluginContext) => {
     const { operation } = ctx;
-
     if (addTypename && operation.query) {
       operation.query = ensureDocumentHasTypenames(operation.query as any);
     }
 
+    // per-op session
     let session = sessionByOp.get(operation.key);
     if (!session) {
-      const s = views.createViewSession();
-      session = { wire: s.wireConnections, destroy: s.destroy };
+      const s = views.createSession();
+      session = { mountSelection: s.mountSelection, destroy: s.destroy };
       sessionByOp.set(operation.key, session);
     }
 
     const publish = (payload: OperationResult, terminal: boolean) => ctx.useResult(payload, terminal);
-    const policy = (operation as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
+    const policy =
+      (operation as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
 
-    // pull per-op view/window hints from villus context
     const cachebay: CachebayCtx = ((operation as any).context?.cachebay) || {};
+    const vars = operation.variables || {};
 
-    // ─────────────────────────────────────────────────────────────────────
-    // CACHE-ONLY
-    // ─────────────────────────────────────────────────────────────────────
+    // Cache-pre-pass (for cache-first/cache-only/cache-and-network)
+    const cachedHit = tryReadFromCache({ graph, selections }, operation.query, vars);
+
     if (policy === "cache-only") {
-      const hit = graph.lookupOperation(operation);
-      if (hit) {
-        const vars = operation.variables || hit.entry.variables || {};
-        // Publish a deep snapshot so nested refs don't get swapped by wiring.
-        const toPublish = deepSnapshot(hit.entry.data);
-        // Wire on a separate clone so views are attached/sized for this op.
-        const forWiring = shallowClone(hit.entry.data);
-        session.wire(forWiring, vars, cachebay);
-        return publish({ data: toPublish }, true);
+      if (cachedHit) {
+        return publish({ data: deepSnapshot(cachedHit) }, true);
       }
       const err = new CombinedError({
         networkError: Object.assign(new Error("CACHE_ONLY_MISS"), { name: "CacheOnlyMiss" }),
@@ -106,49 +180,16 @@ export function createPlugin(
       return publish({ error: err }, true);
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // CACHE-FIRST
-    // ─────────────────────────────────────────────────────────────────────
-    if (policy === "cache-first") {
-      const hit = graph.lookupOperation(operation);
-      if (hit) {
-        const vars = operation.variables || hit.entry.variables || {};
-        const toPublish = deepSnapshot(hit.entry.data);
-        const forWiring = shallowClone(hit.entry.data);
-        session.wire(forWiring, vars, cachebay);
-        return publish({ data: toPublish }, true);
-      }
-      // miss → fallthrough to network
+    if (policy === "cache-first" && cachedHit) {
+      return publish({ data: deepSnapshot(cachedHit) }, true);
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // CACHE-AND-NETWORK
-    // ─────────────────────────────────────────────────────────────────────
-    if (policy === "cache-and-network") {
-      const hit = graph.lookupOperation(operation);
-      if (hit) {
-        const vars = operation.variables || hit.entry.variables || {};
-        const toPublish = deepSnapshot(hit.entry.data);
-        const forWiring = shallowClone(hit.entry.data);
-        session.wire(forWiring, vars, cachebay);
-
-        const hadTicket = !!ssr?.hydrateOperationTicket?.has(hit.key);
-        if (hadTicket) ssr!.hydrateOperationTicket!.delete(hit.key);
-
-        // non-terminal cache frame; network will follow
-        publish({ data: toPublish }, false);
-      }
-      // network result handled below
+    if (policy === "cache-and-network" && cachedHit) {
+      publish({ data: deepSnapshot(cachedHit) }, false); // non-terminal cached
+      // continue to network path
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // NETWORK RESULT PATH
-    // ─────────────────────────────────────────────────────────────────────
-    // Pin request signature now (avoid using a mutated ctx.operation later)
-    const sentQuery = operation.query;
-    const sentVars = operation.variables || {};
-    const sentKey = getOperationKey({ query: sentQuery, variables: sentVars } as any);
-
+    // Wrap network publishing: normalize + write selections + materialize
     const originalUseResult = ctx.useResult;
     ctx.useResult = (incoming: OperationResult, terminal?: boolean) => {
       const r: any = incoming;
@@ -158,40 +199,53 @@ export function createPlugin(
       if (!hasData && !hasError) return originalUseResult(incoming, false);
       if (hasError) return originalUseResult(incoming, true);
 
-      // 1) Normalize into the graph (e.g., relay merges into canonical lists)
+      // 1) apply resolvers (relay etc.) on a shallow clone
       const payload = shallowClone(r.data);
-      resolvers.applyResolversOnGraph(payload, sentVars, { stale: false, ...cachebay });
+      resolvers.applyOnObject(payload, vars, { stale: false, ...cachebay });
 
-      // 2) Wire views for *this* op so edges reflect the correct window
-      session!.wire(payload, sentVars, cachebay);
+      // 2) derive & write selection skeletons
+      const entries = selections.compileSelections({ data: payload });
+      for (let i = 0; i < entries.length; i++) {
+        graph.putSelection(entries[i].key, entries[i].subtree);
+      }
 
-      // 3) Store the normalized snapshot for this exact op signature
-      graph.putOperation(sentKey, { data: deepSnapshot(payload), variables: sentVars });
+      // 3) materialize root for publish: for each top-level field, if we have a selection key,
+      //    replace that subtree with the materialized selection proxy; otherwise leave as-is.
+      const fields = topLevelFieldsFromQuery(operation.query);
+      const out: Record<string, any> = { __typename: "Query" };
+      for (const f of fields) {
+        const outKey = f.alias?.value ?? f.name.value;
+        const argsObj = fieldArgsObject(f, vars) || {};
+        const selKey = selections.buildRootSelectionKey(f.name.value, argsObj);
+        const skel = graph.getSelection(selKey);
+        if (skel) {
+          const proxy = graph.materializeSelection(selKey);
+          session!.mountSelection(selKey); // keep mounted in this session
+          out[outKey] = proxy;
+        } else {
+          // fallback: publish the resolved subtree (rare: non-connection simple objects)
+          out[outKey] = (payload as any)[outKey];
+        }
+      }
 
-      // 4) Publish terminal frame
-      return originalUseResult({ data: payload }, true);
+      return originalUseResult({ data: out }, true);
     };
   };
-
   return plugin;
 }
 
+// Back-compat name used by your tests previously
+export const buildCachebayPlugin = createPlugin;
+
+// Provide minimal public API for Vue apps (unchanged)
 export function provideCachebay(app: App, instance: any) {
   const api: any = {
+    hasFragment: (instance as any).hasFragment,
     readFragment: instance.readFragment,
-    readFragments: instance.readFragments,
     writeFragment: instance.writeFragment,
     identify: instance.identify,
     modifyOptimistic: instance.modifyOptimistic,
-    hasFragment: (instance as any).hasFragment,
-    listEntityKeys: (instance as any).listEntityKeys,
-    listEntities: (instance as any).listEntities,
     inspect: (instance as any).inspect,
-    registerEntityWatcher: instance.registerEntityWatcher,
-    unregisterEntityWatcher: instance.unregisterEntityWatcher,
-    trackEntity: instance.trackEntity,
-    registerTypeWatcher: instance.registerTypeWatcher,
-    unregisterTypeWatcher: instance.unregisterTypeWatcher,
   };
   app.provide(CACHEBAY_KEY, api);
 }
