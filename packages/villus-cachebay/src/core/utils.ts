@@ -3,6 +3,28 @@ import { isRef, isReactive, toRaw } from "vue";
 import type { EntityKey, RelayOptions } from "./types";
 import { QUERY_ROOT } from "./constants";
 
+export const traverse = (node: any, visit: (object: any) => void) => {
+  if (!node || typeof node !== "object") {
+    return;
+  }
+
+  visit(node);
+
+  if (Array.isArray(node)) {
+    for (let i = 0; i < node.length; i++) {
+      traverse(node[i], visit);
+    }
+
+    return;
+  }
+
+  const keys = Object.keys(node);
+
+  for (let i = 0; i < keys.length; i++) {
+    traverse(node[keys[i]], visit);
+  }
+}
+
 /* ────────────────────────────────────────────────────────────────────────────
  * GraphQL AST utils (robust to non-AST inputs for tests)
  * ──────────────────────────────────────────────────────────────────────────── */

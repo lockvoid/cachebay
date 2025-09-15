@@ -1,116 +1,157 @@
-// src/core/selections.ts
-import { stableStringify } from "./utils";
+import { stableStringify, traverse } from "./utils";
 
-export type SelectionsConfig = {
-  // reserved for future options (formatters, key policies, etc.)
-};
-
-type Deps = {
-  graph: {
-    identify: (obj: any) => string | null;
-  };
+type SelectionMark = {
+  /** Canonical entity key, e.g. "Query" or "User:1" */
+  entityKey: string;
+  /** The unaliased field name on the parent entity, e.g. "posts" */
+  field: string;
+  /** Optional arguments used to shape the selection key (usually {}) */
+  args?: Record<string, any>;
 };
 
 export type SelectionsAPI = ReturnType<typeof createSelections>;
 
 /**
- * Selection helpers:
- * - build stable selection keys for root fields and entity sub-fields
- * - heuristically compile selection entries (skeletons) from a payload subtree
+ * Selection registry for a normalized GraphQL cache.
  *
- * NOTE: This is a light heuristic. You can swap `compileSelections` with a
- * real GraphQL AST compiler later without changing the public API here.
+ * What is a "selection"?
+ *
+ * A selection is a stored field result skeleton (like a connection page) with
+ * a stable cache key. It excludes entity normalization - entities are stored
+ * separately. Selections enable deterministic re-materialization of lists and
+ * pages across renders, pagination, and SSR.
+ *
+ * Key builders:
+ *
+ * - buildQuerySelectionKey(field, args) → "posts({\"first\":2})"
+ * - buildFieldSelectionKey(entityKey, field, args) → "User:1.posts({\"first\":2})"
+ *
+ * Selection tracking:
+ *
+ * - markSelection(subtree, {entityKey, field, args}) - Marks a subtree for persistence
+ * - compileSelections(data) - Extracts all marked selections plus root fields
+ *
+ * Design principles:
+ *
+ * - No payload mutation - metadata stored in WeakMap
+ * - Stable keys - identical args produce identical keys regardless of order
+ * - Separation of concerns - selections and entities stored independently
+ *
+ * Example:
+ * ```js
+ * // Mark a connection for persistence
+ * markSelection(payload.user.posts, {
+ *   entityKey: "User:1",
+ *   field: "posts",
+ *   args: { first: 2 }
+ * });
+ *
+ * // Extract all selections for storage
+ * const entries = compileSelections(payload);
+ * // → [
+ * //     { key: "user({})", subtree: payload.user },
+ * //     { key: "User:1.posts({\"first\":2})", subtree: payload.user.posts }
+ * //   ]
+ * ```
  */
-export const createSelections = ({
-  config,
-  dependencies,
-}: {
-  config?: SelectionsConfig;
-  dependencies: Deps;
-}) => {
-  const { graph } = dependencies;
+export const createSelections = () => {
+  const marks = new WeakMap<object, SelectionMark>();
 
-  const buildRootSelectionKey = (field: string, args?: Record<string, any>): string => {
+  /**
+   * Builds a selection key for query-level fields.
+   * @param field - The field name (e.g., "user", "posts")
+   * @param args - Optional arguments for the field
+   * @returns A stable selection key like "user({})" or "posts({first:10})"
+   */
+  const buildQuerySelectionKey = (field: string, args?: Record<string, any>): string => {
     const argsString = args ? stableStringify(args) : "{}";
+
     return `${field}(${argsString})`;
   };
 
-  const buildFieldSelectionKey = (
-    parentEntityKey: string,
-    field: string,
-    args?: Record<string, any>
-  ): string => {
+  /**
+   * Builds a selection key for entity sub-fields.
+   * @param entityKey - The parent entity key (e.g., "User:1")
+   * @param field - The field name on the entity
+   * @param args - Optional arguments for the field
+   * @returns A stable selection key like "User:1.posts({first:10})"
+   */
+  const buildFieldSelectionKey = (entityKey: string, field: string, args?: Record<string, any>): string => {
     const argsString = args ? stableStringify(args) : "{}";
-    return `${parentEntityKey}.${field}(${argsString})`;
+
+    return `${entityKey}.${field}(${argsString})`;
   };
 
   /**
-   * Heuristically emits:
-   * - one root selection key per top-level field in `data`
-   * - for every entity inside, any field shaped like a "connection"
-   *   (object containing `edges` array AND `pageInfo` object)
+   * Marks a subtree as a selection skeleton for cache tracking.
+   * @param subtree - The data subtree to mark
+   * @param meta - Selection metadata (entity key, field name, args)
    */
-  const compileSelections = (input: { data: any }): Array<{ key: string; subtree: any }> => {
-    const out: Array<{ key: string; subtree: any }> = [];
-    const root = input.data;
-
-    if (!root || typeof root !== "object") {
-      return out;
-    }
-
-    // 1) root fields
-    const rootKeys = Object.keys(root);
-    for (let i = 0; i < rootKeys.length; i++) {
-      const field = rootKeys[i];
-      const subtree = (root as any)[field];
-      out.push({ key: buildRootSelectionKey(field, {}), subtree });
-
-      // 2) nested “connection-like” fields keyed by parent entity
-      traverse(subtree, (parent) => {
-        const parentKey = graph.identify(parent);
-        if (!parentKey) {
-          return;
-        }
-
-        const parentFieldKeys = Object.keys(parent);
-        for (let j = 0; j < parentFieldKeys.length; j++) {
-          const k = parentFieldKeys[j];
-          const v = (parent as any)[k];
-          if (v && typeof v === "object" && Array.isArray((v as any).edges) && (v as any).pageInfo) {
-            out.push({ key: buildFieldSelectionKey(parentKey, k, {}), subtree: v });
-          }
-        }
-      });
-    }
-
-    return out;
-  };
-
-  const traverse = (node: any, visit: (obj: any) => void): void => {
-    if (!node || typeof node !== "object") {
+  const markSelection = (subtree: object, meta: SelectionMark): void => {
+    if (!subtree || typeof subtree !== "object") {
       return;
     }
 
-    visit(node);
+    marks.set(subtree, meta);
+  };
 
-    const keys = Object.keys(node);
-    for (let i = 0; i < keys.length; i++) {
-      const value = (node as any)[keys[i]];
-      if (value && typeof value === "object") {
-        if (Array.isArray(value)) {
-          for (let a = 0; a < value.length; a++) {
-            traverse(value[a], visit);
-          }
-        } else {
-          traverse(value, visit);
-        }
-      }
+  /**
+   * Compiles all selections from a GraphQL response payload.
+   * @param input - The GraphQL response with a `data` property
+   * @returns Array of selection entries with their cache keys and subtrees
+   */
+  const compileSelections = (data: Array<{ key: string; subtree: any }>) => {
+    const result: Array<{ key: string; subtree: any }> = [];
+
+    if (!data || typeof data !== "object") {
+      return result;
     }
+
+    // 1. Always emit a query selection key for data fields
+
+    const dataKeys = Object.keys(data);
+
+    for (let i = 0; i < dataKeys.length; i++) {
+      const field = dataKeys[i];
+
+      const key = buildQuerySelectionKey(field, {});
+
+      const subtree = data[field];
+
+      result.push({ key, subtree });
+    }
+
+    // 2. Traverse the entire tree; include only nodes explicitly marked as selections
+
+    const processedKeys = new Set<string>();
+
+    traverse(data, (node) => {
+      if (!node || typeof node !== "object") {
+        return;
+      }
+
+      const mark = marks.get(node);
+
+      if (!mark) {
+        return;
+      }
+
+      const key = buildFieldSelectionKey(mark.entityKey, mark.field, mark.args || {});
+
+      if (!processedKeys.has(key)) {
+        processedKeys.add(key);
+
+        result.push({ key, subtree: node });
+      }
+    });
+
+    return result;
   };
 
   return {
-    buildRootSelectionKey,
+    buildQuerySelectionKey,
     buildFieldSelectionKey,
+    markSelection,
     compileSelections,
   };
 };

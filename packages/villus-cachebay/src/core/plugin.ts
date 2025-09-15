@@ -15,7 +15,7 @@ type PluginDependencies = {
     putSelection: (key: string, subtree: any) => void;
   };
   selections: {
-    buildRootSelectionKey: (field: string, args?: Record<string, any>) => string;
+    buildQuerySelectionKey: (field: string, args?: Record<string, any>) => string;
   };
   views: {
     createSession: () => {
@@ -71,7 +71,7 @@ type RootPick = {
 const rootPicksFromQuery = (
   doc: DocumentNode,
   variables: Record<string, any>,
-  buildRootSelectionKey: (field: string, args?: Record<string, any>) => string
+  buildQuerySelectionKey: (field: string, args?: Record<string, any>) => string
 ): RootPick[] => {
   const def = doc.definitions.find(d => d.kind === Kind.OPERATION_DEFINITION);
   if (!def || def.kind !== Kind.OPERATION_DEFINITION || !def.selectionSet) return [];
@@ -81,8 +81,8 @@ const rootPicksFromQuery = (
     const name = sel.name.value;
     const alias = sel.alias?.value ?? name;
     const args = argsToObject(sel, variables);
-    const keyArg = buildRootSelectionKey(name, args || {});
-    const keyEmpty = buildRootSelectionKey(name, {});
+    const keyArg = buildQuerySelectionKey(name, args || {});
+    const keyEmpty = buildQuerySelectionKey(name, {});
     picks.push({ alias, name, args, keyArg, keyEmpty });
   }
   return picks;
@@ -110,7 +110,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     // Normalize query to DocumentNode
     const doc: DocumentNode = typeof op.query === "string" ? parse(op.query) : (op.query as DocumentNode);
     const vars = op.variables || {};
-    const picks = rootPicksFromQuery(doc, vars, selections.buildRootSelectionKey);
+    const picks = rootPicksFromQuery(doc, vars, selections.buildQuerySelectionKey);
 
     // Session per operation
     let session = sessions.get(op.key);

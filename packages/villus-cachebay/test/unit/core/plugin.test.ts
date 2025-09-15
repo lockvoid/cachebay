@@ -32,7 +32,7 @@ function createGraphMock() {
 
 function createSelectionsMock() {
   return {
-    buildRootSelectionKey(field: string, args?: Record<string, any>) {
+    buildQuerySelectionKey(field: string, args?: Record<string, any>) {
       const a = args ? stableStringify(args) : '{}';
       return `${field}(${a})`;
     },
@@ -44,7 +44,7 @@ function createSelectionsMock() {
       for (const field of Object.keys(root)) {
         if (field === '__typename') continue;
         out.push({
-          key: this.buildRootSelectionKey(field, {}), // heuristic root-only
+          key: this.buildQuerySelectionKey(field, {}), // heuristic root-only
           subtree: (root as any)[field],
         });
       }
@@ -126,7 +126,7 @@ describe('cachebay plugin — cache policies (selection/graph based)', () => {
     const views = createViewsMock(graph);
     const plugin = createPlugin({ addTypename: false }, { graph, selections, resolvers, views });
 
-    const selKey = selections.buildRootSelectionKey('posts', { first: 2 });
+    const selKey = selections.buildQuerySelectionKey('posts', { first: 2 });
     graph.putSelection(selKey, {
       edges: [
         { cursor: 'c1', node: { __typename: 'Post', id: '1' } },
@@ -161,7 +161,7 @@ describe('cachebay plugin — cache policies (selection/graph based)', () => {
     const views = createViewsMock(graph);
     const plugin = createPlugin({ addTypename: false }, { graph, selections, resolvers, views });
 
-    const selKey = selections.buildRootSelectionKey('posts', { first: 1 });
+    const selKey = selections.buildQuerySelectionKey('posts', { first: 1 });
     graph.putSelection(selKey, {
       edges: [{ cursor: 'c1', node: { __typename: 'Post', id: '1' } }],
       pageInfo: { endCursor: 'c1', hasNextPage: true },
@@ -190,7 +190,7 @@ describe('cachebay plugin — cache policies (selection/graph based)', () => {
     const plugin = createPlugin({ addTypename: false }, { graph, selections, resolvers, views });
 
     // seed cached page (1 edge)
-    const cachedKey = selections.buildRootSelectionKey('posts', { first: 1 });
+    const cachedKey = selections.buildQuerySelectionKey('posts', { first: 1 });
     graph.putSelection(cachedKey, {
       edges: [{ cursor: 'c1', node: { __typename: 'Post', id: '1' } }],
       pageInfo: { endCursor: 'c1', hasNextPage: true },
@@ -241,7 +241,7 @@ describe('cachebay plugin — cache policies (selection/graph based)', () => {
     expect(call).toBeTruthy();
 
     // materialize the same selection key the plugin should use (root heuristic)
-    const postsKey = selections.buildRootSelectionKey('posts', {});
+    const postsKey = selections.buildQuerySelectionKey('posts', {});
     const mat = graph.materializeSelection(postsKey);
     expect(mat && Array.isArray(mat.edges) ? mat.edges.length : 0).toBe(2);
   });
@@ -273,7 +273,7 @@ describe('cachebay plugin — cache policies (selection/graph based)', () => {
     expect(ctx._published.length).toBe(1);
     // Verify selection storage was touched
     expect(graph.putSelection).toHaveBeenCalled();
-    const postsKey = selections.buildRootSelectionKey('posts', {});
+    const postsKey = selections.buildQuerySelectionKey('posts', {});
     const mat = graph.materializeSelection(postsKey);
     expect(mat && Array.isArray(mat.edges) ? mat.edges.length : 0).toBe(1);
   });
@@ -286,7 +286,7 @@ describe('cachebay plugin — cache policies (selection/graph based)', () => {
     const plugin = createPlugin({ addTypename: false }, { graph, selections, resolvers, views });
 
     // seed cached page (1 edge) under arg-key
-    const cachedKey = selections.buildRootSelectionKey('posts', { first: 1 });
+    const cachedKey = selections.buildQuerySelectionKey('posts', { first: 1 });
     graph.putSelection(cachedKey, {
       edges: [{ cursor: 'c1', node: { __typename: 'Post', id: '1' } }],
       pageInfo: { endCursor: 'c1', hasNextPage: true },
@@ -331,12 +331,12 @@ describe('cachebay plugin — cache policies (selection/graph based)', () => {
     expect(graph.putSelection).toHaveBeenCalled();
 
     // 1) Root (heuristic) key
-    const rootKey = selections.buildRootSelectionKey('posts', {});
+    const rootKey = selections.buildQuerySelectionKey('posts', {});
     const matRoot = graph.materializeSelection(rootKey);
     expect(matRoot && Array.isArray(matRoot.edges) ? matRoot.edges.length : 0).toBe(2);
 
     // 2) Arg-shaped key used by this operation
-    const argKey = selections.buildRootSelectionKey('posts', { first: 1 });
+    const argKey = selections.buildQuerySelectionKey('posts', { first: 1 });
     const matArg = graph.materializeSelection(argKey);
     expect(matArg && Array.isArray(matArg.edges) ? matArg.edges.length : 0).toBe(2);
   });

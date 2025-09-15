@@ -41,7 +41,7 @@ export async function seedCache(
   const root = clone.__typename ? clone : (clone.data || clone);
   for (const field of Object.keys(root)) {
     if (field === "__typename") continue;
-    const key = selections.buildRootSelectionKey(field, variables || {});
+    const key = selections.buildQuerySelectionKey(field, variables || {});
     graph.putSelection(key, root[field]);
   }
 }
