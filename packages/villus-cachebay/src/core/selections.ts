@@ -88,7 +88,7 @@ export const createSelections = () => {
    * @param meta - Selection metadata (entity key, field name, args)
    */
   const markSelection = (subtree: object, meta: SelectionMark): void => {
-    if (!subtree || typeof subtree !== "object") {
+    if (!subtree || typeof subtree !== "object" || Array.isArray(subtree)) {
       return;
     }
 
@@ -113,9 +113,7 @@ export const createSelections = () => {
 
     for (let i = 0; i < dataKeys.length; i++) {
       const field = dataKeys[i];
-
       const key = buildQuerySelectionKey(field, {});
-
       const subtree = data[field];
 
       result.push({ key, subtree });
