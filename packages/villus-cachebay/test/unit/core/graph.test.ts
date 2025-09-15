@@ -419,8 +419,8 @@ describe("Graph", () => {
     });
   });
 
-  describe("clearSelections", () => {
-    it("clears all selections but keeps entities intact", () => {
+  describe("clear", () => {
+    it("clears all selections and entities", () => {
       const graph = makeGraph();
 
       graph.putEntity({ __typename: "User", id: "1", name: "Ada" });
@@ -428,24 +428,9 @@ describe("Graph", () => {
       graph.putSelection('user({"id":"1"})', { __typename: "User", id: "1" });
       graph.putSelection('featuredPost({})', { __typename: "Post", id: "p1" });
 
-      graph.clearSelections();
+      graph.clear();
 
       expect(graph.listSelectionKeys().length).toBe(0);
-      expect(graph.listEntityKeys().sort()).toEqual(["Post:p1", "User:1"]);
-    });
-  });
-
-  describe("clearEntities", () => {
-    it("clears all entities", () => {
-      const graph = makeGraph();
-
-      graph.putEntity({ __typename: "User", id: "1", name: "Ada" });
-      graph.putEntity({ __typename: "Post", id: "p1", title: "T" });
-
-      expect(graph.listEntityKeys().length).toBe(2);
-
-      graph.clearEntities();
-
       expect(graph.listEntityKeys().length).toBe(0);
     });
   });
