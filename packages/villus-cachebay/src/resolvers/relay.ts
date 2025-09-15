@@ -110,6 +110,19 @@ const readPathValue = (objectValue: any, path: string) => {
   return current;
 };
 
+const writePathValue = (target: any, path: string, value: any) => {
+  if (!target || typeof target !== "object") return;
+  const segs = path.split(".");
+  let obj = target;
+  for (let i = 0; i < segs.length - 1; i++) {
+    const s = segs[i];
+    const next = obj[s];
+    if (!next || typeof next !== "object") obj[s] = {};
+    obj = obj[s];
+  }
+  obj[segs[segs.length - 1]] = value;
+};
+
 const buildConnectionKey = (
   parentKey: string,
   fieldName: string,
@@ -301,6 +314,44 @@ export const relay = (opts?: RelayOptsPartial) => {
       if (!state.initialized) {
         state.initialized = true;
       }
+
+      // ──────────────────────────────────────────────────────────────
+      // PROJECTION: reflect unioned state back onto the response
+      // ──────────────────────────────────────────────────────────────
+      const unionEdges: any[] = new Array(state.list.length);
+      for (let i = 0; i < state.list.length; i++) {
+        const entry = state.list[i]; // { key, cursor, edge? }
+        const key = entry.key;
+        const colon = key.indexOf(":");
+        const typename = colon > -1 ? key.slice(0, colon) : key;
+        const id = colon > -1 ? key.slice(colon + 1) : undefined;
+
+        // Build an edge object that matches the server's shape:
+        // keep any captured meta fields; put 'cursor'; and a minimal node {__typename,id}
+        const edgeObj: Record<string, any> = entry.edge ? { ...entry.edge } : {};
+        edgeObj.cursor = entry.cursor ?? null;
+
+        // assign node at the configured node field/path
+        // we write via path only for dotted node path; otherwise simple assignment
+        if (RELAY.hasNodePath) {
+          // Need a shallow holder object then write the node at nested path
+          const holder: Record<string, any> = edgeObj;
+          writePathValue(holder, RELAY.paths.node, id != null ? { __typename: typename, id } : undefined);
+        } else {
+          edgeObj[RELAY.names.nodeField] = id != null ? { __typename: typename, id } : undefined;
+        }
+
+        unionEdges[i] = edgeObj;
+      }
+
+      // Ensure ctx.value is an object
+      if (!ctx.value || typeof ctx.value !== "object") {
+        ctx.value = { __typename: "Connection" } as any;
+      }
+
+      // Write edges and pageInfo honoring dotted paths
+      writePathValue(ctx.value, RELAY.paths.edges, unionEdges);
+      writePathValue(ctx.value, RELAY.paths.pageInfo, { ...state.pageInfo });
 
       // No return value required, but handy to return the state for the call
       return state;

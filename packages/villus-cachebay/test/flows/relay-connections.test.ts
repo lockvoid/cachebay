@@ -367,7 +367,7 @@ describe('Integration • Relay flows (spec coverage) • Posts', () => {
 /* Non-Suspense: Switch A→B→A then paginate again (to p4)                      */
 /* -------------------------------------------------------------------------- */
 describe('Integration • Relay pagination reset & append from cache — extended', () => {
-  it.only('A→(p2,p3) → B → A (reset) → paginate p2,p3,p4 with cached append, then slow revalidate', async () => {
+  it('A→(p2,p3) → B → A (reset) → paginate p2,p3,p4 with cached append, then slow revalidate', async () => {
     const cache = cacheConfigs.withRelay();
 
 
@@ -485,18 +485,13 @@ describe('Integration • Relay pagination reset & append from cache — extende
     await delay(51);
     expect(liText(wrapper)).toEqual(['A-1', 'A-2']);
 
-    console.log('HERE!!!')
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c2' });
-    await tick(52); // Temprorary show be seedCache
+    await tick(2); // Temprorary show be seedCache
     expect(liText(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4']);
+
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c4' });
     await delay(51);
     expect(liText(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
-
-    console.log('123HERE!!!')
-    console.log([...cache.__internals.graph.connectionStore][0])
-    return;
-
 
     await wrapper.setProps({ filter: 'B', first: 2, after: undefined } as any);
     await delay(51);
