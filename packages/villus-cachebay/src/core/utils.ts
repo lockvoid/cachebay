@@ -1,7 +1,29 @@
 import { visit, Kind, parse, print, type DocumentNode } from "graphql";
 import { isRef, isReactive, toRaw } from "vue";
+import { QUERY_ROOT, IDENTITY_FIELDS } from "./constants";
 import type { EntityKey, RelayOptions } from "./types";
-import { QUERY_ROOT } from "./constants";
+
+export const hasTypename = (value: any): boolean => {
+  return !!(value && typeof value === "object" && typeof value.__typename === "string");
+}
+
+export const isPureIdentity = (value: any): boolean => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const keys = Object.keys(value);
+
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+
+    if (!IDENTITY_FIELDS.has(key) && value[key] !== undefined) {
+      return true;
+    }
+  }
+
+  return false;
+};
 
 export const traverse = (node: any, visit: (object: any) => void) => {
   if (!node || typeof node !== "object") {

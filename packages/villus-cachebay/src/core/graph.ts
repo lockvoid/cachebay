@@ -1,42 +1,15 @@
 import { shallowReactive } from "vue";
+import { hasTypename, isPureIdentity } from "./utils";
+import { IDENTITY_FIELDS } from "./constants";
 
-/** Public config */
 export type GraphConfig = {
-  /** typename -> keyer */
+  /** typename → function returning stable id (or null) to build keys like "User:1" */
   keys: Record<string, (obj: any) => string | null>;
-  /**
-   * Interface map: interfaceName -> concrete implementors.
-   * Example: { Post: ['AudioPost', 'VideoPost'] }
-   * Entities of those implementors are keyed under the interface, e.g. AudioPost{id:1} → "Post:1".
-   */
+  /** interface typename → list of implementor typenames used to canonicalize keys (e.g., AudioPost → Post) */
   interfaces?: Record<string, string[]>;
 };
 
 export type GraphAPI = ReturnType<typeof createGraph>;
-
-const IDENTITY_FIELDS = new Set(["__typename", "id"]);
-
-const hasTypename = (value: any): boolean => {
-  return !!(value && typeof value === "object" && typeof value.__typename === "string");
-}
-
-const isPureIdentity = (value: any): boolean => {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const keys = Object.keys(value);
-
-  for (let i = 0; i < keys.length; i++) {
-    const key = keys[i];
-
-    if (!IDENTITY_FIELDS.has(key) && value[key] !== undefined) {
-      return true;
-    }
-  }
-
-  return false;
-};
 
 /**
  * Proxy cache manager (WeakRef-backed)
@@ -90,160 +63,80 @@ class ProxyManager {
  * @private
  */
 class IdentityManager {
-  // Key parsing cache: full key -> [typename, id]
-  private keyCache = new Map<string, [string, string | undefined]>();
+  private keyStore = new Map<string, [string, string | undefined]>();
+  private interfaceStore = new Map<string, string>();
+  private idResolvers = new Map<string, (obj: any) => string | null>();
 
-  // Interface mapping: implementor -> canonical interface
-  private canonicalByImplementor = new Map<string, string>();
-
-  // Keyer functions: typename -> keyer
-  private keyers = new Map<string, (obj: any) => string | null>();
-
-  constructor(config: {
-    keys: Record<string, (obj: any) => string | null>;
-    interfaces?: Record<string, string[]>;
-  }) {
-    // Initialize keyers
+  constructor(config: { keys: Record<string, (obj: any) => string | null>; interfaces?: Record<string, string[]> }) {
     for (const [typename, keyFunction] of Object.entries(config.keys || {})) {
-      this.keyers.set(typename, keyFunction);
+      this.idResolvers.set(typename, keyFunction);
     }
 
-    // Initialize interface mappings
     if (config.interfaces) {
       const interfaces = Object.keys(config.interfaces);
 
       for (let i = 0; i < interfaces.length; i++) {
-        const interfaceName = interfaces[i];
-        const implementors = config.interfaces[interfaceName] || [];
+        const interfaceTypename = interfaces[i];
+        const implementors = config.interfaces[interfaceTypename] || [];
 
         for (let j = 0; j < implementors.length; j++) {
-          this.canonicalByImplementor.set(implementors[j], interfaceName);
+          this.interfaceStore.set(implementors[j], interfaceTypename);
         }
       }
     }
   }
 
-  /**
-   * Parses a cache key into typename and id components.
-   * @param key - Cache key like "User:123"
-   * @returns Tuple of [typename, id] where id may be undefined
-   */
-  parseKey(key: string): [typename: string, id?: string] {
-    const hit = this.keyCache.get(key);
+  getCanonicalTypename(typename: string): string {
+    return this.interfaceStore.get(typename) || typename;
+  }
+
+  parseKey(key: string): [string, string | undefined] {
+    const hit = this.keyStore.get(key);
+
     if (hit) {
       return hit;
     }
 
-    const colonIndex = key.indexOf(":");
-    const result: [string, string | undefined] =
-      colonIndex >= 0
-        ? [key.slice(0, colonIndex), key.slice(colonIndex + 1)]
-        : [key, undefined];
+    const [typename, id] = key.split(":", 2);
 
-    this.keyCache.set(key, result);
+    this.keyStore.set(key, [typename, id]);
 
-    return result;
+    return [typename, id];
   }
 
-  /**
-   * Gets the canonical type name for an object (handling interface resolution).
-   * @param typename - The concrete typename
-   * @returns The canonical typename (interface if mapped, otherwise original)
-   */
-  getCanonicalType(typename: string): string {
-    return this.canonicalByImplementor.get(typename) || typename;
-  }
-
-  /**
-   * Resolves the appropriate ID for an object using configured keyers.
-   * Tries implementor keyer first, then interface keyer, then falls back to id field.
-   * @param objectValue - The object to get an ID for
-   * @returns The resolved ID or null if not identifiable
-   */
-  resolveId(objectValue: any): string | null {
-    if (!hasTypename(objectValue)) {
+  stringifyKey(object: any): string | null {
+    if (!hasTypename(object)) {
       return null;
     }
 
-    const implementor = objectValue.__typename as string;
-    const canonical = this.getCanonicalType(implementor);
+    const typename = this.getCanonicalTypename(object.__typename);
 
-    // Try implementor keyer first, then interface keyer
-    const implementorKeyer = this.keyers.get(implementor);
-    const interfaceKeyer = canonical !== implementor ? this.keyers.get(canonical) : undefined;
+    const id = this.idResolvers.has(typename) ? this.idResolvers.get(typename)(object) : null;
 
-    const id =
-      (implementorKeyer ? implementorKeyer(objectValue) : undefined) ??
-      (interfaceKeyer ? interfaceKeyer(objectValue) : undefined) ??
-      (objectValue.id ?? null);
-
-    return id != null ? String(id) : null;
+    return (id != null) ? `${typename}:${id}` : null;
   }
 
-  /**
-   * Builds a cache key for an object using its canonical type and resolved ID.
-   * @param objectValue - The object to build a key for
-   * @returns A cache key like "User:123" or null if not identifiable
-   */
-  buildKey(objectValue: any): string | null {
-    if (!hasTypename(objectValue)) {
-      return null;
-    }
-
-    const canonical = this.getCanonicalType(objectValue.__typename);
-    const id = this.resolveId(objectValue);
-
-    if (id == null) {
-      return null;
-    }
-
-    return `${canonical}:${id}`;
-  }
-
-  /**
-   * Clear internal caches (useful for memory management in long-running applications)
-   */
-  clearCache(): void {
-    this.keyCache.clear();
+  clear(): void {
+    this.keyStore.clear();
   }
 }
 
-/**
- * Creates a normalized GraphQL cache with reactive entity and selection stores.
- *
- * Provides entity normalization, selection tracking, and reactive materialization
- * for GraphQL responses. Entities are stored by stable keys and selections maintain
- * references to entities for efficient updates and cache invalidation.
- *
- * @param config - Configuration object with key generators and interface mappings
- * @returns Graph API with entity and selection management methods
- */
 export const createGraph = (config: GraphConfig) => {
-  // Identity manager handles all key/type resolution
-  const identityManager = new IdentityManager({
-    keys: config.keys || {},
-    interfaces: config.interfaces
-  });
-
-  // Stores
+  const identityManager = new IdentityManager({ keys: config.keys, interfaces: config.interfaces });
   const entityStore = new Map<string, Record<string, any>>();
   const selectionStore = new Map<string, any>();
-
-  // Proxies
   const entityProxyManager = new ProxyManager();
   const selectionProxyManager = new ProxyManager();
-
-  // Reverse index: entityKey -> Set<selectionKey>
-  const referencesIndex = new Map<string, Set<string>>();
+  const entityReferences = new Map<string, Set<string>>();
 
   /**
    * Generates a stable cache key for an object based on its type and configured key function.
    *
-   * @param objectValue - The object to identify (must have __typename)
+   * @param object - The object to identify (must have __typename)
    * @returns A stable key like "User:123" or null if not identifiable
    */
-  const identify = (objectValue: any): string | null => {
-    return identityManager.buildKey(objectValue);
+  const identify = (object: any): string | null => {
+    return identityManager.stringifyKey(object);
   };
 
   /**
@@ -266,6 +159,7 @@ export const createGraph = (config: GraphConfig) => {
 
       if (concreteId != null) {
         const stableId = String(concreteId);
+
         if (hit.id !== stableId) {
           hit.id = stableId;
         }
@@ -281,6 +175,7 @@ export const createGraph = (config: GraphConfig) => {
     }
 
     const proxy = shallowReactive({} as any);
+
     proxy.__typename = concreteType;
 
     if (concreteId != null) {
@@ -306,27 +201,26 @@ export const createGraph = (config: GraphConfig) => {
     }
 
     if (Array.isArray(value)) {
-      const output = shallowReactive(new Array(value.length));
+      const result = shallowReactive(new Array(value.length));
 
       for (let i = 0; i < value.length; i++) {
-        output[i] = denormalizeValue(value[i]);
+        result[i] = denormalizeValue(value[i]);
       }
 
-      return output;
+      return result;
     }
 
     if ("__ref" in value && typeof value.__ref === "string") {
       return materializeEntity(value.__ref);
     }
 
-    const proxy = shallowReactive({} as Record<string, any>);
-    const keys = Object.keys(value);
+    const result = shallowReactive({} as Record<string, any>);
 
-    for (let i = 0; i < keys.length; i++) {
-      proxy[keys[i]] = denormalizeValue(value[keys[i]]);
+    for (let i = 0, keys = Object.keys(value); i < keys.length; i++) {
+      result[keys[i]] = denormalizeValue(value[keys[i]]);
     }
 
-    return proxy;
+    return result;
   };
 
   /**
@@ -356,36 +250,31 @@ export const createGraph = (config: GraphConfig) => {
       const key = identify(value);
 
       if (!key) {
-        // non-identifiable object: recurse
-        const object: any = {};
-        const keys = Object.keys(value);
+        const result: any = {};
 
-        for (let i = 0; i < keys.length; i++) {
-          object[keys[i]] = normalizeValue(value[keys[i]]);
+        for (let i = 0, keys = Object.keys(value); i < keys.length; i++) {
+          result[keys[i]] = normalizeValue(value[keys[i]]);
         }
 
-        return object;
+        return result;
       }
 
       if (!isPureIdentity(value)) {
         return { __ref: key };
       }
 
-      // write and return ref
       putEntity(value);
 
       return { __ref: key };
     }
 
-    // plain object
-    const output: any = {};
-    const keys = Object.keys(value);
+    const result: any = {};
 
-    for (let i = 0; i < keys.length; i++) {
-      output[keys[i]] = normalizeValue(value[keys[i]]);
+    for (let i = 0, keys = Object.keys(value); i < keys.length; i++) {
+      result[keys[i]] = normalizeValue(value[keys[i]]);
     }
 
-    return output;
+    return result;
   };
 
   /**
@@ -393,10 +282,7 @@ export const createGraph = (config: GraphConfig) => {
    * @private
    */
   const overlayEntity = (entityProxy: any, snapshot: any) => {
-    // drop stale fields (keep identity)
-    const keys = Object.keys(entityProxy);
-
-    for (let i = 0; i < keys.length; i++) {
+    for (let i = 0, keys = Object.keys(entityProxy); i < keys.length; i++) {
       const field = keys[i];
 
       if (!IDENTITY_FIELDS.has(field) && !(field in snapshot)) {
@@ -404,22 +290,18 @@ export const createGraph = (config: GraphConfig) => {
       }
     }
 
-    // identity
-    if (snapshot.__typename && entityProxy.__typename !== snapshot.__typename) {
+    if ("__typename" in snapshot && snapshot.__typename) {
       entityProxy.__typename = snapshot.__typename;
     }
 
-    if (snapshot.id != null) {
-      const stableId = String(snapshot.id);
-
-      if (entityProxy.id !== stableId) {
-        entityProxy.id = stableId;
+    if ("id" in snapshot) {
+      if (snapshot.id != null) {
+        entityProxy.id = String(snapshot.id);
+      } else {
+        delete entityProxy.id;
       }
-    } else if ("id" in entityProxy) {
-      delete entityProxy.id;
     }
 
-    // fields
     const snapshotKeys = Object.keys(snapshot);
 
     for (let i = 0; i < snapshotKeys.length; i++) {
@@ -442,6 +324,7 @@ export const createGraph = (config: GraphConfig) => {
 
     if ("__ref" in skeleton) {
       const wrapper = shallowReactive({} as Record<string, any>);
+
       overlaySelection(wrapper, skeleton);
 
       return wrapper;
@@ -457,14 +340,13 @@ export const createGraph = (config: GraphConfig) => {
       return output;
     }
 
-    const object = shallowReactive({} as Record<string, any>);
-    const keys = Object.keys(skeleton);
+    const result = shallowReactive({} as Record<string, any>);
 
-    for (let i = 0; i < keys.length; i++) {
-      object[keys[i]] = materializeFromSkeleton(skeleton[keys[i]]);
+    for (let i = 0, keys = Object.keys(skeleton); i < keys.length; i++) {
+      result[keys[i]] = materializeFromSkeleton(skeleton[keys[i]]);
     }
 
-    return object;
+    return result;
   };
 
   /**
@@ -478,10 +360,11 @@ export const createGraph = (config: GraphConfig) => {
 
     if ("__ref" in skeleton && typeof skeleton.__ref === "string") {
       const entity = materializeEntity(skeleton.__ref);
-      const existing = Object.keys(target);
 
-      for (let i = 0; i < existing.length; i++) {
-        delete target[existing[i]];
+      const targetKeys = Object.keys(target);
+
+      for (let i = 0; i < targetKeys.length; i++) {
+        delete target[targetKeys[i]];
       }
 
       const entityKeys = Object.keys(entity);
@@ -527,9 +410,7 @@ export const createGraph = (config: GraphConfig) => {
       }
     }
 
-    const keys = Object.keys(skeleton);
-
-    for (let i = 0; i < keys.length; i++) {
+    for (let i = 0, keys = Object.keys(skeleton); i < keys.length; i++) {
       const field = keys[i];
       const skeletonValue = skeleton[field];
       const targetValue = target[field];
@@ -567,21 +448,23 @@ export const createGraph = (config: GraphConfig) => {
       const entityKey = node.__ref;
 
       if (add) {
-        let bucket = referencesIndex.get(entityKey);
+        let bucket = entityReferences.get(entityKey);
 
         if (!bucket) {
-          referencesIndex.set(entityKey, (bucket = new Set()));
+          bucket = new Set();
+
+          entityReferences.set(entityKey, bucket);
         }
 
         bucket.add(selectionKey);
       } else {
-        const bucket = referencesIndex.get(entityKey);
+        const bucket = entityReferences.get(entityKey);
 
         if (bucket) {
           bucket.delete(selectionKey);
 
           if (bucket.size === 0) {
-            referencesIndex.delete(entityKey);
+            entityReferences.delete(entityKey);
           }
         }
       }
@@ -589,9 +472,7 @@ export const createGraph = (config: GraphConfig) => {
       return;
     }
 
-    const keys = Object.keys(node);
-
-    for (let i = 0; i < keys.length; i++) {
+    for (let i = 0, keys = Object.keys(node); i < keys.length; i++) {
       indexSelectionRefs(selectionKey, node[keys[i]], add);
     }
   };
@@ -601,7 +482,7 @@ export const createGraph = (config: GraphConfig) => {
    * @private
    */
   const syncSelections = (entityKey: string) => {
-    const keys = referencesIndex.get(entityKey);
+    const keys = entityReferences.get(entityKey);
 
     if (!keys) {
       return;
@@ -637,6 +518,7 @@ export const createGraph = (config: GraphConfig) => {
 
     const snapshot: any = { __typename: object.__typename };
     const [, idFromKey] = identityManager.parseKey(key);
+
     snapshot.id = object.id != null ? String(object.id) : idFromKey;
 
     const fields = Object.keys(object);
@@ -657,14 +539,12 @@ export const createGraph = (config: GraphConfig) => {
       entityStore.set(key, snapshot);
     }
 
-    // live entity proxy refresh
     const proxy = entityProxyManager.get(`entity:${key}`);
 
     if (proxy) {
       overlayEntity(proxy, entityStore.get(key)!);
     }
 
-    // reconcile selections that point to this entity
     syncSelections(key);
 
     return key;
@@ -692,14 +572,11 @@ export const createGraph = (config: GraphConfig) => {
     const proxy = entityProxyManager.get(`entity:${key}`);
 
     if (proxy) {
-      const keys = Object.keys(proxy);
-
-      for (let i = 0; i < keys.length; i++) {
+      for (let i = 0, keys = Object.keys(proxy); i < keys.length; i++) {
         delete proxy[keys[i]];
       }
     }
 
-    // selections shrink if they referenced this entity
     syncSelections(key);
 
     return existed;
@@ -719,6 +596,7 @@ export const createGraph = (config: GraphConfig) => {
     }
 
     const normalized = normalizeValue(subtree);
+
     selectionStore.set(selectionKey, normalized);
 
     indexSelectionRefs(selectionKey, normalized, true);
@@ -757,9 +635,7 @@ export const createGraph = (config: GraphConfig) => {
     const proxy = selectionProxyManager.get(`selection:${selectionKey}`);
 
     if (proxy) {
-      const keys = Object.keys(proxy);
-
-      for (let i = 0; i < keys.length; i++) {
+      for (let i = 0, keys = Object.keys(proxy); i < keys.length; i++) {
         delete proxy[keys[i]];
       }
     }
@@ -819,14 +695,12 @@ export const createGraph = (config: GraphConfig) => {
    * Clears all entities and selections from the cache.
    */
   const clear = () => {
-    // Clear selections first
     for (const key of selectionStore.keys()) {
       removeSelection(key);
     }
 
     selectionProxyManager.clear();
 
-    // Clear entities
     for (const key of entityStore.keys()) {
       removeEntity(key);
     }
@@ -853,6 +727,7 @@ export const createGraph = (config: GraphConfig) => {
     return {
       entities: toObject(entityStore),
       selections: toObject(selectionStore),
+
       config: {
         keys: config.keys || {},
         interfaces: config.interfaces || {},
@@ -861,27 +736,18 @@ export const createGraph = (config: GraphConfig) => {
   };
 
   return {
-    // identity
     identify,
-
-    // entities
     putEntity,
     getEntity,
     removeEntity,
     materializeEntity,
-
-    // selections
     putSelection,
     getSelection,
     removeSelection,
     materializeSelection,
-
-    // listings & maintenance
     listEntityKeys,
     listSelectionKeys,
     clear,
-
-    // debug
     inspect,
   };
 };
