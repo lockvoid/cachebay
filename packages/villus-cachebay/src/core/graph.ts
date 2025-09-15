@@ -14,27 +14,27 @@ export type GraphConfig = {
 
 export type GraphAPI = ReturnType<typeof createGraph>;
 
-/** Identity field set */
 const IDENTITY_FIELDS = new Set(["__typename", "id"]);
 
-/**
- * Checks if a value has a __typename property.
- * @private
- */
-const hasTypename = (value: any): boolean =>
-  !!(value && typeof value === "object" && typeof value.__typename === "string");
+const hasTypename = (value: any): boolean => {
+  return !!(value && typeof value === "object" && typeof value.__typename === "string");
+}
 
-/**
- * Checks if an object has fields beyond __typename and id.
- * @private
- */
-const hasNonIdentityFields = (value: any): boolean => {
-  if (!value || typeof value !== "object") return false;
+const isPureIdentity = (value: any): boolean => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
   const keys = Object.keys(value);
+
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i];
-    if (!IDENTITY_FIELDS.has(key) && value[key] !== undefined) return true;
+
+    if (!IDENTITY_FIELDS.has(key) && value[key] !== undefined) {
+      return true;
+    }
   }
+
   return false;
 };
 
@@ -116,9 +116,11 @@ class InterfaceManager {
   constructor(interfaceMap?: Record<string, string[]>) {
     if (interfaceMap) {
       const interfaces = Object.keys(interfaceMap);
+
       for (let i = 0; i < interfaces.length; i++) {
         const interfaceName = interfaces[i];
         const implementors = interfaceMap[interfaceName] || [];
+
         for (let j = 0; j < implementors.length; j++) {
           this.canonicalByImplementor.set(implementors[j], interfaceName);
         }
@@ -140,10 +142,7 @@ class InterfaceManager {
  * Creates normalization utilities with closure access to putEntity and identify.
  * @private
  */
-const createNormalizer = (
-  putEntity: (obj: any) => string | null,
-  identify: (obj: any) => string | null,
-) => {
+const createNormalizer = (putEntity: (obj: any) => string | null, identify: (obj: any) => string | null) => {
   /**
    * Recursively normalizes a value by extracting entities and creating references.
    * @private
@@ -170,7 +169,7 @@ const createNormalizer = (
         for (let i = 0; i < keys.length; i++) object[keys[i]] = normalizeValue(value[keys[i]]);
         return object;
       }
-      if (!hasNonIdentityFields(value)) return { __ref: key };
+      if (!isPureIdentity(value)) return { __ref: key };
       // write and return ref
       putEntity(value);
       return { __ref: key };
@@ -589,14 +588,18 @@ export const createGraph = (config: GraphConfig) => {
    *
    * @returns Array of entity keys like ["User:1", "Post:123"]
    */
-  const listEntityKeys = () => Array.from(entityStore.keys());
+  const listEntityKeys = () => {
+    return Array.from(entityStore.keys());
+  };
 
   /**
    * Returns all selection cache keys currently stored.
    *
    * @returns Array of selection keys like ["user({})", "User:1.posts({first:10})"]
    */
-  const listSelectionKeys = () => Array.from(selectionStore.keys());
+  const listSelectionKeys = () => {
+    return Array.from(selectionStore.keys());
+  };
 
   /**
    * Clears entities and/or selections from the cache.
@@ -612,11 +615,15 @@ export const createGraph = (config: GraphConfig) => {
     const clearSelections = options?.selections ?? true;
 
     if (clearSelections) {
-      for (const key of selectionStore.keys()) removeSelection(key);
+      for (const key of selectionStore.keys()) {
+        removeSelection(key);
+      }
       selectionProxyManager.clear();
     }
     if (clearEntities) {
-      for (const key of entityStore.keys()) removeEntity(key);
+      for (const key of entityStore.keys()) {
+        removeEntity(key);
+      }
       entityProxyManager.clear();
     }
   };
