@@ -1,4 +1,3 @@
-// src/core/graph.ts
 import { shallowReactive } from "vue";
 
 /** Public config */
@@ -18,99 +17,144 @@ export type GraphAPI = ReturnType<typeof createGraph>;
 /** Identity field set */
 const IDENTITY_FIELDS = new Set(["__typename", "id"]);
 
-/** Tiny helpers */
-const hasTypename = (v: any): boolean =>
-  !!(v && typeof v === "object" && typeof v.__typename === "string");
+/**
+ * Checks if a value has a __typename property.
+ * @private
+ */
+const hasTypename = (value: any): boolean =>
+  !!(value && typeof value === "object" && typeof value.__typename === "string");
 
-const hasNonIdentityFields = (v: any): boolean => {
-  if (!v || typeof v !== "object") return false;
-  const ks = Object.keys(v);
-  for (let i = 0; i < ks.length; i++) {
-    const k = ks[i];
-    if (!IDENTITY_FIELDS.has(k) && v[k] !== undefined) return true;
+/**
+ * Checks if an object has fields beyond __typename and id.
+ * @private
+ */
+const hasNonIdentityFields = (value: any): boolean => {
+  if (!value || typeof value !== "object") return false;
+  const keys = Object.keys(value);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (!IDENTITY_FIELDS.has(key) && value[key] !== undefined) return true;
   }
   return false;
 };
 
-/** --------------------------------------------------------------------------
- *  Proxy cache manager (WeakRef-backed)
- * -------------------------------------------------------------------------- */
+/**
+ * Proxy cache manager (WeakRef-backed)
+ * @private
+ */
 class ProxyManager {
   private proxies = new Map<string, WeakRef<any>>();
 
+  /**
+   * Gets a proxy from the cache if it still exists.
+   */
   get(key: string): any | undefined {
     return this.proxies.get(key)?.deref?.();
   }
+
+  /**
+   * Stores a proxy in the cache using WeakRef.
+   */
   set(key: string, proxy: any): void {
     this.proxies.set(key, new WeakRef(proxy));
   }
+
+  /**
+   * Removes a proxy from the cache.
+   */
   delete(key: string): void {
     this.proxies.delete(key);
   }
-  /** Remove entries whose referent was GC’d */
+
+  /**
+   * Remove entries whose referent was garbage collected.
+   */
   prune(): void {
-    for (const [key, wr] of this.proxies.entries()) {
-      if (!wr.deref()) this.proxies.delete(key);
+    for (const [key, weakRef] of this.proxies.entries()) {
+      if (!weakRef.deref()) this.proxies.delete(key);
     }
   }
-  /** Wipe the cache */
+
+  /**
+   * Wipe the entire cache.
+   */
   clear(): void {
     this.proxies.clear();
   }
 }
 
-/** --------------------------------------------------------------------------
- *  Key manager (parse "Type:id" once, with memo)
- * -------------------------------------------------------------------------- */
+/**
+ * Key manager (parse "Type:id" once, with memoization)
+ * @private
+ */
 class KeyManager {
   private cache = new Map<string, [string, string | undefined]>();
+
+  /**
+   * Parses a cache key into typename and id components.
+   * @param key - Cache key like "User:123"
+   * @returns Tuple of [typename, id] where id may be undefined
+   */
   parse(key: string): [typename: string, id?: string] {
     const hit = this.cache.get(key);
     if (hit) return hit;
-    const i = key.indexOf(":");
-    const out: [string, string | undefined] =
-      i >= 0 ? [key.slice(0, i), key.slice(i + 1)] : [key, undefined];
-    this.cache.set(key, out);
-    return out;
+    const colonIndex = key.indexOf(":");
+    const result: [string, string | undefined] =
+      colonIndex >= 0 ? [key.slice(0, colonIndex), key.slice(colonIndex + 1)] : [key, undefined];
+    this.cache.set(key, result);
+    return result;
   }
 }
 
-/** --------------------------------------------------------------------------
- *  Interface manager (implementor -> canonical interface)
- * -------------------------------------------------------------------------- */
+/**
+ * Interface manager (implementor -> canonical interface)
+ * @private
+ */
 class InterfaceManager {
-  private canonicalByImpl = new Map<string, string>();
-  constructor(map?: Record<string, string[]>) {
-    if (map) {
-      const ifaces = Object.keys(map);
-      for (let i = 0; i < ifaces.length; i++) {
-        const iface = ifaces[i];
-        const impls = map[iface] || [];
-        for (let j = 0; j < impls.length; j++) {
-          this.canonicalByImpl.set(impls[j], iface);
+  private canonicalByImplementor = new Map<string, string>();
+
+  constructor(interfaceMap?: Record<string, string[]>) {
+    if (interfaceMap) {
+      const interfaces = Object.keys(interfaceMap);
+      for (let i = 0; i < interfaces.length; i++) {
+        const interfaceName = interfaces[i];
+        const implementors = interfaceMap[interfaceName] || [];
+        for (let j = 0; j < implementors.length; j++) {
+          this.canonicalByImplementor.set(implementors[j], interfaceName);
         }
       }
     }
   }
+
+  /**
+   * Gets the canonical interface name for a typename.
+   * @param typename - The concrete or interface typename
+   * @returns The canonical interface name, or the original typename if no mapping exists
+   */
   canonicalOf(typename: string): string {
-    return this.canonicalByImpl.get(typename) || typename;
+    return this.canonicalByImplementor.get(typename) || typename;
   }
 }
 
-/** --------------------------------------------------------------------------
- *  Normalizer (closes over putEntity/identify)
- * -------------------------------------------------------------------------- */
+/**
+ * Creates normalization utilities with closure access to putEntity and identify.
+ * @private
+ */
 const createNormalizer = (
   putEntity: (obj: any) => string | null,
   identify: (obj: any) => string | null,
 ) => {
+  /**
+   * Recursively normalizes a value by extracting entities and creating references.
+   * @private
+   */
   const normalizeValue = (value: any): any => {
     if (!value || typeof value !== "object") return value;
 
     if (Array.isArray(value)) {
-      const out = new Array(value.length);
-      for (let i = 0; i < value.length; i++) out[i] = normalizeValue(value[i]);
-      return out;
+      const output = new Array(value.length);
+      for (let i = 0; i < value.length; i++) output[i] = normalizeValue(value[i]);
+      return output;
     }
 
     if ("__ref" in value && typeof value.__ref === "string") {
@@ -121,10 +165,10 @@ const createNormalizer = (
       const key = identify(value);
       if (!key) {
         // non-identifiable object: recurse
-        const obj: any = {};
-        const ks = Object.keys(value);
-        for (let i = 0; i < ks.length; i++) obj[ks[i]] = normalizeValue(value[ks[i]]);
-        return obj;
+        const object: any = {};
+        const keys = Object.keys(value);
+        for (let i = 0; i < keys.length; i++) object[keys[i]] = normalizeValue(value[keys[i]]);
+        return object;
       }
       if (!hasNonIdentityFields(value)) return { __ref: key };
       // write and return ref
@@ -133,19 +177,23 @@ const createNormalizer = (
     }
 
     // plain object
-    const o: any = {};
-    const ks = Object.keys(value);
-    for (let i = 0; i < ks.length; i++) o[ks[i]] = normalizeValue(value[ks[i]]);
-    return o;
+    const output: any = {};
+    const keys = Object.keys(value);
+    for (let i = 0; i < keys.length; i++) output[keys[i]] = normalizeValue(value[keys[i]]);
+    return output;
   };
 
-  const denormalizeValue = (value: any, materializeEntity: (k: string) => any): any => {
+  /**
+   * Recursively denormalizes a normalized value by resolving entity references.
+   * @private
+   */
+  const denormalizeValue = (value: any, materializeEntity: (key: string) => any): any => {
     if (!value || typeof value !== "object") return value;
 
     if (Array.isArray(value)) {
-      const out = shallowReactive(new Array(value.length));
-      for (let i = 0; i < value.length; i++) out[i] = denormalizeValue(value[i], materializeEntity);
-      return out;
+      const output = shallowReactive(new Array(value.length));
+      for (let i = 0; i < value.length; i++) output[i] = denormalizeValue(value[i], materializeEntity);
+      return output;
     }
 
     if ("__ref" in value && typeof value.__ref === "string") {
@@ -153,52 +201,64 @@ const createNormalizer = (
     }
 
     const proxy = shallowReactive({} as Record<string, any>);
-    const ks = Object.keys(value);
-    for (let i = 0; i < ks.length; i++) proxy[ks[i]] = denormalizeValue(value[ks[i]], materializeEntity);
+    const keys = Object.keys(value);
+    for (let i = 0; i < keys.length; i++) proxy[keys[i]] = denormalizeValue(value[keys[i]], materializeEntity);
     return proxy;
   };
 
   return { normalizeValue, denormalizeValue };
 };
 
-/** --------------------------------------------------------------------------
- *  Graph
- * -------------------------------------------------------------------------- */
+/**
+ * Creates a normalized GraphQL cache with reactive entity and selection stores.
+ *
+ * Provides entity normalization, selection tracking, and reactive materialization
+ * for GraphQL responses. Entities are stored by stable keys and selections maintain
+ * references to entities for efficient updates and cache invalidation.
+ *
+ * @param config - Configuration object with key generators and interface mappings
+ * @returns Graph API with entity and selection management methods
+ */
 export const createGraph = (config: GraphConfig) => {
   // Interface canonicalization
-  const ifaceMgr = new InterfaceManager(config.interfaces);
+  const interfaceManager = new InterfaceManager(config.interfaces);
 
   // Stores
-  const entityStore = new Map<string, Record<string, any>>();   // "Type:id" -> snapshot
-  const selectionStore = new Map<string, any>();                // selectionKey -> skeleton
+  const entityStore = new Map<string, Record<string, any>>();
+  const selectionStore = new Map<string, any>();
 
   // Proxies
-  const entityProxyMgr = new ProxyManager();     // "entity:Type:id"
-  const selectionProxyMgr = new ProxyManager();  // "selection:<selKey>"
+  const entityProxyManager = new ProxyManager();
+  const selectionProxyManager = new ProxyManager();
 
   // Reverse index: entityKey -> Set<selectionKey>
-  const refsIndex = new Map<string, Set<string>>();
+  const referencesIndex = new Map<string, Set<string>>();
 
   // Keyers cache (typename -> keyer)
   const keyers = new Map<string, (obj: any) => string | null>();
-  for (const [tn, fn] of Object.entries(config.keys || {})) keyers.set(tn, fn);
+  for (const [typename, keyFunction] of Object.entries(config.keys || {})) keyers.set(typename, keyFunction);
 
   // Managers
-  const keyMgr = new KeyManager();
+  const keyManager = new KeyManager();
 
-  /** Identify an object → "CanonicalType:id" or null */
+  /**
+   * Generates a stable cache key for an object based on its type and configured key function.
+   *
+   * @param objectValue - The object to identify (must have __typename)
+   * @returns A stable key like "User:123" or null if not identifiable
+   */
   const identify = (objectValue: any): string | null => {
     if (!hasTypename(objectValue)) return null;
 
-    const impl = objectValue.__typename as string;
-    const canonical = ifaceMgr.canonicalOf(impl);
+    const implementor = objectValue.__typename as string;
+    const canonical = interfaceManager.canonicalOf(implementor);
 
-    const implKeyer = keyers.get(impl);
-    const ifaceKeyer = canonical !== impl ? keyers.get(canonical) : undefined;
+    const implementorKeyer = keyers.get(implementor);
+    const interfaceKeyer = canonical !== implementor ? keyers.get(canonical) : undefined;
 
     const id =
-      (implKeyer ? implKeyer(objectValue) : undefined) ??
-      (ifaceKeyer ? ifaceKeyer(objectValue) : undefined) ??
+      (implementorKeyer ? implementorKeyer(objectValue) : undefined) ??
+      (interfaceKeyer ? interfaceKeyer(objectValue) : undefined) ??
       (objectValue.id ?? null);
 
     if (id == null) return null;
@@ -206,17 +266,20 @@ export const createGraph = (config: GraphConfig) => {
   };
 
   // Normalizer/denormalizer with closures into this graph
-  // (We bind putEntity later, but types are fine since we hoist the decl.)
-  let normalizeValue!: (v: any) => any;
-  let denormalizeValue!: (v: any, materializeEntity: (k: string) => any) => any;
+  // (We bind putEntity later, but types are fine since we hoist the declaration.)
+  let normalizeValue!: (value: any) => any;
+  let denormalizeValue!: (value: any, materializeEntity: (key: string) => any) => any;
 
-  /** Overlay helpers */
+  /**
+   * Updates an entity proxy with the latest snapshot data.
+   * @private
+   */
   const overlayEntity = (entityProxy: any, snapshot: any) => {
     // drop stale fields (keep identity)
     const keys = Object.keys(entityProxy);
     for (let i = 0; i < keys.length; i++) {
-      const f = keys[i];
-      if (!IDENTITY_FIELDS.has(f) && !(f in snapshot)) delete entityProxy[f];
+      const field = keys[i];
+      if (!IDENTITY_FIELDS.has(field) && !(field in snapshot)) delete entityProxy[field];
     }
 
     // identity
@@ -231,51 +294,59 @@ export const createGraph = (config: GraphConfig) => {
     }
 
     // fields
-    const ks = Object.keys(snapshot);
-    for (let i = 0; i < ks.length; i++) {
-      const f = ks[i];
-      if (!IDENTITY_FIELDS.has(f)) entityProxy[f] = denormalizeValue(snapshot[f], materializeEntity);
+    const snapshotKeys = Object.keys(snapshot);
+    for (let i = 0; i < snapshotKeys.length; i++) {
+      const field = snapshotKeys[i];
+      if (!IDENTITY_FIELDS.has(field)) entityProxy[field] = denormalizeValue(snapshot[field], materializeEntity);
     }
   };
 
-  const materializeFromSkeleton = (skel: any): any => {
-    if (!skel || typeof skel !== "object") return skel;
-    if ("__ref" in skel) {
+  /**
+   * Creates a reactive wrapper from a normalized skeleton.
+   * @private
+   */
+  const materializeFromSkeleton = (skeleton: any): any => {
+    if (!skeleton || typeof skeleton !== "object") return skeleton;
+    if ("__ref" in skeleton) {
       const wrapper = shallowReactive({} as Record<string, any>);
-      overlaySelection(wrapper, skel);
+      overlaySelection(wrapper, skeleton);
       return wrapper;
     }
-    if (Array.isArray(skel)) {
-      const out = shallowReactive(new Array(skel.length));
-      for (let i = 0; i < skel.length; i++) out[i] = materializeFromSkeleton(skel[i]);
-      return out;
+    if (Array.isArray(skeleton)) {
+      const output = shallowReactive(new Array(skeleton.length));
+      for (let i = 0; i < skeleton.length; i++) output[i] = materializeFromSkeleton(skeleton[i]);
+      return output;
     }
-    const obj = shallowReactive({} as Record<string, any>);
-    const ks = Object.keys(skel);
-    for (let i = 0; i < ks.length; i++) obj[ks[i]] = materializeFromSkeleton(skel[ks[i]]);
-    return obj;
+    const object = shallowReactive({} as Record<string, any>);
+    const keys = Object.keys(skeleton);
+    for (let i = 0; i < keys.length; i++) object[keys[i]] = materializeFromSkeleton(skeleton[keys[i]]);
+    return object;
   };
 
-  const overlaySelection = (target: any, skel: any) => {
-    if (!skel || typeof skel !== "object") return;
+  /**
+   * Updates a selection wrapper with the latest skeleton data.
+   * @private
+   */
+  const overlaySelection = (target: any, skeleton: any) => {
+    if (!skeleton || typeof skeleton !== "object") return;
 
-    if ("__ref" in skel && typeof skel.__ref === "string") {
-      const ent = materializeEntity(skel.__ref);
+    if ("__ref" in skeleton && typeof skeleton.__ref === "string") {
+      const entity = materializeEntity(skeleton.__ref);
       const existing = Object.keys(target);
       for (let i = 0; i < existing.length; i++) delete target[existing[i]];
-      const entKeys = Object.keys(ent);
-      for (let i = 0; i < entKeys.length; i++) target[entKeys[i]] = ent[entKeys[i]];
+      const entityKeys = Object.keys(entity);
+      for (let i = 0; i < entityKeys.length; i++) target[entityKeys[i]] = entity[entityKeys[i]];
       return;
     }
 
-    if (Array.isArray(skel)) {
+    if (Array.isArray(skeleton)) {
       if (!Array.isArray(target)) return;
-      if (target.length > skel.length) target.splice(skel.length);
-      for (let i = 0; i < skel.length; i++) {
-        const sv = skel[i];
-        const tv = target[i];
-        if (tv && typeof tv === "object") overlaySelection(tv, sv);
-        else target[i] = materializeFromSkeleton(sv);
+      if (target.length > skeleton.length) target.splice(skeleton.length);
+      for (let i = 0; i < skeleton.length; i++) {
+        const skeletonValue = skeleton[i];
+        const targetValue = target[i];
+        if (targetValue && typeof targetValue === "object") overlaySelection(targetValue, skeletonValue);
+        else target[i] = materializeFromSkeleton(skeletonValue);
       }
       return;
     }
@@ -283,219 +354,287 @@ export const createGraph = (config: GraphConfig) => {
     // object
     const current = Object.keys(target);
     for (let i = 0; i < current.length; i++) {
-      const f = current[i];
-      if (!(f in skel)) delete target[f];
+      const field = current[i];
+      if (!(field in skeleton)) delete target[field];
     }
-    const ks = Object.keys(skel);
-    for (let i = 0; i < ks.length; i++) {
-      const f = ks[i];
-      const sv = skel[f];
-      const tv = target[f];
-      if (sv && typeof sv === "object") {
-        if (!tv || typeof tv !== "object") target[f] = materializeFromSkeleton(sv);
-        else overlaySelection(tv, sv);
+    const keys = Object.keys(skeleton);
+    for (let i = 0; i < keys.length; i++) {
+      const field = keys[i];
+      const skeletonValue = skeleton[field];
+      const targetValue = target[field];
+      if (skeletonValue && typeof skeletonValue === "object") {
+        if (!targetValue || typeof targetValue !== "object") target[field] = materializeFromSkeleton(skeletonValue);
+        else overlaySelection(targetValue, skeletonValue);
       } else {
-        target[f] = sv;
+        target[field] = skeletonValue;
       }
     }
   };
 
-  /** Index/unindex __ref usage inside a selection skeleton */
-  const indexSelectionRefs = (selKey: string, node: any, add: boolean) => {
+  /**
+   * Indexes or unindexes __ref usage inside a selection skeleton.
+   * @private
+   */
+  const indexSelectionRefs = (selectionKey: string, node: any, add: boolean) => {
     if (!node || typeof node !== "object") return;
 
     if (Array.isArray(node)) {
-      for (let i = 0; i < node.length; i++) indexSelectionRefs(selKey, node[i], add);
+      for (let i = 0; i < node.length; i++) indexSelectionRefs(selectionKey, node[i], add);
       return;
     }
 
     if ("__ref" in node && typeof node.__ref === "string") {
-      const entKey = node.__ref;
+      const entityKey = node.__ref;
       if (add) {
-        let bucket = refsIndex.get(entKey);
-        if (!bucket) refsIndex.set(entKey, (bucket = new Set()));
-        bucket.add(selKey);
+        let bucket = referencesIndex.get(entityKey);
+        if (!bucket) referencesIndex.set(entityKey, (bucket = new Set()));
+        bucket.add(selectionKey);
       } else {
-        const bucket = refsIndex.get(entKey);
+        const bucket = referencesIndex.get(entityKey);
         if (bucket) {
-          bucket.delete(selKey);
-          if (bucket.size === 0) refsIndex.delete(entKey);
+          bucket.delete(selectionKey);
+          if (bucket.size === 0) referencesIndex.delete(entityKey);
         }
       }
       return;
     }
 
-    const ks = Object.keys(node);
-    for (let i = 0; i < ks.length; i++) indexSelectionRefs(selKey, node[ks[i]], add);
+    const keys = Object.keys(node);
+    for (let i = 0; i < keys.length; i++) indexSelectionRefs(selectionKey, node[keys[i]], add);
   };
 
-  /** Reconcile all mounted selections that reference an entity */
-  const syncSelectionsFor = (entityKey: string) => {
-    const keys = refsIndex.get(entityKey);
+  /**
+   * Reconciles all mounted selections that reference an entity.
+   * @private
+   */
+  const syncSelections = (entityKey: string) => {
+    const keys = referencesIndex.get(entityKey);
     if (!keys) return;
-    for (const selKey of keys) {
-      const skel = selectionStore.get(selKey);
-      if (!skel) continue;
-      const proxy = selectionProxyMgr.get(`selection:${selKey}`);
-      if (proxy) overlaySelection(proxy, skel);
+    for (const selectionKey of keys) {
+      const skeleton = selectionStore.get(selectionKey);
+      if (!skeleton) continue;
+      const proxy = selectionProxyManager.get(`selection:${selectionKey}`);
+      if (proxy) overlaySelection(proxy, skeleton);
     }
   };
 
-  /** Entities API */
-  const putEntity = (obj: any): string | null => {
-    const key = identify(obj);
+  /**
+   * Stores an entity in the normalized cache and updates related selections.
+   *
+   * @param object - The entity object to store
+   * @returns The generated cache key or null if not identifiable
+   */
+  const putEntity = (object: any): string | null => {
+    const key = identify(object);
     if (!key) return null;
 
-    const snap: any = { __typename: obj.__typename };
-    const [, idFromKey] = keyMgr.parse(key);
-    snap.id = obj.id != null ? String(obj.id) : idFromKey;
+    const snapshot: any = { __typename: object.__typename };
+    const [, idFromKey] = keyManager.parse(key);
+    snapshot.id = object.id != null ? String(object.id) : idFromKey;
 
-    const fields = Object.keys(obj);
+    const fields = Object.keys(object);
     for (let i = 0; i < fields.length; i++) {
-      const f = fields[i];
-      if (!IDENTITY_FIELDS.has(f)) snap[f] = normalizeValue(obj[f]);
+      const field = fields[i];
+      if (!IDENTITY_FIELDS.has(field)) snapshot[field] = normalizeValue(object[field]);
     }
 
-    const prev = entityStore.get(key);
-    if (prev) Object.assign(prev, snap);
-    else entityStore.set(key, snap);
+    const previous = entityStore.get(key);
+    if (previous) Object.assign(previous, snapshot);
+    else entityStore.set(key, snapshot);
 
     // live entity proxy refresh
-    const p = entityProxyMgr.get(`entity:${key}`);
-    if (p) overlayEntity(p, entityStore.get(key)!);
+    const proxy = entityProxyManager.get(`entity:${key}`);
+    if (proxy) overlayEntity(proxy, entityStore.get(key)!);
 
     // reconcile selections that point to this entity
-    syncSelectionsFor(key);
+    syncSelections(key);
 
     return key;
   };
 
+  /**
+   * Retrieves the raw normalized snapshot of an entity.
+   *
+   * @param key - The entity cache key
+   * @returns The entity snapshot or undefined if not found
+   */
   const getEntity = (key: string): Record<string, any> | undefined => entityStore.get(key);
 
+  /**
+   * Removes an entity from the cache and clears related proxies.
+   *
+   * @param key - The entity cache key to remove
+   * @returns True if the entity existed and was removed
+   */
   const removeEntity = (key: string): boolean => {
     const existed = entityStore.delete(key);
 
-    const p = entityProxyMgr.get(`entity:${key}`);
-    if (p) {
-      const ks = Object.keys(p);
-      for (let i = 0; i < ks.length; i++) delete p[ks[i]];
+    const proxy = entityProxyManager.get(`entity:${key}`);
+    if (proxy) {
+      const keys = Object.keys(proxy);
+      for (let i = 0; i < keys.length; i++) delete proxy[keys[i]];
     }
 
     // selections shrink if they referenced this entity
-    syncSelectionsFor(key);
+    syncSelections(key);
 
     return existed;
   };
 
+  /**
+   * Creates or retrieves a reactive proxy for an entity.
+   *
+   * @param key - The entity cache key
+   * @returns A reactive proxy object for the entity
+   */
   const materializeEntity = (key: string): any => {
-    const hit = entityProxyMgr.get(`entity:${key}`);
-    const snap = entityStore.get(key);
-    const [typeFromKey, idFromKey] = keyMgr.parse(key);
-    const concreteType = snap?.__typename ?? typeFromKey;
-    const concreteId = snap?.id ?? idFromKey;
+    const hit = entityProxyManager.get(`entity:${key}`);
+    const snapshot = entityStore.get(key);
+    const [typeFromKey, idFromKey] = keyManager.parse(key);
+    const concreteType = snapshot?.__typename ?? typeFromKey;
+    const concreteId = snapshot?.id ?? idFromKey;
 
     if (hit) {
       if (hit.__typename !== concreteType) hit.__typename = concreteType;
       if (concreteId != null) {
-        const sid = String(concreteId);
-        if (hit.id !== sid) hit.id = sid;
+        const stableId = String(concreteId);
+        if (hit.id !== stableId) hit.id = stableId;
       } else if ("id" in hit) {
         delete hit.id;
       }
-      if (snap) overlayEntity(hit, snap);
+      if (snapshot) overlayEntity(hit, snapshot);
       return hit;
     }
 
     const proxy = shallowReactive({} as any);
     proxy.__typename = concreteType;
     if (concreteId != null) proxy.id = String(concreteId);
-    if (snap) overlayEntity(proxy, snap);
+    if (snapshot) overlayEntity(proxy, snapshot);
 
-    entityProxyMgr.set(`entity:${key}`, proxy);
+    entityProxyManager.set(`entity:${key}`, proxy);
     return proxy;
   };
 
-  /** Selections API */
-  const putSelection = (selKey: string, subtree: any): void => {
-    const prev = selectionStore.get(selKey);
-    if (prev) indexSelectionRefs(selKey, prev, false);
+  /**
+   * Stores a selection skeleton and updates the reference index.
+   *
+   * @param selectionKey - The selection cache key
+   * @param subtree - The selection data to normalize and store
+   */
+  const putSelection = (selectionKey: string, subtree: any): void => {
+    const previous = selectionStore.get(selectionKey);
+    if (previous) indexSelectionRefs(selectionKey, previous, false);
 
     const normalized = normalizeValue(subtree);
-    selectionStore.set(selKey, normalized);
+    selectionStore.set(selectionKey, normalized);
 
-    indexSelectionRefs(selKey, normalized, true);
+    indexSelectionRefs(selectionKey, normalized, true);
 
-    const p = selectionProxyMgr.get(`selection:${selKey}`);
-    if (p) overlaySelection(p, normalized);
+    const proxy = selectionProxyManager.get(`selection:${selectionKey}`);
+    if (proxy) overlaySelection(proxy, normalized);
   };
 
-  const getSelection = (selKey: string): any | undefined => selectionStore.get(selKey);
+  /**
+   * Retrieves the raw normalized skeleton of a selection.
+   *
+   * @param selectionKey - The selection cache key
+   * @returns The selection skeleton or undefined if not found
+   */
+  const getSelection = (selectionKey: string): any | undefined => selectionStore.get(selectionKey);
 
-  const removeSelection = (selKey: string): boolean => {
-    const skel = selectionStore.get(selKey);
-    const existed = selectionStore.delete(selKey);
+  /**
+   * Removes a selection from the cache and clears related proxies.
+   *
+   * @param selectionKey - The selection cache key to remove
+   * @returns True if the selection existed and was removed
+   */
+  const removeSelection = (selectionKey: string): boolean => {
+    const skeleton = selectionStore.get(selectionKey);
+    const existed = selectionStore.delete(selectionKey);
 
-    if (skel) indexSelectionRefs(selKey, skel, false);
+    if (skeleton) indexSelectionRefs(selectionKey, skeleton, false);
 
-    const p = selectionProxyMgr.get(`selection:${selKey}`);
-    if (p) {
-      const ks = Object.keys(p);
-      for (let i = 0; i < ks.length; i++) delete p[ks[i]];
+    const proxy = selectionProxyManager.get(`selection:${selectionKey}`);
+    if (proxy) {
+      const keys = Object.keys(proxy);
+      for (let i = 0; i < keys.length; i++) delete proxy[keys[i]];
     }
     return existed;
   };
 
-  const materializeSelection = (selKey: string): any => {
-    const skel = selectionStore.get(selKey);
-    if (!skel) return undefined;
+  /**
+   * Creates or retrieves a reactive proxy for a selection.
+   *
+   * @param selectionKey - The selection cache key
+   * @returns A reactive proxy object for the selection or undefined if not found
+   */
+  const materializeSelection = (selectionKey: string): any => {
+    const skeleton = selectionStore.get(selectionKey);
+    if (!skeleton) return undefined;
 
-    const hit = selectionProxyMgr.get(`selection:${selKey}`);
+    const hit = selectionProxyManager.get(`selection:${selectionKey}`);
     if (hit) {
-      overlaySelection(hit, skel);
+      overlaySelection(hit, skeleton);
       return hit;
     }
-    const wrapper = materializeFromSkeleton(skel);
+    const wrapper = materializeFromSkeleton(skeleton);
     if (wrapper && typeof wrapper === "object") {
-      selectionProxyMgr.set(`selection:${selKey}`, wrapper);
+      selectionProxyManager.set(`selection:${selectionKey}`, wrapper);
     }
     return wrapper;
   };
 
-  /** Listings & clear */
+  /**
+   * Returns all entity cache keys currently stored.
+   *
+   * @returns Array of entity keys like ["User:1", "Post:123"]
+   */
   const listEntityKeys = () => Array.from(entityStore.keys());
+
+  /**
+   * Returns all selection cache keys currently stored.
+   *
+   * @returns Array of selection keys like ["user({})", "User:1.posts({first:10})"]
+   */
   const listSelectionKeys = () => Array.from(selectionStore.keys());
 
   /**
-   * Clear entities and/or selections (defaults: both).
-   * Example:
-   *   clear()                // wipe both
-   *   clear({ entities: true }) // only entities
-   *   clear({ selections: true }) // only selections
+   * Clears entities and/or selections from the cache.
+   *
+   * @param options - Configuration for what to clear (defaults to clearing both)
+   * @example
+   * clear()                        // wipe both
+   * clear({ entities: true })      // only entities
+   * clear({ selections: true })    // only selections
    */
-  const clear = (opts?: { entities?: boolean; selections?: boolean }) => {
-    const doEntities = opts?.entities ?? true;
-    const doSelections = opts?.selections ?? true;
+  const clear = (options?: { entities?: boolean; selections?: boolean }) => {
+    const clearEntities = options?.entities ?? true;
+    const clearSelections = options?.selections ?? true;
 
-    if (doSelections) {
-      for (const k of selectionStore.keys()) removeSelection(k);
-      selectionProxyMgr.clear();
+    if (clearSelections) {
+      for (const key of selectionStore.keys()) removeSelection(key);
+      selectionProxyManager.clear();
     }
-    if (doEntities) {
-      for (const k of entityStore.keys()) removeEntity(k);
-      entityProxyMgr.clear();
+    if (clearEntities) {
+      for (const key of entityStore.keys()) removeEntity(key);
+      entityProxyManager.clear();
     }
   };
 
-  /** Inspect snapshot for debugging/tests */
+  /**
+   * Provides a debug view of the cache contents.
+   *
+   * @returns Object containing entities, selections, and config for inspection
+   */
   const inspect = () => {
-    const toObj = (m: Map<string, any>) => {
-      const out: Record<string, any> = {};
-      for (const [k, v] of m.entries()) out[k] = v;
-      return out;
+    const toObject = (map: Map<string, any>) => {
+      const output: Record<string, any> = {};
+      for (const [key, value] of map.entries()) output[key] = value;
+      return output;
     };
     return {
-      entities: toObj(entityStore),
-      selections: toObj(selectionStore),
+      entities: toObject(entityStore),
+      selections: toObject(selectionStore),
       config: {
         keys: config.keys || {},
         interfaces: config.interfaces || {},
@@ -505,9 +644,9 @@ export const createGraph = (config: GraphConfig) => {
 
   // Install normalizer now (after putEntity/identify closures exist)
   {
-    const n = createNormalizer(putEntity, identify);
-    normalizeValue = n.normalizeValue;
-    denormalizeValue = n.denormalizeValue;
+    const normalizer = createNormalizer(putEntity, identify);
+    normalizeValue = normalizer.normalizeValue;
+    denormalizeValue = normalizer.denormalizeValue;
   }
 
   return {
