@@ -584,16 +584,16 @@ export const createGraph = (config: GraphConfig) => {
       indexSelectionRefs(selectionKey, previous, false);
     }
 
-    const normalized = normalizeValue(subtree);
+    const result = normalizeValue(subtree);
 
-    selectionStore.set(selectionKey, normalized);
+    selectionStore.set(selectionKey, result);
 
-    indexSelectionRefs(selectionKey, normalized, true);
+    indexSelectionRefs(selectionKey, result, true);
 
     const proxy = selectionProxyManager.get(`selection:${selectionKey}`);
 
     if (proxy) {
-      overlaySelection(proxy, normalized);
+      overlaySelection(proxy, result);
     }
   };
 
