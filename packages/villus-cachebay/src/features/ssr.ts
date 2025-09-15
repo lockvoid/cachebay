@@ -6,14 +6,14 @@ type GraphAPIForSSR = {
   getEntity: (key: string) => any | undefined;
   putEntity: (obj: any) => string | null;
   removeEntity: (key: string) => boolean;
-  clearAllEntities: () => void;
+  clearEntities: () => void;
 
   // selections
   listSelectionKeys: () => string[];
   getSelection: (key: string) => any | undefined;
   putSelection: (key: string, subtree: any) => void;
   removeSelection: (key: string) => boolean;
-  clearAllSelections: () => void;
+  clearSelections: () => void;
 };
 
 type Deps = {
@@ -66,8 +66,8 @@ export const createSSR = (deps: Deps) => {
       if (!snapshot) return;
 
       // Reset stores using only public API
-      graph.clearAllEntities();
-      graph.clearAllSelections();
+      graph.clearEntities();
+      graph.clearSelections();
       hydrateSelectionTicket.clear();
 
       // Restore entities

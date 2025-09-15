@@ -96,8 +96,8 @@ export const createSelections = () => {
   };
 
   /**
-   * Compiles all selections from a GraphQL response payload.
-   * @param input - The GraphQL response with a `data` property
+   * Compiles all selections from a GraphQL response.
+   * @param data - The response data
    * @returns Array of selection entries with their cache keys and subtrees
    */
   const compileSelections = (data: Array<{ key: string; subtree: any }>) => {

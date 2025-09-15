@@ -1,15 +1,7 @@
-// src/core/graph.ts
 import { shallowReactive } from "vue";
 
-/** Public config */
 export type GraphConfig = {
-  reactiveMode?: "shallow" | "deep"; // currently using shallow for all
   keys: Record<string, (obj: any) => string | null>;
-  /**
-   * Interface map: interfaceName -> concrete implementors.
-   * Example: { Post: ['AudioPost', 'VideoPost'] }
-   * Entities of those implementors are keyed under the interface, e.g. AudioPost{id:1} → "Post:1".
-   */
   interfaces?: Record<string, string[]>;
 };
 
@@ -34,10 +26,18 @@ const hasNonIdentityFields = (value: any): boolean => {
   return false;
 };
 
+/**
+ * Creates a normalized GraphQL cache with reactive entity and selection stores.
+ *
+ * Provides entity normalization, selection tracking, and reactive materialization
+ * for GraphQL responses. Entities are stored by stable keys and selections maintain
+ * references to entities for efficient updates and cache invalidation.
+ *
+ * @param config - Configuration object with key generators and interface mappings
+ * @returns Graph API with entity and selection management methods
+ */
 export const createGraph = (config: GraphConfig) => {
-  // ────────────────────────────────────────────────────────────────────────────
   // Canonicalization (implementor typename → interface typename)
-  // ────────────────────────────────────────────────────────────────────────────
   const canonicalByImpl = new Map<string, string>();
   if (config.interfaces) {
     const interfaces = Object.keys(config.interfaces);
@@ -50,18 +50,16 @@ export const createGraph = (config: GraphConfig) => {
     }
   }
 
-  // ────────────────────────────────────────────────────────────────────────────
   // Stores
-  // ────────────────────────────────────────────────────────────────────────────
-  const entityStore = new Map<string, Record<string, any>>(); // key -> normalized snapshot (includes identity)
-  const selectionStore = new Map<string, any>();              // selectionKey -> skeleton (objects/arrays with {__ref})
+  const entityStore = new Map<string, Record<string, any>>();
+  const selectionStore = new Map<string, any>();
 
   // Separate proxy caches
-  const entityProxies = new Map<string, WeakRef<any>>();      // "entity:User:1" -> reactive proxy
-  const selectionProxies = new Map<string, WeakRef<any>>();   // "selection:user({})" -> reactive proxy
+  const entityProxies = new Map<string, WeakRef<any>>();
+  const selectionProxies = new Map<string, WeakRef<any>>();
 
   // Reverse index: which selections reference which entities
-  const refsIndex = new Map<string, Set<string>>();           // entityKey -> Set<selectionKey>
+  const refsIndex = new Map<string, Set<string>>();
 
   // Keyers cache (typename -> keyer)
   const keyers = new Map<string, (obj: any) => string | null>();
@@ -70,24 +68,27 @@ export const createGraph = (config: GraphConfig) => {
     keyers.set(configKeyEntries[i][0], configKeyEntries[i][1]);
   }
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // Public: identity
-  // ────────────────────────────────────────────────────────────────────────────
-  const identify = (objectValue: any): string | null => {
-    if (!hasTypename(objectValue)) {
+  /**
+   * Generates a stable cache key for an object based on its type and configured key function.
+   *
+   * @param object - The object to identify (must have __typename)
+   * @returns A stable key like "User:123" or null if not identifiable
+   */
+  const identify = (object: any): string | null => {
+    if (!hasTypename(object)) {
       return null;
     }
 
-    const implementor = objectValue["__typename"] as string;
+    const implementor = object["__typename"] as string;
     const canonical = canonicalByImpl.get(implementor) || implementor;
 
     const keyerForImpl = keyers.get(implementor);
     const keyerForCanonical = canonical !== implementor ? keyers.get(canonical) : undefined;
 
     const id =
-      (keyerForImpl ? keyerForImpl(objectValue) : undefined) ??
-      (keyerForCanonical ? keyerForCanonical(objectValue) : undefined) ??
-      (objectValue["id"] ?? null);
+      (keyerForImpl ? keyerForImpl(object) : undefined) ??
+      (keyerForCanonical ? keyerForCanonical(object) : undefined) ??
+      (object["id"] ?? null);
 
     if (id == null) {
       return null;
@@ -100,7 +101,9 @@ export const createGraph = (config: GraphConfig) => {
   // Private helpers (depend on closures)
   // ===========================================================================
 
-  // ——— Entity denormalization overlay ——————————————————————————————————————
+  /**
+   * Recursively denormalizes a normalized value by resolving entity references.
+   */
   const denormalizeValue = (value: any): any => {
     // primitives
     if (!value || typeof value !== "object") {
@@ -131,6 +134,9 @@ export const createGraph = (config: GraphConfig) => {
     return proxyObject;
   };
 
+  /**
+   * Updates an entity proxy with the latest snapshot data.
+   */
   const overlayEntity = (entityProxy: any, entitySnapshot: any) => {
     // remove stale fields
     const proxyKeys = Object.keys(entityProxy);
@@ -164,7 +170,9 @@ export const createGraph = (config: GraphConfig) => {
     }
   };
 
-  // ——— Normalization (writes entities & returns refs in skeletons) ——————————
+  /**
+   * Recursively normalizes a value by extracting entities and creating references.
+   */
   const normalizeValue = (value: any): any => {
     // primitives
     if (!value || typeof value !== "object") {
@@ -220,7 +228,9 @@ export const createGraph = (config: GraphConfig) => {
     return outPlain;
   };
 
-  // ——— Selection-overlay helpers ————————————————————————————————————————————
+  /**
+   * Updates all selections that reference a given entity.
+   */
   const updateSelectionsReferencing = (entityKey: string) => {
     const selectionKeys = refsIndex.get(entityKey);
     if (!selectionKeys) {
@@ -240,6 +250,9 @@ export const createGraph = (config: GraphConfig) => {
     }
   };
 
+  /**
+   * Indexes entity references within a selection for efficient invalidation.
+   */
   const indexSelectionRefs = (selectionKey: string, node: any, add: boolean) => {
     if (!node || typeof node !== "object") {
       return;
@@ -278,6 +291,9 @@ export const createGraph = (config: GraphConfig) => {
     }
   };
 
+  /**
+   * Creates a reactive wrapper from a normalized skeleton.
+   */
   const materializeFromSkeleton = (skeleton: any): any => {
     if (!skeleton || typeof skeleton !== "object") {
       return skeleton;
@@ -306,6 +322,9 @@ export const createGraph = (config: GraphConfig) => {
     return wrapper;
   };
 
+  /**
+   * Updates a selection wrapper with the latest skeleton data.
+   */
   const overlaySelection = (targetWrapper: any, skeleton: any) => {
     if (!skeleton || typeof skeleton !== "object") {
       return;
@@ -355,16 +374,16 @@ export const createGraph = (config: GraphConfig) => {
     const skeletonKeys = Object.keys(skeleton);
     for (let i = 0; i < skeletonKeys.length; i++) {
       const field = skeletonKeys[i];
-      const sv = skeleton[field];
-      const tv = targetWrapper[field];
-      if (sv && typeof sv === "object") {
-        if (!tv || typeof tv !== "object") {
-          targetWrapper[field] = materializeFromSkeleton(sv);
+      const skeletonValue = skeleton[field];
+      const targetValue = targetWrapper[field];
+      if (skeletonValue && typeof skeletonValue === "object") {
+        if (!targetValue || typeof targetValue !== "object") {
+          targetWrapper[field] = materializeFromSkeleton(skeletonValue);
         } else {
-          overlaySelection(tv, sv);
+          overlaySelection(targetValue, skeletonValue);
         }
       } else {
-        targetWrapper[field] = sv;
+        targetWrapper[field] = skeletonValue;
       }
     }
   };
@@ -373,26 +392,29 @@ export const createGraph = (config: GraphConfig) => {
   // Public API
   // ===========================================================================
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // Entities
-  // ────────────────────────────────────────────────────────────────────────────
-  const putEntity = (objectValue: any): string | null => {
-    const key = identify(objectValue);
+  /**
+   * Stores an entity in the normalized cache and updates related selections.
+   *
+   * @param object - The entity object to store
+   * @returns The generated cache key or null if not identifiable
+   */
+  const putEntity = (object: any): string | null => {
+    const key = identify(object);
     if (!key) {
       return null;
     }
 
     // build snapshot (including identity)
-    const incomingSnapshot: any = { ["__typename"]: objectValue["__typename"] };
+    const incomingSnapshot: any = { ["__typename"]: object["__typename"] };
     const colonIdx = key.indexOf(":");
     const idFromKey = colonIdx > -1 ? key.slice(colonIdx + 1) : undefined;
-    incomingSnapshot["id"] = objectValue["id"] != null ? String(objectValue["id"]) : idFromKey;
+    incomingSnapshot["id"] = object["id"] != null ? String(object["id"]) : idFromKey;
 
-    const objectKeys = Object.keys(objectValue);
+    const objectKeys = Object.keys(object);
     for (let i = 0; i < objectKeys.length; i++) {
       const field = objectKeys[i];
       if (!identityFieldSet.has(field)) {
-        incomingSnapshot[field] = normalizeValue(objectValue[field]);
+        incomingSnapshot[field] = normalizeValue(object[field]);
       }
     }
 
@@ -418,10 +440,22 @@ export const createGraph = (config: GraphConfig) => {
     return key;
   };
 
+  /**
+   * Retrieves the raw normalized snapshot of an entity.
+   *
+   * @param key - The entity cache key
+   * @returns The entity snapshot or undefined if not found
+   */
   const getEntity = (key: string): Record<string, any> | undefined => {
     return entityStore.get(key);
   };
 
+  /**
+   * Removes an entity from the cache and clears related proxies.
+   *
+   * @param key - The entity cache key to remove
+   * @returns True if the entity existed and was removed
+   */
   const removeEntity = (key: string): boolean => {
     const existed = entityStore.delete(key);
 
@@ -441,6 +475,12 @@ export const createGraph = (config: GraphConfig) => {
     return existed;
   };
 
+  /**
+   * Creates or retrieves a reactive proxy for an entity.
+   *
+   * @param key - The entity cache key
+   * @returns A reactive proxy object for the entity
+   */
   const materializeEntity = (key: string): any => {
     const entityCacheKey = `entity:${key}`;
     const entityWeakRef = entityProxies.get(entityCacheKey);
@@ -485,9 +525,12 @@ export const createGraph = (config: GraphConfig) => {
     return proxy;
   };
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // Selections
-  // ────────────────────────────────────────────────────────────────────────────
+  /**
+   * Stores a selection skeleton and updates the reference index.
+   *
+   * @param selectionKey - The selection cache key
+   * @param subtree - The selection data to normalize and store
+   */
   const putSelection = (selectionKey: string, subtree: any): void => {
     // un-index old refs if rewriting
     const previousSkeleton = selectionStore.get(selectionKey);
@@ -510,10 +553,22 @@ export const createGraph = (config: GraphConfig) => {
     }
   };
 
+  /**
+   * Retrieves the raw normalized skeleton of a selection.
+   *
+   * @param selectionKey - The selection cache key
+   * @returns The selection skeleton or undefined if not found
+   */
   const getSelection = (selectionKey: string): any | undefined => {
     return selectionStore.get(selectionKey);
   };
 
+  /**
+   * Removes a selection from the cache and clears related proxies.
+   *
+   * @param selectionKey - The selection cache key to remove
+   * @returns True if the selection existed and was removed
+   */
   const removeSelection = (selectionKey: string): boolean => {
     const skeleton = selectionStore.get(selectionKey);
     const existed = selectionStore.delete(selectionKey);
@@ -535,6 +590,12 @@ export const createGraph = (config: GraphConfig) => {
     return existed;
   };
 
+  /**
+   * Creates or retrieves a reactive proxy for a selection.
+   *
+   * @param selectionKey - The selection cache key
+   * @returns A reactive proxy object for the selection or undefined if not found
+   */
   const materializeSelection = (selectionKey: string): any => {
     const skeleton = selectionStore.get(selectionKey);
     if (!skeleton) {
@@ -556,46 +617,83 @@ export const createGraph = (config: GraphConfig) => {
     return wrapper;
   };
 
+  /**
+   * Returns all entity cache keys currently stored.
+   *
+   * @returns Array of entity keys like ["User:1", "Post:123"]
+   */
+  const listEntityKeys = () => {
+    return Array.from(entityStore.keys());
+  };
+
+  /**
+   * Returns all selection cache keys currently stored.
+   *
+   * @returns Array of selection keys like ["user({})", "User:1.posts({first:10})"]
+   */
+  const listSelectionKeys = () => {
+    return Array.from(selectionStore.keys());
+  };
+
+  /**
+   * Removes all entities from the cache and clears their proxies.
+   */
+  const clearEntities = () => {
+    for (const key of entityStore.keys()) {
+      removeEntity(key);
+    }
+  };
+
+  /**
+   * Removes all selections from the cache and clears their proxies.
+   */
+  const clearSelections = () => {
+    for (const key of selectionStore.keys()) {
+      removeSelection(key);
+    }
+  };
+
+  /**
+   * Provides a debug view of the cache contents.
+   *
+   * @returns Object containing entities, selections, and config for inspection
+   */
   const inspect = () => {
-    const toPlainObject = (m: Map<string, any>) => {
+    const toPlainObject = (object: Map<string, any>) => {
       const result: Record<string, any> = {};
-      for (const [k, v] of m.entries()) {
-        result[k] = v;
+
+      for (const [key, value] of object.entries()) {
+        result[key] = value;
       }
+
       return result;
     };
+
     return {
       entities: toPlainObject(entityStore),
       selections: toPlainObject(selectionStore),
+
       config: {
-        keys: Object.keys(config.keys || {}),
+        keys: config.keys || {},
         interfaces: config.interfaces || {},
       },
     };
   };
 
   return {
-    // identity
     identify,
-
-    // entity-level
     putEntity,
     getEntity,
     removeEntity,
     materializeEntity,
-
-    // selections
     putSelection,
     getSelection,
     removeSelection,
     materializeSelection,
-
-    listEntityKeys: () => Array.from(entityStore.keys()),
-    listSelectionKeys: () => Array.from(selectionStore.keys()),
-    clearAllEntities: () => { for (const k of entityStore.keys()) removeEntity(k); },
-    clearAllSelections: () => { for (const k of selectionStore.keys()) removeSelection(k); },
-
-    // helpers
+    listEntityKeys,
+    listSelectionKeys,
+    clearEntities,
+    clearSelections,
     inspect,
   };
 };

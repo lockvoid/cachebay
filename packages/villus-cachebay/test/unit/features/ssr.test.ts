@@ -20,7 +20,7 @@ function makeGraph() {
       return key;
     },
     removeEntity: (key: string) => entityStore.delete(key),
-    clearAllEntities: () => {
+    clearEntities: () => {
       entityStore.clear();
     },
 
@@ -31,7 +31,7 @@ function makeGraph() {
       selectionStore.set(key, JSON.parse(JSON.stringify(subtree)));
     },
     removeSelection: (key: string) => selectionStore.delete(key),
-    clearAllSelections: () => {
+    clearSelections: () => {
       selectionStore.clear();
     },
   };
