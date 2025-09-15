@@ -564,10 +564,9 @@ export const createGraph = (config: GraphConfig) => {
    * Removes an entity from the cache and clears related proxies.
    *
    * @param key - The entity cache key to remove
-   * @returns True if the entity existed and was removed
    */
-  const removeEntity = (key: string): boolean => {
-    const existed = entityStore.delete(key);
+  const removeEntity = (key: string): void => {
+    entityStore.delete(key);
 
     const proxy = entityProxyManager.get(`entity:${key}`);
 
@@ -578,8 +577,6 @@ export const createGraph = (config: GraphConfig) => {
     }
 
     syncSelections(key);
-
-    return existed;
   };
 
   /**
@@ -622,11 +619,11 @@ export const createGraph = (config: GraphConfig) => {
    * Removes a selection from the cache and clears related proxies.
    *
    * @param selectionKey - The selection cache key to remove
-   * @returns True if the selection existed and was removed
    */
-  const removeSelection = (selectionKey: string): boolean => {
+  const removeSelection = (selectionKey: string): void => {
     const skeleton = selectionStore.get(selectionKey);
-    const existed = selectionStore.delete(selectionKey);
+
+    selectionStore.delete(selectionKey);
 
     if (skeleton) {
       indexSelectionRefs(selectionKey, skeleton, false);
@@ -639,8 +636,6 @@ export const createGraph = (config: GraphConfig) => {
         delete proxy[keys[i]];
       }
     }
-
-    return existed;
   };
 
   /**
@@ -664,13 +659,13 @@ export const createGraph = (config: GraphConfig) => {
       return hit;
     }
 
-    const wrapper = materializeFromSkeleton(skeleton);
+    const result = materializeFromSkeleton(skeleton);
 
-    if (wrapper && typeof wrapper === "object") {
-      selectionProxyManager.set(`selection:${selectionKey}`, wrapper);
+    if (result && typeof result === "object") {
+      selectionProxyManager.set(`selection:${selectionKey}`, result);
     }
 
-    return wrapper;
+    return result;
   };
 
   /**
