@@ -1,9 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { defineComponent, h, computed, watch } from 'vue';
 import { useQuery } from 'villus';
-import { createCache, useFragments } from '@/src';
+import { createCache, useFragment } from '@/src';
 import { tick, delay, type Route } from '@/test/helpers';
 import { mountWithClient, cacheConfigs, testQueries, mockResponses } from '@/test/helpers/integration';
+
+const FRAG_POST = /* GraphQL */ `
+  fragment P on Post { __typename id title }
+`;
+const FRAG_USER = /* GraphQL */ `
+  fragment U on User { __typename id name }
+`;
 
 describe('Integration • Edgecases behaviour', () => {
   it('Relay edges: grow across cursor pages; update in place; entity identity stable across updates', async () => {
@@ -67,7 +74,7 @@ describe('Integration • Edgecases behaviour', () => {
         delay: 10,
         respond: () => mockResponses.posts(['Post 3', 'Post 4']),
       },
-      // update Post 1 (cursor page with first=1) — under current policy, union window remains
+      // update Post 1 (cursor page with first=1) — under union window policy, union remains visible
       {
         when: ({ variables }) => variables.after === 'c4' && variables.first === 1,
         delay: 10,
@@ -104,21 +111,17 @@ describe('Integration • Edgecases behaviour', () => {
     await wrapper.setProps({ first: 1, after: 'c4' });
     await delay(12);
 
-    // Under union-window policy, after an update the list still shows the union,
-    // but the entity with id=1 must reflect the updated title.
+    // Under union-window policy, entity id=1 must reflect the updated title.
     const last = renders.at(-1)!;
     expect(last).toContain('Post 1 Updated');
-    // (It may also still contain "Post 4" in this union window.)
-    // So we don't assert exact equality or length=1; we assert correct update.
-    // Optional sanity: either 1 or 2 items depending on prior union
     expect(last.length === 1 || last.length === 2).toBe(true);
 
-    // Entity identity stability: same entity ("Post 1" -> "Post 1 Updated") keeps the same id across renders
+    // Identity stability
     expect(firstNodeIds[0]).toBe('1');
     expect(firstNodeIds.at(-1)).toBe(firstNodeIds[0]);
   });
 
-  it('Interface reads: Node:* lists concrete implementors (materialized), no phantom keys', async () => {
+  it('Interface reads (no wildcard): two live fragments show concrete implementors (materialized), no phantom keys', async () => {
     const cache = createCache({
       addTypename: true,
       interfaces: { Node: ['Post', 'User'] },
@@ -128,66 +131,92 @@ describe('Integration • Edgecases behaviour', () => {
       },
     });
 
-    // Write fragments to cache
-    (cache as any).writeFragment({ __typename: 'Post', id: '1', title: 'Post 1' }).commit();
-    (cache as any).writeFragment({ __typename: 'User', id: '2', name: 'User 2' }).commit();
+    // Write two interface implementors
+    (cache as any).writeFragment({
+      id: 'Post:1',
+      fragment: FRAG_POST,
+      data: { __typename: 'Post', id: '1', title: 'Post 1' }
+    });
+    (cache as any).writeFragment({
+      id: 'User:2',
+      fragment: FRAG_USER,
+      data: { __typename: 'User', id: '2', name: 'User 2' }
+    });
     await tick(2);
 
     const Comp = defineComponent({
-      name: 'InterfaceList',
+      name: 'InterfaceTwo',
       setup() {
-        const list = useFragments('Node:*'); // materialized: proxies
-        return { list };
+        // live reads for two distinct implementors
+        const postRef = useFragment({ id: 'Post:1', fragment: FRAG_POST });
+        const userRef = useFragment({ id: 'User:2', fragment: FRAG_USER });
+
+        // Use computed strings to avoid any ref auto-unwrapping edge cases in render
+        const postTitle = computed(() => postRef.value?.title || '');
+        const userName = computed(() => userRef.value?.name || '');
+        return { postTitle, userName };
       },
       render() {
-        return h('div', [
-          h('ul', this.list?.map((item: any) =>
-            h('li', { key: item.id }, item.title || item.name || '')
-          ) || [])
-        ]);
+        return h('ul', [h('li', {}, this.postTitle), h('li', {}, this.userName)]);
       },
     });
 
     const { wrapper } = await mountWithClient(Comp, [], cache);
     await tick(2);
 
-    const list = (wrapper.vm as any).list;
-    expect(Array.isArray(list)).toBe(true);
-    expect(list.length).toBe(2);
-
-    const items = list.map((x: any) => x?.title || x?.name).sort();
-    expect(items).toEqual(['Post 1', 'User 2']);
+    const items = wrapper.findAll('li').map(li => li.text()).sort();
+    expect(items).toEqual(['Post 1', 'User 2']); // concrete fields, no phantom keys
   });
 
-  it('Deletion prunes wildcard lists (Post:*) and no phantom entries remain', async () => {
+  it('Deletion hides removed entity in live readers (no wildcard)', async () => {
     const cache = cacheConfigs.basic();
 
     // seed
-    (cache as any).writeFragment({ __typename: 'Post', id: '1', title: 'T1' }).commit();
-    (cache as any).writeFragment({ __typename: 'Post', id: '2', title: 'T2' }).commit();
+    (cache as any).writeFragment({
+      id: 'Post:1', fragment: FRAG_POST,
+      data: { __typename: 'Post', id: '1', title: 'T1' }
+    });
+    (cache as any).writeFragment({
+      id: 'Post:2', fragment: FRAG_POST,
+      data: { __typename: 'Post', id: '2', title: 'T2' }
+    });
     await tick();
 
-    const Comp = defineComponent({
-      name: 'WildcardPostList',
+    const A = defineComponent({
+      name: 'A',
       setup() {
-        const list = useFragments('Post:*'); // materialized proxies for wildcard
-        return { list };
+        const pRef = useFragment({ id: 'Post:1', fragment: FRAG_POST });
+        const title = computed(() => pRef.value?.title || '');
+        return { title };
       },
-      render() {
-        return h('ul', (this.list ?? []).map((p: any) => h('li', { key: p.id }, p.title || '')));
+      render() { return h('div', { class: 'a' }, this.title); }
+    });
+    const B = defineComponent({
+      name: 'B',
+      setup() {
+        const pRef = useFragment({ id: 'Post:2', fragment: FRAG_POST });
+        const title = computed(() => pRef.value?.title || '');
+        return { title };
       },
+      render() { return h('div', { class: 'b' }, this.title); }
+    });
+    const Wrapper = defineComponent({
+      name: 'W',
+      render() { return h('div', {}, [h(A), h(B)]); }
     });
 
-    const { wrapper } = await mountWithClient(Comp, [], cache);
+    const { wrapper } = await mountWithClient(Wrapper, [], cache);
     await tick();
-    let titles = wrapper.findAll('li').map(li => li.text()).sort();
-    expect(titles).toEqual(['T1', 'T2']);
+    expect(wrapper.find('.a').text()).toBe('T1');
+    expect(wrapper.find('.b').text()).toBe('T2');
 
-    // delete Post:1 optimistically
+    // delete Post:1 optimistically via modifyOptimistic (graph-level delete)
     const t = (cache as any).modifyOptimistic((c: any) => { c.delete('Post:1'); });
-    t.commit?.(); await tick();
+    t.commit?.();
+    await tick();
 
-    titles = wrapper.findAll('li').map(li => li.text()).sort();
-    expect(titles).toEqual(['T2']); // pruned
+    // A disappears (empty); B remains
+    expect(wrapper.find('.a').text()).toBe('');
+    expect(wrapper.find('.b').text()).toBe('T2');
   });
 });

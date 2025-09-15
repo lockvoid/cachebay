@@ -5,10 +5,15 @@ import { tick, delay, type Route } from '@/test/helpers';
 import { mountWithClient } from '@/test/helpers/integration';
 import { useFragment } from '@/src';
 
+// live fragment sources used by the tests
+const FRAG_POST = /* GraphQL */ `
+  fragment P on Post { __typename id title }
+`;
+
 describe('Integration • Subscriptions (simulated)', () => {
   /**
    * 1) Simulate subscription frames by updating cache directly.
-   *    Use dynamic + non-materialized so the hook updates when the entity appears/changes.
+   *    Use a live reader (useFragment) so the UI follows writes.
    */
   it('simulates subscription frames by updating cache directly', async () => {
     const cache = cacheConfigs.basic();
@@ -17,27 +22,38 @@ describe('Integration • Subscriptions (simulated)', () => {
       name: 'PostDisplay',
       setup() {
         const key = ref('Post:1');
-        // dynamic + non-materialized: updates when entity appears/changes
-        const post = useFragment<any>(key, { mode: 'dynamic', materialized: false });
-        return () =>
-          h('div', [h('div', { class: 'title' }, post.value?.title || 'No post')]);
+        // live fragment — will react to writes
+        const post = useFragment({ id: key, fragment: FRAG_POST });
+        return () => h('div', [h('div', { class: 'title' }, post.value?.title || 'No post')]);
       },
     });
 
     const { wrapper, cache: testCache } = await mountWithClient(PostDisplay, [] as Route[], cache);
 
     // Frame 0: initial write (entity appears)
-    (testCache as any).writeFragment({ __typename: 'Post', id: '1', title: 'Initial Title' }).commit?.();
+    (testCache as any).writeFragment({
+      id: 'Post:1',
+      fragment: FRAG_POST,
+      data: { __typename: 'Post', id: '1', title: 'Initial Title' },
+    });
     await tick();
     expect(wrapper.find('.title').text()).toBe('Initial Title');
 
     // Frame 1
-    (testCache as any).writeFragment({ __typename: 'Post', id: '1', title: 'Updated via subscription' }).commit?.();
+    (testCache as any).writeFragment({
+      id: 'Post:1',
+      fragment: FRAG_POST,
+      data: { __typename: 'Post', id: '1', title: 'Updated via subscription' },
+    });
     await tick();
     expect(wrapper.find('.title').text()).toBe('Updated via subscription');
 
     // Frame 2
-    (testCache as any).writeFragment({ __typename: 'Post', id: '1', title: 'Second update' }).commit?.();
+    (testCache as any).writeFragment({
+      id: 'Post:1',
+      fragment: FRAG_POST,
+      data: { __typename: 'Post', id: '1', title: 'Second update' },
+    });
     await tick();
     expect(wrapper.find('.title').text()).toBe('Second update');
   });
@@ -84,7 +100,7 @@ describe('Integration • Subscriptions (simulated)', () => {
 
   /**
    * 3) Apply subscription frames and update cache + UI (entity case).
-   *    Use dynamic + non-materialized for the same reason as test #1.
+   *    Use live reader (useFragment) so the UI follows writes.
    */
   it('applies subscription-like frames and updates entities in cache', async () => {
     const cache = cacheConfigs.basic();
@@ -93,7 +109,7 @@ describe('Integration • Subscriptions (simulated)', () => {
       name: 'PostSubscription',
       setup() {
         const key = ref('Post:1');
-        const post = useFragment<any>(key, { mode: 'dynamic', materialized: false });
+        const post = useFragment({ id: key, fragment: FRAG_POST });
         return () => h('div', [h('div', { class: 'current' }, post.value?.title || 'Waiting...')]);
       }
     });
@@ -103,17 +119,29 @@ describe('Integration • Subscriptions (simulated)', () => {
     expect(wrapper.find('.current').text()).toBe('Waiting...');
 
     // Frame 1
-    (testCache as any).writeFragment({ __typename: 'Post', id: '1', title: 'Post 1' }).commit?.();
+    (testCache as any).writeFragment({
+      id: 'Post:1',
+      fragment: FRAG_POST,
+      data: { __typename: 'Post', id: '1', title: 'Post 1' },
+    });
     await tick();
     expect(wrapper.find('.current').text()).toBe('Post 1');
-    expect((testCache as any).hasFragment('Post:1')).toBe(true);
-    expect((testCache as any).readFragment('Post:1', { materialized: false })?.title).toBe('Post 1');
+
+    // Verify snapshot API sees the same (readFragment returns a raw snapshot)
+    const snap1 = (testCache as any).readFragment({ id: 'Post:1', fragment: FRAG_POST });
+    expect(snap1?.title).toBe('Post 1');
 
     // Frame 2
-    (testCache as any).writeFragment({ __typename: 'Post', id: '1', title: 'Post 1 Updated' }).commit?.();
+    (testCache as any).writeFragment({
+      id: 'Post:1',
+      fragment: FRAG_POST,
+      data: { __typename: 'Post', id: '1', title: 'Post 1 Updated' },
+    });
     await tick();
     expect(wrapper.find('.current').text()).toBe('Post 1 Updated');
-    expect((testCache as any).readFragment('Post:1', { materialized: false })?.title).toBe('Post 1 Updated');
+
+    const snap2 = (testCache as any).readFragment({ id: 'Post:1', fragment: FRAG_POST });
+    expect(snap2?.title).toBe('Post 1 Updated');
   });
 
   /**
