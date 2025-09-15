@@ -25,6 +25,10 @@ export const isPureIdentity = (value: any): boolean => {
   return false;
 };
 
+export const isObject = (value: any): value is Record<string, any> => {
+  return value !== null && typeof value === "object";
+}
+
 export const traverse = (node: any, visit: (object: any) => void) => {
   if (!node || typeof node !== "object") {
     return;

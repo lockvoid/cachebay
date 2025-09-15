@@ -1,5 +1,5 @@
 import { shallowReactive } from "vue";
-import { hasTypename, isPureIdentity } from "./utils";
+import { hasTypename, isPureIdentity, isObject } from "./utils";
 import { IDENTITY_FIELDS } from "./constants";
 
 export type GraphConfig = {
@@ -196,7 +196,7 @@ export const createGraph = (config: GraphConfig) => {
    * @private
    */
   const denormalizeValue = (value: any): any => {
-    if (!value || typeof value !== "object") {
+    if (!isObject(value)) {
       return value;
     }
 
@@ -228,7 +228,7 @@ export const createGraph = (config: GraphConfig) => {
    * @private
    */
   const normalizeValue = (value: any): any => {
-    if (!value || typeof value !== "object") {
+    if (!isObject(value)) {
       return value;
     }
 
@@ -318,7 +318,7 @@ export const createGraph = (config: GraphConfig) => {
    * @private
    */
   const materializeFromSkeleton = (skeleton: any): any => {
-    if (!skeleton || typeof skeleton !== "object") {
+    if (!isObject(skeleton)) {
       return skeleton;
     }
 
@@ -354,23 +354,19 @@ export const createGraph = (config: GraphConfig) => {
    * @private
    */
   const overlaySelection = (target: any, skeleton: any) => {
-    if (!skeleton || typeof skeleton !== "object") {
+    if (!isObject(skeleton)) {
       return;
     }
 
     if ("__ref" in skeleton && typeof skeleton.__ref === "string") {
       const entity = materializeEntity(skeleton.__ref);
 
-      const targetKeys = Object.keys(target);
-
-      for (let i = 0; i < targetKeys.length; i++) {
-        delete target[targetKeys[i]];
+      for (let i = 0, keys = Object.keys(target); i < keys.length; i++) {
+        delete target[keys[i]];
       }
 
-      const entityKeys = Object.keys(entity);
-
-      for (let i = 0; i < entityKeys.length; i++) {
-        target[entityKeys[i]] = entity[entityKeys[i]];
+      for (let i = 0, keys = Object.keys(entity); i < keys.length; i++) {
+        target[keys[i]] = entity[keys[i]];
       }
 
       return;
@@ -389,7 +385,7 @@ export const createGraph = (config: GraphConfig) => {
         const skeletonValue = skeleton[i];
         const targetValue = target[i];
 
-        if (targetValue && typeof targetValue === "object") {
+        if (isObject(targetValue)) {
           overlaySelection(targetValue, skeletonValue);
         } else {
           target[i] = materializeFromSkeleton(skeletonValue);
@@ -399,11 +395,8 @@ export const createGraph = (config: GraphConfig) => {
       return;
     }
 
-    // object
-    const current = Object.keys(target);
-
-    for (let i = 0; i < current.length; i++) {
-      const field = current[i];
+    for (let i = 0, keys = Object.keys(target); i < keys.length; i++) {
+      const field = keys[i];
 
       if (!(field in skeleton)) {
         delete target[field];
@@ -415,14 +408,16 @@ export const createGraph = (config: GraphConfig) => {
       const skeletonValue = skeleton[field];
       const targetValue = target[field];
 
-      if (skeletonValue && typeof skeletonValue === "object") {
-        if (!targetValue || typeof targetValue !== "object") {
-          target[field] = materializeFromSkeleton(skeletonValue);
-        } else {
-          overlaySelection(targetValue, skeletonValue);
-        }
-      } else {
+      if (!isObject(skeletonValue)) {
         target[field] = skeletonValue;
+
+        continue;
+      }
+
+      if (!isObject(targetValue)) {
+        target[field] = materializeFromSkeleton(skeletonValue);
+      } else {
+        overlaySelection(targetValue, skeletonValue);
       }
     }
   };
@@ -432,7 +427,7 @@ export const createGraph = (config: GraphConfig) => {
    * @private
    */
   const indexSelectionRefs = (selectionKey: string, node: any, add: boolean) => {
-    if (!node || typeof node !== "object") {
+    if (!isObject(node)) {
       return;
     }
 
@@ -516,14 +511,11 @@ export const createGraph = (config: GraphConfig) => {
       return null;
     }
 
-    const snapshot: any = { __typename: object.__typename };
-    const [, idFromKey] = identityManager.parseKey(key);
+    const [, id] = identityManager.parseKey(key);
 
-    snapshot.id = object.id != null ? String(object.id) : idFromKey;
+    const snapshot = { __typename: object.__typename, id: object.id != null ? String(object.id) : id };
 
-    const fields = Object.keys(object);
-
-    for (let i = 0; i < fields.length; i++) {
+    for (let i = 0, fields = Object.keys(object); i < fields.length; i++) {
       const field = fields[i];
 
       if (!IDENTITY_FIELDS.has(field)) {
@@ -661,7 +653,7 @@ export const createGraph = (config: GraphConfig) => {
 
     const result = materializeFromSkeleton(skeleton);
 
-    if (result && typeof result === "object") {
+    if (isObject(result)) {
       selectionProxyManager.set(`selection:${selectionKey}`, result);
     }
 
