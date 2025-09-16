@@ -11,57 +11,15 @@ type SelectionMark = {
 
 export type SelectionsAPI = ReturnType<typeof createSelections>;
 
-/**
- * Selection registry for a normalized GraphQL cache.
- *
- * What is a "selection"?
- *
- * A selection is a stored field result skeleton (like a connection page) with
- * a stable cache key. It excludes entity normalization - entities are stored
- * separately. Selections enable deterministic re-materialization of lists and
- * pages across renders, pagination, and SSR.
- *
- * Key builders:
- *
- * - buildQuerySelectionKey(field, args) → "posts({\"first\":2})"
- * - buildFieldSelectionKey(entityKey, field, args) → "User:1.posts({\"first\":2})"
- *
- * Selection tracking:
- *
- * - markSelection(subtree, {entityKey, field, args}) - Marks a subtree for persistence
- * - compileSelections(data) - Extracts all marked selections plus root fields
- *
- * Design principles:
- *
- * - No payload mutation - metadata stored in WeakMap
- * - Stable keys - identical args produce identical keys regardless of order
- * - Separation of concerns - selections and entities stored independently
- *
- * Example:
- * ```js
- * // Mark a connection for persistence
- * markSelection(payload.user.posts, {
- *   entityKey: "User:1",
- *   field: "posts",
- *   args: { first: 2 }
- * });
- *
- * // Extract all selections for storage
- * const entries = compileSelections(payload);
- * // → [
- * //     { key: "user({})", subtree: payload.user },
- * //     { key: "User:1.posts({\"first\":2})", subtree: payload.user.posts }
- * //   ]
- * ```
- */
 export const createSelections = () => {
   const marks = new WeakMap<object, SelectionMark>();
 
   /**
    * Builds a selection key for query-level fields.
+   *
    * @param field - The field name (e.g., "user", "posts")
    * @param args - Optional arguments for the field
-   * @returns A stable selection key like "user({})" or "posts({first:10})"
+   * @return A stable selection key like "user({})" or "posts({first:10})"
    */
   const buildQuerySelectionKey = (field: string, args?: Record<string, any>): string => {
     const argsString = args ? stableStringify(args) : "{}";
@@ -71,10 +29,11 @@ export const createSelections = () => {
 
   /**
    * Builds a selection key for entity sub-fields.
+   *
    * @param entityKey - The parent entity key (e.g., "User:1")
    * @param field - The field name on the entity
    * @param args - Optional arguments for the field
-   * @returns A stable selection key like "User:1.posts({first:10})"
+   * @return A stable selection key like "User:1.posts({first:10})"
    */
   const buildFieldSelectionKey = (entityKey: string, field: string, args?: Record<string, any>): string => {
     const argsString = args ? stableStringify(args) : "{}";
@@ -84,6 +43,7 @@ export const createSelections = () => {
 
   /**
    * Marks a subtree as a selection skeleton for cache tracking.
+   *
    * @param subtree - The data subtree to mark
    * @param meta - Selection metadata (entity key, field name, args)
    */
@@ -97,8 +57,9 @@ export const createSelections = () => {
 
   /**
    * Compiles all selections from a GraphQL response.
+   *
    * @param data - The response data
-   * @returns Array of selection entries with their cache keys and subtrees
+   * @return Array of selection entries with their cache keys and subtrees
    */
   const compileSelections = (data: Array<{ key: string; subtree: any }>) => {
     const result: Array<{ key: string; subtree: any }> = [];

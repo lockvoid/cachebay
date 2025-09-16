@@ -3,12 +3,16 @@ import { isRef, isReactive, toRaw } from "vue";
 import { QUERY_ROOT, IDENTITY_FIELDS } from "./constants";
 import type { EntityKey, RelayOptions } from "./types";
 
+export const isObject = (value: any): value is Record<string, any> => {
+  return value !== null && typeof value === "object";
+}
+
 export const hasTypename = (value: any): boolean => {
   return !!(value && typeof value === "object" && typeof value.__typename === "string");
 }
 
 export const isPureIdentity = (value: any): boolean => {
-  if (!value || typeof value !== "object") {
+  if (!isObject(value)) {
     return false;
   }
 
@@ -25,9 +29,68 @@ export const isPureIdentity = (value: any): boolean => {
   return false;
 };
 
-export const isObject = (value: any): value is Record<string, any> => {
-  return value !== null && typeof value === "object";
+
+export const stableStringify = (object: any): string => {
+  const walk = (object: any): any => {
+    if (!isObject(object)) {
+      return object;
+    }
+
+    if (Array.isArray(object)) {
+      return object.map(walk);
+    }
+
+    const result: Record<string, any> = {};
+
+    for (let i = 0, keys = Object.keys(object).sort(); i < keys.length; i++) {
+      const key = keys[i];
+
+      result[key] = walk(object[key]);
+    }
+
+    return result;
+  };
+
+  try {
+    return JSON.stringify(walk(object));
+  } catch {
+    return '';
+  }
 }
+
+export const traverseFast = (root, callback) => {
+  const stack = [root];
+
+  while (stack.length > 0) {
+    const node = stack.pop();
+
+    if (!isObject(node)) {
+      continue;
+    }
+
+    callback(node);
+
+    if (Array.isArray(node)) {
+      for (let i = node.length - 1; i >= 0; i--) {
+        if (!isObject(node[i])) {
+          continue;
+        }
+
+        stack.push(node[i]);
+      }
+    } else {
+      for (let i = 0, keys = Object.keys(node); i < keys.length; i++) {
+        const value = node[keys[i]];
+
+        if (!isObject(value)) {
+          continue;
+        }
+
+        stack.push(value);
+      }
+    }
+  }
+};
 
 export const traverse = (node: any, visit: (object: any) => void) => {
   if (!node || typeof node !== "object") {
@@ -133,23 +196,7 @@ const DOCUMENT_CACHE = new WeakMap<DocumentNode, DocumentNode>();
 const STRING_DOCUMENT_CACHE = new Map<string, DocumentNode>();
 const PRINT_CACHE = new WeakMap<DocumentNode, string>();
 
-export function stableStringify(value: any): string {
-  const seen = new WeakSet();
-  const walk = (v: any): any => {
-    if (v === null || typeof v !== 'object') return v;
-    if (seen.has(v)) return '[Circular]';
-    seen.add(v);
-    if (Array.isArray(v)) return v.map(walk);
-    const out: Record<string, any> = {};
-    for (const k of Object.keys(v).sort()) {
-      const vv = (v as any)[k];
-      if (vv === undefined) continue;
-      out[k] = walk(vv);
-    }
-    return out;
-  };
-  try { return JSON.stringify(walk(value)); } catch { return ''; }
-}
+
 
 function isDocumentNode(v: any): v is DocumentNode {
   return !!v && typeof v === "object" && v.kind === Kind.DOCUMENT;

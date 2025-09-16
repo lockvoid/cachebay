@@ -447,8 +447,8 @@ describe("Graph", () => {
       expect(snapshot.entities["User:1"]).toEqual({ __typename: "User", id: "1", name: "Ada" });
       expect(snapshot.selections['user({"id":"1"})']).toEqual({ __ref: "User:1" });
 
-      expect(Object.keys(snapshot.config.keys)).toEqual(["User", "Profile", "Post", "Comment", "Tag"]);
-      expect(Object.keys(snapshot.config.interfaces)).toEqual(["Post"]);
+      expect(Object.keys(snapshot.options.keys)).toEqual(["User", "Profile", "Post", "Comment", "Tag"]);
+      expect(Object.keys(snapshot.options.interfaces)).toEqual(["Post"]);
     });
   });
 });

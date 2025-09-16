@@ -2,14 +2,12 @@ import { shallowReactive } from "vue";
 import { hasTypename, isPureIdentity, isObject } from "./utils";
 import { IDENTITY_FIELDS } from "./constants";
 
-export type GraphConfig = {
-  /** typename → function returning stable id (or null) to build keys like "User:1" */
-  keys: Record<string, (obj: any) => string | null>;
-  /** interface typename → list of implementor typenames used to canonicalize keys (e.g., AudioPost → Post) */
+export type GraphOptions = {
+  keys?: Record<string, (obj: any) => string | null>;
   interfaces?: Record<string, string[]>;
 };
 
-export type GraphAPI = ReturnType<typeof createGraph>;
+export type GraphInstance = ReturnType<typeof createGraph>;
 
 /**
  * Proxy cache manager (WeakRef-backed)
@@ -121,8 +119,8 @@ class IdentityManager {
   }
 }
 
-export const createGraph = (config: GraphConfig) => {
-  const identityManager = new IdentityManager({ keys: config.keys, interfaces: config.interfaces });
+export const createGraph = (options: GraphOptions) => {
+  const identityManager = new IdentityManager({ keys: options.keys, interfaces: options.interfaces });
   const entityStore = new Map<string, Record<string, any>>();
   const selectionStore = new Map<string, any>();
   const entityProxyManager = new ProxyManager();
@@ -133,7 +131,7 @@ export const createGraph = (config: GraphConfig) => {
    * Generates a stable cache key for an object based on its type and configured key function.
    *
    * @param object - The object to identify (must have __typename)
-   * @returns A stable key like "User:123" or null if not identifiable
+   * @return A stable key like "User:123" or null if not identifiable
    */
   const identify = (object: any): string | null => {
     return identityManager.stringifyKey(object);
@@ -143,18 +141,18 @@ export const createGraph = (config: GraphConfig) => {
    * Creates or retrieves a reactive proxy for an entity.
    *
    * @param key - The entity cache key
-   * @returns A reactive proxy object for the entity
+   * @return A reactive proxy object for the entity
    */
   const materializeEntity = (key: string): any => {
-    const hit = entityProxyManager.get(`entity:${key}`);
+    const hit = entityProxyManager.get(key);
     const snapshot = entityStore.get(key);
-    const [typeFromKey, idFromKey] = identityManager.parseKey(key);
-    const concreteType = snapshot?.__typename ?? typeFromKey;
-    const concreteId = snapshot?.id ?? idFromKey;
+    const [typename, id] = identityManager.parseKey(key);
+    const concreteTypename = snapshot?.__typename ?? typename;
+    const concreteId = snapshot?.id ?? id;
 
     if (hit) {
-      if (hit.__typename !== concreteType) {
-        hit.__typename = concreteType;
+      if (hit.__typename !== concreteTypename) {
+        hit.__typename = concreteTypename;
       }
 
       if (concreteId != null) {
@@ -176,7 +174,7 @@ export const createGraph = (config: GraphConfig) => {
 
     const proxy = shallowReactive({} as any);
 
-    proxy.__typename = concreteType;
+    proxy.__typename = concreteTypename;
 
     if (concreteId != null) {
       proxy.id = String(concreteId);
@@ -186,7 +184,7 @@ export const createGraph = (config: GraphConfig) => {
       overlayEntity(proxy, snapshot);
     }
 
-    entityProxyManager.set(`entity:${key}`, proxy);
+    entityProxyManager.set(key, proxy);
 
     return proxy;
   };
@@ -302,10 +300,8 @@ export const createGraph = (config: GraphConfig) => {
       }
     }
 
-    const snapshotKeys = Object.keys(snapshot);
-
-    for (let i = 0; i < snapshotKeys.length; i++) {
-      const field = snapshotKeys[i];
+    for (let i = 0, keys = Object.keys(snapshot); i < keys.length; i++) {
+      const field = keys[i];
 
       if (!IDENTITY_FIELDS.has(field)) {
         entityProxy[field] = denormalizeValue(snapshot[field]);
@@ -502,7 +498,7 @@ export const createGraph = (config: GraphConfig) => {
    * Stores an entity in the normalized cache and updates related selections.
    *
    * @param object - The entity object to store
-   * @returns The generated cache key or null if not identifiable
+   * @return The generated cache key or null if not identifiable
    */
   const putEntity = (object: any): string | null => {
     const key = identify(object);
@@ -531,7 +527,7 @@ export const createGraph = (config: GraphConfig) => {
       entityStore.set(key, snapshot);
     }
 
-    const proxy = entityProxyManager.get(`entity:${key}`);
+    const proxy = entityProxyManager.get(key);
 
     if (proxy) {
       overlayEntity(proxy, entityStore.get(key)!);
@@ -546,7 +542,7 @@ export const createGraph = (config: GraphConfig) => {
    * Retrieves the raw normalized snapshot of an entity.
    *
    * @param key - The entity cache key
-   * @returns The entity snapshot or undefined if not found
+   * @return The entity snapshot or undefined if not found
    */
   const getEntity = (key: string): Record<string, any> | undefined => {
     return entityStore.get(key);
@@ -560,7 +556,7 @@ export const createGraph = (config: GraphConfig) => {
   const removeEntity = (key: string): void => {
     entityStore.delete(key);
 
-    const proxy = entityProxyManager.get(`entity:${key}`);
+    const proxy = entityProxyManager.get(key);
 
     if (proxy) {
       for (let i = 0, keys = Object.keys(proxy); i < keys.length; i++) {
@@ -601,7 +597,7 @@ export const createGraph = (config: GraphConfig) => {
    * Retrieves the raw normalized skeleton of a selection.
    *
    * @param selectionKey - The selection cache key
-   * @returns The selection skeleton or undefined if not found
+   * @return The selection skeleton or undefined if not found
    */
   const getSelection = (selectionKey: string): any | undefined => {
     return selectionStore.get(selectionKey);
@@ -634,7 +630,7 @@ export const createGraph = (config: GraphConfig) => {
    * Creates or retrieves a reactive proxy for a selection.
    *
    * @param selectionKey - The selection cache key
-   * @returns A reactive proxy object for the selection or undefined if not found
+   * @return A reactive proxy object for the selection or undefined if not found
    */
   const materializeSelection = (selectionKey: string): any => {
     const skeleton = selectionStore.get(selectionKey);
@@ -663,7 +659,7 @@ export const createGraph = (config: GraphConfig) => {
   /**
    * Returns all entity cache keys currently stored.
    *
-   * @returns Array of entity keys like ["User:1", "Post:123"]
+   * @return Array of entity keys like ["User:1", "Post:123"]
    */
   const listEntityKeys = () => {
     return Array.from(entityStore.keys());
@@ -672,7 +668,7 @@ export const createGraph = (config: GraphConfig) => {
   /**
    * Returns all selection cache keys currently stored.
    *
-   * @returns Array of selection keys like ["user({})", "User:1.posts({first:10})"]
+   * @return Array of selection keys like ["user({})", "User:1.posts({first:10})"]
    */
   const listSelectionKeys = () => {
     return Array.from(selectionStore.keys());
@@ -698,7 +694,7 @@ export const createGraph = (config: GraphConfig) => {
   /**
    * Provides a debug view of the cache contents.
    *
-   * @returns Object containing entities, selections, and config for inspection
+   * @return Object containing entities, selections, and config for inspection
    */
   const inspect = () => {
     const toObject = (map: Map<string, any>) => {
@@ -715,9 +711,9 @@ export const createGraph = (config: GraphConfig) => {
       entities: toObject(entityStore),
       selections: toObject(selectionStore),
 
-      config: {
-        keys: config.keys || {},
-        interfaces: config.interfaces || {},
+      options: {
+        keys: options.keys || {},
+        interfaces: options.interfaces || {},
       },
     };
   };

@@ -1,214 +1,110 @@
-// src/core/resolvers.ts
-//
-// Generic field-resolver framework, view-agnostic.
-// - Binds resolver specs (including __cb_resolver__ factories).
-// - Applies resolvers on plain objects (applyOnObject) or materialized trees.
-// - Tracks per-object signature to avoid re-applying for identical vars/hints.
-// - Supports argsIndex (path → args) so field resolvers receive ctx.args.
-//
-// NOTE: stateless helpers (stringify, etc.) are internal here;
-// no external utils object is required.
-//
+import { isObject } from "./utils";
+import type { GraphInstance } from "@/src/core/graph";
 
-export type ResolverHint = { stale?: boolean };
+export type Resolver = {
+  bind: (deps: { graph: GraphInstance }) => ResolverFn;
+}
 
-export type FieldResolverCtx = {
-  parentTypename: string;
-  field: string;
-  parent: any;
-  value: any;
-  variables: Record<string, any>;
-  hint?: ResolverHint;
-  args?: Record<string, any>;         // ← args for THIS field (if available)
-  set: (next: any) => void;
-};
-
-export type FieldResolver = (ctx: FieldResolverCtx) => void;
-
-export type ResolversDict = Record<string, Record<string, FieldResolver | any>>;
+export type ResolverFn = (context: { parent: any; field: string; value: any; variables: Record<string, any>; hint: Record<string, any>; set: (next: any) => void; }) => void;
 
 export type ResolversConfig = {
-  resolvers?: ResolversDict;
+  resolvers?: Record<string, Record<string, Resolver>>;
 };
 
-export type ResolversDeps = {
-  graph: {
-    materializeEntity: (key: string) => any;
-    materializeSelection: (key: string) => any;
-  };
+export type ResolversDependencies = {
+  graph: GraphInstance;
 };
 
-// simple stable stringify for signature
-const stableStringify = (value: any): string => {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return "[" + value.map(stableStringify).join(",") + "]";
-  }
-  const keys = Object.keys(value).sort();
-  return "{" + keys.map((k) => JSON.stringify(k) + ":" + stableStringify(value[k])).join(",") + "}";
-};
+export function createResolvers(config: ResolversConfig, dependencies: ResolversDependencies) {
+  const { graph } = dependencies;
 
-const RESOLVE_SIGNATURE = Symbol.for("cachebay.resolve.signature");
+  const boundResolvers: Map<string, Map<string, ResolverFn>> = new Map();
 
-export type ApplyObjectOptions = {
-  argsIndex?: Map<string, Record<string, any>>;
-};
+  if (isObject(config.resolvers)) {
+    for (const typename of Object.keys(config.resolvers)) {
+      const fields = config.resolvers[typename] || {};
 
-export const createResolvers = (
-  config: ResolversConfig,
-  deps: ResolversDeps
-) => {
-  const { graph } = deps;
-  const specs = config.resolvers || {};
+      const resolverFns = {};
 
-  // Bind tree: supports { __cb_resolver__: true, bind(deps) } specs
-  const FIELD_RESOLVERS: Record<string, Record<string, FieldResolver>> = {};
-  for (const typename of Object.keys(specs)) {
-    const fieldMap = specs[typename]!;
-    const out: Record<string, FieldResolver> = {};
-    for (const fieldName of Object.keys(fieldMap)) {
-      const candidate = fieldMap[fieldName];
-      if (
-        candidate &&
-        typeof candidate === "object" &&
-        candidate.__cb_resolver__ === true &&
-        typeof candidate.bind === "function"
-      ) {
-        out[fieldName] = candidate.bind({ graph });
-      } else {
-        out[fieldName] = candidate as FieldResolver;
+      for (const field of Object.keys(fields)) {
+        const resolver = fields[field];
+
+        if (!isObject(resolver) || typeof resolver.bind !== "function") {
+          throw new Error(`Resolver for ${typename}.${field} must be a factory with a .bind method`);
+        }
+
+        const resolverFn = resolver.bind({ graph });
+
+        if (typeof resolverFn !== "function") {
+          throw new Error(`Bound resolver for ${typename}.${field} must return a function`);
+        }
+
+        handlers[field] = resolverFn;
       }
+
+      boundResolvers.set(typename, handlers);
     }
-    FIELD_RESOLVERS[typename] = out;
   }
 
-  const applyFieldResolvers = (
-    parentTypename: string,
-    objectValue: any,
-    variables: Record<string, any>,
-    hint?: ResolverHint,
-    argsForThisField?: Record<string, any>
-  ) => {
-    const map = FIELD_RESOLVERS[parentTypename];
-    if (!map || !objectValue || typeof objectValue !== "object") {
+  const applyResolvers = (root: any, vars: Record<string, any> = {}, hint?: { stale?: boolean }) => {
+    if (!isObject(root)) {
       return;
     }
 
-    const signature = (hint?.stale ? "S|" : "F|") + stableStringify(variables || {});
-    if ((objectValue as any)[RESOLVE_SIGNATURE] === signature) {
-      return;
-    }
-
-    for (const fieldName of Object.keys(map)) {
-      const resolver = map[fieldName];
-      if (typeof resolver !== "function") {
-        continue;
-      }
-      const currentValue = objectValue[fieldName];
-
-      resolver({
-        parentTypename,
-        field: fieldName,
-        parent: objectValue,
-        value: currentValue,
-        variables,
-        hint,
-        args: argsForThisField,
-        set: (next: any) => {
-          objectValue[fieldName] = next;
-        },
-      });
-    }
-
-    (objectValue as any)[RESOLVE_SIGNATURE] = signature;
-  };
-
-  const applyOnObject = (
-    root: any,
-    variables: Record<string, any>,
-    hint: ResolverHint = {},
-    extra?: ApplyObjectOptions
-  ) => {
-    if (!root || typeof root !== "object") {
-      return;
-    }
-
-    // We build a runtime path using JSON keys (alias-friendly)
-    const currentPath: string[] = ["Query"];
-    const stack: Array<{ typename: string | null; node: any; atKey?: string }> = [
-      { typename: "Query", node: root },
-    ];
-
-    const join = (xs: string[]) => xs.join(".");
+    // DFS stack: node + parent typename (fallback to current node typename)
+    const stack: Array<{ node: any; parentTypename: string | null }> = [{ node: root, parentTypename: "Query" }];
 
     while (stack.length) {
-      const frame = stack.pop()!;
-      const { typename: parentTypename, node, atKey } = frame;
-      if (!node || typeof node !== "object") {
-        continue;
-      }
+      const { node, parentTypename } = stack.pop()!;
+      if (!node || typeof node !== "object") continue;
 
-      if (atKey) {
-        currentPath.push(atKey);
-      }
+      // Prefer explicit __typename when present
+      const selfTypename: string | null =
+        typeof node.__typename === "string" ? node.__typename : parentTypename ?? null;
 
-      const typename = (node as any).__typename ?? parentTypename ?? null;
-      if (typename) {
-        const argsForThisField = extra?.argsIndex?.get(join(currentPath));
-        applyFieldResolvers(typename, node, variables, hint, argsForThisField);
-      }
-
+      // Process each field in the node
       for (const key of Object.keys(node)) {
-        const value = node[key];
-        if (!value || typeof value !== "object") {
-          continue;
-        }
-        if (Array.isArray(value)) {
-          for (let i = value.length - 1; i >= 0; i--) {
-            const it = value[i];
-            if (it && typeof it === "object") {
-              stack.push({ typename, node: it, atKey: key });
-            }
-          }
-        } else {
-          stack.push({ typename, node: value, atKey: key });
-        }
-      }
+        const val = node[key];
 
-      if (atKey) {
-        currentPath.pop();
+        // Find and execute handler for this typename and field
+        const handlers = selfTypename ? boundResolvers.get(selfTypename) : undefined;
+        const handler = handlers ? handlers.get(key) : undefined;
+
+        if (handler) {
+          let nextAssigned = false;
+          const set = (next: any) => {
+            node[key] = next;
+            nextAssigned = true;
+          };
+
+          handler({
+            parent: node,
+            field: key,
+            value: val,
+            variables: vars,
+            hint,
+            set,
+          });
+        }
+
+        // Continue traversal into nested objects/arrays
+        if (isObject(val)) {
+          if (Array.isArray(val)) {
+            for (let i = 0; i < val.length; i++) {
+              const it = val[i];
+              if (it && typeof it === "object") {
+                stack.push({ node: it, parentTypename: selfTypename });
+              }
+            }
+          } else {
+            stack.push({ node: val, parentTypename: selfTypename });
+          }
+        }
       }
     }
-  };
-
-  const applyOnEntity = (
-    entityKey: string,
-    variables: Record<string, any>,
-    hint?: ResolverHint
-  ) => {
-    const proxy = graph.materializeEntity(entityKey);
-    applyOnObject(proxy, variables, hint);
-    return proxy;
-  };
-
-  const applyOnSelection = (
-    selectionKey: string,
-    variables: Record<string, any>,
-    hint?: ResolverHint,
-    opts?: ApplyObjectOptions
-  ) => {
-    const tree = graph.materializeSelection(selectionKey);
-    applyOnObject(tree, variables, hint, opts);
-    return tree;
   };
 
   return {
-    FIELD_RESOLVERS,
-    applyFieldResolvers,
-    applyOnObject,
-    applyOnEntity,
-    applyOnSelection,
+    applyResolvers,
   };
-};
+}

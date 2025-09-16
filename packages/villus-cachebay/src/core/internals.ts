@@ -50,43 +50,20 @@ export type CachebayInstance = ClientPlugin & {
 };
 
 export type CachebayOptions = {
-  addTypename?: boolean;
   keys?: Record<string, (obj: any) => string | null>;
   interfaces?: Record<string, string[]>;
   resolvers?: Record<string, Record<string, any>>;
 };
 
 export function createCache(options: CachebayOptions = {}): CachebayInstance {
-  // Graph (selection-first)
-  const graph = createGraph({
-    reactiveMode: "shallow",
-    keys: options.keys || {},
-    interfaces: options.interfaces || {},
-  });
-
-  // Selections helpers (stable keys, heuristic compiler)
-  const selections = createSelections({ dependencies: { graph } });
-
-  // Views (short-lived sessions that mount selections/entities)
+  const graph = createGraph({ keys: options.keys, interfaces: options.interfaces });
+  const selections = createSelections();
   const views = createViews({ dependencies: { graph } });
-
-  // Resolvers (field resolvers over plain objects / materialized trees)
   const resolvers = createResolvers({ resolvers: options.resolvers }, { graph });
-
-  // Fragments (GraphQL fragment read/write using graph + selections)
   const fragments = createFragments({ dependencies: { graph, selections } });
-
-  // SSR for entities + selections
   const ssr = createSSR({ graph, resolvers });
-
-  // Optimistic (selection skeleton operations)
   const modifyOptimistic = createModifyOptimistic({ graph });
-
-  // Plugin (cache policies & subscriptions)
-  const plugin = createPlugin(
-    { addTypename: options.addTypename ?? true },
-    { graph, selections, resolvers, ssr, views }
-  ) as unknown as CachebayInstance;
+  const plugin = createPlugin({ graph, selections, resolvers, ssr, views });
 
   // Vue install
   (plugin as any).install = (app: App) => {

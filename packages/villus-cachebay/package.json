@@ -9,8 +9,10 @@
     "pnpm": "10.x"
   },
   "scripts": {
-    "test": "vitest run",
-    "coverage": "vitest run --coverage"
+    "test": "vitest --run",
+    "test:perf": "vitest bench --run",
+    "test:benchmark": "vitest bench --run",
+    "coverage": "vitest --run --coverage"
   },
   "devDependencies": {
     "@lockvoid/eslint-config": "^0.5.9",
