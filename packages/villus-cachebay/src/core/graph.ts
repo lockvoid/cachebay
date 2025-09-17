@@ -1,5 +1,4 @@
 import { shallowReactive } from "vue";
-import { hasTypename } from "./utils";
 import { ID_FIELD, TYPENAME_FIELD, IDENTITY_FIELDS } from "./constants";
 
 export type GraphOptions = {
@@ -25,7 +24,7 @@ const overlayRecordDiff = (recordProxy: any, recordSnapshot: Record<string, any>
   }
 
   if (idChanged) {
-    if (recordSnapshot[ID_FIELD] != null) {
+    if (ID_FIELD in recordSnapshot) {
       recordProxy[ID_FIELD] = recordSnapshot[ID_FIELD];
     } else {
       delete recordProxy[ID_FIELD];
@@ -61,11 +60,9 @@ const overlayRecordFull = (recordProxy: any, recordSnapshot: Record<string, any>
   }
 
   if (ID_FIELD in recordSnapshot) {
-    if (recordSnapshot[ID_FIELD] != null) {
-      recordProxy[ID_FIELD] = recordSnapshot[ID_FIELD];
-    } else {
-      delete recordProxy[ID_FIELD];
-    }
+    recordProxy[ID_FIELD] = recordSnapshot[ID_FIELD];
+  } else {
+    delete recordProxy[ID_FIELD];
   }
 
   for (let i = 0, fields = Object.keys(recordProxy); i < fields.length; i++) {
@@ -344,8 +341,8 @@ export const createGraph = (options: GraphOptions) => {
       const proxy = weakRef.deref();
 
       if (proxy) {
-        for (const key in proxy) {
-          delete proxy[key];
+        for (let i = 0, keys = Object.keys(proxy); i < keys.length; i++) {
+          delete proxy[keys[i]];
         }
       }
     }
@@ -354,6 +351,7 @@ export const createGraph = (options: GraphOptions) => {
     recordProxyStore.clear();
     recordVersionStore.clear();
   };
+
 
   /**
    * Debug inspection of current state
