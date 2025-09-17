@@ -44,6 +44,7 @@
     }
   },
   "dependencies": {
+    "graphql-tag": "^2.12.6",
     "object-hash": "^3.0.0"
   }
 }

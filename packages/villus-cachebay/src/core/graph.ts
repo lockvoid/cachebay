@@ -1,6 +1,6 @@
 import { shallowReactive } from "vue";
 import { hasTypename } from "./utils";
-import { TYPENAME_FIELD, IDENTITY_FIELDS, RECORD_PROXY_VERSION } from "./constants";
+import { ID_FIELD, TYPENAME_FIELD, IDENTITY_FIELDS } from "./constants";
 
 export type GraphOptions = {
   keys?: Record<string, (obj: any) => string | null>;
@@ -8,6 +8,8 @@ export type GraphOptions = {
 };
 
 export type GraphInstance = ReturnType<typeof createGraph>;
+
+const RECORD_PROXY_VERSION = Symbol("graph:record-proxy-version");
 
 /**
  * Update proxy with only changed fields for optimal performance
@@ -23,10 +25,10 @@ const overlayRecordDiff = (recordProxy: any, recordSnapshot: Record<string, any>
   }
 
   if (idChanged) {
-    if (recordSnapshot.id != null) {
-      recordProxy.id = recordSnapshot.id;
+    if (recordSnapshot[ID_FIELD] != null) {
+      recordProxy[ID_FIELD] = recordSnapshot[ID_FIELD];
     } else {
-      delete recordProxy.id;
+      delete recordProxy[ID_FIELD];
     }
   }
 
@@ -58,11 +60,11 @@ const overlayRecordFull = (recordProxy: any, recordSnapshot: Record<string, any>
     recordProxy[TYPENAME_FIELD] = recordSnapshot[TYPENAME_FIELD];
   }
 
-  if ("id" in recordSnapshot) {
-    if (recordSnapshot.id != null) {
-      recordProxy.id = recordSnapshot.id;
+  if (ID_FIELD in recordSnapshot) {
+    if (recordSnapshot[ID_FIELD] != null) {
+      recordProxy[ID_FIELD] = recordSnapshot[ID_FIELD];
     } else {
-      delete recordProxy.id;
+      delete recordProxy[ID_FIELD];
     }
   }
 
@@ -96,11 +98,11 @@ const overlayRecordFull = (recordProxy: any, recordSnapshot: Record<string, any>
 class IdentityManager {
   private keyStore = new Map<string, [string, string | undefined]>();
   private interfaceStore = new Map<string, string>();
-  private idResolvers = new Map<string, (obj: any) => string | null>();
+  private keyers = new Map<string, (obj: any) => string | null>();
 
   constructor(config: { keys: Record<string, (obj: any) => string | null>; interfaces?: Record<string, string[]> }) {
     for (const [typename, keyFunction] of Object.entries(config.keys || {})) {
-      this.idResolvers.set(typename, keyFunction);
+      this.keyers.set(typename, keyFunction);
     }
 
     if (config.interfaces) {
@@ -142,7 +144,7 @@ class IdentityManager {
       return null;
     }
 
-    const id = this.idResolvers.get(typename)?.(object) ?? object.id;
+    const id = this.keyers.get(typename)?.(object) ?? object[ID_FIELD];
 
     if (!id) {
       return null;
@@ -157,10 +159,7 @@ class IdentityManager {
 }
 
 export const createGraph = (options: GraphOptions) => {
-  const identityManager = new IdentityManager({
-    keys: options.keys || {},
-    interfaces: options.interfaces,
-  });
+  const identityManager = new IdentityManager({ keys: options.keys, interfaces: options.interfaces });
 
   const recordStore = new Map<string, Record<string, any>>();
   const recordProxyStore = new Map<string, WeakRef<any>>();
@@ -203,7 +202,7 @@ export const createGraph = (options: GraphOptions) => {
         if (fieldName in currentSnapshot) {
           if (fieldName === TYPENAME_FIELD) {
             typenameChanged = true;
-          } else if (fieldName === "id") {
+          } else if (fieldName === ID_FIELD) {
             idChanged = true;
           } else {
             removedFields.push(fieldName);
@@ -223,13 +222,13 @@ export const createGraph = (options: GraphOptions) => {
       }
 
       // Handle id with normalization
-      if (fieldName === "id") {
+      if (fieldName === ID_FIELD) {
         const normalizedId = incomingValue != null ? String(incomingValue) : incomingValue;
-        if (currentSnapshot.id !== normalizedId) {
+        if (currentSnapshot[ID_FIELD] !== normalizedId) {
           if (normalizedId != null) {
-            currentSnapshot.id = normalizedId;
+            currentSnapshot[ID_FIELD] = normalizedId;
           } else {
-            delete currentSnapshot.id;
+            delete currentSnapshot[ID_FIELD];
           }
           idChanged = true;
         }
