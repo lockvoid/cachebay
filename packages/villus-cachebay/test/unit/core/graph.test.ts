@@ -1,8 +1,8 @@
-import { isReactive } from 'vue';
-import { createGraph } from '@/src/core/graph';
-import type { GraphAPI } from '@/src/core/graph';
+import { isReactive } from "vue";
+import { createGraph } from "@/src/core/graph";
+import type { GraphInstance } from "@/src/core/graph";
 
-const makeGraph = (overrides?: Partial<Parameters<typeof createGraph>[0]>): GraphAPI => {
+const makeGraph = (overrides?: Partial<Parameters<typeof createGraph>[0]>): GraphInstance => {
   return createGraph({
     keys: {
       User: (object: { id: string }) => {
@@ -25,20 +25,20 @@ const makeGraph = (overrides?: Partial<Parameters<typeof createGraph>[0]>): Grap
         return object.id;
       },
 
-      ...(overrides?.keys || {})
+      ...(overrides?.keys || {}),
     },
 
     interfaces: {
-      Post: ['AudioPost', 'VideoPost'],
+      Post: ["AudioPost", "VideoPost"],
 
-      ...(overrides?.interfaces || {})
+      ...(overrides?.interfaces || {}),
     },
 
     ...overrides,
   });
-}
+};
 
-describe("Graph", () => {
+describe("Graph (low-level record store)", () => {
   describe("identify", () => {
     it("returns canonical keys for base and interface implementors", () => {
       const graph = makeGraph();
@@ -61,393 +61,151 @@ describe("Graph", () => {
     });
   });
 
-  describe("putEntity", () => {
-    it("canonicalizes implementors and merges subsequent writes", () => {
+  describe("putRecord / getRecord", () => {
+    it("merges subsequent writes and supports interface canonicalization via identify (done by caller)", () => {
       const graph = makeGraph();
 
-      const firstKey = graph.putEntity({ __typename: "Post", id: "1", title: "A" });
+      // Caller decides ids; graph shallow-merges by recordId
+      graph.putRecord("Post:1", { __typename: "Post", id: "1", title: "A" });
+      expect(graph.getRecord("Post:1")).toEqual({ __typename: "Post", id: "1", title: "A" });
 
-      expect(firstKey).toBe("Post:1");
-      expect(graph.getEntity("Post:1")).toEqual({ __typename: "Post", id: "1", title: "A" });
+      // Change typename to an implementor; store accepts it as-is
+      graph.putRecord("Post:1", { __typename: "AudioPost" });
+      expect(graph.getRecord("Post:1")).toEqual({ __typename: "AudioPost", id: "1", title: "A" });
 
-      const secondKey = graph.putEntity({ __typename: "AudioPost", id: "1", title: "B" });
-
-      expect(secondKey).toBe("Post:1");
-      expect(graph.getEntity("Post:1")).toEqual({ __typename: "AudioPost", id: "1", title: "B" });
-
-      const thirdKey = graph.putEntity({ __typename: "VideoPost", id: "1", extra: "C" });
-
-      expect(thirdKey).toBe("Post:1");
-      expect(graph.getEntity("Post:1")).toEqual({ __typename: "VideoPost", id: "1", title: "B", extra: "C" });
+      // Merge an extra field
+      graph.putRecord("Post:1", { extra: "C" });
+      expect(graph.getRecord("Post:1")).toEqual({ __typename: "AudioPost", id: "1", title: "A", extra: "C" });
     });
 
-    it("normalizes nested references and leaves scalars embedded", () => {
+    it("stores normalized refs as-is and leaves plain objects embedded", () => {
       const graph = makeGraph();
 
-      graph.putEntity({
+      // Pre-normalized related records
+      graph.putRecord("User:u1", { __typename: "User", id: "u1", name: "Ada" });
+      graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "Audio A" });
+      graph.putRecord("Post:p3", { __typename: "Post", id: "p3", title: "Video B" });
+
+      // Parent with refs + scalar array + plain object
+      graph.putRecord("Post:p1", {
         __typename: "Post",
         id: "p1",
         title: "A",
-
-        author: {
-          __typename: "User",
-          id: "u1",
-          name: "Ada"
-        },
-
-        links: [
-          {
-            __typename: "AudioPost",
-            id: "p2",
-            title: "Audio A",
-          },
-
-          {
-            __typename: "VideoPost",
-            id: "p3",
-            title: "Video B",
-          },
-        ],
-
-        tags: [
-          "red",
-          "blue",
-        ],
+        author: { __ref: "User:u1" },
+        links: [{ __ref: "Post:p2" }, { __ref: "Post:p3" }],
+        color: { r: 1, g: 2, b: 3 },
+        tags: ["red", "blue"],
       });
 
-      const snapshot = graph.getEntity("Post:p1")!;
+      const snapshot = graph.getRecord("Post:p1")!;
 
       expect(snapshot.author).toEqual({ __ref: "User:u1" });
       expect(snapshot.links).toEqual([{ __ref: "Post:p2" }, { __ref: "Post:p3" }]);
+      expect(snapshot.color).toEqual({ r: 1, g: 2, b: 3 });
       expect(snapshot.tags).toEqual(["red", "blue"]);
     });
-
-    it("embeds plain objects without identity, but normalizes objects with __typename+id", () => {
-      const graph = makeGraph();
-
-      graph.putEntity({
-        __typename: "Post",
-        id: "p1",
-
-        color: {
-          r: 1,
-          g: 2,
-          b: 3,
-        },
-      });
-
-      graph.putEntity({
-        __typename: "Post",
-        id: "p2",
-
-        tags: [
-          {
-            __typename: "Tag",
-            id: "t1",
-            label: "physics"
-          }
-        ],
-      });
-
-      expect(graph.getEntity("Post:p1")).toEqual({ __typename: "Post", id: "p1", color: { r: 1, g: 2, b: 3 } });
-      expect(graph.getEntity("Post:p2")).toEqual({ __typename: "Post", id: "p2", tags: [{ __ref: "Tag:t1" }] });
-      expect(graph.getEntity("Tag:t1")).toEqual({ __typename: "Tag", id: "t1", label: "physics" });
-    });
   });
 
-  describe("getEntity", () => {
-    it("returns the normalized snapshot (identity + refs)", () => {
+  describe("materializeRecord", () => {
+    it("returns a shallow-reactive proxy and reflects subsequent record writes", () => {
       const graph = makeGraph();
 
-      graph.putEntity({
-        __typename: "Post",
-        id: "p1",
-        title: "A",
+      graph.putRecord("User:1", { __typename: "User", id: "1", name: "John" });
 
-        author: {
-          __typename: "User",
-          id: "u1",
-          name: "Ada"
-        },
-      });
+      const userProxy = graph.materializeRecord("User:1")!;
 
-      expect(graph.getEntity("Post:p1")).toEqual({ __typename: "Post", id: "p1", title: "A", author: { __ref: "User:u1" } });
-      expect(graph.getEntity("User:u1")).toEqual({ __typename: "User", id: "u1", name: "Ada" });
-    });
-  });
+      expect(isReactive(userProxy)).toBe(true);
+      expect(userProxy.name).toBe("John");
 
-  describe("materializeEntity", () => {
-    it("returns a shallow-reactive proxy and reflects subsequent entity writes", () => {
-      const graph = makeGraph();
+      graph.putRecord("User:1", { name: "John Updated" });
 
-      graph.putEntity({ __typename: "User", id: "1", name: "John" });
-
-      const user = graph.materializeEntity("User:1");
-
-      expect(isReactive(user)).toBe(true);
-      expect(user.name).toBe("John");
-
-      graph.putEntity({ __typename: "User", id: "1", name: "John Updated" });
-
-      expect(isReactive(user)).toBe(true);
-      expect(user.name).toBe("John Updated");
+      expect(isReactive(userProxy)).toBe(true);
+      expect(userProxy.name).toBe("John Updated");
     });
 
-    it("materializes nested refs as proxies (arrays & objects)", () => {
+    it("does not deep-materialize { __ref } (values are assigned as-is); referenced records can be materialized separately", () => {
       const graph = makeGraph();
 
-      graph.putEntity({
+      graph.putRecord("User:u1", { __typename: "User", id: "u1", name: "Ada" });
+      graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "P2" });
+
+      graph.putRecord("Post:p1", {
         __typename: "Post",
         id: "p1",
         title: "P1",
-
-        author: {
-          __typename: "User",
-          id: "u1",
-          name: "Ada",
-        },
-
-        links: [{
-          __typename: "Post",
-          id: "p2",
-          title: "P2",
-        }],
+        author: { __ref: "User:u1" },
+        links: [{ __ref: "Post:p2" }],
       });
 
-      const post = graph.materializeEntity("Post:p1");
+      const postProxy = graph.materializeRecord("Post:p1")!;
 
-      expect(isReactive(post.author)).toBe(true);
-      expect(post.author).toEqual({ __typename: "User", id: "u1", name: "Ada" });
-      expect(isReactive(post.links)).toBe(true);
-      expect(post.links[0]).toEqual({ __typename: "Post", id: "p2", title: "P2" });
-      expect(isReactive(post.links[0])).toBe(true);
+      // Shallow reactive: nested values are whatever was stored (normalized)
+      expect(isReactive(postProxy)).toBe(true);
+      expect(postProxy.author).toEqual({ __ref: "User:u1" });
+      expect(Array.isArray(postProxy.links)).toBe(true);
+      expect(postProxy.links[0]).toEqual({ __ref: "Post:p2" });
+
+      // Caller can materialize a referenced record when needed
+      const authorProxy = graph.materializeRecord("User:u1")!;
+      expect(isReactive(authorProxy)).toBe(true);
+      expect(authorProxy).toEqual({ __typename: "User", id: "u1", name: "Ada" });
     });
   });
 
-  describe("removeEntity", () => {
+  describe("removeRecord", () => {
     it("clears any live proxy (fully) and leaves no snapshot", () => {
       const graph = makeGraph();
 
-      graph.putEntity({ __typename: "User", id: "1", name: "John", email: "j@example.com" });
+      graph.putRecord("User:1", { __typename: "User", id: "1", name: "John", email: "j@example.com" });
 
-      const user = graph.materializeEntity("User:1");
+      const userProxy = graph.materializeRecord("User:1")!;
 
-      expect(user).toEqual({ __typename: "User", id: "1", name: "John", email: "j@example.com" });
+      expect(userProxy).toEqual({ __typename: "User", id: "1", name: "John", email: "j@example.com" });
 
-      graph.removeEntity("User:1");
+      graph.removeRecord("User:1");
 
-      expect(user).toEqual({});
-      expect(graph.getEntity("User:1")).toBeUndefined();
+      expect(userProxy).toEqual({});
+      expect(graph.getRecord("User:1")).toBeUndefined();
     });
   });
 
-  describe("putSelection", () => {
-    it("normalizes skeletons, indexes entity refs and refreshes live selection proxies", () => {
+  describe("keys", () => {
+    it("lists record ids", () => {
       const graph = makeGraph();
 
-      const payload = {
-        __typename: "User",
-        id: "u1",
-        name: "Ada",
+      graph.putRecord("User:1", { __typename: "User", id: "1", name: "Ada" });
+      graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "T" });
 
-        posts: {
-          __typename: "PostConnection",
-
-          pageInfo: {
-            __typename: "PageInfo",
-            endCursor: "c2",
-            hasNextPage: true,
-          },
-
-          edges: [
-            {
-              cursor: "c1",
-
-              node: {
-                __typename: "Post",
-                id: "p1",
-                title: "P1"
-              }
-            },
-            {
-              cursor: "c2",
-
-              node: {
-                __typename: "Post",
-                id: "p2",
-                title: "P2"
-              }
-            },
-          ],
-        },
-      };
-
-      // Store selections
-
-      graph.putSelection('user({"id":"1"})', payload);
-      graph.putSelection('User:u1.posts({"first":2})', payload.posts);
-
-      // Verify entities were normalized
-
-      expect(graph.getEntity("User:u1")).toBeTruthy();
-      expect(graph.getEntity("Post:p1")).toBeTruthy();
-      expect(graph.getEntity("Post:p2")).toBeTruthy();
-
-      // Verify skeleton contains refs
-
-      const skeleton = graph.getSelection('User:u1.posts({"first":2})')!;
-
-      expect(skeleton.edges[0].node).toEqual({ __ref: "Post:p1" });
-
-      // Verify live selection materializes correctly
-
-      const liveSelection = graph.materializeSelection('User:u1.posts({"first":2})');
-
-      expect(Array.isArray(liveSelection.edges)).toBe(true);
-      expect(liveSelection.edges[0].node).toEqual({ __typename: "Post", id: "p1", title: "P1" });
-      expect(liveSelection.edges[1].node).toEqual({ __typename: "Post", id: "p2", title: "P2" });
-
-      // Verify live selection updates when entity changes
-
-      graph.putEntity({ __typename: "Post", id: "p1", title: "P1 (Updated)" });
-
-      expect(liveSelection.edges[0].node).toEqual({ __typename: "Post", id: "p1", title: "P1 (Updated)" });
-      expect(liveSelection.edges[1].node).toEqual({ __typename: "Post", id: "p2", title: "P2" });
-    });
-  });
-
-  describe("getSelection", () => {
-    it("returns normalized skeletons with __ref nodes", () => {
-      const graph = makeGraph();
-
-      graph.putSelection('featuredPost({})', { __typename: "Post", id: "p1", title: "T" });
-
-      const skeleton = graph.getSelection('featuredPost({})')!;
-
-      expect(skeleton).toEqual({ __ref: "Post:p1" });
-    });
-  });
-
-  describe("materializeSelection", () => {
-    it("returns a shallow-reactive wrapper tree, overlaying entity proxies", () => {
-      const graph = makeGraph();
-
-      const payload = {
-        __typename: "PostConnection",
-
-        pageInfo: {
-          __typename: "PageInfo",
-          endCursor: "c1",
-          hasNextPage: false,
-        },
-
-        edges: [
-          {
-            cursor: "c1",
-
-            node: {
-              __typename: "Post",
-              id: "p1",
-              title: "P1"
-            }
-          },
-
-          {
-            cursor: "c2",
-
-            node: {
-              __typename: "Post",
-              id: "p2",
-              title: "P2"
-            }
-          }
-        ],
-      }
-
-      graph.putEntity({ __typename: "User", id: "1", name: "Ada" });
-      graph.putSelection('User:1.posts({"first":1})', payload);
-
-      const selection = graph.materializeSelection('User:1.posts({"first":1})');
-
-      expect(isReactive(selection)).toBe(true);
-      expect(isReactive(selection.edges)).toBe(true);
-
-      expect(isReactive(selection.edges[0].node)).toBe(true);
-      expect(selection.edges[0].node).toEqual({ __typename: "Post", id: "p1", title: "P1" });
-
-      expect(isReactive(selection.edges[1].node)).toBe(true);
-      expect(selection.edges[1].node).toEqual({ __typename: "Post", id: "p2", title: "P2" });
-    });
-  });
-
-  describe("removeSelection", () => {
-    it("clears the live wrapper but leaves entities intact", () => {
-      const graph = makeGraph();
-
-      graph.putSelection('user({"id":"1"})', { __typename: "User", id: "1", name: "Ada" });
-
-      const selection = graph.materializeSelection('user({"id":"1"})');
-
-      expect(selection).toEqual({ __typename: "User", id: "1", name: "Ada" });
-
-      graph.removeSelection('user({"id":"1"})')
-
-      expect(selection).toEqual({});
-      expect(graph.getEntity("User:1")).toEqual({ __typename: "User", id: "1", name: "Ada" });
-    });
-  });
-
-  describe("listEntityKeys", () => {
-    it("lists entity keys", () => {
-      const graph = makeGraph();
-
-      graph.putEntity({ __typename: "User", id: "1", name: "Ada" });
-      graph.putEntity({ __typename: "Post", id: "p1", title: "T" });
-
-      expect(graph.listEntityKeys().sort()).toEqual(["Post:p1", "User:1"]);
-    });
-  });
-
-  describe("listSelectionKeys", () => {
-    it("lists selection keys", () => {
-      const graph = makeGraph();
-
-      graph.putSelection('user({"id":"1"})', { __typename: "User", id: "1" });
-      graph.putSelection('featuredPost({})', { __typename: "Post", id: "p1" });
-
-      expect(graph.listSelectionKeys().sort()).toEqual(["featuredPost({})", "user({\"id\":\"1\"})"]);
+      expect(graph.keys().sort()).toEqual(["Post:p1", "User:1"]);
     });
   });
 
   describe("clear", () => {
-    it("clears all selections and entities", () => {
+    it("clears all records", () => {
       const graph = makeGraph();
 
-      graph.putEntity({ __typename: "User", id: "1", name: "Ada" });
-      graph.putEntity({ __typename: "Post", id: "p1", title: "T" });
-      graph.putSelection('user({"id":"1"})', { __typename: "User", id: "1" });
-      graph.putSelection('featuredPost({})', { __typename: "Post", id: "p1" });
+      graph.putRecord("User:1", { __typename: "User", id: "1", name: "Ada" });
+      graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "T" });
 
       graph.clear();
 
-      expect(graph.listSelectionKeys().length).toBe(0);
-      expect(graph.listEntityKeys().length).toBe(0);
+      expect(graph.keys().length).toBe(0);
     });
   });
 
   describe("inspect", () => {
-    it("exposes entities, selections, and config (keys/interfaces)", () => {
+    it("exposes records and config (keys/interfaces)", () => {
       const graph = makeGraph();
 
-      graph.putEntity({ __typename: "User", id: "1", name: "Ada" });
-      graph.putSelection('user({"id":"1"})', { __typename: "User", id: "1" });
+      graph.putRecord("User:1", { __typename: "User", id: "1", name: "Ada" });
+      graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "T" });
 
       const snapshot = graph.inspect();
 
-      expect(snapshot.entities["User:1"]).toEqual({ __typename: "User", id: "1", name: "Ada" });
-      expect(snapshot.selections['user({"id":"1"})']).toEqual({ __ref: "User:1" });
+      expect(snapshot.records["User:1"]).toEqual({ __typename: "User", id: "1", name: "Ada" });
+      expect(snapshot.records["Post:p1"]).toEqual({ __typename: "Post", id: "p1", title: "T" });
 
-      expect(Object.keys(snapshot.options.keys)).toEqual(["User", "Profile", "Post", "Comment", "Tag"]);
+      expect(Object.keys(snapshot.options.keys).sort()).toEqual(["Comment", "Post", "Profile", "Tag", "User"]);
       expect(Object.keys(snapshot.options.interfaces)).toEqual(["Post"]);
     });
   });

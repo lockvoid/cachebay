@@ -1,6 +1,6 @@
 import { shallowReactive } from "vue";
 import { hasTypename } from "./utils";
-import { TYPENAME_FIELD, IDENTITY_FIELDS, RECORD_PROXY_VERSION } from "./constants";
+import { IDENTITY_FIELDS, RECORD_PROXY_VERSION } from "./constants";
 
 export type GraphOptions = {
   keys?: Record<string, (obj: any) => string | null>;
@@ -19,7 +19,7 @@ const overlayRecordDiff = (recordProxy: any, recordSnapshot: Record<string, any>
   }
 
   if (typenameChanged) {
-    recordProxy[TYPENAME_FIELD] = recordSnapshot[TYPENAME_FIELD];
+    recordProxy.__typename = recordSnapshot.__typename;
   }
 
   if (idChanged) {
@@ -54,8 +54,8 @@ const overlayRecordDiff = (recordProxy: any, recordSnapshot: Record<string, any>
  * @private
  */
 const overlayRecordFull = (recordProxy: any, recordSnapshot: Record<string, any>, targetVersion: number) => {
-  if (recordSnapshot[TYPENAME_FIELD]) {
-    recordProxy[TYPENAME_FIELD] = recordSnapshot[TYPENAME_FIELD];
+  if (recordSnapshot.__typename) {
+    recordProxy.__typename = recordSnapshot.__typename;
   }
 
   if ("id" in recordSnapshot) {
@@ -90,8 +90,7 @@ const overlayRecordFull = (recordProxy: any, recordSnapshot: Record<string, any>
 };
 
 /**
- * Unified identity manager handling key parsing, interface resolution, and keyer functions
- * @private
+ * Manages identity resolution and key parsing
  */
 class IdentityManager {
   private keyStore = new Map<string, [string, string | undefined]>();
@@ -122,33 +121,29 @@ class IdentityManager {
   }
 
   parseKey(key: string): [string, string | undefined] {
-    const cached = this.keyStore.get(key);
+    cosnt hit = this.keyStore.get(key);
 
-    if (cached) {
-      return cached;
+    if (hit) {
+      return hit;
     }
 
-    const parsed = key.split(":", 2) as [string, string | undefined];
+    const result = key.split(":", 2) as [string, string | undefined];
 
-    this.keyStore.set(key, parsed);
+    this.keyStore.set(key, result);
 
-    return parsed;
+    return result;
   }
 
   stringifyKey(object: any): string | null {
-    const typename = this.getCanonicalTypename(object[TYPENAME_FIELD]) || object[TYPENAME_FIELD];
-
-    if (!typename) {
+    if (!hasTypename(object)) {
       return null;
     }
 
-    const id = this.idResolvers.get(typename)?.(object) ?? object.id;
+    const typename = this.getCanonicalTypename(object.__typename);
 
-    if (!id) {
-      return null;
-    }
+    const id = this.idResolvers.has(typename) ? this.idResolvers.get(typename)(object) : null;
 
-    return `${typename}:${id}`;
+    return (id != null) ? `${typename}:${id}` : null;
   }
 
   clear(): void {
@@ -201,7 +196,7 @@ export const createGraph = (options: GraphOptions) => {
       if (incomingValue === undefined) {
         // Handle deletions
         if (fieldName in currentSnapshot) {
-          if (fieldName === TYPENAME_FIELD) {
+          if (fieldName === "__typename") {
             typenameChanged = true;
           } else if (fieldName === "id") {
             idChanged = true;
@@ -214,9 +209,9 @@ export const createGraph = (options: GraphOptions) => {
       }
 
       // Handle __typename
-      if (fieldName === TYPENAME_FIELD) {
-        if (currentSnapshot[TYPENAME_FIELD] !== incomingValue) {
-          currentSnapshot[TYPENAME_FIELD] = incomingValue;
+      if (fieldName === "__typename") {
+        if (currentSnapshot.__typename !== incomingValue) {
+          currentSnapshot.__typename = incomingValue;
           typenameChanged = true;
         }
         continue;
@@ -341,12 +336,12 @@ export const createGraph = (options: GraphOptions) => {
    * Clear all data and proxies
    */
   const clear = () => {
-    for (const [, weakRef] of recordProxyStore) {
-      const proxy = weakRef.deref();
-
-      if (proxy) {
-        for (const key in proxy) {
-          delete proxy[key];
+    for (const [, weakReference] of recordProxyStore.entries()) {
+      const recordProxy = weakReference?.deref?.();
+      if (recordProxy) {
+        const proxyKeys = Object.keys(recordProxy);
+        for (let i = 0; i < proxyKeys.length; i++) {
+          delete recordProxy[proxyKeys[i]];
         }
       }
     }
@@ -361,14 +356,12 @@ export const createGraph = (options: GraphOptions) => {
    */
   const inspect = () => {
     const records: Record<string, any> = {};
-
     for (const [recordId, recordSnapshot] of recordStore.entries()) {
       records[recordId] = recordSnapshot;
     }
 
     return {
       records,
-
       options: {
         keys: options.keys || {},
         interfaces: options.interfaces || {},
