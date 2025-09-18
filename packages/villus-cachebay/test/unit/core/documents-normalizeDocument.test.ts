@@ -425,7 +425,7 @@ describe("normalizeDocument (progression by query)", () => {
     });
   });
 
-  it.only("USERS_QUERY — root users connection @.users({role,first}) with edge records", () => {
+  it("USERS_QUERY — root users connection @.users({role,first}) with edge records", () => {
     const usersData_page1 = {
       users: {
         __typename: "UserConnection",
@@ -487,20 +487,18 @@ describe("normalizeDocument (progression by query)", () => {
       data: usersData_page2,
     });
 
-    console.log(graph.inspect())
     expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"})')).toEqual({
       __typename: "UserConnection",
       pageInfo: {
         __typename: "PageInfo",
         startCursor: "u1",
-        endCursor: "u3",
-        hasNextPage: false,
+        endCursor: "u2",
+        hasNextPage: true,
         hasPreviousPage: false,
       },
       edges: [
         { __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.0' },
         { __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.1' },
-        { __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.2' },
       ],
     });
 
@@ -509,12 +507,28 @@ describe("normalizeDocument (progression by query)", () => {
       cursor: "u1",
       node: { __ref: "User:u1" },
     });
+
     expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges.1')).toEqual({
       __typename: "UserEdge",
       cursor: "u2",
       node: { __ref: "User:u2" },
     });
-    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges.2')).toEqual({
+
+    expect(graph.getRecord('@.users({"after":"u2","first":2,"role":"admin"})')).toEqual({
+      __typename: "UserConnection",
+      pageInfo: {
+        __typename: "PageInfo",
+        startCursor: "u3",
+        endCursor: "u3",
+        hasNextPage: false,
+        hasPreviousPage: false,
+      },
+      edges: [
+        { __ref: '@.users({"after":"u2","first":2,"role":"admin"}).edges.0' },
+      ],
+    });
+
+    expect(graph.getRecord('@.users({"after":"u2","first":2,"role":"admin"}).edges.0')).toEqual({
       __typename: "UserEdge",
       cursor: "u3",
       node: { __ref: "User:u3" },
@@ -702,7 +716,7 @@ describe("normalizeDocument (progression by query)", () => {
     });
   });
 
-  it("USERS_POSTS_QUERY — root users connection plus nested per-user posts(category) connections", () => {
+  it.only("USERS_POSTS_QUERY — root users connection plus nested per-user posts(category) connections", () => {
     const usersPostsData = {
       users: {
         __typename: "UserConnection",
@@ -818,6 +832,7 @@ describe("normalizeDocument (progression by query)", () => {
       node: { __ref: "User:u2" },
     });
 
+    console.log(graph.inspect())
     expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1})')).toEqual({
       __typename: "PostConnection",
       pageInfo: {
@@ -827,7 +842,9 @@ describe("normalizeDocument (progression by query)", () => {
         hasNextPage: false,
         hasPreviousPage: false,
       },
-      edges: [{ __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0' }],
+      edges: [
+        { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0' },
+      ],
     });
 
     expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0')).toEqual({

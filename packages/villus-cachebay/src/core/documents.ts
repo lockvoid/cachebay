@@ -34,9 +34,8 @@ const buildConnectionKey = (
   parentRecordId: string,
   variables: Record<string, any>
 ): string => {
-  const r = `@.${parentRecordId}.${field.fieldName}(${field.stringifyArgs(variables)})`;
-
-  return r;
+  const prefix = parentRecordId === ROOT_ID ? "@." : `@.${parentRecordId}.`;
+  return `${prefix}${field.fieldName}(${field.stringifyArgs(variables)})`;
 };
 
 /** Find a field by responseKey in current selection scope (simple linear scan). */
