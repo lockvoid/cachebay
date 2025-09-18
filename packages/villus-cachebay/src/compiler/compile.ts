@@ -1,6 +1,6 @@
 // src/compiler/compile.ts
 import { Kind, type DocumentNode, type FragmentDefinitionNode, type OperationDefinitionNode } from "graphql";
-import { lowerSelectionSet, type ConnectionsConfig } from "./lowering/flatten";
+import { lowerSelectionSet } from "./lowering/flatten";
 import type { CachePlanV1, PlanField } from "./types";
 
 /** Build a Map of fragment name -> fragment definition for lowering. */
@@ -33,27 +33,23 @@ const opRootTypename = (op: OperationDefinitionNode): string => {
 
 /**
  * compileToPlan:
- *  - If the DocumentNode has an OperationDefinition, compile it as before
- *  - Otherwise, if it has a single FragmentDefinition, compile as a "fragment" plan
+ *  - If the DocumentNode has an OperationDefinition, compile it
+ *  - Otherwise, if it has a single FragmentDefinition, compile as "fragment"
  *  - Throws when neither is present
  */
 export const compileToPlan = (
   document: DocumentNode,
-  opts: { connections?: ConnectionsConfig } = {}
 ): CachePlanV1 => {
-  const connections = opts.connections || {};
   const fragmentsByName = indexFragments(document);
 
-  // Prefer the first operation if present
   const operation = document.definitions.find(
     (d): d is OperationDefinitionNode => d.kind === Kind.OPERATION_DEFINITION
   );
 
   if (operation) {
     const rootTypename = opRootTypename(operation);
-    const root = lowerSelectionSet(operation.selectionSet, rootTypename, fragmentsByName, connections);
+    const root = lowerSelectionSet(operation.selectionSet, rootTypename, fragmentsByName);
     const rootSelectionMap = indexByResponseKey(root);
-
     return {
       __kind: "CachePlanV1",
       operation: operation.operation, // "query" | "mutation" | "subscription"
@@ -63,7 +59,6 @@ export const compileToPlan = (
     };
   }
 
-  // If no operation, try a single fragment definition
   const fragmentDefs = document.definitions.filter(
     (d): d is FragmentDefinitionNode => d.kind === Kind.FRAGMENT_DEFINITION
   );
@@ -71,10 +66,9 @@ export const compileToPlan = (
   if (fragmentDefs.length === 1) {
     const frag = fragmentDefs[0];
     const parentTypename = frag.typeCondition.name.value;
-    const root = lowerSelectionSet(frag.selectionSet, parentTypename, fragmentsByName, connections);
+    const root = lowerSelectionSet(frag.selectionSet, parentTypename, fragmentsByName);
     const rootSelectionMap = indexByResponseKey(root);
 
-    // Return as a unified plan but mark operation="fragment"
     return {
       __kind: "CachePlanV1",
       operation: "fragment",

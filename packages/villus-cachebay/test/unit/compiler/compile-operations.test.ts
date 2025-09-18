@@ -4,18 +4,6 @@ import gql from "graphql-tag";
 import { compileToPlan } from "@/src/compiler/compile";
 import type { CachePlanV1, PlanField } from "@/src/compiler/types";
 
-const connections = {
-  Query: {
-    users: { mode: "infinite", args: ["role"] },
-  },
-  User: {
-    posts: { mode: "infinite", args: ["category"] },
-  },
-  Post: {
-    comments: { mode: "infinite", args: [] },
-  },
-} as const;
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Fragments
 // ─────────────────────────────────────────────────────────────────────────────
@@ -59,7 +47,7 @@ const USER_QUERY = gql`
 const USERS_QUERY = gql`
   ${USER_FRAGMENT}
   query UsersQuery($usersRole: String, $first: Int, $after: String) {
-    users(role: $usersRole, first: $first, after: $after) {
+    users(role: $usersRole, first: $first, after: $after) @connection(args: ["role"]) {
       __typename
       pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
       edges {
@@ -77,7 +65,7 @@ const USER_POSTS_QUERY = gql`
     user(id: $id) {
       __typename
       ...UserFields
-      posts(category: $postsCategory, first: $first, after: $after) {
+      posts(category: $postsCategory, first: $first, after: $after) @connection(args: ["category"]) {
         __typename
         pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
         edges {
@@ -107,7 +95,7 @@ const USERS_POSTS_COMMENTS_QUERY = gql`
     $commentsFirst: Int
     $commentsAfter: String
   ) {
-    users(role: $usersRole, first: $usersFirst, after: $usersAfter) {
+    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
       __typename
       pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
       edges {
@@ -115,7 +103,7 @@ const USERS_POSTS_COMMENTS_QUERY = gql`
         node {
           __typename
           ...UserFields
-          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) {
+          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
             __typename
             pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
             edges {
@@ -123,7 +111,7 @@ const USERS_POSTS_COMMENTS_QUERY = gql`
               node {
                 __typename
                 ...PostFields
-                comments(first: $commentsFirst, after: $commentsAfter) {
+                comments(first: $commentsFirst, after: $commentsAfter) @connection(args: []) {
                   __typename
                   pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
                   edges {
@@ -179,7 +167,7 @@ const findField = (fields: PlanField[], responseKey: string): PlanField | null =
 
 describe("compiler: compileToPlan", () => {
   it("compiles USER_QUERY: flattens fragments and builds arg pickers", () => {
-    const plan = compileToPlan(USER_QUERY, { connections });
+    const plan = compileToPlan(USER_QUERY);
     expect(plan.__kind).toBe("CachePlanV1");
     expect(plan.operation).toBe("query");
     expect(plan.rootTypename).toBe("Query");
@@ -200,7 +188,7 @@ describe("compiler: compileToPlan", () => {
   });
 
   it("compiles USERS_QUERY: marks users as connection, args builder omits undefined", () => {
-    const plan = compileToPlan(USERS_QUERY, { connections });
+    const plan = compileToPlan(USERS_QUERY);
 
     const users = findField(plan.root, "users")!;
     expect(users.isConnection).toBe(true);
@@ -215,7 +203,7 @@ describe("compiler: compileToPlan", () => {
   });
 
   it("compiles USER_POSTS_QUERY: marks nested posts as connection and builds both arg builders", () => {
-    const plan = compileToPlan(USER_POSTS_QUERY, { connections });
+    const plan = compileToPlan(USER_POSTS_QUERY);
 
     const user = findField(plan.root, "user")!;
     const posts = findField(user.selectionSet!, "posts")!;
@@ -238,7 +226,7 @@ describe("compiler: compileToPlan", () => {
   });
 
   it("compiles USERS_POSTS_COMMENTS_QUERY: connection flags on users, posts, comments", () => {
-    const plan: CachePlanV1 = compileToPlan(USERS_POSTS_COMMENTS_QUERY, { connections });
+    const plan: CachePlanV1 = compileToPlan(USERS_POSTS_COMMENTS_QUERY);
 
     const users = findField(plan.root, "users")!;
     expect(users.isConnection).toBe(true);
@@ -269,7 +257,7 @@ describe("compiler: compileToPlan", () => {
   // Extra coverage
 
   it("preserves alias as responseKey and field name as fieldName", () => {
-    const plan = compileToPlan(ALIAS_QUERY, { connections });
+    const plan = compileToPlan(ALIAS_QUERY);
     const currentUser = findField(plan.root, "currentUser")!;
     expect(currentUser.responseKey).toBe("currentUser");
     expect(currentUser.fieldName).toBe("user");
@@ -277,7 +265,7 @@ describe("compiler: compileToPlan", () => {
   });
 
   it("when multiple distinct type conditions exist, child parent inference falls back", () => {
-    const plan = compileToPlan(MULTI_TYPE_FRAGMENT_QUERY, { connections });
+    const plan = compileToPlan(MULTI_TYPE_FRAGMENT_QUERY);
     const user = findField(plan.root, "user")!;
     // Selection set should contain both fields from UserOnly/AdminOnly fragments
     const idField = findField(user.selectionSet!, "id");     // from UserOnly

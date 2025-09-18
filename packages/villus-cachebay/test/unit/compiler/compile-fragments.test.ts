@@ -27,7 +27,7 @@ describe("compiler: compileToPlan (fragments)", () => {
     const FRAG = gql`
       fragment UserPosts on User {
         id
-        posts(category: $cat, first: $first, after: $after) {
+        posts(category: $cat, first: $first, after: $after) @connection(args: ["category"]) {
           __typename
           totalCount
           pageInfo {
@@ -51,7 +51,7 @@ describe("compiler: compileToPlan (fragments)", () => {
       }
     `;
 
-    const plan = compileToPlan(FRAG, { connections: { User: { posts: { mode: "infinite", args: ["category"] } } } });
+    const plan = compileToPlan(FRAG);
 
     expect(plan.operation).toBe("fragment");
     expect(plan.rootTypename).toBe("User");
