@@ -1,51 +1,57 @@
-// src/features/inspect.ts
+/* src/features/inspect.ts */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { GraphAPI } from "@/src/core/graph";
+import type { ReturnTypeCreateGraph } from "@/src/core/graph"; // if you don't have this, replace with your Graph type
+import type { GraphInstance } from "@/src/core/graph";
 
 /**
- * Lightweight debug/inspection helpers over the selection-first graph.
- * - Lists entity keys (optionally filtered by typename)
- * - Reads raw or materialized entities/selections
- * - Exposes current config (keys/interfaces)
+ * Lightweight debug/inspection helpers over the unified graph.
+ * - keys(): list all record ids
+ * - record(id): raw or materialized view of a record
+ * - entityKeys(): filter "Type:id" records (excludes '@', '@.' pages, and '.edges.' keys)
+ * - pageKeys(): connection page records ('@.' prefix, not edge records)
+ * - edgeKeys(): edge records matching '*.edges.N' (optionally under a page)
+ * - config(): returns graph creation options (keys/interfaces)
  */
-export const createInspect = ({ graph }: { graph: GraphAPI }) => {
-  const snapshot = () => graph.inspect() || { entities: {}, selections: {}, config: {} };
+export const createInspect = ({ graph }: { graph: GraphInstance }) => {
+  const keys = (): string[] => graph.keys();
 
-  const entities = (typename?: string): string[] => {
-    const snap = snapshot();
-    const keys = Object.keys(snap.entities || {});
-    if (!typename) {
-      return keys;
-    }
-    return keys.filter((k) => k.startsWith(`${typename}:`));
+  const isRootKey = (id: string) => id === "@";
+  const isEdgeKey = (id: string) => id.includes(".edges.");
+  const isPageKey = (id: string) => id.startsWith("@.") && !isEdgeKey(id);
+  const isEntityKey = (id: string) => !isRootKey(id) && !isPageKey(id) && !isEdgeKey(id);
+
+  const entityKeys = (typename?: string): string[] => {
+    const all = keys().filter(isEntityKey);
+    if (!typename) return all;
+    return all.filter((k) => k.startsWith(`${typename}:`));
   };
 
-  const entity = (key: string, opts?: { materialized?: boolean }): any => {
-    if (opts?.materialized) {
-      return graph.materializeEntity(key);
-    }
-    return graph.getEntity(key);
+  const pageKeys = (): string[] => keys().filter(isPageKey);
+
+  const edgeKeys = (pageKey?: string): string[] => {
+    const all = keys().filter(isEdgeKey);
+    if (!pageKey) return all;
+    const prefix = `${pageKey}.edges.`;
+    return all.filter((k) => k.startsWith(prefix));
   };
 
-  const selections = (): string[] => {
-    const snap = snapshot();
-    return Object.keys(snap.selections || {});
+  const record = (id: string, opts?: { materialized?: boolean }): any => {
+    if (opts?.materialized) return graph.materializeRecord(id);
+    return graph.getRecord(id);
   };
 
-  const selection = (key: string, opts?: { materialized?: boolean }): any => {
-    if (opts?.materialized) {
-      return graph.materializeSelection(key);
-    }
-    return graph.getSelection(key);
+  const config = () => {
+    // graph.inspect() returns { records, options: { keys, interfaces } }
+    const snap = graph.inspect?.();
+    return snap?.options ?? { keys: {}, interfaces: {} };
   };
-
-  const config = () => snapshot().config;
 
   return {
-    entities,
-    entity,
-    selections,
-    selection,
+    keys,
+    record,
+    entityKeys,
+    pageKeys,
+    edgeKeys,
     config,
   };
 };

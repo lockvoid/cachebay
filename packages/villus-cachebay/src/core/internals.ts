@@ -1,34 +1,32 @@
-// src/core/internals.ts
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { App } from "vue";
 import type { ClientPlugin } from "villus";
 
 import { createPlugin, provideCachebay } from "./plugin";
-import { createGraph, type GraphAPI } from "./graph";
-import { createSelections } from "./selections";
-import { createResolvers } from "./resolvers";
-import { createFragments } from "./fragments";
-import { createSSR } from "../features/ssr";
-import { createModifyOptimistic } from "../features/optimistic";
-import { createInspect } from "../features/inspect";
+import { createGraph } from "./graph";
 import { createViews } from "./views";
+import { createPlanner } from "./planner";
+import { createSessions } from "./sessions";
+import { createDocuments } from "./documents";
+import { createFragments } from "./fragments";
+
+import { createSSR } from "@/src/features/ssr";
+import { createModifyOptimistic } from "@/src/features/optimistic";
+import { createInspect } from "@/src/features/inspect";
 
 export type CachebayInstance = ClientPlugin & {
   // SSR
   dehydrate: () => any;
-  hydrate: (
-    input: any | ((hydrate: (snapshot: any) => void) => void),
-    opts?: { materialize?: boolean; rabbit?: boolean }
-  ) => void;
+  hydrate: (input: any | ((emit: (snapshot: any) => void) => void)) => void;
 
   // Identity
   identify: (obj: any) => string | null;
 
   // Fragments
-  readFragment: (args: { id: string; fragment: string; variables?: Record<string, any> }) => any;
-  writeFragment: (args: { id: string; fragment: string; data: any; variables?: Record<string, any> }) => void;
+  readFragment: (args: { id: string; fragment: any; variables?: Record<string, any> }) => any;
+  writeFragment: (args: { id: string; fragment: any; data: any; variables?: Record<string, any> }) => void;
 
-  // Optimistic (selection-first)
+  // Optimistic
   modifyOptimistic: ReturnType<typeof createModifyOptimistic>;
 
   // Debug
@@ -39,31 +37,38 @@ export type CachebayInstance = ClientPlugin & {
 
   // internals for tests/debug
   __internals: {
-    graph: GraphAPI;
-    selections: ReturnType<typeof createSelections>;
-    resolvers: ReturnType<typeof createResolvers>;
+    graph: ReturnType<typeof createGraph>;
+    views: ReturnType<typeof createViews>;
+    planner: ReturnType<typeof createPlanner>;
+    sessions: ReturnType<typeof createSessions>;
+    documents: ReturnType<typeof createDocuments>;
     fragments: ReturnType<typeof createFragments>;
     ssr: ReturnType<typeof createSSR>;
     inspect: ReturnType<typeof createInspect>;
-    views: ReturnType<typeof createViews>;
   };
 };
 
 export type CachebayOptions = {
   keys?: Record<string, (obj: any) => string | null>;
   interfaces?: Record<string, string[]>;
-  resolvers?: Record<string, Record<string, any>>;
 };
 
 export function createCache(options: CachebayOptions = {}): CachebayInstance {
-  const graph = createGraph({ keys: options.keys, interfaces: options.interfaces });
-  const selections = createSelections();
-  const views = createViews({ dependencies: { graph } });
-  const resolvers = createResolvers({ resolvers: options.resolvers }, { graph });
-  const fragments = createFragments({ dependencies: { graph, selections } });
-  const ssr = createSSR({ graph, resolvers });
+  // Core
+  const graph = createGraph({ keys: options.keys || {}, interfaces: options.interfaces || {} });
+  const views = createViews({ graph });
+  const planner = createPlanner(); // @connection/@paginate driven; configless by default
+  const sessions = createSessions({ graph, views });
+  const documents = createDocuments({ graph, views, planner });
+  const fragments = createFragments({}, { graph, views });
+
+  // Features
+  const ssr = createSSR({ graph });
   const modifyOptimistic = createModifyOptimistic({ graph });
-  const plugin = createPlugin({ graph, selections, resolvers, ssr, views });
+  const inspect = createInspect({ graph });
+
+  // Villus plugin (ClientPlugin)
+  const plugin = createPlugin({}, { graph, planner, documents, sessions });
 
   // Vue install
   (plugin as any).install = (app: App) => {
@@ -76,13 +81,11 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Fragments API
   (plugin as any).readFragment = fragments.readFragment;
   (plugin as any).writeFragment = fragments.writeFragment;
-  (plugin as any).watchFragment = fragments.watchFragment;
 
   // Optimistic API
   (plugin as any).modifyOptimistic = modifyOptimistic;
 
   // Inspect (debug)
-  const inspect = createInspect({ graph });
   (plugin as any).inspect = inspect;
 
   // SSR API
@@ -92,12 +95,13 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Internals for tests
   (plugin as any).__internals = {
     graph,
-    selections,
-    resolvers,
+    views,
+    planner,
+    sessions,
+    documents,
     fragments,
     ssr,
     inspect,
-    views,
   };
 
   return plugin as CachebayInstance;

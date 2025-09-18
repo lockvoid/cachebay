@@ -9,7 +9,7 @@ import {
 import { ROOT_ID } from "./constants";
 import { isObject, hasTypename, upsertEntityShallow, buildConnectionKey } from "./utils";
 import type { GraphInstance } from "./graph";
-import type { ViewsAPI } from "./views";
+import type { ViewsInstance } from "./views";
 import type { PlannerInstance } from "./planner";
 
 export type FragmentsOptions = {
@@ -20,7 +20,7 @@ export type FragmentsOptions = {
 export type FragmentsDependencies = {
   graph: GraphInstance;
   planner: PlannerInstance;
-  views: ViewsAPI; // createViews({ graph })
+  views: ViewsInstance; // createViews({ graph })
 };
 
 export type ReadFragmentArgs = {

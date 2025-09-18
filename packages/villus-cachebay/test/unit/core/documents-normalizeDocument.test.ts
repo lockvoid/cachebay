@@ -886,7 +886,6 @@ describe("normalizeDocument (progression by query)", () => {
       node: { __ref: "User:u2" },
     });
 
-    console.log(graph.inspect())
     expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1})')).toEqual({
       __typename: "PostConnection",
       pageInfo: {

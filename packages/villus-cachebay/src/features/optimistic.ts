@@ -175,13 +175,27 @@ export const createModifyOptimistic = ({ graph }: Deps) => {
     baseSnap.set(recordId, prev ? cloneJSON(prev) : null);
   };
 
-  const applyEntityWrite = (recordId: string, patch: Record<string, any>, policy: "merge" | "replace") => {
+  const applyEntityWrite = (
+    recordId: string,
+    patch: Record<string, any>,
+    policy: "merge" | "replace"
+  ) => {
     captureBase(recordId);
+
+    const existing = graph.getRecord(recordId);
+    const [typename, id] = recordId.split(":", 2);
+
+    if (!existing) {
+      // brand-new record → always write identity with the patch
+      graph.putRecord(recordId, { __typename: typename, id, ...patch });
+      return;
+    }
+
     if (policy === "replace") {
-      // replace: compute next = { ...identityFromRecordId, ...patch }
-      const [typename, id] = recordId.split(":", 2);
+      // replace: rebuild snapshot (keep identity explicit)
       graph.putRecord(recordId, { __typename: typename, id, ...patch });
     } else {
+      // merge into existing
       graph.putRecord(recordId, patch);
     }
   };
