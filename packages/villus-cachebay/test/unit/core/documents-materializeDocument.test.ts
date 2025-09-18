@@ -360,7 +360,7 @@ const makeDocuments = (graph: ReturnType<typeof createGraph>) =>
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("materializeDocument (progression by query)", () => {
+describe("materializeDocument", () => {
   let graph: ReturnType<typeof createGraph>;
   let documents: ReturnType<typeof makeDocuments>;
 
