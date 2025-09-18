@@ -148,6 +148,8 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
 
     const plan = getPlan(document);
 
+    const isQuery = (plan as any).operation ? (plan as any).operation === "query" : (plan as any).opKind === "query";
+
     type Frame = {
       parentRecordId: string;
       fields: PlanField[];       // current scope fields
@@ -165,23 +167,20 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
       if (!frame) return;
 
       const parentRecordId = frame.parentRecordId;
+      const planField = typeof responseKey === "string"
+        ? findField(frame.fields, responseKey)
+        : undefined;
 
-      // resolve planField in this scope
-      const planField =
-        typeof responseKey === "string" ? findField(frame.fields, responseKey) : undefined;
-
-      console.log("planField", frame.fields, responseKey as any, planField as any);
-
-      // Connection page — write page and link parent field (full args)
+      // Connection page — store page & (only for queries) link parent field(full args)
       if (planField && planField.isConnection && isObject(valueNode)) {
         const pageKey = buildConnectionKey(planField, parentRecordId, variables);
         const fieldKey = buildFieldKey(planField, variables);
 
-        const inEdges: any[] = Array.isArray((valueNode as any).edges) ? (valueNode as any).edges : [];
-        const edgeRefs = new Array(inEdges.length);
+        const edgesIn: any[] = Array.isArray((valueNode as any).edges) ? (valueNode as any).edges : [];
+        const edgeRefs = new Array(edgesIn.length);
 
-        for (let i = 0; i < inEdges.length; i++) {
-          const edge = inEdges[i] || {};
+        for (let i = 0; i < edgesIn.length; i++) {
+          const edge = edgesIn[i] || {};
           const cursor = edge.cursor;
           const nodeObj = edge.node;
 
@@ -189,46 +188,63 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
             const nodeKey = upsertEntityShallow(graph, nodeObj);
             if (nodeKey) {
               const edgeKey = `${pageKey}.edges.${i}`;
-              graph.putRecord(edgeKey, { ...edge, node: { __ref: nodeKey } });
+              const { node, ...edgeRest } = edge as any;
+              const edgeSnap: Record<string, any> = edgeRest;
+
+              edgeSnap.node = { __ref: nodeKey };
+
+              // 4) write edge record + push ref
+              graph.putRecord(edgeKey, edgeSnap);
               edgeRefs[i] = { __ref: edgeKey };
             }
           }
         }
 
-        const pageInfo =
-          isObject((valueNode as any).pageInfo) ? { ...(valueNode as any).pageInfo } : undefined;
+        const { edges, pageInfo, ...connRest } = valueNode as any;
 
-        graph.putRecord(pageKey, {
+        const pageSnap: Record<string, any> = {
           __typename: (valueNode as any).__typename,
-          edges: edgeRefs,
-          pageInfo,
-        });
+          ...connRest,                // e.g., totalCount, cost, etc. (scalars/arrays)
+        };
 
-        // Link parent field (full args) → this page
-        graph.putRecord(parentRecordId, { [fieldKey]: { __ref: pageKey } });
+        if (pageInfo) pageSnap.pageInfo = { ...(pageInfo as any) }; // shallow copy
+        pageSnap.edges = edgeRefs;
 
-        // Descend into connection selection (edges/pageInfo)
+        graph.putRecord(pageKey, pageSnap);
+
+        // link only on queries
+        if (isQuery) {
+          graph.putRecord(parentRecordId, { [fieldKey]: { __ref: pageKey } });
+        }
+
+        // descend into the connection’s selection (edges/pageInfo)
         const nextFields = planField.selectionSet || [];
         return { parentRecordId, fields: nextFields, insideConnection: true } as Frame;
       }
 
-      // Arrays — keep current scope (the array element will expose string keys later)
+      // Arrays — switch scope to the array field’s *item* selection (edges → cursor/node)
       if (Array.isArray(valueNode) && typeof responseKey === "string") {
-        const pf = findField(frame.fields, responseKey);    // e.g., 'edges'
-        const nextFields = pf?.selectionSet || frame.fields; // switch to edge-item scope
+        const pf = findField(frame.fields, responseKey);
+        const nextFields = pf?.selectionSet || frame.fields; // <- critical
         return { parentRecordId, fields: nextFields, insideConnection: frame.insideConnection } as Frame;
       }
 
-      // Identifiable entity — link and descend (avoid linking edge.node directly)
+      // Identifiable entity — upsert & optionally link (only on queries)
       if (planField && isObject(valueNode) && hasTypename(valueNode) && valueNode.id != null) {
         const entityKey = upsertEntityShallow(graph, valueNode);
         if (entityKey) {
+          // Only link on queries:
+          //  - at root for root fields
+          //  - or non-root when the field actually has args (avoid author({}))
           const argObj = planField.buildArgs(variables);
           const hasArgs = argObj && Object.keys(argObj).length > 0;
+          const shouldLink = isQuery &&
+            !(frame.insideConnection && planField.responseKey === "node") &&
+            (parentRecordId === ROOT_ID ? true : hasArgs);
 
-          if (frame.parentRecordId === ROOT_ID || hasArgs) {
+          if (shouldLink) {
             const parentFieldKey = buildFieldKey(planField, variables);
-            graph.putRecord(frame.parentRecordId, { [parentFieldKey]: { __ref: entityKey } });
+            graph.putRecord(parentRecordId, { [parentFieldKey]: { __ref: entityKey } });
           }
 
           const nextFields = planField.selectionSet || [];

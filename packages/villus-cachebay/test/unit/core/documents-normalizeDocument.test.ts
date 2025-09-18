@@ -97,6 +97,7 @@ export const USER_POSTS_QUERY = gql`
         edges {
           __typename
           cursor
+          score
 
           node {
             __typename
@@ -117,13 +118,41 @@ export const USER_POSTS_QUERY = gql`
 
 export const UPDATE_USER_MUTATION = gql`
   ${USER_FRAGMENT}
-  mutation UpdateUserMutation($id: ID!, $email: String!, $name: String!) {
-    updateUser(id: $id, input: { email: $email, name: $name }) {
+
+  mutation UpdateUserMutation($input: UpdateUserInput!, $postCategory: String!, $postFirst: Int!, $postAfter: String!) {
+    updateUser(id: $id, input: $input) {
       __typename
 
-      ...UserFields
+      user {
+        __typename
 
-      name
+        ...UserFields
+
+        name
+
+        posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) {
+          __typename
+
+          pageInfo {
+            __typename
+            startCursor
+            endCursor
+            hasNextPage
+            hasPreviousPage
+          }
+
+          edges {
+            __typename
+            cursor
+
+            node {
+              __typename
+
+              ...PostFields
+            }
+          }
+        }
+      }
     }
   }
 `;
@@ -132,11 +161,13 @@ export const USER_UPDATED_SUBSCRIPTION = gql`
   ${USER_FRAGMENT}
   subscription UserUpdatedSubscription($id: ID!) {
     userUpdated(id: $id) {
-      __typename
+      user {
+        __typename
 
-      ...UserFields
+        ...UserFields
 
-      name
+        name
+      }
     }
   }
 `;
@@ -545,6 +576,8 @@ describe("normalizeDocument (progression by query)", () => {
         posts: {
           __typename: "PostConnection",
 
+          totalCount: 2,
+
           pageInfo: {
             startCursor: "p1",
             endCursor: "p2",
@@ -557,6 +590,7 @@ describe("normalizeDocument (progression by query)", () => {
             {
               __typename: "PostEdge",
               cursor: "p1",
+              score: 0.5,
 
               node: {
                 __typename: "Post",
@@ -573,6 +607,7 @@ describe("normalizeDocument (progression by query)", () => {
             {
               __typename: "PostEdge",
               cursor: "p2",
+              score: 0.7,
 
               node: {
                 __typename: "Post",
@@ -599,6 +634,8 @@ describe("normalizeDocument (progression by query)", () => {
         posts: {
           __typename: "PostConnection",
 
+          totalCount: 1,
+
           pageInfo: {
             __typename: "PageInfo",
             startCursor: "p3",
@@ -611,6 +648,7 @@ describe("normalizeDocument (progression by query)", () => {
             {
               __typename: "PostEdge",
               cursor: "p3",
+              score: 0.3,
 
               node: {
                 __typename: "Post",
@@ -628,6 +666,7 @@ describe("normalizeDocument (progression by query)", () => {
             {
               __typename: "PostEdge",
               cursor: "p4",
+              score: 0.6,
 
               node: {
                 __typename: "Post",
@@ -669,6 +708,8 @@ describe("normalizeDocument (progression by query)", () => {
 
     expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":2})')).toEqual({
       __typename: 'PostConnection',
+      totalCount: 2,
+
       pageInfo: {
         __typename: 'PageInfo',
         startCursor: 'p1',
@@ -684,6 +725,8 @@ describe("normalizeDocument (progression by query)", () => {
 
     expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"lifestyle","first":2})')).toEqual({
       __typename: 'PostConnection',
+      totalCount: 1,
+
       pageInfo: {
         __typename: 'PageInfo',
         startCursor: 'p3',
@@ -700,18 +743,28 @@ describe("normalizeDocument (progression by query)", () => {
     expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0')).toEqual({
       __typename: "PostEdge",
       cursor: "p1",
+      score: 0.5,
       node: { __ref: "Post:p1" },
+    });
+
+    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.1')).toEqual({
+      __typename: "PostEdge",
+      cursor: "p2",
+      score: 0.7,
+      node: { __ref: "Post:p2" },
     });
 
     expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges.0')).toEqual({
       __typename: "PostEdge",
       cursor: "p3",
+      score: 0.3,
       node: { __ref: "Post:p3" },
     });
 
     expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges.1')).toEqual({
       __typename: "PostEdge",
       cursor: "p4",
+      score: 0.6,
       node: { __ref: "Post:p4" },
     });
   });
@@ -1270,7 +1323,7 @@ describe("normalizeDocument (progression by query)", () => {
     });
   });
 
-  it.only("UPDATE_USER_MUTATION — mutation operations normalize entities correctly", () => {
+  it("UPDATE_USER_MUTATION — mutation operations normalize entities correctly", () => {
     const updateUserData = {
       updateUser: {
         user: {
@@ -1278,6 +1331,32 @@ describe("normalizeDocument (progression by query)", () => {
           id: "u1",
           email: "u1_updated@example.com",
           name: "Updated User 1",
+
+          posts: {
+            __typename: "PostConnection",
+
+            pageInfo: {
+              __typename: "PageInfo",
+              startCursor: "p1",
+              endCursor: "p1",
+              hasNextPage: false,
+              hasPreviousPage: false,
+            },
+
+            edges: [
+              {
+                __typename: "PostEdge",
+                cursor: "p1",
+
+                node: {
+                  __typename: "Post",
+                  id: "p1",
+                  title: "Post 1",
+                  tags: [],
+                }
+              }
+            ]
+          }
         }
       },
     };
@@ -1296,6 +1375,7 @@ describe("normalizeDocument (progression by query)", () => {
       data: updateUserData,
     });
 
+    console.log(graph.inspect());
     expect(graph.getRecord("@")).toEqual({
       id: "@",
       __typename: "@",
@@ -1306,12 +1386,16 @@ describe("normalizeDocument (progression by query)", () => {
       __typename: "User",
       email: "u1_updated@example.com",
       name: "Updated User 1",
+
+
     });
   });
 
   it("USER_UPDATED_SUBSCRIPTION — subscription operations normalize entities correctly", () => {
     const userUpdatedData = {
       userUpdated: {
+        __typename: "UserUpdated",
+
         user: {
           __typename: "User",
           id: "u1",
