@@ -21,6 +21,7 @@ export type DocumentsDependencies = {
 export type DocumentsInstance = ReturnType<typeof createDocuments>;
 
 const buildFieldKey = (field: PlanField, variables: Record<string, any>): string => {
+  // Per your contract: stringifyArgs receives raw variables and applies buildArgs internally
   return `${field.fieldName}(${field.stringifyArgs(variables)})`;
 };
 
@@ -33,12 +34,14 @@ const buildConnectionKey = (
   return `${prefix}${field.fieldName}(${field.stringifyArgs(variables)})`;
 };
 
-const findField = (fields: PlanField[] | null, responseKey: string): PlanField | undefined => {
-  if (!fields) return undefined;
+// Build a Map from a PlanField[] (used only for root; for nested we use field.selectionMap)
+const mapFrom = (fields: PlanField[] | null | undefined): Map<string, PlanField> => {
+  const map = new Map<string, PlanField>();
+  if (!fields) return map;
   for (let i = 0; i < fields.length; i++) {
-    if (fields[i].responseKey === responseKey) return fields[i];
+    map.set(fields[i].responseKey, fields[i]);
   }
-  return undefined;
+  return map;
 };
 
 export const createDocuments = (options: DocumentsOptions, deps: DocumentsDependencies) => {
@@ -143,12 +146,14 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
     type Frame = {
       parentRecordId: string;
       fields: PlanField[];
+      fieldsMap: Map<string, PlanField>;
       insideConnection: boolean;
     };
 
     const initialFrame: Frame = {
       parentRecordId: ROOT_ID,
       fields: plan.root,
+      fieldsMap: mapFrom(plan.root), // root has no parent; build once
       insideConnection: false,
     };
 
@@ -156,8 +161,9 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
       if (!frame) return;
 
       const parentRecordId = frame.parentRecordId;
+
       const planField = typeof responseKey === "string"
-        ? findField(frame.fields, responseKey)
+        ? frame.fieldsMap.get(responseKey)
         : undefined;
 
       // Connection page — store page & (only for queries) link parent field(full args)
@@ -206,14 +212,16 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
 
         // Descend into the connection's selection
         const nextFields = planField.selectionSet || [];
-        return { parentRecordId, fields: nextFields, insideConnection: true } as Frame;
+        const nextMap = planField.selectionMap || mapFrom(nextFields);
+        return { parentRecordId, fields: nextFields, fieldsMap: nextMap, insideConnection: true } as Frame;
       }
 
       // Arrays — switch scope to the array field's item selection
       if (Array.isArray(valueNode) && typeof responseKey === "string") {
-        const pf = findField(frame.fields, responseKey);
+        const pf = frame.fieldsMap.get(responseKey);
         const nextFields = pf?.selectionSet || frame.fields;
-        return { parentRecordId, fields: nextFields, insideConnection: frame.insideConnection } as Frame;
+        const nextMap = pf?.selectionMap || frame.fieldsMap;
+        return { parentRecordId, fields: nextFields, fieldsMap: nextMap, insideConnection: frame.insideConnection } as Frame;
       }
 
       // Identifiable entity — upsert & optionally link (only on queries)
@@ -232,7 +240,8 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
           }
 
           const nextFields = planField.selectionSet || [];
-          return { parentRecordId: entityKey, fields: nextFields, insideConnection: false } as Frame;
+          const nextMap = planField.selectionMap || mapFrom(nextFields);
+          return { parentRecordId: entityKey, fields: nextFields, fieldsMap: nextMap, insideConnection: false } as Frame;
         }
         return TRAVERSE_SKIP;
       }
@@ -240,7 +249,8 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
       // Plain object — propagate scope
       if (isObject(valueNode)) {
         const nextFields = planField?.selectionSet || frame.fields;
-        return { parentRecordId, fields: nextFields, insideConnection: frame.insideConnection } as Frame;
+        const nextMap = planField?.selectionMap || frame.fieldsMap;
+        return { parentRecordId, fields: nextFields, fieldsMap: nextMap, insideConnection: frame.insideConnection } as Frame;
       }
 
       return;
@@ -263,11 +273,16 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
 
     const view = new Proxy(entityProxy, {
       get(target, prop, receiver) {
-        const field = fields && typeof prop === "string" ? findField(fields, prop) : undefined;
+        const field = fields && typeof prop === "string"
+          ? (fields as any).selectionMap?.get?.(prop as string) ?? mapFrom(fields).get(prop as string)
+          : undefined;
 
         // Lazily materialize connection fields
         if (field?.isConnection) {
-          const parentId = graph.identify(target);
+          // safer parent id (materializeRecord returns a proxy with __typename/id)
+          const typename = (target as any).__typename;
+          const id = (target as any).id;
+          const parentId = typename && id != null ? `${typename}:${id}` : (graph.identify({ __typename: typename, id }) || "");
           const pageKey = buildConnectionKey(field, parentId, variables);
           return getConnectionView(pageKey, field, variables);
         }
@@ -277,17 +292,23 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
         // Deref { __ref } → entity view
         if (value && typeof value === "object" && (value as any).__ref) {
           const childProxy = graph.materializeRecord((value as any).__ref);
-          const sub = fields && typeof prop === "string" ? findField(fields, prop) : undefined;
+          const sub = fields && typeof prop === "string"
+            ? ((fields as any).selectionMap?.get?.(prop as string) ?? mapFrom(fields).get(prop as string))
+            : undefined;
           const subFields = sub ? sub.selectionSet || null : null;
           return childProxy ? getEntityView(childProxy, subFields, variables) : undefined;
         }
 
         // Arrays (map refs if we know a sub-selection)
         if (Array.isArray(value)) {
-          const sub = fields && typeof prop === "string" ? findField(fields, prop) : undefined;
+          const sub = fields && typeof prop === "string"
+            ? ((fields as any).selectionMap?.get?.(prop as string) ?? mapFrom(fields).get(prop as string))
+            : undefined;
+
           if (!sub?.selectionSet || sub.selectionSet.length === 0) {
             return value.slice();
           }
+
           const out = new Array(value.length);
           for (let i = 0; i < value.length; i++) {
             const item = value[i];
@@ -373,8 +394,8 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
     let bucket = viewCache.get(pageProxy);
     if (bucket?.kind === "page" && bucket.view) return bucket.view;
 
-    const edgesField = findField(field.selectionSet, "edges");
-    const nodeField = edgesField ? findField(edgesField.selectionSet, "node") : undefined;
+    const edgesField = field.selectionMap?.get("edges");
+    const nodeField = edgesField ? edgesField.selectionMap?.get("node") : undefined;
 
     const view = new Proxy(pageProxy, {
       get(target, prop, receiver) {
