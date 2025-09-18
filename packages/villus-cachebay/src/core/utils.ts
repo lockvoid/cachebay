@@ -1,4 +1,4 @@
-import { QUERY_ROOT, IDENTITY_FIELDS } from "./constants";
+import { IDENTITY_FIELDS } from "./constants";
 import type { EntityKey, RelayOptions } from "./types";
 
 export const TRAVERSE_SKIP = Symbol('traverse:skip');

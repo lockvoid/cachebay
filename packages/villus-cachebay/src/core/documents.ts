@@ -1,8 +1,7 @@
-// src/core/documents.ts
 import type { DocumentNode } from "graphql";
 import type { GraphInstance } from "./graph";
 import { isObject, hasTypename, traverseFast, TRAVERSE_SKIP } from "./utils";
-import { IDENTITY_FIELDS } from "./constants";
+import { IDENTITY_FIELDS, ROOT_ID } from "./constants";
 
 import {
   compileToPlan,
@@ -20,8 +19,6 @@ export type DocumentsDependencies = {
 };
 
 export type DocumentsInstance = ReturnType<typeof createDocuments>;
-
-const ROOT_ID = "@";
 
 /** Build parent field key from compiler plan (full args). */
 const buildFieldKey = (field: PlanField, variables: Record<string, any>): string => {
@@ -266,14 +263,18 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
   // ───────────────────────────────────────────────────────────────────────────
   // materializeDocument — reactive, exact page; ONE per-instance view cache
   // ───────────────────────────────────────────────────────────────────────────
-
   const viewCache = new WeakMap<object, any>();
 
-  // Current call's variables (helpers read from here)
-  const variablesRef: { current: Record<string, any> } = { current: {} };
+  const getParentEntityId = (entityProxy: any): string => {
+    const t = entityProxy?.__typename;
+    const id = entityProxy?.id;
+    if (t && id != null) return `${t}:${id}`;
+    const fallback = graph.identify({ __typename: t, id });
+    return fallback || "";
+  };
 
-  // Selection-aware entity view (memoized per (entityProxy, selection))
-  const getEntityView = (entityProxy: any, fields: PlanField[] | null): any => {
+  // selection-aware entity view (memoized per (entityProxy, selection))
+  const getEntityView = (entityProxy: any, fields: PlanField[] | null, variables: Record<string, any>): any => {
     if (!entityProxy || typeof entityProxy !== "object") return entityProxy;
 
     let bucket = viewCache.get(entityProxy);
@@ -291,9 +292,9 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
 
         // lazily materialize connection fields
         if (field?.isConnection) {
-          const parentId = graph.identify(target);
-          const pageKey = buildConnectionKey(field, parentId, variablesRef.current);
-          return getConnectionView(pageKey, field);
+          const parentId = getParentEntityId(target);
+          const pageKey = buildConnectionKey(field, parentId, variables);
+          return getConnectionView(pageKey, field, variables);
         }
 
         const value = Reflect.get(target, prop, receiver);
@@ -303,7 +304,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
           const childProxy = graph.materializeRecord((value as any).__ref);
           const sub = fields && typeof prop === "string" ? findField(fields, prop) : undefined;
           const subFields = sub ? sub.selectionSet || null : null;
-          return childProxy ? getEntityView(childProxy, subFields) : undefined;
+          return childProxy ? getEntityView(childProxy, subFields, variables) : undefined;
         }
 
         // arrays (map refs if we know a sub-selection)
@@ -317,7 +318,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
             const item = value[i];
             if (item && typeof item === "object" && (item as any).__ref) {
               const rec = graph.materializeRecord((item as any).__ref);
-              out[i] = rec ? getEntityView(rec, sub.selectionSet || null) : undefined;
+              out[i] = rec ? getEntityView(rec, sub.selectionSet || null, variables) : undefined;
             } else {
               out[i] = item;
             }
@@ -327,9 +328,9 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
 
         return value;
       },
-      has(target, prop) { return Reflect.has(target, prop); },
-      ownKeys(target) { return Reflect.ownKeys(target); },
-      getOwnPropertyDescriptor(target, prop) { return Reflect.getOwnPropertyDescriptor(target, prop); },
+      has: (t, p) => Reflect.has(t, p),
+      ownKeys: (t) => Reflect.ownKeys(t),
+      getOwnPropertyDescriptor: (t, p) => Reflect.getOwnPropertyDescriptor(t, p),
       set() { return false; },
     });
 
@@ -337,8 +338,8 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
     return view;
   };
 
-  // Edge view (memoized by edge record proxy)
-  const getEdgeView = (edgeKey: string, nodeField: PlanField | undefined): any => {
+  // edge view (memoized by edge record proxy)
+  const getEdgeView = (edgeKey: string, nodeField: PlanField | undefined, variables: Record<string, any>): any => {
     const edgeProxy = graph.materializeRecord(edgeKey);
     if (!edgeProxy) return undefined;
 
@@ -349,14 +350,14 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
       get(target, prop, receiver) {
         if (prop === "node" && (target as any).node?.__ref) {
           const nodeProxy = graph.materializeRecord((target as any).node.__ref);
-          return nodeProxy ? getEntityView(nodeProxy, nodeField?.selectionSet || null) : undefined;
+          return nodeProxy ? getEntityView(nodeProxy, nodeField?.selectionSet || null, variables) : undefined;
         }
 
         const value = Reflect.get(target, prop, receiver);
 
         if (value && typeof value === "object" && (value as any).__ref) {
           const rec = graph.materializeRecord((value as any).__ref);
-          return rec ? getEntityView(rec, null) : undefined;
+          return rec ? getEntityView(rec, null, variables) : undefined;
         }
 
         if (Array.isArray(value)) {
@@ -365,7 +366,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
             const item = value[i];
             if (item && typeof item === "object" && (item as any).__ref) {
               const rec = graph.materializeRecord((item as any).__ref);
-              out[i] = rec ? getEntityView(rec, null) : undefined;
+              out[i] = rec ? getEntityView(rec, null, variables) : undefined;
             } else {
               out[i] = item;
             }
@@ -375,9 +376,9 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
 
         return value;
       },
-      has(target, prop) { return Reflect.has(target, prop); },
-      ownKeys(target) { return Reflect.ownKeys(target); },
-      getOwnPropertyDescriptor(target, prop) { return Reflect.getOwnPropertyDescriptor(target, prop); },
+      has: (t, p) => Reflect.has(t, p),
+      ownKeys: (t) => Reflect.ownKeys(t),
+      getOwnPropertyDescriptor: (t, p) => Reflect.getOwnPropertyDescriptor(t, p),
       set() { return false; },
     });
 
@@ -391,8 +392,8 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
     return view;
   };
 
-  // Connection (page) view (memoized) + stable edges array per page
-  const getConnectionView = (pageKey: string, field: PlanField): any => {
+  // connection (page) view (memoized) + stable edges array per page
+  const getConnectionView = (pageKey: string, field: PlanField, variables: Record<string, any>): any => {
     const pageProxy = graph.materializeRecord(pageKey);
     if (!pageProxy) return undefined;
 
@@ -421,7 +422,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
           const arr = new Array(refs.length);
           for (let i = 0; i < refs.length; i++) {
             const ek = refs[i];
-            arr[i] = ek ? getEdgeView(ek, nodeField) : undefined;
+            arr[i] = ek ? getEdgeView(ek, nodeField, variables) : undefined;
           }
 
           if (!bucket || bucket.kind !== "page") {
@@ -439,7 +440,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
 
         if (value && typeof value === "object" && (value as any).__ref) {
           const rec = graph.materializeRecord((value as any).__ref);
-          return rec ? getEntityView(rec, null) : undefined;
+          return rec ? getEntityView(rec, null, variables) : undefined;
         }
 
         if (Array.isArray(value)) {
@@ -448,7 +449,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
             const item = value[i];
             if (item && typeof item === "object" && (item as any).__ref) {
               const rec = graph.materializeRecord((item as any).__ref);
-              out[i] = rec ? getEntityView(rec, null) : undefined;
+              out[i] = rec ? getEntityView(rec, null, variables) : undefined;
             } else {
               out[i] = item;
             }
@@ -458,9 +459,9 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
 
         return value;
       },
-      has(target, prop) { return Reflect.has(target, prop); },
-      ownKeys(target) { return Reflect.ownKeys(target); },
-      getOwnPropertyDescriptor(target, prop) { return Reflect.getOwnPropertyDescriptor(target, prop); },
+      has: (t, p) => Reflect.has(t, p),
+      ownKeys: (t) => Reflect.ownKeys(t),
+      getOwnPropertyDescriptor: (t, p) => Reflect.getOwnPropertyDescriptor(t, p),
       set() { return false; },
     });
 
@@ -481,9 +482,6 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
     document: DocumentNode | CachePlanV1;
     variables?: Record<string, any>;
   }) => {
-    // make this call's variables available to the helpers
-    variablesRef.current = variables;
-
     const plan = getPlan(document);
     const rootSnap = graph.getRecord(ROOT_ID) || {};
     const result: Record<string, any> = {};
@@ -493,7 +491,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
 
       if (field.isConnection) {
         const pageKey = buildConnectionKey(field, ROOT_ID, variables);
-        result[field.responseKey] = getConnectionView(pageKey, field);
+        result[field.responseKey] = getConnectionView(pageKey, field, variables);
         continue;
       }
 
@@ -512,12 +510,12 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
       }
 
       if (!field.selectionSet || field.selectionSet.length === 0) {
-        result[field.responseKey] = getEntityView(entityProxy, null);
+        result[field.responseKey] = getEntityView(entityProxy, null, variables);
         continue;
       }
 
-      // selected shell whose properties are read via entity view (nested connections remain reactive)
-      const entityView = getEntityView(entityProxy, field.selectionSet);
+      // selected shell whose properties read via entity view (nested connections remain reactive)
+      const entityView = getEntityView(entityProxy, field.selectionSet, variables);
       const shell: Record<string, any> = {
         __typename: entityView.__typename,
         id: entityView.id,
