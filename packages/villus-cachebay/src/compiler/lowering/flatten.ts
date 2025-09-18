@@ -29,13 +29,23 @@ function inferChildParentTypename(
   const selections = selectionSet.selections;
   for (let i = 0; i < selections.length; i++) {
     const sel = selections[i];
+
     if (sel.kind === "InlineFragment") {
-      const ifrag = sel as InlineFragmentNode;
-      const t = ifrag.typeCondition?.name.value;
-      if (t) typeNames.add(t);
-    } else if (sel.kind === "FragmentSpread") {
-      const frag = fragmentsByName.get((sel as FragmentSpreadNode).name.value);
-      if (frag) typeNames.add(frag.typeCondition.name.value);
+      const inlineFragment = sel as InlineFragmentNode;
+      const typename = inlineFragment.typeCondition?.name.value;
+      if (typename) {
+        typeNames.add(typename);
+      }
+      continue;
+    }
+
+    if (sel.kind === "FragmentSpread") {
+      const spread = sel as FragmentSpreadNode;
+      const fragment = fragmentsByName.get(spread.name.value);
+      if (fragment) {
+        typeNames.add(fragment.typeCondition.name.value);
+      }
+      continue;
     }
   }
 
@@ -47,11 +57,30 @@ function inferChildParentTypename(
 }
 
 /**
+ * Build a Map from responseKey -> PlanField for faster lookups at runtime.
+ * Returns undefined when selectionSet is null/empty to keep the plan lightweight.
+ */
+function buildSelectionMap(childPlan: PlanField[] | null): Map<string, PlanField> | undefined {
+  if (!childPlan || childPlan.length === 0) {
+    return undefined;
+  }
+
+  const map = new Map<string, PlanField>();
+
+  for (let i = 0; i < childPlan.length; i++) {
+    map.set(childPlan[i].responseKey, childPlan[i]);
+  }
+
+  return map;
+}
+
+/**
  * Lower a selection set to a flat list of PlanField entries.
  * - Flattens fragments and inline fragments
  * - Preserves aliases as responseKey
  * - Annotates connections from config based on *current* parent typename
  * - For nested selection sets, infers the child type context from type conditions
+ * - Additionally, attaches `selectionMap` by responseKey alongside each `selectionSet`
  */
 export const lowerSelectionSet = (
   selectionSet: SelectionSetNode | null | undefined,
@@ -72,6 +101,7 @@ export const lowerSelectionSet = (
     // Field
     if (selection.kind === "Field") {
       const fieldNode = selection as FieldNode;
+
       const responseKey = fieldNode.alias?.value || fieldNode.name.value;
       const fieldName = fieldNode.name.value;
 
@@ -86,6 +116,7 @@ export const lowerSelectionSet = (
           parentTypename,
           fragmentsByName
         );
+
         childPlan = lowerSelectionSet(
           fieldNode.selectionSet,
           childParentTypename,
@@ -94,39 +125,49 @@ export const lowerSelectionSet = (
         );
       }
 
+      // Build arg readers/stringifier (stringify receives raw variables)
       const buildArgs = compileArgBuilder(fieldNode.arguments || []);
 
-      const stringifyArgs = (value: any) => {
+      const stringifyArgs = (rawVariables: any) => {
         const stableStringify = (obj: any): string => {
-          if (obj === null || typeof obj !== 'object') {
+          if (obj === null || typeof obj !== "object") {
             return JSON.stringify(obj);
           }
 
           if (Array.isArray(obj)) {
-            return '[' + obj.map(stableStringify).join(',') + ']';
+            const items = new Array(obj.length);
+            for (let j = 0; j < obj.length; j++) {
+              items[j] = stableStringify(obj[j]);
+            }
+            return "[" + items.join(",") + "]";
           }
 
-          // Sort keys alphabetically for stable ordering
-          const sortedKeys = Object.keys(obj).sort();
-          const pairs = sortedKeys.map(key =>
-            JSON.stringify(key) + ':' + stableStringify(obj[key])
-          );
-
-          return '{' + pairs.join(',') + '}';
+          const keys = Object.keys(obj).sort();
+          const pairs = new Array(keys.length);
+          for (let k = 0; k < keys.length; k++) {
+            const key = keys[k];
+            pairs[k] = JSON.stringify(key) + ":" + stableStringify(obj[key]);
+          }
+          return "{" + pairs.join(",") + "}";
         };
 
-        return stableStringify(buildArgs(value));
+        // Per your contract: stringifyArgs receives *raw* variables and applies buildArgs internally.
+        return stableStringify(buildArgs(rawVariables));
       };
 
-      output.push({
+      const planField: PlanField = {
         responseKey,
         fieldName,
         isConnection,
         buildArgs,
         stringifyArgs,
         selectionSet: childPlan,
-      });
+      };
 
+      // Attach selectionMap by responseKey for fast lookups at runtime
+      (planField as any).selectionMap = buildSelectionMap(childPlan);
+
+      output.push(planField);
       continue;
     }
 
@@ -157,13 +198,16 @@ export const lowerSelectionSet = (
       if (!fragment) {
         continue; // unknown fragment; ignore
       }
+
       const nextParentTypename = fragment.typeCondition.name.value;
+
       const lowered = lowerSelectionSet(
         fragment.selectionSet,
         nextParentTypename,
         fragmentsByName,
         connections
       );
+
       for (let j = 0; j < lowered.length; j++) {
         output.push(lowered[j]);
       }
