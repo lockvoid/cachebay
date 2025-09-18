@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import gql from "graphql-tag";
 import { createGraph } from "@/src/core/graph";
 import { createViews } from "@/src/core/views";
+import { createPlanner } from "@/src/core/planner";
 import { createDocuments } from "@/src/core/documents";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -403,7 +404,25 @@ const makeViews = (graph) => {
   return createViews({ graph });
 }
 
-const makeDocuments = (graph: ReturnType<typeof createGraph>, views: ReturnType<typeof makeViews>) =>
+const makePlanner = () => {
+  return createPlanner({
+    connections: {
+      Query: {
+        users: { mode: "infinite", args: ["role"] }
+      },
+
+      User: {
+        posts: { mode: "infinite", args: ["category"] }
+      },
+
+      Post: {
+        comments: { mode: "infinite" }
+      },
+    },
+  });
+}
+
+const makeDocuments = (graph: ReturnType<typeof createGraph>, planner: ReturnType<typeof createPlanner>, views: ReturnType<typeof makeViews>) =>
   createDocuments(
     {
       connections: {
@@ -420,7 +439,7 @@ const makeDocuments = (graph: ReturnType<typeof createGraph>, views: ReturnType<
         },
       },
     },
-    { graph, views }
+    { graph, planner, views }
   );
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -429,13 +448,15 @@ const makeDocuments = (graph: ReturnType<typeof createGraph>, views: ReturnType<
 
 describe("normalizeDocument (progression by query)", () => {
   let graph: ReturnType<typeof createGraph>;
+  let planner: ReturnType<typeof createPlanner>;
   let views: ReturnType<typeof createViews>;
   let documents: ReturnType<typeof makeDocuments>;
 
   beforeEach(() => {
     graph = makeGraph();
     views = makeViews(graph);
-    documents = makeDocuments(graph, views);
+    planner = makePlanner();
+    documents = makeDocuments(graph, planner, views);
   });
 
   it("USER_QUERY — root '@' reference and entity snapshot (Type:id)", () => {

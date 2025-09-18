@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { isReactive } from "vue";
 import gql from "graphql-tag";
 import { createGraph } from "@/src/core/graph";
+import { createPlanner } from "@/src/core/planner";
 import { createViews } from "@/src/core/views";
 import { createDocuments } from "@/src/core/documents";
 
@@ -346,11 +347,30 @@ const makeGraph = () =>
   });
 
 
+const makePlanner = () => {
+  return createPlanner({
+    connections: {
+      Query: {
+        users: { mode: "infinite", args: ["role"] }
+      },
+
+      User: {
+        posts: { mode: "infinite", args: ["category"] }
+      },
+
+      Post: {
+        comments: { mode: "infinite" }
+      },
+    },
+  });
+}
+
+
 const makeViews = (graph) => {
   return createViews({ graph });
 }
 
-const makeDocuments = (graph: ReturnType<typeof createGraph>, views: ReturnType<typeof makeViews>) =>
+const makeDocuments = (graph: ReturnType<typeof createGraph>, planner: ReturnType<typeof createPlanner>, views: ReturnType<typeof makeViews>) =>
   createDocuments(
     {
       connections: {
@@ -359,7 +379,7 @@ const makeDocuments = (graph: ReturnType<typeof createGraph>, views: ReturnType<
         Post: { comments: { mode: "infinite" } },
       },
     },
-    { graph, views }
+    { graph, planner, views }
   );
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -368,13 +388,15 @@ const makeDocuments = (graph: ReturnType<typeof createGraph>, views: ReturnType<
 
 describe("materializeDocument", () => {
   let graph: ReturnType<typeof createGraph>;
+  let planner: ReturnType<typeof createPlanner>;
   let views: ReturnType<typeof makeViews>;
   let documents: ReturnType<typeof makeDocuments>;
 
   beforeEach(() => {
     graph = makeGraph();
+    planner = makePlanner();
     views = makeViews(graph);
-    documents = makeDocuments(graph, views);
+    documents = makeDocuments(graph, planner, views);
   });
 
   it("USER_QUERY — user node reactive when read directly; materialized shape ok", () => {

@@ -10,6 +10,7 @@ import {
 import type { DocumentNode } from "graphql";
 import type { GraphInstance } from "./graph";
 import type { ViewsInstance } from "./views";
+import type { PlannerInstance } from "./planner";
 
 export type DocumentsOptions = {
   connections: Record<string, Record<string, { mode?: "infinite" | "page"; args?: string[] }>>;
@@ -18,27 +19,16 @@ export type DocumentsOptions = {
 export type DocumentsDependencies = {
   graph: GraphInstance;
   views: ViewsInstance;
+  planner: PlannerInstance;
 };
 
 export type DocumentsInstance = ReturnType<typeof createDocuments>;
 
 export const createDocuments = (options: DocumentsOptions, deps: DocumentsDependencies) => {
-  const { graph, views } = deps;
-
-  const planCache = new WeakMap<DocumentNode, CachePlanV1>();
+  const { graph, views, planner } = deps;
 
   const ensureRoot = () => {
     graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
-  };
-
-  // Plan cache per DocumentNode
-  const getPlan = (docOrPlan: DocumentNode | CachePlanV1): CachePlanV1 => {
-    if (isCachePlanV1(docOrPlan)) return docOrPlan;
-    const hit = planCache.get(docOrPlan);
-    if (hit) return hit;
-    const plan = compileToPlan(docOrPlan, { connections: options.connections || {} });
-    planCache.set(docOrPlan, plan);
-    return plan;
   };
 
   const normalizeDocument = ({
@@ -52,7 +42,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
   }) => {
     ensureRoot();
 
-    const plan = getPlan(document);
+    const plan = planner.getPlan(document);
     const isQuery = (plan as any).operation ? (plan as any).operation === "query" : (plan as any).opKind === "query";
 
     type Frame = {
@@ -176,7 +166,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
     document: DocumentNode | CachePlanV1;
     variables?: Record<string, any>;
   }) => {
-    const plan = getPlan(document);
+    const plan = planner.getPlan(document);
     const rootSnap = graph.getRecord(ROOT_ID) || {};
     const result: Record<string, any> = {};
 
