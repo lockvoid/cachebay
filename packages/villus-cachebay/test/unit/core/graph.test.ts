@@ -38,7 +38,7 @@ const makeGraph = (overrides?: Partial<Parameters<typeof createGraph>[0]>): Grap
   });
 };
 
-describe("Graph (low-level record store)", () => {
+describe("Graph", () => {
   describe("identify", () => {
     it("returns canonical keys for base and interface implementors", () => {
       const graph = makeGraph();
@@ -58,6 +58,29 @@ describe("Graph (low-level record store)", () => {
       expect(graph.identify({ __typename: "Profile", uuid: "profile-uuid-1" })).toBe("Profile:profile-uuid-1");
       expect(graph.identify({ __typename: "PageInfo", endCursor: "c2" })).toBe(null);
       expect(graph.identify({ foo: 1 })).toBe(null);
+    });
+
+    it("handles falsy but valid IDs", () => {
+      const graph = makeGraph();
+
+      expect(graph.identify({ __typename: "User", id: "0" })).toBe("User:0");
+      expect(graph.identify({ __typename: "User", id: "" })).toBe("User:");
+      expect(graph.identify({ __typename: "User", id: false })).toBe("User:false");
+    });
+
+    it("normalizes numeric IDs to strings", () => {
+      const graph = makeGraph();
+
+      expect(graph.identify({ __typename: "User", id: 123 })).toBe("User:123");
+      expect(graph.identify({ __typename: "User", id: 0 })).toBe("User:0");
+    });
+
+    it("handles null and undefined IDs", () => {
+      const graph = makeGraph();
+
+      expect(graph.identify({ __typename: "User", id: null })).toBe(null);
+      expect(graph.identify({ __typename: "User", id: undefined })).toBe(null);
+      expect(graph.identify({ __typename: "User" })).toBe(null);
     });
   });
 
@@ -158,6 +181,48 @@ describe("Graph (low-level record store)", () => {
       const authorProxy = graph.materializeRecord("User:u1")!;
       expect(isReactive(authorProxy)).toBe(true);
       expect(authorProxy).toEqual({ __typename: "User", id: "u1", name: "Ada" });
+    });
+
+    it("returns same proxy instance for multiple calls with no changes", () => {
+      const graph = makeGraph();
+
+      graph.putRecord("User:1", { __typename: "User", id: "1", name: "John" });
+
+      const proxy1 = graph.materializeRecord("User:1");
+      const proxy2 = graph.materializeRecord("User:1");
+      const proxy3 = graph.materializeRecord("User:1");
+
+      expect(proxy1).toBe(proxy2);
+      expect(proxy2).toBe(proxy3);
+    });
+
+    it("reuses existing proxy after updates", () => {
+      const graph = makeGraph();
+
+      graph.putRecord("User:1", { __typename: "User", id: "1", name: "John" });
+
+      const proxy1 = graph.materializeRecord("User:1");
+
+      graph.putRecord("User:1", { name: "Jane" });
+
+      const proxy2 = graph.materializeRecord("User:1");
+
+      expect(proxy1).toBe(proxy2);
+      expect(proxy1.name).toBe("Jane");
+    });
+
+    it("handles field deletions in proxies", () => {
+      const graph = makeGraph();
+
+      graph.putRecord("User:1", { __typename: "User", id: "1", name: "John", email: "john@test.com" });
+
+      const userProxy = graph.materializeRecord("User:1");
+      expect(userProxy.email).toBe("john@test.com");
+
+      // Delete field
+      graph.putRecord("User:1", { email: undefined });
+      expect(userProxy.email).toBeUndefined();
+      expect("email" in userProxy).toBe(false);
     });
   });
 

@@ -94,11 +94,36 @@ export const lowerSelectionSet = (
         );
       }
 
+      const buildArgs = compileArgBuilder(fieldNode.arguments || []);
+
+      const stringifyArgs = (value: any) => {
+        const stableStringify = (obj: any): string => {
+          if (obj === null || typeof obj !== 'object') {
+            return JSON.stringify(obj);
+          }
+
+          if (Array.isArray(obj)) {
+            return '[' + obj.map(stableStringify).join(',') + ']';
+          }
+
+          // Sort keys alphabetically for stable ordering
+          const sortedKeys = Object.keys(obj).sort();
+          const pairs = sortedKeys.map(key =>
+            JSON.stringify(key) + ':' + stableStringify(obj[key])
+          );
+
+          return '{' + pairs.join(',') + '}';
+        };
+
+        return stableStringify(buildArgs(value));
+      };
+
       output.push({
         responseKey,
         fieldName,
         isConnection,
-        buildArgs: compileArgBuilder(fieldNode.arguments || []),
+        buildArgs,
+        stringifyArgs,
         selectionSet: childPlan,
       });
 

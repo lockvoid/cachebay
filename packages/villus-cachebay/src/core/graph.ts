@@ -205,7 +205,7 @@ class IdentityManager {
 
     const id = this.keyers.get(typename)?.(object) ?? object[ID_FIELD];
 
-    if (!id) {
+    if (id === undefined || id === null) {
       return null;
     }
 

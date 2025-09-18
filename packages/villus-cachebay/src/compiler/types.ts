@@ -26,6 +26,8 @@ export type PlanField = {
    */
   buildArgs: ArgBuilder;
 
+  stringifyArgs: (value: any) => string;
+
   /**
    * Nested selections (flattened fragments); null for leaf fields.
    */
