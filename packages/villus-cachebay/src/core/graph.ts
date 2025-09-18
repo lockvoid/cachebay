@@ -14,18 +14,18 @@ const RECORD_PROXY_VERSION = Symbol("graph:record-proxy-version");
  * Update proxy with only changed fields for optimal performance
  * @private
  */
-const overlayRecordDiff = (recordProxy: any, recordSnapshot: Record<string, any>, changedFields: string[], removedFields: string[], typenameChanged: boolean, idChanged: boolean, targetVersion: number) => {
+const overlayRecordDiff = (recordProxy: any, currentSnapshot: Record<string, any>, changedFields: string[], removedFields: string[], typenameChanged: boolean, idChanged: boolean, targetVersion: number) => {
   if (recordProxy[RECORD_PROXY_VERSION] === targetVersion) {
     return;
   }
 
   if (typenameChanged) {
-    recordProxy[TYPENAME_FIELD] = recordSnapshot[TYPENAME_FIELD];
+    recordProxy[TYPENAME_FIELD] = currentSnapshot[TYPENAME_FIELD];
   }
 
   if (idChanged) {
-    if (ID_FIELD in recordSnapshot) {
-      recordProxy[ID_FIELD] = recordSnapshot[ID_FIELD];
+    if (ID_FIELD in currentSnapshot) {
+      recordProxy[ID_FIELD] = currentSnapshot[ID_FIELD];
     } else {
       delete recordProxy[ID_FIELD];
     }
@@ -39,7 +39,7 @@ const overlayRecordDiff = (recordProxy: any, recordSnapshot: Record<string, any>
     const field = changedFields[i];
 
     if (!IDENTITY_FIELDS.has(field)) {
-      recordProxy[field] = recordSnapshot[field];
+      recordProxy[field] = currentSnapshot[field];
     }
   }
 
@@ -54,13 +54,13 @@ const overlayRecordDiff = (recordProxy: any, recordSnapshot: Record<string, any>
  * Full proxy overlay for initialization or version drift recovery
  * @private
  */
-const overlayRecordFull = (recordProxy: any, recordSnapshot: Record<string, any>, targetVersion: number) => {
-  if (recordSnapshot[TYPENAME_FIELD]) {
-    recordProxy[TYPENAME_FIELD] = recordSnapshot[TYPENAME_FIELD];
+const overlayRecordFull = (recordProxy: any, currentSnapshot: Record<string, any>, targetVersion: number) => {
+  if (currentSnapshot[TYPENAME_FIELD]) {
+    recordProxy[TYPENAME_FIELD] = currentSnapshot[TYPENAME_FIELD];
   }
 
-  if (ID_FIELD in recordSnapshot) {
-    recordProxy[ID_FIELD] = recordSnapshot[ID_FIELD];
+  if (ID_FIELD in currentSnapshot) {
+    recordProxy[ID_FIELD] = currentSnapshot[ID_FIELD];
   } else {
     delete recordProxy[ID_FIELD];
   }
@@ -68,16 +68,16 @@ const overlayRecordFull = (recordProxy: any, recordSnapshot: Record<string, any>
   for (let i = 0, fields = Object.keys(recordProxy); i < fields.length; i++) {
     const field = fields[i];
 
-    if (!(field in recordSnapshot)) {
+    if (!(field in currentSnapshot)) {
       delete recordProxy[field];
     }
   }
 
-  for (let i = 0, fields = Object.keys(recordSnapshot); i < fields.length; i++) {
+  for (let i = 0, fields = Object.keys(currentSnapshot); i < fields.length; i++) {
     const field = fields[i];
 
     if (!IDENTITY_FIELDS.has(field)) {
-      recordProxy[field] = recordSnapshot[field];
+      recordProxy[field] = currentSnapshot[field];
     }
   }
 
@@ -264,8 +264,6 @@ export const createGraph = (options: GraphOptions) => {
 
     if (proxy) {
       overlayRecordDiff(proxy, currentSnapshot, changes[0], changes[1], changes[2], changes[3], nextVersion);
-    } else if (proxyRef) {
-      recordProxyStore.delete(recordId);
     }
   };
 
@@ -294,7 +292,7 @@ export const createGraph = (options: GraphOptions) => {
    * Get or create reactive proxy for record
    */
   const materializeRecord = (recordId: string): any => {
-    const recordSnapshot = recordStore.get(recordId) || {};
+    const currentSnapshot = recordStore.get(recordId) || {};
     const currentVersion = recordVersionStore.get(recordId) || 0;
     const proxyRef = recordProxyStore.get(recordId);
     const proxy = proxyRef?.deref();
@@ -303,13 +301,9 @@ export const createGraph = (options: GraphOptions) => {
       return proxy;
     }
 
-    if (proxyRef && !proxy) {
-      recordProxyStore.delete(recordId);
-    }
-
     const targetProxy = proxy || shallowReactive({} as any);
 
-    overlayRecordFull(targetProxy, recordSnapshot, currentVersion);
+    overlayRecordFull(targetProxy, currentSnapshot, currentVersion);
 
     if (!proxy) {
       recordProxyStore.set(recordId, new WeakRef(targetProxy));
@@ -351,8 +345,8 @@ export const createGraph = (options: GraphOptions) => {
   const inspect = () => {
     const records: Record<string, any> = {};
 
-    for (const [recordId, recordSnapshot] of recordStore.entries()) {
-      records[recordId] = recordSnapshot;
+    for (const [recordId, currentSnapshot] of recordStore.entries()) {
+      records[recordId] = currentSnapshot;
     }
 
     return {
