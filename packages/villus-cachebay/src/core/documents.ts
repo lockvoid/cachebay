@@ -22,17 +22,6 @@ export type DocumentsDependencies = {
 
 export type DocumentsInstance = ReturnType<typeof createDocuments>;
 
-
-// Build a Map from a PlanField[] (used only for root; for nested we use field.selectionMap)
-const mapFrom = (fields: PlanField[] | null | undefined): Map<string, PlanField> => {
-  const map = new Map<string, PlanField>();
-  if (!fields) return map;
-  for (let i = 0; i < fields.length; i++) {
-    map.set(fields[i].responseKey, fields[i]);
-  }
-  return map;
-};
-
 export const createDocuments = (options: DocumentsOptions, deps: DocumentsDependencies) => {
   const { graph, views } = deps;
 
@@ -141,7 +130,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
     const initialFrame: Frame = {
       parentRecordId: ROOT_ID,
       fields: plan.root,
-      fieldsMap: mapFrom(plan.root), // root has no parent; build once
+      fieldsMap: plan.rootSelectionMap ?? new Map<string, PlanField>(), // use compiler-provided map
       insideConnection: false,
     };
 
@@ -200,7 +189,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
 
         // Descend into the connection's selection
         const nextFields = planField.selectionSet || [];
-        const nextMap = planField.selectionMap || mapFrom(nextFields);
+        const nextMap = planField.selectionMap || frame.fieldsMap;
         return { parentRecordId, fields: nextFields, fieldsMap: nextMap, insideConnection: true } as Frame;
       }
 
@@ -228,7 +217,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
           }
 
           const nextFields = planField.selectionSet || [];
-          const nextMap = planField.selectionMap || mapFrom(nextFields);
+          const nextMap = planField.selectionMap || frame.fieldsMap;
           return { parentRecordId: entityKey, fields: nextFields, fieldsMap: nextMap, insideConnection: false } as Frame;
         }
         return TRAVERSE_SKIP;
