@@ -267,6 +267,213 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
   // materializeDocument — reactive, exact page; ONE per-instance view cache
   // ───────────────────────────────────────────────────────────────────────────
 
+  const viewCache = new WeakMap<object, any>();
+
+  // Current call's variables (helpers read from here)
+  const variablesRef: { current: Record<string, any> } = { current: {} };
+
+  // Selection-aware entity view (memoized per (entityProxy, selection))
+  const getEntityView = (entityProxy: any, fields: PlanField[] | null): any => {
+    if (!entityProxy || typeof entityProxy !== "object") return entityProxy;
+
+    let bucket = viewCache.get(entityProxy);
+    if (!bucket || bucket.kind !== "entity") {
+      bucket = { kind: "entity", bySelection: new Map<PlanField[] | null, any>() };
+      viewCache.set(entityProxy, bucket);
+    } else {
+      const hit = bucket.bySelection.get(fields || null);
+      if (hit) return hit;
+    }
+
+    const view = new Proxy(entityProxy, {
+      get(target, prop, receiver) {
+        const field = fields && typeof prop === "string" ? findField(fields, prop) : undefined;
+
+        // lazily materialize connection fields
+        if (field?.isConnection) {
+          const parentId = graph.identify(target);
+          const pageKey = buildConnectionKey(field, parentId, variablesRef.current);
+          return getConnectionView(pageKey, field);
+        }
+
+        const value = Reflect.get(target, prop, receiver);
+
+        // deref { __ref } → entity view
+        if (value && typeof value === "object" && (value as any).__ref) {
+          const childProxy = graph.materializeRecord((value as any).__ref);
+          const sub = fields && typeof prop === "string" ? findField(fields, prop) : undefined;
+          const subFields = sub ? sub.selectionSet || null : null;
+          return childProxy ? getEntityView(childProxy, subFields) : undefined;
+        }
+
+        // arrays (map refs if we know a sub-selection)
+        if (Array.isArray(value)) {
+          const sub = fields && typeof prop === "string" ? findField(fields, prop) : undefined;
+          if (!sub?.selectionSet || sub.selectionSet.length === 0) {
+            return value.slice();
+          }
+          const out = new Array(value.length);
+          for (let i = 0; i < value.length; i++) {
+            const item = value[i];
+            if (item && typeof item === "object" && (item as any).__ref) {
+              const rec = graph.materializeRecord((item as any).__ref);
+              out[i] = rec ? getEntityView(rec, sub.selectionSet || null) : undefined;
+            } else {
+              out[i] = item;
+            }
+          }
+          return out;
+        }
+
+        return value;
+      },
+      has(target, prop) { return Reflect.has(target, prop); },
+      ownKeys(target) { return Reflect.ownKeys(target); },
+      getOwnPropertyDescriptor(target, prop) { return Reflect.getOwnPropertyDescriptor(target, prop); },
+      set() { return false; },
+    });
+
+    bucket.bySelection.set(fields || null, view);
+    return view;
+  };
+
+  // Edge view (memoized by edge record proxy)
+  const getEdgeView = (edgeKey: string, nodeField: PlanField | undefined): any => {
+    const edgeProxy = graph.materializeRecord(edgeKey);
+    if (!edgeProxy) return undefined;
+
+    let bucket = viewCache.get(edgeProxy);
+    if (bucket?.kind === "edge" && bucket.view) return bucket.view;
+
+    const view = new Proxy(edgeProxy, {
+      get(target, prop, receiver) {
+        if (prop === "node" && (target as any).node?.__ref) {
+          const nodeProxy = graph.materializeRecord((target as any).node.__ref);
+          return nodeProxy ? getEntityView(nodeProxy, nodeField?.selectionSet || null) : undefined;
+        }
+
+        const value = Reflect.get(target, prop, receiver);
+
+        if (value && typeof value === "object" && (value as any).__ref) {
+          const rec = graph.materializeRecord((value as any).__ref);
+          return rec ? getEntityView(rec, null) : undefined;
+        }
+
+        if (Array.isArray(value)) {
+          const out = new Array(value.length);
+          for (let i = 0; i < value.length; i++) {
+            const item = value[i];
+            if (item && typeof item === "object" && (item as any).__ref) {
+              const rec = graph.materializeRecord((item as any).__ref);
+              out[i] = rec ? getEntityView(rec, null) : undefined;
+            } else {
+              out[i] = item;
+            }
+          }
+          return out;
+        }
+
+        return value;
+      },
+      has(target, prop) { return Reflect.has(target, prop); },
+      ownKeys(target) { return Reflect.ownKeys(target); },
+      getOwnPropertyDescriptor(target, prop) { return Reflect.getOwnPropertyDescriptor(target, prop); },
+      set() { return false; },
+    });
+
+    if (!bucket || bucket.kind !== "edge") {
+      bucket = { kind: "edge", view };
+      viewCache.set(edgeProxy, bucket);
+    } else {
+      bucket.view = view;
+    }
+
+    return view;
+  };
+
+  // Connection (page) view (memoized) + stable edges array per page
+  const getConnectionView = (pageKey: string, field: PlanField): any => {
+    const pageProxy = graph.materializeRecord(pageKey);
+    if (!pageProxy) return undefined;
+
+    let bucket = viewCache.get(pageProxy);
+    if (bucket?.kind === "page" && bucket.view) return bucket.view;
+
+    const edgesField = findField(field.selectionSet, "edges");
+    const nodeField = edgesField ? findField(edgesField.selectionSet, "node") : undefined;
+
+    const view = new Proxy(pageProxy, {
+      get(target, prop, receiver) {
+        if (prop === "edges") {
+          const list = (target as any).edges;
+          if (!Array.isArray(list)) return list;
+
+          const refs = list.map((r: any) => (r && r.__ref) || "");
+          const cached = bucket?.edgesCache;
+          if (
+            cached &&
+            cached.refs.length === refs.length &&
+            cached.refs.every((v: string, i: number) => v === refs[i])
+          ) {
+            return cached.array;
+          }
+
+          const arr = new Array(refs.length);
+          for (let i = 0; i < refs.length; i++) {
+            const ek = refs[i];
+            arr[i] = ek ? getEdgeView(ek, nodeField) : undefined;
+          }
+
+          if (!bucket || bucket.kind !== "page") {
+            bucket = { kind: "page", view, edgesCache: { refs, array: arr } };
+            viewCache.set(pageProxy, bucket);
+          } else {
+            bucket.view = view;
+            bucket.edgesCache = { refs, array: arr };
+          }
+
+          return arr;
+        }
+
+        const value = Reflect.get(target, prop, receiver);
+
+        if (value && typeof value === "object" && (value as any).__ref) {
+          const rec = graph.materializeRecord((value as any).__ref);
+          return rec ? getEntityView(rec, null) : undefined;
+        }
+
+        if (Array.isArray(value)) {
+          const out = new Array(value.length);
+          for (let i = 0; i < value.length; i++) {
+            const item = value[i];
+            if (item && typeof item === "object" && (item as any).__ref) {
+              const rec = graph.materializeRecord((item as any).__ref);
+              out[i] = rec ? getEntityView(rec, null) : undefined;
+            } else {
+              out[i] = item;
+            }
+          }
+          return out;
+        }
+
+        return value;
+      },
+      has(target, prop) { return Reflect.has(target, prop); },
+      ownKeys(target) { return Reflect.ownKeys(target); },
+      getOwnPropertyDescriptor(target, prop) { return Reflect.getOwnPropertyDescriptor(target, prop); },
+      set() { return false; },
+    });
+
+    if (!bucket || bucket.kind !== "page") {
+      bucket = { kind: "page", view, edgesCache: { refs: [], array: [] } };
+      viewCache.set(pageProxy, bucket);
+    } else {
+      bucket.view = view;
+    }
+
+    return view;
+  };
+
   const materializeDocument = ({
     document,
     variables = {},
@@ -274,224 +481,52 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
     document: DocumentNode | CachePlanV1;
     variables?: Record<string, any>;
   }) => {
+    // make this call's variables available to the helpers
+    variablesRef.current = variables;
+
     const plan = getPlan(document);
     const rootSnap = graph.getRecord(ROOT_ID) || {};
     const result: Record<string, any> = {};
 
-    // unified, per-call caches
-    const viewCache = new WeakMap<object, any>();
-    // memoize entity views per (entityProxy, fields[]) to reuse wrappers
-    const entityViewByFields = new WeakMap<object, Map<PlanField[] | null, any>>();
-
-    const wrapArrayOfEntityRefs = (arr: any[]): any[] => {
-      const cached = viewCache.get(arr);
-      if (cached) return cached as any[];
-      const mapped = new Array(arr.length);
-      for (let i = 0; i < arr.length; i++) {
-        const item = arr[i];
-        if (item && item.__ref) {
-          const childProxy = graph.materializeRecord(item.__ref);
-          mapped[i] = childProxy ? wrapEntityProxy(childProxy, null) : undefined;
-        } else {
-          mapped[i] = item;
-        }
-      }
-      viewCache.set(arr, mapped);
-      return mapped;
-    };
-
-    // Wrap an entity proxy with selection-aware behavior:
-    // - Exposes nested connection fields reactively (returns connection wrappers)
-    // - Lazily derefs nested entity refs
-    const wrapEntityProxy = (entityProxy: any, fields: PlanField[] | null): any => {
-      if (!entityProxy || typeof entityProxy !== "object") return entityProxy;
-
-      // memoize per (entityProxy, fields)
-      let byFields = entityViewByFields.get(entityProxy);
-      if (!byFields) {
-        byFields = new Map();
-        entityViewByFields.set(entityProxy, byFields);
-      }
-      const cachedView = byFields.get(fields || null);
-      if (cachedView) return cachedView;
-
-      const view = new Proxy(entityProxy, {
-        get(target, prop, receiver) {
-          // If selection has a connection with this responseKey, materialize it reactively
-          const sfield =
-            fields && typeof prop === "string" ? findField(fields, prop as string) : undefined;
-
-          if (sfield && sfield.isConnection) {
-            const pageKey = buildConnectionKey(sfield, entityProxy.id ? `${entityProxy.__typename}:${entityProxy.id}` : (entityProxy.id ?? ""), variables);
-            const page = graph.getRecord(pageKey);
-            if (!page) return undefined;
-
-            return wrapConnectionPage(pageKey, sfield);
-          }
-
-          // Otherwise normal deref
-          const value = Reflect.get(target, prop, receiver);
-
-          if (value && typeof value === "object" && (value as any).__ref) {
-            // Follow ref (if selection has subfields for this prop, honor them)
-            const sub = fields && typeof prop === "string" ? findField(fields, prop as string) : undefined;
-            const subFields = sub ? sub.selectionSet || null : null;
-            const childProxy = graph.materializeRecord((value as any).__ref);
-            return childProxy ? wrapEntityProxy(childProxy, subFields) : undefined;
-          }
-
-          if (Array.isArray(value)) {
-            return wrapArrayOfEntityRefs(value);
-          }
-
-          return value;
-        },
-        has(target, prop) { return Reflect.has(target, prop); },
-        ownKeys(target) { return Reflect.ownKeys(target); },
-        getOwnPropertyDescriptor(target, prop) { return Reflect.getOwnPropertyDescriptor(target, prop); },
-        set() { return false; },
-      });
-
-      byFields.set(fields || null, view);
-      return view;
-    };
-
-    // Wrap an edge record proxy; override 'node' to return entity view
-    const wrapEdge = (edgeKey: string, nodeField: PlanField | undefined): any => {
-      const edgeProxy = graph.materializeRecord(edgeKey);
-      if (!edgeProxy) return undefined;
-
-      const cached = viewCache.get(edgeProxy);
-      if (cached) return cached;
-
-      const view = new Proxy(edgeProxy, {
-        get(target, prop, receiver) {
-          if (prop === "node") {
-            const ref = (target as any).node?.__ref;
-            if (!ref) return undefined;
-            const nodeProxy = graph.materializeRecord(ref);
-            // wrap with selection for nodeField (so nested connections work)
-            return nodeProxy ? wrapEntityProxy(nodeProxy, nodeField?.selectionSet || null) : undefined;
-          }
-
-          const value = Reflect.get(target, prop, receiver);
-          // Pass-through edge extras and cursor; if any arrays/refs occur, map them
-          if (value && typeof value === "object" && (value as any).__ref) {
-            const childProxy = graph.materializeRecord((value as any).__ref);
-            return childProxy ? wrapEntityProxy(childProxy, null) : undefined;
-          }
-          if (Array.isArray(value)) {
-            return wrapArrayOfEntityRefs(value);
-          }
-          return value;
-        },
-        has(target, prop) { return Reflect.has(target, prop); },
-        ownKeys(target) { return Reflect.ownKeys(target); },
-        getOwnPropertyDescriptor(target, prop) { return Reflect.getOwnPropertyDescriptor(target, prop); },
-        set() { return false; },
-      });
-
-      viewCache.set(edgeProxy, view);
-      return view;
-    };
-
-    // Wrap a connection page record proxy, override 'edges' to map to wrapped edges
-    const wrapConnectionPage = (pageKey: string, connField: PlanField): any => {
-      const pageProxy = graph.materializeRecord(pageKey);
-      if (!pageProxy) return undefined;
-
-      const cached = viewCache.get(pageProxy);
-      if (cached) return cached;
-
-      const edgesField = findField(connField.selectionSet, "edges");
-      const nodeField = edgesField ? findField(edgesField.selectionSet, "node") : undefined;
-
-      const view = new Proxy(pageProxy, {
-        get(target, prop, receiver) {
-          if (prop === "edges") {
-            const list = (target as any).edges;
-            if (!Array.isArray(list)) return list;
-
-            // map each edge ref to a wrapped reactive edge proxy
-            const mapped = new Array(list.length);
-            for (let i = 0; i < list.length; i++) {
-              const ref = list[i]?.__ref;
-              if (!ref) { mapped[i] = undefined; continue; }
-              mapped[i] = wrapEdge(ref, nodeField);
-            }
-            return mapped;
-          }
-
-          // pass-through extras (totalCount) and pageInfo reactively
-          const value = Reflect.get(target, prop, receiver);
-
-          if (value && typeof value === "object" && (value as any).__ref) {
-            const childProxy = graph.materializeRecord((value as any).__ref);
-            return childProxy ? wrapEntityProxy(childProxy, null) : undefined;
-          }
-          if (Array.isArray(value)) {
-            return wrapArrayOfEntityRefs(value);
-          }
-          return value;
-        },
-        has(target, prop) { return Reflect.has(target, prop); },
-        ownKeys(target) { return Reflect.ownKeys(target); },
-        getOwnPropertyDescriptor(target, prop) { return Reflect.getOwnPropertyDescriptor(target, prop); },
-        set() { return false; },
-      });
-
-      viewCache.set(pageProxy, view);
-      return view;
-    };
-
-    // Root readers
-
-    const readConnectionAtRoot = (field: PlanField) => {
-      const pageKey = buildConnectionKey(field, ROOT_ID, variables);
-      return wrapConnectionPage(pageKey, field);
-    };
-
-    const readEntityAtRoot = (field: PlanField) => {
-      const linkKey = buildFieldKey(field, variables);
-      const link = rootSnap[linkKey];
-      if (!link?.__ref) return undefined;
-
-      // Assemble a (mostly) plain object for the root entity, but:
-      // - nested connection fields are wrapped reactively through the entity view wrapper
-      // - nested entity refs are returned as reactive entity views
-      const assemble = (recordId: string, fields: PlanField[] | null): any => {
-        const entityProxy = graph.materializeRecord(recordId);
-        if (!entityProxy) return undefined;
-
-        if (!fields) {
-          return wrapEntityProxy(entityProxy, null); // reactive entity at root if no subfields
-        }
-
-        // Build a plain shell, but values that are connections or entity refs will be reactive via wrapper reads
-        const shell: Record<string, any> = { __typename: entityProxy.__typename, id: entityProxy.id };
-
-        const reactiveEntityView = wrapEntityProxy(entityProxy, fields);
-
-        for (let i = 0; i < fields.length; i++) {
-          const f = fields[i];
-
-          // read through the entity view wrapper so connections/refs are handled
-          shell[f.responseKey] = (reactiveEntityView as any)[f.responseKey];
-        }
-        return shell;
-      };
-
-      return assemble(link.__ref, field.selectionSet || null);
-    };
-
-    // Root fields
     for (let i = 0; i < plan.root.length; i++) {
       const field = plan.root[i];
+
       if (field.isConnection) {
-        result[field.responseKey] = readConnectionAtRoot(field);
-      } else {
-        result[field.responseKey] = readEntityAtRoot(field);
+        const pageKey = buildConnectionKey(field, ROOT_ID, variables);
+        result[field.responseKey] = getConnectionView(pageKey, field);
+        continue;
       }
+
+      const linkKey = buildFieldKey(field, variables);
+      const link = rootSnap[linkKey];
+
+      if (!link?.__ref) {
+        result[field.responseKey] = undefined;
+        continue;
+      }
+
+      const entityProxy = graph.materializeRecord(link.__ref);
+      if (!entityProxy) {
+        result[field.responseKey] = undefined;
+        continue;
+      }
+
+      if (!field.selectionSet || field.selectionSet.length === 0) {
+        result[field.responseKey] = getEntityView(entityProxy, null);
+        continue;
+      }
+
+      // selected shell whose properties are read via entity view (nested connections remain reactive)
+      const entityView = getEntityView(entityProxy, field.selectionSet);
+      const shell: Record<string, any> = {
+        __typename: entityView.__typename,
+        id: entityView.id,
+      };
+      for (let j = 0; j < field.selectionSet.length; j++) {
+        const sf = field.selectionSet[j];
+        shell[sf.responseKey] = (entityView as any)[sf.responseKey];
+      }
+      result[field.responseKey] = shell;
     }
 
     return result;
