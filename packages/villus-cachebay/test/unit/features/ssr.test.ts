@@ -1,159 +1,150 @@
-// test/unit/features/ssr.test.ts
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
+import { createGraph } from "@/src/core/graph";
 import { createSSR } from "@/src/features/ssr";
 
-// Minimal graph stub that implements ONLY the public API SSR uses
-function makeGraph() {
-  const entityStore = new Map<string, any>();
-  const selectionStore = new Map<string, any>();
+// Small seeding helper: create a connection page (+ edges)
+function seedPage(
+  graph: ReturnType<typeof createGraph>,
+  pageKey: string,
+  edges: Array<{ nodeRef: string; cursor?: string; extra?: Record<string, any> }>,
+  pageInfo?: Record<string, any>,
+  extra?: Record<string, any>,
+  edgeTypename = "Edge",
+  connectionTypename = "Connection"
+) {
+  const edgeRefs: Array<{ __ref: string }> = [];
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
+    const edgeKey = `${pageKey}.edges.${i}`;
+    graph.putRecord(edgeKey, {
+      __typename: edgeTypename,
+      cursor: e.cursor ?? null,
+      ...(e.extra || {}),
+      node: { __ref: e.nodeRef },
+    });
+    edgeRefs.push({ __ref: edgeKey });
+  }
 
-  const graph = {
-    // entities
-    listEntityKeys: () => Array.from(entityStore.keys()),
-    getEntity: (key: string) => entityStore.get(key),
-    putEntity: (obj: any) => {
-      if (!obj || typeof obj !== "object" || !obj.__typename) return null;
-      const id = obj.id != null ? String(obj.id) : null;
-      if (id == null) return null;
-      const key = `${obj.__typename}:${id}`;
-      entityStore.set(key, JSON.parse(JSON.stringify(obj)));
-      return key;
-    },
-    removeEntity: (key: string) => entityStore.delete(key),
-    clearEntities: () => {
-      entityStore.clear();
-    },
-
-    // selections
-    listSelectionKeys: () => Array.from(selectionStore.keys()),
-    getSelection: (key: string) => selectionStore.get(key),
-    putSelection: (key: string, subtree: any) => {
-      selectionStore.set(key, JSON.parse(JSON.stringify(subtree)));
-    },
-    removeSelection: (key: string) => selectionStore.delete(key),
-    clearSelections: () => {
-      selectionStore.clear();
-    },
+  const snap: Record<string, any> = {
+    __typename: connectionTypename,
+    edges: edgeRefs,
   };
+  if (pageInfo) snap.pageInfo = { ...(pageInfo as any) };
+  if (extra) Object.assign(snap, extra);
 
-  return graph;
+  graph.putRecord(pageKey, snap);
 }
 
-// tiny helper to flush one microtask
-const waitMicrotask = async () =>
-  await new Promise<void>((resolve) => queueMicrotask(resolve));
+describe("SSR (graph records)", () => {
+  let graph: ReturnType<typeof createGraph>;
+  let ssr: ReturnType<typeof createSSR>;
 
-describe("features/ssr — entities + selections", () => {
-  it("dehydrates empty stores", () => {
-    const graph = makeGraph();
-    const ssr = createSSR({ graph });
-
-    const snap = ssr.dehydrate();
-    expect(Array.isArray(snap.entities)).toBe(true);
-    expect(Array.isArray(snap.selections)).toBe(true);
-    expect(snap.entities.length).toBe(0);
-    expect(snap.selections.length).toBe(0);
+  beforeEach(() => {
+    graph = createGraph({
+      interfaces: { Post: ["AudioPost", "VideoPost"] },
+    });
+    ssr = createSSR({ graph });
   });
 
-  it("round-trips entities and selections", async () => {
-    // Seed (using public API)
-    const graph1 = makeGraph();
-    graph1.putEntity({ __typename: "User", id: "1", name: "Ada" });
-    graph1.putEntity({ __typename: "Post", id: "101", title: "Hello" });
-    graph1.putSelection('user({"id":"1"})', { __ref: "User:1" });
-    graph1.putSelection('User:1.posts({"first":2})', {
-      __typename: "PostConnection",
-      edges: [{ cursor: "c1", node: { __ref: "Post:101" } }],
-      pageInfo: { endCursor: "c1", hasNextPage: true },
+  it("dehydrate/hydrate roundtrips all records", async () => {
+    // seed root, entity, and a connection page
+    graph.putRecord("@", {
+      id: "@",
+      __typename: "@",
+      'user({"id":"u1"})': { __ref: "User:u1" },
     });
+    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
 
-    const ssr1 = createSSR({ graph: graph1 });
-    const snapshot = ssr1.dehydrate();
+    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1" });
+    const pageKey = '@.User:u1.posts({"after":null,"category":"tech","first":1})';
+    seedPage(
+      graph,
+      pageKey,
+      [{ nodeRef: "Post:p1", cursor: "p1" }],
+      { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false },
+      { totalCount: 1 },
+      "PostEdge",
+      "PostConnection"
+    );
 
-    // Hydrate into a fresh graph
-    const graph2 = makeGraph();
-    const ssr2 = createSSR({ graph: graph2 });
-
-    expect(ssr2.isHydrating()).toBe(false);
-    ssr2.hydrate(snapshot);
-    expect(ssr2.isHydrating()).toBe(true);
-
-    // flips to false on the next microtask
-    await waitMicrotask();
-    expect(ssr2.isHydrating()).toBe(false);
-
-    // Entities restored (public API)
-    expect(graph2.getEntity("User:1")).toEqual({
-      __typename: "User",
-      id: "1",
-      name: "Ada",
-    });
-    expect(graph2.getEntity("Post:101")).toEqual({
-      __typename: "Post",
-      id: "101",
-      title: "Hello",
-    });
-
-    // Selections restored (public API)
-    expect(graph2.getSelection('user({"id":"1"})')).toEqual({ __ref: "User:1" });
-    expect(graph2.getSelection('User:1.posts({"first":2})')).toEqual({
-      __typename: "PostConnection",
-      edges: [{ cursor: "c1", node: { __ref: "Post:101" } }],
-      pageInfo: { endCursor: "c1", hasNextPage: true },
-    });
-
-    // Tickets populated by default
-    expect(ssr2.hydrateSelectionTicket.size).toBe(2);
-    expect(ssr2.hydrateSelectionTicket.has('user({"id":"1"})')).toBe(true);
-  });
-
-  it("hydrate accepts a streaming-style function and can disable tickets", async () => {
-    const graph = makeGraph();
-    const ssr = createSSR({ graph });
-
-    const emitted = {
-      entities: [["User:1", { __typename: "User", id: "1", name: "Ada" }]],
-      selections: [['user({"id":"1"})', { __ref: "User:1" }]],
-    };
-
-    ssr.hydrate((emit) => {
-      emit(emitted);
-    }, { tickets: false });
-
-    await waitMicrotask();
-
-    expect(graph.getEntity("User:1")).toEqual({
-      __typename: "User",
-      id: "1",
-      name: "Ada",
-    });
-    expect(graph.getSelection('user({"id":"1"})')).toEqual({ __ref: "User:1" });
-    expect(ssr.hydrateSelectionTicket.size).toBe(0); // tickets disabled
-  });
-
-  it("materialize option warms selection clones with resolvers.applyOnObject (if provided)", async () => {
-    const graph = makeGraph();
-    graph.putSelection("stats({})", { __typename: "Stats", total: 1 });
-
-    let calls = 0;
-    const resolvers = {
-      applyOnObject: (root: any) => {
-        if (root && root.__typename === "Stats") {
-          root.total = (root.total ?? 0) + 1;
-          calls++;
-        }
-      },
-    };
-
-    const ssr = createSSR({ graph, resolvers });
-
+    // 1) dehydrate
     const snapshot = ssr.dehydrate();
-    ssr.hydrate(snapshot, { materialize: true });
+    expect(() => JSON.stringify(snapshot)).not.toThrow();
 
-    await waitMicrotask();
+    // 2) clear and ensure empty
+    graph.clear();
+    expect(graph.keys().length).toBe(0);
 
-    // Store is unchanged (warming happened on clones)
-    expect(graph.getSelection("stats({})")).toEqual({ __typename: "Stats", total: 1 });
-    expect(calls).toBe(1);
+    // 3) hydrate
+    ssr.hydrate(snapshot);
+    expect(ssr.isHydrating()).toBe(true);
+    await Promise.resolve();
+    expect(ssr.isHydrating()).toBe(false);
+
+    // 4) verify restored records
+    const restoredRoot = graph.getRecord("@");
+    expect(restoredRoot['user({"id":"u1"})'].__ref).toBe("User:u1");
+    expect(graph.getRecord("User:u1").email).toBe("a@example.com");
+
+    const restoredPage = graph.getRecord(pageKey);
+    expect(restoredPage.__typename).toBe("PostConnection");
+    expect(restoredPage.pageInfo.endCursor).toBe("p1");
+
+    const edgeRef = restoredPage.edges[0].__ref;
+    const edgeRec = graph.getRecord(edgeRef);
+    expect(edgeRec.cursor).toBe("p1");
+    expect(edgeRec.node.__ref).toBe("Post:p1");
+  });
+
+  it("hydrate accepts a function (stream-friendly) and toggles isHydrating()", async () => {
+    const snap = {
+      records: [
+        ["@", { id: "@", __typename: "@", 'user({"id":"u2"})': { __ref: "User:u2" } }],
+        ["User:u2", { __typename: "User", id: "u2", email: "b@example.com" }],
+      ] as Array<[string, any]>,
+    };
+
+    let emitted = false;
+    ssr.hydrate((emit) => {
+      emitted = true;
+      emit(snap);
+    });
+
+    expect(emitted).toBe(true);
+    expect(ssr.isHydrating()).toBe(true);
+    await Promise.resolve();
+    expect(ssr.isHydrating()).toBe(false);
+
+    const root = graph.getRecord("@");
+    expect(root['user({"id":"u2"})'].__ref).toBe("User:u2");
+    expect(graph.getRecord("User:u2").email).toBe("b@example.com");
+  });
+
+  it("hydrates gracefully on malformed snapshots (no throw)", async () => {
+    ssr.hydrate({} as any);
+    await Promise.resolve();
+    expect(graph.keys().length).toBe(0);
+
+    ssr.hydrate({
+      records: [null as any, ["User:x", null], ["User:y", 123], ["User:z", { __typename: "User", id: "z" }]],
+    });
+    await Promise.resolve();
+    expect(graph.getRecord("User:z")?.id).toBe("z");
+  });
+
+  it("dehydrate reflects runtime updates after hydrate", async () => {
+    ssr.hydrate({
+      records: [
+        ["@", { id: "@", __typename: "@", 'user({"id":"u1"})': { __ref: "User:u1" } }],
+        ["User:u1", { __typename: "User", id: "u1", email: "a@example.com" }],
+      ],
+    });
+    await Promise.resolve();
+
+    graph.putRecord("User:u1", { email: "a+1@example.com" });
+
+    const next = ssr.dehydrate();
+    const recs = new Map(next.records);
+    expect(recs.get("User:u1").email).toBe("a+1@example.com");
   });
 });

@@ -2,149 +2,153 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { App } from "vue";
 import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus";
-import { CombinedError } from "villus";
-import { parse, Kind, type DocumentNode, type ValueNode, type FieldNode } from "graphql";
+import { CombinedError } from "villus"; // ✅ import CombinedError
+import type { DocumentNode } from "graphql";
+
+import type { GraphInstance } from "./graph";
+import type { PlannerInstance } from "./planner";
+import type { DocumentsInstance } from "./documents";
+import type { SessionsInstance } from "./sessions";
+
+import { ROOT_ID } from "./constants";
+import { buildFieldKey, buildConnectionKey, buildConnectionIdentity } from "./utils";
 
 export const CACHEBAY_KEY: unique symbol = Symbol("CACHEBAY_KEY");
 
 type PluginOptions = { addTypename?: boolean };
 
 type PluginDependencies = {
-  graph: {
-    getSelection: (key: string) => any | undefined;
-    putSelection: (key: string, subtree: any) => void;
-  };
-  selections: {
-    buildQuerySelectionKey: (field: string, args?: Record<string, any>) => string;
-  };
-  views: {
-    createSession: () => {
-      mountSelection: (selectionKey: string) => any;
-      destroy: () => void;
-    };
-  };
-  resolvers: {
-    applyOnObject: (root: any, vars?: Record<string, any>, hint?: { stale?: boolean }) => void;
-  };
-  ssr?: {
-    /** optional: if present, allows CN to prefer cached-first immediately after hydrate */
-    hydrateSelectionTicket?: Set<string>;
-    isHydrating?: () => boolean;
-  };
+  graph: GraphInstance;
+  planner: PlannerInstance;
+  documents: DocumentsInstance;
+  sessions: SessionsInstance;
+  ssr?: { isHydrating?: () => boolean };
 };
 
-// ---------- small helpers (AST → args/keys) ----------
-const valueNodeToJS = (node: ValueNode, vars?: Record<string, any>): any => {
-  switch (node.kind) {
-    case Kind.NULL: return null;
-    case Kind.INT:
-    case Kind.FLOAT: return Number(node.value);
-    case Kind.STRING: return node.value;
-    case Kind.BOOLEAN: return node.value;
-    case Kind.ENUM: return node.value;
-    case Kind.LIST: return node.values.map(v => valueNodeToJS(v, vars));
-    case Kind.OBJECT: {
-      const o: Record<string, any> = {};
-      for (const f of node.fields) o[f.name.value] = valueNodeToJS(f.value, vars);
-      return o;
-    }
-    case Kind.VARIABLE: return vars ? vars[node.name.value] : undefined;
-    default: return undefined;
-  }
-};
-
-const argsToObject = (field: FieldNode, vars?: Record<string, any>): Record<string, any> | undefined => {
-  if (!field.arguments || field.arguments.length === 0) return undefined;
-  const out: Record<string, any> = {};
-  for (const a of field.arguments) out[a.name.value] = valueNodeToJS(a.value, vars);
-  return out;
-};
-
-type RootPick = {
-  alias: string;
-  name: string;
-  args: Record<string, any> | undefined;
-  keyArg: string;     // e.g. posts({"first":2})
-  keyEmpty: string;   // e.g. posts({})
-};
-
-const rootPicksFromQuery = (
-  doc: DocumentNode,
-  variables: Record<string, any>,
-  buildQuerySelectionKey: (field: string, args?: Record<string, any>) => string
-): RootPick[] => {
-  const def = doc.definitions.find(d => d.kind === Kind.OPERATION_DEFINITION);
-  if (!def || def.kind !== Kind.OPERATION_DEFINITION || !def.selectionSet) return [];
-  const picks: RootPick[] = [];
-  for (const sel of def.selectionSet.selections) {
-    if (sel.kind !== Kind.FIELD) continue;
-    const name = sel.name.value;
-    const alias = sel.alias?.value ?? name;
-    const args = argsToObject(sel, variables);
-    const keyArg = buildQuerySelectionKey(name, args || {});
-    const keyEmpty = buildQuerySelectionKey(name, {});
-    picks.push({ alias, name, args, keyArg, keyEmpty });
-  }
-  return picks;
-};
-
-// ---------- deep copy helper (no proxies) ----------
 const deepCopy = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 
-// ---------- main plugin ----------
-export function createPlugin(options: PluginOptions, deps: PluginDependencies): ClientPlugin {
-  const { addTypename = true } = options;
-  const { graph, selections, views, resolvers, ssr } = deps;
+function mountConnectionsForOperation(
+  deps: { graph: GraphInstance; planner: PlannerInstance; sessions: SessionsInstance },
+  session: ReturnType<SessionsInstance["createSession"]>,
+  docOrPlan: DocumentNode | any,
+  variables: Record<string, any>
+) {
+  const { graph, planner } = deps;
+  const plan = planner.getPlan(docOrPlan);
 
-  // one session (mountSelection/destroy) per operation.key
-  const sessions = new Map<number, { mountSelection: (key: string) => any; destroy: () => void }>();
+  // 1) Root connections
+  for (let i = 0; i < plan.root.length; i++) {
+    const field = plan.root[i];
+    if (!field.isConnection) continue;
+
+    const identityKey = buildConnectionIdentity(field, ROOT_ID, variables);
+    const pageKey = buildConnectionKey(field, ROOT_ID, variables);
+
+    if (graph.getRecord(pageKey)) {
+      const composer = session.mountConnection({
+        identityKey,
+        mode: field.connectionMode ?? "infinite",
+        dedupeBy: "cursor",
+      });
+      composer.addPage(pageKey);
+    }
+
+    // 3) Multi-parent nested under root connection nodes
+    const edgesField = field.selectionMap?.get("edges");
+    const nodeField = edgesField?.selectionMap?.get("node");
+    if (nodeField?.selectionMap) {
+      const nodeChildMap = nodeField.selectionMap;
+      const page = graph.getRecord(pageKey);
+      if (page && Array.isArray(page.edges)) {
+        for (let e = 0; e < page.edges.length; e++) {
+          const edgeRef = page.edges[e]?.__ref;
+          if (!edgeRef) continue;
+          const edgeRec = graph.getRecord(edgeRef);
+          const parentRef = edgeRec?.node?.__ref;
+          if (!parentRef) continue;
+
+          for (const [, childField] of nodeChildMap) {
+            if (!childField.isConnection) continue;
+
+            // ✅ only mount if child page exists
+            const childPageKey = buildConnectionKey(childField, parentRef, variables);
+            if (!graph.getRecord(childPageKey)) continue;
+
+            const childIdentity = buildConnectionIdentity(childField, parentRef, variables);
+            const childComposer = session.mountConnection({
+              identityKey: childIdentity,
+              mode: childField.connectionMode ?? "infinite",
+              dedupeBy: "cursor",
+            });
+            childComposer.addPage(childPageKey);
+          }
+        }
+      }
+    }
+  }
+
+  // 2) Nested single-parent under root entity fields
+  for (let i = 0; i < plan.root.length; i++) {
+    const parentField = plan.root[i];
+    if (parentField.isConnection) continue;
+
+    const childMap: Map<string, any> | undefined = parentField.selectionMap;
+    if (!childMap) continue;
+
+    const linkKey = buildFieldKey(parentField, variables);
+    const rootSnap = graph.getRecord(ROOT_ID) || {};
+    const parentRef: string | undefined = rootSnap?.[linkKey]?.__ref;
+    if (!parentRef) continue;
+
+    for (const [, childField] of childMap) {
+      if (!childField.isConnection) continue;
+
+      const pageKey = buildConnectionKey(childField, parentRef, variables);
+      if (!graph.getRecord(pageKey)) continue; // ✅ skip empty
+
+      const identityKey = buildConnectionIdentity(childField, parentRef, variables);
+      const composer = session.mountConnection({
+        identityKey,
+        mode: childField.connectionMode ?? "infinite",
+        dedupeBy: "cursor",
+      });
+      composer.addPage(pageKey);
+    }
+  }
+}
+
+export function createPlugin(options: PluginOptions, deps: PluginDependencies): ClientPlugin {
+  const { addTypename = false } = options;
+  const { graph, planner, documents, sessions } = deps;
+
+  const sessionByOpKey = new Map<number, ReturnType<SessionsInstance["createSession"]>>();
 
   return (ctx: ClientPluginContext) => {
     const op = ctx.operation;
+    const vars: Record<string, any> = op.variables || {};
+    const document: DocumentNode = op.query as DocumentNode;
 
-    // if you have an add-typename pass, insert here (optional)
     if (addTypename && typeof op.query === "string") {
-      // e.g. op.query = ensureDocumentHasTypenames(op.query as any);
+      // optional hook
     }
 
-    // Normalize query to DocumentNode
-    const doc: DocumentNode = typeof op.query === "string" ? parse(op.query) : (op.query as DocumentNode);
-    const vars = op.variables || {};
-    const picks = rootPicksFromQuery(doc, vars, selections.buildQuerySelectionKey);
-
-    // Session per operation
-    let session = sessions.get(op.key);
+    let session = sessionByOpKey.get(op.key);
     if (!session) {
-      const s = views.createSession();
-      session = { mountSelection: s.mountSelection, destroy: s.destroy };
-      sessions.set(op.key, session);
+      session = sessions.createSession();
+      sessionByOpKey.set(op.key, session);
     }
 
     const publish = (payload: OperationResult, terminal: boolean) => ctx.useResult(payload, terminal);
-    const policy: string = (op as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
+    const policy: string =
+      (op as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
 
-    // ————————————————————————————————————————————————————————————————
-    // Cached frame builder: tries arg-key first, then {} fallback
-    // ————————————————————————————————————————————————————————————————
     const buildCachedFrame = () => {
-      const out: any = { __typename: "Query" };
-      let anyHit = false;
-
-      for (const p of picks) {
-        let hit = graph.getSelection(p.keyArg);
-        if (!hit) hit = graph.getSelection(p.keyEmpty);
-        if (hit) {
-          anyHit = true;
-          // prefer mounting arg key if present; else mount empty
-          const chosenKey = graph.getSelection(p.keyArg) ? p.keyArg : p.keyEmpty;
-          out[p.alias] = session!.mountSelection(chosenKey);
-        }
-      }
-
-      return anyHit ? { data: out } : null;
+      if (!documents.hasDocument({ document, variables: vars })) return null;
+      mountConnectionsForOperation({ graph, planner, sessions }, session!, document, vars);
+      const view = documents.materializeDocument({ document, variables: vars });
+      return { data: view };
     };
 
-    // cache-only
     if (policy === "cache-only") {
       const cached = buildCachedFrame();
       if (cached) return publish(cached, true);
@@ -156,63 +160,31 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       return publish({ error: err }, true);
     }
 
-    // cache-first
     if (policy === "cache-first") {
       const cached = buildCachedFrame();
       if (cached) return publish(cached, true);
-      // fall through to network
     }
 
-    // cache-and-network
     if (policy === "cache-and-network") {
-      // SSR ticket (optional): treat first mount after hydrate as cached-first
-      let usedTicket = false;
-      if (ssr?.hydrateSelectionTicket) {
-        for (const p of picks) {
-          if (ssr.hydrateSelectionTicket.has(p.keyArg) || ssr.hydrateSelectionTicket.has(p.keyEmpty)) {
-            usedTicket = true;
-            ssr.hydrateSelectionTicket.delete(p.keyArg);
-            ssr.hydrateSelectionTicket.delete(p.keyEmpty);
-          }
-        }
-      }
       const cached = buildCachedFrame();
       if (cached) publish(cached, false);
-      // network follows regardless; ticket only influences terminal flag on cached frame
     }
 
-    // network-only or network follow-up
     const originalUseResult = ctx.useResult;
     ctx.useResult = (incoming: OperationResult, terminal?: boolean) => {
-      const r: any = incoming;
-      const hasData = r && "data" in r && r.data != null;
-      const hasError = r && "error" in r && r.error != null;
+      const hasData = !!incoming?.data;
+      const hasError = !!incoming?.error;
 
       if (!hasData && !hasError) return originalUseResult(incoming, false);
       if (hasError) return originalUseResult(incoming, true);
 
-      // 1) Apply resolvers (e.g., relay merge) on a deep copy
-      const mutable = deepCopy(r.data);
-      resolvers.applyOnObject(mutable, vars, { stale: false });
+      const mutable = deepCopy(incoming.data);
+      documents.normalizeDocument({ document, variables: vars, data: mutable });
 
-      // 2) For each root field: write BOTH selection keys (arg-shaped and empty)
-      const out: any = { __typename: "Query" };
-      for (const p of picks) {
-        const subtree = (mutable as any)[p.alias]; // alias in response object
-        if (subtree !== undefined) {
-          // write arg-shaped key
-          graph.putSelection(p.keyArg, subtree);
-          // also write the empty-args variant so other code paths can hit it
-          if (p.keyEmpty !== p.keyArg) {
-            graph.putSelection(p.keyEmpty, subtree);
-          }
-          // mount (prefer arg-shaped key)
-          out[p.alias] = session!.mountSelection(p.keyArg);
-        }
-      }
+      mountConnectionsForOperation({ graph, planner, sessions }, session!, document, vars);
 
-      // 3) Publish terminal frame
-      return originalUseResult({ data: out }, true);
+      const view = documents.materializeDocument({ document, variables: vars });
+      return originalUseResult({ data: view }, true);
     };
   };
 }

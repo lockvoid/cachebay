@@ -1,238 +1,299 @@
 // src/core/sessions.ts
 import type { GraphInstance } from "./graph";
 import type { ViewsInstance } from "./views";
-
-export type SessionsOptions = Record<string, never>;
+import { buildConnectionKey, buildConnectionIdentity } from "./utils";
+import { ROOT_ID } from "./constants";
 
 export type SessionsDependencies = {
   graph: GraphInstance;
   views: ViewsInstance;
 };
 
-export type SessionsAPI = ReturnType<typeof createSessions>;
+export type DedupeStrategy = "cursor" | "node" | "edgeRef";
 
-/**
- * Sessions: lifecycle helper for UI/data hooks.
- * Responsibilities:
- *  - mount record proxies (entities),
- *  - create Relay-style connection composers that combine multiple pages on READ.
- * NOT responsible for: cache lookup (hasDocument) → put that in documents.ts.
- */
-export const createSessions = (_options: SessionsOptions, deps: SessionsDependencies) => {
+export type MountConnectionOptions = {
+  identityKey: string;               // filters-only identity (parent + field)
+  mode?: "infinite" | "page";        // default "infinite"
+  dedupeBy?: DedupeStrategy;         // default "cursor"
+};
+
+export type ConnectionComposer = {
+  addPage: (pageKey: string) => void;
+  removePage: (pageKey: string) => void;
+  setPage: (pageKey: string | null) => void; // select page for mode:"page" (null -> last)
+  clear: () => void;
+  getView: () => any;                          // reactive connection view (Proxy)
+  inspect: () => { pages: string[]; mode: string; dedupeBy: string; activePage: string | null };
+};
+
+export type Session = {
+  mount: (entityId: string) => any; // retain & return reactive entity proxy
+  mountConnection: (opts: MountConnectionOptions) => ConnectionComposer;
+  getConnection: (identityKey: string) => ConnectionComposer | undefined;
+  inspect: () => { connections: string[]; retained: string[] };
+  destroy: () => void;
+};
+
+export type SessionsInstance = ReturnType<typeof createSessions>;
+
+export const createSessions = (deps: SessionsDependencies) => {
   const { graph, views } = deps;
 
-  /**
-   * Create a Relay-style connection composer (no cache merging).
-   *   mode: "infinite" → concatenates edges from added pages (with dedupe)
-   *         "page"     → shows one active page; you can switch pages
-   *   dedupeBy: "edgeRef" | "cursor" | "node"
-   */
-  const createConnectionComposer = ({
-    mode = "infinite",
-    dedupeBy = "edgeRef",
-  }: {
-    mode?: "infinite" | "page";
-    dedupeBy?: "edgeRef" | "cursor" | "node";
-  } = {}) => {
-    const pageKeys: string[] = [];
-    let activePageIdx = 0;
+  const createSession = (): Session => {
+    // retained entities (for lifetime of this session)
+    const retained = new Set<string>();
 
-    // edge-array cache for infinite mode
-    let cachedRefs: string[] | null = null;
-    let cachedEdges: any[] | null = null;
+    // identityKey -> composer
+    const composers = new Map<string, ConnectionComposerImpl>();
 
-    const addPage = (pageKey: string) => {
-      if (!pageKeys.includes(pageKey)) {
-        pageKeys.push(pageKey);
-        if (mode === "page") activePageIdx = pageKeys.length - 1;
-        cachedRefs = null;
-        cachedEdges = null;
-      }
+    const mount = (entityId: string) => {
+      retained.add(entityId);
+      return graph.materializeRecord(entityId);
     };
 
-    const removePage = (pageKey: string) => {
-      const idx = pageKeys.indexOf(pageKey);
-      if (idx >= 0) {
-        pageKeys.splice(idx, 1);
-        if (mode === "page" && activePageIdx >= pageKeys.length) {
-          activePageIdx = Math.max(0, pageKeys.length - 1);
-        }
-        cachedRefs = null;
-        cachedEdges = null;
-      }
-    };
+    const getConnection = (identityKey: string) => composers.get(identityKey)?.public;
 
-    const clear = () => {
-      pageKeys.length = 0;
-      activePageIdx = 0;
-      cachedRefs = null;
-      cachedEdges = null;
-    };
+    const mountConnection = (opts: MountConnectionOptions): ConnectionComposer => {
+      const identityKey = opts.identityKey;
+      const existing = composers.get(identityKey);
+      if (existing) return existing.public;
 
-    const setActivePage = (pageKey: string) => {
-      if (mode !== "page") return;
-      const idx = pageKeys.indexOf(pageKey);
-      if (idx >= 0) activePageIdx = idx;
-    };
+      const impl = new ConnectionComposerImpl(identityKey, {
+        mode: opts.mode ?? "infinite",
+        dedupeBy: opts.dedupeBy ?? "cursor",
+      }, graph, views);
 
-    const getView = () => {
-      const composed = new Proxy(
-        {},
-        {
-          get(_t, prop: string | symbol) {
-            if (prop === "edges") {
-              if (mode === "page") {
-                const pk = pageKeys[activePageIdx];
-                const snap = pk ? graph.getRecord(pk) : undefined;
-                const list = Array.isArray(snap?.edges) ? snap!.edges : [];
-                const arr = new Array(list.length);
-                for (let i = 0; i < list.length; i++) {
-                  const ref = list[i]?.__ref;
-                  arr[i] = ref ? views.getEdgeView(ref, undefined, {}) : undefined;
-                }
-                return arr;
-              }
-
-              // infinite: concat and dedupe
-              const allRefs: string[] = [];
-              for (let i = 0; i < pageKeys.length; i++) {
-                const s = graph.getRecord(pageKeys[i]);
-                const refs = Array.isArray(s?.edges) ? s!.edges.map((r: any) => r?.__ref || "") : [];
-                for (let j = 0; j < refs.length; j++) if (refs[j]) allRefs.push(refs[j]);
-              }
-
-              if (dedupeBy !== "edgeRef") {
-                const seen = new Set<string>();
-                const deduped: string[] = [];
-                for (let i = 0; i < allRefs.length; i++) {
-                  const ref = allRefs[i];
-                  if (!ref) continue;
-                  const e = graph.getRecord(ref);
-                  let key: string | undefined;
-                  if (dedupeBy === "cursor") key = e?.cursor;
-                  else if (dedupeBy === "node") key = e?.node?.__ref;
-                  if (!key) {
-                    deduped.push(ref);
-                    continue;
-                  }
-                  if (!seen.has(key)) {
-                    seen.add(key);
-                    deduped.push(ref);
-                  }
-                }
-                allRefs.length = 0;
-                Array.prototype.push.apply(allRefs, deduped);
-              }
-
-              if (
-                cachedRefs &&
-                cachedRefs.length === allRefs.length &&
-                cachedRefs.every((v, i) => v === allRefs[i]) &&
-                cachedEdges
-              ) {
-                return cachedEdges;
-              }
-
-              const arr = new Array(allRefs.length);
-              for (let i = 0; i < allRefs.length; i++) {
-                arr[i] = views.getEdgeView(allRefs[i], undefined, {});
-              }
-              cachedRefs = allRefs;
-              cachedEdges = arr;
-              return arr;
-            }
-
-            if (prop === "pageInfo") {
-              if (mode === "page") {
-                const pk = pageKeys[activePageIdx];
-                const s = pk ? graph.getRecord(pk) : undefined;
-                return s?.pageInfo ? { ...s.pageInfo } : undefined;
-              }
-              const last = pageKeys.length > 0 ? graph.getRecord(pageKeys[pageKeys.length - 1]) : undefined;
-              return last?.pageInfo ? { ...last.pageInfo } : undefined;
-            }
-
-            if (prop === "__typename") {
-              const first = pageKeys.length > 0 ? graph.getRecord(pageKeys[0]) : undefined;
-              return first?.__typename;
-            }
-
-            // extras (e.g., totalCount): last page (infinite) or active page (page)
-            if (typeof prop === "string") {
-              if (mode === "page") {
-                const pk = pageKeys[activePageIdx];
-                const s = pk ? graph.getRecord(pk) : undefined;
-                if (s && prop in (s as any)) {
-                  const v = (s as any)[prop];
-                  return typeof v === "object" && v !== null ? { ...v } : v;
-                }
-                return undefined;
-              }
-              const last = pageKeys.length > 0 ? graph.getRecord(pageKeys[pageKeys.length - 1]) : undefined;
-              if (last && prop in (last as any)) {
-                const v = (last as any)[prop];
-                return typeof v === "object" && v !== null ? { ...v } : v;
-              }
-              for (let i = 0; i < pageKeys.length; i++) {
-                const s = graph.getRecord(pageKeys[i]);
-                if (s && prop in (s as any)) {
-                  const v = (s as any)[prop];
-                  return typeof v === "object" && v !== null ? { ...v } : v;
-                }
-              }
-            }
-
-            return undefined;
-          },
-        }
-      );
-
-      return composed;
+      composers.set(identityKey, impl);
+      return impl.public;
     };
 
     const inspect = () => ({
-      pages: pageKeys.slice(),
-      mode,
-    });
-
-    return { addPage, removePage, clear, setActivePage, getView, inspect };
-  };
-
-  /**
-   * per-usage session
-   */
-  const createSession = () => {
-    const records = new Set<string>();
-    const connections = new Set<ReturnType<typeof createConnectionComposer>>();
-
-    const mountRecord = (recordId: string) => {
-      records.add(recordId);
-      return graph.materializeRecord(recordId);
-    };
-
-    const mountConnection = (opts?: Parameters<typeof createConnectionComposer>[0]) => {
-      const c = createConnectionComposer(opts);
-      connections.add(c);
-      return c;
-    };
-
-    const inspect = () => ({
-      records: Array.from(records),
-      connections: Array.from(connections).map((c) => c.inspect()),
+      connections: Array.from(composers.keys()),
+      retained: Array.from(retained.keys()),
     });
 
     const destroy = () => {
-      records.clear();
-      connections.clear();
+      retained.clear();
+      composers.clear();
     };
 
-    return {
-      mountRecord,
-      mountConnection,
-      inspect,
-      destroy,
-    };
+    return { mount, mountConnection, getConnection, inspect, destroy };
   };
 
   return { createSession };
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Internal: ConnectionComposerImpl
+// ─────────────────────────────────────────────────────────────────────────────
+
+class ConnectionComposerImpl {
+  private identityKey: string;
+  private mode: "infinite" | "page";
+  private dedupeBy: DedupeStrategy;
+
+  private graph: GraphInstance;
+  private views: ViewsInstance;
+
+  // concrete page keys in insertion order
+  private pages: string[] = [];
+  // currently selected page (mode:"page"); null -> use latest
+  private activePageKey: string | null = null;
+
+  // stable connection view proxy
+  private viewProxy: any | null = null;
+
+  public readonly public: ConnectionComposer;
+
+  constructor(
+    identityKey: string,
+    opts: { mode: "infinite" | "page"; dedupeBy: DedupeStrategy },
+    graph: GraphInstance,
+    views: ViewsInstance
+  ) {
+    this.identityKey = identityKey;
+    this.mode = opts.mode;
+    this.dedupeBy = opts.dedupeBy;
+    this.graph = graph;
+    this.views = views;
+
+    this.public = {
+      addPage: (k) => this.addPage(k),
+      removePage: (k) => this.removePage(k),
+      setPage: (k) => this.setPage(k),
+      clear: () => this.clear(),
+      getView: () => this.getView(),
+      inspect: () => ({
+        pages: this.pages.slice(),
+        mode: this.mode,
+        dedupeBy: this.dedupeBy,
+        activePage: this.activePageKey,
+      }),
+    };
+  }
+
+  private addPage(pageKey: string) {
+    if (!pageKey) return;
+    if (this.pages.indexOf(pageKey) !== -1) return;
+    // only add if the page exists in cache; no-op otherwise
+    if (this.graph.getRecord(pageKey)) {
+      this.pages.push(pageKey);
+      // do not eagerly rebuild; getView computes on demand
+    }
+  }
+
+  private removePage(pageKey: string) {
+    const idx = this.pages.indexOf(pageKey);
+    if (idx === -1) return;
+    this.pages.splice(idx, 1);
+    if (this.activePageKey === pageKey) this.activePageKey = null;
+  }
+
+  private setPage(pageKey: string | null) {
+    this.activePageKey = pageKey;
+  }
+
+  private clear() {
+    this.pages.length = 0;
+    this.activePageKey = null;
+  }
+
+  private getView() {
+    if (this.viewProxy) return this.viewProxy;
+
+    // a stable proxy that reads through to current pages
+    const self = this;
+
+    const handler: ProxyHandler<any> = {
+      get(_t, prop) {
+        if (prop === "__typename") {
+          const chosen = self.choosePageKey();
+          if (!chosen) return "Connection";
+          const snap = self.graph.getRecord(chosen);
+          return snap?.__typename ?? "Connection";
+        }
+
+        if (prop === "pageInfo") {
+          // reflect chosen page's pageInfo as plain object (unchanged by composer)
+          const chosen = self.choosePageKey();
+          if (!chosen) return undefined;
+          const snap = self.graph.getRecord(chosen);
+          return snap?.pageInfo ? { ...snap.pageInfo } : undefined;
+        }
+
+        if (prop === "edges") {
+          return self.composeEdges();
+        }
+
+        // expose extras (e.g., totalCount) off chosen page
+        const chosen = self.choosePageKey();
+        if (!chosen) return undefined;
+        const snap = self.graph.getRecord(chosen);
+        if (!snap) return undefined;
+        return (snap as any)[prop as any];
+      },
+
+      has(_t, prop) {
+        if (prop === "edges" || prop === "pageInfo" || prop === "__typename") return true;
+        const chosen = self.choosePageKey();
+        if (!chosen) return false;
+        const snap = self.graph.getRecord(chosen);
+        return snap ? Reflect.has(snap, prop) : false;
+      },
+
+      ownKeys() {
+        const chosen = self.choosePageKey();
+        if (!chosen) return ["__typename", "edges"];
+        const snap = self.graph.getRecord(chosen) || {};
+        const keys = new Set<string>(["__typename", "edges", ...Object.keys(snap)]);
+        // pageInfo is enumerated when present
+        if ((snap as any).pageInfo) keys.add("pageInfo");
+        return Array.from(keys);
+      },
+
+      getOwnPropertyDescriptor(_t, prop) {
+        return {
+          configurable: true,
+          enumerable: true,
+          writable: false,
+          value: (self as any)[prop as any], // not used; get() returns values
+        };
+      },
+    };
+
+    this.viewProxy = new Proxy(Object.create(null), handler);
+    return this.viewProxy;
+  }
+
+  /** pick the active page (mode:"page") or latest (mode:"infinite") */
+  private choosePageKey(): string | null {
+    if (this.pages.length === 0) return null;
+    if (this.mode === "page") {
+      if (this.activePageKey && this.pages.indexOf(this.activePageKey) !== -1) {
+        return this.activePageKey;
+      }
+      return this.pages[this.pages.length - 1];
+    }
+    // infinite: pageInfo/extras reflect the latest page by default
+    return this.pages[this.pages.length - 1];
+  }
+
+  /** compose deduped edge views from current pages */
+  private composeEdges(): any[] {
+    if (this.pages.length === 0) return [];
+
+    // choose which pages to read
+    const pageKeys = this.mode === "page"
+      ? (() => {
+        const single = this.choosePageKey();
+        return single ? [single] : [];
+      })()
+      : this.pages;
+
+    // Build flat list of edgeRef keys in order, deduping as requested
+    const resultRefs: string[] = [];
+    const seen = new Set<string>();
+
+    for (let p = 0; p < pageKeys.length; p++) {
+      const pageKey = pageKeys[p];
+      const snap = this.graph.getRecord(pageKey);
+      if (!snap || !Array.isArray((snap as any).edges)) continue;
+
+      const edgeRefs = (snap as any).edges.map((r: any) => r?.__ref).filter(Boolean) as string[];
+      for (let i = 0; i < edgeRefs.length; i++) {
+        const ref = edgeRefs[i];
+        const edgeRec = this.graph.getRecord(ref);
+        if (!edgeRec) continue;
+
+        let dedupeKey: string;
+        switch (this.dedupeBy) {
+          case "node": {
+            const nodeRef = (edgeRec as any).node?.__ref || "";
+            dedupeKey = `node:${nodeRef}`;
+            break;
+          }
+          case "edgeRef":
+            dedupeKey = `edge:${ref}`;
+            break;
+          case "cursor":
+          default: {
+            const cursor = (edgeRec as any).cursor ?? "";
+            dedupeKey = `cursor:${String(cursor)}`;
+            break;
+          }
+        }
+
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        resultRefs.push(ref);
+      }
+    }
+
+    // Map refs to reactive edge views (node is reactive via views)
+    const edges = new Array(resultRefs.length);
+    for (let i = 0; i < resultRefs.length; i++) {
+      edges[i] = this.views.getEdgeView(resultRefs[i], /* nodeField */ undefined, /* vars */ {});
+    }
+    return edges;
+  }
+}

@@ -116,7 +116,7 @@ export const buildConnectionKey = (
   return `${prefix}${field.fieldName}(${field.stringifyArgs(variables)})`;
 };
 
-export const buildConnectionIdentityKey = (
+export const buildConnectionIdentity = (
   field: PlanField,
   parentRecordId: string,
   variables: Record<string, any>

@@ -1,107 +1,57 @@
-// src/features/ssr.ts — SSR de/hydration for the entities+selections model
+// src/features/ssr.ts — SSR de/hydration for the unified graph record store
 
-type GraphAPIForSSR = {
-  // entities
-  listEntityKeys: () => string[];
-  getEntity: (key: string) => any | undefined;
-  putEntity: (obj: any) => string | null;
-  removeEntity: (key: string) => boolean;
-  clearEntities: () => void;
-
-  // selections
-  listSelectionKeys: () => string[];
-  getSelection: (key: string) => any | undefined;
-  putSelection: (key: string, subtree: any) => void;
-  removeSelection: (key: string) => boolean;
-  clearSelections: () => void;
+type GraphForSSR = {
+  keys: () => string[];
+  getRecord: (recordId: string) => any | undefined;
+  putRecord: (recordId: string, partialSnapshot: Record<string, any>) => void;
+  clear: () => void;
 };
 
-type Deps = {
-  graph: GraphAPIForSSR;
-  resolvers?: {
-    /** Optional: warm selection clones (purely derived work — no writes). */
-    applyOnObject?: (root: any, vars?: Record<string, any>, hint?: { stale?: boolean }) => void;
-  };
+type Deps = { graph: GraphForSSR };
+
+type GraphSnapshot = {
+  /** Array of [recordId, snapshot] entries; JSON-safe */
+  records: Array<[string, any]>;
 };
 
 /** JSON-only deep clone; safe for snapshots. */
-const cloneData = <T,>(data: T): T => {
-  try {
-    return JSON.parse(JSON.stringify(data));
-  } catch {
-    return data;
-  }
-};
+const cloneJSON = <T,>(data: T): T => JSON.parse(JSON.stringify(data));
 
-export const createSSR = (deps: Deps) => {
-  const { graph, resolvers } = deps;
-
-  // Selection “tickets” — lets a plugin publish cached-first once after hydrate.
-  const hydrateSelectionTicket = new Set<string>();
-
-  // Hydration flag — true inside hydrate() until the next microtask.
+export const createSSR = ({ graph }: Deps) => {
   let hydrating = false;
 
-  /** Serialize graph stores (entities, selections). */
-  const dehydrate = () => {
-    const entities = graph.listEntityKeys().map((k) => [k, graph.getEntity(k)]);
-    const selections = graph.listSelectionKeys().map((k) => [k, graph.getSelection(k)]);
-    return { entities, selections };
+  /** Serialize all graph records. */
+  const dehydrate = (): GraphSnapshot => {
+    const ids = graph.keys();
+    const out: Array<[string, any]> = new Array(ids.length);
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      const snap = graph.getRecord(id);
+      out[i] = [id, snap != null ? cloneJSON(snap) : undefined];
+    }
+    return { records: out };
   };
 
   /**
    * Hydrate a snapshot into the graph.
-   * - input: snapshot object OR a function receiving a (hydrate) callback (streaming-friendly)
-   * - opts.materialize: warm resolvers on a clone of each selection skeleton (no writes)
-   * - opts.tickets: (default true) emit a ticket per selection key for cached-first publish
+   * - input can be a plain snapshot or a function that emits it (stream-friendly)
+   * - clears the graph first, then restores records
+   * - `isHydrating()` is true until the next microtask
    */
   const hydrate = (
-    input: any | ((emit: (snapshot: any) => void) => void),
-    opts?: { materialize?: boolean; tickets?: boolean }
+    input: GraphSnapshot | ((emit: (snapshot: GraphSnapshot) => void) => void)
   ) => {
-    const doMaterialize = !!opts?.materialize;
-    const withTickets = opts?.tickets !== false; // default true
+    const run = (snapshot: GraphSnapshot) => {
+      if (!snapshot || !Array.isArray(snapshot.records)) return;
 
-    const run = (snapshot: any) => {
-      if (!snapshot) return;
+      graph.clear();
 
-      // Reset stores using only public API
-      graph.clearEntities();
-      graph.clearSelections();
-      hydrateSelectionTicket.clear();
-
-      // Restore entities
-      if (Array.isArray(snapshot.entities)) {
-        for (let i = 0; i < snapshot.entities.length; i++) {
-          const [, snap] = snapshot.entities[i];
-          if (snap && typeof snap === "object") {
-            graph.putEntity(snap);
-          }
-        }
-      }
-
-      // Restore selections
-      if (Array.isArray(snapshot.selections)) {
-        for (let i = 0; i < snapshot.selections.length; i++) {
-          const [key, skeleton] = snapshot.selections[i];
-          graph.putSelection(key, skeleton);
-          if (withTickets) hydrateSelectionTicket.add(key);
-        }
-      }
-
-      // Optional warm-up of derived fields (no writes; clones only)
-      if (doMaterialize && typeof resolvers?.applyOnObject === "function") {
-        const all = graph.listSelectionKeys();
-        for (let i = 0; i < all.length; i++) {
-          const skel = graph.getSelection(all[i]);
-          if (skel) {
-            try {
-              resolvers.applyOnObject!(cloneData(skel), {}, { stale: false });
-            } catch {
-              /* ignore any resolver warm-up errors */
-            }
-          }
-        }
+      for (let i = 0; i < snapshot.records.length; i++) {
+        const entry = snapshot.records[i];
+        if (!entry) continue;
+        const [id, snap] = entry;
+        if (!id || !snap || typeof snap !== "object") continue;
+        graph.putRecord(id, snap);
       }
     };
 
@@ -123,6 +73,5 @@ export const createSSR = (deps: Deps) => {
     dehydrate,
     hydrate,
     isHydrating: () => hydrating,
-    hydrateSelectionTicket,
   };
 };

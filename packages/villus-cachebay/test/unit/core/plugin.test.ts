@@ -1,343 +1,325 @@
-import { describe, it, expect, vi } from 'vitest';
-import { createPlugin } from '@/src/core/plugin';
-import { CombinedError } from 'villus';
-import { parse } from 'graphql';
+import { describe, it, expect, beforeEach } from "vitest";
+import gql from "graphql-tag";
+import type { ClientPluginContext, OperationResult } from "villus";
 
-// tiny stable stringify (mirrors selections.ts policy)
-const stableStringify = (value: any): string => {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return '[' + value.map(stableStringify).join(',') + ']';
-  const keys = Object.keys(value).filter(k => value[k] !== undefined).sort();
-  return '{' + keys.map(k => JSON.stringify(k) + ':' + stableStringify(value[k])).join(',') + '}';
-};
+import { createGraph } from "@/src/core/graph";
+import { createPlanner } from "@/src/core/planner";
+import { createViews } from "@/src/core/views";
+import { createSessions } from "@/src/core/sessions";
+import { createDocuments } from "@/src/core/documents";
+import { createPlugin } from "@/src/core/plugin";
+import { ROOT_ID } from "@/src/core/constants";
+import { buildConnectionKey, buildConnectionIdentity } from "@/src/core/utils";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Mocks (selection-first pipeline)
-// ─────────────────────────────────────────────────────────────────────────────
-function createGraphMock() {
-  const selections = new Map<string, any>();
-
-  return {
-    putSelection: vi.fn((key: string, subtree: any) => {
-      selections.set(key, JSON.parse(JSON.stringify(subtree)));
-    }),
-    getSelection: vi.fn((key: string) => selections.get(key)),
-    materializeSelection: vi.fn((key: string) => {
-      const v = selections.get(key);
-      return v ? JSON.parse(JSON.stringify(v)) : undefined;
-    }),
-    __selections: selections,
-  };
-}
-
-function createSelectionsMock() {
-  return {
-    buildQuerySelectionKey(field: string, args?: Record<string, any>) {
-      const a = args ? stableStringify(args) : '{}';
-      return `${field}(${a})`;
-    },
-    compileSelections(input: { data: any }) {
-      const out: Array<{ key: string; subtree: any }> = [];
-      const root = input.data;
-      if (!root || typeof root !== 'object') return out;
-
-      for (const field of Object.keys(root)) {
-        if (field === '__typename') continue;
-        out.push({
-          key: this.buildQuerySelectionKey(field, {}), // heuristic root-only
-          subtree: (root as any)[field],
-        });
+const USERS_POSTS_QUERY = gql`
+  query UsersPosts($usersRole: String, $usersFirst: Int, $usersAfter: String, $postsCategory: String, $postsFirst: Int, $postsAfter: String) {
+    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
+      __typename
+      pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
+      edges {
+        __typename
+        cursor
+        node {
+          __typename
+          id
+          email
+          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
+            __typename
+            pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
+            edges { __typename cursor node { __typename id title } }
+          }
+        }
       }
-      return out;
-    },
+    }
+  }
+`;
+
+const USER_QUERY = gql`
+  query User($id: ID!) {
+    user(id: $id) {
+      __typename
+      id
+      email
+    }
+  }
+`;
+
+// Seed a page into graph
+function seedPage(
+  graph: ReturnType<typeof createGraph>,
+  pageKey: string,
+  edges: Array<{ nodeRef: string; cursor?: string; extra?: Record<string, any> }>,
+  pageInfo?: Record<string, any>,
+  extra?: Record<string, any>,
+  edgeTypename = "Edge",
+  connectionTypename = "Connection"
+) {
+  const edgeRefs: Array<{ __ref: string }> = [];
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
+    const edgeKey = `${pageKey}.edges.${i}`;
+    graph.putRecord(edgeKey, {
+      __typename: edgeTypename,
+      cursor: e.cursor ?? null,
+      ...(e.extra || {}),
+      node: { __ref: e.nodeRef },
+    });
+    edgeRefs.push({ __ref: edgeKey });
+  }
+
+  const snap: Record<string, any> = {
+    __typename: connectionTypename,
+    edges: edgeRefs,
   };
+
+  if (pageInfo) snap.pageInfo = { ...(pageInfo as any) };
+  if (extra) Object.assign(snap, extra);
+
+  graph.putRecord(pageKey, snap);
 }
 
-function createResolversMock() {
-  return {
-    applyOnObject: vi.fn((_root: any, _vars: Record<string, any>) => {
-      // no-op; we just prove the call path
-    }),
-  };
-}
+describe("plugin (villus)", () => {
+  let graph: ReturnType<typeof createGraph>;
+  let planner: ReturnType<typeof createPlanner>;
+  let views: ReturnType<typeof createViews>;
+  let sessions: ReturnType<typeof createSessions>;
+  let documents: ReturnType<typeof createDocuments>;
 
-function createViewsMock(graph: ReturnType<typeof createGraphMock>) {
-  return {
-    createSession() {
-      const mounted = new Set<string>();
-      return {
-        mountSelection: (selectionKey: string) => {
-          mounted.add(selectionKey);
-          return graph.materializeSelection(selectionKey);
+  // capture created sessions to inspect composers
+  let createdSessions: Array<ReturnType<typeof sessions.createSession>>;
+
+  beforeEach(() => {
+    graph = createGraph({ interfaces: { Post: ["AudioPost", "VideoPost"] } });
+    planner = createPlanner();
+    views = createViews({ graph });
+    sessions = createSessions({ graph, views });
+    documents = createDocuments({ graph, views, planner });
+
+    createdSessions = [];
+    const orig = sessions.createSession;
+    // wrap createSession to capture the session the plugin allocates
+    (sessions as any).createSession = () => {
+      const s = orig();
+      createdSessions.push(s);
+      return s;
+    };
+
+    // root present
+    graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
+  });
+
+  it("cache-only: hit publishes cached frame; miss publishes CacheOnlyMiss error", () => {
+    const plugin = createPlugin({}, { graph, planner, documents, sessions });
+
+    // seed link for USER_QUERY
+    graph.putRecord(ROOT_ID, {
+      id: ROOT_ID,
+      __typename: ROOT_ID,
+      ['user({"id":"u1"})']: { __ref: "User:u1" },
+    });
+    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
+
+    // ctx harness
+    const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
+    const ctx: any = {
+      operation: { key: 1, query: USER_QUERY, variables: { id: "u1" }, cachePolicy: "cache-only" },
+      useResult: (payload: OperationResult, terminal?: boolean) => {
+        emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
+      },
+    };
+
+    plugin(ctx); // cache-only hit
+    expect(emissions.length).toBe(1);
+    expect(emissions[0].data.user.id).toBe("u1");
+    expect(emissions[0].terminal).toBe(true);
+
+    // miss
+    const ctxMiss: any = {
+      operation: { key: 2, query: USER_QUERY, variables: { id: "u2" }, cachePolicy: "cache-only" },
+      useResult: (payload: OperationResult, terminal?: boolean) => {
+        emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
+      },
+    };
+    plugin(ctxMiss);
+    expect(emissions.length).toBe(2);
+    expect(emissions[1].error).toBeTruthy();
+    expect((emissions[1].error as any).networkError?.name).toBe("CacheOnlyMiss");
+    expect(emissions[1].terminal).toBe(true);
+  });
+
+  it("cache-first: miss → network normalized and published", () => {
+    const plugin = createPlugin({}, { graph, planner, documents, sessions });
+
+    const ctx: any = {
+      operation: { key: 3, query: USER_QUERY, variables: { id: "u9" }, cachePolicy: "cache-first" },
+      useResult: (payload: OperationResult, terminal?: boolean) => { }, // will be wrapped
+    };
+
+    plugin(ctx);
+
+    // simulate network success
+    const result = {
+      data: { user: { __typename: "User", id: "u9", email: "x@example.com" } },
+    };
+    ctx.useResult(result, true);
+
+    const view = documents.materializeDocument({ document: USER_QUERY, variables: { id: "u9" } });
+    expect(view.user.email).toBe("x@example.com");
+  });
+
+  it("cache-and-network: cached frame first (terminal=false), then network (terminal=true); no double addPage", () => {
+    const plugin = createPlugin({}, { graph, planner, documents, sessions });
+
+    // seed a root connection page for users(role:dj)
+    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
+    graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "b@example.com" });
+
+    const plan = planner.getPlan(USERS_POSTS_QUERY);
+    const usersField = plan.rootSelectionMap!.get("users")!;
+    const usersPageKey = buildConnectionKey(usersField, ROOT_ID, {
+      usersRole: "dj",
+      usersFirst: 2,
+      usersAfter: null,
+      postsCategory: "tech",
+      postsFirst: 1,
+      postsAfter: null,
+    });
+
+    seedPage(
+      graph,
+      usersPageKey,
+      [{ nodeRef: "User:u1", cursor: "u1" }, { nodeRef: "User:u2", cursor: "u2" }],
+      { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false },
+      {},
+      "UserEdge",
+      "UserConnection"
+    );
+
+    const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
+    const ctx: any = {
+      operation: {
+        key: 10,
+        query: USERS_POSTS_QUERY,
+        variables: {
+          usersRole: "dj", usersFirst: 2, usersAfter: null,
+          postsCategory: "tech", postsFirst: 1, postsAfter: null,
         },
-        destroy: () => mounted.clear(),
-        _mounted: mounted,
-      };
-    },
-  };
-}
+        cachePolicy: "cache-and-network",
+      },
+      useResult: (payload: OperationResult, terminal?: boolean) => {
+        emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
+      },
+    };
 
-const gql = (s: TemplateStringsArray) => s.join('');
-const queryDoc = (src: string) => parse(src);
-
-function makeCtx(doc: any, variables: any = {}, type: 'query' | 'mutation' | 'subscription' = 'query') {
-  const op: any = { type, variables, query: doc, key: Math.floor(Math.random() * 1e9) };
-  const published: any[] = [];
-  const ctx: any = {
-    operation: op,
-    useResult: (r: any, term?: boolean) => { published.push({ r, term }); },
-    get _published() { return published; }
-  };
-  return ctx;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tests
-// ─────────────────────────────────────────────────────────────────────────────
-describe('cachebay plugin — cache policies (selection/graph based)', () => {
-  it('cache-only miss → CacheOnlyMiss error', () => {
-    const graph = createGraphMock();
-    const selections = createSelectionsMock();
-    const resolvers = createResolversMock();
-    const views = createViewsMock(graph);
-    const plugin = createPlugin({ addTypename: false }, { graph, selections, resolvers, views });
-
-    const doc = queryDoc(gql`
-      query Q($first:Int){
-        posts(first:$first){
-          edges{cursor node{__typename id}}
-          pageInfo{endCursor hasNextPage}
-        }
-      }`);
-    const ctx = makeCtx(doc, { first: 2 }, 'query');
-
-    ctx.operation.cachePolicy = 'cache-only';
     plugin(ctx);
+    // cached frame emitted
+    expect(emissions.length).toBe(1);
+    expect(emissions[0].terminal).toBe(false);
+    expect(Array.isArray(emissions[0].data.users.edges)).toBe(true);
 
-    expect(ctx._published.length).toBe(1);
-    expect(ctx._published[0].r.error).toBeInstanceOf(CombinedError);
-    expect(ctx._published[0].r.error.networkError.name).toBe('CacheOnlyMiss');
-  });
-
-  it('cache-only hit → returns materialized selection from graph (no network)', () => {
-    const graph = createGraphMock();
-    const selections = createSelectionsMock();
-    const resolvers = createResolversMock();
-    const views = createViewsMock(graph);
-    const plugin = createPlugin({ addTypename: false }, { graph, selections, resolvers, views });
-
-    const selKey = selections.buildQuerySelectionKey('posts', { first: 2 });
-    graph.putSelection(selKey, {
-      edges: [
-        { cursor: 'c1', node: { __typename: 'Post', id: '1' } },
-        { cursor: 'c2', node: { __typename: 'Post', id: '2' } },
-      ],
-      pageInfo: { endCursor: 'c2', hasNextPage: true },
-    });
-
-    const doc = queryDoc(gql`
-      query Q($first:Int){
-        posts(first:$first){
-          edges{cursor node{__typename id}}
-          pageInfo{endCursor hasNextPage}
-        }
-      }`);
-    const ctx = makeCtx(doc, { first: 2 });
-
-    ctx.operation.cachePolicy = 'cache-only';
-    plugin(ctx);
-
-    expect(ctx._published.length).toBe(1);
-    const result = ctx._published[0].r.data;
-    expect(result.__typename).toBe('Query');
-    expect(result.posts.edges.length).toBe(2);
-    expect(result.posts.pageInfo.endCursor).toBe('c2');
-  });
-
-  it('cache-first hit → terminal cached publish', () => {
-    const graph = createGraphMock();
-    const selections = createSelectionsMock();
-    const resolvers = createResolversMock();
-    const views = createViewsMock(graph);
-    const plugin = createPlugin({ addTypename: false }, { graph, selections, resolvers, views });
-
-    const selKey = selections.buildQuerySelectionKey('posts', { first: 1 });
-    graph.putSelection(selKey, {
-      edges: [{ cursor: 'c1', node: { __typename: 'Post', id: '1' } }],
-      pageInfo: { endCursor: 'c1', hasNextPage: true },
-    });
-
-    const doc = queryDoc(gql`
-      query Q($first:Int){
-        posts(first:$first){
-          edges{cursor node{__typename id}}
-          pageInfo{endCursor hasNextPage}
-        }
-      }`);
-    const ctx = makeCtx(doc, { first: 1 });
-
-    ctx.operation.cachePolicy = 'cache-first';
-    plugin(ctx);
-    expect(ctx._published.length).toBe(1);
-    expect(ctx._published[0].term).toBe(true);
-  });
-
-  it('cache-and-network hit → non-terminal cached; then network writes selections & publishes terminal', () => {
-    const graph = createGraphMock();
-    const selections = createSelectionsMock();
-    const resolvers = createResolversMock();
-    const views = createViewsMock(graph);
-    const plugin = createPlugin({ addTypename: false }, { graph, selections, resolvers, views });
-
-    // seed cached page (1 edge)
-    const cachedKey = selections.buildQuerySelectionKey('posts', { first: 1 });
-    graph.putSelection(cachedKey, {
-      edges: [{ cursor: 'c1', node: { __typename: 'Post', id: '1' } }],
-      pageInfo: { endCursor: 'c1', hasNextPage: true },
-    });
-
-    const doc = queryDoc(gql`
-      query Q($first:Int){
-        posts(first:$first){
-          edges{cursor node{__typename id}}
-          pageInfo{endCursor hasNextPage}
-        }
-      }`);
-    const ctx = makeCtx(doc, { first: 1 });
-
-    ctx.operation.cachePolicy = 'cache-and-network';
-    plugin(ctx);
-
-    // cached non-terminal
-    expect(ctx._published.length).toBe(1);
-    expect(ctx._published[0].term).toBe(false);
-
-    // network frame (2 edges)
-    const networkPayload = {
+    // now simulate network returning the SAME page again
+    const networkData = {
       data: {
-        __typename: 'Query',
-        posts: {
+        users: {
+          __typename: "UserConnection",
+          pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false },
           edges: [
-            { cursor: 'c1', node: { __typename: 'Post', id: '1' } },
-            { cursor: 'c2', node: { __typename: 'Post', id: '2' } },
+            { __typename: "UserEdge", cursor: "u1", node: { __typename: "User", id: "u1", email: "a@example.com" } },
+            { __typename: "UserEdge", cursor: "u2", node: { __typename: "User", id: "u2", email: "b@example.com" } },
           ],
-          pageInfo: { endCursor: 'c2', hasNextPage: true },
         },
       },
     };
 
-    ctx.useResult(networkPayload as any, true);
+    ctx.useResult(networkData, true);
+    // final frame emitted
+    expect(emissions.length).toBe(2);
+    expect(emissions[1].terminal).toBe(true);
 
-    // terminal publish
-    expect(ctx._published.length).toBe(2);
-    expect(ctx._published[1].term).toBe(true);
-
-    // ensure selections got updated by plugin
-    expect(graph.putSelection).toHaveBeenCalled();
-    const call = (graph.putSelection as any).mock.calls.find((c: any[]) => {
-      const [, subtree] = c;
-      return subtree && subtree.edges && Array.isArray(subtree.edges) && subtree.edges.length === 2;
+    // Inspect the created session → ensure the root composer did not add the same page twice
+    const session = (createdSessions[0] as any);
+    const usersIdentity = buildConnectionIdentity(usersField, ROOT_ID, {
+      usersRole: "dj", usersFirst: 2, usersAfter: null,
+      postsCategory: "tech", postsFirst: 1, postsAfter: null,
     });
-    expect(call).toBeTruthy();
-
-    // materialize the same selection key the plugin should use (root heuristic)
-    const postsKey = selections.buildQuerySelectionKey('posts', {});
-    const mat = graph.materializeSelection(postsKey);
-    expect(mat && Array.isArray(mat.edges) ? mat.edges.length : 0).toBe(2);
+    const composer = session.getConnection(usersIdentity);
+    expect(composer).toBeTruthy();
+    const info = composer.inspect();
+    // should be exactly 1 page
+    expect(info.pages.length).toBe(1);
+    expect(info.pages[0]).toBe(usersPageKey);
   });
 
-  it('subscriptions: each frame updates selections and publishes a frame', () => {
-    const graph = createGraphMock();
-    const selections = createSelectionsMock();
-    const resolvers = createResolversMock();
-    const views = createViewsMock(graph);
-    const plugin = createPlugin({ addTypename: false }, { graph, selections, resolvers, views });
+  it("multi-parent nested mounting: root users page → mount per-user posts child connections", () => {
+    const plugin = createPlugin({}, { graph, planner, documents, sessions });
 
-    const doc = queryDoc(gql`
-      subscription S {
-        posts {
-          edges { cursor node { __typename id } }
-          pageInfo { endCursor }
-        }
-      }`);
-    const ctx = makeCtx(doc, {}, 'subscription');
-    plugin(ctx);
+    // seed users page with two users
+    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
+    graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "b@example.com" });
 
-    ctx.useResult({
-      data: {
-        __typename: 'Query',
-        posts: { edges: [{ cursor: 'c1', node: { __typename: 'Post', id: '1' } }], pageInfo: { endCursor: 'c1' } }
-      }
-    } as any, false);
+    const plan = planner.getPlan(USERS_POSTS_QUERY);
+    const usersField = plan.rootSelectionMap!.get("users")!;
+    const postsField = plan.rootSelectionMap!.get("users")!
+      .selectionMap!.get("edges")!
+      .selectionMap!.get("node")!
+      .selectionMap!.get("posts")!;
 
-    expect(ctx._published.length).toBe(1);
-    // Verify selection storage was touched
-    expect(graph.putSelection).toHaveBeenCalled();
-    const postsKey = selections.buildQuerySelectionKey('posts', {});
-    const mat = graph.materializeSelection(postsKey);
-    expect(mat && Array.isArray(mat.edges) ? mat.edges.length : 0).toBe(1);
-  });
+    const usersVars = {
+      usersRole: "dj", usersFirst: 2, usersAfter: null,
+      postsCategory: "tech", postsFirst: 1, postsAfter: null,
+    };
 
-  it('cache-and-network hit → non-terminal cached; then network writes selections & publishes terminal', () => {
-    const graph = createGraphMock();
-    const selections = createSelectionsMock();
-    const resolvers = createResolversMock();
-    const views = createViewsMock(graph);
-    const plugin = createPlugin({ addTypename: false }, { graph, selections, resolvers, views });
+    const usersPageKey = buildConnectionKey(usersField, ROOT_ID, usersVars);
+    seedPage(
+      graph,
+      usersPageKey,
+      [{ nodeRef: "User:u1", cursor: "u1" }, { nodeRef: "User:u2", cursor: "u2" }],
+      { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false },
+      {},
+      "UserEdge",
+      "UserConnection"
+    );
 
-    // seed cached page (1 edge) under arg-key
-    const cachedKey = selections.buildQuerySelectionKey('posts', { first: 1 });
-    graph.putSelection(cachedKey, {
-      edges: [{ cursor: 'c1', node: { __typename: 'Post', id: '1' } }],
-      pageInfo: { endCursor: 'c1', hasNextPage: true },
-    });
+    // seed nested posts page for u1 only
+    const u1PostsKey = buildConnectionKey(postsField, "User:u1", usersVars);
+    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1" });
+    seedPage(
+      graph,
+      u1PostsKey,
+      [{ nodeRef: "Post:p1", cursor: "p1" }],
+      { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false },
+      {},
+      "PostEdge",
+      "PostConnection"
+    );
 
-    const doc = queryDoc(gql`
-      query Q($first:Int){
-        posts(first:$first){
-          edges{cursor node{__typename id}}
-          pageInfo{endCursor hasNextPage}
-        }
-      }`);
-    const ctx = makeCtx(doc, { first: 1 });
-
-    ctx.operation.cachePolicy = 'cache-and-network';
-    plugin(ctx);
-
-    // cached non-terminal
-    expect(ctx._published.length).toBe(1);
-    expect(ctx._published[0].term).toBe(false);
-
-    // network frame (2 edges)
-    const networkPayload = {
-      data: {
-        __typename: 'Query',
-        posts: {
-          edges: [
-            { cursor: 'c1', node: { __typename: 'Post', id: '1' } },
-            { cursor: 'c2', node: { __typename: 'Post', id: '2' } },
-          ],
-          pageInfo: { endCursor: 'c2', hasNextPage: true },
-        },
+    const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
+    const ctx: any = {
+      operation: { key: 20, query: USERS_POSTS_QUERY, variables: usersVars, cachePolicy: "cache-first" },
+      useResult: (payload: OperationResult, terminal?: boolean) => {
+        emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
       },
     };
-    ctx.useResult(networkPayload as any, true);
 
-    // terminal publish
-    expect(ctx._published.length).toBe(2);
-    expect(ctx._published[1].term).toBe(true);
+    plugin(ctx);
+    // cache-first should emit cached frame immediately
+    expect(emissions.length).toBe(1);
+    expect(emissions[0].terminal).toBe(true);
 
-    // ensure selections got updated by plugin
-    expect(graph.putSelection).toHaveBeenCalled();
+    // the plugin created one session; verify nested composer exists for u1.posts, not for u2.posts
+    const session = (createdSessions[0] as any);
 
-    // 1) Root (heuristic) key
-    const rootKey = selections.buildQuerySelectionKey('posts', {});
-    const matRoot = graph.materializeSelection(rootKey);
-    expect(matRoot && Array.isArray(matRoot.edges) ? matRoot.edges.length : 0).toBe(2);
+    const u1PostsIdentity = buildConnectionIdentity(postsField, "User:u1", usersVars);
+    const u2PostsIdentity = buildConnectionIdentity(postsField, "User:u2", usersVars);
 
-    // 2) Arg-shaped key used by this operation
-    const argKey = selections.buildQuerySelectionKey('posts', { first: 1 });
-    const matArg = graph.materializeSelection(argKey);
-    expect(matArg && Array.isArray(matArg.edges) ? matArg.edges.length : 0).toBe(2);
+    const u1Composer = session.getConnection(u1PostsIdentity);
+    const u2Composer = session.getConnection(u2PostsIdentity);
+
+    expect(u1Composer).toBeTruthy();
+    expect(u2Composer).toBeUndefined();
+
+    const info = u1Composer.inspect();
+    expect(info.pages.length).toBe(1);
+    expect(info.pages[0]).toBe(u1PostsKey);
   });
 });
