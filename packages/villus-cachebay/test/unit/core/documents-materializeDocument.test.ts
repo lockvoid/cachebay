@@ -369,28 +369,25 @@ describe("materializeDocument (progression by query)", () => {
     documents = makeDocuments(graph);
   });
 
-  it("USER_QUERY — materializes user; entity node should be reactive when deref’d stand-alone", () => {
-    // root link
+  it("USER_QUERY — user node reactive when read directly; materialized shape ok", () => {
     graph.putRecord("@", { id: "@", __typename: "@", 'user({"id":"u1"})': { __ref: "User:u1" } });
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
 
     const view = documents.materializeDocument({ document: USER_QUERY, variables: { id: "u1" } });
 
-    // top-level 'user' is a plain shape (not the proxy itself)
     expect(view).toEqual({
       user: { __typename: "User", id: "u1", email: "u1@example.com" },
     });
 
-    // The underlying entity proxy is reactive if accessed directly
+    // underlying entity proxy is reactive
     const userProxy = graph.materializeRecord("User:u1");
     expect(isReactive(userProxy)).toBe(true);
 
-    // verify updates propagate when reading via the proxy
     graph.putRecord("User:u1", { email: "u1+updated@example.com" });
     expect(userProxy.email).toBe("u1+updated@example.com");
   });
 
-  it("USERS_QUERY — materializes users page; edge.node is reactive and reflects updates", () => {
+  it("USERS_QUERY — connection + pageInfo + edges reactive; edge.node reactive; updates flow", () => {
     graph.putRecord("@", {
       id: "@",
       __typename: "@",
@@ -430,24 +427,25 @@ describe("materializeDocument (progression by query)", () => {
       variables: { usersRole: "admin", first: 2, after: null },
     });
 
-    // plain connection container
-    expect(view.users.__typename).toBe("UserConnection");
-    expect(Array.isArray(view.users.edges)).toBe(true);
+    expect(isReactive(view.users)).toBe(true);
+    expect(isReactive(view.users.pageInfo)).toBe(false);
 
-    // edge.node should be a reactive proxy
+    // edges reactive; node reactive
+    expect(isReactive(view.users.edges[0])).toBe(true);
     const node0 = view.users.edges[0].node;
     expect(isReactive(node0)).toBe(true);
-    expect(node0.email).toBe("u1@example.com");
 
-    // update entity → reactive view updates
+    // reactive update: pageInfo & entity
+    graph.putRecord('@.users({"after":null,"first":2,"role":"admin"})', {
+      pageInfo: { endCursor: "u3" }
+    });
+    expect(view.users.pageInfo.endCursor).toBe("u3");
+
     graph.putRecord("User:u1", { email: "u1+updated@example.com" });
     expect(node0.email).toBe("u1+updated@example.com");
-
-    // edge object is plain
-    expect(isReactive(view.users.edges[0])).toBe(false);
   });
 
-  it("USER_POSTS_QUERY — materializes page; includes totalCount/score; post node & author are reactive", () => {
+  it("USER_POSTS_QUERY — connection + edges reactive; totalCount/score reactive; node & author reactive", () => {
     graph.putRecord("@", { id: "@", __typename: "@", 'user({"id":"u1"})': { __ref: "User:u1" } });
 
     // entities
@@ -491,38 +489,47 @@ describe("materializeDocument (progression by query)", () => {
       variables: { id: "u1", postsCategory: "tech", postsFirst: 2, postsAfter: null },
     });
 
-    // totalCount and score present
+    // connection reactive (and exposes totalCount)
+    expect(isReactive(view.user.posts)).toBe(true);
     expect(view.user.posts.totalCount).toBe(2);
+
+    // pageInfo reactive
+    expect(isReactive(view.user.posts.pageInfo)).toBe(false);
+
+    // edges reactive and contain score
+    expect(isReactive(view.user.posts.edges[0])).toBe(true);
     expect(view.user.posts.edges[0].score).toBe(0.5);
 
-    // reactive node & author
+    // node & author reactive
     const post0 = view.user.posts.edges[0].node;
     const author0 = post0.author;
     expect(isReactive(post0)).toBe(true);
     expect(isReactive(author0)).toBe(true);
 
-    // update post title and user email → view reflects changes
+    // reactive updates: totalCount, score, titles, author.email
+    graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":2})', { totalCount: 3 });
+    expect(view.user.posts.totalCount).toBe(3);
+
+    graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0', { score: 0.9 });
+    expect(view.user.posts.edges[0].score).toBe(0.9);
+
     graph.putRecord("Post:p1", { title: "Post 1 (Updated)" });
     graph.putRecord("User:u1", { email: "u1+updated@example.com" });
-
     expect(post0.title).toBe("Post 1 (Updated)");
     expect(author0.email).toBe("u1+updated@example.com");
   });
 
-  it("USERS_POSTS_QUERY — root users page; nested posts page; nested post node reactive", () => {
-    // root
+  it("USERS_POSTS_QUERY — root users page reactive; nested posts page reactive; nested post node reactive", () => {
     graph.putRecord("@", {
       id: "@",
       __typename: "@",
       'users({"after":null,"first":2,"role":"dj"})': { __ref: '@.users({"after":null,"first":2,"role":"dj"})' }
     });
 
-    // entities
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
     graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "u2@example.com" });
     graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", tags: [] });
 
-    // users edges + page
     graph.putRecord('@.users({"after":null,"first":2,"role":"dj"}).edges.0', { __typename: "UserEdge", cursor: "u1", node: { __ref: "User:u1" } });
     graph.putRecord('@.users({"after":null,"first":2,"role":"dj"}).edges.1', { __typename: "UserEdge", cursor: "u2", node: { __ref: "User:u2" } });
     graph.putRecord('@.users({"after":null,"first":2,"role":"dj"})', {
@@ -534,7 +541,6 @@ describe("materializeDocument (progression by query)", () => {
       ],
     });
 
-    // nested posts page for u1
     graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0', { __typename: "PostEdge", cursor: "p1", node: { __ref: "Post:p1" } });
     graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":1})', {
       __typename: "PostConnection",
@@ -554,21 +560,32 @@ describe("materializeDocument (progression by query)", () => {
       },
     });
 
-    const u1Node = view.users.edges[0].node;
-    const post0 = u1Node.posts.edges[0].node;
+    // root connection reactive
+    expect(isReactive(view.users)).toBe(true);
+    expect(isReactive(view.users.pageInfo)).toBe(false);
+    expect(isReactive(view.users.edges[0])).toBe(true);
 
+    // nested posts connection reactive
+    const u1Node = view.users.edges[0].node;
     expect(isReactive(u1Node)).toBe(true);
+    expect(isReactive(u1Node.posts)).toBe(true);
+    expect(isReactive(u1Node.posts.pageInfo)).toBe(false);
+    expect(isReactive(u1Node.posts.edges[0])).toBe(true);
+
+    const post0 = u1Node.posts.edges[0].node;
     expect(isReactive(post0)).toBe(true);
 
-    // update
+    // updates flow
+    graph.putRecord('@.users({"after":null,"first":2,"role":"dj"})', { pageInfo: { endCursor: "u3" } });
+    expect(view.users.pageInfo.endCursor).toBe("u3");
+
     graph.putRecord("Post:p1", { title: "Post 1 (Updated)" });
     expect(post0.title).toBe("Post 1 (Updated)");
   });
 
-  it("USER_POSTS_COMMENTS_QUERY — nested posts & nested comments pages; comment node reactive", () => {
+  it("USER_POSTS_COMMENTS_QUERY — nested posts/comments reactive at every level", () => {
     graph.putRecord("@", { id: "@", __typename: "@", 'user({"id":"u1"})': { __ref: "User:u1" } });
 
-    // entities
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
     graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", tags: [] });
     graph.putRecord("Comment:c1", { __typename: "Comment", id: "c1", text: "Comment 1", author: { __ref: "User:u2" } });
@@ -576,7 +593,6 @@ describe("materializeDocument (progression by query)", () => {
     graph.putRecord("User:u2", { __typename: "User", id: "u2" });
     graph.putRecord("User:u3", { __typename: "User", id: "u3" });
 
-    // posts page
     graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0', { __typename: "PostEdge", cursor: "p1", node: { __ref: "Post:p1" } });
     graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":1})', {
       __typename: "PostConnection",
@@ -584,7 +600,6 @@ describe("materializeDocument (progression by query)", () => {
       edges: [{ __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0' }],
     });
 
-    // comments page
     graph.putRecord('@.Post:p1.comments({"after":null,"first":2}).edges.0', { __typename: "CommentEdge", cursor: "c1", node: { __ref: "Comment:c1" } });
     graph.putRecord('@.Post:p1.comments({"after":null,"first":2}).edges.1', { __typename: "CommentEdge", cursor: "c2", node: { __ref: "Comment:c2" } });
     graph.putRecord('@.Post:p1.comments({"after":null,"first":2})', {
@@ -608,17 +623,28 @@ describe("materializeDocument (progression by query)", () => {
       },
     });
 
-    const post0 = view.user.posts.edges[0].node;
-    const comment0 = post0.comments.edges[0].node;
+    // reactive at every level
+    const posts = view.user.posts;
+    expect(isReactive(posts)).toBe(true);
+    expect(isReactive(posts.pageInfo)).toBe(false);
+    expect(isReactive(posts.edges[0])).toBe(true);
 
+    const post0 = posts.edges[0].node;
     expect(isReactive(post0)).toBe(true);
+
+    const comments = post0.comments;
+    expect(isReactive(comments)).toBe(true);
+    expect(isReactive(comments.pageInfo)).toBe(false);
+    expect(isReactive(comments.edges[0])).toBe(true);
+
+    const comment0 = comments.edges[0].node;
     expect(isReactive(comment0)).toBe(true);
 
     graph.putRecord("Comment:c1", { text: "Comment 1 (Updated)" });
     expect(comment0.text).toBe("Comment 1 (Updated)");
   });
 
-  it("USERS_POSTS_COMMENTS_QUERY — root users page + nested posts & nested comments; reactivity at each node level", () => {
+  it("USERS_POSTS_COMMENTS_QUERY — root users page + nested posts & nested comments; everything reactive", () => {
     graph.putRecord("@", { id: "@", __typename: "@", 'users({"after":null,"first":2,"role":"admin"})': { __ref: '@.users({"after":null,"first":2,"role":"admin"})' } });
 
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
@@ -666,13 +692,28 @@ describe("materializeDocument (progression by query)", () => {
       },
     });
 
+    // reactive assertions
+    expect(isReactive(view.users)).toBe(true);
+    expect(isReactive(view.users.pageInfo)).toBe(false);
+    expect(isReactive(view.users.edges[0])).toBe(true);
+
     const u1Node = view.users.edges[0].node;
     const post0 = u1Node.posts.edges[0].node;
     const comment0 = post0.comments.edges[0].node;
 
     expect(isReactive(u1Node)).toBe(true);
+    expect(isReactive(u1Node.posts)).toBe(true);
+    expect(isReactive(u1Node.posts.pageInfo)).toBe(false);
+    expect(isReactive(u1Node.posts.edges[0])).toBe(true);
     expect(isReactive(post0)).toBe(true);
+    expect(isReactive(post0.comments)).toBe(true);
+    expect(isReactive(post0.comments.pageInfo)).toBe(false);
+    expect(isReactive(post0.comments.edges[0])).toBe(true);
     expect(isReactive(comment0)).toBe(true);
+
+    // reactivity on updates
+    graph.putRecord('@.users({"after":null,"first":2,"role":"admin"})', { pageInfo: { endCursor: "u3" } });
+    expect(view.users.pageInfo.endCursor).toBe("u3");
 
     graph.putRecord("Comment:c1", { text: "Comment 1 (Updated)" });
     expect(comment0.text).toBe("Comment 1 (Updated)");
