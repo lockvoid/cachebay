@@ -292,33 +292,75 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
           const page = graph.getRecord(pageKey);
           if (!page) { out[field.responseKey] = undefined; continue; }
 
+          // Selection helpers for this connection branch
           const edgesField = findField(field.selectionSet, "edges");
           const nodeField = edgesField ? findField(edgesField.selectionSet, "node") : undefined;
           const pageInfoField = findField(field.selectionSet, "pageInfo");
 
+          // Conn-level scalar leaves (e.g., totalCount)
+          const connExtras: string[] = [];
+          if (field.selectionSet) {
+            for (let j = 0; j < field.selectionSet.length; j++) {
+              const f = field.selectionSet[j];
+              if (f.responseKey === "edges" || f.responseKey === "pageInfo") continue;
+              if (!f.selectionSet || f.selectionSet.length === 0) connExtras.push(f.responseKey);
+            }
+          }
+
+          // Edge-level scalar leaves (e.g., score) & whether __typename was requested
+          const edgeExtras: string[] = [];
+          const wantEdgeTypename = !!(edgesField && findField(edgesField.selectionSet, "__typename"));
           const wantCursor = !!(edgesField && findField(edgesField.selectionSet, "cursor"));
 
+          if (edgesField?.selectionSet) {
+            for (let j = 0; j < edgesField.selectionSet.length; j++) {
+              const ef = edgesField.selectionSet[j];
+              if (ef.responseKey === "node" || ef.responseKey === "__typename" || ef.responseKey === "cursor") continue;
+              if (!ef.selectionSet || ef.selectionSet.length === 0) edgeExtras.push(ef.responseKey);
+            }
+          }
+
+          // Build edges array
           const edges = Array.isArray(page.edges)
             ? page.edges.map((ref: any) => {
               const edgeRec = graph.getRecord(ref?.__ref || "");
               if (!edgeRec) return null;
-              const e: any = {};
+
+              const e: Record<string, any> = {};
+              if (wantEdgeTypename && edgeRec.__typename) e.__typename = edgeRec.__typename;
               if (wantCursor) e.cursor = edgeRec.cursor;
+
+              // selected extras (e.g., score)
+              for (let k = 0; k < edgeExtras.length; k++) {
+                const name = edgeExtras[k];
+                if (name in edgeRec) e[name] = edgeRec[name];
+              }
+
+              // node
               if (nodeField && edgeRec.node?.__ref) {
                 e.node = readEntityPlain(edgeRec.node.__ref, nodeField.selectionSet || null);
+              } else if (nodeField) {
+                e.node = undefined;
               }
               return e;
             }).filter(Boolean)
             : [];
 
-          const connOut: any = { __typename: page.__typename };
-          if (pageInfoField && page.pageInfo) connOut.pageInfo = { ...page.pageInfo };
+          // Build connection object
+          const connOut: Record<string, any> = { __typename: page.__typename };
+          // selected conn-level extras (e.g., totalCount)
+          for (let k = 0; k < connExtras.length; k++) {
+            const name = connExtras[k];
+            if (name in page) connOut[name] = page[name];
+          }
+          if (pageInfoField && page.pageInfo) connOut.pageInfo = { ...(page.pageInfo as any) };
           if (edgesField) connOut.edges = edges;
 
           out[field.responseKey] = connOut;
           continue;
         }
 
+        // Non-connection field
         const linkKey = buildFieldKey(field, variables);
         const stored = snap[linkKey] ?? snap[field.responseKey] ?? snap[field.fieldName];
 
@@ -348,23 +390,54 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
         const nodeField = edgesField ? findField(edgesField.selectionSet, "node") : undefined;
         const pageInfoField = findField(field.selectionSet, "pageInfo");
 
+        const connExtras: string[] = [];
+        if (field.selectionSet) {
+          for (let j = 0; j < field.selectionSet.length; j++) {
+            const f = field.selectionSet[j];
+            if (f.responseKey === "edges" || f.responseKey === "pageInfo") continue;
+            if (!f.selectionSet || f.selectionSet.length === 0) connExtras.push(f.responseKey);
+          }
+        }
+
+        const edgeExtras: string[] = [];
+        const wantEdgeTypename = !!(edgesField && findField(edgesField.selectionSet, "__typename"));
         const wantCursor = !!(edgesField && findField(edgesField.selectionSet, "cursor"));
+
+        if (edgesField?.selectionSet) {
+          for (let j = 0; j < edgesField.selectionSet.length; j++) {
+            const ef = edgesField.selectionSet[j];
+            if (ef.responseKey === "node" || ef.responseKey === "__typename" || ef.responseKey === "cursor") continue;
+            if (!ef.selectionSet || ef.selectionSet.length === 0) edgeExtras.push(ef.responseKey);
+          }
+        }
 
         const edges = Array.isArray(page.edges)
           ? page.edges.map((ref: any) => {
             const edgeRec = graph.getRecord(ref?.__ref || "");
             if (!edgeRec) return null;
-            const e: any = {};
+
+            const e: Record<string, any> = {};
+            if (wantEdgeTypename && edgeRec.__typename) e.__typename = edgeRec.__typename;
             if (wantCursor) e.cursor = edgeRec.cursor;
+            for (let k = 0; k < edgeExtras.length; k++) {
+              const name = edgeExtras[k];
+              if (name in edgeRec) e[name] = edgeRec[name];
+            }
             if (nodeField && edgeRec.node?.__ref) {
               e.node = readEntityPlain(edgeRec.node.__ref, nodeField.selectionSet || null);
+            } else if (nodeField) {
+              e.node = undefined;
             }
             return e;
           }).filter(Boolean)
           : [];
 
-        const connOut: any = { __typename: page.__typename };
-        if (pageInfoField && page.pageInfo) connOut.pageInfo = { ...page.pageInfo };
+        const connOut: Record<string, any> = { __typename: page.__typename };
+        for (let k = 0; k < connExtras.length; k++) {
+          const name = connExtras[k];
+          if (name in page) connOut[name] = page[name];
+        }
+        if (pageInfoField && page.pageInfo) connOut.pageInfo = { ...(page.pageInfo as any) };
         if (edgesField) connOut.edges = edges;
 
         result[field.responseKey] = connOut;
