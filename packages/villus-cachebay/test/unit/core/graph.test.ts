@@ -107,6 +107,15 @@ describe("Graph (low-level record store)", () => {
   });
 
   describe("materializeRecord", () => {
+    it("returns a shallow-reactive empty proxy unless the record is existing", () => {
+      const graph = makeGraph();
+
+      const userProxy = graph.materializeRecord("User:1")!;
+
+      expect(isReactive(userProxy)).toBe(true);
+      expect(userProxy).toEqual({});
+    });
+
     it("returns a shallow-reactive proxy and reflects subsequent record writes", () => {
       const graph = makeGraph();
 

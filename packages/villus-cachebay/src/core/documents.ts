@@ -1,6 +1,8 @@
-import type { DocumentNode, OperationDefinitionNode, SelectionSetNode, FieldNode, ArgumentNode, ValueNode } from "graphql";
 import type { GraphInstance } from "./graph";
-import { isObject, hasTypename, traverseFast, stableStringify } from "./utils";
+import { isObject, hasTypename, traverseFast, stableStringify, TRAVERSE_SKIP } from "./utils";
+export { compileToPlan, isCachePlanV1 } from "@/src/compiler";
+import { IDENTITY_FIELDS } from "./constants";
+import type { ArgBuilder, PlanField, CachePlanV1 } from "@/src/compiler";
 
 export type ConnectionOptions = {
   mode?: "infinite" | "page";
@@ -21,8 +23,10 @@ export const createDocuments = (config: DocumentsOptions, dependencies: Document
   const { graph } = dependencies;
 
   const normalizeDocument = ({ document, variables = {}, data }: { document: DocumentNode; variables?: Record<string, any>; data: any }) => {
-    traverseFast(data, (node) => {
-      // ...
+    graph.putRecord("@", { id: "@", __typename: "@" });
+
+    traverseFast(data, (parentNode, valueNode, fieldKey) => {
+
     });
   }
 

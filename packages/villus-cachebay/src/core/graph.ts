@@ -89,6 +89,68 @@ const overlayRecordFull = (recordProxy: any, recordSnapshot: Record<string, any>
 };
 
 /**
+ * Diff field changes and track what changed
+ * @private
+ */
+
+const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot: Record<string, any>): [string[], string[], boolean, boolean, boolean] => {
+  let idChanged = false;
+  let typenameChanged = false;
+  const changedFields: string[] = [];
+  const removedFields: string[] = [];
+
+  for (let i = 0, fields = Object.keys(partialSnapshot); i < fields.length; i++) {
+    const fieldName = fields[i];
+    const incomingValue = partialSnapshot[fieldName];
+
+    if (incomingValue === undefined) {
+      if (fieldName in currentSnapshot) {
+        delete currentSnapshot[fieldName];
+
+        if (fieldName === ID_FIELD) {
+          idChanged = true;
+        } else if (fieldName === TYPENAME_FIELD) {
+          typenameChanged = true;
+        } else {
+          removedFields.push(fieldName);
+        }
+      }
+
+      continue;
+    }
+
+    if (fieldName === ID_FIELD) {
+      const normalizedId = incomingValue ? String(incomingValue) : null;
+
+      if (currentSnapshot[ID_FIELD] !== normalizedId) {
+        currentSnapshot[ID_FIELD] = normalizedId;
+        idChanged = true;
+      }
+
+      continue;
+    }
+
+    if (fieldName === TYPENAME_FIELD) {
+      if (currentSnapshot[TYPENAME_FIELD] !== incomingValue) {
+        currentSnapshot[TYPENAME_FIELD] = incomingValue;
+        typenameChanged = true;
+      }
+
+      continue;
+    }
+
+    if (currentSnapshot[fieldName] !== incomingValue) {
+      currentSnapshot[fieldName] = incomingValue;
+      changedFields.push(fieldName);
+    }
+  }
+
+  const hasChanges = idChanged || typenameChanged || changedFields.length > 0 || removedFields.length > 0;
+
+  return [changedFields, removedFields, typenameChanged, idChanged, hasChanges];
+};
+
+/**
  * Unified identity manager handling key parsing, interface resolution, and keyer functions
  * @private
  */
@@ -180,98 +242,30 @@ export const createGraph = (options: GraphOptions) => {
    * Update record with partial data, undefined values delete fields
    */
   const putRecord = (recordId: string, partialSnapshot: Record<string, any>): void => {
-    const existingSnapshot = recordStore.get(recordId);
-    const currentSnapshot = existingSnapshot || {};
-    const changedFields: string[] = [];
-    const removedFields: string[] = [];
+    const currentSnapshot = recordStore.get(recordId) || {};
 
-    let typenameChanged = false;
-    let idChanged = false;
+    const changes = applyFieldChanges(currentSnapshot, partialSnapshot); // NOTE: Don't destructure for performance
 
-    // Process incoming changes
-    const incomingFields = Object.keys(partialSnapshot);
-    for (let i = 0; i < incomingFields.length; i++) {
-      const fieldName = incomingFields[i];
-      const incomingValue = partialSnapshot[fieldName];
-
-      if (incomingValue === undefined) {
-        // Handle deletions
-        if (fieldName in currentSnapshot) {
-          if (fieldName === TYPENAME_FIELD) {
-            typenameChanged = true;
-          } else if (fieldName === ID_FIELD) {
-            idChanged = true;
-          } else {
-            removedFields.push(fieldName);
-          }
-          delete currentSnapshot[fieldName];
-        }
-        continue;
-      }
-
-      // Handle __typename
-      if (fieldName === TYPENAME_FIELD) {
-        if (currentSnapshot[TYPENAME_FIELD] !== incomingValue) {
-          currentSnapshot[TYPENAME_FIELD] = incomingValue;
-          typenameChanged = true;
-        }
-        continue;
-      }
-
-      // Handle id with normalization
-      if (fieldName === ID_FIELD) {
-        const normalizedId = incomingValue != null ? String(incomingValue) : incomingValue;
-        if (currentSnapshot[ID_FIELD] !== normalizedId) {
-          if (normalizedId != null) {
-            currentSnapshot[ID_FIELD] = normalizedId;
-          } else {
-            delete currentSnapshot[ID_FIELD];
-          }
-          idChanged = true;
-        }
-        continue;
-      }
-
-      // Handle regular fields
-      if (currentSnapshot[fieldName] !== incomingValue) {
-        currentSnapshot[fieldName] = incomingValue;
-        changedFields.push(fieldName);
-      }
+    if (!changes[4]) {
+      return;
     }
 
-    const hadChanges = typenameChanged || idChanged ||
-      changedFields.length > 0 || removedFields.length > 0;
+    const nextVersion = (recordVersionStore.get(recordId) || 0) + 1;
 
-    if (!existingSnapshot && !hadChanges) {
-      // New empty record
-      recordStore.set(recordId, { ...currentSnapshot });
-      recordVersionStore.set(recordId, (recordVersionStore.get(recordId) || 0) + 1);
-    } else if (hadChanges) {
-      // Commit changes
-      if (!existingSnapshot) {
-        recordStore.set(recordId, { ...currentSnapshot });
-      }
-      const nextVersion = (recordVersionStore.get(recordId) || 0) + 1;
-      recordStore.set(recordId, currentSnapshot);
-      recordVersionStore.set(recordId, nextVersion);
+    // Store next version
 
-      // Update proxy if it exists
-      const weakReference = recordProxyStore.get(recordId);
-      const recordProxy = weakReference?.deref?.();
+    recordStore.set(recordId, currentSnapshot);
+    recordVersionStore.set(recordId, nextVersion);
 
-      if (recordProxy) {
-        overlayRecordDiff(
-          recordProxy,
-          currentSnapshot,
-          changedFields,
-          removedFields,
-          typenameChanged,
-          idChanged,
-          nextVersion
-        );
-      } else if (weakReference) {
-        recordProxyStore.delete(recordId);
-      }
+    // Proxy next version
+
+    const proxyRef = recordProxyStore.get(recordId);
+    const proxy = proxyRef?.deref();
+
+    if (proxy) {
+      overlayRecordDiff(proxy, currentSnapshot, changes[0], changes[1], changes[2], changes[3], nextVersion);
+    } else if (proxyRef) {
+      recordProxyStore.delete(recordId);
     }
   };
 
@@ -279,51 +273,49 @@ export const createGraph = (options: GraphOptions) => {
    * Delete record and clear its proxy
    */
   const removeRecord = (recordId: string): void => {
-    recordStore.delete(recordId);
-    recordVersionStore.delete(recordId);
+    const proxyRef = recordProxyStore.get(recordId);
 
-    const weakReference = recordProxyStore.get(recordId);
-    const recordProxy = weakReference?.deref?.();
+    if (proxyRef) {
+      const proxy = proxyRef.deref();
 
-    if (recordProxy) {
-      const proxyKeys = Object.keys(recordProxy);
-      for (let i = 0; i < proxyKeys.length; i++) {
-        delete recordProxy[proxyKeys[i]];
+      if (proxy) {
+        for (let i = 0, keys = Object.keys(proxy); i < keys.length; i++) {
+          delete proxy[keys[i]];
+        }
       }
     }
 
+    recordStore.delete(recordId);
     recordProxyStore.delete(recordId);
+    recordVersionStore.delete(recordId);
   };
 
   /**
    * Get or create reactive proxy for record
    */
-  const materializeRecord = (recordId: string): any | undefined => {
-    const recordSnapshot = recordStore.get(recordId);
-    if (!recordSnapshot) return undefined;
-
+  const materializeRecord = (recordId: string): any => {
+    const recordSnapshot = recordStore.get(recordId) || {};
     const currentVersion = recordVersionStore.get(recordId) || 0;
-    const weakReference = recordProxyStore.get(recordId);
-    const cachedProxy = weakReference?.deref?.();
+    const proxyRef = recordProxyStore.get(recordId);
+    const proxy = proxyRef?.deref();
 
-    if (cachedProxy) {
-      const proxyVersion = cachedProxy[RECORD_PROXY_VERSION];
-      if (proxyVersion === currentVersion) {
-        return cachedProxy;
-      }
-      // Sync proxy with current version
-      overlayRecordFull(cachedProxy, recordSnapshot, currentVersion);
-      return cachedProxy;
-    } else if (weakReference) {
+    if (proxy && proxy[RECORD_PROXY_VERSION] === currentVersion) {
+      return proxy;
+    }
+
+    if (proxyRef && !proxy) {
       recordProxyStore.delete(recordId);
     }
 
-    // Create new proxy
-    const recordProxy = shallowReactive({} as any);
-    overlayRecordFull(recordProxy, recordSnapshot, currentVersion);
-    recordProxyStore.set(recordId, new WeakRef(recordProxy));
+    const targetProxy = proxy || shallowReactive({} as any);
 
-    return recordProxy;
+    overlayRecordFull(targetProxy, recordSnapshot, currentVersion);
+
+    if (!proxy) {
+      recordProxyStore.set(recordId, new WeakRef(targetProxy));
+    }
+
+    return targetProxy;
   };
 
   /**
