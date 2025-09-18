@@ -116,6 +116,19 @@ export const buildConnectionKey = (
   return `${prefix}${field.fieldName}(${field.stringifyArgs(variables)})`;
 };
 
+export const buildConnectionIdentityKey = (
+  field: PlanField,
+  parentRecordId: string,
+  variables: Record<string, any>
+) => {
+  const args = field.buildArgs(variables) || {};
+  const names = field.connectionArgs ?? Object.keys(args).filter(k => !["first", "last", "after", "before"].includes(k));
+  const identity: Record<string, any> = {};
+  for (let i = 0; i < names.length; i++) identity[names[i]] = args[names[i]];
+  const prefix = parentRecordId === ROOT_ID ? "@." : `@.${parentRecordId}.`;
+  return `${prefix}${field.fieldName}(${JSON.stringify(identity)})#identity`;
+};
+
 export const upsertEntityShallow = (graph: GraphInstance, node: any): string | null => {
   const entityKey = graph.identify(node);
   if (!entityKey) return null;

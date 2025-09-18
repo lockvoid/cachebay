@@ -52,7 +52,7 @@ export const USERS_QUERY = gql`
   ${USER_FRAGMENT}
 
   query UsersQuery($usersRole: String, $first: Int, $after: String) {
-    users(role: $usersRole, first: $first, after: $after) {
+    users(role: $usersRole, first: $first, after: $after) @connection(args: ["role"]) {
       __typename
 
       pageInfo {
@@ -86,7 +86,7 @@ export const USER_POSTS_QUERY = gql`
 
       ...UserFields
 
-      posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) {
+      posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
         __typename
         totalCount
 
@@ -132,7 +132,7 @@ export const USERS_POSTS_QUERY = gql`
     $postsFirst: Int
     $postsAfter: String
   ) {
-    users(role: $usersRole, first: $usersFirst, after: $usersAfter) {
+    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
       __typename
 
       pageInfo {
@@ -151,7 +151,7 @@ export const USERS_POSTS_QUERY = gql`
 
           ...UserFields
 
-          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) {
+          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
             __typename
 
             pageInfo {
@@ -197,7 +197,7 @@ export const USER_POSTS_COMMENTS_QUERY = gql`
 
       ...UserFields
 
-      posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) {
+      posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
         __typename
 
         pageInfo {
@@ -216,7 +216,7 @@ export const USER_POSTS_COMMENTS_QUERY = gql`
 
             ...PostFields
 
-            comments(first: $commentsFirst, after: $commentsAfter) {
+            comments(first: $commentsFirst, after: $commentsAfter) @connection(args: []) {
               __typename
 
               pageInfo {
@@ -265,7 +265,7 @@ export const USERS_POSTS_COMMENTS_QUERY = gql`
     $commentsFirst: Int
     $commentsAfter: String
   ) {
-    users(role: $usersRole, first: $usersFirst, after: $usersAfter) {
+    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
       __typename
 
       pageInfo {
@@ -285,7 +285,7 @@ export const USERS_POSTS_COMMENTS_QUERY = gql`
 
           ...UserFields
 
-          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) {
+          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
             __typename
 
             pageInfo {
@@ -305,7 +305,7 @@ export const USERS_POSTS_COMMENTS_QUERY = gql`
 
                 ...PostFields
 
-                comments(first: $commentsFirst, after: $commentsAfter) {
+                comments(first: $commentsFirst, after: $commentsAfter) @connection(args: []) {
                   __typename
 
                   pageInfo {
@@ -346,41 +346,19 @@ const makeGraph = () =>
     },
   });
 
-
 const makePlanner = () => {
-  return createPlanner({
-    connections: {
-      Query: {
-        users: { mode: "infinite", args: ["role"] }
-      },
+  return createPlanner(); // compiler uses @connection in documents
+};
 
-      User: {
-        posts: { mode: "infinite", args: ["category"] }
-      },
-
-      Post: {
-        comments: { mode: "infinite" }
-      },
-    },
-  });
-}
-
-
-const makeViews = (graph) => {
+const makeViews = (graph: ReturnType<typeof createGraph>) => {
   return createViews({ graph });
-}
+};
 
-const makeDocuments = (graph: ReturnType<typeof createGraph>, planner: ReturnType<typeof createPlanner>, views: ReturnType<typeof makeViews>) =>
-  createDocuments(
-    {
-      connections: {
-        Query: { users: { mode: "infinite", args: ["role"] } },
-        User: { posts: { mode: "infinite", args: ["category"] } },
-        Post: { comments: { mode: "infinite" } },
-      },
-    },
-    { graph, planner, views }
-  );
+const makeDocuments = (
+  graph: ReturnType<typeof createGraph>,
+  planner: ReturnType<typeof createPlanner>,
+  views: ReturnType<typeof makeViews>
+) => createDocuments({ graph, planner, views });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests

@@ -1,3 +1,4 @@
+// src/core/fragments.ts
 import type { DocumentNode } from "graphql";
 import {
   compileToPlan,
@@ -5,17 +6,20 @@ import {
   type CachePlanV1,
   type PlanField,
 } from "@/src/compiler";
-import { ROOT_ID, IDENTITY_FIELDS } from "./constants";
-import { isObject, hasTypename, upsertEntityShallow } from "./utils";
+import { ROOT_ID } from "./constants";
+import { isObject, hasTypename, upsertEntityShallow, buildConnectionKey } from "./utils";
 import type { GraphInstance } from "./graph";
 import type { ViewsAPI } from "./views";
+import type { PlannerInstance } from "./planner";
 
 export type FragmentsOptions = {
+  // kept for API compatibility; ignored (compiler uses @connection)
   connections?: Record<string, Record<string, { mode?: "infinite" | "page"; args?: string[] }>>;
 };
 
 export type FragmentsDependencies = {
   graph: GraphInstance;
+  planner: PlannerInstance;
   views: ViewsAPI; // createViews({ graph })
 };
 
@@ -33,39 +37,17 @@ export type WriteFragmentArgs = {
 };
 
 export const createFragments = (
-  options: FragmentsOptions,
+  _options: FragmentsOptions,
   deps: FragmentsDependencies
 ) => {
-  const { graph, views } = deps;
-
-  // Plan cache per DocumentNode to avoid recompiling fragments
-  const planCache = new WeakMap<DocumentNode, CachePlanV1>();
-
-  const getPlan = (docOrPlan: DocumentNode | CachePlanV1): CachePlanV1 => {
-    if (isCachePlanV1(docOrPlan)) return docOrPlan;
-    const hit = planCache.get(docOrPlan);
-    if (hit) return hit;
-    const plan = compileToPlan(docOrPlan, { connections: options.connections || {} });
-    planCache.set(docOrPlan, plan);
-    return plan;
-  };
-
-  const buildFieldKey = (field: PlanField, variables: Record<string, any>) => {
-    // stringifyArgs receives raw variables; it applies buildArgs internally
-    return `${field.fieldName}(${field.stringifyArgs(variables)})`;
-  };
-
-  const buildConnectionKey = (field: PlanField, parentRecordId: string, variables: Record<string, any>) => {
-    const prefix = parentRecordId === ROOT_ID ? "@." : `@.${parentRecordId}.`;
-    return `${prefix}${field.fieldName}(${field.stringifyArgs(variables)})`;
-  };
+  const { graph, planner, views } = deps;
 
   /** Reactive read of a fragment selection over an entity. */
   const readFragment = ({ id, fragment, variables = {} }: ReadFragmentArgs): any => {
-    const plan = getPlan(fragment);
+    const plan = planner.getPlan(fragment);
     const proxy = graph.materializeRecord(id);
     if (!proxy) return undefined; // if your graph returns a reactive empty proxy, this will be truthy
-    // NEW SIGNATURE: pass selectionSet AND selectionMap from the compiler
+    // pass selectionSet AND selectionMap per new views signature
     return views.getEntityView(proxy, plan.root, plan.rootSelectionMap, variables);
   };
 
@@ -73,7 +55,7 @@ export const createFragments = (
   const writeFragment = ({ id, fragment, data, variables = {} }: WriteFragmentArgs): void => {
     if (!data || typeof data !== "object") return;
 
-    const plan = getPlan(fragment);
+    const plan = planner.getPlan(fragment);
 
     // Ensure the parent record exists
     const parentProxy = graph.materializeRecord(id);

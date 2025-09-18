@@ -3,6 +3,7 @@ import gql from "graphql-tag";
 import { createGraph } from "@/src/core/graph";
 import { createViews } from "@/src/core/views";
 import { createDocuments } from "@/src/core/documents";
+import { createPlanner } from "@/src/core/planner";
 import { ROOT_ID } from "@/src/core/constants";
 import { compileToPlan } from "@/src/compiler";
 
@@ -22,7 +23,7 @@ const USER_QUERY = gql`
 
 const USERS_QUERY = gql`
   query UsersQuery($usersRole: String, $usersFirst: Int, $usersAfter: String) {
-    users(role: $usersRole, first: $usersFirst, after: $usersAfter) {
+    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
       __typename
       pageInfo {
         __typename
@@ -51,7 +52,7 @@ const MIXED_QUERY = gql`
       id
       email
     }
-    users(role: $usersRole, first: $usersFirst, after: $usersAfter) {
+    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
       __typename
       pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
       edges { __typename cursor node { __typename id } }
@@ -69,14 +70,11 @@ const makeGraph = () =>
   });
 
 const makeDocuments = (graph: ReturnType<typeof createGraph>) =>
-  createDocuments(
-    {
-      connections: {
-        Query: { users: { mode: "infinite", args: ["role"] } },
-      },
-    },
-    { graph, views: createViews({ graph }) }
-  );
+  createDocuments({
+    graph,
+    views: createViews({ graph }),
+    planner: createPlanner(), // compiler uses @connection in documents
+  });
 
 // For USERS_QUERY with { usersRole: "dj", usersFirst: 2, usersAfter: null }
 const USERS_PAGE_KEY = '@.users({"after":null,"first":2,"role":"dj"})';
@@ -182,9 +180,7 @@ describe("documents.hasDocument", () => {
   });
 
   it("precompiled plan (CachePlanV1) is accepted", () => {
-    const plan = compileToPlan(USERS_QUERY, {
-      connections: { Query: { users: { mode: "infinite", args: ["role"] } } },
-    });
+    const plan = compileToPlan(USERS_QUERY);
 
     // seed page
     graph.putRecord(USERS_PAGE_KEY, {

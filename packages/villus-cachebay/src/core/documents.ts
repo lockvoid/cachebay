@@ -1,20 +1,10 @@
 import { isObject, hasTypename, traverseFast, buildFieldKey, buildConnectionKey, upsertEntityShallow, TRAVERSE_SKIP } from "./utils";
-import { IDENTITY_FIELDS, ROOT_ID } from "./constants";
-import {
-  compileToPlan,
-  isCachePlanV1,
-  type CachePlanV1,
-  type PlanField,
-} from "@/src/compiler";
-
+import { ROOT_ID } from "./constants";
+import type { CachePlanV1, PlanField } from "@/src/compiler";
 import type { DocumentNode } from "graphql";
 import type { GraphInstance } from "./graph";
 import type { ViewsInstance } from "./views";
 import type { PlannerInstance } from "./planner";
-
-export type DocumentsOptions = {
-  connections: Record<string, Record<string, { mode?: "infinite" | "page"; args?: string[] }>>;
-};
 
 export type DocumentsDependencies = {
   graph: GraphInstance;
@@ -24,7 +14,7 @@ export type DocumentsDependencies = {
 
 export type DocumentsInstance = ReturnType<typeof createDocuments>;
 
-export const createDocuments = (options: DocumentsOptions, deps: DocumentsDependencies) => {
+export const createDocuments = (deps: DocumentsDependencies) => {
   const { graph, views, planner } = deps;
 
   const ensureRoot = () => {
@@ -43,7 +33,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
     ensureRoot();
 
     const plan = planner.getPlan(document);
-    const isQuery = (plan as any).operation ? (plan as any).operation === "query" : (plan as any).opKind === "query";
+    const isQuery = plan.operation === "query";
 
     type Frame = {
       parentRecordId: string;
@@ -55,7 +45,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
     const initialFrame: Frame = {
       parentRecordId: ROOT_ID,
       fields: plan.root,
-      fieldsMap: plan.rootSelectionMap ?? new Map<string, PlanField>(), // use compiler-provided map
+      fieldsMap: plan.rootSelectionMap ?? new Map<string, PlanField>(),
       insideConnection: false,
     };
 
@@ -68,7 +58,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
         ? frame.fieldsMap.get(responseKey)
         : undefined;
 
-      // Connection page — store page & (only for queries) link parent field(full args)
+      // Connection page — store page & (only for queries) link parent field (full args)
       if (planField && planField.isConnection && isObject(valueNode)) {
         const pageKey = buildConnectionKey(planField, parentRecordId, variables);
         const fieldKey = buildFieldKey(planField, variables);
@@ -180,7 +170,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
       }
 
       const linkKey = buildFieldKey(field, variables);
-      const link = rootSnap[linkKey];
+      const link = (rootSnap as any)[linkKey];
 
       if (!link?.__ref) {
         result[field.responseKey] = undefined;
@@ -194,7 +184,6 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
       }
 
       if (!field.selectionSet || field.selectionSet.length === 0) {
-        // pass null selection and undefined map to the new signature
         result[field.responseKey] = views.getEntityView(entityProxy, null, undefined, variables);
         continue;
       }
@@ -220,8 +209,42 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
     return result;
   };
 
+  const hasDocument = ({
+    document,
+    variables = {},
+  }: {
+    document: DocumentNode | CachePlanV1;
+    variables?: Record<string, any>;
+  }): boolean => {
+    const plan = planner.getPlan(document);
+
+    // fragments aren't checked here; this is an operations helper
+    if (plan.operation === "fragment") {
+      return false;
+    }
+
+    const rootSnap = graph.getRecord(ROOT_ID) || {};
+
+    for (let i = 0; i < plan.root.length; i++) {
+      const field = plan.root[i];
+
+      if (field.isConnection) {
+        const pageKey = buildConnectionKey(field, ROOT_ID, variables);
+        if (!graph.getRecord(pageKey)) return false;
+        continue;
+      }
+
+      const linkKey = buildFieldKey(field, variables);
+      const link = (rootSnap as any)[linkKey];
+      if (!link?.__ref) return false;
+    }
+
+    return true;
+  };
+
   return {
     normalizeDocument,
     materializeDocument,
+    hasDocument,
   };
 };

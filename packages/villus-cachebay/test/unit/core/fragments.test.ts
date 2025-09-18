@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { isReactive } from "vue";
 import gql from "graphql-tag";
 import { createGraph } from "@/src/core/graph";
+import { createPlanner } from "@/src/core/planner";
 import { createViews } from "@/src/core/views";
 import { createFragments } from "@/src/core/fragments";
 
@@ -17,7 +18,7 @@ const USER_POSTS_FRAGMENT = gql`
   fragment UserPosts on User {
     id
     email
-    posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) {
+    posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
       __typename
       totalCount
       pageInfo {
@@ -46,7 +47,7 @@ const POST_COMMENTS_FRAGMENT = gql`
   fragment PostWithComments on Post {
     id
     title
-    comments(first: $commentsFirst, after: $commentsAfter) {
+    comments(first: $commentsFirst, after: $commentsAfter) @connection(args: []) {
       __typename
       pageInfo {
         __typename
@@ -78,26 +79,32 @@ const makeGraph = () =>
     interfaces: { Post: ["AudioPost", "VideoPost"] },
   });
 
-const makeFragments = (graph: ReturnType<typeof createGraph>) =>
+
+const makePlanner = () => {
+  // no options — compiler reads @connection
+  return createPlanner();
+};
+
+
+const makeFragments = (graph: ReturnType<typeof createGraph>, planner: ReturnType<typeof makePlanner>) =>
   createFragments(
     {
-      connections: {
-        User: { posts: { mode: "infinite", args: ["category"] } },
-        Post: { comments: { mode: "infinite" } },
-      },
+      // options kept for API compatibility; ignored (compiler uses @connection)
     },
-    { graph, views: createViews({ graph }) }
+    { graph, planner, views: createViews({ graph }) }
   );
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("readFragment (reactive)", () => {
   let graph: ReturnType<typeof createGraph>;
+  let planner: ReturnType<typeof makePlanner>;
   let fragments: ReturnType<typeof makeFragments>;
 
   beforeEach(() => {
     graph = makeGraph();
-    fragments = makeFragments(graph);
+    planner = makePlanner();
+    fragments = makeFragments(graph, planner);
   });
 
   it("UserFields — reactive user view", () => {
@@ -221,11 +228,13 @@ describe("readFragment (reactive)", () => {
 
 describe("writeFragment (targeted)", () => {
   let graph: ReturnType<typeof createGraph>;
+  let planner: ReturnType<typeof makePlanner>;
   let fragments: ReturnType<typeof makeFragments>;
 
   beforeEach(() => {
     graph = makeGraph();
-    fragments = makeFragments(graph);
+    planner = makePlanner();
+    fragments = makeFragments(graph, planner);
   });
 
   it("UserFields — writes entity fields shallowly", () => {
