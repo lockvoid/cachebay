@@ -1,4 +1,4 @@
-import { IDENTITY_FIELDS } from "./constants";
+import { IDENTITY_FIELDS, ROOT_ID } from "./constants";
 import type { EntityKey, RelayOptions } from "./types";
 
 export const TRAVERSE_SKIP = Symbol('traverse:skip');
@@ -100,4 +100,18 @@ export const traverseFast = (root: any, context: any, visit: (parentNode: any, v
       }
     }
   }
+};
+
+export const buildFieldKey = (field: PlanField, variables: Record<string, any>): string => {
+  // Per your contract: stringifyArgs receives raw variables and applies buildArgs internally
+  return `${field.fieldName}(${field.stringifyArgs(variables)})`;
+};
+
+export const buildConnectionKey = (
+  field: PlanField,
+  parentRecordId: string,
+  variables: Record<string, any>
+): string => {
+  const prefix = parentRecordId === ROOT_ID ? "@." : `@.${parentRecordId}.`;
+  return `${prefix}${field.fieldName}(${field.stringifyArgs(variables)})`;
 };

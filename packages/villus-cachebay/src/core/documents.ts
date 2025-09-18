@@ -1,4 +1,4 @@
-import { isObject, hasTypename, traverseFast, TRAVERSE_SKIP } from "./utils";
+import { isObject, hasTypename, traverseFast, buildFieldKey, buildConnectionKey, TRAVERSE_SKIP } from "./utils";
 import { IDENTITY_FIELDS, ROOT_ID } from "./constants";
 import {
   compileToPlan,
@@ -22,19 +22,6 @@ export type DocumentsDependencies = {
 
 export type DocumentsInstance = ReturnType<typeof createDocuments>;
 
-const buildFieldKey = (field: PlanField, variables: Record<string, any>): string => {
-  // Per your contract: stringifyArgs receives raw variables and applies buildArgs internally
-  return `${field.fieldName}(${field.stringifyArgs(variables)})`;
-};
-
-const buildConnectionKey = (
-  field: PlanField,
-  parentRecordId: string,
-  variables: Record<string, any>
-): string => {
-  const prefix = parentRecordId === ROOT_ID ? "@." : `@.${parentRecordId}.`;
-  return `${prefix}${field.fieldName}(${field.stringifyArgs(variables)})`;
-};
 
 // Build a Map from a PlanField[] (used only for root; for nested we use field.selectionMap)
 const mapFrom = (fields: PlanField[] | null | undefined): Map<string, PlanField> => {

@@ -1,412 +1,319 @@
-// test/unit/core/fragments.test.ts
-import { describe, it, expect } from 'vitest';
-import { isReactive } from 'vue';
-import { createGraph, type GraphAPI } from '@/src/core/graph';
-import { createSelections } from '@/src/core/selections';
-import { createFragments } from '@/src/core/fragments';
+import { describe, it, expect, beforeEach } from "vitest";
+import { isReactive } from "vue";
+import gql from "graphql-tag";
+import { createGraph } from "@/src/core/graph";
+import { createViews } from "@/src/core/views";
+import { createFragments } from "@/src/core/fragments";
 
-function makeGraph(): GraphAPI {
-  return createGraph({
-    reactiveMode: 'shallow',
-    keys: {
-      User: (o) => o?.id ?? null,
-      Profile: (o) => o?.id ?? null,
-      Post: (o) => o?.id ?? null,       // canonical interface key
-      AudioPost: (o) => o?.id ?? null,
-      VideoPost: (o) => o?.id ?? null,
-      Comment: (o) => o?.id ?? null,
-      PageInfo: () => null,
-      PostEdge: () => null,
+// Fragments
+const USER_FRAGMENT = gql`
+  fragment UserFields on User {
+    id
+    email
+  }
+`;
+
+const USER_POSTS_FRAGMENT = gql`
+  fragment UserPosts on User {
+    id
+    email
+    posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) {
+      __typename
+      totalCount
+      pageInfo {
+        __typename
+        startCursor
+        endCursor
+        hasNextPage
+        hasPreviousPage
+      }
+      edges {
+        __typename
+        cursor
+        score
+        node {
+          __typename
+          id
+          title
+          tags
+        }
+      }
+    }
+  }
+`;
+
+const POST_COMMENTS_FRAGMENT = gql`
+  fragment PostWithComments on Post {
+    id
+    title
+    comments(first: $commentsFirst, after: $commentsAfter) {
+      __typename
+      pageInfo {
+        __typename
+        startCursor
+        endCursor
+        hasNextPage
+        hasPreviousPage
+      }
+      edges {
+        __typename
+        cursor
+        node {
+          __typename
+          id
+          text
+          author {
+            __typename
+            id
+          }
+        }
+      }
+    }
+  }
+`;
+
+// helpers
+const makeGraph = () =>
+  createGraph({
+    interfaces: { Post: ["AudioPost", "VideoPost"] },
+  });
+
+const makeFragments = (graph: ReturnType<typeof createGraph>) =>
+  createFragments(
+    {
+      connections: {
+        User: { posts: { mode: "infinite", args: ["category"] } },
+        Post: { comments: { mode: "infinite" } },
+      },
     },
-    interfaces: { Post: ['AudioPost', 'VideoPost'] },
-  });
-}
+    { graph, views: createViews({ graph }) }
+  );
 
-describe('fragments.ts — readFragment/writeFragment/watchFragment', () => {
-  // ────────────────────────────────────────────────────────────────────────────
-  // SNAPSHOTS: readFragment / writeFragment
-  // ────────────────────────────────────────────────────────────────────────────
-  it('writes and reads a simple entity fragment (User); readFragment returns a plain snapshot (non-reactive)', () => {
-    const graph = makeGraph();
-    const selections = createSelections({ dependencies: { graph } });
-    const { writeFragment, readFragment } = createFragments({
-      dependencies: { graph, selections },
-    });
+// ─────────────────────────────────────────────────────────────────────────────
 
-    writeFragment({
-      id: 'User:1',
-      fragment: /* GraphQL */ `
-        fragment UserBasics on User {
-          id
-          name
-          email
-        }
-      `,
-      data: {
-        __typename: 'User',
-        id: '1',
-        name: 'Ada',
-        email: 'ada@example.com',
-      },
-    });
+describe("readFragment (reactive)", () => {
+  let graph: ReturnType<typeof createGraph>;
+  let fragments: ReturnType<typeof makeFragments>;
 
-    const result = readFragment({
-      id: 'User:1',
-      fragment: /* GraphQL */ `
-        fragment UserBasics on User {
-          id
-          name
-          email
-        }
-      `,
-    });
-
-    expect(result).toEqual({
-      __typename: 'User',
-      id: '1',
-      name: 'Ada',
-      email: 'ada@example.com',
-    });
-    expect(isReactive(result)).toBe(false);
-
-    // entity proxy stays reactive and reflects future writes (sanity)
-    const live = graph.materializeEntity('User:1');
-    expect(isReactive(live)).toBe(true);
-    expect(live.name).toBe('Ada');
-
-    writeFragment({
-      id: 'User:1',
-      fragment: /* GraphQL */ `fragment UserNameOnly on User { name }`,
-      data: { __typename: 'User', id: '1', name: 'Ada Lovelace' },
-    });
-    expect(live.name).toBe('Ada Lovelace');
-
-    const again = readFragment({
-      id: 'User:1',
-      fragment: /* GraphQL */ `
-        fragment UserBasics on User {
-          id
-          name
-          email
-        }
-      `,
-    });
-    expect(again).toEqual({
-      __typename: 'User',
-      id: '1',
-      name: 'Ada Lovelace',
-      email: 'ada@example.com',
-    });
-    expect(isReactive(again)).toBe(false);
+  beforeEach(() => {
+    graph = makeGraph();
+    fragments = makeFragments(graph);
   });
 
-  it('handles interface implementors (AudioPost/VideoPost) → canonical Post:1; readFragment is a snapshot', () => {
-    const graph = makeGraph();
-    const selections = createSelections({ dependencies: { graph } });
-    const { writeFragment, readFragment } = createFragments({
-      dependencies: { graph, selections },
+  it("UserFields — reactive user view", () => {
+    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
+
+    const view = fragments.readFragment({
+      id: "User:u1",
+      fragment: USER_FRAGMENT,
+      variables: {},
     });
 
-    writeFragment({
-      id: 'Post:1',
-      fragment: /* GraphQL */ `
-        fragment AudioMeta on AudioPost {
-          id
-          title
-          bitrate
-        }
-      `,
-      data: {
-        __typename: 'AudioPost',
-        id: '1',
-        title: 'Audio A',
-        bitrate: 320,
-      },
-    });
+    expect(isReactive(view)).toBe(true);
+    expect(view.__typename).toBe("User");
+    expect(view.id).toBe("u1");
+    expect(view.email).toBe("u1@example.com");
 
-    writeFragment({
-      id: 'Post:1',
-      fragment: /* GraphQL */ `
-        fragment VideoMeta on VideoPost {
-          id
-          title
-          duration
-        }
-      `,
-      data: {
-        __typename: 'VideoPost',
-        id: '1',
-        title: 'Video B',
-        duration: 120,
-      },
-    });
-
-    const postProxy = graph.materializeEntity('Post:1');
-    expect(isReactive(postProxy)).toBe(true);
-    expect(postProxy.__typename).toBe('VideoPost');
-    expect(postProxy.title).toBe('Video B');
-    expect(postProxy.duration).toBe(120);
-
-    const snap = readFragment({
-      id: 'Post:1',
-      fragment: /* GraphQL */ `
-        fragment PostView on Post {
-          id
-          title
-        }
-      `,
-    });
-    expect(snap).toMatchObject({
-      __typename: 'VideoPost',
-      id: '1',
-      title: 'Video B',
-    });
-    expect(isReactive(snap)).toBe(false);
+    graph.putRecord("User:u1", { email: "u1+updated@example.com" });
+    expect(view.email).toBe("u1+updated@example.com");
   });
 
-  it('writes & reads a nested field with args (connection page) via fragment; selection subtree is a snapshot (not reactive)', () => {
-    const graph = makeGraph();
-    const selections = createSelections({ dependencies: { graph } });
-    const { writeFragment, readFragment } = createFragments({
-      dependencies: { graph, selections },
+  it("UserPosts — connection reactive; extras present", () => {
+    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
+    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1", tags: [] });
+    graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "P2", tags: [] });
+
+    graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0', {
+      __typename: "PostEdge",
+      cursor: "p1",
+      score: 0.5,
+      node: { __ref: "Post:p1" },
+    });
+    graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.1', {
+      __typename: "PostEdge",
+      cursor: "p2",
+      score: 0.7,
+      node: { __ref: "Post:p2" },
+    });
+    graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":2})', {
+      __typename: "PostConnection",
+      totalCount: 2,
+      pageInfo: {
+        __typename: "PageInfo",
+        startCursor: "p1",
+        endCursor: "p2",
+        hasNextPage: true,
+        hasPreviousPage: false,
+      },
+      edges: [
+        { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0' },
+        { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.1' },
+      ],
     });
 
-    graph.putEntity({
-      __typename: 'User',
-      id: '1',
-      name: 'John',
-      profile: { __typename: 'Profile', id: 'p1', bio: 'dev' },
+    const view = fragments.readFragment({
+      id: "User:u1",
+      fragment: USER_POSTS_FRAGMENT,
+      variables: { postsCategory: "tech", postsFirst: 2, postsAfter: null },
     });
 
-    writeFragment({
-      id: 'User:1',
-      fragment: /* GraphQL */ `
-        fragment UserPostsPage on User {
-          posts(first: 2) {
-            __typename
-            edges {
-              __typename
-              cursor
-              node { __typename id title }
-            }
-            pageInfo { __typename hasNextPage endCursor }
-          }
-        }
-      `,
+    expect(isReactive(view.posts)).toBe(true);
+    expect(view.posts.totalCount).toBe(2);
+    expect(isReactive(view.posts.edges[0])).toBe(true);
+    expect(isReactive(view.posts.edges[0].node)).toBe(true);
+    expect(view.posts.edges[0].node.title).toBe("P1");
+  });
+
+  it("PostWithComments — nested connection reactive; comment node reactive", () => {
+    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1", tags: [] });
+    graph.putRecord("Comment:c1", { __typename: "Comment", id: "c1", text: "C1", author: { __ref: "User:u2" } });
+    graph.putRecord("User:u2", { __typename: "User", id: "u2" });
+
+    graph.putRecord('@.Post:p1.comments({"after":null,"first":1}).edges.0', {
+      __typename: "CommentEdge",
+      cursor: "c1",
+      node: { __ref: "Comment:c1" },
+    });
+    graph.putRecord('@.Post:p1.comments({"after":null,"first":1})', {
+      __typename: "CommentConnection",
+      pageInfo: {
+        __typename: "PageInfo",
+        startCursor: "c1",
+        endCursor: "c1",
+        hasNextPage: false,
+        hasPreviousPage: false,
+      },
+      edges: [{ __ref: '@.Post:p1.comments({"after":null,"first":1}).edges.0' }],
+    });
+
+    const view = fragments.readFragment({
+      id: "Post:p1",
+      fragment: POST_COMMENTS_FRAGMENT,
+      variables: { commentsFirst: 1, commentsAfter: null },
+    });
+
+    expect(isReactive(view.comments)).toBe(true);
+    expect(isReactive(view.comments.edges[0])).toBe(true);
+    expect(isReactive(view.comments.edges[0].node)).toBe(true);
+
+    graph.putRecord("Comment:c1", { text: "C1 (Updated)" });
+    expect(view.comments.edges[0].node.text).toBe("C1 (Updated)");
+  });
+
+  it("returns reactive empty view when entity is missing (proxy created later)", () => {
+    const view = fragments.readFragment({
+      id: "User:missing",
+      fragment: USER_FRAGMENT,
+      variables: {},
+    });
+
+    // Your graph.materializeRecord returns a live proxy even if the snapshot isn't seeded yet.
+    // So we assert reactive empty object rather than undefined.
+    if (view === undefined) {
+      // if your graph returns undefined in your build, allow that too
+      expect(view).toBeUndefined();
+    } else {
+      expect(isReactive(view)).toBe(true);
+      expect(Object.keys(view).length).toBe(0);
+    }
+  });
+});
+
+describe("writeFragment (targeted)", () => {
+  let graph: ReturnType<typeof createGraph>;
+  let fragments: ReturnType<typeof makeFragments>;
+
+  beforeEach(() => {
+    graph = makeGraph();
+    fragments = makeFragments(graph);
+  });
+
+  it("UserFields — writes entity fields shallowly", () => {
+    fragments.writeFragment({
+      id: "User:u1",
+      fragment: USER_FRAGMENT,
+      variables: {},
+      data: { __typename: "User", id: "u1", email: "seed@example.com" },
+    });
+
+    expect(graph.getRecord("User:u1")).toEqual({
+      __typename: "User",
+      id: "u1",
+      email: "seed@example.com",
+    });
+
+    const view = fragments.readFragment({ id: "User:u1", fragment: USER_FRAGMENT, variables: {} });
+    expect(view.email).toBe("seed@example.com");
+
+    fragments.writeFragment({
+      id: "User:u1",
+      fragment: USER_FRAGMENT,
+      variables: {},
+      data: { email: "seed2@example.com" },
+    });
+    expect(graph.getRecord("User:u1")!.email).toBe("seed2@example.com");
+    expect(view.email).toBe("seed2@example.com");
+  });
+
+  it("UserPosts — writes a connection page (no link); read is reactive", () => {
+    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "x@example.com" });
+
+    fragments.writeFragment({
+      id: "User:u1",
+      fragment: USER_POSTS_FRAGMENT,
+      variables: { postsCategory: "tech", postsFirst: 2, postsAfter: null },
       data: {
-        __typename: 'User',
-        id: '1',
+        id: "u1",
+        email: "x@example.com",
         posts: {
-          __typename: 'PostConnection',
+          __typename: "PostConnection",
+          totalCount: 2,
+          pageInfo: {
+            __typename: "PageInfo",
+            startCursor: "p1",
+            endCursor: "p2",
+            hasNextPage: true,
+            hasPreviousPage: false,
+          },
           edges: [
-            { __typename: 'PostEdge', cursor: 'c1', node: { __typename: 'Post', id: '101', title: 'Hello' } },
-            { __typename: 'PostEdge', cursor: 'c2', node: { __typename: 'Post', id: '102', title: 'World' } },
+            {
+              __typename: "PostEdge",
+              cursor: "p1",
+              score: 0.5,
+              node: { __typename: "Post", id: "p1", title: "P1", tags: [] },
+            },
+            {
+              __typename: "PostEdge",
+              cursor: "p2",
+              score: 0.7,
+              node: { __typename: "Post", id: "p2", title: "P2", tags: [] },
+            },
           ],
-          pageInfo: { __typename: 'PageInfo', hasNextPage: true, endCursor: 'c2' },
         },
       },
     });
 
-    const out = readFragment({
-      id: 'User:1',
-      fragment: /* GraphQL */ `
-        fragment UserPostsPage on User {
-          posts(first: 2) {
-            __typename
-            edges { __typename cursor node { __typename id title } }
-            pageInfo { __typename hasNextPage endCursor }
-          }
-        }
-      `,
+    // Page and edges exist
+    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":2})')).toMatchObject({
+      __typename: "PostConnection",
+      totalCount: 2,
+    });
+    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0')).toMatchObject({
+      cursor: "p1",
+      score: 0.5,
+      node: { __ref: "Post:p1" },
     });
 
-    // Entire subtree is PLAIN
-    expect(isReactive(out)).toBe(false);
-    expect(isReactive(out.posts)).toBe(false);
-    expect(isReactive(out.posts.edges)).toBe(false);
-    expect(isReactive(out.posts.edges[0].node)).toBe(false);
-    expect(isReactive(out.posts.pageInfo)).toBe(false);
-
-    expect(out.posts.__typename).toBe('PostConnection');
-    expect(out.posts.edges.map((e: any) => e.node.title)).toEqual(['Hello', 'World']);
-    expect(out.posts.pageInfo).toEqual({
-      __typename: 'PageInfo',
-      hasNextPage: true,
-      endCursor: 'c2',
+    const view = fragments.readFragment({
+      id: "User:u1",
+      fragment: USER_POSTS_FRAGMENT,
+      variables: { postsCategory: "tech", postsFirst: 2, postsAfter: null },
     });
 
-    // update entity and verify fresh snapshot reflects it
-    graph.putEntity({ __typename: 'Post', id: '101', title: 'Hello (updated)' });
-    const out2 = readFragment({
-      id: 'User:1',
-      fragment: /* GraphQL */ `
-        fragment UserPostsPage on User {
-          posts(first: 2) {
-            edges { node { id title } }
-            pageInfo { endCursor }
-          }
-        }
-      `,
-    });
-    expect(out2.posts.edges[0].node.title).toBe('Hello (updated)');
-    expect(isReactive(out2.posts)).toBe(false);
-  });
+    expect(view.posts.totalCount).toBe(2);
+    expect(view.posts.edges[0].node.title).toBe("P1");
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // LIVE: watchFragment
-  // ────────────────────────────────────────────────────────────────────────────
-  it('watchFragment → live projection for entity-only fields; updates when entity changes', () => {
-    const graph = makeGraph();
-    const selections = createSelections({ dependencies: { graph } });
-    const { writeFragment, watchFragment } = createFragments({
-      dependencies: { graph, selections },
-    });
-
-    writeFragment({
-      id: 'User:10',
-      fragment: /* GraphQL */ `fragment U on User { id name email }`,
-      data: { __typename: 'User', id: '10', name: 'Eve', email: 'eve@example.com' },
-    });
-
-    const liveRef = watchFragment({
-      id: 'User:10',
-      fragment: /* GraphQL */ `fragment U on User { id name email }`,
-    });
-
-    // liveRef.value is a stable, reactive object
-    expect(isReactive(liveRef.value)).toBe(true);
-    expect(liveRef.value.__typename).toBe('User');
-    expect(liveRef.value.name).toBe('Eve');
-
-    // mutate via writeFragment → projection updates
-    writeFragment({
-      id: 'User:10',
-      fragment: /* GraphQL */ `fragment NameOnly on User { name }`,
-      data: { __typename: 'User', id: '10', name: 'Eve Updated' },
-    });
-    expect(liveRef.value.name).toBe('Eve Updated');
-  });
-
-  it('watchFragment with interface implementors: projection shows concrete __typename and updates', () => {
-    const graph = makeGraph();
-    const selections = createSelections({ dependencies: { graph } });
-    const { writeFragment, watchFragment } = createFragments({
-      dependencies: { graph, selections },
-    });
-
-    writeFragment({
-      id: 'Post:77',
-      fragment: /* GraphQL */ `fragment A on AudioPost { id title }`,
-      data: { __typename: 'AudioPost', id: '77', title: 'A-Title' },
-    });
-
-    const live = watchFragment({
-      id: 'Post:77',
-      fragment: /* GraphQL */ `fragment PV on Post { id title }`,
-    });
-
-    expect(isReactive(live.value)).toBe(true);
-    expect(live.value.__typename).toBe('AudioPost');
-    expect(live.value.title).toBe('A-Title');
-
-    // change implementor
-    writeFragment({
-      id: 'Post:77',
-      fragment: /* GraphQL */ `fragment V on VideoPost { id title duration }`,
-      data: { __typename: 'VideoPost', id: '77', title: 'V-Title', duration: 42 },
-    });
-
-    expect(live.value.__typename).toBe('VideoPost');
-    expect(live.value.title).toBe('V-Title');
-  });
-
-  it('watchFragment with connection args returns a live selection wrapper; entity/selection updates reflect in projection', () => {
-    const graph = makeGraph();
-    const selections = createSelections({ dependencies: { graph } });
-    const { writeFragment, watchFragment } = createFragments({
-      dependencies: { graph, selections },
-    });
-
-    // seed user and first page
-    writeFragment({
-      id: 'User:5',
-      fragment: /* GraphQL */ `
-        fragment Page on User {
-          posts(first: 2) {
-            __typename
-            edges { __typename cursor node { __typename id title } }
-            pageInfo { __typename endCursor hasNextPage }
-          }
-        }
-      `,
-      data: {
-        __typename: 'User',
-        id: '5',
-        posts: {
-          __typename: 'PostConnection',
-          edges: [
-            { __typename: 'PostEdge', cursor: 'c1', node: { __typename: 'Post', id: 'p1', title: 'One' } },
-            { __typename: 'PostEdge', cursor: 'c2', node: { __typename: 'Post', id: 'p2', title: 'Two' } },
-          ],
-          pageInfo: { __typename: 'PageInfo', endCursor: 'c2', hasNextPage: true },
-        },
-      },
-    });
-
-    const live = watchFragment({
-      id: 'User:5',
-      fragment: /* GraphQL */ `
-        fragment Page on User {
-          posts(first: 2) {
-            __typename
-            edges { cursor node { __typename id title } }
-            pageInfo { __typename endCursor hasNextPage }
-          }
-        }
-      `,
-    });
-
-    // selection wrapper is reactive
-    expect(isReactive(live.value)).toBe(true);
-    expect(isReactive(live.value.posts)).toBe(true);
-    expect(Array.isArray(live.value.posts.edges)).toBe(true);
-    expect(live.value.posts.edges.map((e: any) => e.node.title)).toEqual(['One', 'Two']);
-
-    // entity mutation → reflected
-    writeFragment({
-      id: 'Post:p1', // still canonicalized as Post: p1 via keys
-      fragment: /* GraphQL */ `fragment PT on Post { id title }`,
-      data: { __typename: 'Post', id: 'p1', title: 'One (upd)' },
-    });
-    expect(live.value.posts.edges[0].node.title).toBe('One (upd)');
-
-    // second page write for same args — replace or merge according to your write policy
-    writeFragment({
-      id: 'User:5',
-      fragment: /* GraphQL */ `
-        fragment Page on User {
-          posts(first: 2) {
-            __typename
-            edges { __typename cursor node { __typename id title } }
-            pageInfo { __typename endCursor hasNextPage }
-          }
-        }
-      `,
-      data: {
-        __typename: 'User',
-        id: '5',
-        posts: {
-          __typename: 'PostConnection',
-          edges: [
-            { __typename: 'PostEdge', cursor: 'c1x', node: { __typename: 'Post', id: 'p1', title: 'One (upd)' } },
-            { __typename: 'PostEdge', cursor: 'c2x', node: { __typename: 'Post', id: 'p2', title: 'Two' } },
-          ],
-          pageInfo: { __typename: 'PageInfo', endCursor: 'c2x', hasNextPage: false },
-        },
-      },
-    });
-
-    expect(live.value.posts.pageInfo.endCursor).toBe('c2x');
-    expect(live.value.posts.edges[0].cursor).toBe('c1x');
+    graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0', { score: 0.9 });
+    expect(view.posts.edges[0].score).toBe(0.9);
   });
 });

@@ -1,4 +1,4 @@
-import { ROOT_ID } from "./constants";
+import { buildFieldKey, buildConnectionKey } from "./utils";
 import type { GraphInstance } from "./graph";
 import type { PlanField } from "@/src/compiler";
 
@@ -6,20 +6,6 @@ export type ViewsInstance = ReturnType<typeof createViews>;
 
 export type ViewsDependencies = {
   graph: GraphInstance;
-};
-
-const buildFieldKey = (field: PlanField, variables: Record<string, any>): string => {
-  // Per your contract: stringifyArgs receives raw variables and applies buildArgs internally
-  return `${field.fieldName}(${field.stringifyArgs(variables)})`;
-};
-
-const buildConnectionKey = (
-  field: PlanField,
-  parentRecordId: string,
-  variables: Record<string, any>
-): string => {
-  const prefix = parentRecordId === ROOT_ID ? "@." : `@.${parentRecordId}.`;
-  return `${prefix}${field.fieldName}(${field.stringifyArgs(variables)})`;
 };
 
 const mapFrom = (fields: PlanField[] | null | undefined): Map<string, PlanField> => {

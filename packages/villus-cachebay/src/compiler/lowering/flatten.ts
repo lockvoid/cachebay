@@ -15,9 +15,8 @@ export type ConnectionsConfig = Record<
 >;
 
 /**
- * Try to infer the child type for a field's selection set by looking at
- * inline fragments and fragment spreads. If there is exactly one distinct
- * type condition, return it; otherwise fall back to the provided default.
+ * Infer child parent typename for a field's selection set using type conditions
+ * across inline fragments and spreads; fallback to provided default.
  */
 function inferChildParentTypename(
   selectionSet: SelectionSetNode,
@@ -25,26 +24,22 @@ function inferChildParentTypename(
   fragmentsByName: Map<string, FragmentDefinitionNode>
 ): string {
   const typeNames = new Set<string>();
-
   const selections = selectionSet.selections;
+
   for (let i = 0; i < selections.length; i++) {
     const sel = selections[i];
 
     if (sel.kind === "InlineFragment") {
-      const inlineFragment = sel as InlineFragmentNode;
-      const typename = inlineFragment.typeCondition?.name.value;
-      if (typename) {
-        typeNames.add(typename);
-      }
+      const ifrag = sel as InlineFragmentNode;
+      const t = ifrag.typeCondition?.name.value;
+      if (t) typeNames.add(t);
       continue;
     }
 
     if (sel.kind === "FragmentSpread") {
       const spread = sel as FragmentSpreadNode;
-      const fragment = fragmentsByName.get(spread.name.value);
-      if (fragment) {
-        typeNames.add(fragment.typeCondition.name.value);
-      }
+      const frag = fragmentsByName.get(spread.name.value);
+      if (frag) typeNames.add(frag.typeCondition.name.value);
       continue;
     }
   }
@@ -56,31 +51,20 @@ function inferChildParentTypename(
   return defaultParent;
 }
 
-/**
- * Build a Map from responseKey -> PlanField for faster lookups at runtime.
- * Returns undefined when selectionSet is null/empty to keep the plan lightweight.
- */
-function buildSelectionMap(childPlan: PlanField[] | null): Map<string, PlanField> | undefined {
-  if (!childPlan || childPlan.length === 0) {
-    return undefined;
-  }
-
-  const map = new Map<string, PlanField>();
-
-  for (let i = 0; i < childPlan.length; i++) {
-    map.set(childPlan[i].responseKey, childPlan[i]);
-  }
-
-  return map;
+/** Build responseKey -> PlanField map for a child selection. */
+function buildSelectionMap(child: PlanField[] | null): Map<string, PlanField> | undefined {
+  if (!child || child.length === 0) return undefined;
+  const m = new Map<string, PlanField>();
+  for (let i = 0; i < child.length; i++) m.set(child[i].responseKey, child[i]);
+  return m;
 }
 
 /**
- * Lower a selection set to a flat list of PlanField entries.
- * - Flattens fragments and inline fragments
- * - Preserves aliases as responseKey
- * - Annotates connections from config based on *current* parent typename
- * - For nested selection sets, infers the child type context from type conditions
- * - Additionally, attaches `selectionMap` by responseKey alongside each `selectionSet`
+ * Lower a selection set to flat PlanField[]:
+ *  - flattens fragments
+ *  - preserves aliases (responseKey)
+ *  - marks connections based on parent typename
+ *  - attaches selectionMap for each selectionSet (compile time)
  */
 export const lowerSelectionSet = (
   selectionSet: SelectionSetNode | null | undefined,
@@ -88,71 +72,41 @@ export const lowerSelectionSet = (
   fragmentsByName: Map<string, FragmentDefinitionNode>,
   connections: ConnectionsConfig
 ): PlanField[] => {
-  if (!selectionSet) {
-    return [];
-  }
+  if (!selectionSet) return [];
 
   const output: PlanField[] = [];
   const selections = selectionSet.selections;
 
   for (let i = 0; i < selections.length; i++) {
-    const selection = selections[i];
+    const sel = selections[i];
 
-    // Field
-    if (selection.kind === "Field") {
-      const fieldNode = selection as FieldNode;
+    if (sel.kind === "Field") {
+      const f = sel as FieldNode;
+      const responseKey = f.alias?.value || f.name.value;
+      const fieldName = f.name.value;
+      const isConnection = !!connections?.[parentTypename]?.[fieldName];
 
-      const responseKey = fieldNode.alias?.value || fieldNode.name.value;
-      const fieldName = fieldNode.name.value;
-
-      // Mark connection based on the *current* parent typename
-      const isConnection = Boolean(connections?.[parentTypename]?.[fieldName]);
-
-      // Recurse into children with the *child* type context (inferred)
-      let childPlan: PlanField[] | null = null;
-      if (fieldNode.selectionSet) {
-        const childParentTypename = inferChildParentTypename(
-          fieldNode.selectionSet,
-          parentTypename,
-          fragmentsByName
-        );
-
-        childPlan = lowerSelectionSet(
-          fieldNode.selectionSet,
-          childParentTypename,
-          fragmentsByName,
-          connections
-        );
+      // child lowering if any
+      let child: PlanField[] | null = null;
+      if (f.selectionSet) {
+        const childParent = inferChildParentTypename(f.selectionSet, parentTypename, fragmentsByName);
+        child = lowerSelectionSet(f.selectionSet, childParent, fragmentsByName, connections);
       }
 
-      // Build arg readers/stringifier (stringify receives raw variables)
-      const buildArgs = compileArgBuilder(fieldNode.arguments || []);
-
-      const stringifyArgs = (rawVariables: any) => {
-        const stableStringify = (obj: any): string => {
-          if (obj === null || typeof obj !== "object") {
-            return JSON.stringify(obj);
-          }
-
-          if (Array.isArray(obj)) {
-            const items = new Array(obj.length);
-            for (let j = 0; j < obj.length; j++) {
-              items[j] = stableStringify(obj[j]);
-            }
-            return "[" + items.join(",") + "]";
-          }
-
-          const keys = Object.keys(obj).sort();
+      const buildArgs = compileArgBuilder(f.arguments || []);
+      const stringifyArgs = (rawVars: any) => {
+        const stable = (x: any): string => {
+          if (x === null || typeof x !== "object") return JSON.stringify(x);
+          if (Array.isArray(x)) return "[" + x.map(stable).join(",") + "]";
+          const keys = Object.keys(x).sort();
           const pairs = new Array(keys.length);
-          for (let k = 0; k < keys.length; k++) {
-            const key = keys[k];
-            pairs[k] = JSON.stringify(key) + ":" + stableStringify(obj[key]);
+          for (let i = 0; i < keys.length; i++) {
+            const k = keys[i];
+            pairs[i] = JSON.stringify(k) + ":" + stable(x[k]);
           }
           return "{" + pairs.join(",") + "}";
         };
-
-        // Per your contract: stringifyArgs receives *raw* variables and applies buildArgs internally.
-        return stableStringify(buildArgs(rawVariables));
+        return stable(buildArgs(rawVars));
       };
 
       const planField: PlanField = {
@@ -161,56 +115,29 @@ export const lowerSelectionSet = (
         isConnection,
         buildArgs,
         stringifyArgs,
-        selectionSet: childPlan,
+        selectionSet: child,
       };
 
-      // Attach selectionMap by responseKey for fast lookups at runtime
-      (planField as any).selectionMap = buildSelectionMap(childPlan);
-
+      (planField as any).selectionMap = buildSelectionMap(child);
       output.push(planField);
       continue;
     }
 
-    // Inline fragment
-    if (selection.kind === "InlineFragment") {
-      const inlineFragment = selection as InlineFragmentNode;
-      const nextParentTypename = inlineFragment.typeCondition
-        ? inlineFragment.typeCondition.name.value
-        : parentTypename;
-
-      const lowered = lowerSelectionSet(
-        inlineFragment.selectionSet,
-        nextParentTypename,
-        fragmentsByName,
-        connections
-      );
-
-      for (let j = 0; j < lowered.length; j++) {
-        output.push(lowered[j]);
-      }
+    if (sel.kind === "InlineFragment") {
+      const ifrag = sel as InlineFragmentNode;
+      const nextParent = ifrag.typeCondition ? ifrag.typeCondition.name.value : parentTypename;
+      const lowered = lowerSelectionSet(ifrag.selectionSet, nextParent, fragmentsByName, connections);
+      for (let j = 0; j < lowered.length; j++) output.push(lowered[j]);
       continue;
     }
 
-    // Fragment spread
-    if (selection.kind === "FragmentSpread") {
-      const spread = selection as FragmentSpreadNode;
-      const fragment = fragmentsByName.get(spread.name.value);
-      if (!fragment) {
-        continue; // unknown fragment; ignore
-      }
-
-      const nextParentTypename = fragment.typeCondition.name.value;
-
-      const lowered = lowerSelectionSet(
-        fragment.selectionSet,
-        nextParentTypename,
-        fragmentsByName,
-        connections
-      );
-
-      for (let j = 0; j < lowered.length; j++) {
-        output.push(lowered[j]);
-      }
+    if (sel.kind === "FragmentSpread") {
+      const spread = sel as FragmentSpreadNode;
+      const frag = fragmentsByName.get(spread.name.value);
+      if (!frag) continue;
+      const nextParent = frag.typeCondition.name.value;
+      const lowered = lowerSelectionSet(frag.selectionSet, nextParent, fragmentsByName, connections);
+      for (let j = 0; j < lowered.length; j++) output.push(lowered[j]);
       continue;
     }
   }
