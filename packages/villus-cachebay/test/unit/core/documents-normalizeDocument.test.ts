@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import gql from "graphql-tag";
 import { createGraph } from "@/src/core/graph";
+import { createViews } from "@/src/core/views";
 import { createDocuments } from "@/src/core/documents";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -398,7 +399,11 @@ const makeGraph = () =>
     },
   });
 
-const makeDocuments = (graph: ReturnType<typeof createGraph>) =>
+const makeViews = (graph) => {
+  return createViews({ graph });
+}
+
+const makeDocuments = (graph: ReturnType<typeof createGraph>, views: ReturnType<typeof makeViews>) =>
   createDocuments(
     {
       connections: {
@@ -415,7 +420,7 @@ const makeDocuments = (graph: ReturnType<typeof createGraph>) =>
         },
       },
     },
-    { graph }
+    { graph, views }
   );
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -424,11 +429,13 @@ const makeDocuments = (graph: ReturnType<typeof createGraph>) =>
 
 describe("normalizeDocument (progression by query)", () => {
   let graph: ReturnType<typeof createGraph>;
+  let views: ReturnType<typeof createViews>;
   let documents: ReturnType<typeof makeDocuments>;
 
   beforeEach(() => {
     graph = makeGraph();
-    documents = makeDocuments(graph);
+    views = makeViews(graph);
+    documents = makeDocuments(graph, views);
   });
 
   it("USER_QUERY — root '@' reference and entity snapshot (Type:id)", () => {
