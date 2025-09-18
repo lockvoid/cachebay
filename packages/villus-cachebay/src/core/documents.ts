@@ -160,6 +160,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
       insideConnection: false,
     };
 
+    console.log(plan)
     traverseFast(data, initialFrame, (parentNode, valueNode, responseKey, frame) => {
       if (!frame) return;
 
@@ -169,7 +170,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
       const planField =
         typeof responseKey === "string" ? findField(frame.fields, responseKey) : undefined;
 
-      console.log("planField", responseKey as any, planField as any);
+      console.log("planField", frame.fields, responseKey as any, planField as any);
 
       // Connection page — write page and link parent field (full args)
       if (planField && planField.isConnection && isObject(valueNode)) {
@@ -212,17 +213,22 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
       }
 
       // Arrays — keep current scope (the array element will expose string keys later)
-      if (Array.isArray(valueNode)) {
-        return frame;
+      if (Array.isArray(valueNode) && typeof responseKey === "string") {
+        const pf = findField(frame.fields, responseKey);    // e.g., 'edges'
+        const nextFields = pf?.selectionSet || frame.fields; // switch to edge-item scope
+        return { parentRecordId, fields: nextFields, insideConnection: frame.insideConnection } as Frame;
       }
 
       // Identifiable entity — link and descend (avoid linking edge.node directly)
       if (planField && isObject(valueNode) && hasTypename(valueNode) && valueNode.id != null) {
         const entityKey = upsertEntityShallow(graph, valueNode);
         if (entityKey) {
-          if (!(frame.insideConnection && planField.responseKey === "node")) {
+          const argObj = planField.buildArgs(variables);
+          const hasArgs = argObj && Object.keys(argObj).length > 0;
+
+          if (frame.parentRecordId === ROOT_ID || hasArgs) {
             const parentFieldKey = buildFieldKey(planField, variables);
-            graph.putRecord(parentRecordId, { [parentFieldKey]: { __ref: entityKey } });
+            graph.putRecord(frame.parentRecordId, { [parentFieldKey]: { __ref: entityKey } });
           }
 
           const nextFields = planField.selectionSet || [];

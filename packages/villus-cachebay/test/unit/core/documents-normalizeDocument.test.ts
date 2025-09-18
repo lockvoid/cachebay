@@ -716,7 +716,7 @@ describe("normalizeDocument (progression by query)", () => {
     });
   });
 
-  it.only("USERS_POSTS_QUERY — root users connection plus nested per-user posts(category) connections", () => {
+  it("USERS_POSTS_QUERY — root users connection plus nested per-user posts(category) connections", () => {
     const usersPostsData = {
       users: {
         __typename: "UserConnection",
@@ -1270,7 +1270,7 @@ describe("normalizeDocument (progression by query)", () => {
     });
   });
 
-  it("UPDATE_USER_MUTATION — mutation operations normalize entities correctly", () => {
+  it.only("UPDATE_USER_MUTATION — mutation operations normalize entities correctly", () => {
     const updateUserData = {
       updateUser: {
         user: {
