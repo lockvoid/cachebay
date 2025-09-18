@@ -472,27 +472,158 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
     const rootSnap = graph.getRecord(ROOT_ID) || {};
     const result: Record<string, any> = {};
 
-    // unified per-instance cache
+    // unified, per-call caches
     const viewCache = new WeakMap<object, any>();
+    const entityViewByFields = new WeakMap<object, Map<PlanField[] | null, any>>();
 
-    const wrapArrayValue = (arrayValue: any[]): any[] => {
-      const cached = viewCache.get(arrayValue);
-      if (cached) return cached;
-
-      const mapped = new Array(arrayValue.length);
-      for (let i = 0; i < arrayValue.length; i++) {
-        const item = arrayValue[i];
-        if (item && item.__ref) {
-          const childProxy = graph.materializeRecord(item.__ref);
-          mapped[i] = childProxy ? wrapEntityProxy(childProxy) : undefined;
-        } else {
-          mapped[i] = item;
+    // Build connection container (plain) from a page snapshot, guided by selection
+    const buildConnectionContainer = (
+      parentId: string,
+      field: PlanField,               // the connection field plan
+      nodeField: PlanField | undefined, // edges.node field plan (if selected)
+      page: any,                      // page snapshot from graph
+      edgesField: PlanField | undefined // edges field plan (if selected)
+    ) => {
+      // Which conn-level extras (leaf scalars) were selected? (e.g., totalCount)
+      const connExtras: string[] = [];
+      if (field.selectionSet) {
+        for (let j = 0; j < field.selectionSet.length; j++) {
+          const f = field.selectionSet[j];
+          if (f.responseKey === "edges" || f.responseKey === "pageInfo") continue;
+          if (!f.selectionSet || f.selectionSet.length === 0) connExtras.push(f.responseKey);
         }
       }
-      viewCache.set(arrayValue, mapped);
-      return mapped;
+
+      // Which edge-level extras were selected? (e.g., score)
+      const edgeExtras: string[] = [];
+      const wantCursor = !!(edgesField && findField(edgesField.selectionSet, "cursor"));
+      if (edgesField?.selectionSet) {
+        for (let j = 0; j < edgesField.selectionSet.length; j++) {
+          const ef = edgesField.selectionSet[j];
+          if (ef.responseKey === "node" || ef.responseKey === "__typename" || ef.responseKey === "cursor") continue;
+          if (!ef.selectionSet || ef.selectionSet.length === 0) edgeExtras.push(ef.responseKey);
+        }
+      }
+
+      // Build edges (plain objects), but entity nodes are reactive views
+      const edges = Array.isArray(page.edges)
+        ? page.edges.map((ref: any) => {
+          const edgeRec = graph.getRecord(ref?.__ref || "");
+          if (!edgeRec) return null;
+
+          const e: Record<string, any> = {};
+          if (wantCursor) e.cursor = edgeRec.cursor;
+
+          // copy selected extras (score, etc.)
+          for (let k = 0; k < edgeExtras.length; k++) {
+            const name = edgeExtras[k];
+            if (name in edgeRec) e[name] = edgeRec[name];
+          }
+
+          // node: reactive entity view honoring node selection
+          if (nodeField && edgeRec.node?.__ref) {
+            e.node = createEntityView(edgeRec.node.__ref, nodeField.selectionSet || null);
+          } else if (nodeField) {
+            e.node = undefined;
+          }
+
+          return e;
+        }).filter(Boolean)
+        : [];
+
+      // Build connection container (plain)
+      const pageInfoField = findField(field.selectionSet, "pageInfo");
+      const out: Record<string, any> = { __typename: page.__typename };
+
+      // conn-level extras (totalCount, etc.)
+      for (let k = 0; k < connExtras.length; k++) {
+        const name = connExtras[k];
+        if (name in page) out[name] = page[name];
+      }
+
+      if (pageInfoField && page.pageInfo) out.pageInfo = { ...(page.pageInfo as any) };
+      if (edgesField) out.edges = edges;
+
+      return out;
     };
 
+    // Create a reactive entity view that lazily materializes connection fields from selection
+    const createEntityView = (recordId: string, fields: PlanField[] | null): any => {
+      const entityProxy = graph.materializeRecord(recordId);
+      if (!entityProxy) return undefined;
+
+      // Fast path: if no selection given, wrap raw entity proxy
+      if (!fields || fields.length === 0) {
+        return wrapEntityProxy(entityProxy);
+      }
+
+      // memoize per (entityProxy, fields) pair
+      let byFields = entityViewByFields.get(entityProxy);
+      if (!byFields) {
+        byFields = new Map();
+        entityViewByFields.set(entityProxy, byFields);
+      }
+      const cached = byFields.get(fields);
+      if (cached) return cached;
+
+      const view = new Proxy(entityProxy, {
+        get(target, prop, receiver) {
+          // If the selection includes a connection with this responseKey, materialize it on demand
+          const field =
+            typeof prop === "string" ? findField(fields, prop as string) : undefined;
+
+          if (field && field.isConnection) {
+            const pageKey = buildConnectionKey(field, recordId, variables);
+            const page = graph.getRecord(pageKey);
+            if (!page) return undefined;
+
+            const edgesField = findField(field.selectionSet, "edges");
+            const nodeField = edgesField ? findField(edgesField.selectionSet, "node") : undefined;
+
+            return buildConnectionContainer(recordId, field, nodeField, page, edgesField);
+          }
+
+          // Otherwise, deref __ref values and arrays as usual
+          const value = Reflect.get(target, prop, receiver);
+
+          if (value && typeof value === "object" && (value as any).__ref) {
+            // If the selection had a sub-selection for this field, honor it; otherwise plain entity view
+            const sub = typeof prop === "string" ? findField(fields, prop as string) : undefined;
+            const subFields = sub ? sub.selectionSet || null : null;
+            return createEntityView((value as any).__ref, subFields);
+          }
+
+          if (Array.isArray(value)) {
+            // map array of refs → entity views (or raw values)
+            const cachedArr = viewCache.get(value);
+            if (cachedArr) return cachedArr;
+
+            const mapped = new Array(value.length);
+            for (let i = 0; i < value.length; i++) {
+              const item = value[i];
+              if (item && item.__ref) {
+                mapped[i] = createEntityView(item.__ref, null);
+              } else {
+                mapped[i] = item;
+              }
+            }
+            viewCache.set(value, mapped);
+            return mapped;
+          }
+
+          return value;
+        },
+        has(target, prop) { return Reflect.has(target, prop); },
+        ownKeys(target) { return Reflect.ownKeys(target); },
+        getOwnPropertyDescriptor(target, prop) { return Reflect.getOwnPropertyDescriptor(target, prop); },
+        set() { return false; },
+      });
+
+      byFields.set(fields, view);
+      return view;
+    };
+
+    // Fallback entity proxy wrapper (no selection-aware connections)
     const wrapEntityProxy = (entityProxy: any): any => {
       if (!entityProxy || typeof entityProxy !== "object") return entityProxy;
       const cached = viewCache.get(entityProxy);
@@ -508,7 +639,20 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
           }
 
           if (Array.isArray(value)) {
-            return wrapArrayValue(value);
+            const cachedArr = viewCache.get(value);
+            if (cachedArr) return cachedArr;
+            const mapped = new Array(value.length);
+            for (let i = 0; i < value.length; i++) {
+              const item = value[i];
+              if (item && item.__ref) {
+                const childProxy = graph.materializeRecord(item.__ref);
+                mapped[i] = childProxy ? wrapEntityProxy(childProxy) : undefined;
+              } else {
+                mapped[i] = item;
+              }
+            }
+            viewCache.set(value, mapped);
+            return mapped;
           }
 
           return value;
@@ -523,105 +667,73 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
       return view;
     };
 
-    const readEntityReactive = (recordId: string, fields: PlanField[] | null): any => {
-      const proxy = graph.materializeRecord(recordId);
-      if (!proxy) return undefined;
-      if (!fields) return wrapEntityProxy(proxy);
+    // Build plain connection container at root
+    const readConnectionAtRoot = (field: PlanField) => {
+      const pageKey = buildConnectionKey(field, ROOT_ID, variables);
+      const page = graph.getRecord(pageKey);
+      if (!page) return undefined;
 
-      const out: Record<string, any> = {};
-      for (let i = 0; i < fields.length; i++) {
-        const field = fields[i];
+      const edgesField = findField(field.selectionSet, "edges");
+      const nodeField = edgesField ? findField(edgesField.selectionSet, "node") : undefined;
 
-        if (field.isConnection) {
-          const pageKey = buildConnectionKey(field, recordId, variables);
-          const page = graph.getRecord(pageKey);
-          if (!page) { out[field.responseKey] = undefined; continue; }
-
-          const edgesField = findField(field.selectionSet, "edges");
-          const nodeField = edgesField ? findField(edgesField.selectionSet, "node") : undefined;
-          const pageInfoField = findField(field.selectionSet, "pageInfo");
-
-          const wantCursor = !!(edgesField && findField(edgesField.selectionSet, "cursor"));
-
-          const edges = Array.isArray(page.edges) ? page.edges.map((ref: any) => {
-            const edgeRec = graph.getRecord(ref?.__ref || "");
-            if (!edgeRec) return null;
-            const e: any = {};
-            if (wantCursor) e.cursor = edgeRec.cursor;
-            if (nodeField && edgeRec.node?.__ref) {
-              const nodeProxy = graph.materializeRecord(edgeRec.node.__ref);
-              e.node = nodeProxy ? wrapEntityProxy(nodeProxy) : undefined;
-            }
-            return e;
-          }).filter(Boolean) : [];
-
-          const connOut: any = { __typename: page.__typename };
-          if (pageInfoField && page.pageInfo) connOut.pageInfo = { ...page.pageInfo };
-          if (edgesField) connOut.edges = edges;
-
-          out[field.responseKey] = connOut;
-          continue;
-        }
-
-        const linkKey = buildFieldKey(field, variables);
-        const value = proxy[linkKey] ?? proxy[field.responseKey] ?? proxy[field.fieldName];
-
-        if (value?.__ref) {
-          out[field.responseKey] = readEntityReactive(value.__ref, field.selectionSet || null);
-        } else if (Array.isArray(value)) {
-          out[field.responseKey] = wrapArrayValue(value);
-        } else if (isObject(value)) {
-          out[field.responseKey] = { ...value };
-        } else {
-          out[field.responseKey] = value;
-        }
-      }
-
-      return out;
+      return buildConnectionContainer(ROOT_ID, field, nodeField, page, edgesField);
     };
 
+    // Build plain entity object at root (usually query root field like user)
+    const readEntityAtRoot = (field: PlanField) => {
+      const linkKey = buildFieldKey(field, variables);
+      const link = rootSnap[linkKey];
+      if (!link?.__ref) return undefined;
+      // For root entities, return a plain object assembled from selection (not a proxy)
+      // but nested entity nodes inside connections will be reactive via createEntityView
+      const assemble = (recordId: string, fields: PlanField[] | null): any => {
+        const snap = graph.getRecord(recordId);
+        if (!snap) return undefined;
+        if (!fields) return { __typename: snap.__typename, id: snap.id };
+
+        const out: Record<string, any> = {};
+        for (let i = 0; i < fields.length; i++) {
+          const f = fields[i];
+
+          if (f.isConnection) {
+            const pageKey = buildConnectionKey(f, recordId, variables);
+            const page = graph.getRecord(pageKey);
+            if (!page) { out[f.responseKey] = undefined; continue; }
+
+            const edgesField = findField(f.selectionSet, "edges");
+            const nodeField = edgesField ? findField(edgesField.selectionSet, "node") : undefined;
+
+            out[f.responseKey] = buildConnectionContainer(recordId, f, nodeField, page, edgesField);
+            continue;
+          }
+
+          // non-connection: follow ref if present
+          const linkKey = buildFieldKey(f, variables);
+          const stored = snap[linkKey] ?? snap[f.responseKey] ?? snap[f.fieldName];
+          if (stored?.__ref) {
+            // entities under non-connection fields at root: return plain (not reactive)
+            out[f.responseKey] = assemble(stored.__ref, f.selectionSet || null);
+          } else {
+            out[f.responseKey] = stored;
+          }
+        }
+        return out;
+      };
+
+      return assemble(link.__ref, field.selectionSet || null);
+    };
+
+    // Root
     for (let i = 0; i < plan.root.length; i++) {
       const field = plan.root[i];
 
       if (field.isConnection) {
-        const pageKey = buildConnectionKey(field, ROOT_ID, variables);
-        const page = graph.getRecord(pageKey);
-        if (!page) { result[field.responseKey] = undefined; continue; }
-
-        const edgesField = findField(field.selectionSet, "edges");
-        const nodeField = edgesField ? findField(edgesField.selectionSet, "node") : undefined;
-        const pageInfoField = findField(field.selectionSet, "pageInfo");
-
-        const wantCursor = !!(edgesField && findField(edgesField.selectionSet, "cursor"));
-
-        const edges = Array.isArray(page.edges) ? page.edges.map((ref: any) => {
-          const edgeRec = graph.getRecord(ref?.__ref || "");
-          if (!edgeRec) return null;
-          const e: any = {};
-          if (wantCursor) e.cursor = edgeRec.cursor;
-          if (nodeField && edgeRec.node?.__ref) {
-            const nodeProxy = graph.materializeRecord(edgeRec.node.__ref);
-            e.node = nodeProxy ? wrapEntityProxy(nodeProxy) : undefined;
-          }
-          return e;
-        }).filter(Boolean) : [];
-
-        const connOut: any = { __typename: page.__typename };
-        if (pageInfoField && page.pageInfo) connOut.pageInfo = { ...page.pageInfo };
-        if (edgesField) connOut.edges = edges;
-
-        result[field.responseKey] = connOut;
+        result[field.responseKey] = readConnectionAtRoot(field);
         continue;
       }
 
-      const linkKey = buildFieldKey(field, variables);
-      const link = rootSnap[linkKey];
-
-      if (link?.__ref) {
-        result[field.responseKey] = readEntityReactive(link.__ref, field.selectionSet || null);
-      } else {
-        result[field.responseKey] = undefined;
-      }
+      // non-connection root field: entity object assembled (plain)
+      result[field.responseKey] = readEntityAtRoot(field);
     }
 
     return result;
