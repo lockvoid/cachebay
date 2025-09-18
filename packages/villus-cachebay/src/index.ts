@@ -11,6 +11,3 @@ export { useFragment } from "./composables/useFragment";
 
 // Public types + helpers for user-land
 export * from "./types";
-
-// Optional resolver helpers users can opt into
-export { relay } from "./resolvers/relay";

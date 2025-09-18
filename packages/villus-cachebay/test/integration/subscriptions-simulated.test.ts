@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { defineComponent, h, ref } from 'vue';
+import gql from 'graphql-tag';
 import { cacheConfigs } from '@/test/helpers/integration';
 import { tick, delay, type Route } from '@/test/helpers';
 import { mountWithClient } from '@/test/helpers/integration';
 import { useFragment } from '@/src';
 
 // live fragment sources used by the tests
-const FRAG_POST = /* GraphQL */ `
+const FRAG_POST = gql`
   fragment P on Post { __typename id title }
 `;
 
@@ -24,7 +25,8 @@ describe('Integration • Subscriptions (simulated)', () => {
         const key = ref('Post:1');
         // live fragment — will react to writes
         const post = useFragment({ id: key, fragment: FRAG_POST });
-        return () => h('div', [h('div', { class: 'title' }, post.value?.title || 'No post')]);
+        return () =>
+          h('div', [h('div', { class: 'title' }, post.value?.title || 'No post')]);
       },
     });
 
@@ -71,14 +73,20 @@ describe('Integration • Subscriptions (simulated)', () => {
         const data = ref<any>(null);
 
         // Simulate a push stream: success then error
-        setTimeout(() => { data.value = { message: 'Success' }; }, 20);
-        setTimeout(() => { error.value = new Error('Connection lost'); data.value = null; }, 40);
+        setTimeout(() => {
+          data.value = { message: 'Success' };
+        }, 20);
+        setTimeout(() => {
+          error.value = new Error('Connection lost');
+          data.value = null;
+        }, 40);
 
-        return () => h('div', [
-          h('div', { class: 'error' }, error.value?.message || 'No error'),
-          h('div', { class: 'data' }, data.value?.message || 'No data'),
-        ]);
-      }
+        return () =>
+          h('div', [
+            h('div', { class: 'error' }, error.value?.message || 'No error'),
+            h('div', { class: 'data' }, data.value?.message || 'No data'),
+          ]);
+      },
     });
 
     const { wrapper } = await mountWithClient(ErrorHandlingComponent, [] as Route[], cache);
@@ -110,11 +118,16 @@ describe('Integration • Subscriptions (simulated)', () => {
       setup() {
         const key = ref('Post:1');
         const post = useFragment({ id: key, fragment: FRAG_POST });
-        return () => h('div', [h('div', { class: 'current' }, post.value?.title || 'Waiting...')]);
-      }
+        return () =>
+          h('div', [h('div', { class: 'current' }, post.value?.title || 'Waiting...')]);
+      },
     });
 
-    const { wrapper, cache: testCache } = await mountWithClient(PostSubscription, [] as Route[], cache);
+    const { wrapper, cache: testCache } = await mountWithClient(
+      PostSubscription,
+      [] as Route[],
+      cache,
+    );
     await delay(10);
     expect(wrapper.find('.current').text()).toBe('Waiting...');
 
@@ -157,13 +170,16 @@ describe('Integration • Subscriptions (simulated)', () => {
         const data = ref<any>(null);
 
         // Simulate an error frame
-        setTimeout(() => { error.value = new Error('Subscription failed'); }, 15);
+        setTimeout(() => {
+          error.value = new Error('Subscription failed');
+        }, 15);
 
-        return () => h('div', [
-          h('div', { class: 'error' }, error.value?.message || 'No error'),
-          h('div', { class: 'data' }, data.value?.ping || 'No data'),
-        ]);
-      }
+        return () =>
+          h('div', [
+            h('div', { class: 'error' }, error.value?.message || 'No error'),
+            h('div', { class: 'data' }, data.value?.ping || 'No data'),
+          ]);
+      },
     });
 
     const { wrapper } = await mountWithClient(ErrorSubscription, [] as Route[], cache);
@@ -189,15 +205,29 @@ describe('Integration • Subscriptions (simulated)', () => {
         const latest = ref<string>('No messages');
 
         // Frames at 5ms, 20ms, 40ms
-        setTimeout(() => { latest.value = 'Message 1'; messages.value.push('Message 1'); }, 5);
-        setTimeout(() => { latest.value = 'Message 2'; messages.value.push('Message 2'); }, 20);
-        setTimeout(() => { latest.value = 'Message 3'; messages.value.push('Message 3'); }, 40);
+        setTimeout(() => {
+          latest.value = 'Message 1';
+          messages.value.push('Message 1');
+        }, 5);
+        setTimeout(() => {
+          latest.value = 'Message 2';
+          messages.value.push('Message 2');
+        }, 20);
+        setTimeout(() => {
+          latest.value = 'Message 3';
+          messages.value.push('Message 3');
+        }, 40);
 
-        return () => h('div', [
-          h('div', { class: 'latest' }, latest.value),
-          h('ul', { class: 'history' }, messages.value.map((m, i) => h('li', { key: i }, m))),
-        ]);
-      }
+        return () =>
+          h('div', [
+            h('div', { class: 'latest' }, latest.value),
+            h(
+              'ul',
+              { class: 'history' },
+              messages.value.map((m, i) => h('li', { key: i }, m)),
+            ),
+          ]);
+      },
     });
 
     const { wrapper } = await mountWithClient(MultiFrameSubscription, [] as Route[], cache);
@@ -211,7 +241,7 @@ describe('Integration • Subscriptions (simulated)', () => {
     await delay(20); // total ~45ms > 40ms
     expect(wrapper.find('.latest').text()).toBe('Message 3');
 
-    const history = wrapper.findAll('.history li').map(li => li.text());
+    const history = wrapper.findAll('.history li').map((li) => li.text());
     expect(history).toEqual(['Message 1', 'Message 2', 'Message 3']);
   });
 });

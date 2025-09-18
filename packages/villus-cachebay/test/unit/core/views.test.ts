@@ -180,12 +180,12 @@ describe("views helpers", () => {
 
     // add a second edge → refs change → new array instance
     graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "P2" });
-    const nextRefIndex = 1;
-    const edgeKey = `${pageKey}.edges.${nextRefIndex}`;
+    const edgeKey = `${pageKey}.edges.1`;
     graph.putRecord(edgeKey, { __typename: "PostEdge", cursor: "p2", node: { __ref: "Post:p2" } });
-    const page = graph.getRecord(pageKey)!;
-    page.edges = [...page.edges, { __ref: edgeKey }];
-    graph.putRecord(pageKey, page);
+
+    // IMPORTANT: write a new edges array so the view sees different refs
+    const prevEdges = (graph.getRecord(pageKey)?.edges ?? []).slice();
+    graph.putRecord(pageKey, { edges: [...prevEdges, { __ref: edgeKey }] });
 
     const edges3 = pageView.edges;
     expect(edges3).not.toBe(edges1);

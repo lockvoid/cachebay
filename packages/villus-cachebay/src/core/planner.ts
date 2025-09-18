@@ -3,29 +3,32 @@ import { compileToPlan, isCachePlanV1, type CachePlanV1 } from "@/src/compiler";
 
 export type PlannerInstance = ReturnType<typeof createPlanner>;
 
-/**
- * Shared plan cache for operations & fragments.
- * One instance per app (or per graph env) is typical.
- */
 export const createPlanner = () => {
-  const planCache = new WeakMap<DocumentNode, CachePlanV1>();
+  // AST → plan
+  const docCache = new WeakMap<DocumentNode, CachePlanV1>();
+  // string → plan
+  const strCache = new Map<string, CachePlanV1>();
 
-  const getPlan = (docOrPlan: DocumentNode | CachePlanV1): CachePlanV1 => {
+  const getPlan = (docOrPlan: DocumentNode | CachePlanV1 | string): CachePlanV1 => {
+    // Already compiled? just return it
     if (isCachePlanV1(docOrPlan)) return docOrPlan;
 
-    const hit = planCache.get(docOrPlan);
+    // String docs: use a normal Map
+    if (typeof docOrPlan === "string") {
+      const hit = strCache.get(docOrPlan);
+      if (hit) return hit;
+      const plan = compileToPlan(docOrPlan); // compileToPlan now accepts strings
+      strCache.set(docOrPlan, plan);
+      return plan;
+    }
+
+    // DocumentNode: use WeakMap
+    const hit = docCache.get(docOrPlan);
     if (hit) return hit;
-
     const plan = compileToPlan(docOrPlan);
-
-    planCache.set(docOrPlan, plan);
-
+    docCache.set(docOrPlan, plan);
     return plan;
   };
 
-  const clear = () => {
-    planCache.clear();
-  };
-
-  return { getPlan, clear };
+  return { getPlan };
 };

@@ -1,13 +1,13 @@
-// test/flows/optimistic-updates.test.ts
 import { describe, it, expect, afterEach } from 'vitest';
 import { defineComponent, h } from 'vue';
+import gql from 'graphql-tag';
 import { useQuery } from 'villus';
 import { createCache } from '@/src';
 import { tick, delay, seedCache, type Route } from '@/test/helpers';
 import { mountWithClient, getListItems, cacheConfigs, testQueries, mockResponses } from '@/test/helpers/integration';
 
-/** Snapshot fragments for entity checks */
-const FRAG_POST = /* GraphQL */ `
+/** Snapshot fragments for entity checks (DocumentNode) */
+const FRAG_POST = gql`
   fragment P on Post { __typename id title }
 `;
 
@@ -124,13 +124,17 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
     const PostList = defineComponent({
       setup() {
         const { data } = useQuery({ query: testQueries.POSTS, variables: {}, cachePolicy: 'cache-first' });
-        return () => h('div', [
-          h('ul', (data.value?.posts?.edges || []).map((e: any) =>
-            h('li', { key: e.node.id }, e.node.title)
-          )),
-          h('div', { class: 'pageInfo' }, JSON.stringify(data.value?.posts?.pageInfo || {}))
-        ]);
-      }
+        return () =>
+          h('div', [
+            h(
+              'ul',
+              (data.value?.posts?.edges || []).map((e: any) =>
+                h('li', { key: e.node.id }, e.node.title),
+              ),
+            ),
+            h('div', { class: 'pageInfo' }, JSON.stringify(data.value?.posts?.pageInfo || {})),
+          ]);
+      },
     });
 
     const { wrapper } = await mountWithClient(PostList, [] as Route[], cache);
@@ -168,15 +172,21 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
     const PostList = defineComponent({
       setup() {
         const { data } = useQuery({ query: testQueries.POSTS, variables: {}, cachePolicy: 'cache-first' });
-        return () => h('div', [
-          h('ul', (data.value?.posts?.edges || []).map((e: any) =>
-            h('li', { key: e.node.id }, e.node.title)
-          )),
-          h('div', { class: 'cursors' },
-            (data.value?.posts?.edges || []).map((e: any) => e.cursor).join(',')
-          )
-        ]);
-      }
+        return () =>
+          h('div', [
+            h(
+              'ul',
+              (data.value?.posts?.edges || []).map((e: any) =>
+                h('li', { key: e.node.id }, e.node.title),
+              ),
+            ),
+            h(
+              'div',
+              { class: 'cursors' },
+              (data.value?.posts?.edges || []).map((e: any) => e.cursor).join(','),
+            ),
+          ]);
+      },
     });
 
     const { wrapper } = await mountWithClient(PostList, [] as Route[], cache);
@@ -229,12 +239,16 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
     const PostList = defineComponent({
       setup() {
         const { data } = useQuery({ query: testQueries.POSTS, variables: {}, cachePolicy: 'cache-first' });
-        return () => h('div', [
-          h('ul', (data.value?.posts?.edges || []).map((e: any) =>
-            h('li', { key: e.node.id }, e.node.title)
-          ))
-        ]);
-      }
+        return () =>
+          h('div', [
+            h(
+              'ul',
+              (data.value?.posts?.edges || []).map((e: any) =>
+                h('li', { key: e.node.id }, e.node.title),
+              ),
+            ),
+          ]);
+      },
     });
 
     const { wrapper } = await mountWithClient(PostList, [] as Route[], cache);
@@ -263,13 +277,17 @@ describe('Integration • Optimistic updates (entities & connections)', () => {
     const PostList = defineComponent({
       setup() {
         const { data } = useQuery({ query: testQueries.POSTS, variables: {}, cachePolicy: 'cache-first' });
-        return () => h('div', [
-          h('ul', (data.value?.posts?.edges || []).map((e: any) =>
-            h('li', { key: e.node.id }, e.node.title)
-          )),
-          h('div', { class: 'pageInfo' }, JSON.stringify(data.value?.posts?.pageInfo || {}))
-        ]);
-      }
+        return () =>
+          h('div', [
+            h(
+              'ul',
+              (data.value?.posts?.edges || []).map((e: any) =>
+                h('li', { key: e.node.id }, e.node.title),
+              ),
+            ),
+            h('div', { class: 'pageInfo' }, JSON.stringify(data.value?.posts?.pageInfo || {})),
+          ]);
+      },
     });
 
     const { wrapper } = await mountWithClient(PostList, [] as Route[], cache);

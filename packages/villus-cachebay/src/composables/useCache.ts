@@ -18,22 +18,25 @@ export function useCache<T = any>(): T {
 
   const writeFragmentShim = (args: {
     id: string;
-    fragment: string;
+    fragment: any; // string | DocumentNode | CachePlanV1
     data: any;
     variables?: Record<string, any>;
   }) => {
     const ret = instance.writeFragment?.(args);
     if (ret && typeof ret === "object" && ("commit" in ret || "revert" in ret)) {
-      return ret; // underlying API already transactional
+      return ret; // transactional already
     }
-    // Fallback: perform write eagerly, return no-op tx to satisfy callers
+    // Eager write; provide tx-like surface
     return {
-      commit() {/* no-op: already written */ },
-      revert() {/* optional to implement later if you add history */ },
+      commit() {
+        /* no-op */
+      },
+      revert() {
+        /* optional: add history later */
+      },
     };
   };
 
-  // expose everything else as-is, but replace writeFragment with shim
   return {
     ...instance,
     writeFragment: writeFragmentShim,

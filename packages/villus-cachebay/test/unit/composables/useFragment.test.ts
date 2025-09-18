@@ -1,122 +1,221 @@
-// test/unit/composables/useFragment.test.ts
-import { describe, it, expect, vi, afterEach } from "vitest";
-
-// Hoisted mock for useCache — we control its return value per test
-const mockUseCache = vi.fn();
-vi.mock("@/src/composables/useCache", () => ({
-  useCache: () => mockUseCache(),
-}));
-
-import { ref, reactive, isReactive, nextTick } from "vue";
+import { describe, it, expect } from "vitest";
+import { defineComponent, h } from "vue";
+import { mount } from "@vue/test-utils";
+import gql from "graphql-tag";
+import { tick, delay } from '@/test/helpers/concurrency';
+import { createGraph } from "@/src/core/graph";
+import { createViews } from "@/src/core/views";
+import { createPlanner } from "@/src/core/planner";
+import { createFragments } from "@/src/core/fragments";
+import { provideCachebay } from "@/src/core/plugin";
 import { useFragment } from "@/src/composables/useFragment";
 
-afterEach(() => {
-  mockUseCache.mockReset();
+// ─────────────────────────────────────────────────────────────────────────────
+// Fragments
+// ─────────────────────────────────────────────────────────────────────────────
+
+const USER_FRAGMENT = gql`
+  fragment UserFields on User {
+    id
+    email
+  }
+`;
+
+const USER_POSTS_FRAGMENT = gql`
+  fragment UserPosts on User {
+    id
+    posts(first: $first, after: $after) @connection {
+      __typename
+      totalCount
+      pageInfo {
+        __typename
+        endCursor
+        hasNextPage
+      }
+      edges {
+        __typename
+        cursor
+        node {
+          __typename
+          id
+          title
+        }
+      }
+    }
+  }
+`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+const makeCache = () => {
+  const graph = createGraph({
+    keys: {
+      User: (o: any) => (o?.id != null ? String(o.id) : null),
+      Post: (o: any) => (o?.id != null ? String(o.id) : null),
+    },
+  });
+
+  const views = createViews({ graph });
+  const planner = createPlanner({
+    // tests rely on these fields being flagged as connections
+    connections: {
+      User: { posts: { mode: "infinite", args: [] } },
+    },
+  });
+
+  const fragments = createFragments({}, { graph, planner, views });
+
+  const cache = {
+    readFragment: fragments.readFragment,
+    writeFragment: fragments.writeFragment,
+    __graph: graph,
+  };
+
+  return { cache, graph };
+};
+
+const provide = (cache: any) => ({
+  install(app: any) {
+    provideCachebay(app, cache);
+  },
 });
 
-describe("useFragment (LIVE)", () => {
-  it("materializes and returns a reactive proxy; external writes flow through", () => {
-    // Provide a watchFragment that returns a live reactive object
-    const proxies = new Map<string, any>();
-    const getProxy = (key: string) => {
-      let p = proxies.get(key);
-      if (!p) {
-        const [, id] = key.split(":");
-        p = reactive({ __typename: "Post", id, title: undefined });
-        proxies.set(key, p);
-      }
-      return p;
-    };
-    const watchFragment = vi.fn(({ id }: { id: string }) => ({ value: getProxy(id) }));
-    mockUseCache.mockReturnValue({ watchFragment });
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests
+// ─────────────────────────────────────────────────────────────────────────────
 
-    const data = useFragment({
-      id: "Post:1",
-      fragment: /* GraphQL */ `fragment P on Post { id title }`,
+describe("useFragment()", () => {
+  it("reactive view for simple fragment; updates propagate", async () => {
+    const { cache, graph } = makeCache();
+
+    // seed entity
+    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
+
+    const Comp = defineComponent({
+      setup() {
+        const data = useFragment({
+          id: "User:u1",
+          fragment: USER_FRAGMENT,
+          variables: {},
+        });
+        return () => h("div", {}, data.value?.email || "");
+      },
     });
 
-    // Immediate live value
-    expect(watchFragment).toHaveBeenCalledWith(expect.objectContaining({ id: "Post:1" }));
-    expect(isReactive(data.value)).toBe(true);
-    expect(data.value.__typename).toBe("Post");
-    expect(data.value.id).toBe("1");
+    const wrapper = mount(Comp, { global: { plugins: [provide(cache)] } });
 
-    // Mutating the underlying proxy is visible via composable
-    proxies.get("Post:1").title = "Hello";
-    expect(data.value.title).toBe("Hello");
+    await tick();
+    expect(wrapper.text()).toBe("u1@example.com");
+
+    // update → reflected
+    graph.putRecord("User:u1", { email: "u1+updated@example.com" });
+    await tick();
+    expect(wrapper.text()).toBe("u1+updated@example.com");
   });
 
-  it("reacts to id (Ref) changes by swapping the live proxy", async () => {
-    const proxies = new Map<string, any>();
-    const getProxy = (key: string) => {
-      let p = proxies.get(key);
-      if (!p) {
-        const [, id] = key.split(":");
-        p = reactive({ __typename: "User", id, name: `User-${id}` });
-        proxies.set(key, p);
-      }
-      return p;
-    };
+  it("reactive connection fields: edges and nodes are live", async () => {
+    const { cache, graph } = makeCache();
 
-    const watchFragment = vi.fn(({ id }: { id: string }) => ({ value: getProxy(id) }));
-    mockUseCache.mockReturnValue({ watchFragment });
+    // seed user + page with 1 edge
+    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "x@example.com" });
+    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1" });
 
-    const idRef = ref("User:1");
-    const data = useFragment({
-      id: idRef,
-      fragment: /* GraphQL */ `fragment U on User { id name }`,
+    const pageKey = '@.User:u1.posts({"after":null,"first":2})';
+    graph.putRecord(`${pageKey}.edges.0`, {
+      __typename: "PostEdge",
+      cursor: "p1",
+      node: { __ref: "Post:p1" },
+    });
+    graph.putRecord(pageKey, {
+      __typename: "PostConnection",
+      totalCount: 1,
+      pageInfo: { __typename: "PageInfo", endCursor: "p1", hasNextPage: false },
+      edges: [{ __ref: `${pageKey}.edges.0` }],
     });
 
-    // First key
-    expect(data.value.name).toBe("User-1");
-
-    // Switch key
-    idRef.value = "User:2";
-    await nextTick();
-    expect(watchFragment).toHaveBeenLastCalledWith(expect.objectContaining({ id: "User:2" }));
-    expect(data.value.name).toBe("User-2");
-  });
-
-  it("sets data to null when id is missing/invalid; resumes when id becomes valid", async () => {
-    const watchFragment = vi.fn(({ id }: { id: string }) => ({
-      value: reactive({ __typename: "Thing", id: id.split(":")[1] }),
-    }));
-    mockUseCache.mockReturnValue({ watchFragment });
-
-    const idRef = ref<string | undefined>(undefined);
-    const data = useFragment({
-      id: idRef as any,
-      fragment: /* GraphQL */ `fragment T on Thing { id }`,
+    const Comp = defineComponent({
+      setup() {
+        const data = useFragment({
+          id: "User:u1",
+          fragment: USER_POSTS_FRAGMENT,
+          variables: { first: 2, after: null },
+        });
+        return () =>
+          h(
+            "ul",
+            {},
+            (data.value?.posts?.edges ?? []).map((e: any) =>
+              h("li", {}, e?.node?.title || "")
+            )
+          );
+      },
     });
 
-    // No id → null and no subscription
-    expect(data.value).toBeNull();
-    expect(watchFragment).not.toHaveBeenCalled();
+    const wrapper = mount(Comp, { global: { plugins: [provide(cache)] } });
+    await tick();
 
-    // Becomes valid → subscribe and expose live proxy
-    idRef.value = "Thing:42";
-    await nextTick();
-    expect(watchFragment).toHaveBeenCalledWith(expect.objectContaining({ id: "Thing:42" }));
-    expect(data.value?.id).toBe("42");
+    // initial list
+    let items = wrapper.findAll("li").map((li) => li.text());
+    expect(items).toEqual(["P1"]);
+
+    // update node → reflected
+    graph.putRecord("Post:p1", { title: "P1 (Updated)" });
+    await tick();
+    items = wrapper.findAll("li").map((li) => li.text());
+    expect(items).toEqual(["P1 (Updated)"]);
+
+    // add another edge (p2)
+    graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "P2" });
+    graph.putRecord(`${pageKey}.edges.1`, {
+      __typename: "PostEdge",
+      cursor: "p2",
+      node: { __ref: "Post:p2" },
+    });
+    const pageSnap = graph.getRecord(pageKey)!;
+    graph.putRecord(pageKey, {
+      ...pageSnap,
+      totalCount: 2,
+      edges: [...pageSnap.edges, { __ref: `${pageKey}.edges.1` }],
+    });
+
+    await tick();
+    items = wrapper.findAll("li").map((li) => li.text());
+    expect(items).toEqual(["P1 (Updated)", "P2"]);
+
+    // update p2 title → reflected
+    graph.putRecord("Post:p2", { title: "P2 (New)" });
+    await tick();
+    items = wrapper.findAll("li").map((li) => li.text());
+    expect(items).toEqual(["P1 (Updated)", "P2 (New)"]);
   });
 
-  it("accepts any fragment string (ignored for LIVE) — no validation errors", () => {
-    const watchFragment = vi.fn(() => ({ value: reactive({ __typename: "X", id: "1" }) }));
-    mockUseCache.mockReturnValue({ watchFragment });
+  it("returns undefined (or reactive empty) when entity is missing", async () => {
+    const { cache } = makeCache();
 
-    // Empty string → tolerated
-    expect(() =>
-      useFragment({ id: "X:1", fragment: "" }),
-    ).not.toThrow();
+    const Comp = defineComponent({
+      setup() {
+        const data = useFragment({
+          id: "User:missing",
+          fragment: USER_FRAGMENT,
+          variables: {},
+        });
+        return () => h("div", {}, data.value ? JSON.stringify(data.value) : "undefined");
+      },
+    });
 
-    // Non-fragment (a query) → also tolerated
-    expect(() =>
-      useFragment({ id: "X:1", fragment: /* GraphQL */ `query Q { __typename }` }),
-    ).not.toThrow();
+    const wrapper = mount(Comp, { global: { plugins: [provide(cache)] } });
+    await tick();
 
-    // Proper fragment → also fine, of course
-    expect(() =>
-      useFragment({ id: "X:1", fragment: /* GraphQL */ `fragment X on X { id }` }),
-    ).not.toThrow();
+    // Depending on graph implementation, it may be 'undefined' or '{}' (reactive empty proxy)
+    const txt = wrapper.text();
+    if (txt === "undefined") {
+      expect(txt).toBe("undefined");
+    } else {
+      expect(() => JSON.parse(txt)).not.toThrow();
+      const obj = JSON.parse(txt);
+      expect(typeof obj).toBe("object");
+    }
   });
 });

@@ -1,6 +1,13 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { defineComponent, h, computed, watch } from 'vue';
-import { mountWithClient, testQueries, mockResponses, cacheConfigs, cleanVars } from '@/test/helpers/integration';
+import gql from 'graphql-tag';
+import {
+  mountWithClient,
+  testQueries,
+  mockResponses,
+  cacheConfigs,
+  cleanVars,
+} from '@/test/helpers/integration';
 import { type Route, tick, delay } from '@/test/helpers';
 
 /* -----------------------------------------------------------------------------
@@ -20,7 +27,12 @@ function MakeHarness(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-ne
     setup(props) {
       const { useQuery } = require('villus');
       const vars = computed(() => cleanVars({ first: props.first, after: props.after }));
-      const { data, error } = useQuery({ query: testQueries.POSTS, variables: vars, cachePolicy });
+      // IMPORTANT: pass a DocumentNode (gql`...`) so planner/compiler always has a doc
+      const { data, error } = useQuery({
+        query: gql`${testQueries.POSTS}`,
+        variables: vars,
+        cachePolicy,
+      });
 
       // Record meaningful payloads: edges with items, or explicit empty edges array
       watch(
@@ -39,12 +51,20 @@ function MakeHarness(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-ne
       // Record GraphQL/transport errors once
       watch(
         () => error.value,
-        (e) => { if (e) (props.errors as any[]).push(e.message || 'error'); },
+        (e) => {
+          if (e) (props.errors as any[]).push(e.message || 'error');
+        },
         { immediate: true },
       );
 
       return () =>
-        h('ul', {}, (data?.value?.posts?.edges ?? []).map((e: any) => h('li', {}, e?.node?.title || '')));
+        h(
+          'ul',
+          {},
+          (data?.value?.posts?.edges ?? []).map((e: any) =>
+            h('li', {}, e?.node?.title || ''),
+          ),
+        );
     },
   });
 }
@@ -54,7 +74,7 @@ function MakeHarness(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-ne
  * -------------------------------------------------------------------------- */
 
 describe('Integration • Errors (Posts connection)', () => {
-  const mocks: Array<{ waitAll: () => Promise<void>, restore: () => void }> = [];
+  const mocks: Array<{ waitAll: () => Promise<void>; restore: () => void }> = [];
 
   afterEach(async () => {
     while (mocks.length) {
@@ -84,14 +104,15 @@ describe('Integration • Errors (Posts connection)', () => {
       defineComponent({
         setup() {
           return () => h(App, { first: 2, renders, errors, empties, name: 'E1' });
-        }
+        },
       }),
       routes,
-      cache
+      cache,
     );
     mocks.push(fx);
 
-    await delay(10); await tick();
+    await delay(10);
+    await tick();
     expect(errors.length).toBe(1);
     expect(renders.length).toBe(0);
     expect(empties.length).toBe(0);
@@ -124,23 +145,26 @@ describe('Integration • Errors (Posts connection)', () => {
         props: ['first'],
         setup(props) {
           return () => h(App, { first: props.first, renders, errors, empties, name: 'GATE' });
-        }
+        },
       }),
       routes,
-      cache
+      cache,
     );
     mocks.push(fx);
 
     // Newer leader (first=3)
-    await wrapper.setProps({ first: 3 }); await tick();
+    await wrapper.setProps({ first: 3 });
+    await tick();
 
-    await delay(10); await tick();
+    await delay(10);
+    await tick();
     expect(renders).toEqual([['NEW']]);
     expect(errors.length).toBe(0);
     expect(empties.length).toBe(0);
 
     // Older error arrives later → dropped
-    await delay(25); await tick();
+    await delay(25);
+    await tick();
     expect(errors.length).toBe(0);
     expect(renders).toEqual([['NEW']]);
   });
@@ -172,27 +196,31 @@ describe('Integration • Errors (Posts connection)', () => {
       defineComponent({
         props: ['first', 'after'],
         setup(props) {
-          return () => h(App, { first: props.first, after: props.after, renders, errors, empties, name: 'CR' });
-        }
+          return () =>
+            h(App, { first: props.first, after: props.after, renders, errors, empties, name: 'CR' });
+        },
       }),
       routes,
-      cache
+      cache,
     );
     mocks.push(fx);
 
     // Start with older cursor op in-flight…
     await wrapper.setProps({ first: 2, after: 'p1' });
     // …then issue the newer leader (no cursor)
-    await wrapper.setProps({ first: 2, after: undefined }); await tick();
+    await wrapper.setProps({ first: 2, after: undefined });
+    await tick();
 
     // Newer success arrives
-    await delay(10); await tick();
+    await delay(10);
+    await tick();
     expect(renders).toEqual([['NEW']]);
     expect(errors.length).toBe(0);
     expect(empties.length).toBe(0);
 
     // Cursor error arrives later — dropped
-    await delay(25); await tick();
+    await delay(25);
+    await tick();
     expect(errors.length).toBe(0);
     expect(renders).toEqual([['NEW']]);
     expect(empties.length).toBe(0);
@@ -207,7 +235,11 @@ describe('Integration • Errors (Posts connection)', () => {
         respond: () => mockResponses.posts(['O1']),
       },
       // O2: first=3 (fast error)
-      { when: ({ variables }) => variables.first === 3 && !variables.after, delay: 5, respond: () => ({ error: new Error('O2 err') }) },
+      {
+        when: ({ variables }) => variables.first === 3 && !variables.after,
+        delay: 5,
+        respond: () => ({ error: new Error('O2 err') }),
+      },
       // O3: first=4 (medium success)
       {
         when: ({ variables }) => variables.first === 4 && !variables.after,
@@ -228,31 +260,36 @@ describe('Integration • Errors (Posts connection)', () => {
         props: ['first'],
         setup(props) {
           return () => h(App, { first: props.first, renders, errors, empties, name: 'REORD' });
-        }
+        },
       }),
       routes,
-      cache
+      cache,
     );
     mocks.push(fx);
 
     // Start with O1
     await wrapper.setProps({ first: 2 });
     // enqueue O2 then O3
-    await wrapper.setProps({ first: 3 }); await tick();
-    await wrapper.setProps({ first: 4 }); await tick();
+    await wrapper.setProps({ first: 3 });
+    await tick();
+    await wrapper.setProps({ first: 4 });
+    await tick();
 
     // Fast error arrives (dropped), medium still pending
-    await delay(10); await tick();
+    await delay(10);
+    await tick();
     expect(errors.length).toBe(0);
     expect(renders.length).toBe(0);
     expect(empties.length).toBe(0);
 
     // O3 arrives
-    await delay(15); await tick();
+    await delay(15);
+    await tick();
     expect(renders).toEqual([['O3']]);
 
     // O1 comes last — ignored (older)
-    await delay(40); await tick();
+    await delay(40);
+    await tick();
     expect(renders).toEqual([['O3']]);
     expect(errors.length).toBe(0);
     expect(empties.length).toBe(0);

@@ -60,7 +60,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   const planner = createPlanner(); // @connection/@paginate driven; configless by default
   const sessions = createSessions({ graph, views });
   const documents = createDocuments({ graph, views, planner });
-  const fragments = createFragments({}, { graph, views });
+  const fragments = createFragments({}, { graph, views, planner });
 
   // Features
   const ssr = createSSR({ graph });

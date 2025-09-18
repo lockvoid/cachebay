@@ -1,18 +1,19 @@
+// test/integration/cache-policies.test.ts
 import { describe, it, expect, afterEach } from 'vitest';
 import { defineComponent, h, watch } from 'vue';
-import { mount } from '@vue/test-utils';
 import {
   createListComponent,
-  createWatcherComponent,
   mountWithClient,
   getListItems,
   waitForList,
   testQueries,
   mockResponses,
   cacheConfigs,
-  createTestClient
+  createTestClient,
+  seedCache,
 } from '@/test/helpers/integration';
-import { tick, delay, seedCache, type Route } from '@/test/helpers';
+import { tick, delay } from '@/test/helpers/concurrency';
+import type { Route } from '@/test/helpers/transport';
 
 describe('Integration • Cache Policies Behavior', () => {
   const restores: Array<() => void> = [];
@@ -22,7 +23,7 @@ describe('Integration • Cache Policies Behavior', () => {
   });
 
   // ────────────────────────────────────────────────────────────────────────────
-  // cache-first policy
+  // cache-first
   // ────────────────────────────────────────────────────────────────────────────
   describe('cache-first policy', () => {
     it('miss → one network then render', async () => {
@@ -52,10 +53,8 @@ describe('Integration • Cache Policies Behavior', () => {
         query: testQueries.POSTS,
         variables: { filter: 'cached' },
         data: mockResponses.posts(['Cached Post']).data,
-        materialize: true,
       });
 
-      // Let cache settle and clear hydration state
       await delay(5);
 
       const Component = createListComponent(testQueries.POSTS, { filter: 'cached' }, { cachePolicy: 'cache-first' });
@@ -67,7 +66,6 @@ describe('Integration • Cache Policies Behavior', () => {
       expect(fx.calls.length).toBe(0);
     });
 
-    // 🔹 Single-object query: Post by id
     it('single object • miss → one network then render', async () => {
       const routes: Route[] = [{
         when: ({ variables }) => variables.id === '42',
@@ -87,12 +85,12 @@ describe('Integration • Cache Policies Behavior', () => {
       restores.push(fx.restore);
 
       await tick();
-      expect(wrapper.text()).toBe('');        // no cached
-      expect(fx.calls.length).toBe(1);        // one network
+      expect(wrapper.text()).toBe('');
+      expect(fx.calls.length).toBe(1);
 
       await delay(20);
       await tick();
-      expect(wrapper.text()).toBe('Answer');  // now rendered
+      expect(wrapper.text()).toBe('Answer');
     });
 
     it('single object • hit emits cached and terminates, no network', async () => {
@@ -102,7 +100,6 @@ describe('Integration • Cache Policies Behavior', () => {
         query: testQueries.POST,
         variables: { id: '7' },
         data: mockResponses.post('Cached Single', '7').data,
-        materialize: true,
       });
 
       await delay(5);
@@ -125,21 +122,18 @@ describe('Integration • Cache Policies Behavior', () => {
   });
 
   // ────────────────────────────────────────────────────────────────────────────
-  // cache-and-network policy
+  // cache-and-network
   // ────────────────────────────────────────────────────────────────────────────
   describe('cache-and-network policy', () => {
     it('hit → immediate cached render then network refresh once', async () => {
       const cache = cacheConfigs.withRelay();
 
-      // Seed cache with initial data
       await seedCache(cache, {
         query: testQueries.POSTS,
         variables: { filter: 'news' },
         data: mockResponses.posts(['Old News']).data,
-        materialize: true,
       });
 
-      // Let cache settle and clear hydration state
       await delay(5);
 
       const routes: Route[] = [{
@@ -152,11 +146,9 @@ describe('Integration • Cache Policies Behavior', () => {
       const { wrapper, fx } = await mountWithClient(Component, routes, cache);
       restores.push(fx.restore);
 
-      // immediate cached render
       await delay(10);
       expect(getListItems(wrapper)).toEqual(['Old News']);
 
-      // network refresh
       await delay(20);
       await tick(6);
       expect(getListItems(wrapper)).toEqual(['Fresh News']);
@@ -171,16 +163,14 @@ describe('Integration • Cache Policies Behavior', () => {
         query: testQueries.POSTS,
         variables: { filter: 'same' },
         data: cachedData,
-        materialize: true,
       });
 
-      // Let cache settle and clear hydration state
       await delay(5);
 
       const routes: Route[] = [{
         when: ({ variables }) => variables.filter === 'same',
         delay: 10,
-        respond: () => ({ data: cachedData }), // Same data
+        respond: () => ({ data: cachedData }),
       }];
 
       const Component = createListComponent(testQueries.POSTS, { filter: 'same' }, { cachePolicy: 'cache-and-network' });
@@ -192,7 +182,7 @@ describe('Integration • Cache Policies Behavior', () => {
 
       await delay(15);
       await tick(2);
-      expect(getListItems(wrapper)).toEqual(['Same Post']); // Still same
+      expect(getListItems(wrapper)).toEqual(['Same Post']);
       expect(fx.calls.length).toBe(1);
     });
 
@@ -203,16 +193,14 @@ describe('Integration • Cache Policies Behavior', () => {
         query: testQueries.POSTS,
         variables: { filter: 'diff' },
         data: mockResponses.posts(['Initial Post']).data,
-        materialize: true,
       });
 
-      // Let cache settle and clear hydration state
       await delay(5);
 
       const routes: Route[] = [{
         when: ({ variables }) => variables.filter === 'diff',
         delay: 10,
-        respond: () => mockResponses.posts(['Updated Post']), // Different data
+        respond: () => mockResponses.posts(['Updated Post']),
       }];
 
       const renders: string[][] = [];
@@ -241,14 +229,13 @@ describe('Integration • Cache Policies Behavior', () => {
       const { wrapper, fx } = await mountWithClient(Component, routes, cache);
       restores.push(fx.restore);
 
-      // Should see cached data immediately
       await tick(2);
       expect(getListItems(wrapper)).toEqual(['Initial Post']);
 
       await delay(15);
       await tick(2);
-      expect(renders).toEqual([['Initial Post'], ['Updated Post']]); // Two renders observed
-      expect(getListItems(wrapper)).toEqual(['Updated Post']); // DOM shows latest
+      expect(renders).toEqual([['Initial Post'], ['Updated Post']]);
+      expect(getListItems(wrapper)).toEqual(['Updated Post']);
       expect(fx.calls.length).toBe(1);
     });
 
@@ -264,7 +251,7 @@ describe('Integration • Cache Policies Behavior', () => {
       restores.push(fx.restore);
 
       await tick(2);
-      expect(getListItems(wrapper)).toEqual([]); // No cached data
+      expect(getListItems(wrapper)).toEqual([]);
 
       await delay(8);
       await tick(2);
@@ -272,7 +259,6 @@ describe('Integration • Cache Policies Behavior', () => {
       expect(fx.calls.length).toBe(1);
     });
 
-    // 🔹 Single-object query variants
     it('single object • hit → immediate cached render then network refresh once', async () => {
       const cache = cacheConfigs.withRelay();
 
@@ -280,7 +266,6 @@ describe('Integration • Cache Policies Behavior', () => {
         query: testQueries.POST,
         variables: { id: '88' },
         data: mockResponses.post('Old Title', '88').data,
-        materialize: true,
       });
 
       await delay(5);
@@ -302,11 +287,9 @@ describe('Integration • Cache Policies Behavior', () => {
       const { wrapper, fx } = await mountWithClient(Component, routes, cache);
       restores.push(fx.restore);
 
-      // cached frame
       await delay(8);
       expect(wrapper.text()).toBe('Old Title');
 
-      // network refresh
       await delay(15);
       await tick();
       expect(wrapper.text()).toBe('Fresh Title');
@@ -332,7 +315,7 @@ describe('Integration • Cache Policies Behavior', () => {
       restores.push(fx.restore);
 
       await tick();
-      expect(wrapper.text()).toBe('');        // no cached
+      expect(wrapper.text()).toBe('');
 
       await delay(10);
       await tick();
@@ -342,7 +325,7 @@ describe('Integration • Cache Policies Behavior', () => {
   });
 
   // ────────────────────────────────────────────────────────────────────────────
-  // network-only policy
+  // network-only
   // ────────────────────────────────────────────────────────────────────────────
   describe('network-only policy', () => {
     it('no cache, renders only on network', async () => {
@@ -364,7 +347,6 @@ describe('Integration • Cache Policies Behavior', () => {
       expect(getListItems(wrapper)).toEqual(['Network Post']);
     });
 
-    // 🔹 Single-object
     it('single object • no cache, renders on network', async () => {
       const routes: Route[] = [{
         when: ({ variables }) => variables.id === '501',
@@ -393,7 +375,7 @@ describe('Integration • Cache Policies Behavior', () => {
   });
 
   // ────────────────────────────────────────────────────────────────────────────
-  // cache-only policy
+  // cache-only
   // ────────────────────────────────────────────────────────────────────────────
   describe('cache-only policy', () => {
     it('hit renders cached data, no network call', async () => {
@@ -403,10 +385,8 @@ describe('Integration • Cache Policies Behavior', () => {
         query: testQueries.POSTS,
         variables: { filter: 'hit' },
         data: mockResponses.posts(['Hit Post']).data,
-        materialize: true,
       });
 
-      // Let cache settle and clear hydration state
       await delay(5);
 
       const Component = createListComponent(testQueries.POSTS, { filter: 'hit' }, { cachePolicy: 'cache-only' });
@@ -452,7 +432,6 @@ describe('Integration • Cache Policies Behavior', () => {
       expect(fx.calls.length).toBe(0);
     });
 
-    // 🔹 Single-object variants
     it('single object • hit renders cached, no network', async () => {
       const cache = cacheConfigs.withRelay();
 
@@ -460,7 +439,6 @@ describe('Integration • Cache Policies Behavior', () => {
         query: testQueries.POST,
         variables: { id: '11' },
         data: mockResponses.post('Cache Hit Single', '11').data,
-        materialize: true,
       });
 
       await delay(5);
@@ -500,7 +478,7 @@ describe('Integration • Cache Policies Behavior', () => {
   });
 
   // ────────────────────────────────────────────────────────────────────────────
-  // cursor replay with relay resolver (unchanged)
+  // cursor replay (still just verifies network-only path renders)
   // ────────────────────────────────────────────────────────────────────────────
   describe('cursor replay with relay resolver', () => {
     it('publishes terminally (append/prepend/replace)', async () => {
@@ -513,10 +491,11 @@ describe('Integration • Cache Policies Behavior', () => {
             comments: {
               __typename: 'CommentConnection',
               edges: [
-                { cursor: 'c3', node: { __typename: 'Comment', id: '3', text: 'Comment 3', postId: '1', authorId: '1' } },
-                { cursor: 'c4', node: { __typename: 'Comment', id: '4', text: 'Comment 4', postId: '1', authorId: '1' } },
+                { __typename: 'CommentEdge', cursor: 'c3', node: { __typename: 'Comment', id: '3', text: 'Comment 3', postId: '1', authorId: '1' } },
+                { __typename: 'CommentEdge', cursor: 'c4', node: { __typename: 'Comment', id: '4', text: 'Comment 4', postId: '1', authorId: '1' } },
               ],
               pageInfo: {
+                __typename: 'PageInfo',
                 startCursor: 'c3',
                 endCursor: 'c4',
                 hasNextPage: false,

@@ -1,7 +1,19 @@
-// src/compiler/compile.ts
-import { Kind, type DocumentNode, type FragmentDefinitionNode, type OperationDefinitionNode } from "graphql";
+import {
+  Kind,
+  parse, // ← add parse so strings are supported
+  type DocumentNode,
+  type FragmentDefinitionNode,
+  type OperationDefinitionNode,
+} from "graphql";
 import { lowerSelectionSet } from "./lowering/flatten";
 import type { CachePlanV1, PlanField } from "./types";
+
+/** Tiny type guard so other modules can pass plans directly */
+export const isCachePlanV1 = (v: any): v is CachePlanV1 =>
+  v != null &&
+  typeof v === "object" &&
+  v.__kind === "CachePlanV1" &&
+  Array.isArray((v as any).root);
 
 /** Build a Map of fragment name -> fragment definition for lowering. */
 const indexFragments = (doc: DocumentNode): Map<string, FragmentDefinitionNode> => {
@@ -33,13 +45,29 @@ const opRootTypename = (op: OperationDefinitionNode): string => {
 
 /**
  * compileToPlan:
+ *  - Accepts: string | DocumentNode | CachePlanV1
+ *  - String → parse() to DocumentNode
+ *  - Plan   → returned as-is (zero work)
+ *  - Doc    → compiled like before
+ *
  *  - If the DocumentNode has an OperationDefinition, compile it
  *  - Otherwise, if it has a single FragmentDefinition, compile as "fragment"
  *  - Throws when neither is present
  */
 export const compileToPlan = (
-  document: DocumentNode,
+  documentOrStringOrPlan: string | DocumentNode | CachePlanV1,
 ): CachePlanV1 => {
+  // Precompiled plan? done.
+  if (isCachePlanV1(documentOrStringOrPlan)) {
+    return documentOrStringOrPlan;
+  }
+
+  // String? parse first.
+  const document: DocumentNode =
+    typeof documentOrStringOrPlan === "string"
+      ? parse(documentOrStringOrPlan)
+      : documentOrStringOrPlan;
+
   const fragmentsByName = indexFragments(document);
 
   const operation = document.definitions.find(

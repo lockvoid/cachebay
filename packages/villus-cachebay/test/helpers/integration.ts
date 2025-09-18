@@ -1,81 +1,60 @@
-import { defineComponent, h, computed, watch, type Ref } from 'vue';
+// test/helpers/integration.ts
+import { defineComponent, h, watch } from 'vue';
 import { mount } from '@vue/test-utils';
-import { createClient, type Client } from 'villus';
-import { createCache, relay } from '@/src';
-import { CACHEBAY_KEY, provideCachebay } from '@/src/core/plugin'; // ⟵ import provideCachebay
-import { createFetchMock, type Route, tick, delay } from './index';
-import { getOperationKey, ensureDocumentHasTypenames } from '@/src/core/utils';
+import { createClient } from 'villus';
+import { createCache } from '@/src/core/internals';
+import { provideCachebay } from '@/src/core/plugin';
+import { createFetchMock, type Route } from './transport';
+import { tick, delay } from './concurrency';
+import gql from 'graphql-tag';
 
+/**
+ * Seed the cache by running the current normalize path (documents).
+ * Accepts a GraphQL DocumentNode (or string) + variables + a server-like { data } payload.
+ */
 export async function seedCache(
   cache: any,
   {
-    query,        // not used anymore (kept for API parity)
+    query,
     variables = {},
-    data,         // shape like mockResponses.posts(...).data
-    materialize = true,
+    data,
   }: {
     query: any;
     variables?: Record<string, any>;
     data: any;
-    materialize?: boolean;
   }
 ) {
-  // pull public internals
   const internals = (cache as any).__internals;
-  if (!internals) {
-    throw new Error("[seedCache] cache.__internals is missing");
-  }
-  const { graph, selections, resolvers } = internals;
+  if (!internals) throw new Error("[seedCache] cache.__internals is missing");
+  const { documents } = internals;
 
-  // 1) make a mutable clone and (optionally) warm it with resolvers
-  const clone = JSON.parse(JSON.stringify(data?.data ?? data));
-  if (materialize && resolvers?.applyOnObject) {
-    // apply field resolvers the same way plugin does before writing selections
-    resolvers.applyOnObject(clone, variables, { stale: false });
-  }
+  const document =
+    typeof query === 'string'
+      ? (gql as any)([query] as any)
+      : query;
 
-  // 2) write each root field into the selections store using arg-shaped keys
-  //    (alias-free root, same policy the plugin uses)
-  if (!clone || typeof clone !== "object") return;
+  // run normalization like the plugin would
+  documents.normalizeDocument({
+    document,
+    variables,
+    data: data?.data ?? data,
+  });
 
-  const root = clone.__typename ? clone : (clone.data || clone);
-  for (const field of Object.keys(root)) {
-    if (field === "__typename") continue;
-    const key = selections.buildQuerySelectionKey(field, variables || {});
-    graph.putSelection(key, root[field]);
-  }
+  // give time for any reactive overlays (usually not needed)
+  await tick();
 }
 
 /**
- * Common cache configurations for integration tests
+ * Cache configs
  */
 export const cacheConfigs = {
-  basic: () => createCache({
-    addTypename: true,
-  }),
-
-  withRelay: (resolverFn?: any) => {
-    const cache = createCache({
-      addTypename: true,
-      resolvers: {
-        Query: {
-          posts: resolverFn || relay({}),
-          // comments: resolverFn || relay({}),
-          // users: resolverFn || relay({}),
-        }
-      },
-    });
-    return cache;
-  },
-
-  withCustomKeys: (keys: Record<string, (o: any) => string | null>) => createCache({
-    addTypename: true,
-    keys,
-  }),
+  basic: () => createCache(),
+  withRelay: () => createCache(),          // connections are annotated with @connection in the queries below
+  withCustomKeys: (keys: Record<string, (o: any) => string | null>) => createCache({ keys }),
 };
 
 /**
- * Creates a test client with cache and mock fetch
+ * Create a test client with cache and mock fetch
  */
 export function createTestClient(routes: Route[], cacheConfig?: any) {
   const cache = cacheConfig || cacheConfigs.basic();
@@ -113,7 +92,7 @@ export function createListComponent(
       });
 
       return () => {
-        const items = data?.value?.[dataPath]?.[itemPath] ?? [];
+        const items = (data?.value?.[dataPath]?.[itemPath]) ?? [];
         return h(
           'ul',
           {},
@@ -152,13 +131,10 @@ export function createWatcherComponent(
         cachePolicy: options.cachePolicy
       });
 
-      const renders: any[] = [];
-
       watch(data, (newData) => {
         if (newData && options.onData) {
           options.onData(newData);
         }
-        renders.push(newData);
       }, { immediate: true });
 
       watch(error, (newError) => {
@@ -186,14 +162,12 @@ export async function mountWithClient(
     global: {
       plugins: [
         client as any,
-        // use a tiny plugin to call provideCachebay with the *actual* cache instance
         {
           install(app) {
             provideCachebay(app as any, cache);
           }
         }
       ],
-      // ⚠️ remove manual provide of CACHEBAY_KEY — provideCachebay handles it
     },
   });
 
@@ -222,13 +196,15 @@ export function cleanVars(v: Record<string, any>): Record<string, any> {
 }
 
 /**
- * Standard GraphQL queries for testing
+ * Standard GraphQL queries for testing (annotated with @connection)
  */
 export const testQueries = {
-  POSTS: /* GraphQL */ `
+  POSTS: /* GraphQL */ gql`
     query Posts($filter: String, $first: Int, $after: String) {
-      posts(filter: $filter, first: $first, after: $after) {
+      posts(filter: $filter, first: $first, after: $after) @connection(mode: "infinite", args: ["filter"]) {
+        __typename
         edges {
+          __typename
           cursor
           node {
             __typename
@@ -239,6 +215,7 @@ export const testQueries = {
           }
         }
         pageInfo {
+          __typename
           endCursor
           hasNextPage
         }
@@ -246,8 +223,7 @@ export const testQueries = {
     }
   `,
 
-  // 🔹 Single Post by id (object, not a connection)
-  POST: /* GraphQL */ `
+  POST: /* GraphQL */ gql`
     query Post($id: ID!) {
       post(id: $id) {
         __typename
@@ -261,8 +237,10 @@ export const testQueries = {
 
   COMMENTS: /* GraphQL */ `
     query Comments($postId: ID, $first: Int, $after: String) {
-      comments(postId: $postId, first: $first, after: $after) {
+      comments(postId: $postId, first: $first, after: $after) @connection(mode: "infinite", args: ["postId"]) {
+        __typename
         edges {
+          __typename
           cursor
           node {
             __typename
@@ -273,6 +251,7 @@ export const testQueries = {
           }
         }
         pageInfo {
+          __typename
           startCursor
           endCursor
           hasNextPage
@@ -282,10 +261,12 @@ export const testQueries = {
     }
   `,
 
-  USERS: /* GraphQL */ `
+  USERS: /* GraphQL */ gql`
     query Users($first: Int, $after: String) {
-      users(first: $first, after: $after) {
+      users(first: $first, after: $after) @connection(mode: "infinite") {
+        __typename
         edges {
+          __typename
           cursor
           node {
             __typename
@@ -295,6 +276,7 @@ export const testQueries = {
           }
         }
         pageInfo {
+          __typename
           endCursor
           hasNextPage
         }
@@ -302,7 +284,7 @@ export const testQueries = {
     }
   `,
 
-  SIMPLE_POSTS: /* GraphQL */ `
+  SIMPLE_POSTS: /* GraphQL */ gql`
     query SimplePosts {
       posts {
         __typename
@@ -324,6 +306,7 @@ export const mockResponses = {
       posts: {
         __typename: 'PostConnection',
         edges: titles.map((title, i) => ({
+          __typename: 'PostEdge',
           cursor: `c${fromId + i}`,
           node: {
             __typename: 'Post',
@@ -334,14 +317,14 @@ export const mockResponses = {
           },
         })),
         pageInfo: {
-          endCursor: titles.length > 0 ? `c${titles.length}` : null,
+          __typename: 'PageInfo',
+          endCursor: titles.length > 0 ? `c${fromId + titles.length - 1}` : null,
           hasNextPage: true,
         },
       },
     },
   }),
 
-  // 🔹 Single Post object
   post: (title: string, id: string = '1') => ({
     data: {
       __typename: 'Query',
@@ -361,6 +344,7 @@ export const mockResponses = {
       comments: {
         __typename: 'CommentConnection',
         edges: texts.map((text, i) => ({
+          __typename: 'CommentEdge',
           cursor: `c${fromId + i}`,
           node: {
             __typename: 'Comment',
@@ -371,8 +355,9 @@ export const mockResponses = {
           },
         })),
         pageInfo: {
-          startCursor: texts.length > 0 ? 'c1' : null,
-          endCursor: texts.length > 0 ? `c${texts.length}` : null,
+          __typename: 'PageInfo',
+          startCursor: texts.length > 0 ? `c${fromId}` : null,
+          endCursor: texts.length > 0 ? `c${fromId + texts.length - 1}` : null,
           hasNextPage: false,
           hasPreviousPage: false,
         },
@@ -386,6 +371,7 @@ export const mockResponses = {
       users: {
         __typename: 'UserConnection',
         edges: names.map((name, i) => ({
+          __typename: 'UserEdge',
           cursor: `c${i + 1}`,
           node: {
             __typename: 'User',
@@ -395,6 +381,7 @@ export const mockResponses = {
           },
         })),
         pageInfo: {
+          __typename: 'PageInfo',
           endCursor: names.length > 0 ? `c${names.length}` : null,
           hasNextPage: false,
         },

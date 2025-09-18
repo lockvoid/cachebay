@@ -1,3 +1,4 @@
+// test/helpers/transport.ts
 import { fetch as villusFetch } from 'villus';
 import { delay, tick } from './concurrency';
 
@@ -26,8 +27,9 @@ function buildResponse(obj: any) {
     async text() { return JSON.stringify(obj); },
   } as any;
 }
+
 export function createFetchMock(routes: Route[]) {
-  const calls: Array<{ body: string; variables: any; context: any }> = [];
+  const calls: Array<RecordedCall> = [];
   const originalFetch = globalThis.fetch;
   let pending = 0;
 
@@ -64,7 +66,6 @@ export function createFetchMock(routes: Route[]) {
 
       return buildResponse(resp);
     } finally {
-      // ensure we decrement pending even if respond throws
       if (pending > 0) pending--;
     }
   };

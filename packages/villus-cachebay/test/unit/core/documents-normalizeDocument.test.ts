@@ -1375,7 +1375,6 @@ describe("normalizeDocument (progression by query)", () => {
       data: updateUserData,
     });
 
-    console.log(graph.inspect());
     expect(graph.getRecord("@")).toEqual({
       id: "@",
       __typename: "@",
