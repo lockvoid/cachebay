@@ -115,3 +115,68 @@ export const buildConnectionKey = (
   const prefix = parentRecordId === ROOT_ID ? "@." : `@.${parentRecordId}.`;
   return `${prefix}${field.fieldName}(${field.stringifyArgs(variables)})`;
 };
+
+export const upsertEntityShallow = (graph: GraphInstance, node: any): string | null => {
+  const entityKey = graph.identify(node);
+  if (!entityKey) return null;
+
+  const snapshot: Record<string, any> = {
+    __typename: node.__typename,
+    id: node.id != null ? String(node.id) : undefined,
+  };
+
+  const keys = Object.keys(node);
+  for (let i = 0; i < keys.length; i++) {
+    const field = keys[i];
+    if (IDENTITY_FIELDS.has(field)) continue;
+
+    const value = node[field];
+
+    // skip connection-like
+    if (
+      isObject(value) &&
+      typeof (value as any).__typename === "string" &&
+      (value as any).__typename.endsWith("Connection") &&
+      Array.isArray((value as any).edges)
+    ) {
+      continue;
+    }
+
+    // identifiable child
+    if (isObject(value) && hasTypename(value) && value.id != null) {
+      const childKey = graph.identify(value);
+      if (childKey) {
+        graph.putRecord(childKey, { __typename: value.__typename, id: String(value.id) });
+        snapshot[field] = { __ref: childKey };
+        continue;
+      }
+    }
+
+    // arrays (may contain identifiable)
+    if (Array.isArray(value)) {
+      const out = new Array(value.length);
+      for (let j = 0; j < value.length; j++) {
+        const item = value[j];
+        if (isObject(item) && hasTypename(item) && item.id != null) {
+          const childKey = graph.identify(item);
+          if (childKey) {
+            graph.putRecord(childKey, { __typename: item.__typename, id: String(item.id) });
+            out[j] = { __ref: childKey };
+          } else {
+            out[j] = item;
+          }
+        } else {
+          out[j] = item;
+        }
+      }
+      snapshot[field] = out;
+      continue;
+    }
+
+    // plain scalar/object
+    snapshot[field] = value;
+  }
+
+  graph.putRecord(entityKey, snapshot);
+  return entityKey;
+};

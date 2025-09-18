@@ -1,4 +1,4 @@
-import { isObject, hasTypename, traverseFast, buildFieldKey, buildConnectionKey, TRAVERSE_SKIP } from "./utils";
+import { isObject, hasTypename, traverseFast, buildFieldKey, buildConnectionKey, upsertEntityShallow, TRAVERSE_SKIP } from "./utils";
 import { IDENTITY_FIELDS, ROOT_ID } from "./constants";
 import {
   compileToPlan,
@@ -39,71 +39,6 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
     const plan = compileToPlan(docOrPlan, { connections: options.connections || {} });
     planCache.set(docOrPlan, plan);
     return plan;
-  };
-
-  const upsertEntityShallow = (node: any) => {
-    const entityKey = graph.identify(node);
-    if (!entityKey) return null;
-
-    const snapshot: Record<string, any> = {
-      __typename: node.__typename,
-      id: String(node.id),
-    };
-
-    const keys = Object.keys(node);
-    for (let i = 0; i < keys.length; i++) {
-      const field = keys[i];
-      if (IDENTITY_FIELDS.has(field)) continue;
-
-      const value = node[field];
-
-      // Skip embedding connection-like objects (typename ends with Connection & has edges)
-      if (
-        isObject(value) &&
-        typeof (value as any).__typename === "string" &&
-        (value as any).__typename.endsWith("Connection") &&
-        Array.isArray((value as any).edges)
-      ) {
-        continue;
-      }
-
-      // Linked entity object
-      if (isObject(value) && hasTypename(value) && value.id != null) {
-        const childKey = graph.identify(value);
-        if (childKey) {
-          graph.putRecord(childKey, { __typename: value.__typename, id: String(value.id) });
-          snapshot[field] = { __ref: childKey };
-          continue;
-        }
-      }
-
-      // Arrays of possible entities
-      if (Array.isArray(value)) {
-        const out = new Array(value.length);
-        for (let j = 0; j < value.length; j++) {
-          const item = value[j];
-          if (isObject(item) && hasTypename(item) && item.id != null) {
-            const childKey = graph.identify(item);
-            if (childKey) {
-              graph.putRecord(childKey, { __typename: item.__typename, id: String(item.id) });
-              out[j] = { __ref: childKey };
-            } else {
-              out[j] = item;
-            }
-          } else {
-            out[j] = item;
-          }
-        }
-        snapshot[field] = out;
-        continue;
-      }
-
-      // Plain object or scalar
-      snapshot[field] = value;
-    }
-
-    graph.putRecord(entityKey, snapshot);
-    return entityKey;
   };
 
   const normalizeDocument = ({
@@ -156,7 +91,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
           const nodeObj = edge.node;
 
           if (isObject(nodeObj) && hasTypename(nodeObj) && nodeObj.id != null) {
-            const nodeKey = upsertEntityShallow(nodeObj);
+            const nodeKey = upsertEntityShallow(graph, nodeObj);
             if (nodeKey) {
               const edgeKey = `${pageKey}.edges.${i}`;
               const { node, ...edgeRest } = edge as any;
@@ -203,7 +138,7 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
 
       // Identifiable entity — upsert & optionally link (only on queries)
       if (planField && isObject(valueNode) && hasTypename(valueNode) && valueNode.id != null) {
-        const entityKey = upsertEntityShallow(valueNode);
+        const entityKey = upsertEntityShallow(graph, valueNode);
         if (entityKey) {
           const argObj = planField.buildArgs(variables);
           const hasArgs = argObj && Object.keys(argObj).length > 0;
@@ -269,12 +204,18 @@ export const createDocuments = (options: DocumentsOptions, deps: DocumentsDepend
       }
 
       if (!field.selectionSet || field.selectionSet.length === 0) {
-        result[field.responseKey] = views.getEntityView(entityProxy, null, variables);
+        // pass null selection and undefined map to the new signature
+        result[field.responseKey] = views.getEntityView(entityProxy, null, undefined, variables);
         continue;
       }
 
       // Selected shell whose properties read via entity view (nested connections remain reactive)
-      const entityView = views.getEntityView(entityProxy, field.selectionSet, variables);
+      const entityView = views.getEntityView(
+        entityProxy,
+        field.selectionSet,
+        field.selectionMap,
+        variables
+      );
       const shell: Record<string, any> = {
         __typename: entityView.__typename,
         id: entityView.id,
