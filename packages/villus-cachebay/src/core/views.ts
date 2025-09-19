@@ -1,4 +1,3 @@
-// src/core/views.ts
 import { buildConnectionKey, buildConnectionCanonicalKey } from "./utils";
 import type { GraphInstance } from "./graph";
 import type { PlanField } from "@/src/compiler";
@@ -194,6 +193,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     canonical: boolean,
   ): any => {
     const pageProxy = graph.materializeRecord(pageKey);
+
     if (!pageProxy) return undefined;
 
     let bucket = viewCache.get(pageProxy);
@@ -210,29 +210,33 @@ export const createViews = ({ graph }: ViewsDependencies) => {
 
           const refs = list.map((r: any) => (r && r.__ref) || "");
           const cached = bucket?.edgesCache;
-          if (
-            cached &&
-            cached.refs.length === refs.length &&
-            cached.refs.every((v: string, i: number) => v === refs[i])
-          ) {
-            return cached.array;
+
+          // Invalidate if the source edges array identity changed, or the ref list changed
+          const identityChanged = !cached || cached.sourceArray !== list;
+          const refsChanged =
+            !cached ||
+            cached.refs.length !== refs.length ||
+            !cached.refs.every((v: string, i: number) => v === refs[i]);
+
+          if (identityChanged || refsChanged) {
+            const arr = new Array(refs.length);
+            for (let i = 0; i < refs.length; i++) {
+              const ek = refs[i];
+              arr[i] = ek ? getEdgeView(ek, nodeField, variables, canonical) : undefined;
+            }
+
+            if (!bucket || bucket.kind !== "page") {
+              bucket = { kind: "page", view, edgesCache: { refs, array: arr, sourceArray: list } };
+              viewCache.set(pageProxy, bucket);
+            } else {
+              bucket.view = view;
+              bucket.edgesCache = { refs, array: arr, sourceArray: list };
+            }
+
+            return arr;
           }
 
-          const arr = new Array(refs.length);
-          for (let i = 0; i < refs.length; i++) {
-            const ek = refs[i];
-            arr[i] = ek ? getEdgeView(ek, nodeField, variables, canonical) : undefined;
-          }
-
-          if (!bucket || bucket.kind !== "page") {
-            bucket = { kind: "page", view, edgesCache: { refs, array: arr } };
-            viewCache.set(pageProxy, bucket);
-          } else {
-            bucket.view = view;
-            bucket.edgesCache = { refs, array: arr };
-          }
-
-          return arr;
+          return cached.array;
         }
 
         const value = Reflect.get(target, prop, receiver);
@@ -265,7 +269,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     });
 
     if (!bucket || bucket.kind !== "page") {
-      bucket = { kind: "page", view, edgesCache: { refs: [], array: [] } };
+      bucket = { kind: "page", view, edgesCache: { refs: [], array: [], sourceArray: null as any } };
       viewCache.set(pageProxy, bucket);
     } else {
       bucket.view = view;

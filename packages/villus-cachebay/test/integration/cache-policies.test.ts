@@ -298,9 +298,10 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
     });
 
     it("nested Post→Comments (uuid) • hit then refresh", async () => {
-      const cache = (await mountWithClient(defineComponent({ render: () => h("div") }), [])).cache;
+      // bootstrap a cache instance we can seed directly
+      const { cache } = await mountWithClient(defineComponent({ render: () => h("div") }), []);
 
-      // Seed: User u1 with Posts(tech) page→ P1 node with Comments(C1,C2)
+      // Seed: User u1 with Posts(tech) page → P1 that already has Comments(C1, C2) canonicalized
       await seedCache(cache, {
         query: operations.USER_POSTS_COMMENTS_QUERY,
         variables: {
@@ -333,14 +334,15 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
 
       await delay(5);
 
-      // Network: after 'c2' add Comment 3 for P1
+      // Network: we revalidate the SAME leader (no cursor) and server now includes C3 as well.
+      // (We don't auto-fire an 'after' request; canonical union grows because the leader payload changed.)
       const routes: Route[] = [
         {
           when: ({ variables }) =>
             variables.id === "u1" &&
             variables.postsCategory === "tech" &&
-            variables.commentsFirst === 1 &&
-            variables.commentsAfter === "c2",
+            variables.commentsFirst === 2 &&
+            variables.commentsAfter == null,
           delay: 12,
           respond: () => ({
             data: {
@@ -353,7 +355,10 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
                     {
                       title: "P1",
                       extras: {
-                        comments: fixtures.comments.connection(["Comment 3"], { postId: "p1", fromId: 3 }),
+                        comments: fixtures.comments.connection(["Comment 1", "Comment 2", "Comment 3"], {
+                          postId: "p1",
+                          fromId: 1,
+                        }),
                       },
                     },
                   ],
@@ -365,20 +370,43 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
         },
       ];
 
-      const Comp = UserPostComments("cache-and-network");
+      // Component that reads: User(u1) → posts(tech first:1) → edges[0].node.comments(first:2, after:null)
+      const Comp = defineComponent({
+        name: "UserPostComments",
+        setup() {
+          const { useQuery } = require("villus");
+          const { data } = useQuery({
+            query: operations.USER_POSTS_COMMENTS_QUERY,
+            variables: {
+              id: "u1",
+              postsCategory: "tech",
+              postsFirst: 1,
+              postsAfter: null,
+              commentsFirst: 2,
+              commentsAfter: null,
+            },
+            cachePolicy: "cache-and-network",
+          });
+          return () => {
+            const edges =
+              data.value?.user?.posts?.edges?.[0]?.node?.comments?.edges ?? [];
+            return edges.map((e: any) => h("div", {}, e?.node?.text ?? ""));
+          };
+        },
+      });
+
       const { wrapper, fx } = await mountWithClient(Comp, routes, cache);
 
-      // allow canonical nested comments to surface immediately
+      // Immediate cached render (C1, C2)
       await tick();
-      await tick();
+      expect(wrapper.findAll("div").map((d) => d.text())).toEqual(["Comment 1", "Comment 2"]);
 
-      // immediate cached render (C1, C2)
-      expect(rows(wrapper)).toEqual(["Comment 1", "Comment 2"]);
+      // After network revalidate, canonical shows C1, C2, C3
+      await delay(125);
 
-      // after network, union via canonical (C1, C2, C3)
-      await delay(20);
-      await tick();
-      expect(rows(wrapper)).toEqual(["Comment 1", "Comment 2", "Comment 3"]);
+
+      expect(wrapper.findAll("div").map((d) => d.text())).toEqual(["Comment 1", "Comment 2", "Comment 3"]);
+
       fx.restore();
     });
   });

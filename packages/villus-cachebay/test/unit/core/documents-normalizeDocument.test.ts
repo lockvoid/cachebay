@@ -1913,4 +1913,129 @@ describe("normalizeDocument (progression by query)", () => {
     });
     expect(canon.totalCount).toBe(9);
   });
+  it("materialized canonical nested comments: leader (C1,C2) then after (C3) updates view (regression)", () => {
+    // 1) Leader page: Post:p1 → comments C1, C2
+    documents.normalizeDocument({
+      document: USER_POSTS_COMMENTS_QUERY,
+      variables: {
+        id: "u1",
+        postsCategory: "tech",
+        postsFirst: 1,
+        postsAfter: null,
+        commentsFirst: 2,
+        commentsAfter: null,
+      },
+      data: {
+        user: {
+          __typename: "User",
+          id: "u1",
+          posts: {
+            __typename: "PostConnection",
+            pageInfo: { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false },
+            edges: [
+              {
+                __typename: "PostEdge",
+                cursor: "p1",
+                node: {
+                  __typename: "Post",
+                  id: "p1",
+                  comments: {
+                    __typename: "CommentConnection",
+                    pageInfo: {
+                      __typename: "PageInfo",
+                      startCursor: "c1",
+                      endCursor: "c2",
+                      hasNextPage: true,
+                      hasPreviousPage: false,
+                    },
+                    edges: [
+                      { __typename: "CommentEdge", cursor: "c1", node: { __typename: "Comment", id: "c1", text: "Comment 1" } },
+                      { __typename: "CommentEdge", cursor: "c2", node: { __typename: "Comment", id: "c2", text: "Comment 2" } },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    // Materialize now → expect C1, C2
+    let view = documents.materializeDocument({
+      document: USER_POSTS_COMMENTS_QUERY,
+      variables: {
+        id: "u1",
+        postsCategory: "tech",
+        postsFirst: 1,
+        postsAfter: null,
+        commentsFirst: 2,
+        commentsAfter: null,
+      },
+    });
+
+    let got = (view.user.posts.edges[0].node.comments.edges || []).map((e: any) => e?.node?.text);
+    expect(got).toEqual(["Comment 1", "Comment 2"]);
+
+    // 2) After page: add C3 (after "c2")
+    documents.normalizeDocument({
+      document: USER_POSTS_COMMENTS_QUERY,
+      variables: {
+        id: "u1",
+        postsCategory: "tech",
+        postsFirst: 1,
+        postsAfter: null,
+        commentsFirst: 1,
+        commentsAfter: "c2",
+      },
+      data: {
+        user: {
+          __typename: "User",
+          id: "u1",
+          posts: {
+            __typename: "PostConnection",
+            edges: [
+              {
+                __typename: "PostEdge",
+                cursor: "p1",
+                node: {
+                  __typename: "Post",
+                  id: "p1",
+                  comments: {
+                    __typename: "CommentConnection",
+                    pageInfo: {
+                      __typename: "PageInfo",
+                      startCursor: "c3",
+                      endCursor: "c3",
+                      hasNextPage: false,
+                      hasPreviousPage: false,
+                    },
+                    edges: [
+                      { __typename: "CommentEdge", cursor: "c3", node: { __typename: "Comment", id: "c3", text: "Comment 3" } },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    // Materialize again → expect C1, C2, C3 (this failed before the fix)
+    view = documents.materializeDocument({
+      document: USER_POSTS_COMMENTS_QUERY,
+      variables: {
+        id: "u1",
+        postsCategory: "tech",
+        postsFirst: 1,
+        postsAfter: null,
+        commentsFirst: 2,
+        commentsAfter: null,
+      },
+    });
+
+    got = (view.user.posts.edges[0].node.comments.edges || []).map((e: any) => e?.node?.text);
+    expect(got).toEqual(["Comment 1", "Comment 2", "Comment 3"]);
+  });
 });

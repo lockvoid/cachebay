@@ -93,7 +93,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         seen.add(key);
         front.push({ __ref: ref });
       }
-      // prepend in natural order of the page
       if (front.length) dst.unshift(...front);
     };
 
@@ -106,85 +105,89 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       pageSnap: Record<string, any>,
       pageEdgeRefs: Array<{ __ref: string }>
     ) => {
-      // Build canonical key (filters-only identity)
       const canonicalKey = buildConnectionCanonicalKey(field, parentRecordId, requestVars);
       const mode = field.connectionMode || "page";
 
-      // Load or initialize the canonical record
-      let canonical = graph.getRecord(canonicalKey) || {
+      // Read current record (do NOT mutate it)
+      const current = graph.getRecord(canonicalKey) || {
         __typename: pageSnap.__typename || "Connection",
         edges: [] as Array<{ __ref: string }>,
         pageInfo: {},
       };
 
-      // Strict detection from compiled field args (preferred)
+      // Detect cursor role
       const reqArgs = field.buildArgs(requestVars) || {};
       let hasAfter = "after" in reqArgs && reqArgs.after != null;
       let hasBefore = "before" in reqArgs && reqArgs.before != null;
 
-      // Loose fallback: if variables object has keys that *look* like after/before, honor them.
-      // This covers cases where the op didn't declare that arg on the field but the test uses
-      // variable names like usersBefore / usersAfter.
+      // Loose fallback for tests using differently named vars
       if (!hasAfter) {
         for (const k of Object.keys(requestVars)) {
           if (k.toLowerCase().includes("after") && requestVars[k] != null) {
-            hasAfter = true;
-            break;
+            hasAfter = true; break;
           }
         }
       }
       if (!hasBefore) {
         for (const k of Object.keys(requestVars)) {
           if (k.toLowerCase().includes("before") && requestVars[k] != null) {
-            hasBefore = true;
-            break;
+            hasBefore = true; break;
           }
         }
       }
 
       const isLeader = !hasAfter && !hasBefore;
 
-      // normalize arrays
-      const canEdges: Array<{ __ref: string }> = Array.isArray(canonical.edges) ? canonical.edges.slice() : [];
-      const pageEdges = pageEdgeRefs;
+      // Compute next state WITHOUT mutating the current snapshot
+      let nextEdges: Array<{ __ref: string }> = Array.isArray(current.edges) ? current.edges.slice() : [];
+      let nextPageInfo: Record<string, any> | undefined;
+      const extrasPatch: Record<string, any> = {};
 
       if (mode === "infinite") {
         if (isLeader) {
-          // first no-cursor page anchors pageInfo; keep union list (don’t truncate)
-          if (canEdges.length === 0) {
-            canonical.edges = pageEdges.slice();
+          if (nextEdges.length === 0) {
+            nextEdges = pageEdgeRefs.slice();
           } else {
-            const next = canEdges.slice();
-            appendUniqueByCursor(next, pageEdges);
-            canonical.edges = next;
+            const tmp = nextEdges.slice();
+            appendUniqueByCursor(tmp, pageEdgeRefs);
+            nextEdges = tmp;
           }
-          if (pageSnap.pageInfo) canonical.pageInfo = { ...(pageSnap.pageInfo as any) };
+          if (pageSnap.pageInfo) nextPageInfo = { ...(pageSnap.pageInfo as any) };
           for (const k of Object.keys(pageSnap)) {
             if (k === "edges" || k === "pageInfo" || k === "__typename") continue;
-            (canonical as any)[k] = (pageSnap as any)[k];
+            extrasPatch[k] = (pageSnap as any)[k];
           }
-          (canonical as any).__leader = pageKey; // optional debug
+          extrasPatch.__leader = pageKey;
         } else if (hasBefore) {
-          // ⬅ precedence to before (prepend)
-          const next = canEdges.slice();
-          prependUniqueByCursor(next, pageEdges);
-          canonical.edges = next;
+          const tmp = nextEdges.slice();
+          prependUniqueByCursor(tmp, pageEdgeRefs);
+          nextEdges = tmp;
+          // keep anchored pageInfo (no change)
         } else if (hasAfter) {
-          const next = canEdges.slice();
-          appendUniqueByCursor(next, pageEdges);
-          canonical.edges = next;
+          const tmp = nextEdges.slice();
+          appendUniqueByCursor(tmp, pageEdgeRefs);
+          nextEdges = tmp;
+          // keep anchored pageInfo (no change)
         }
       } else {
-        // mode === "page": always replace with the last page fetched
-        canonical.edges = pageEdges.slice();
-        if (pageSnap.pageInfo) canonical.pageInfo = { ...(pageSnap.pageInfo as any) };
+        // page mode → always last page
+        nextEdges = pageEdgeRefs.slice();
+        if (pageSnap.pageInfo) nextPageInfo = { ...(pageSnap.pageInfo as any) };
         for (const k of Object.keys(pageSnap)) {
           if (k === "edges" || k === "pageInfo" || k === "__typename") continue;
-          (canonical as any)[k] = (pageSnap as any)[k];
+          extrasPatch[k] = (pageSnap as any)[k];
         }
       }
 
-      graph.putRecord(canonicalKey, canonical);
+      // Build a FRESH PATCH so graph diffing can detect changes & bump version
+      const patch: any = {
+        __typename: current.__typename || pageSnap.__typename || "Connection",
+        edges: nextEdges,
+      };
+      if (nextPageInfo) patch.pageInfo = nextPageInfo;
+      for (const k of Object.keys(extrasPatch)) patch[k] = extrasPatch[k];
+
+      graph.putRecord(canonicalKey, patch);
     };
 
     traverseFast(data, initialFrame, (parentNode, valueNode, responseKey, frame) => {

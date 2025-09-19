@@ -75,12 +75,8 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     // network-only or network follow-up
     const originalUseResult = ctx.useResult;
     ctx.useResult = (incoming: OperationResult, terminal?: boolean) => {
-      const hasData = !!incoming?.data;
       const hasError = !!incoming?.error;
 
-      if (!hasData && !hasError) {
-        return originalUseResult(incoming, false);
-      }
       if (hasError) {
         return originalUseResult(incoming, true);
       }
