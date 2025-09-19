@@ -1,5 +1,6 @@
-import { IDENTITY_FIELDS, ROOT_ID } from "./constants";
+import { IDENTITY_FIELDS, CONNECTION_FIELDS, ROOT_ID } from "./constants";
 import type { EntityKey, RelayOptions } from "./types";
+import type { PlanField } from "@/src/compiler/types";
 
 export const TRAVERSE_SKIP = Symbol('traverse:skip');
 
@@ -102,11 +103,23 @@ export const traverseFast = (root: any, context: any, visit: (parentNode: any, v
   }
 };
 
+
+/**
+ * Build a field link key used on a record snapshot, e.g.:
+ *   user({"id":"u1"})
+ *
+ * NOTE: `field.stringifyArgs(vars)` expects RAW variables; it internally runs the compiled
+ * `buildArgs` to map variable names → field-arg names and drops undefined.
+ */
 export const buildFieldKey = (field: PlanField, variables: Record<string, any>): string => {
-  // Per your contract: stringifyArgs receives raw variables and applies buildArgs internally
   return `${field.fieldName}(${field.stringifyArgs(variables)})`;
 };
 
+/**
+ * Build a concrete page record key for a connection field, e.g.:
+ *   @.posts({"after":null,"first":2})
+ *   @.User:u1.posts({"after":"p2","first":1})
+ */
 export const buildConnectionKey = (
   field: PlanField,
   parentRecordId: string,
@@ -116,18 +129,38 @@ export const buildConnectionKey = (
   return `${prefix}${field.fieldName}(${field.stringifyArgs(variables)})`;
 };
 
-export const buildConnectionIdentity = (
+/**
+ * Build the canonical connection key (filters-only identity) under the `@connection.` namespace, e.g.:
+ *   @connection.posts({"category":"tech"})#identity
+ *   @connection.User:u1.posts({"category":"tech","sort":"hot"})#identity
+ *
+ * - Uses `field.connectionKey` (directive key) when available; falls back to the field name.
+ * - If `field.connectionFilters` is present, use only those arg names (when present in args).
+ * - Otherwise, include all non-pagination args derived from `buildArgs(vars)`.
+ */
+export const buildConnectionCanonicalKey = (
   field: PlanField,
   parentRecordId: string,
   variables: Record<string, any>
-) => {
-  const args = field.buildArgs(variables) || {};
-  const names = field.connectionArgs ?? Object.keys(args).filter(k => !["first", "last", "after", "before"].includes(k));
+): string => {
+  const allArgs = field.buildArgs(variables) || {};
+
+  const filters =
+    Array.isArray(field.connectionFilters) && field.connectionFilters.length > 0
+      ? field.connectionFilters
+      : Object.keys(allArgs).filter((k) => !RELAY_CONNECTION_FIELDS.has(k));
+
   const identity: Record<string, any> = {};
-  for (let i = 0; i < names.length; i++) identity[names[i]] = args[names[i]];
-  const prefix = parentRecordId === ROOT_ID ? "@." : `@.${parentRecordId}.`;
-  return `${prefix}${field.fieldName}(${JSON.stringify(identity)})#identity`;
+  for (let i = 0; i < filters.length; i++) {
+    const name = filters[i];
+    if (name in allArgs) identity[name] = allArgs[name];
+  }
+
+  const keyPart = field.connectionKey || field.fieldName; // prefer directive key; fallback to field
+  const parentPart = parentRecordId === ROOT_ID ? "@connection." : `@connection.${parentRecordId}.`;
+  return `${parentPart}${keyPart}(${stableStringify(identity)})#identity`;
 };
+
 
 export const upsertEntityShallow = (graph: GraphInstance, node: any): string | null => {
   const entityKey = graph.identify(node);

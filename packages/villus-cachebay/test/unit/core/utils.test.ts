@@ -1,5 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { traverseFast, TRAVERSE_SKIP, isObject } from '../../../src/core/utils';
+import { traverseFast, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, TRAVERSE_SKIP, isObject } from '@/src/core/utils';
+import gql from "graphql-tag";
+import { compileToPlan } from "@/src/compiler/compile";
+import { ROOT_ID } from "@/src/core/constants";
 
 describe('traverseFast', () => {
   let visitMock: ReturnType<typeof vi.fn>;
@@ -199,5 +201,149 @@ describe('traverseFast', () => {
     const indices = visitedNodes.filter(v => typeof v.fieldKey === 'number').map(v => v.fieldKey);
 
     expect(indices).toEqual([0, 1, 2]);
+  });
+});
+
+
+
+describe("buildFieldKey", () => {
+  it("uses field.stringifyArgs(vars) with RAW vars (mapped to field-arg names)", () => {
+    const DOC = gql`
+      query Q($postsCategory: String, $postsFirst: Int, $postsAfter: String) {
+        posts(category: $postsCategory, first: $postsFirst, after: $postsAfter)
+          @connection(filters: ["category"]) {
+          edges { cursor node { id __typename } __typename }
+          pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
+        }
+      }
+    `;
+    const plan = compileToPlan(DOC);
+    const posts = plan.rootSelectionMap!.get("posts")!;
+
+    const k = buildFieldKey(posts, {
+      postsCategory: "tech",
+      postsFirst: 2,
+      postsAfter: null,
+    });
+
+    expect(k).toBe(`posts({"after":null,"category":"tech","first":2})`);
+  });
+});
+
+describe("buildConnectionKey", () => {
+  it("builds a concrete page key for root parent", () => {
+    const DOC = gql`
+      query Q($first: Int, $after: String) {
+        posts(first: $first, after: $after) @connection {
+          edges { cursor node { id __typename } __typename }
+          pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
+        }
+      }
+    `;
+    const plan = compileToPlan(DOC);
+    const posts = plan.rootSelectionMap!.get("posts")!;
+
+    const pageRoot = buildConnectionKey(posts, ROOT_ID, { first: 2, after: null });
+    expect(pageRoot).toBe(`@.posts({"after":null,"first":2})`);
+  });
+
+  it("builds a concrete page key for nested parent", () => {
+    const DOC = gql`
+      query Q($id: ID!, $first: Int, $after: String) {
+        user(id: $id) {
+          __typename id
+          posts(first: $first, after: $after) @connection {
+            edges { cursor node { id __typename } __typename }
+            pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
+          }
+        }
+      }
+    `;
+    const plan = compileToPlan(DOC);
+    const user = plan.rootSelectionMap!.get("user")!;
+    const posts = user.selectionMap!.get("posts")!;
+
+    const pageNested = buildConnectionKey(posts, "User:u1", { id: "u1", first: 1, after: "p2" });
+    expect(pageNested).toBe(`@.User:u1.posts({"after":"p2","first":1})`);
+  });
+});
+
+describe("buildConnectionCanonicalKey", () => {
+  it("respects filters & uses directive key  under @connection.", () => {
+    const DOC = gql`
+      query Q($cat: String, $first: Int, $after: String) {
+        posts(category: $cat, first: $first, after: $after)
+          @connection(key: "PostsList", filters: ["category"]) {
+          edges { cursor node { id __typename } __typename }
+          pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
+        }
+      }
+    `;
+    const plan = compileToPlan(DOC);
+    const posts = plan.rootSelectionMap!.get("posts")!;
+
+    // root
+    const idRoot = buildConnectionCanonicalKey(posts, ROOT_ID, { cat: "tech", first: 2, after: null });
+    // Only category in identity; pagination removed. Uses key if provided, but our key-part
+    // in canonical name uses `connectionKey || fieldName` — for namespace we only need field name segment.
+    // (We keep the segment as field name to avoid exploding namespace; key still picked up by metadata)
+    expect(idRoot).toBe(`@connection.PostsList({"category":"tech"})#identity`);
+
+    // nested
+    const idNested = buildConnectionCanonicalKey(posts, "User:u1", { cat: "tech", first: 2, after: "p2" });
+    expect(idNested).toBe(`@connection.User:u1.PostsList({"category":"tech"})#identity`);
+  });
+
+  it("defaults filters to all non-pagination args when filters omitted", () => {
+    const DOC = gql`
+      query Q($category: String, $sort: String, $first: Int, $after: String) {
+        posts(category: $category, sort: $sort, first: $first, after: $after)
+          @connection {
+          edges { cursor node { id __typename } __typename }
+          pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
+        }
+      }
+    `;
+    const plan = compileToPlan(DOC);
+    const posts = plan.rootSelectionMap!.get("posts")!;
+
+    const id = buildConnectionCanonicalKey(posts, ROOT_ID, {
+      category: "tech",
+      first: 2,
+      sort: "hot",
+      after: null,
+    });
+
+    expect(id).toBe(`@connection.posts({"category":"tech","sort":"hot"})#identity`);
+  });
+
+  it("stable stringify → identity identical regardless of variable order", () => {
+    const DOC = gql`
+      query Q($category: String, $sort: String, $first: Int, $after: String) {
+        posts(category: $category, sort: $sort, first: $first, after: $after)
+          @connection {
+          edges { cursor node { id __typename } __typename }
+          pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
+        }
+      }
+    `;
+    const plan = compileToPlan(DOC);
+    const posts = plan.rootSelectionMap!.get("posts")!;
+
+    const a = buildConnectionCanonicalKey(posts, ROOT_ID, {
+      sort: "hot",
+      category: "tech",
+      first: 2,
+      after: null,
+    });
+    const b = buildConnectionCanonicalKey(posts, ROOT_ID, {
+      category: "tech",
+      after: null,
+      sort: "hot",
+      first: 2,
+    });
+
+    expect(a).toBe(b);
+    expect(a).toBe(`@connection.posts({"category":"tech","sort":"hot"})#identity`);
   });
 });
