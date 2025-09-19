@@ -81,7 +81,12 @@ const upsertCanonicalEdge = (
   // Create new edge record
   const idx = nextEdgeIndex(canKey, canSnap);
   const edgeKey = `${canKey}.edges.${idx}`;
+
+  const nodeType = (entityKey.split(":")[0] || "").trim();
+  const edgeTypename = nodeType ? `${nodeType}Edge` : "Edge";
+
   graph.putRecord(edgeKey, {
+    __typename: edgeTypename,
     cursor: cursor ?? null,
     ...(edgeMeta || {}),
     node: { __ref: entityKey },

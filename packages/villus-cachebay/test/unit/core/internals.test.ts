@@ -1,3 +1,4 @@
+// test/unit/core/internals.test.ts
 import { describe, it, expect } from "vitest";
 import gql from "graphql-tag";
 
@@ -30,10 +31,9 @@ describe("createCache (internals)", () => {
     expect(internals.views).toBeTruthy();
     expect(internals.planner).toBeTruthy();
     expect(internals.documents).toBeTruthy();
-    expect(internals.sessions).toBeTruthy();
     expect(internals.fragments).toBeTruthy();
 
-    // write a root link + entity and read fragment reactively
+    // seed: link + entity
     internals.graph.putRecord(ROOT_ID, {
       id: ROOT_ID,
       __typename: ROOT_ID,
@@ -41,45 +41,63 @@ describe("createCache (internals)", () => {
     });
     internals.graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
 
+    // reactive fragment read
     const view = cache.readFragment({ id: "User:u1", fragment: USER_FRAGMENT, variables: {} });
     expect(view.__typename).toBe("User");
     expect(view.id).toBe("u1");
     expect(view.email).toBe("a@example.com");
 
-    // mutation-like graph write updates the reactive view
+    // reactive update
     internals.graph.putRecord("User:u1", { email: "a+1@example.com" });
     expect(view.email).toBe("a+1@example.com");
 
-    // optimistic: add a Post to a page and patch pageInfo
-    const pageKey = '@.User:u1.posts({"after":null,"category":"tech","first":1})';
-    const tx = cache.modifyOptimistic((tx) => {
-      const [conn] = tx.connection({ pageKey });
-      conn.addNode({ __typename: "Post", id: "p1", title: "P1" }, { cursor: "p1" });
-      conn.patch({ endCursor: "p1", hasNextPage: false });
+    // ── Optimistic over CANONICAL connection ───────────────────────────────
+    // canonical key we expect to be touched by the TX
+    const canKey = '@connection.User:u1.posts({"category":"tech"})';
+
+    const T = cache.modifyOptimistic((tx: any) => {
+      const conn = tx.connection({
+        parent: "User:u1",  // record id or "Query"
+        key: "posts",       // field/key
+        filters: { category: "tech" }, // identity filters (non-cursor)
+      });
+
+      // append a node and patch pageInfo
+      conn.append({ __typename: "Post", id: "p1", title: "P1" }, { cursor: "p1" });
+      conn.patch({ pageInfo: { endCursor: "p1", hasNextPage: false } });
     });
-    tx.commit?.();
+    T.commit?.();
 
-    const page = internals.graph.getRecord(pageKey);
-    expect(page.pageInfo.endCursor).toBe("p1");
-    const edgeRef = page.edges[0].__ref;
-    const edgeRec = internals.graph.getRecord(edgeRef);
-    expect(edgeRec.node.__ref).toBe("Post:p1");
-    expect(internals.graph.getRecord("Post:p1")?.title).toBe("P1");
+    // verify canonical, not page
+    const canon = internals.graph.getRecord(canKey);
+    expect(canon?.pageInfo?.endCursor).toBe("p1");
+    expect(Array.isArray(canon?.edges)).toBe(true);
+    expect(canon.edges.length).toBe(1);
 
-    // SSR: roundtrip snapshot
+    const edgeRef = canon.edges[0].__ref as string;
+    const edge = internals.graph.getRecord(edgeRef);
+    expect(edge).toMatchObject({ __typename: "PostEdge", cursor: "p1", node: { __ref: "Post:p1" } });
+
+    const post = internals.graph.getRecord("Post:p1");
+    expect(post?.title).toBe("P1");
+
+    // ── SSR roundtrip ─────────────────────────────────────────────────────
     const snapshot = cache.dehydrate();
     internals.graph.clear();
     expect(internals.graph.keys().length).toBe(0);
+
     cache.hydrate(snapshot);
     await Promise.resolve();
-    expect(internals.graph.getRecord("User:u1")?.email).toBe("a+1@example.com");
-    expect(internals.graph.getRecord(pageKey)?.pageInfo?.endCursor).toBe("p1");
 
-    // documents: hasDocument check via internals
+    expect(internals.graph.getRecord("User:u1")?.email).toBe("a+1@example.com");
+    const restored = internals.graph.getRecord(canKey);
+    expect(restored?.pageInfo?.endCursor).toBe("p1");
+    expect(restored?.edges?.length).toBe(1);
+
+    // hasDocument (operations only) → true for seeded link
     const hasUser = internals.documents.hasDocument({
-      document: gql`
-      query Q($id: ID!) { user(id:$id) { __typename id email } }
-    `, variables: { id: "u1" }
+      document: gql`query Q($id: ID!) { user(id:$id) { __typename id email } }`,
+      variables: { id: "u1" },
     });
     expect(hasUser).toBe(true);
   });
@@ -92,7 +110,6 @@ describe("createCache (internals)", () => {
     } as any;
 
     cache.install(app);
-    // at least provided once; we don’t assert exact symbol equality here
     expect(provided.length).toBeGreaterThan(0);
   });
 });

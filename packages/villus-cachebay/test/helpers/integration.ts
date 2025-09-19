@@ -400,3 +400,158 @@ export const mockResponses = {
     },
   }),
 };
+
+// test/helpers/transport.ts
+import { fetch as villusFetch } from 'villus';
+import { delay, tick } from './concurrency';
+
+export type Route = {
+  when: (op: { body: string; variables: any; context: any }) => boolean;
+  respond: (op: { body: string; variables: any; context: any }) =>
+    | { data?: any; error?: any }
+    | any;
+  delay?: number; // ms
+};
+
+type RecordedCall = { body: string; variables: any; context: any };
+
+/** Build a Response compatible object (works in happy-dom too) */
+function buildResponse(obj: any) {
+  if (typeof Response !== 'undefined') {
+    return new Response(JSON.stringify(obj), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+  return {
+    ok: true,
+    status: 200,
+    async json() { return obj; },
+    async text() { return JSON.stringify(obj); },
+  } as any;
+}
+
+export function createFetchMock(routes: Route[]) {
+  const calls: Array<RecordedCall> = [];
+  const originalFetch = globalThis.fetch;
+  let pending = 0;
+
+  globalThis.fetch = async (_input: any, init?: any) => {
+    try {
+      const bodyObj =
+        init && typeof (init as any).body === 'string'
+          ? JSON.parse((init as any).body as string)
+          : {};
+      const body = bodyObj.query || '';
+      const variables = bodyObj.variables || {};
+      const context = {};
+      const op = { body, variables, context };
+
+      const route = routes.find(r => r.when(op));
+      if (!route) {
+        // unmatched: return benign payload; do not count as "call"
+        return buildResponse({ data: null });
+      }
+
+      calls.push(op);
+      pending++;
+      if (route.delay && route.delay > 0) {
+        await delay(route.delay);
+      }
+
+      const payload = route.respond(op);
+      const resp =
+        payload && typeof payload === 'object' && 'error' in payload && (payload as any).error
+          ? { errors: [{ message: (payload as any).error?.message || 'Mock error' }] }
+          : (payload && typeof payload === 'object' && 'data' in payload
+            ? payload
+            : { data: payload });
+
+      return buildResponse(resp);
+    } finally {
+      if (pending > 0) pending--;
+    }
+  };
+
+  return {
+    plugin: villusFetch(),
+    calls,
+    async waitAll(timeoutMs = 200) {
+      const end = Date.now() + timeoutMs;
+      while (pending > 0 && Date.now() < end) {
+        await tick();
+      }
+    },
+    restore() { globalThis.fetch = originalFetch; },
+  };
+}
+
+
+/** Treat the cache (plugin) as a function Villus will call with a context. */
+export function asPlugin(cache: any) {
+  return cache; // CachebayInstance is a ClientPlugin (callable)
+}
+
+/**
+ * Publish a result through the plugin pipeline.
+ * Returns the value passed to ctx.useResult — convenient for grabbing the view.
+ */
+export function publish(
+  cache: any,
+  data: any,
+  query: string = 'query Q { __typename }',
+  variables: Record<string, any> = {},
+) {
+  const plugin = asPlugin(cache);
+  let published: any = null;
+
+  const ctx: any = {
+    operation: { type: 'query', query, variables, cachePolicy: 'cache-and-network', context: {} },
+    useResult: (payload: any) => {
+      published = payload;
+    },
+    afterQuery: () => { },
+  };
+
+  plugin(ctx);
+  ctx.useResult({ data });
+  return published;
+}
+
+/**
+ * Seed an empty Relay connection so tests can mutate it optimistically later.
+ */
+export function seedRelay(
+  cache: any,
+  {
+    field,
+    connectionTypename,
+    pageInfo = {
+      __typename: 'PageInfo',
+      endCursor: null,
+      hasNextPage: false,
+      startCursor: null,
+      hasPreviousPage: false,
+    },
+    edges = [],
+    query = `query Seed { ${field} { edges { cursor node { __typename id } } pageInfo { endCursor hasNextPage } } }`,
+    variables = {},
+  }: {
+    field: string;
+    connectionTypename: string;
+    pageInfo?: any;
+    edges?: any[];
+    query?: string;
+    variables?: Record<string, any>;
+  },
+) {
+  return publish(
+    cache,
+    {
+      __typename: 'Query',
+      [field]: { __typename: connectionTypename, edges, pageInfo },
+    },
+    query,
+    variables,
+  );
+}

@@ -1,18 +1,28 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import gql from "graphql-tag";
-import type { ClientPluginContext, OperationResult } from "villus";
+import type { OperationResult } from "villus";
 
 import { createGraph } from "@/src/core/graph";
 import { createPlanner } from "@/src/core/planner";
 import { createViews } from "@/src/core/views";
-import { createSessions } from "@/src/core/sessions";
 import { createDocuments } from "@/src/core/documents";
 import { createPlugin } from "@/src/core/plugin";
 import { ROOT_ID } from "@/src/core/constants";
-import { buildConnectionKey, buildConnectionIdentity } from "@/src/core/utils";
+import { buildConnectionKey } from "@/src/core/utils";
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Documents
+ * -------------------------------------------------------------------------- */
 
 const USERS_POSTS_QUERY = gql`
-  query UsersPosts($usersRole: String, $usersFirst: Int, $usersAfter: String, $postsCategory: String, $postsFirst: Int, $postsAfter: String) {
+  query UsersPosts(
+    $usersRole: String
+    $usersFirst: Int
+    $usersAfter: String
+    $postsCategory: String
+    $postsFirst: Int
+    $postsAfter: String
+  ) {
     users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
       __typename
       pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
@@ -44,7 +54,10 @@ const USER_QUERY = gql`
   }
 `;
 
-// Seed a page into graph
+/* ────────────────────────────────────────────────────────────────────────────
+ * Helpers
+ * -------------------------------------------------------------------------- */
+
 function seedPage(
   graph: ReturnType<typeof createGraph>,
   pageKey: string,
@@ -52,7 +65,7 @@ function seedPage(
   pageInfo?: Record<string, any>,
   extra?: Record<string, any>,
   edgeTypename = "Edge",
-  connectionTypename = "Connection"
+  connectionTypename = "Connection",
 ) {
   const edgeRefs: Array<{ __ref: string }> = [];
   for (let i = 0; i < edges.length; i++) {
@@ -78,40 +91,35 @@ function seedPage(
   graph.putRecord(pageKey, snap);
 }
 
-describe("plugin (villus)", () => {
+/* canonical key helpers used in tests */
+const canUsers = (role: string) => `@connection.users({"role":"${role}"})`;
+const canPosts = (userId: string, category: string) =>
+  `@connection.User:${userId}.posts({"category":"${category}"})`;
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Test Setup
+ * -------------------------------------------------------------------------- */
+
+describe("plugin (villus) — canonical materialization, no sessions", () => {
   let graph: ReturnType<typeof createGraph>;
   let planner: ReturnType<typeof createPlanner>;
   let views: ReturnType<typeof createViews>;
-  let sessions: ReturnType<typeof createSessions>;
   let documents: ReturnType<typeof createDocuments>;
-
-  // capture created sessions to inspect composers
-  let createdSessions: Array<ReturnType<typeof sessions.createSession>>;
 
   beforeEach(() => {
     graph = createGraph({ interfaces: { Post: ["AudioPost", "VideoPost"] } });
     planner = createPlanner();
     views = createViews({ graph });
-    sessions = createSessions({ graph, views });
     documents = createDocuments({ graph, views, planner });
 
-    createdSessions = [];
-    const orig = sessions.createSession;
-    // wrap createSession to capture the session the plugin allocates
-    (sessions as any).createSession = () => {
-      const s = orig();
-      createdSessions.push(s);
-      return s;
-    };
-
-    // root present
+    // ensure root record exists
     graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
   });
 
   it("cache-only: hit publishes cached frame; miss publishes CacheOnlyMiss error", () => {
-    const plugin = createPlugin({}, { graph, planner, documents, sessions });
+    const plugin = createPlugin({}, { graph, planner, documents });
 
-    // seed link for USER_QUERY
+    // seed link for USER_QUERY (user u1)
     graph.putRecord(ROOT_ID, {
       id: ROOT_ID,
       __typename: ROOT_ID,
@@ -119,16 +127,15 @@ describe("plugin (villus)", () => {
     });
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
 
-    // ctx harness
     const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
-    const ctx: any = {
-      operation: { key: 1, query: USER_QUERY, variables: { id: "u1" }, cachePolicy: "cache-only" },
-      useResult: (payload: OperationResult, terminal?: boolean) => {
-        emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
-      },
-    };
 
-    plugin(ctx); // cache-only hit
+    // hit
+    const ctxHit: any = {
+      operation: { key: 1, query: USER_QUERY, variables: { id: "u1" }, cachePolicy: "cache-only" },
+      useResult: (payload: OperationResult, terminal?: boolean) =>
+        emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal }),
+    };
+    plugin(ctxHit);
     expect(emissions.length).toBe(1);
     expect(emissions[0].data.user.id).toBe("u1");
     expect(emissions[0].terminal).toBe(true);
@@ -136,9 +143,8 @@ describe("plugin (villus)", () => {
     // miss
     const ctxMiss: any = {
       operation: { key: 2, query: USER_QUERY, variables: { id: "u2" }, cachePolicy: "cache-only" },
-      useResult: (payload: OperationResult, terminal?: boolean) => {
-        emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
-      },
+      useResult: (payload: OperationResult, terminal?: boolean) =>
+        emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal }),
     };
     plugin(ctxMiss);
     expect(emissions.length).toBe(2);
@@ -148,43 +154,49 @@ describe("plugin (villus)", () => {
   });
 
   it("cache-first: miss → network normalized and published", () => {
-    const plugin = createPlugin({}, { graph, planner, documents, sessions });
+    const plugin = createPlugin({}, { graph, planner, documents });
 
+    const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
     const ctx: any = {
       operation: { key: 3, query: USER_QUERY, variables: { id: "u9" }, cachePolicy: "cache-first" },
-      useResult: (payload: OperationResult, terminal?: boolean) => { }, // will be wrapped
+      useResult: (payload: OperationResult, terminal?: boolean) =>
+        emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal }),
     };
 
     plugin(ctx);
 
     // simulate network success
-    const result = {
+    const network = {
       data: { user: { __typename: "User", id: "u9", email: "x@example.com" } },
     };
-    ctx.useResult(result, true);
+    ctx.useResult(network, true);
 
     const view = documents.materializeDocument({ document: USER_QUERY, variables: { id: "u9" } });
     expect(view.user.email).toBe("x@example.com");
+
+    // final publish happened
+    expect(emissions.length).toBe(1);
+    expect(emissions[0].terminal).toBe(true);
   });
 
-  it("cache-and-network: cached frame first (terminal=false), then network (terminal=true); no double addPage", () => {
-    const plugin = createPlugin({}, { graph, planner, documents, sessions });
+  it("cache-and-network: cached frame first (terminal=false), then network (terminal=true)", () => {
+    const plugin = createPlugin({}, { graph, planner, documents });
 
-    // seed a root connection page for users(role:dj)
+    // seed a concrete root page for users(role:dj) AND its CANONICAL, so cached frame exists
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
     graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "b@example.com" });
 
     const plan = planner.getPlan(USERS_POSTS_QUERY);
     const usersField = plan.rootSelectionMap!.get("users")!;
-    const usersPageKey = buildConnectionKey(usersField, ROOT_ID, {
+    const usersVars = {
       usersRole: "dj",
       usersFirst: 2,
       usersAfter: null,
       postsCategory: "tech",
       postsFirst: 1,
       postsAfter: null,
-    });
-
+    };
+    const usersPageKey = buildConnectionKey(usersField, ROOT_ID, usersVars);
     seedPage(
       graph,
       usersPageKey,
@@ -192,30 +204,32 @@ describe("plugin (villus)", () => {
       { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false },
       {},
       "UserEdge",
-      "UserConnection"
+      "UserConnection",
     );
+    // seed CANONICAL for users(role:dj)
+    const canUsersKey = canUsers("dj");
+    graph.putRecord(canUsersKey, {
+      __typename: "UserConnection",
+      pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false, hasPreviousPage: false },
+      edges: [
+        { __ref: `${usersPageKey}.edges.0` },
+        { __ref: `${usersPageKey}.edges.1` },
+      ],
+    });
 
     const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
     const ctx: any = {
-      operation: {
-        key: 10,
-        query: USERS_POSTS_QUERY,
-        variables: {
-          usersRole: "dj", usersFirst: 2, usersAfter: null,
-          postsCategory: "tech", postsFirst: 1, postsAfter: null,
-        },
-        cachePolicy: "cache-and-network",
-      },
-      useResult: (payload: OperationResult, terminal?: boolean) => {
-        emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
-      },
+      operation: { key: 10, query: USERS_POSTS_QUERY, variables: usersVars, cachePolicy: "cache-and-network" },
+      useResult: (payload: OperationResult, terminal?: boolean) =>
+        emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal }),
     };
 
     plugin(ctx);
-    // cached frame emitted
+    // cached frame should be emitted from CANONICAL
     expect(emissions.length).toBe(1);
     expect(emissions[0].terminal).toBe(false);
     expect(Array.isArray(emissions[0].data.users.edges)).toBe(true);
+    expect(emissions[0].data.users.edges.length).toBe(2);
 
     // now simulate network returning the SAME page again
     const networkData = {
@@ -232,44 +246,41 @@ describe("plugin (villus)", () => {
     };
 
     ctx.useResult(networkData, true);
-    // final frame emitted
+
+    // final frame from CANONICAL
     expect(emissions.length).toBe(2);
     expect(emissions[1].terminal).toBe(true);
 
-    // Inspect the created session → ensure the root composer did not add the same page twice
-    const session = (createdSessions[0] as any);
-    const usersIdentity = buildConnectionIdentity(usersField, ROOT_ID, {
-      usersRole: "dj", usersFirst: 2, usersAfter: null,
-      postsCategory: "tech", postsFirst: 1, postsAfter: null,
-    });
-    const composer = session.getConnection(usersIdentity);
-    expect(composer).toBeTruthy();
-    const info = composer.inspect();
-    // should be exactly 1 page
-    expect(info.pages.length).toBe(1);
-    expect(info.pages[0]).toBe(usersPageKey);
+    // Graph still contains a single page record; no duplicates added by plugin
+    const page = graph.getRecord(usersPageKey);
+    expect(Array.isArray(page.edges)).toBe(true);
+    expect(page.edges.length).toBe(2);
   });
 
-  it("multi-parent nested mounting: root users page → mount per-user posts child connections", () => {
-    const plugin = createPlugin({}, { graph, planner, documents, sessions });
+  it("cache-first with nested connection seeded (page + canonical): returns nested edges from cache", () => {
+    const plugin = createPlugin({}, { graph, planner, documents });
 
-    // seed users page with two users
+    // seed users page (u1,u2) + CANONICAL
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
     graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "b@example.com" });
 
     const plan = planner.getPlan(USERS_POSTS_QUERY);
     const usersField = plan.rootSelectionMap!.get("users")!;
-    const postsField = plan.rootSelectionMap!.get("users")!
+    const postsField = usersField
       .selectionMap!.get("edges")!
       .selectionMap!.get("node")!
       .selectionMap!.get("posts")!;
 
-    const usersVars = {
-      usersRole: "dj", usersFirst: 2, usersAfter: null,
-      postsCategory: "tech", postsFirst: 1, postsAfter: null,
+    const vars = {
+      usersRole: "dj",
+      usersFirst: 2,
+      usersAfter: null,
+      postsCategory: "tech",
+      postsFirst: 1,
+      postsAfter: null,
     };
 
-    const usersPageKey = buildConnectionKey(usersField, ROOT_ID, usersVars);
+    const usersPageKey = buildConnectionKey(usersField, ROOT_ID, vars);
     seedPage(
       graph,
       usersPageKey,
@@ -277,49 +288,58 @@ describe("plugin (villus)", () => {
       { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false },
       {},
       "UserEdge",
-      "UserConnection"
+      "UserConnection",
     );
+    const canUsersKey = canUsers("dj");
+    graph.putRecord(canUsersKey, {
+      __typename: "UserConnection",
+      pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false, hasPreviousPage: false },
+      edges: [
+        { __ref: `${usersPageKey}.edges.0` },
+        { __ref: `${usersPageKey}.edges.1` },
+      ],
+    });
 
-    // seed nested posts page for u1 only
-    const u1PostsKey = buildConnectionKey(postsField, "User:u1", usersVars);
+    // nested posts for u1: seed page + CANONICAL
     graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1" });
+    const u1PostsPage = buildConnectionKey(postsField, "User:u1", vars);
     seedPage(
       graph,
-      u1PostsKey,
+      u1PostsPage,
       [{ nodeRef: "Post:p1", cursor: "p1" }],
       { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false },
       {},
       "PostEdge",
-      "PostConnection"
+      "PostConnection",
     );
+    const canPostsKey = canPosts("u1", "tech");
+    graph.putRecord(canPostsKey, {
+      __typename: "PostConnection",
+      pageInfo: { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false },
+      edges: [{ __ref: `${u1PostsPage}.edges.0` }],
+    });
 
     const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
     const ctx: any = {
-      operation: { key: 20, query: USERS_POSTS_QUERY, variables: usersVars, cachePolicy: "cache-first" },
-      useResult: (payload: OperationResult, terminal?: boolean) => {
-        emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
-      },
+      operation: { key: 20, query: USERS_POSTS_QUERY, variables: vars, cachePolicy: "cache-first" },
+      useResult: (payload: OperationResult, terminal?: boolean) =>
+        emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal }),
     };
 
     plugin(ctx);
-    // cache-first should emit cached frame immediately
+    // cache-first emits one terminal frame from CANONICAL cache
     expect(emissions.length).toBe(1);
     expect(emissions[0].terminal).toBe(true);
 
-    // the plugin created one session; verify nested composer exists for u1.posts, not for u2.posts
-    const session = (createdSessions[0] as any);
+    const data = emissions[0].data;
+    expect(Array.isArray(data.users.edges)).toBe(true);
+    expect(data.users.edges.length).toBe(2);
 
-    const u1PostsIdentity = buildConnectionIdentity(postsField, "User:u1", usersVars);
-    const u2PostsIdentity = buildConnectionIdentity(postsField, "User:u2", usersVars);
+    // nested posts for u1 present (canonical seeded); u2 missing
+    expect(Array.isArray(data.users.edges[0].node.posts.edges)).toBe(true);
+    expect(data.users.edges[0].node.posts.edges.length).toBe(1);
+    expect(data.users.edges[0].node.posts.edges[0].node.title).toBe("P1");
 
-    const u1Composer = session.getConnection(u1PostsIdentity);
-    const u2Composer = session.getConnection(u2PostsIdentity);
-
-    expect(u1Composer).toBeTruthy();
-    expect(u2Composer).toBeUndefined();
-
-    const info = u1Composer.inspect();
-    expect(info.pages.length).toBe(1);
-    expect(info.pages[0]).toBe(u1PostsKey);
+    expect((data.users.edges[1].node.posts?.edges ?? []).length).toBe(0);
   });
 });
