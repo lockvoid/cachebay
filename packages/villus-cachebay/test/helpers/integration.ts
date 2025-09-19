@@ -245,13 +245,16 @@ export function createFetchMock(routes: Route[]) {
 
   return {
     plugin: villusFetch(),
+
     calls,
-    async waitAll(timeoutMs = 200) {
+
+    async restore(timeoutMs = 200) {
       const end = Date.now() + timeoutMs;
       while (pending > 0 && Date.now() < end) {
         await tick();
       }
+
+      globalThis.fetch = originalFetch;
     },
-    restore() { globalThis.fetch = originalFetch; },
   };
 }

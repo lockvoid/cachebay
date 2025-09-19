@@ -102,7 +102,7 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
       await delay(40);
       await tick();
       expect(rows(wrapper)).toEqual(["tech.user@example.com"]);
-      fx.restore();
+      await fx.restore();
     });
 
     it("hit emits cached and terminates, no network call (root users)", async () => {
@@ -122,7 +122,7 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
       await delay(10);
       expect(rows(wrapper)).toEqual(["cached.user@example.com"]);
       expect(fx.calls.length).toBe(0);
-      fx.restore();
+      await fx.restore();
     });
 
     it("single object • miss → one network then render (User)", async () => {
@@ -140,7 +140,7 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
       await delay(20);
       await tick();
       expect(rows(wrapper)).toEqual(["answer@example.com"]);
-      fx.restore();
+      await fx.restore();
     });
 
     it("single object • hit emits cached and terminates, no network (User)", async () => {
@@ -160,7 +160,7 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
       await delay(10);
       expect(rows(wrapper)).toEqual(["cached@example.com"]);
       expect(fx.calls.length).toBe(0);
-      fx.restore();
+      await fx.restore();
     });
   });
 
@@ -197,7 +197,7 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
       await tick();
       expect(rows(wrapper)).toEqual(["fresh.news@example.com"]);
       expect(fx.calls.length).toBe(1);
-      fx.restore();
+      await fx.restore();
     });
 
     it("identical network as cache → single render", async () => {
@@ -226,7 +226,7 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
       await tick();
       expect(rows(wrapper)).toEqual(["same.user@example.com"]);
       expect(fx.calls.length).toBe(1);
-      fx.restore();
+      await fx.restore();
     });
 
     it("different network → two renders (recorded)", async () => {
@@ -276,7 +276,7 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
       expect(renders).toEqual([["initial.user@example.com"], ["updated.user@example.com"]]);
       expect(rows(wrapper)).toEqual(["updated.user@example.com"]);
       expect(fx.calls.length).toBe(1);
-      fx.restore();
+      await fx.restore();
     });
 
     it("miss → one render on network response (root users)", async () => {
@@ -294,7 +294,7 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
       await tick();
       expect(rows(wrapper)).toEqual(["new.user@example.com"]);
       expect(fx.calls.length).toBe(1);
-      fx.restore();
+      await fx.restore();
     });
 
     it("nested Post→Comments (uuid) • hit then refresh", async () => {
@@ -407,7 +407,7 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
 
       expect(wrapper.findAll("div").map((d) => d.text())).toEqual(["Comment 1", "Comment 2", "Comment 3"]);
 
-      fx.restore();
+      await fx.restore();
     });
   });
 
@@ -429,7 +429,7 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
 
       await delay(25);
       expect(rows(wrapper)).toEqual(["network.user@example.com"]);
-      fx.restore();
+      await fx.restore();
     });
 
     it("single object • no cache, renders on network (User)", async () => {
@@ -446,7 +446,7 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
 
       await delay(20);
       expect(rows(wrapper)).toEqual(["net@example.com"]);
-      fx.restore();
+      await fx.restore();
     });
   });
 
@@ -471,7 +471,7 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
       await delay(10);
       expect(rows(wrapper)).toEqual(["hit.user@example.com"]);
       expect(fx.calls.length).toBe(0);
-      fx.restore();
+      await fx.restore();
     });
 
     it("miss renders nothing and does not network", async () => {
@@ -481,7 +481,7 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
       await tick();
       expect(rows(wrapper).length).toBe(0);
       expect(fx.calls.length).toBe(0);
-      fx.restore();
+      await fx.restore();
     });
 
     it("miss yields CacheOnlyMiss error", async () => {
@@ -502,7 +502,7 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
       await tick();
       expect(wrapper.text()).toContain("CacheOnlyMiss");
       expect(fx.calls.length).toBe(0);
-      fx.restore();
+      await fx.restore();
     });
   });
 
@@ -561,7 +561,7 @@ describe("Integration • Cache Policies Behavior (canonical connections, nested
       await delay(12);
       await tick();
       expect(rows(wrapper)).toEqual(["Comment 3", "Comment 4"]);
-      fx.restore();
+      await fx.restore();
     });
   });
 });

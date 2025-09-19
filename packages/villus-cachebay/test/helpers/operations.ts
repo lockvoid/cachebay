@@ -78,6 +78,31 @@ export const USERS_QUERY = gql`
   }
 `;
 
+/** Root posts connection (used by error-handling & cache-policy tests). */
+export const POSTS_QUERY = gql`
+  ${POST_FRAGMENT}
+  query Posts($filter: String, $first: Int, $after: String) {
+    posts(filter: $filter, first: $first, after: $after) @connection(args: ["filter"]) {
+      __typename
+      pageInfo {
+        __typename
+        startCursor
+        endCursor
+        hasNextPage
+        hasPreviousPage
+      }
+      edges {
+        __typename
+        cursor
+        node {
+          __typename
+          ...PostFields
+        }
+      }
+    }
+  }
+`;
+
 export const USER_POSTS_QUERY = gql`
   ${USER_FRAGMENT}
   ${POST_FRAGMENT}

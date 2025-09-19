@@ -1,19 +1,12 @@
-import { describe, it, expect, afterEach } from 'vitest';
+// test/integration/error-handling.test.ts
+import { describe, it, expect } from 'vitest';
 import { defineComponent, h, computed, watch } from 'vue';
-import gql from 'graphql-tag';
-import {
-  mountWithClient,
-  testQueries,
-  mockResponses,
-  cacheConfigs,
-  cleanVars,
-} from '@/test/helpers/integration';
-import { type Route, tick, delay } from '@/test/helpers';
+import { mountWithClient, delay, type Route } from '@/test/helpers';
+import { operations, fixtures } from '@/test/helpers';
 
 /* -----------------------------------------------------------------------------
  * Harness: records non-empty renders and error events
  * -------------------------------------------------------------------------- */
-
 function MakeHarness(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-network') {
   return defineComponent({
     props: {
@@ -26,15 +19,21 @@ function MakeHarness(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-ne
     },
     setup(props) {
       const { useQuery } = require('villus');
-      const vars = computed(() => cleanVars({ first: props.first, after: props.after }));
-      // IMPORTANT: pass a DocumentNode (gql`...`) so planner/compiler always has a doc
+
+      const vars = computed(() => {
+        const v: any = {};
+        if (props.first != null) v.first = props.first;
+        if (props.after != null) v.after = props.after;
+        return v;
+      });
+
       const { data, error } = useQuery({
-        query: gql`${testQueries.POSTS}`,
+        query: operations.POSTS_QUERY, // DocumentNode
         variables: vars,
         cachePolicy,
       });
 
-      // Record meaningful payloads: edges with items, or explicit empty edges array
+      // Record meaningful payloads
       watch(
         () => data.value,
         (v) => {
@@ -57,13 +56,10 @@ function MakeHarness(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-ne
         { immediate: true },
       );
 
+      // Render simple rows (no outer wrapper)
       return () =>
-        h(
-          'ul',
-          {},
-          (data?.value?.posts?.edges ?? []).map((e: any) =>
-            h('li', {}, e?.node?.title || ''),
-          ),
+        (data?.value?.posts?.edges ?? []).map((e: any) =>
+          h('div', {}, e?.node?.title || ''),
         );
     },
   });
@@ -74,16 +70,6 @@ function MakeHarness(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-ne
  * -------------------------------------------------------------------------- */
 
 describe('Integration • Errors (Posts connection)', () => {
-  const mocks: Array<{ waitAll: () => Promise<void>; restore: () => void }> = [];
-
-  afterEach(async () => {
-    while (mocks.length) {
-      const m = mocks.pop()!;
-      await m.waitAll?.();
-      m.restore?.();
-    }
-  });
-
   it('GraphQL/transport error: recorded once; no empty emissions', async () => {
     const routes: Route[] = [
       {
@@ -93,29 +79,26 @@ describe('Integration • Errors (Posts connection)', () => {
       },
     ];
 
-    const cache = cacheConfigs.withRelay();
-
     const renders: string[][] = [];
     const errors: string[] = [];
     const empties: string[] = [];
 
     const App = MakeHarness('network-only');
-    const { wrapper, fx } = await mountWithClient(
+    const { fx } = await mountWithClient(
       defineComponent({
         setup() {
           return () => h(App, { first: 2, renders, errors, empties, name: 'E1' });
         },
       }),
       routes,
-      cache,
     );
-    mocks.push(fx);
 
-    await delay(10);
-    await tick();
+    await delay(12);
     expect(errors.length).toBe(1);
     expect(renders.length).toBe(0);
     expect(empties.length).toBe(0);
+
+    await fx.restore();
   });
 
   it('Latest-only gating (non-cursor): older error is dropped; newer data renders', async () => {
@@ -130,10 +113,14 @@ describe('Integration • Errors (Posts connection)', () => {
       {
         when: ({ variables }) => variables.first === 3 && !variables.after,
         delay: 5,
-        respond: () => mockResponses.posts(['NEW']),
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            posts: fixtures.posts.connection(['NEW'], { fromId: 1 }),
+          },
+        }),
       },
     ];
-    const cache = cacheConfigs.withRelay();
 
     const renders: string[][] = [];
     const errors: string[] = [];
@@ -148,25 +135,22 @@ describe('Integration • Errors (Posts connection)', () => {
         },
       }),
       routes,
-      cache,
     );
-    mocks.push(fx);
 
     // Newer leader (first=3)
     await wrapper.setProps({ first: 3 });
-    await tick();
 
-    await delay(10);
-    await tick();
+    await delay(14);
     expect(renders).toEqual([['NEW']]);
     expect(errors.length).toBe(0);
     expect(empties.length).toBe(0);
 
     // Older error arrives later → dropped
     await delay(25);
-    await tick();
     expect(errors.length).toBe(0);
     expect(renders).toEqual([['NEW']]);
+
+    await fx.restore();
   });
 
   it('Cursor-page error is dropped (no replay); latest success remains', async () => {
@@ -175,17 +159,20 @@ describe('Integration • Errors (Posts connection)', () => {
       {
         when: ({ variables }) => !variables.after && variables.first === 2,
         delay: 5,
-        respond: () => mockResponses.posts(['NEW']),
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            posts: fixtures.posts.connection(['NEW'], { fromId: 1 }),
+          },
+        }),
       },
-      // Older cursor op (after='p1') slow error -> DROPPED
+      // Older cursor op (after='c1') slow error -> DROPPED
       {
-        when: ({ variables }) => variables.after === 'p1' && variables.first === 2,
+        when: ({ variables }) => variables.after === 'c1' && variables.first === 2,
         delay: 30,
         respond: () => ({ error: new Error('Cursor page failed') }),
       },
     ];
-
-    const cache = cacheConfigs.withRelay();
 
     const renders: string[][] = [];
     const errors: string[] = [];
@@ -196,34 +183,30 @@ describe('Integration • Errors (Posts connection)', () => {
       defineComponent({
         props: ['first', 'after'],
         setup(props) {
-          return () =>
-            h(App, { first: props.first, after: props.after, renders, errors, empties, name: 'CR' });
+          return () => h(App, { first: props.first, after: props.after, renders, errors, empties, name: 'CR' });
         },
       }),
       routes,
-      cache,
     );
-    mocks.push(fx);
 
     // Start with older cursor op in-flight…
-    await wrapper.setProps({ first: 2, after: 'p1' });
+    await wrapper.setProps({ first: 2, after: 'c1' });
     // …then issue the newer leader (no cursor)
     await wrapper.setProps({ first: 2, after: undefined });
-    await tick();
 
     // Newer success arrives
-    await delay(10);
-    await tick();
+    await delay(14);
     expect(renders).toEqual([['NEW']]);
     expect(errors.length).toBe(0);
     expect(empties.length).toBe(0);
 
     // Cursor error arrives later — dropped
     await delay(25);
-    await tick();
     expect(errors.length).toBe(0);
     expect(renders).toEqual([['NEW']]);
     expect(empties.length).toBe(0);
+
+    await fx.restore();
   });
 
   it('Transport reordering: O1 slow success, O2 fast error, O3 medium success → final is O3; errors dropped; no empties', async () => {
@@ -232,7 +215,12 @@ describe('Integration • Errors (Posts connection)', () => {
       {
         when: ({ variables }) => variables.first === 2 && !variables.after,
         delay: 50,
-        respond: () => mockResponses.posts(['O1']),
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            posts: fixtures.posts.connection(['O1'], { fromId: 1 }),
+          },
+        }),
       },
       // O2: first=3 (fast error)
       {
@@ -244,11 +232,14 @@ describe('Integration • Errors (Posts connection)', () => {
       {
         when: ({ variables }) => variables.first === 4 && !variables.after,
         delay: 20,
-        respond: () => mockResponses.posts(['O3']),
+        respond: () => ({
+          data: {
+            __typename: 'Query',
+            posts: fixtures.posts.connection(['O3'], { fromId: 1 }),
+          },
+        }),
       },
     ];
-
-    const cache = cacheConfigs.withRelay();
 
     const renders: string[][] = [];
     const errors: string[] = [];
@@ -263,35 +254,30 @@ describe('Integration • Errors (Posts connection)', () => {
         },
       }),
       routes,
-      cache,
     );
-    mocks.push(fx);
 
     // Start with O1
     await wrapper.setProps({ first: 2 });
     // enqueue O2 then O3
     await wrapper.setProps({ first: 3 });
-    await tick();
     await wrapper.setProps({ first: 4 });
-    await tick();
 
     // Fast error arrives (dropped), medium still pending
-    await delay(10);
-    await tick();
+    await delay(12);
     expect(errors.length).toBe(0);
     expect(renders.length).toBe(0);
     expect(empties.length).toBe(0);
 
     // O3 arrives
-    await delay(15);
-    await tick();
+    await delay(18);
     expect(renders).toEqual([['O3']]);
 
     // O1 comes last — ignored (older)
     await delay(40);
-    await tick();
     expect(renders).toEqual([['O3']]);
     expect(errors.length).toBe(0);
     expect(empties.length).toBe(0);
+
+    await fx.restore();
   });
 });
