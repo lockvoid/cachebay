@@ -170,12 +170,14 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     for (let i = 0; i < plan.root.length; i++) {
       const field = plan.root[i];
 
+      // Root-level @connection → always read the CANONICAL connection
       if (field.isConnection) {
-        const pageKey = buildConnectionCanonicalKey(field, ROOT_ID, variables);
-        result[field.responseKey] = views.getConnectionView(pageKey, field, variables, true);
+        const canKey = buildConnectionCanonicalKey(field, ROOT_ID, variables);
+        result[field.responseKey] = views.getConnectionView(canKey, field, variables, /* canonical */ true);
         continue;
       }
 
+      // Plain field linked off the root record
       const linkKey = buildFieldKey(field, variables);
       const link = (rootSnap as any)[linkKey];
 
@@ -190,28 +192,26 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         continue;
       }
 
+      // If no sub-selection, return a live entity view (reactive proxy)
       if (!field.selectionSet || field.selectionSet.length === 0) {
-        result[field.responseKey] = views.getEntityView(entityProxy, null, undefined, variables, true);
+        result[field.responseKey] = views.getEntityView(
+          entityProxy,
+          null,
+          undefined,
+          variables,
+          true
+        );
         continue;
       }
 
-      // Selected shell whose properties read via entity view (nested connections remain reactive)
-      const entityView = views.getEntityView(
+      // With a sub-selection, return the selection-aware live entity view (NOT a snapshot shell)
+      result[field.responseKey] = views.getEntityView(
         entityProxy,
         field.selectionSet,
         field.selectionMap,
         variables,
         true
       );
-      const shell: Record<string, any> = {
-        __typename: entityView.__typename,
-        id: entityView.id,
-      };
-      for (let j = 0; j < field.selectionSet.length; j++) {
-        const sf = field.selectionSet[j];
-        shell[sf.responseKey] = (entityView as any)[sf.responseKey];
-      }
-      result[field.responseKey] = shell;
     }
 
     return result;
