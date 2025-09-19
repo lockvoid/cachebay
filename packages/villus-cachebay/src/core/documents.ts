@@ -303,8 +303,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       const field = plan.root[i];
 
       if (field.isConnection) {
-        const pageKey = buildConnectionKey(field, ROOT_ID, variables);
-        result[field.responseKey] = views.getConnectionView(pageKey, field, variables);
+        const pageKey = buildConnectionCanonicalKey(field, ROOT_ID, variables);
+        result[field.responseKey] = views.getConnectionView(pageKey, field, variables, true);
         continue;
       }
 
@@ -323,7 +323,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
 
       if (!field.selectionSet || field.selectionSet.length === 0) {
-        result[field.responseKey] = views.getEntityView(entityProxy, null, undefined, variables);
+        result[field.responseKey] = views.getEntityView(entityProxy, null, undefined, variables, true);
         continue;
       }
 
@@ -332,7 +332,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         entityProxy,
         field.selectionSet,
         field.selectionMap,
-        variables
+        variables,
+        true
       );
       const shell: Record<string, any> = {
         __typename: entityView.__typename,

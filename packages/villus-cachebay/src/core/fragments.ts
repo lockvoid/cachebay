@@ -1,16 +1,14 @@
 // src/core/fragments.ts
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { DocumentNode } from "graphql";
 import {
-  compileToPlan,
-  isCachePlanV1,
   type CachePlanV1,
-  type PlanField,
+  isCachePlanV1,
 } from "@/src/compiler";
-import { ROOT_ID } from "./constants";
-import { isObject, hasTypename, upsertEntityShallow, buildConnectionKey } from "./utils";
-import type { GraphInstance } from "./graph";
-import type { ViewsInstance } from "./views";
 import type { PlannerInstance } from "./planner";
+import type { ViewsInstance } from "./views";
+import type { GraphInstance } from "./graph";
+import { isObject, hasTypename, upsertEntityShallow, buildConnectionKey, buildConnectionCanonicalKey } from "./utils";
 
 export type FragmentsOptions = {
   // kept for API compatibility; ignored (compiler uses @connection)
@@ -47,8 +45,8 @@ export const createFragments = (
     const plan = planner.getPlan(fragment);
     const proxy = graph.materializeRecord(id);
     if (!proxy) return undefined; // if your graph returns a reactive empty proxy, this will be truthy
-    // pass selectionSet AND selectionMap per new views signature
-    return views.getEntityView(proxy, plan.root, plan.rootSelectionMap, variables);
+    // pass selectionSet AND selectionMap per views signature
+    return views.getEntityView(proxy, plan.root, plan.rootSelectionMap, variables, false);
   };
 
   /** Targeted write of entity/connection fields covered by the fragment selection. */
@@ -57,7 +55,7 @@ export const createFragments = (
 
     const plan = planner.getPlan(fragment);
 
-    // Ensure the parent record exists
+    // Ensure the parent record exists (entity id or any arbitrary record id)
     const parentProxy = graph.materializeRecord(id);
     if (!parentProxy) {
       if (hasTypename(data) && (data as any).id != null) {
@@ -76,13 +74,13 @@ export const createFragments = (
       const field = plan.root[i];
       const respKey = field.responseKey;
 
+      // Connection subtree — write a concrete page (edge records + page record)
       if (field.isConnection) {
         const subtree = (data as any)[respKey];
         if (!isObject(subtree)) continue;
 
         const pageKey = buildConnectionKey(field, id, variables);
 
-        // Build edge records and refs
         const inputEdges: any[] = Array.isArray((subtree as any).edges) ? (subtree as any).edges : [];
         const edgeRefs = new Array(inputEdges.length);
 
@@ -106,7 +104,7 @@ export const createFragments = (
         const { edges, pageInfo, ...connRest } = subtree as any;
         const pageSnap: Record<string, any> = {
           __typename: (subtree as any).__typename || "Connection",
-          ...connRest, // extras like totalCount
+          ...connRest, // e.g. totalCount
           edges: edgeRefs,
         };
         if (pageInfo) pageSnap.pageInfo = { ...(pageInfo as any) };
@@ -115,7 +113,7 @@ export const createFragments = (
         continue;
       }
 
-      // Non-connection fields
+      // Non-connection fields: shallow write with entity deref
       const value = (data as any)[respKey];
       if (value === undefined) continue;
 

@@ -1,3 +1,4 @@
+// test/unit/core/documents-materializeDocument.test.ts
 import { describe, it, expect, beforeEach } from "vitest";
 import { isReactive } from "vue";
 import gql from "graphql-tag";
@@ -38,11 +39,9 @@ export const COMMENT_FRAGMENT = gql`
 
 export const USER_QUERY = gql`
   ${USER_FRAGMENT}
-
   query UserQuery($id: ID!) {
     user(id: $id) {
       __typename
-
       ...UserFields
     }
   }
@@ -50,11 +49,9 @@ export const USER_QUERY = gql`
 
 export const USERS_QUERY = gql`
   ${USER_FRAGMENT}
-
   query UsersQuery($usersRole: String, $first: Int, $after: String) {
     users(role: $usersRole, first: $first, after: $after) @connection(args: ["role"]) {
       __typename
-
       pageInfo {
         __typename
         startCursor
@@ -62,14 +59,11 @@ export const USERS_QUERY = gql`
         hasNextPage
         hasPreviousPage
       }
-
       edges {
         __typename
         cursor
-
         node {
           __typename
-
           ...UserFields
         }
       }
@@ -83,13 +77,10 @@ export const USER_POSTS_QUERY = gql`
   query UserPostsQuery($id: ID!, $postsCategory: String, $postsFirst: Int, $postsAfter: String) {
     user(id: $id) {
       __typename
-
       ...UserFields
-
       posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
         __typename
         totalCount
-
         pageInfo {
           __typename
           startCursor
@@ -97,20 +88,15 @@ export const USER_POSTS_QUERY = gql`
           hasNextPage
           hasPreviousPage
         }
-
         edges {
           __typename
           cursor
           score
-
           node {
             __typename
-
             ...PostFields
-
             author {
               __typename
-
               id
             }
           }
@@ -123,7 +109,6 @@ export const USER_POSTS_QUERY = gql`
 export const USERS_POSTS_QUERY = gql`
   ${USER_FRAGMENT}
   ${POST_FRAGMENT}
-
   query UsersPostsQuery(
     $usersRole: String
     $usersFirst: Int
@@ -134,7 +119,6 @@ export const USERS_POSTS_QUERY = gql`
   ) {
     users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
       __typename
-
       pageInfo {
         __typename
         startCursor
@@ -142,18 +126,14 @@ export const USERS_POSTS_QUERY = gql`
         hasNextPage
         hasPreviousPage
       }
-
       edges {
         __typename
         cursor
         node {
           __typename
-
           ...UserFields
-
           posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
             __typename
-
             pageInfo {
               __typename
               startCursor
@@ -161,14 +141,11 @@ export const USERS_POSTS_QUERY = gql`
               hasNextPage
               hasPreviousPage
             }
-
             edges {
               __typename
               cursor
-
               node {
                 __typename
-
                 ...PostFields
               }
             }
@@ -183,7 +160,6 @@ export const USER_POSTS_COMMENTS_QUERY = gql`
   ${USER_FRAGMENT}
   ${POST_FRAGMENT}
   ${COMMENT_FRAGMENT}
-
   query UserPostsCommentsQuery(
     $id: ID!
     $postsCategory: String
@@ -194,12 +170,9 @@ export const USER_POSTS_COMMENTS_QUERY = gql`
   ) {
     user(id: $id) {
       __typename
-
       ...UserFields
-
       posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
         __typename
-
         pageInfo {
           __typename
           startCursor
@@ -207,18 +180,14 @@ export const USER_POSTS_COMMENTS_QUERY = gql`
           hasNextPage
           hasPreviousPage
         }
-
         edges {
           __typename
           cursor
           node {
             __typename
-
             ...PostFields
-
             comments(first: $commentsFirst, after: $commentsAfter) @connection(args: []) {
               __typename
-
               pageInfo {
                 __typename
                 startCursor
@@ -226,16 +195,12 @@ export const USER_POSTS_COMMENTS_QUERY = gql`
                 hasNextPage
                 hasPreviousPage
               }
-
               edges {
                 __typename
                 cursor
-
                 node {
                   __typename
-
                   ...CommentFields
-
                   author {
                     __typename
                     id
@@ -254,7 +219,6 @@ export const USERS_POSTS_COMMENTS_QUERY = gql`
   ${USER_FRAGMENT}
   ${POST_FRAGMENT}
   ${COMMENT_FRAGMENT}
-
   query UsersPostsCommentsQuery(
     $usersRole: String
     $usersFirst: Int
@@ -267,7 +231,6 @@ export const USERS_POSTS_COMMENTS_QUERY = gql`
   ) {
     users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
       __typename
-
       pageInfo {
         __typename
         startCursor
@@ -275,19 +238,14 @@ export const USERS_POSTS_COMMENTS_QUERY = gql`
         hasNextPage
         hasPreviousPage
       }
-
       edges {
         __typename
         cursor
-
         node {
           __typename
-
           ...UserFields
-
           posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
             __typename
-
             pageInfo {
               __typename
               startCursor
@@ -295,19 +253,14 @@ export const USERS_POSTS_COMMENTS_QUERY = gql`
               hasNextPage
               hasPreviousPage
             }
-
             edges {
               __typename
               cursor
-
               node {
                 __typename
-
                 ...PostFields
-
                 comments(first: $commentsFirst, after: $commentsAfter) @connection(args: []) {
                   __typename
-
                   pageInfo {
                     __typename
                     startCursor
@@ -315,11 +268,9 @@ export const USERS_POSTS_COMMENTS_QUERY = gql`
                     hasNextPage
                     hasPreviousPage
                   }
-
                   edges {
                     __typename
                     cursor
-
                     node {
                       __typename
                       ...CommentFields
@@ -360,6 +311,12 @@ const makeDocuments = (
   views: ReturnType<typeof makeViews>
 ) => createDocuments({ graph, planner, views });
 
+// helpers for canonical keys we seed/read
+const canUsers = (role: string) => `@connection.users({"role":"${role}"})`;
+const canPosts = (userId: string, category: string) =>
+  `@connection.User:${userId}.posts({"category":"${category}"})`;
+const canComments = (postId: string) => `@connection.Post:${postId}.comments({})`;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -387,7 +344,6 @@ describe("materializeDocument", () => {
       user: { __typename: "User", id: "u1", email: "u1@example.com" },
     });
 
-    // underlying entity proxy is reactive
     const userProxy = graph.materializeRecord("User:u1");
     expect(isReactive(userProxy)).toBe(true);
 
@@ -395,27 +351,19 @@ describe("materializeDocument", () => {
     expect(userProxy.email).toBe("u1+updated@example.com");
   });
 
-  it("USERS_QUERY — connection + pageInfo + edges reactive; edge.node reactive; updates flow", () => {
-    graph.putRecord("@", {
-      id: "@",
-      __typename: "@",
-      'users({"after":null,"first":2,"role":"admin"})': { __ref: '@.users({"after":null,"first":2,"role":"admin"})' },
-    });
-
+  it("USERS_QUERY — canonical connection reactive (edges reactive; pageInfo not); node reactive; updates flow via canonical", () => {
+    // Seed edge records for the leader page (after:null)
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
     graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "u2@example.com" });
 
-    graph.putRecord('@.users({"after":null,"first":2,"role":"admin"}).edges.0', {
-      __typename: "UserEdge",
-      cursor: "u1",
-      node: { __ref: "User:u1" },
-    });
-    graph.putRecord('@.users({"after":null,"first":2,"role":"admin"}).edges.1', {
-      __typename: "UserEdge",
-      cursor: "u2",
-      node: { __ref: "User:u2" },
-    });
-    graph.putRecord('@.users({"after":null,"first":2,"role":"admin"})', {
+    const e0 = '@.users({"after":null,"first":2,"role":"admin"}).edges.0';
+    const e1 = '@.users({"after":null,"first":2,"role":"admin"}).edges.1';
+    graph.putRecord(e0, { __typename: "UserEdge", cursor: "u1", node: { __ref: "User:u1" } });
+    graph.putRecord(e1, { __typename: "UserEdge", cursor: "u2", node: { __ref: "User:u2" } });
+
+    // Seed canonical root users(role:admin)
+    const canKey = canUsers("admin");
+    graph.putRecord(canKey, {
       __typename: "UserConnection",
       pageInfo: {
         __typename: "PageInfo",
@@ -424,10 +372,7 @@ describe("materializeDocument", () => {
         hasNextPage: true,
         hasPreviousPage: false,
       },
-      edges: [
-        { __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.0' },
-        { __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.1' },
-      ],
+      edges: [{ __ref: e0 }, { __ref: e1 }],
     });
 
     const view = documents.materializeDocument({
@@ -435,6 +380,7 @@ describe("materializeDocument", () => {
       variables: { usersRole: "admin", first: 2, after: null },
     });
 
+    // Canonical view
     expect(isReactive(view.users)).toBe(true);
     expect(isReactive(view.users.pageInfo)).toBe(false);
 
@@ -443,40 +389,32 @@ describe("materializeDocument", () => {
     const node0 = view.users.edges[0].node;
     expect(isReactive(node0)).toBe(true);
 
-    // reactive update: pageInfo & entity
-    graph.putRecord('@.users({"after":null,"first":2,"role":"admin"})', {
-      pageInfo: { endCursor: "u3" }
-    });
+    // reactive update through CANONICAL
+    graph.putRecord(canKey, { pageInfo: { endCursor: "u3" } });
     expect(view.users.pageInfo.endCursor).toBe("u3");
 
     graph.putRecord("User:u1", { email: "u1+updated@example.com" });
     expect(node0.email).toBe("u1+updated@example.com");
   });
 
-  it("USER_POSTS_QUERY — connection + edges reactive; totalCount/score reactive; node & author reactive", () => {
+  it("USER_POSTS_QUERY — nested posts connection (canonical) reactive; totals/score reactive; node & author reactive", () => {
+    // Seed root link to the user
     graph.putRecord("@", { id: "@", __typename: "@", 'user({"id":"u1"})': { __ref: "User:u1" } });
 
-    // entities
+    // Entities
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
     graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", tags: [], author: { __ref: "User:u1" } });
     graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "Post 2", tags: [], author: { __ref: "User:u1" } });
 
-    // edges
-    graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0', {
-      __typename: "PostEdge",
-      cursor: "p1",
-      score: 0.5,
-      node: { __ref: "Post:p1" },
-    });
-    graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.1', {
-      __typename: "PostEdge",
-      cursor: "p2",
-      score: 0.7,
-      node: { __ref: "Post:p2" },
-    });
+    // Concrete page edge records (not strictly required for canonical test, but realistic)
+    const pe0 = '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0';
+    const pe1 = '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.1';
+    graph.putRecord(pe0, { __typename: "PostEdge", cursor: "p1", score: 0.5, node: { __ref: "Post:p1" } });
+    graph.putRecord(pe1, { __typename: "PostEdge", cursor: "p2", score: 0.7, node: { __ref: "Post:p2" } });
 
-    // page
-    graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":2})', {
+    // Seed CANONICAL posts for User:u1 (category:tech)
+    const canPostsKey = canPosts("u1", "tech");
+    graph.putRecord(canPostsKey, {
       __typename: "PostConnection",
       totalCount: 2,
       pageInfo: {
@@ -486,10 +424,7 @@ describe("materializeDocument", () => {
         hasNextPage: true,
         hasPreviousPage: false,
       },
-      edges: [
-        { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0' },
-        { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.1' },
-      ],
+      edges: [{ __ref: pe0 }, { __ref: pe1 }],
     });
 
     const view = documents.materializeDocument({
@@ -497,28 +432,22 @@ describe("materializeDocument", () => {
       variables: { id: "u1", postsCategory: "tech", postsFirst: 2, postsAfter: null },
     });
 
-    // connection reactive (and exposes totalCount)
+    // canonical posts connection is reactive
     expect(isReactive(view.user.posts)).toBe(true);
     expect(view.user.posts.totalCount).toBe(2);
-
-    // pageInfo reactive
     expect(isReactive(view.user.posts.pageInfo)).toBe(false);
-
-    // edges reactive and contain score
     expect(isReactive(view.user.posts.edges[0])).toBe(true);
-    expect(view.user.posts.edges[0].score).toBe(0.5);
 
-    // node & author reactive
     const post0 = view.user.posts.edges[0].node;
     const author0 = post0.author;
     expect(isReactive(post0)).toBe(true);
     expect(isReactive(author0)).toBe(true);
 
-    // reactive updates: totalCount, score, titles, author.email
-    graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":2})', { totalCount: 3 });
+    // updates: canonical totals & edge meta & entity
+    graph.putRecord(canPostsKey, { totalCount: 3 });
     expect(view.user.posts.totalCount).toBe(3);
 
-    graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0', { score: 0.9 });
+    graph.putRecord(pe0, { score: 0.9 });
     expect(view.user.posts.edges[0].score).toBe(0.9);
 
     graph.putRecord("Post:p1", { title: "Post 1 (Updated)" });
@@ -527,33 +456,34 @@ describe("materializeDocument", () => {
     expect(author0.email).toBe("u1+updated@example.com");
   });
 
-  it("USERS_POSTS_QUERY — root users page reactive; nested posts page reactive; nested post node reactive", () => {
-    graph.putRecord("@", {
-      id: "@",
-      __typename: "@",
-      'users({"after":null,"first":2,"role":"dj"})': { __ref: '@.users({"after":null,"first":2,"role":"dj"})' }
-    });
-
+  it("USERS_POSTS_QUERY — root users canonical reactive; nested posts canonical reactive; nested post node reactive", () => {
+    // Seed users canonical
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
     graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "u2@example.com" });
-    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", tags: [] });
 
-    graph.putRecord('@.users({"after":null,"first":2,"role":"dj"}).edges.0', { __typename: "UserEdge", cursor: "u1", node: { __ref: "User:u1" } });
-    graph.putRecord('@.users({"after":null,"first":2,"role":"dj"}).edges.1', { __typename: "UserEdge", cursor: "u2", node: { __ref: "User:u2" } });
-    graph.putRecord('@.users({"after":null,"first":2,"role":"dj"})', {
+    const ue0 = '@.users({"after":null,"first":2,"role":"dj"}).edges.0';
+    const ue1 = '@.users({"after":null,"first":2,"role":"dj"}).edges.1';
+    graph.putRecord(ue0, { __typename: "UserEdge", cursor: "u1", node: { __ref: "User:u1" } });
+    graph.putRecord(ue1, { __typename: "UserEdge", cursor: "u2", node: { __ref: "User:u2" } });
+
+    const canUsersKey = canUsers("dj");
+    graph.putRecord(canUsersKey, {
       __typename: "UserConnection",
       pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: true, hasPreviousPage: false },
-      edges: [
-        { __ref: '@.users({"after":null,"first":2,"role":"dj"}).edges.0' },
-        { __ref: '@.users({"after":null,"first":2,"role":"dj"}).edges.1' },
-      ],
+      edges: [{ __ref: ue0 }, { __ref: ue1 }],
     });
 
-    graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0', { __typename: "PostEdge", cursor: "p1", node: { __ref: "Post:p1" } });
-    graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":1})', {
+    // Seed nested posts CANONICAL for u1 (category:tech)
+    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", tags: [] });
+    const pKey = '@.User:u1.posts({"after":null,"category":"tech","first":1})';
+    const pe0 = `${pKey}.edges.0`;
+    graph.putRecord(pe0, { __typename: "PostEdge", cursor: "p1", node: { __ref: "Post:p1" } });
+
+    const canPostsKey = canPosts("u1", "tech");
+    graph.putRecord(canPostsKey, {
       __typename: "PostConnection",
       pageInfo: { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false },
-      edges: [{ __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0' }],
+      edges: [{ __ref: pe0 }],
     });
 
     const view = documents.materializeDocument({
@@ -568,12 +498,12 @@ describe("materializeDocument", () => {
       },
     });
 
-    // root connection reactive
+    // root canonical users
     expect(isReactive(view.users)).toBe(true);
     expect(isReactive(view.users.pageInfo)).toBe(false);
     expect(isReactive(view.users.edges[0])).toBe(true);
 
-    // nested posts connection reactive
+    // nested posts canonical
     const u1Node = view.users.edges[0].node;
     expect(isReactive(u1Node)).toBe(true);
     expect(isReactive(u1Node.posts)).toBe(true);
@@ -584,16 +514,18 @@ describe("materializeDocument", () => {
     expect(isReactive(post0)).toBe(true);
 
     // updates flow
-    graph.putRecord('@.users({"after":null,"first":2,"role":"dj"})', { pageInfo: { endCursor: "u3" } });
+    graph.putRecord(canUsersKey, { pageInfo: { endCursor: "u3" } });
     expect(view.users.pageInfo.endCursor).toBe("u3");
 
     graph.putRecord("Post:p1", { title: "Post 1 (Updated)" });
     expect(post0.title).toBe("Post 1 (Updated)");
   });
 
-  it("USER_POSTS_COMMENTS_QUERY — nested posts/comments reactive at every level", () => {
+  it("USER_POSTS_COMMENTS_QUERY — nested posts/comments canonical at every level", () => {
+    // Root entity link for user
     graph.putRecord("@", { id: "@", __typename: "@", 'user({"id":"u1"})': { __ref: "User:u1" } });
 
+    // Entities
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
     graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", tags: [] });
     graph.putRecord("Comment:c1", { __typename: "Comment", id: "c1", text: "Comment 1", author: { __ref: "User:u2" } });
@@ -601,22 +533,26 @@ describe("materializeDocument", () => {
     graph.putRecord("User:u2", { __typename: "User", id: "u2" });
     graph.putRecord("User:u3", { __typename: "User", id: "u3" });
 
-    graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0', { __typename: "PostEdge", cursor: "p1", node: { __ref: "Post:p1" } });
-    graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":1})', {
+    // posts canonical for user:u1 (category:tech)
+    const pe0 = '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0';
+    graph.putRecord(pe0, { __typename: "PostEdge", cursor: "p1", node: { __ref: "Post:p1" } });
+    const canPostsKey = canPosts("u1", "tech");
+    graph.putRecord(canPostsKey, {
       __typename: "PostConnection",
       pageInfo: { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false },
-      edges: [{ __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0' }],
+      edges: [{ __ref: pe0 }],
     });
 
-    graph.putRecord('@.Post:p1.comments({"after":null,"first":2}).edges.0', { __typename: "CommentEdge", cursor: "c1", node: { __ref: "Comment:c1" } });
-    graph.putRecord('@.Post:p1.comments({"after":null,"first":2}).edges.1', { __typename: "CommentEdge", cursor: "c2", node: { __ref: "Comment:c2" } });
-    graph.putRecord('@.Post:p1.comments({"after":null,"first":2})', {
+    // comments canonical for Post:p1
+    const ce0 = '@.Post:p1.comments({"after":null,"first":2}).edges.0';
+    const ce1 = '@.Post:p1.comments({"after":null,"first":2}).edges.1';
+    graph.putRecord(ce0, { __typename: "CommentEdge", cursor: "c1", node: { __ref: "Comment:c1" } });
+    graph.putRecord(ce1, { __typename: "CommentEdge", cursor: "c2", node: { __ref: "Comment:c2" } });
+    const canCommentsKey = canComments("p1");
+    graph.putRecord(canCommentsKey, {
       __typename: "CommentConnection",
       pageInfo: { __typename: "PageInfo", startCursor: "c1", endCursor: "c2", hasNextPage: true, hasPreviousPage: false },
-      edges: [
-        { __ref: '@.Post:p1.comments({"after":null,"first":2}).edges.0' },
-        { __ref: '@.Post:p1.comments({"after":null,"first":2}).edges.1' },
-      ],
+      edges: [{ __ref: ce0 }, { __ref: ce1 }],
     });
 
     const view = documents.materializeDocument({
@@ -631,7 +567,7 @@ describe("materializeDocument", () => {
       },
     });
 
-    // reactive at every level
+    // reactive at every canonical level
     const posts = view.user.posts;
     expect(isReactive(posts)).toBe(true);
     expect(isReactive(posts.pageInfo)).toBe(false);
@@ -652,38 +588,38 @@ describe("materializeDocument", () => {
     expect(comment0.text).toBe("Comment 1 (Updated)");
   });
 
-  it("USERS_POSTS_COMMENTS_QUERY — root users page + nested posts & nested comments; everything reactive", () => {
-    graph.putRecord("@", { id: "@", __typename: "@", 'users({"after":null,"first":2,"role":"admin"})': { __ref: '@.users({"after":null,"first":2,"role":"admin"})' } });
-
+  it("USERS_POSTS_COMMENTS_QUERY — root users canonical + nested posts/comments canonical: everything reactive", () => {
+    // root users canonical
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
-    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", tags: [] });
-    graph.putRecord("Comment:c1", { __typename: "Comment", id: "c1", text: "Comment 1" });
-
-    graph.putRecord('@.users({"after":null,"first":2,"role":"admin"}).edges.0', {
-      __typename: "UserEdge",
-      cursor: "u1",
-      node: { __ref: "User:u1" },
-    });
-    graph.putRecord('@.users({"after":null,"first":2,"role":"admin"})', {
+    const ue0 = '@.users({"after":null,"first":2,"role":"admin"}).edges.0';
+    graph.putRecord(ue0, { __typename: "UserEdge", cursor: "u1", node: { __ref: "User:u1" } });
+    const canUsersKey = canUsers("admin");
+    graph.putRecord(canUsersKey, {
       __typename: "UserConnection",
-      pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: true, hasPreviousPage: false },
-      edges: [{ __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.0' }],
+      pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u1", hasNextPage: true, hasPreviousPage: false },
+      edges: [{ __ref: ue0 }],
     });
 
-    const u1Posts = '@.User:u1.posts({"after":null,"category":"tech","first":1})';
-    graph.putRecord(`${u1Posts}.edges.0`, { __typename: "PostEdge", cursor: "p1", node: { __ref: "Post:p1" } });
-    graph.putRecord(u1Posts, {
+    // nested posts canonical
+    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", tags: [] });
+    const pe0 = '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0';
+    graph.putRecord(pe0, { __typename: "PostEdge", cursor: "p1", node: { __ref: "Post:p1" } });
+    const canPostsKey = canPosts("u1", "tech");
+    graph.putRecord(canPostsKey, {
       __typename: "PostConnection",
       pageInfo: { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false },
-      edges: [{ __ref: `${u1Posts}.edges.0` }],
+      edges: [{ __ref: pe0 }],
     });
 
-    const p1Comments = '@.Post:p1.comments({"after":null,"first":1})';
-    graph.putRecord(`${p1Comments}.edges.0`, { __typename: "CommentEdge", cursor: "c1", node: { __ref: "Comment:c1" } });
-    graph.putRecord(p1Comments, {
+    // nested comments canonical
+    const ce0 = '@.Post:p1.comments({"after":null,"first":1}).edges.0';
+    graph.putRecord("Comment:c1", { __typename: "Comment", id: "c1", text: "Comment 1" });
+    graph.putRecord(ce0, { __typename: "CommentEdge", cursor: "c1", node: { __ref: "Comment:c1" } });
+    const canCommentsKey = canComments("p1");
+    graph.putRecord(canCommentsKey, {
       __typename: "CommentConnection",
       pageInfo: { __typename: "PageInfo", startCursor: "c1", endCursor: "c1", hasNextPage: false, hasPreviousPage: false },
-      edges: [{ __ref: `${p1Comments}.edges.0` }],
+      edges: [{ __ref: ce0 }],
     });
 
     const view = documents.materializeDocument({
@@ -700,7 +636,6 @@ describe("materializeDocument", () => {
       },
     });
 
-    // reactive assertions
     expect(isReactive(view.users)).toBe(true);
     expect(isReactive(view.users.pageInfo)).toBe(false);
     expect(isReactive(view.users.edges[0])).toBe(true);
@@ -719,8 +654,8 @@ describe("materializeDocument", () => {
     expect(isReactive(post0.comments.edges[0])).toBe(true);
     expect(isReactive(comment0)).toBe(true);
 
-    // reactivity on updates
-    graph.putRecord('@.users({"after":null,"first":2,"role":"admin"})', { pageInfo: { endCursor: "u3" } });
+    // reactivity on updates via canonical
+    graph.putRecord(canUsersKey, { pageInfo: { endCursor: "u3" } });
     expect(view.users.pageInfo.endCursor).toBe("u3");
 
     graph.putRecord("Comment:c1", { text: "Comment 1 (Updated)" });

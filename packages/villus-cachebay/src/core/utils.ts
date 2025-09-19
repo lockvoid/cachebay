@@ -131,8 +131,8 @@ export const buildConnectionKey = (
 
 /**
  * Build the canonical connection key (filters-only identity) under the `@connection.` namespace, e.g.:
- *   @connection.posts({"category":"tech"})#identity
- *   @connection.User:u1.posts({"category":"tech","sort":"hot"})#identity
+ *   @connection.posts({"category":"tech"})
+ *   @connection.User:u1.posts({"category":"tech","sort":"hot"})
  *
  * - Uses `field.connectionKey` (directive key) when available; falls back to the field name.
  * - If `field.connectionFilters` is present, use only those arg names (when present in args).

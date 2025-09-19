@@ -6,7 +6,6 @@ import { createPlugin, provideCachebay } from "./plugin";
 import { createGraph } from "./graph";
 import { createViews } from "./views";
 import { createPlanner } from "./planner";
-import { createSessions } from "./sessions";
 import { createDocuments } from "./documents";
 import { createFragments } from "./fragments";
 
@@ -40,7 +39,6 @@ export type CachebayInstance = ClientPlugin & {
     graph: ReturnType<typeof createGraph>;
     views: ReturnType<typeof createViews>;
     planner: ReturnType<typeof createPlanner>;
-    sessions: ReturnType<typeof createSessions>;
     documents: ReturnType<typeof createDocuments>;
     fragments: ReturnType<typeof createFragments>;
     ssr: ReturnType<typeof createSSR>;
@@ -58,7 +56,6 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   const graph = createGraph({ keys: options.keys || {}, interfaces: options.interfaces || {} });
   const views = createViews({ graph });
   const planner = createPlanner(); // @connection/@paginate driven; configless by default
-  const sessions = createSessions({ graph, views });
   const documents = createDocuments({ graph, views, planner });
   const fragments = createFragments({}, { graph, views, planner });
 
@@ -68,7 +65,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   const inspect = createInspect({ graph });
 
   // Villus plugin (ClientPlugin)
-  const plugin = createPlugin({}, { graph, planner, documents, sessions });
+  const plugin = createPlugin({}, { graph, planner, documents });
 
   // Vue install
   (plugin as any).install = (app: App) => {
@@ -97,7 +94,6 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     graph,
     views,
     planner,
-    sessions,
     documents,
     fragments,
     ssr,

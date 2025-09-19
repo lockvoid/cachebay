@@ -287,11 +287,11 @@ describe("buildConnectionCanonicalKey", () => {
     // Only category in identity; pagination removed. Uses key if provided, but our key-part
     // in canonical name uses `connectionKey || fieldName` — for namespace we only need field name segment.
     // (We keep the segment as field name to avoid exploding namespace; key still picked up by metadata)
-    expect(idRoot).toBe(`@connection.PostsList({"category":"tech"})#identity`);
+    expect(idRoot).toBe(`@connection.PostsList({"category":"tech"})`);
 
     // nested
     const idNested = buildConnectionCanonicalKey(posts, "User:u1", { cat: "tech", first: 2, after: "p2" });
-    expect(idNested).toBe(`@connection.User:u1.PostsList({"category":"tech"})#identity`);
+    expect(idNested).toBe(`@connection.User:u1.PostsList({"category":"tech"})`);
   });
 
   it("defaults filters to all non-pagination args when filters omitted", () => {
@@ -314,7 +314,7 @@ describe("buildConnectionCanonicalKey", () => {
       after: null,
     });
 
-    expect(id).toBe(`@connection.posts({"category":"tech","sort":"hot"})#identity`);
+    expect(id).toBe(`@connection.posts({"category":"tech","sort":"hot"})`);
   });
 
   it("stable stringify → identity identical regardless of variable order", () => {
@@ -344,6 +344,6 @@ describe("buildConnectionCanonicalKey", () => {
     });
 
     expect(a).toBe(b);
-    expect(a).toBe(`@connection.posts({"category":"tech","sort":"hot"})#identity`);
+    expect(a).toBe(`@connection.posts({"category":"tech","sort":"hot"})`);
   });
 });

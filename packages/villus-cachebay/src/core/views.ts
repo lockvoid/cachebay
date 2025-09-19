@@ -1,4 +1,5 @@
-import { buildConnectionKey } from "./utils";
+// src/core/views.ts
+import { buildConnectionKey, buildConnectionCanonicalKey } from "./utils";
 import type { GraphInstance } from "./graph";
 import type { PlanField } from "@/src/compiler";
 
@@ -19,7 +20,7 @@ export const createViews = (dependencies: ViewsDependencies) => {
   const viewCache = new WeakMap<object, any>();
 
   /**
-   * Selection-aware entity view (memoized per (entityProxy, selection key))
+   * Selection-aware entity view (memoized per (entityProxy, selection key, canonical flag))
    * fieldsMap MUST be the compiler-provided map: rootSelectionMap or field.selectionMap
    */
   const getEntityView = (
@@ -27,6 +28,7 @@ export const createViews = (dependencies: ViewsDependencies) => {
     fields: PlanField[] | null,
     fieldsMap: Map<string, PlanField> | undefined,
     variables: Record<string, any>,
+    canonical: boolean,
   ): any => {
     if (!entityProxy || typeof entityProxy !== "object") return entityProxy;
 
@@ -36,8 +38,8 @@ export const createViews = (dependencies: ViewsDependencies) => {
       bucket = { kind: "entity", bySelection: new Map<any, any>() };
       viewCache.set(entityProxy, bucket);
     } else {
-      const key = fieldsMap ?? fields ?? null;
-      const hit = bucket.bySelection.get(key);
+      const cacheKey = `${String(fieldsMap ?? fields ?? null)}|canonical:${canonical ? 1 : 0}`;
+      const hit = bucket.bySelection.get(cacheKey);
       if (hit) return hit;
     }
 
@@ -57,8 +59,12 @@ export const createViews = (dependencies: ViewsDependencies) => {
             typename && id != null
               ? `${typename}:${id}`
               : (graph.identify({ __typename: typename, id }) || "");
-          const pageKey = buildConnectionKey(planField, parentId, variables);
-          return getConnectionView(pageKey, planField, variables);
+
+          const key = canonical
+            ? buildConnectionCanonicalKey(planField, parentId, variables)
+            : buildConnectionKey(planField, parentId, variables);
+
+          return getConnectionView(key, planField, variables, canonical);
         }
 
         const value = Reflect.get(target, prop, receiver);
@@ -72,7 +78,7 @@ export const createViews = (dependencies: ViewsDependencies) => {
               : undefined;
           const subFields = sub ? sub.selectionSet || null : null;
           const subMap = sub ? sub.selectionMap : undefined;
-          return childProxy ? getEntityView(childProxy, subFields, subMap, variables) : undefined;
+          return childProxy ? getEntityView(childProxy, subFields, subMap, variables, canonical) : undefined;
         }
 
         // Arrays (map refs if we know a sub-selection)
@@ -92,7 +98,7 @@ export const createViews = (dependencies: ViewsDependencies) => {
             if (item && typeof item === "object" && (item as any).__ref) {
               const rec = graph.materializeRecord((item as any).__ref);
               out[i] = rec
-                ? getEntityView(rec, sub.selectionSet || null, sub.selectionMap, variables)
+                ? getEntityView(rec, sub.selectionSet || null, sub.selectionMap, variables, canonical)
                 : undefined;
             } else {
               out[i] = item;
@@ -109,8 +115,8 @@ export const createViews = (dependencies: ViewsDependencies) => {
       set() { return false; },
     });
 
-    const key = fieldsMap ?? fields ?? null;
-    bucket.bySelection.set(key, view);
+    const cacheKey = `${String(fieldsMap ?? fields ?? null)}|canonical:${canonical ? 1 : 0}`;
+    bucket.bySelection.set(cacheKey, view);
     return view;
   };
 
@@ -121,6 +127,7 @@ export const createViews = (dependencies: ViewsDependencies) => {
     edgeKey: string,
     nodeField: PlanField | undefined,
     variables: Record<string, any>,
+    canonical: boolean,
   ): any => {
     const edgeProxy = graph.materializeRecord(edgeKey);
     if (!edgeProxy) return undefined;
@@ -133,7 +140,7 @@ export const createViews = (dependencies: ViewsDependencies) => {
         if (prop === "node" && (target as any).node?.__ref) {
           const nodeProxy = graph.materializeRecord((target as any).node.__ref);
           return nodeProxy
-            ? getEntityView(nodeProxy, nodeField?.selectionSet || null, nodeField?.selectionMap, variables)
+            ? getEntityView(nodeProxy, nodeField?.selectionSet || null, nodeField?.selectionMap, variables, canonical)
             : undefined;
         }
 
@@ -141,7 +148,7 @@ export const createViews = (dependencies: ViewsDependencies) => {
 
         if (value && typeof value === "object" && (value as any).__ref) {
           const rec = graph.materializeRecord((value as any).__ref);
-          return rec ? getEntityView(rec, null, undefined, variables) : undefined;
+          return rec ? getEntityView(rec, null, undefined, variables, canonical) : undefined;
         }
 
         if (Array.isArray(value)) {
@@ -150,7 +157,7 @@ export const createViews = (dependencies: ViewsDependencies) => {
             const item = value[i];
             if (item && typeof item === "object" && (item as any).__ref) {
               const rec = graph.materializeRecord((item as any).__ref);
-              out[i] = rec ? getEntityView(rec, null, undefined, variables) : undefined;
+              out[i] = rec ? getEntityView(rec, null, undefined, variables, canonical) : undefined;
             } else {
               out[i] = item;
             }
@@ -177,12 +184,13 @@ export const createViews = (dependencies: ViewsDependencies) => {
   };
 
   /**
-   * Connection (page) view (memoized) + stable edges array per page
+   * Connection (page or canonical) view (memoized) + stable edges array per key
    */
   const getConnectionView = (
     pageKey: string,
     field: PlanField,
     variables: Record<string, any>,
+    canonical: boolean,
   ): any => {
     const pageProxy = graph.materializeRecord(pageKey);
     if (!pageProxy) return undefined;
@@ -212,7 +220,7 @@ export const createViews = (dependencies: ViewsDependencies) => {
           const arr = new Array(refs.length);
           for (let i = 0; i < refs.length; i++) {
             const ek = refs[i];
-            arr[i] = ek ? getEdgeView(ek, nodeField, variables) : undefined;
+            arr[i] = ek ? getEdgeView(ek, nodeField, variables, canonical) : undefined;
           }
 
           if (!bucket || bucket.kind !== "page") {
@@ -230,7 +238,7 @@ export const createViews = (dependencies: ViewsDependencies) => {
 
         if (value && typeof value === "object" && (value as any).__ref) {
           const rec = graph.materializeRecord((value as any).__ref);
-          return rec ? getEntityView(rec, null, undefined, variables) : undefined;
+          return rec ? getEntityView(rec, null, undefined, variables, canonical) : undefined;
         }
 
         if (Array.isArray(value)) {
@@ -239,7 +247,7 @@ export const createViews = (dependencies: ViewsDependencies) => {
             const item = value[i];
             if (item && typeof item === "object" && (item as any).__ref) {
               const rec = graph.materializeRecord((item as any).__ref);
-              out[i] = rec ? getEntityView(rec, null, undefined, variables) : undefined;
+              out[i] = rec ? getEntityView(rec, null, undefined, variables, canonical) : undefined;
             } else {
               out[i] = item;
             }

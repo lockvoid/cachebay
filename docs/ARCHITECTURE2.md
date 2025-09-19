@@ -83,7 +83,7 @@ type Sessions = {
 
 ### How a composer works internally (read-only, reactive)
 
-- **identity:** e.g. `@.User:u1.posts({"category":"tech"})#identity`
+- **identity:** e.g. `@.User:u1.posts({"category":"tech"})`
   - built from `PlanField.connectionArgs` + parent record id (no pagination args)
 - **pages:** concrete **page keys** from the normalized cache, e.g.
   - `@.User:u1.posts({"category":"tech","first":10,"after":null})`
@@ -237,7 +237,7 @@ export function createVillusAdapter(deps: {
 ```
 
 > `buildConnectionIdentityKey` is a small helper you can keep near `utils`:
-> - it calls `field.buildArgs(vars)`, picks `field.connectionArgs` (filters-only), stable-stringifies, and prefixes with `@.` or `@.<parent>.`, then suffixed with `#identity`.
+> - it calls `field.buildArgs(vars)`, picks `field.connectionArgs` (filters-only), stable-stringifies, and prefixes with `@.` or `@.<parent>.`, then suffixed with ``.
 
 ---
 

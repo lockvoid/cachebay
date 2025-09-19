@@ -1,3 +1,4 @@
+// test/unit/core/fragments.test.ts
 import { describe, it, expect, beforeEach } from "vitest";
 import { isReactive } from "vue";
 import gql from "graphql-tag";
@@ -6,7 +7,10 @@ import { createPlanner } from "@/src/core/planner";
 import { createViews } from "@/src/core/views";
 import { createFragments } from "@/src/core/fragments";
 
+// ─────────────────────────────────────────────────────────────────────────────
 // Fragments
+// ─────────────────────────────────────────────────────────────────────────────
+
 const USER_FRAGMENT = gql`
   fragment UserFields on User {
     id
@@ -73,20 +77,24 @@ const POST_COMMENTS_FRAGMENT = gql`
   }
 `;
 
-// helpers
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
 const makeGraph = () =>
   createGraph({
     interfaces: { Post: ["AudioPost", "VideoPost"] },
   });
 
-
 const makePlanner = () => {
-  // no options — compiler reads @connection
+  // compiler reads @connection; no external connection config needed
   return createPlanner();
 };
 
-
-const makeFragments = (graph: ReturnType<typeof createGraph>, planner: ReturnType<typeof makePlanner>) =>
+const makeFragments = (
+  graph: ReturnType<typeof createGraph>,
+  planner: ReturnType<typeof makePlanner>
+) =>
   createFragments(
     {
       // options kept for API compatibility; ignored (compiler uses @connection)
@@ -214,10 +222,8 @@ describe("readFragment (reactive)", () => {
       variables: {},
     });
 
-    // Your graph.materializeRecord returns a live proxy even if the snapshot isn't seeded yet.
-    // So we assert reactive empty object rather than undefined.
+    // Graph may return an empty reactive proxy or undefined depending on build.
     if (view === undefined) {
-      // if your graph returns undefined in your build, allow that too
       expect(view).toBeUndefined();
     } else {
       expect(isReactive(view)).toBe(true);
@@ -264,7 +270,7 @@ describe("writeFragment (targeted)", () => {
     expect(view.email).toBe("seed2@example.com");
   });
 
-  it("UserPosts — writes a connection page (no link); read is reactive", () => {
+  it("UserPosts — writes a connection page (no canonical); read is reactive", () => {
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "x@example.com" });
 
     fragments.writeFragment({
@@ -302,7 +308,7 @@ describe("writeFragment (targeted)", () => {
       },
     });
 
-    // Page and edges exist
+    // Concrete page and edges exist
     expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":2})')).toMatchObject({
       __typename: "PostConnection",
       totalCount: 2,
