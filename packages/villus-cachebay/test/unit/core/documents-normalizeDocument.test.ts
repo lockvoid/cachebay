@@ -3,6 +3,7 @@ import gql from "graphql-tag";
 import { createGraph } from "@/src/core/graph";
 import { createViews } from "@/src/core/views";
 import { createPlanner } from "@/src/core/planner";
+import { createCanonical } from "@/src/core/canonical";
 import { createDocuments } from "@/src/core/documents";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -435,11 +436,16 @@ const makePlanner = () => {
   return createPlanner();
 };
 
+const makeCanonical = (graph: ReturnType<typeof createGraph>) => {
+  return createCanonical({ graph });
+};
+
 const makeDocuments = (
   graph: ReturnType<typeof createGraph>,
   planner: ReturnType<typeof createPlanner>,
+  canonical: ReturnType<typeof makeCanonical>,
   views: ReturnType<typeof makeViews>
-) => createDocuments({ graph, planner, views });
+) => createDocuments({ graph, planner, canonical, views });
 
 // helper: read canonical node ids by canonical key
 const canonicalNodeIds = (graph: ReturnType<typeof createGraph>, canonicalKey: string): string[] => {
@@ -465,13 +471,15 @@ describe("normalizeDocument (progression by query)", () => {
   let graph: ReturnType<typeof createGraph>;
   let planner: ReturnType<typeof createPlanner>;
   let views: ReturnType<typeof createViews>;
+  let canonical: ReturnType<typeof makeCanonical>;
   let documents: ReturnType<typeof makeDocuments>;
 
   beforeEach(() => {
     graph = makeGraph();
     views = makeViews(graph);
     planner = makePlanner();
-    documents = makeDocuments(graph, planner, views);
+    canonical = makeCanonical(graph);
+    documents = makeDocuments(graph, planner, canonical, views);
   });
 
   // ───────────────── existing tests (UNCHANGED) ─────────────────

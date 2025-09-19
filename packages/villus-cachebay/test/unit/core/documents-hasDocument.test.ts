@@ -4,6 +4,7 @@ import { createGraph } from "@/src/core/graph";
 import { createViews } from "@/src/core/views";
 import { createDocuments } from "@/src/core/documents";
 import { createPlanner } from "@/src/core/planner";
+import { createCanonical } from "@/src/core/canonical";
 import { ROOT_ID } from "@/src/core/constants";
 import { compileToPlan } from "@/src/compiler";
 
@@ -64,16 +65,30 @@ const MIXED_QUERY = gql`
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-const makeGraph = () =>
-  createGraph({
+const makeGraph = () => {
+  return createGraph({
     interfaces: { Post: ["AudioPost", "VideoPost"] },
   });
+};
 
-const makeDocuments = (graph: ReturnType<typeof createGraph>) =>
+const makeViews = () => {
+  return createViews({ graph: makeGraph() });
+};
+
+const makeCanonical = (graph: ReturnType<typeof makeGraph>) => {
+  return createCanonical({ graph });
+};
+
+const makePlanner = (graph: ReturnType<typeof makeGraph>) => {
+  return createPlanner({ graph });
+};
+
+const makeDocuments = (graph: ReturnType<typeof createGraph>, planner: ReturnType<typeof makePlanner>, canonical: ReturnType<typeof makeCanonical>, views: ReturnType<typeof makeViews>) =>
   createDocuments({
     graph,
-    views: createViews({ graph }),
-    planner: createPlanner(), // compiler uses @connection in documents
+    views,
+    canonical,
+    planner,
   });
 
 // For USERS_QUERY with { usersRole: "dj", usersFirst: 2, usersAfter: null }
@@ -91,13 +106,17 @@ const USER_LINK_KEY = 'user({"id":"u1"})';
 
 describe("documents.hasDocument", () => {
   let graph: ReturnType<typeof createGraph>;
+  let planner: ReturnType<typeof makePlanner>;
+  let canonical: ReturnType<typeof makeCanonical>;
+  let views: ReturnType<typeof makeViews>;
   let documents: ReturnType<typeof makeDocuments>;
 
   beforeEach(() => {
     graph = makeGraph();
-    documents = makeDocuments(graph);
-    // ensure root exists
-    graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
+    planner = makePlanner(graph);
+    canonical = makeCanonical(graph);
+    views = makeViews(graph);
+    documents = makeDocuments(graph, planner, canonical, views);
   });
 
   it("returns true when a root entity link exists", () => {

@@ -6,6 +6,7 @@ import { createPlugin, provideCachebay } from "./plugin";
 import { createGraph } from "./graph";
 import { createViews } from "./views";
 import { createPlanner } from "./planner";
+import { createCanonical } from "./canonical";
 import { createDocuments } from "./documents";
 import { createFragments } from "./fragments";
 
@@ -39,6 +40,7 @@ export type CachebayInstance = ClientPlugin & {
     graph: ReturnType<typeof createGraph>;
     views: ReturnType<typeof createViews>;
     planner: ReturnType<typeof createPlanner>;
+    canonical: ReturnType<typeof createCanonical>;
     documents: ReturnType<typeof createDocuments>;
     fragments: ReturnType<typeof createFragments>;
     ssr: ReturnType<typeof createSSR>;
@@ -55,8 +57,9 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Core
   const graph = createGraph({ keys: options.keys || {}, interfaces: options.interfaces || {} });
   const views = createViews({ graph });
-  const planner = createPlanner(); // @connection/@paginate driven; configless by default
-  const documents = createDocuments({ graph, views, planner });
+  const planner = createPlanner();
+  const canonical = createCanonical({ graph });
+  const documents = createDocuments({ graph, views, planner, canonical });
   const fragments = createFragments({}, { graph, views, planner });
 
   // Features
@@ -94,6 +97,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     graph,
     views,
     planner,
+    canonical,
     documents,
     fragments,
     ssr,

@@ -5,6 +5,7 @@ import gql from "graphql-tag";
 import { createGraph } from "@/src/core/graph";
 import { createPlanner } from "@/src/core/planner";
 import { createViews } from "@/src/core/views";
+import { createCanonical } from "@/src/core/canonical";
 import { createDocuments } from "@/src/core/documents";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -305,11 +306,16 @@ const makeViews = (graph: ReturnType<typeof createGraph>) => {
   return createViews({ graph });
 };
 
+const makeCanonical = (graph: ReturnType<typeof createGraph>) => {
+  return createCanonical({ graph });
+};
+
 const makeDocuments = (
   graph: ReturnType<typeof createGraph>,
   planner: ReturnType<typeof createPlanner>,
+  canonical: ReturnType<typeof makeCanonical>,
   views: ReturnType<typeof makeViews>
-) => createDocuments({ graph, planner, views });
+) => createDocuments({ graph, planner, canonical, views });
 
 // helpers for canonical keys we seed/read
 const canUsers = (role: string) => `@connection.users({"role":"${role}"})`;
@@ -324,14 +330,16 @@ const canComments = (postId: string) => `@connection.Post:${postId}.comments({})
 describe("materializeDocument", () => {
   let graph: ReturnType<typeof createGraph>;
   let planner: ReturnType<typeof createPlanner>;
+  let canonical: ReturnType<typeof makeCanonical>;
   let views: ReturnType<typeof makeViews>;
   let documents: ReturnType<typeof makeDocuments>;
 
   beforeEach(() => {
     graph = makeGraph();
     planner = makePlanner();
+    canonical = makeCanonical();
     views = makeViews(graph);
-    documents = makeDocuments(graph, planner, views);
+    documents = makeDocuments(graph, planner, canonical, views);
   });
 
   it("USER_QUERY — user node reactive when read directly; materialized shape ok", () => {

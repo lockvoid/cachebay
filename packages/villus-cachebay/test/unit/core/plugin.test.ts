@@ -4,6 +4,7 @@ import type { OperationResult } from "villus";
 
 import { createGraph } from "@/src/core/graph";
 import { createPlanner } from "@/src/core/planner";
+import { createCanonical } from "@/src/core/canonical";
 import { createViews } from "@/src/core/views";
 import { createDocuments } from "@/src/core/documents";
 import { createPlugin } from "@/src/core/plugin";
@@ -103,14 +104,16 @@ const canPosts = (userId: string, category: string) =>
 describe("plugin (villus) — canonical materialization, no sessions", () => {
   let graph: ReturnType<typeof createGraph>;
   let planner: ReturnType<typeof createPlanner>;
+  let canonical: ReturnType<typeof createCanonical>;
   let views: ReturnType<typeof createViews>;
   let documents: ReturnType<typeof createDocuments>;
 
   beforeEach(() => {
     graph = createGraph({ interfaces: { Post: ["AudioPost", "VideoPost"] } });
     planner = createPlanner();
+    canonical = createCanonical({ graph });
     views = createViews({ graph });
-    documents = createDocuments({ graph, views, planner });
+    documents = createDocuments({ graph, planner, canonical, views });
 
     // ensure root record exists
     graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
