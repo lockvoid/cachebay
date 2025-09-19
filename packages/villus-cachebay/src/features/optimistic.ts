@@ -243,17 +243,32 @@ export const createModifyOptimistic = ({ graph }: Deps) => {
     }
   };
 
+  /** Replace (in place) the whole snapshot of a record without changing proxy identity. */
+  const replaceInPlace = (recordId: string, full: Record<string, any>) => {
+    const current = graph.getRecord(recordId) || {};
+    // 1) delete fields that must disappear
+    const deletions: Record<string, any> = {};
+    for (const k of Object.keys(current)) {
+      if (!(k in full)) deletions[k] = undefined;
+    }
+    if (Object.keys(deletions).length) graph.putRecord(recordId, deletions);
+    // 2) set entire snapshot (including id/__typename)
+    graph.putRecord(recordId, full);
+  };
+
   const resetToBase = () => {
-    // Must REPLACE, not merge — so that removed fields don't stick around.
+    // Keep proxy identity stable for records that existed at baseline.
     for (const [id, snap] of baseSnap) {
-      graph.removeRecord(id);
-      if (snap !== null) {
-        graph.putRecord(id, snap);
+      if (snap === null) {
+        graph.removeRecord(id);
+      } else {
+        replaceInPlace(id, snap);
       }
     }
   };
 
   const reapplyLayers = () => {
+    // Re-apply committed (non-reverted) in insertion order
     for (const L of committed) {
       if (reverted.has(L.id)) continue;
       for (const e of L.entityOps) {
@@ -262,6 +277,7 @@ export const createModifyOptimistic = ({ graph }: Deps) => {
       }
       for (const c of L.canOps) applyCanonOp(c);
     }
+    // Then pending in id order
     const pend = Array.from(pending).sort((a, b) => a.id - b.id);
     for (const L of pend) {
       for (const e of L.entityOps) {
@@ -397,11 +413,18 @@ export const createModifyOptimistic = ({ graph }: Deps) => {
       revert() {
         if (pending.has(layer)) pending.delete(layer);
         const idx = committed.findIndex((L) => L.id === layer.id);
-        if (idx >= 0) reverted.add(layer.id);
+
+        // Remove from committed when present; fallback to marking as reverted for safety.
+        if (idx >= 0) {
+          committed.splice(idx, 1);
+        } else {
+          reverted.add(layer.id);
+        }
+
         resetToBase();
         reapplyLayers();
         cleanupIfIdle();
-      },
+      }
     };
   };
 };

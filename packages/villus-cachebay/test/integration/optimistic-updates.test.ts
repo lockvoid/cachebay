@@ -198,6 +198,12 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
   it("Canonical layering: T1 adds 2, T2 adds 1; revert T1 preserves T2; revert T2 → baseline", async () => {
     const cache = createCache();
 
+    await seedCache(cache, {
+      query: operations.POSTS_QUERY,
+      variables: {},                            // no cursors => canonical
+      data: { __typename: "Query", posts: fixtures.posts.connection([]) },
+    });
+
     const Comp = defineComponent({
       setup() {
         const { data } = useQuery({
@@ -243,6 +249,12 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
     // Revert T1 → keep T2 in place. Give the view a second frame to settle.
     T1.revert?.();
     await tick(2);
+
+    const canKey = "@connection.posts({})";
+    const can = (cache as any).__internals.graph.getRecord(canKey);
+    const edgeKeys = Array.isArray(can?.edges) ? can.edges.map((r: any) => r.__ref) : [];
+    const nodeRefs = edgeKeys.map((ek: string) => (cache as any).__internals.graph.getRecord(ek)?.node?.__ref);
+
     expect(rows(wrapper)).toEqual(["Post 3"]);
 
     // Revert T2 → back to baseline (empty)
