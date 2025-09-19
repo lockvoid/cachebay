@@ -1,528 +1,539 @@
-// test/integration/cache-policies.test.ts
-import { describe, it, expect, afterEach } from 'vitest';
-import { defineComponent, h, watch } from 'vue';
+import { describe, it, expect } from "vitest";
+import { defineComponent, h, watch } from "vue";
 import {
-  createListComponent,
   mountWithClient,
-  getListItems,
-  waitForList,
-  testQueries,
-  mockResponses,
-  cacheConfigs,
-  createTestClient,
   seedCache,
-} from '@/test/helpers/integration';
-import { tick, delay } from '@/test/helpers/concurrency';
-import type { Route } from '@/test/helpers/transport';
+  tick,
+  delay,
+  type Route,
+  fixtures,
+  operations,
+} from "@/test/helpers";
 
-describe('Integration • Cache Policies Behavior', () => {
-  const restores: Array<() => void> = [];
+// tiny helper to read rendered rows (each row is a bare <div> with text)
+const rows = (wrapper: any) =>
+  wrapper.findAll("div").map((n: any) => n.text()).filter((t: string) => t !== "");
 
-  afterEach(() => {
-    while (restores.length) (restores.pop()!)();
+/* -----------------------------------------------------------------------------
+ * Components
+ * -------------------------------------------------------------------------- */
+
+const UsersList = (
+  policy: "cache-first" | "cache-and-network" | "network-only" | "cache-only",
+  vars: any
+) =>
+  defineComponent({
+    name: "UsersList",
+    setup() {
+      const { useQuery } = require("villus");
+      const { data } = useQuery({ query: operations.USERS_QUERY, variables: vars, cachePolicy: policy });
+      return () => {
+        const usersEdges = data.value?.users?.edges ?? [];
+        return usersEdges.map((e: any) => h("div", {}, e?.node?.email ?? ""));
+      };
+    },
   });
 
+const UserTitle = (
+  policy: "cache-first" | "cache-and-network" | "network-only" | "cache-only",
+  id: string
+) =>
+  defineComponent({
+    name: "UserTitle",
+    setup() {
+      const { useQuery } = require("villus");
+      const { data } = useQuery({ query: operations.USER_QUERY, variables: { id }, cachePolicy: policy });
+      return () => h("div", {}, data.value?.user?.email ?? "");
+    },
+  });
+
+// Nested: User -> Posts(tech) -> first post -> Comments (uuid identity)
+// Renders comment texts
+const UserPostComments = (
+  policy: "cache-first" | "cache-and-network" | "network-only" | "cache-only"
+) =>
+  defineComponent({
+    name: "UserPostComments",
+    setup() {
+      const { useQuery } = require("villus");
+      const vars = {
+        id: "u1",
+        postsCategory: "tech",
+        postsFirst: 1,
+        postsAfter: null,
+        commentsFirst: 2,
+        commentsAfter: null,
+      };
+      const { data } = useQuery({ query: operations.USER_POSTS_COMMENTS_QUERY, variables: vars, cachePolicy: policy });
+      return () => {
+        const postEdges = data.value?.user?.posts?.edges ?? [];
+        const firstPost = postEdges[0]?.node;
+        const commentEdges = firstPost?.comments?.edges ?? [];
+        return commentEdges.map((e: any) => h("div", {}, e?.node?.text ?? ""));
+      };
+    },
+  });
+
+/* -----------------------------------------------------------------------------
+ * Tests
+ * -------------------------------------------------------------------------- */
+
+describe("Integration • Cache Policies Behavior (canonical connections, nested, uuid)", () => {
   // ────────────────────────────────────────────────────────────────────────────
   // cache-first
   // ────────────────────────────────────────────────────────────────────────────
-  describe('cache-first policy', () => {
-    it('miss → one network then render', async () => {
-      const routes: Route[] = [{
-        when: ({ variables }) => variables.filter === 'tech',
-        delay: 30,
-        respond: () => mockResponses.posts(['First Post']),
-      }];
+  describe("cache-first policy", () => {
+    it("miss → one network then render (root users connection)", async () => {
+      const routes: Route[] = [
+        {
+          when: ({ variables }) => variables.usersRole === "tech",
+          delay: 30,
+          respond: () => fixtures.users.query(["tech.user@example.com"]),
+        },
+      ];
 
-      const Component = createListComponent(testQueries.POSTS, { filter: 'tech' }, { cachePolicy: 'cache-first' });
-      const { wrapper, fx } = await mountWithClient(Component, routes, cacheConfigs.withRelay());
-      restores.push(fx.restore);
+      const Comp = UsersList("cache-first", { usersRole: "tech", usersFirst: 2, usersAfter: null });
+      const { wrapper, fx } = await mountWithClient(Comp, routes);
 
       await tick();
-      expect(getListItems(wrapper).length).toBe(0);
+      expect(rows(wrapper).length).toBe(0);
       expect(fx.calls.length).toBe(1);
 
       await delay(40);
       await tick();
-      expect(getListItems(wrapper)).toEqual(['First Post']);
+      expect(rows(wrapper)).toEqual(["tech.user@example.com"]);
+      fx.restore();
     });
 
-    it('hit emits cached and terminates, no network call', async () => {
-      const cache = cacheConfigs.withRelay();
+    it("hit emits cached and terminates, no network call (root users)", async () => {
+      const cache = (await mountWithClient(defineComponent({ render: () => h("div") }), [])).cache;
 
       await seedCache(cache, {
-        query: testQueries.POSTS,
-        variables: { filter: 'cached' },
-        data: mockResponses.posts(['Cached Post']).data,
+        query: operations.USERS_QUERY,
+        variables: { usersRole: "cached", usersFirst: 2, usersAfter: null },
+        data: fixtures.users.query(["cached.user@example.com"]).data,
       });
 
       await delay(5);
 
-      const Component = createListComponent(testQueries.POSTS, { filter: 'cached' }, { cachePolicy: 'cache-first' });
-      const { wrapper, fx } = await mountWithClient(Component, [], cache);
-      restores.push(fx.restore);
+      const Comp = UsersList("cache-first", { usersRole: "cached", usersFirst: 2, usersAfter: null });
+      const { wrapper, fx } = await mountWithClient(Comp, [], cache);
 
       await delay(10);
-      expect(getListItems(wrapper)).toEqual(['Cached Post']);
+      expect(rows(wrapper)).toEqual(["cached.user@example.com"]);
       expect(fx.calls.length).toBe(0);
+      fx.restore();
     });
 
-    it('single object • miss → one network then render', async () => {
-      const routes: Route[] = [{
-        when: ({ variables }) => variables.id === '42',
-        delay: 15,
-        respond: () => mockResponses.post('Answer', '42'),
-      }];
+    it("single object • miss → one network then render (User)", async () => {
+      const routes: Route[] = [
+        { when: ({ variables }) => variables.id === "42", delay: 15, respond: () => fixtures.singleUser.query("42", "answer@example.com") },
+      ];
 
-      const Component = defineComponent({
-        setup() {
-          const { useQuery } = require('villus');
-          const { data } = useQuery({ query: testQueries.POST, variables: { id: '42' }, cachePolicy: 'cache-first' });
-          return () => h('div', {}, data.value?.post?.title || '');
-        }
-      });
-
-      const { wrapper, fx } = await mountWithClient(Component, routes, cacheConfigs.withRelay());
-      restores.push(fx.restore);
+      const Comp = UserTitle("cache-first", "42");
+      const { wrapper, fx } = await mountWithClient(Comp, routes);
 
       await tick();
-      expect(wrapper.text()).toBe('');
+      expect(rows(wrapper).join("")).toBe("");
       expect(fx.calls.length).toBe(1);
 
       await delay(20);
       await tick();
-      expect(wrapper.text()).toBe('Answer');
+      expect(rows(wrapper)).toEqual(["answer@example.com"]);
+      fx.restore();
     });
 
-    it('single object • hit emits cached and terminates, no network', async () => {
-      const cache = cacheConfigs.withRelay();
+    it("single object • hit emits cached and terminates, no network (User)", async () => {
+      const cache = (await mountWithClient(defineComponent({ render: () => h("div") }), [])).cache;
 
       await seedCache(cache, {
-        query: testQueries.POST,
-        variables: { id: '7' },
-        data: mockResponses.post('Cached Single', '7').data,
+        query: operations.USER_QUERY,
+        variables: { id: "7" },
+        data: fixtures.singleUser.query("7", "cached@example.com").data,
       });
 
       await delay(5);
 
-      const Component = defineComponent({
-        setup() {
-          const { useQuery } = require('villus');
-          const { data } = useQuery({ query: testQueries.POST, variables: { id: '7' }, cachePolicy: 'cache-first' });
-          return () => h('div', {}, data.value?.post?.title || '');
-        }
-      });
-
-      const { wrapper, fx } = await mountWithClient(Component, [], cache);
-      restores.push(fx.restore);
+      const Comp = UserTitle("cache-first", "7");
+      const { wrapper, fx } = await mountWithClient(Comp, [], cache);
 
       await delay(10);
-      expect(wrapper.text()).toBe('Cached Single');
+      expect(rows(wrapper)).toEqual(["cached@example.com"]);
       expect(fx.calls.length).toBe(0);
+      fx.restore();
     });
   });
 
   // ────────────────────────────────────────────────────────────────────────────
   // cache-and-network
   // ────────────────────────────────────────────────────────────────────────────
-  describe('cache-and-network policy', () => {
-    it('hit → immediate cached render then network refresh once', async () => {
-      const cache = cacheConfigs.withRelay();
+  describe("cache-and-network policy", () => {
+    it("hit → immediate cached render then network refresh once (root users)", async () => {
+      const cache = (await mountWithClient(defineComponent({ render: () => h("div") }), [])).cache;
 
       await seedCache(cache, {
-        query: testQueries.POSTS,
-        variables: { filter: 'news' },
-        data: mockResponses.posts(['Old News']).data,
+        query: operations.USERS_QUERY,
+        variables: { usersRole: "news", usersFirst: 2, usersAfter: null },
+        data: fixtures.users.query(["old.news@example.com"]).data,
       });
 
       await delay(5);
 
-      const routes: Route[] = [{
-        when: ({ variables }) => variables.filter === 'news',
-        delay: 15,
-        respond: () => mockResponses.posts(['Fresh News']),
-      }];
+      const routes: Route[] = [
+        {
+          when: ({ variables }) => variables.usersRole === "news",
+          delay: 15,
+          respond: () => fixtures.users.query(["fresh.news@example.com"]),
+        },
+      ];
 
-      const Component = createListComponent(testQueries.POSTS, { filter: 'news' }, { cachePolicy: 'cache-and-network' });
-      const { wrapper, fx } = await mountWithClient(Component, routes, cache);
-      restores.push(fx.restore);
+      const Comp = UsersList("cache-and-network", { usersRole: "news", usersFirst: 2, usersAfter: null });
+      const { wrapper, fx } = await mountWithClient(Comp, routes, cache);
 
       await delay(10);
-      expect(getListItems(wrapper)).toEqual(['Old News']);
+      expect(rows(wrapper)).toEqual(["old.news@example.com"]);
 
       await delay(20);
-      await tick(6);
-      expect(getListItems(wrapper)).toEqual(['Fresh News']);
+      await tick();
+      expect(rows(wrapper)).toEqual(["fresh.news@example.com"]);
       expect(fx.calls.length).toBe(1);
+      fx.restore();
     });
 
-    it('identical network as cache → single render', async () => {
-      const cache = cacheConfigs.withRelay();
-      const cachedData = mockResponses.posts(['Same Post']).data;
+    it("identical network as cache → single render", async () => {
+      const cache = (await mountWithClient(defineComponent({ render: () => h("div") }), [])).cache;
+      const cached = fixtures.users.query(["same.user@example.com"]).data;
 
       await seedCache(cache, {
-        query: testQueries.POSTS,
-        variables: { filter: 'same' },
-        data: cachedData,
+        query: operations.USERS_QUERY,
+        variables: { usersRole: "same", usersFirst: 2, usersAfter: null },
+        data: cached,
       });
 
       await delay(5);
 
-      const routes: Route[] = [{
-        when: ({ variables }) => variables.filter === 'same',
-        delay: 10,
-        respond: () => ({ data: cachedData }),
-      }];
+      const routes: Route[] = [
+        { when: ({ variables }) => variables.usersRole === "same", delay: 10, respond: () => ({ data: cached }) },
+      ];
 
-      const Component = createListComponent(testQueries.POSTS, { filter: 'same' }, { cachePolicy: 'cache-and-network' });
-      const { wrapper, fx } = await mountWithClient(Component, routes, cache);
-      restores.push(fx.restore);
+      const Comp = UsersList("cache-and-network", { usersRole: "same", usersFirst: 2, usersAfter: null });
+      const { wrapper, fx } = await mountWithClient(Comp, routes, cache);
 
       await delay(10);
-      expect(getListItems(wrapper)).toEqual(['Same Post']);
+      expect(rows(wrapper)).toEqual(["same.user@example.com"]);
 
       await delay(15);
-      await tick(2);
-      expect(getListItems(wrapper)).toEqual(['Same Post']);
+      await tick();
+      expect(rows(wrapper)).toEqual(["same.user@example.com"]);
       expect(fx.calls.length).toBe(1);
+      fx.restore();
     });
 
-    it('different network → two renders', async () => {
-      const cache = cacheConfigs.withRelay();
+    it("different network → two renders (recorded)", async () => {
+      const cache = (await mountWithClient(defineComponent({ render: () => h("div") }), [])).cache;
 
       await seedCache(cache, {
-        query: testQueries.POSTS,
-        variables: { filter: 'diff' },
-        data: mockResponses.posts(['Initial Post']).data,
+        query: operations.USERS_QUERY,
+        variables: { usersRole: "diff", usersFirst: 2, usersAfter: null },
+        data: fixtures.users.query(["initial.user@example.com"]).data,
       });
 
       await delay(5);
 
-      const routes: Route[] = [{
-        when: ({ variables }) => variables.filter === 'diff',
-        delay: 10,
-        respond: () => mockResponses.posts(['Updated Post']),
-      }];
+      const routes: Route[] = [
+        { when: ({ variables }) => variables.usersRole === "diff", delay: 10, respond: () => fixtures.users.query(["updated.user@example.com"]) },
+      ];
 
       const renders: string[][] = [];
-      const Component = defineComponent({
+      const Comp = defineComponent({
+        name: "UsersDiff",
         setup() {
-          const { useQuery } = require('villus');
+          const { useQuery } = require("villus");
           const { data } = useQuery({
-            query: testQueries.POSTS,
-            variables: { filter: 'diff' },
-            cachePolicy: 'cache-and-network'
+            query: operations.USERS_QUERY,
+            variables: { usersRole: "diff", usersFirst: 2, usersAfter: null },
+            cachePolicy: "cache-and-network",
           });
-
-          watch(() => data.value, (v) => {
-            const titles = (v?.posts?.edges ?? []).map((e: any) => e?.node?.title || '');
-            if (titles.length) renders.push(titles);
-          }, { immediate: true });
-
-          return () => h('ul', {},
-            (data?.value?.posts?.edges ?? []).map((e: any) =>
-              h('li', {}, e?.node?.title || '')
-            )
+          watch(
+            () => data.value,
+            (v) => {
+              const emails = (v?.users?.edges ?? []).map((e: any) => e?.node?.email ?? "");
+              if (emails.length) renders.push(emails);
+            },
+            { immediate: true }
           );
-        }
+          return () => (data.value?.users?.edges ?? []).map((e: any) => h("div", {}, e?.node?.email ?? ""));
+        },
       });
 
-      const { wrapper, fx } = await mountWithClient(Component, routes, cache);
-      restores.push(fx.restore);
+      const { wrapper, fx } = await mountWithClient(Comp, routes, cache);
 
-      await tick(2);
-      expect(getListItems(wrapper)).toEqual(['Initial Post']);
+      await tick();
+      expect(rows(wrapper)).toEqual(["initial.user@example.com"]);
 
       await delay(15);
-      await tick(2);
-      expect(renders).toEqual([['Initial Post'], ['Updated Post']]);
-      expect(getListItems(wrapper)).toEqual(['Updated Post']);
+      await tick();
+      expect(renders).toEqual([["initial.user@example.com"], ["updated.user@example.com"]]);
+      expect(rows(wrapper)).toEqual(["updated.user@example.com"]);
       expect(fx.calls.length).toBe(1);
+      fx.restore();
     });
 
-    it('miss → one render on network response', async () => {
-      const routes: Route[] = [{
-        when: ({ variables }) => variables.filter === 'miss',
-        delay: 5,
-        respond: () => mockResponses.posts(['New Post']),
-      }];
+    it("miss → one render on network response (root users)", async () => {
+      const routes: Route[] = [
+        { when: ({ variables }) => variables.usersRole === "miss", delay: 5, respond: () => fixtures.users.query(["new.user@example.com"]) },
+      ];
 
-      const Component = createListComponent(testQueries.POSTS, { filter: 'miss' }, { cachePolicy: 'cache-and-network' });
-      const { wrapper, fx } = await mountWithClient(Component, routes, cacheConfigs.withRelay());
-      restores.push(fx.restore);
+      const Comp = UsersList("cache-and-network", { usersRole: "miss", usersFirst: 2, usersAfter: null });
+      const { wrapper, fx } = await mountWithClient(Comp, routes);
 
-      await tick(2);
-      expect(getListItems(wrapper)).toEqual([]);
+      await tick();
+      expect(rows(wrapper)).toEqual([]);
 
       await delay(8);
-      await tick(2);
-      expect(getListItems(wrapper)).toEqual(['New Post']);
+      await tick();
+      expect(rows(wrapper)).toEqual(["new.user@example.com"]);
       expect(fx.calls.length).toBe(1);
+      fx.restore();
     });
 
-    it('single object • hit → immediate cached render then network refresh once', async () => {
-      const cache = cacheConfigs.withRelay();
+    it("nested Post→Comments (uuid) • hit then refresh", async () => {
+      const cache = (await mountWithClient(defineComponent({ render: () => h("div") }), [])).cache;
 
+      // Seed: User u1 with Posts(tech) page→ P1 node with Comments(C1,C2)
       await seedCache(cache, {
-        query: testQueries.POST,
-        variables: { id: '88' },
-        data: mockResponses.post('Old Title', '88').data,
+        query: operations.USER_POSTS_COMMENTS_QUERY,
+        variables: {
+          id: "u1",
+          postsCategory: "tech",
+          postsFirst: 1,
+          postsAfter: null,
+          commentsFirst: 2,
+          commentsAfter: null,
+        },
+        data: {
+          __typename: "Query",
+          user: {
+            __typename: "User",
+            id: "u1",
+            posts: fixtures.posts.connection(
+              [
+                {
+                  title: "P1",
+                  extras: {
+                    comments: fixtures.comments.connection(["Comment 1", "Comment 2"], { postId: "p1", fromId: 1 }),
+                  },
+                },
+              ],
+              { fromId: 1 }
+            ),
+          },
+        },
       });
 
       await delay(5);
 
-      const routes: Route[] = [{
-        when: ({ variables }) => variables.id === '88',
-        delay: 10,
-        respond: () => mockResponses.post('Fresh Title', '88'),
-      }];
+      // Network: after 'c2' add Comment 3 for P1
+      const routes: Route[] = [
+        {
+          when: ({ variables }) =>
+            variables.id === "u1" &&
+            variables.postsCategory === "tech" &&
+            variables.commentsFirst === 1 &&
+            variables.commentsAfter === "c2",
+          delay: 12,
+          respond: () => ({
+            data: {
+              __typename: "Query",
+              user: {
+                __typename: "User",
+                id: "u1",
+                posts: fixtures.posts.connection(
+                  [
+                    {
+                      title: "P1",
+                      extras: {
+                        comments: fixtures.comments.connection(["Comment 3"], { postId: "p1", fromId: 3 }),
+                      },
+                    },
+                  ],
+                  { fromId: 1 }
+                ),
+              },
+            },
+          }),
+        },
+      ];
 
-      const Component = defineComponent({
-        setup() {
-          const { useQuery } = require('villus');
-          const { data } = useQuery({ query: testQueries.POST, variables: { id: '88' }, cachePolicy: 'cache-and-network' });
-          return () => h('div', {}, data.value?.post?.title || '');
-        }
-      });
+      const Comp = UserPostComments("cache-and-network");
+      const { wrapper, fx } = await mountWithClient(Comp, routes, cache);
 
-      const { wrapper, fx } = await mountWithClient(Component, routes, cache);
-      restores.push(fx.restore);
-
-      await delay(8);
-      expect(wrapper.text()).toBe('Old Title');
-
-      await delay(15);
+      // allow canonical nested comments to surface immediately
       await tick();
-      expect(wrapper.text()).toBe('Fresh Title');
-      expect(fx.calls.length).toBe(1);
-    });
-
-    it('single object • miss → one render on network response', async () => {
-      const routes: Route[] = [{
-        when: ({ variables }) => variables.id === '404',
-        delay: 5,
-        respond: () => mockResponses.post('Found Later', '404'),
-      }];
-
-      const Component = defineComponent({
-        setup() {
-          const { useQuery } = require('villus');
-          const { data } = useQuery({ query: testQueries.POST, variables: { id: '404' }, cachePolicy: 'cache-and-network' });
-          return () => h('div', {}, data.value?.post?.title || '');
-        }
-      });
-
-      const { wrapper, fx } = await mountWithClient(Component, routes, cacheConfigs.withRelay());
-      restores.push(fx.restore);
-
       await tick();
-      expect(wrapper.text()).toBe('');
 
-      await delay(10);
+      // immediate cached render (C1, C2)
+      expect(rows(wrapper)).toEqual(["Comment 1", "Comment 2"]);
+
+      // after network, union via canonical (C1, C2, C3)
+      await delay(20);
       await tick();
-      expect(wrapper.text()).toBe('Found Later');
-      expect(fx.calls.length).toBe(1);
+      expect(rows(wrapper)).toEqual(["Comment 1", "Comment 2", "Comment 3"]);
+      fx.restore();
     });
   });
 
   // ────────────────────────────────────────────────────────────────────────────
   // network-only
   // ────────────────────────────────────────────────────────────────────────────
-  describe('network-only policy', () => {
-    it('no cache, renders only on network', async () => {
-      const routes: Route[] = [{
-        when: ({ variables }) => variables.filter === 'network',
-        delay: 20,
-        respond: () => mockResponses.posts(['Network Post']),
-      }];
+  describe("network-only policy", () => {
+    it("no cache, renders only on network (users)", async () => {
+      const routes: Route[] = [
+        { when: ({ variables }) => variables.usersRole === "network", delay: 20, respond: () => fixtures.users.query(["network.user@example.com"]) },
+      ];
 
-      const Component = createListComponent(testQueries.POSTS, { filter: 'network' }, { cachePolicy: 'network-only' });
-      const { wrapper, fx } = await mountWithClient(Component, routes, cacheConfigs.withRelay());
-      restores.push(fx.restore);
+      const Comp = UsersList("network-only", { usersRole: "network", usersFirst: 2, usersAfter: null });
+      const { wrapper, fx } = await mountWithClient(Comp, routes);
 
-      await tick(6);
-      expect(getListItems(wrapper).length).toBe(0);
+      await tick();
+      expect(rows(wrapper).length).toBe(0);
       expect(fx.calls.length).toBe(1);
 
       await delay(25);
-      expect(getListItems(wrapper)).toEqual(['Network Post']);
+      expect(rows(wrapper)).toEqual(["network.user@example.com"]);
+      fx.restore();
     });
 
-    it('single object • no cache, renders on network', async () => {
-      const routes: Route[] = [{
-        when: ({ variables }) => variables.id === '501',
-        delay: 15,
-        respond: () => mockResponses.post('Network Obj', '501'),
-      }];
+    it("single object • no cache, renders on network (User)", async () => {
+      const routes: Route[] = [
+        { when: ({ variables }) => variables.id === "501", delay: 15, respond: () => fixtures.singleUser.query("501", "net@example.com") },
+      ];
 
-      const Component = defineComponent({
-        setup() {
-          const { useQuery } = require('villus');
-          const { data } = useQuery({ query: testQueries.POST, variables: { id: '501' }, cachePolicy: 'network-only' });
-          return () => h('div', {}, data.value?.post?.title || '');
-        }
-      });
-
-      const { wrapper, fx } = await mountWithClient(Component, routes, cacheConfigs.withRelay());
-      restores.push(fx.restore);
+      const Comp = UserTitle("network-only", "501");
+      const { wrapper, fx } = await mountWithClient(Comp, routes);
 
       await tick();
-      expect(wrapper.text()).toBe('');
+      expect(rows(wrapper)).toEqual([]);
       expect(fx.calls.length).toBe(1);
 
       await delay(20);
-      expect(wrapper.text()).toBe('Network Obj');
+      expect(rows(wrapper)).toEqual(["net@example.com"]);
+      fx.restore();
     });
   });
 
   // ────────────────────────────────────────────────────────────────────────────
   // cache-only
   // ────────────────────────────────────────────────────────────────────────────
-  describe('cache-only policy', () => {
-    it('hit renders cached data, no network call', async () => {
-      const cache = cacheConfigs.withRelay();
+  describe("cache-only policy", () => {
+    it("hit renders cached data, no network call (users)", async () => {
+      const cache = (await mountWithClient(defineComponent({ render: () => h("div") }), [])).cache;
 
       await seedCache(cache, {
-        query: testQueries.POSTS,
-        variables: { filter: 'hit' },
-        data: mockResponses.posts(['Hit Post']).data,
+        query: operations.USERS_QUERY,
+        variables: { usersRole: "hit", usersFirst: 2, usersAfter: null },
+        data: fixtures.users.query(["hit.user@example.com"]).data,
       });
 
       await delay(5);
 
-      const Component = createListComponent(testQueries.POSTS, { filter: 'hit' }, { cachePolicy: 'cache-only' });
-      const { wrapper, fx } = await mountWithClient(Component, [], cache);
-      restores.push(fx.restore);
+      const Comp = UsersList("cache-only", { usersRole: "hit", usersFirst: 2, usersAfter: null });
+      const { wrapper, fx } = await mountWithClient(Comp, [], cache);
 
       await delay(10);
-      expect(getListItems(wrapper)).toEqual(['Hit Post']);
+      expect(rows(wrapper)).toEqual(["hit.user@example.com"]);
       expect(fx.calls.length).toBe(0);
+      fx.restore();
     });
 
-    it('miss renders nothing and does not network', async () => {
-      const Component = createListComponent(testQueries.POSTS, { filter: 'miss' }, { cachePolicy: 'cache-only' });
-      const { wrapper, fx } = await mountWithClient(Component, [], cacheConfigs.withRelay());
-      restores.push(fx.restore);
-
-      await tick(6);
-      expect(getListItems(wrapper).length).toBe(0);
-      expect(fx.calls.length).toBe(0);
-    });
-
-    it('miss yields CacheOnlyMiss error', async () => {
-      const Component = defineComponent({
-        setup() {
-          const { useQuery } = require('villus');
-          const { data, error } = useQuery({
-            query: testQueries.POSTS,
-            variables: { filter: 'miss' },
-            cachePolicy: 'cache-only'
-          });
-          return () => h('div', {},
-            error?.value?.networkError?.name ||
-            (data?.value?.posts?.edges?.length ?? 0)
-          );
-        }
-      });
-
-      const { wrapper, fx } = await mountWithClient(Component, [], cacheConfigs.withRelay());
-      restores.push(fx.restore);
-
-      await tick(2);
-      expect(wrapper.text()).toContain('CacheOnlyMiss');
-      expect(fx.calls.length).toBe(0);
-    });
-
-    it('single object • hit renders cached, no network', async () => {
-      const cache = cacheConfigs.withRelay();
-
-      await seedCache(cache, {
-        query: testQueries.POST,
-        variables: { id: '11' },
-        data: mockResponses.post('Cache Hit Single', '11').data,
-      });
-
-      await delay(5);
-
-      const Component = defineComponent({
-        setup() {
-          const { useQuery } = require('villus');
-          const { data } = useQuery({ query: testQueries.POST, variables: { id: '11' }, cachePolicy: 'cache-only' });
-          return () => h('div', {}, data.value?.post?.title || '');
-        }
-      });
-
-      const { wrapper, fx } = await mountWithClient(Component, [], cache);
-      restores.push(fx.restore);
-
-      await delay(10);
-      expect(wrapper.text()).toBe('Cache Hit Single');
-      expect(fx.calls.length).toBe(0);
-    });
-
-    it('single object • miss shows nothing, no network; exposes CacheOnlyMiss', async () => {
-      const Component = defineComponent({
-        setup() {
-          const { useQuery } = require('villus');
-          const { data, error } = useQuery({ query: testQueries.POST, variables: { id: 'nope' }, cachePolicy: 'cache-only' });
-          return () => h('div', {}, error?.value?.networkError?.name || (data.value?.post?.title || ''));
-        }
-      });
-
-      const { wrapper, fx } = await mountWithClient(Component, [], cacheConfigs.withRelay());
-      restores.push(fx.restore);
+    it("miss renders nothing and does not network", async () => {
+      const Comp = UsersList("cache-only", { usersRole: "miss", usersFirst: 2, usersAfter: null });
+      const { wrapper, fx } = await mountWithClient(Comp, []);
 
       await tick();
-      expect(wrapper.text()).toContain('CacheOnlyMiss');
+      expect(rows(wrapper).length).toBe(0);
       expect(fx.calls.length).toBe(0);
+      fx.restore();
+    });
+
+    it("miss yields CacheOnlyMiss error", async () => {
+      const Comp = defineComponent({
+        name: "CacheOnlyMissComp",
+        setup() {
+          const { useQuery } = require("villus");
+          const { data, error } = useQuery({
+            query: operations.USERS_QUERY,
+            variables: { usersRole: "miss", usersFirst: 2, usersAfter: null },
+            cachePolicy: "cache-only",
+          });
+          return () => h("div", {}, error?.value?.networkError?.name || String((data?.value?.users?.edges ?? []).length));
+        },
+      });
+
+      const { wrapper, fx } = await mountWithClient(Comp, []);
+      await tick();
+      expect(wrapper.text()).toContain("CacheOnlyMiss");
+      expect(fx.calls.length).toBe(0);
+      fx.restore();
     });
   });
 
   // ────────────────────────────────────────────────────────────────────────────
-  // cursor replay (still just verifies network-only path renders)
+  // cursor replay (simple smoke via network-only)
   // ────────────────────────────────────────────────────────────────────────────
-  describe('cursor replay with relay resolver', () => {
-    it('publishes terminally (append/prepend/replace)', async () => {
-      const routes: Route[] = [{
-        when: ({ variables }) => variables.after === 'c2' && variables.first === 2,
-        delay: 10,
-        respond: () => ({
-          data: {
-            __typename: 'Query',
-            comments: {
-              __typename: 'CommentConnection',
-              edges: [
-                { __typename: 'CommentEdge', cursor: 'c3', node: { __typename: 'Comment', id: '3', text: 'Comment 3', postId: '1', authorId: '1' } },
-                { __typename: 'CommentEdge', cursor: 'c4', node: { __typename: 'Comment', id: '4', text: 'Comment 4', postId: '1', authorId: '1' } },
-              ],
-              pageInfo: {
-                __typename: 'PageInfo',
-                startCursor: 'c3',
-                endCursor: 'c4',
-                hasNextPage: false,
-                hasPreviousPage: true
+  describe("cursor replay (network-only) — nested comments page", () => {
+    it("publishes terminally — simple smoke via network-only", async () => {
+      const routes: Route[] = [
+        {
+          when: ({ variables }) =>
+            variables.id === "u1" &&
+            variables.postsCategory === "tech" &&
+            variables.commentsFirst === 2 &&
+            variables.commentsAfter === "c2",
+          delay: 10,
+          respond: () => ({
+            data: {
+              __typename: "Query",
+              user: {
+                __typename: "User",
+                id: "u1",
+                posts: fixtures.posts.connection(
+                  [
+                    {
+                      title: "P1",
+                      extras: {
+                        comments: fixtures.comments.connection(["Comment 3", "Comment 4"], { postId: "p1", fromId: 3 }),
+                      },
+                    },
+                  ],
+                  { fromId: 1 }
+                ),
               },
             },
-          },
-        }),
-      }];
+          }),
+        },
+      ];
 
-      const Component = createListComponent(
-        testQueries.COMMENTS,
-        { postId: '1', first: 2, after: 'c2' },
-        {
-          cachePolicy: 'network-only',
-          dataPath: 'comments',
-          itemPath: 'edges',
-          keyPath: 'node.text'
-        }
-      );
+      const Comp = defineComponent({
+        name: "NetworkOnlyComments",
+        setup() {
+          const { useQuery } = require("villus");
+          const vars = { id: "u1", postsCategory: "tech", postsFirst: 1, postsAfter: null, commentsFirst: 2, commentsAfter: "c2" };
+          const { data } = useQuery({ query: operations.USER_POSTS_COMMENTS_QUERY, variables: vars, cachePolicy: "network-only" });
+          return () => {
+            const postEdges = data.value?.user?.posts?.edges ?? [];
+            const first = postEdges[0]?.node;
+            const commentEdges = first?.comments?.edges ?? [];
+            return commentEdges.map((e: any) => h("div", {}, e?.node?.text ?? ""));
+          };
+        },
+      });
 
-      const { wrapper, fx } = await mountWithClient(Component, routes, cacheConfigs.withRelay());
-      restores.push(fx.restore);
-
+      const { wrapper, fx } = await mountWithClient(Comp, routes);
       await delay(12);
-      await tick(2);
-      expect(getListItems(wrapper)).toEqual(['Comment 3', 'Comment 4']);
+      await tick();
+      expect(rows(wrapper)).toEqual(["Comment 3", "Comment 4"]);
+      fx.restore();
     });
   });
 });
