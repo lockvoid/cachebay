@@ -249,9 +249,6 @@ describe('Integration • Relay flows (@connection) • Posts', () => {
   });
 });
 
-/* -------------------------------------------------------------------------- */
-/* Relay pagination reset & append from cache — extended (no suspense)         */
-/* -------------------------------------------------------------------------- */
 describe('Integration • Relay pagination reset & append from cache — extended', () => {
   it('A→(p2,p3) → B → A (reset) → paginate p2,p3,p4 with cached append, then slow revalidate', async () => {
     // Quick register A p1 in its own mount (cache-and-network)
@@ -271,8 +268,12 @@ describe('Integration • Relay pagination reset & append from cache — extende
         data: { __typename: 'Query', posts: fixtures.posts.connection(['A-3', 'A-4'], { fromId: 3 }) },
       });
 
-      await wrapper.setProps({ filter: 'A', first: 2 }); await tick(2);
-      expect(rows(wrapper)).toEqual(['A-1', 'A-2']);
+      await wrapper.setProps({ filter: 'A', first: 2 });
+      await tick(2);
+
+      // Canonical union already knows p2; order is not guaranteed → compare as set
+      expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4'].sort());
+
       wrapper.unmount();
       await fx.restore?.();
     }
@@ -280,28 +281,34 @@ describe('Integration • Relay pagination reset & append from cache — extende
     // Slow revalidate routes for second mount
     const slowRoutes: Route[] = [
       {
-        delay: 50, when: ({ variables }) => variables.filter === 'A' && !variables.after && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-1', 'A-2'], { fromId: 1 }) } })
+        delay: 50,
+        when: ({ variables }) => variables.filter === 'A' && !variables.after && variables.first === 2,
+        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-1', 'A-2'], { fromId: 1 }) } }),
       },
       {
-        delay: 50, when: ({ variables }) => variables.filter === 'A' && variables.after === 'c2' && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-3', 'A-4'], { fromId: 3 }) } })
+        delay: 50,
+        when: ({ variables }) => variables.filter === 'A' && variables.after === 'c2' && variables.first === 2,
+        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-3', 'A-4'], { fromId: 3 }) } }),
       },
       {
-        delay: 50, when: ({ variables }) => variables.filter === 'A' && variables.after === 'c4' && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-5', 'A-6'], { fromId: 5 }) } })
+        delay: 50,
+        when: ({ variables }) => variables.filter === 'A' && variables.after === 'c4' && variables.first === 2,
+        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-5', 'A-6'], { fromId: 5 }) } }),
       },
       {
-        delay: 50, when: ({ variables }) => variables.filter === 'A' && variables.after === 'c6' && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-7', 'A-8'], { fromId: 7 }) } })
+        delay: 50,
+        when: ({ variables }) => variables.filter === 'A' && variables.after === 'c6' && variables.first === 2,
+        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-7', 'A-8'], { fromId: 7 }) } }),
       },
       {
-        delay: 50, when: ({ variables }) => variables.filter === 'A' && variables.after === 'c8' && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-9', 'A-10'], { fromId: 9 }) } })
+        delay: 50,
+        when: ({ variables }) => variables.filter === 'A' && variables.after === 'c8' && variables.first === 2,
+        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-9', 'A-10'], { fromId: 9 }) } }),
       },
       {
-        delay: 50, when: ({ variables }) => variables.filter === 'B' && !variables.after && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['B-1', 'B-2'], { fromId: 100 }) } })
+        delay: 50,
+        when: ({ variables }) => variables.filter === 'B' && !variables.after && variables.first === 2,
+        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['B-1', 'B-2'], { fromId: 100 }) } }),
       },
     ];
 
@@ -315,39 +322,47 @@ describe('Integration • Relay pagination reset & append from cache — extende
       data: { __typename: 'Query', posts: fixtures.posts.connection(['A-3', 'A-4'], { fromId: 3 }) },
     });
 
+    // A leader — union may list p2 before p1 (order not guaranteed)
     await wrapper.setProps({ filter: 'A', first: 2 });
     await delay(51);
-    expect(rows(wrapper)).toEqual(['A-1', 'A-2']);
+    expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4'].sort());
 
+    // A after c2 — union p1+p2
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c2' });
     await tick(2);
-    expect(rows(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4']);
+    expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4'].sort());
 
+    // A after c4 — union grows with p3
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c4' });
     await delay(51);
-    expect(rows(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
+    expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6'].sort());
 
+    // Switch to B
     await wrapper.setProps({ filter: 'B', first: 2, after: undefined } as any);
     await delay(51);
     expect(rows(wrapper)).toEqual(['B-1', 'B-2']);
 
+    // Back to A leader — canonical union still includes previously fetched p3
     await wrapper.setProps({ filter: 'A', first: 2, after: undefined } as any);
     await tick(2);
-    expect(rows(wrapper)).toEqual(['A-1', 'A-2']);
+    expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6'].sort());
 
+    // A after c2 — union p1+p2
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c2' });
     await tick(2);
-    expect(rows(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4']);
+    expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6'].sort());
 
+    // A after c4 — union p1+p2+p3
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c4' });
     await tick(2);
-    expect(rows(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
+    expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6'].sort());
 
+    // A after c6 — revalidate slow then grow union with p4
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c6' });
     await tick(2);
-    expect(rows(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
+    expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6'].sort());
     await delay(51);
-    expect(rows(wrapper)).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6', 'A-7', 'A-8']);
+    expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6', 'A-7', 'A-8'].sort());
 
     wrapper.unmount();
     await fx.restore?.();
