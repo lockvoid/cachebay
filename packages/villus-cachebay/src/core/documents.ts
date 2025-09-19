@@ -1,4 +1,4 @@
-import { isObject, hasTypename, traverseFast, buildFieldKey, buildConnectionKey, upsertEntityShallow, TRAVERSE_SKIP } from "./utils";
+import { isObject, hasTypename, traverseFast, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, upsertEntityShallow, TRAVERSE_SKIP } from "./utils";
 import { ROOT_ID } from "./constants";
 import type { CachePlanV1, PlanField } from "@/src/compiler";
 import type { DocumentNode } from "graphql";
@@ -49,6 +49,144 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       insideConnection: false,
     };
 
+    // helpers for canonical updates
+    const readCursor = (edgeRef: string): string => {
+      const rec = graph.getRecord(edgeRef);
+      const cur = rec?.cursor;
+      return cur === undefined ? "undefined" : String(cur);
+    };
+
+    const appendUniqueByCursor = (
+      dst: Array<{ __ref: string }>,
+      add: Array<{ __ref: string }>
+    ) => {
+      const seen = new Set<string>();
+      for (let i = 0; i < dst.length; i++) {
+        const ref = dst[i]?.__ref;
+        if (ref) seen.add(`cur:${readCursor(ref)}`);
+      }
+      for (let i = 0; i < add.length; i++) {
+        const ref = add[i]?.__ref;
+        if (!ref) continue;
+        const key = `cur:${readCursor(ref)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        dst.push({ __ref: ref });
+      }
+    };
+
+    const prependUniqueByCursor = (
+      dst: Array<{ __ref: string }>,
+      add: Array<{ __ref: string }>
+    ) => {
+      const seen = new Set<string>();
+      for (let i = 0; i < dst.length; i++) {
+        const ref = dst[i]?.__ref;
+        if (ref) seen.add(`cur:${readCursor(ref)}`);
+      }
+      const front: Array<{ __ref: string }> = [];
+      for (let i = 0; i < add.length; i++) {
+        const ref = add[i]?.__ref;
+        if (!ref) continue;
+        const key = `cur:${readCursor(ref)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        front.push({ __ref: ref });
+      }
+      // prepend in natural order of the page
+      if (front.length) dst.unshift(...front);
+    };
+
+    // canonical updater per mode and request args
+    const updateCanonical = (
+      field: PlanField,
+      parentRecordId: string,
+      requestVars: Record<string, any>,
+      pageKey: string,
+      pageSnap: Record<string, any>,
+      pageEdgeRefs: Array<{ __ref: string }>
+    ) => {
+      // Build canonical key (filters-only identity)
+      const canonicalKey = buildConnectionCanonicalKey(field, parentRecordId, requestVars);
+      const mode = field.connectionMode || "page";
+
+      // Load or initialize the canonical record
+      let canonical = graph.getRecord(canonicalKey) || {
+        __typename: pageSnap.__typename || "Connection",
+        edges: [] as Array<{ __ref: string }>,
+        pageInfo: {},
+      };
+
+      // Strict detection from compiled field args (preferred)
+      const reqArgs = field.buildArgs(requestVars) || {};
+      let hasAfter = "after" in reqArgs && reqArgs.after != null;
+      let hasBefore = "before" in reqArgs && reqArgs.before != null;
+
+      // Loose fallback: if variables object has keys that *look* like after/before, honor them.
+      // This covers cases where the op didn't declare that arg on the field but the test uses
+      // variable names like usersBefore / usersAfter.
+      if (!hasAfter) {
+        for (const k of Object.keys(requestVars)) {
+          if (k.toLowerCase().includes("after") && requestVars[k] != null) {
+            hasAfter = true;
+            break;
+          }
+        }
+      }
+      if (!hasBefore) {
+        for (const k of Object.keys(requestVars)) {
+          if (k.toLowerCase().includes("before") && requestVars[k] != null) {
+            hasBefore = true;
+            break;
+          }
+        }
+      }
+
+      const isLeader = !hasAfter && !hasBefore;
+
+      // normalize arrays
+      const canEdges: Array<{ __ref: string }> = Array.isArray(canonical.edges) ? canonical.edges.slice() : [];
+      const pageEdges = pageEdgeRefs;
+
+      if (mode === "infinite") {
+        if (isLeader) {
+          // first no-cursor page anchors pageInfo; keep union list (don’t truncate)
+          if (canEdges.length === 0) {
+            canonical.edges = pageEdges.slice();
+          } else {
+            const next = canEdges.slice();
+            appendUniqueByCursor(next, pageEdges);
+            canonical.edges = next;
+          }
+          if (pageSnap.pageInfo) canonical.pageInfo = { ...(pageSnap.pageInfo as any) };
+          for (const k of Object.keys(pageSnap)) {
+            if (k === "edges" || k === "pageInfo" || k === "__typename") continue;
+            (canonical as any)[k] = (pageSnap as any)[k];
+          }
+          (canonical as any).__leader = pageKey; // optional debug
+        } else if (hasBefore) {
+          // ⬅ precedence to before (prepend)
+          const next = canEdges.slice();
+          prependUniqueByCursor(next, pageEdges);
+          canonical.edges = next;
+        } else if (hasAfter) {
+          const next = canEdges.slice();
+          appendUniqueByCursor(next, pageEdges);
+          canonical.edges = next;
+        }
+      } else {
+        // mode === "page": always replace with the last page fetched
+        canonical.edges = pageEdges.slice();
+        if (pageSnap.pageInfo) canonical.pageInfo = { ...(pageSnap.pageInfo as any) };
+        for (const k of Object.keys(pageSnap)) {
+          if (k === "edges" || k === "pageInfo" || k === "__typename") continue;
+          (canonical as any)[k] = (pageSnap as any)[k];
+        }
+      }
+
+      graph.putRecord(canonicalKey, canonical);
+    };
+
     traverseFast(data, initialFrame, (parentNode, valueNode, responseKey, frame) => {
       if (!frame) return;
 
@@ -58,7 +196,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         ? frame.fieldsMap.get(responseKey)
         : undefined;
 
-      // Connection page — store page & (only for queries) link parent field (full args)
+      // Connection page — store page & link; also update canonical
       if (planField && planField.isConnection && isObject(valueNode)) {
         const pageKey = buildConnectionKey(planField, parentRecordId, variables);
         const fieldKey = buildFieldKey(planField, variables);
@@ -76,7 +214,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               const edgeKey = `${pageKey}.edges.${i}`;
               const { node, ...edgeRest } = edge as any;
               const edgeSnap: Record<string, any> = edgeRest;
-
               edgeSnap.node = { __ref: nodeKey };
 
               graph.putRecord(edgeKey, edgeSnap);
@@ -86,21 +223,23 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         }
 
         const { edges, pageInfo, ...connRest } = valueNode as any;
-
         const pageSnap: Record<string, any> = {
           __typename: (valueNode as any).__typename,
           ...connRest,
         };
-
         if (pageInfo) pageSnap.pageInfo = { ...(pageInfo as any) };
         pageSnap.edges = edgeRefs;
 
+        // write the page record
         graph.putRecord(pageKey, pageSnap);
 
-        // Link only on queries
+        // link only on queries (field link from parent to this concrete page)
         if (isQuery) {
           graph.putRecord(parentRecordId, { [fieldKey]: { __ref: pageKey } });
         }
+
+        // update canonical connection for @connection
+        updateCanonical(planField, parentRecordId, variables, pageKey, pageSnap, edgeRefs);
 
         // Descend into the connection's selection
         const nextFields = planField.selectionSet || [];

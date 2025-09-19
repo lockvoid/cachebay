@@ -148,7 +148,7 @@ export const buildConnectionCanonicalKey = (
   const filters =
     Array.isArray(field.connectionFilters) && field.connectionFilters.length > 0
       ? field.connectionFilters
-      : Object.keys(allArgs).filter((k) => !RELAY_CONNECTION_FIELDS.has(k));
+      : Object.keys(allArgs).filter((k) => !CONNECTION_FIELDS.has(k));
 
   const identity: Record<string, any> = {};
   for (let i = 0; i < filters.length; i++) {
@@ -158,7 +158,7 @@ export const buildConnectionCanonicalKey = (
 
   const keyPart = field.connectionKey || field.fieldName; // prefer directive key; fallback to field
   const parentPart = parentRecordId === ROOT_ID ? "@connection." : `@connection.${parentRecordId}.`;
-  return `${parentPart}${keyPart}(${stableStringify(identity)})#identity`;
+  return `${parentPart}${keyPart}(${stableStringify(identity)})`;
 };
 
 

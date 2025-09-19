@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import gql from "graphql-tag";
 import { createGraph } from "@/src/core/graph";
 import { createViews } from "@/src/core/views";
@@ -389,6 +389,32 @@ export const USERS_POSTS_COMMENTS_QUERY = gql`
   }
 `;
 
+// NEW: Page-mode versions (for replacement canonical behavior)
+const USERS_PAGE_QUERY = gql`
+  query UsersPage($usersRole: String, $first: Int, $after: String, $before: String, $last: Int) {
+    users(role: $usersRole, first: $first, after: $after, before: $before, last: $last)
+      @connection(args: ["role"], mode: "page") {
+      __typename
+      pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
+      edges { __typename cursor node { __typename id email } }
+    }
+  }
+`;
+
+const COMMENTS_PAGE_QUERY = gql`
+  query CommentsPage($postId: ID!, $first: Int, $after: String, $before: String, $last: Int) {
+    post(id: $postId) {
+      __typename
+      id
+      comments(first: $first, after: $after, before: $before, last: $last) @connection(args: [], mode: "page") {
+        __typename
+        pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
+        edges { __typename cursor node { __typename id text } }
+      }
+    }
+  }
+`;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Setup
 // ─────────────────────────────────────────────────────────────────────────────
@@ -415,6 +441,22 @@ const makeDocuments = (
   views: ReturnType<typeof makeViews>
 ) => createDocuments({ graph, planner, views });
 
+// helper: read canonical node ids by canonical key
+const canonicalNodeIds = (graph: ReturnType<typeof createGraph>, canonicalKey: string): string[] => {
+  const can = graph.getRecord(canonicalKey) || {};
+  const refs = Array.isArray(can.edges) ? can.edges : [];
+  const out: string[] = [];
+  for (let i = 0; i < refs.length; i++) {
+    const edgeRef = refs[i]?.__ref;
+    if (!edgeRef) continue;
+    const e = graph.getRecord(edgeRef);
+    const nodeRef = e?.node?.__ref;
+    const n = nodeRef ? graph.getRecord(nodeRef) : undefined;
+    if (n?.id != null) out.push(String(n.id));
+  }
+  return out;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Suite
 // ─────────────────────────────────────────────────────────────────────────────
@@ -431,6 +473,8 @@ describe("normalizeDocument (progression by query)", () => {
     planner = makePlanner();
     documents = makeDocuments(graph, planner, views);
   });
+
+  // ───────────────── existing tests (UNCHANGED) ─────────────────
 
   it("USER_QUERY — root '@' reference and entity snapshot (Type:id)", () => {
     const userData = {
@@ -1419,5 +1463,454 @@ describe("normalizeDocument (progression by query)", () => {
       email: "u1_subscribed@example.com",
       name: "Subscribed User 1",
     });
+  });
+
+  // ───────────────── NEW: canonical @connection behavior ─────────────────
+
+  it("canonical users (infinite): leader then after appends; before prepends", () => {
+    // leader (no cursor)
+    documents.normalizeDocument({
+      document: USERS_QUERY,
+      variables: { usersRole: "admin", first: 2, after: null },
+      data: {
+        users: {
+          __typename: "UserConnection",
+          totalCount: 2,
+          pageInfo: {
+            __typename: "PageInfo",
+            startCursor: "u1",
+            endCursor: "u2",
+            hasNextPage: true,
+            hasPreviousPage: false,
+          },
+          edges: [
+            { __typename: "UserEdge", cursor: "u1", node: { __typename: "User", id: "u1" } },
+            { __typename: "UserEdge", cursor: "u2", node: { __typename: "User", id: "u2" } },
+          ],
+        },
+      },
+    });
+
+    // after page
+    documents.normalizeDocument({
+      document: USERS_QUERY,
+      variables: { usersRole: "admin", first: 2, after: "u2" },
+      data: {
+        users: {
+          __typename: "UserConnection",
+          totalCount: 3,
+          pageInfo: {
+            __typename: "PageInfo",
+            startCursor: "u3",
+            endCursor: "u3",
+            hasNextPage: true,
+            hasPreviousPage: false,
+          },
+          edges: [{ __typename: "UserEdge", cursor: "u3", node: { __typename: "User", id: "u3" } }],
+        },
+      },
+    });
+
+    // before page
+    documents.normalizeDocument({
+      document: USERS_QUERY,
+      variables: { usersRole: "admin", last: 1, before: "u1" } as any,
+      data: {
+        users: {
+          __typename: "UserConnection",
+          totalCount: 99,
+          pageInfo: {
+            __typename: "PageInfo",
+            startCursor: "u0",
+            endCursor: "u0",
+            hasNextPage: false,
+            hasPreviousPage: true,
+          },
+          edges: [{ __typename: "UserEdge", cursor: "u0", node: { __typename: "User", id: "u0" } }],
+        },
+      },
+    });
+
+    const canKey = '@connection.users({"role":"admin"})';
+    const canon = graph.getRecord(canKey)!;
+
+    // Edges length (u0 prepended, leader u1/u2, after u3)
+    expect(canon.edges.length).toBe(4);
+
+    // Read edge records the canonical list points to (explicitly; no loops)
+    const r0 = canon.edges[0].__ref as string;
+    const r1 = canon.edges[1].__ref as string;
+    const r2 = canon.edges[2].__ref as string;
+    const r3 = canon.edges[3].__ref as string;
+
+    const e0 = graph.getRecord(r0)!;
+    const e1 = graph.getRecord(r1)!;
+    const e2 = graph.getRecord(r2)!;
+    const e3 = graph.getRecord(r3)!;
+
+    // Explicit assertions on each edge record (no entity deref assertions here — just the edge record itself)
+    expect(e0).toEqual({ __typename: "UserEdge", cursor: "u0", node: { __ref: "User:u0" } });
+    expect(e1).toEqual({ __typename: "UserEdge", cursor: "u1", node: { __ref: "User:u1" } });
+    expect(e2).toEqual({ __typename: "UserEdge", cursor: "u2", node: { __ref: "User:u2" } });
+    expect(e3).toEqual({ __typename: "UserEdge", cursor: "u3", node: { __ref: "User:u3" } });
+
+    // pageInfo remains anchored to the leader (no-cursor) page
+    expect(canon.pageInfo).toEqual({
+      __typename: "PageInfo",
+      startCursor: "u1",
+      endCursor: "u2",
+      hasNextPage: true,
+      hasPreviousPage: false,
+    });
+
+    // totalCount sticks from leader in infinite mode
+    expect(canon.totalCount).toBe(2);
+  });
+
+  it("canonical users (page mode): last fetched page replaces edges (leader, then after, then before)", () => {
+    // leader
+    documents.normalizeDocument({
+      document: USERS_PAGE_QUERY,
+      variables: { usersRole: "mod", first: 2, after: null },
+      data: {
+        users: {
+          __typename: "UserConnection",
+          totalCount: 10,
+          pageInfo: { __typename: "PageInfo", startCursor: "m1", endCursor: "m2", hasNextPage: true, hasPreviousPage: false },
+          edges: [
+            { __typename: "UserEdge", cursor: "m1", node: { __typename: "User", id: "m1" } },
+            { __typename: "UserEdge", cursor: "m2", node: { __typename: "User", id: "m2" } },
+          ],
+        },
+      },
+    });
+
+    const canKey = '@connection.users({"role":"mod"})';
+    let canon = graph.getRecord(canKey)!;
+    expect(canon.edges.length).toBe(2);
+
+    const lm0 = '@.users({"after":null,"first":2,"role":"mod"}).edges.0';
+    const lm1 = '@.users({"after":null,"first":2,"role":"mod"}).edges.1';
+    expect(canon.edges[0]).toEqual({ __ref: lm0 });
+    expect(canon.edges[1]).toEqual({ __ref: lm1 });
+    expect(graph.getRecord(lm0)).toEqual({ __typename: "UserEdge", cursor: "m1", node: { __ref: "User:m1" } });
+    expect(graph.getRecord(lm1)).toEqual({ __typename: "UserEdge", cursor: "m2", node: { __ref: "User:m2" } });
+    expect(canon.pageInfo).toEqual({
+      __typename: "PageInfo",
+      startCursor: "m1",
+      endCursor: "m2",
+      hasNextPage: true,
+      hasPreviousPage: false,
+    });
+    expect(canon.totalCount).toBe(10);
+
+    // after → replace
+    documents.normalizeDocument({
+      document: USERS_PAGE_QUERY,
+      variables: { usersRole: "mod", first: 2, after: "m2" },
+      data: {
+        users: {
+          __typename: "UserConnection",
+          totalCount: 12,
+          pageInfo: { __typename: "PageInfo", startCursor: "m3", endCursor: "m4", hasNextPage: false, hasPreviousPage: true },
+          edges: [
+            { __typename: "UserEdge", cursor: "m3", node: { __typename: "User", id: "m3" } },
+            { __typename: "UserEdge", cursor: "m4", node: { __typename: "User", id: "m4" } },
+          ],
+        },
+      },
+    });
+
+    canon = graph.getRecord(canKey)!;
+    const am0 = '@.users({"after":"m2","first":2,"role":"mod"}).edges.0';
+    const am1 = '@.users({"after":"m2","first":2,"role":"mod"}).edges.1';
+    expect(canon.edges.length).toBe(2);
+    expect(canon.edges[0]).toEqual({ __ref: am0 });
+    expect(canon.edges[1]).toEqual({ __ref: am1 });
+    expect(graph.getRecord(am0)).toEqual({ __typename: "UserEdge", cursor: "m3", node: { __ref: "User:m3" } });
+    expect(graph.getRecord(am1)).toEqual({ __typename: "UserEdge", cursor: "m4", node: { __ref: "User:m4" } });
+    expect(canon.pageInfo).toEqual({
+      __typename: "PageInfo",
+      startCursor: "m3",
+      endCursor: "m4",
+      hasNextPage: false,
+      hasPreviousPage: true,
+    });
+    expect(canon.totalCount).toBe(12);
+
+    // before → replace
+    documents.normalizeDocument({
+      document: USERS_PAGE_QUERY,
+      variables: { usersRole: "mod", last: 1, before: "m3" } as any,
+      data: {
+        users: {
+          __typename: "UserConnection",
+          totalCount: 1,
+          pageInfo: { __typename: "PageInfo", startCursor: "m0", endCursor: "m0", hasNextPage: true, hasPreviousPage: false },
+          edges: [{ __typename: "UserEdge", cursor: "m0", node: { __typename: "User", id: "m0" } }],
+        },
+      },
+    });
+
+    canon = graph.getRecord(canKey)!;
+    const bm0 = '@.users({"before":"m3","last":1,"role":"mod"}).edges.0';
+    expect(canon.edges.length).toBe(1);
+    expect(canon.edges[0]).toEqual({ __ref: bm0 });
+    expect(graph.getRecord(bm0)).toEqual({ __typename: "UserEdge", cursor: "m0", node: { __ref: "User:m0" } });
+    expect(canon.pageInfo).toEqual({
+      __typename: "PageInfo",
+      startCursor: "m0",
+      endCursor: "m0",
+      hasNextPage: true,
+      hasPreviousPage: false,
+    });
+    expect(canon.totalCount).toBe(1);
+  });
+
+  it("canonical nested comments (infinite): leader then after appends", () => {
+    // leader for Post:p1
+    documents.normalizeDocument({
+      document: USER_POSTS_COMMENTS_QUERY,
+      variables: {
+        id: "u1",
+        postsCategory: "tech",
+        postsFirst: 1,
+        postsAfter: null,
+        commentsFirst: 2,
+        commentsAfter: null,
+      },
+      data: {
+        user: {
+          __typename: "User",
+          id: "u1",
+          posts: {
+            __typename: "PostConnection",
+            pageInfo: { __typename: "PageInfo", startCursor: "p1", endCursor: "p1" },
+            edges: [
+              {
+                __typename: "PostEdge",
+                cursor: "p1",
+                node: {
+                  __typename: "Post",
+                  id: "p1",
+                  comments: {
+                    __typename: "CommentConnection",
+                    totalCount: 2,
+                    pageInfo: {
+                      __typename: "PageInfo",
+                      startCursor: "c1",
+                      endCursor: "c2",
+                      hasNextPage: true,
+                      hasPreviousPage: false,
+                    },
+                    edges: [
+                      { __typename: "CommentEdge", cursor: "c1", node: { __typename: "Comment", id: "c1" } },
+                      { __typename: "CommentEdge", cursor: "c2", node: { __typename: "Comment", id: "c2" } },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    // after page for comments
+    documents.normalizeDocument({
+      document: USER_POSTS_COMMENTS_QUERY,
+      variables: {
+        id: "u1",
+        postsCategory: "tech",
+        postsFirst: 1,
+        postsAfter: null,
+        commentsFirst: 1,
+        commentsAfter: "c2",
+      },
+      data: {
+        user: {
+          __typename: "User",
+          id: "u1",
+          posts: {
+            __typename: "PostConnection",
+            edges: [
+              {
+                __typename: "PostEdge",
+                cursor: "p1",
+                node: {
+                  __typename: "Post",
+                  id: "p1",
+                  comments: {
+                    __typename: "CommentConnection",
+                    totalCount: 3, // should remain anchored to 2 (leader) in infinite
+                    pageInfo: { __typename: "PageInfo", startCursor: "c3", endCursor: "c3" },
+                    edges: [{ __typename: "CommentEdge", cursor: "c3", node: { __typename: "Comment", id: "c3" } }],
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const canKey = '@connection.Post:p1.comments({})';
+    const canon = graph.getRecord(canKey)!;
+
+    // Edges
+    const ce0 = '@.Post:p1.comments({"after":null,"first":2}).edges.0';
+    const ce1 = '@.Post:p1.comments({"after":null,"first":2}).edges.1';
+    const ce2 = '@.Post:p1.comments({"after":"c2","first":1}).edges.0';
+
+    expect(canon.edges.length).toBe(3);
+    expect(canon.edges[0]).toEqual({ __ref: ce0 });
+    expect(canon.edges[1]).toEqual({ __ref: ce1 });
+    expect(canon.edges[2]).toEqual({ __ref: ce2 });
+
+    expect(graph.getRecord(ce0)).toEqual({ __typename: "CommentEdge", cursor: "c1", node: { __ref: "Comment:c1" } });
+    expect(graph.getRecord(ce1)).toEqual({ __typename: "CommentEdge", cursor: "c2", node: { __ref: "Comment:c2" } });
+    expect(graph.getRecord(ce2)).toEqual({ __typename: "CommentEdge", cursor: "c3", node: { __ref: "Comment:c3" } });
+
+    // Anchored leader pageInfo and totalCount
+    expect(canon.pageInfo).toEqual({
+      __typename: "PageInfo",
+      startCursor: "c1",
+      endCursor: "c2",
+      hasNextPage: true,
+      hasPreviousPage: false,
+    });
+    expect(canon.totalCount).toBe(2);
+  });
+
+  it("canonical page-mode nested comments: leader, after, before each replace", () => {
+    // leader
+    documents.normalizeDocument({
+      document: COMMENTS_PAGE_QUERY,
+      variables: { postId: "p9", first: 2, after: null },
+      data: {
+        post: {
+          __typename: "Post",
+          id: "p9",
+          comments: {
+            __typename: "CommentConnection",
+            totalCount: 10,
+            pageInfo: {
+              __typename: "PageInfo",
+              startCursor: "x1",
+              endCursor: "x2",
+              hasNextPage: true,
+              hasPreviousPage: false,
+            },
+            edges: [
+              { __typename: "CommentEdge", cursor: "x1", node: { __typename: "Comment", id: "x1" } },
+              { __typename: "CommentEdge", cursor: "x2", node: { __typename: "Comment", id: "x2" } },
+            ],
+          },
+        },
+      },
+    });
+
+    const canKey = '@connection.Post:p9.comments({})';
+    let canon = graph.getRecord(canKey)!;
+    const lx0 = '@.Post:p9.comments({"after":null,"first":2}).edges.0';
+    const lx1 = '@.Post:p9.comments({"after":null,"first":2}).edges.1';
+
+    expect(canon.edges.length).toBe(2);
+    expect(canon.edges[0]).toEqual({ __ref: lx0 });
+    expect(canon.edges[1]).toEqual({ __ref: lx1 });
+    expect(graph.getRecord(lx0)).toEqual({ __typename: "CommentEdge", cursor: "x1", node: { __ref: "Comment:x1" } });
+    expect(graph.getRecord(lx1)).toEqual({ __typename: "CommentEdge", cursor: "x2", node: { __ref: "Comment:x2" } });
+    expect(canon.pageInfo).toEqual({
+      __typename: "PageInfo",
+      startCursor: "x1",
+      endCursor: "x2",
+      hasNextPage: true,
+      hasPreviousPage: false,
+    });
+    expect(canon.totalCount).toBe(10);
+
+    // after → replace
+    documents.normalizeDocument({
+      document: COMMENTS_PAGE_QUERY,
+      variables: { postId: "p9", first: 2, after: "x2" },
+      data: {
+        post: {
+          __typename: "Post",
+          id: "p9",
+          comments: {
+            __typename: "CommentConnection",
+            totalCount: 12,
+            pageInfo: {
+              __typename: "PageInfo",
+              startCursor: "x3",
+              endCursor: "x4",
+              hasNextPage: false,
+              hasPreviousPage: true,
+            },
+            edges: [
+              { __typename: "CommentEdge", cursor: "x3", node: { __typename: "Comment", id: "x3" } },
+              { __typename: "CommentEdge", cursor: "x4", node: { __typename: "Comment", id: "x4" } },
+            ],
+          },
+        },
+      },
+    });
+
+    canon = graph.getRecord(canKey)!;
+    const ax0 = '@.Post:p9.comments({"after":"x2","first":2}).edges.0';
+    const ax1 = '@.Post:p9.comments({"after":"x2","first":2}).edges.1';
+
+    expect(canon.edges.length).toBe(2);
+    expect(canon.edges[0]).toEqual({ __ref: ax0 });
+    expect(canon.edges[1]).toEqual({ __ref: ax1 });
+    expect(graph.getRecord(ax0)).toEqual({ __typename: "CommentEdge", cursor: "x3", node: { __ref: "Comment:x3" } });
+    expect(graph.getRecord(ax1)).toEqual({ __typename: "CommentEdge", cursor: "x4", node: { __ref: "Comment:x4" } });
+    expect(canon.pageInfo).toEqual({
+      __typename: "PageInfo",
+      startCursor: "x3",
+      endCursor: "x4",
+      hasNextPage: false,
+      hasPreviousPage: true,
+    });
+    expect(canon.totalCount).toBe(12);
+
+    // before → replace
+    documents.normalizeDocument({
+      document: COMMENTS_PAGE_QUERY,
+      variables: { postId: "p9", last: 1, before: "x3" } as any,
+      data: {
+        post: {
+          __typename: "Post",
+          id: "p9",
+          comments: {
+            __typename: "CommentConnection",
+            totalCount: 9,
+            pageInfo: {
+              __typename: "PageInfo",
+              startCursor: "x0",
+              endCursor: "x0",
+              hasNextPage: true,
+              hasPreviousPage: false,
+            },
+            edges: [{ __typename: "CommentEdge", cursor: "x0", node: { __typename: "Comment", id: "x0" } }],
+          },
+        },
+      },
+    });
+
+    canon = graph.getRecord(canKey)!;
+    const bx0 = '@.Post:p9.comments({"before":"x3","last":1}).edges.0';
+
+    expect(canon.edges.length).toBe(1);
+    expect(canon.edges[0]).toEqual({ __ref: bx0 });
+    expect(graph.getRecord(bx0)).toEqual({ __typename: "CommentEdge", cursor: "x0", node: { __ref: "Comment:x0" } });
+    expect(canon.pageInfo).toEqual({
+      __typename: "PageInfo",
+      startCursor: "x0",
+      endCursor: "x0",
+      hasNextPage: true,
+      hasPreviousPage: false,
+    });
+    expect(canon.totalCount).toBe(9);
   });
 });
