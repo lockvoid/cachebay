@@ -15,7 +15,7 @@ const provide = (cache: any) => ({
   },
 });
 
-describe("Integration • useFragment / useCache", () => {
+describe("Composables", () => {
   it("useFragment — reactive entity view (updates flow)", async () => {
     const cache = createCache({
       keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },

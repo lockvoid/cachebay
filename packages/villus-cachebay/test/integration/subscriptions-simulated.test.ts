@@ -1,90 +1,85 @@
-import { describe, it, expect } from 'vitest';
-import { defineComponent, h, ref } from 'vue';
-import gql from 'graphql-tag';
-import { cacheConfigs } from '@/test/helpers/integration';
-import { tick, delay, type Route } from '@/test/helpers';
-import { mountWithClient } from '@/test/helpers/integration';
-import { useFragment } from '@/src';
+import { describe, it, expect } from "vitest";
+import { defineComponent, h, ref } from "vue";
+import { operations } from "@/test/helpers";
+import { tick, delay, type Route } from "@/test/helpers";
+import { mountWithClient } from "@/test/helpers";
+import { createCache, type CachebayInstance } from "@/src/core/internals";
+import { useFragment } from "@/src";
 
-// live fragment sources used by the tests
-const FRAG_POST = gql`
-  fragment P on Post { __typename id title }
-`;
-
-describe('Integration • Subscriptions (simulated)', () => {
+describe("Subscriptions", () => {
   /**
    * 1) Simulate subscription frames by updating cache directly.
    *    Use a live reader (useFragment) so the UI follows writes.
    */
-  it('simulates subscription frames by updating cache directly', async () => {
-    const cache = cacheConfigs.basic();
+  it("simulates subscription frames by updating cache directly", async () => {
+    const cache: CachebayInstance = createCache();
 
     const PostDisplay = defineComponent({
-      name: 'PostDisplay',
+      name: "PostDisplay",
       setup() {
-        const key = ref('Post:1');
-        // live fragment — will react to writes
-        const post = useFragment({ id: key, fragment: FRAG_POST });
+        const key = ref("Post:1");
+        // live fragment — reacts to writeFragment calls below
+        const post = useFragment({ id: key, fragment: operations.POST_FRAGMENT });
         return () =>
-          h('div', [h('div', { class: 'title' }, post.value?.title || 'No post')]);
+          h("div", [h("div", { class: "title" }, post.value?.title || "No post")]);
       },
     });
 
-    const { wrapper, cache: testCache } = await mountWithClient(PostDisplay, [] as Route[], cache);
+    const { wrapper } = await mountWithClient(PostDisplay, [] as Route[], cache);
 
     // Frame 0: initial write (entity appears)
-    (testCache as any).writeFragment({
-      id: 'Post:1',
-      fragment: FRAG_POST,
-      data: { __typename: 'Post', id: '1', title: 'Initial Title' },
+    cache.writeFragment({
+      id: "Post:1",
+      fragment: operations.POST_FRAGMENT,
+      data: { __typename: "Post", id: "1", title: "Initial Title", tags: [] },
     });
     await tick();
-    expect(wrapper.find('.title').text()).toBe('Initial Title');
+    expect(wrapper.find(".title").text()).toBe("Initial Title");
 
     // Frame 1
-    (testCache as any).writeFragment({
-      id: 'Post:1',
-      fragment: FRAG_POST,
-      data: { __typename: 'Post', id: '1', title: 'Updated via subscription' },
+    cache.writeFragment({
+      id: "Post:1",
+      fragment: operations.POST_FRAGMENT,
+      data: { title: "Updated via subscription" },
     });
     await tick();
-    expect(wrapper.find('.title').text()).toBe('Updated via subscription');
+    expect(wrapper.find(".title").text()).toBe("Updated via subscription");
 
     // Frame 2
-    (testCache as any).writeFragment({
-      id: 'Post:1',
-      fragment: FRAG_POST,
-      data: { __typename: 'Post', id: '1', title: 'Second update' },
+    cache.writeFragment({
+      id: "Post:1",
+      fragment: operations.POST_FRAGMENT,
+      data: { title: "Second update" },
     });
     await tick();
-    expect(wrapper.find('.title').text()).toBe('Second update');
+    expect(wrapper.find(".title").text()).toBe("Second update");
   });
 
   /**
    * 2) Subscription-like error states in the UI (pure local simulation).
    */
-  it('handles subscription-like error states in UI', async () => {
-    const cache = cacheConfigs.basic();
+  it("handles subscription-like error states in UI", async () => {
+    const cache: CachebayInstance = createCache();
 
     const ErrorHandlingComponent = defineComponent({
-      name: 'ErrorHandlingComponent',
+      name: "ErrorHandlingComponent",
       setup() {
         const error = ref<Error | null>(null);
-        const data = ref<any>(null);
+        const data = ref<{ message: string } | null>(null);
 
         // Simulate a push stream: success then error
         setTimeout(() => {
-          data.value = { message: 'Success' };
+          data.value = { message: "Success" };
         }, 20);
         setTimeout(() => {
-          error.value = new Error('Connection lost');
+          error.value = new Error("Connection lost");
           data.value = null;
         }, 40);
 
         return () =>
-          h('div', [
-            h('div', { class: 'error' }, error.value?.message || 'No error'),
-            h('div', { class: 'data' }, data.value?.message || 'No data'),
+          h("div", [
+            h("div", { class: "error" }, error.value?.message || "No error"),
+            h("div", { class: "data" }, data.value?.message || "No data"),
           ]);
       },
     });
@@ -92,139 +87,133 @@ describe('Integration • Subscriptions (simulated)', () => {
     const { wrapper } = await mountWithClient(ErrorHandlingComponent, [] as Route[], cache);
 
     // Initially no data or error
-    expect(wrapper.find('.error').text()).toBe('No error');
-    expect(wrapper.find('.data').text()).toBe('No data');
+    expect(wrapper.find(".error").text()).toBe("No error");
+    expect(wrapper.find(".data").text()).toBe("No data");
 
     // Wait for success frame
     await delay(25);
-    expect(wrapper.find('.error').text()).toBe('No error');
-    expect(wrapper.find('.data').text()).toBe('Success');
+    expect(wrapper.find(".error").text()).toBe("No error");
+    expect(wrapper.find(".data").text()).toBe("Success");
 
     // Wait for error frame
     await delay(25);
-    expect(wrapper.find('.error').text()).toBe('Connection lost');
-    expect(wrapper.find('.data').text()).toBe('No data');
+    expect(wrapper.find(".error").text()).toBe("Connection lost");
+    expect(wrapper.find(".data").text()).toBe("No data");
   });
 
   /**
    * 3) Apply subscription frames and update cache + UI (entity case).
    *    Use live reader (useFragment) so the UI follows writes.
    */
-  it('applies subscription-like frames and updates entities in cache', async () => {
-    const cache = cacheConfigs.basic();
+  it("applies subscription-like frames and updates entities in cache", async () => {
+    const cache: CachebayInstance = createCache();
 
     const PostSubscription = defineComponent({
-      name: 'PostSubscription',
+      name: "PostSubscription",
       setup() {
-        const key = ref('Post:1');
-        const post = useFragment({ id: key, fragment: FRAG_POST });
+        const key = ref("Post:1");
+        const post = useFragment({ id: key, fragment: operations.POST_FRAGMENT });
         return () =>
-          h('div', [h('div', { class: 'current' }, post.value?.title || 'Waiting...')]);
+          h("div", [h("div", { class: "current" }, post.value?.title || "Waiting...")]);
       },
     });
 
-    const { wrapper, cache: testCache } = await mountWithClient(
-      PostSubscription,
-      [] as Route[],
-      cache,
-    );
+    const { wrapper } = await mountWithClient(PostSubscription, [] as Route[], cache);
     await delay(10);
-    expect(wrapper.find('.current').text()).toBe('Waiting...');
+    expect(wrapper.find(".current").text()).toBe("Waiting...");
 
     // Frame 1
-    (testCache as any).writeFragment({
-      id: 'Post:1',
-      fragment: FRAG_POST,
-      data: { __typename: 'Post', id: '1', title: 'Post 1' },
+    cache.writeFragment({
+      id: "Post:1",
+      fragment: operations.POST_FRAGMENT,
+      data: { __typename: "Post", id: "1", title: "Post 1", tags: [] },
     });
     await tick();
-    expect(wrapper.find('.current').text()).toBe('Post 1');
+    expect(wrapper.find(".current").text()).toBe("Post 1");
 
-    // Verify snapshot API sees the same (readFragment returns a raw snapshot)
-    const snap1 = (testCache as any).readFragment({ id: 'Post:1', fragment: FRAG_POST });
-    expect(snap1?.title).toBe('Post 1');
+    // Verify read API sees the same (reactive view from readFragment)
+    const snap1 = cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT });
+    expect(snap1?.title).toBe("Post 1");
 
     // Frame 2
-    (testCache as any).writeFragment({
-      id: 'Post:1',
-      fragment: FRAG_POST,
-      data: { __typename: 'Post', id: '1', title: 'Post 1 Updated' },
+    cache.writeFragment({
+      id: "Post:1",
+      fragment: operations.POST_FRAGMENT,
+      data: { title: "Post 1 Updated" },
     });
     await tick();
-    expect(wrapper.find('.current').text()).toBe('Post 1 Updated');
+    expect(wrapper.find(".current").text()).toBe("Post 1 Updated");
 
-    const snap2 = (testCache as any).readFragment({ id: 'Post:1', fragment: FRAG_POST });
-    expect(snap2?.title).toBe('Post 1 Updated');
+    const snap2 = cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT });
+    expect(snap2?.title).toBe("Post 1 Updated");
   });
 
   /**
    * 4) Subscription error display (pure local simulation).
    */
-  it('handles subscription errors properly', async () => {
-    const cache = cacheConfigs.basic();
+  it("handles subscription errors properly", async () => {
+    const cache: CachebayInstance = createCache();
 
     const ErrorSubscription = defineComponent({
-      name: 'ErrorSubscription',
+      name: "ErrorSubscription",
       setup() {
         const error = ref<Error | null>(null);
-        const data = ref<any>(null);
+        const data = ref<{ ping: string } | null>(null);
 
         // Simulate an error frame
         setTimeout(() => {
-          error.value = new Error('Subscription failed');
+          error.value = new Error("Subscription failed");
         }, 15);
 
         return () =>
-          h('div', [
-            h('div', { class: 'error' }, error.value?.message || 'No error'),
-            h('div', { class: 'data' }, data.value?.ping || 'No data'),
+          h("div", [
+            h("div", { class: "error" }, error.value?.message || "No error"),
+            h("div", { class: "data" }, data.value?.ping || "No data"),
           ]);
       },
     });
 
     const { wrapper } = await mountWithClient(ErrorSubscription, [] as Route[], cache);
     await delay(5);
-    expect(wrapper.find('.error').text()).toBe('No error');
-    expect(wrapper.find('.data').text()).toBe('No data');
+    expect(wrapper.find(".error").text()).toBe("No error");
+    expect(wrapper.find(".data").text()).toBe("No data");
 
     await delay(20);
-    expect(wrapper.find('.error').text()).toBe('Subscription failed');
+    expect(wrapper.find(".error").text()).toBe("Subscription failed");
   });
 
   /**
    * 5) Multiple subscription-like frames (non-entity messages).
    *    Adjust frame timings so expectations don't overlap the next frame.
    */
-  it('handles multiple subscription-like frames with different data', async () => {
-    const cache = cacheConfigs.basic();
+  it("handles multiple subscription-like frames with different data", async () => {
+    const cache: CachebayInstance = createCache();
 
     const MultiFrameSubscription = defineComponent({
-      name: 'MultiFrameSubscription',
+      name: "MultiFrameSubscription",
       setup() {
         const messages = ref<string[]>([]);
-        const latest = ref<string>('No messages');
+        const latest = ref<string>("No messages");
 
         // Frames at 5ms, 20ms, 40ms
         setTimeout(() => {
-          latest.value = 'Message 1';
-          messages.value.push('Message 1');
+          latest.value = "Message 1";
+          messages.value.push("Message 1");
         }, 5);
         setTimeout(() => {
-          latest.value = 'Message 2';
-          messages.value.push('Message 2');
+          latest.value = "Message 2";
+          messages.value.push("Message 2");
         }, 20);
         setTimeout(() => {
-          latest.value = 'Message 3';
-          messages.value.push('Message 3');
+          latest.value = "Message 3";
+          messages.value.push("Message 3");
         }, 40);
 
         return () =>
-          h('div', [
-            h('div', { class: 'latest' }, latest.value),
-            h(
-              'ul',
-              { class: 'history' },
-              messages.value.map((m, i) => h('li', { key: i }, m)),
+          h("div", [
+            h("div", { class: "latest" }, latest.value),
+            h("div", { class: "history" },
+              messages.value.map((m, i) => h("div", { class: "row", key: i }, m)),
             ),
           ]);
       },
@@ -233,15 +222,15 @@ describe('Integration • Subscriptions (simulated)', () => {
     const { wrapper } = await mountWithClient(MultiFrameSubscription, [] as Route[], cache);
 
     await delay(10);
-    expect(wrapper.find('.latest').text()).toBe('Message 1');
+    expect(wrapper.find(".latest").text()).toBe("Message 1");
 
     await delay(15); // total ~25ms < 40ms
-    expect(wrapper.find('.latest').text()).toBe('Message 2');
+    expect(wrapper.find(".latest").text()).toBe("Message 2");
 
     await delay(20); // total ~45ms > 40ms
-    expect(wrapper.find('.latest').text()).toBe('Message 3');
+    expect(wrapper.find(".latest").text()).toBe("Message 3");
 
-    const history = wrapper.findAll('.history li').map((li) => li.text());
-    expect(history).toEqual(['Message 1', 'Message 2', 'Message 3']);
+    const history = wrapper.findAll(".row").map((d) => d.text());
+    expect(history).toEqual(["Message 1", "Message 2", "Message 3"]);
   });
 });

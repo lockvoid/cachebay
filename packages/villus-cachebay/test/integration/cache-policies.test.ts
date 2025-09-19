@@ -78,7 +78,7 @@ const UserPostComments = (
  * Tests
  * -------------------------------------------------------------------------- */
 
-describe("Integration • Cache Policies Behavior (canonical connections, nested, uuid)", () => {
+describe("Cache Policies Behavior", () => {
   // ────────────────────────────────────────────────────────────────────────────
   // cache-first
   // ────────────────────────────────────────────────────────────────────────────

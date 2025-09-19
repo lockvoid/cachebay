@@ -69,7 +69,7 @@ function MakeHarness(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-ne
  * Tests
  * -------------------------------------------------------------------------- */
 
-describe('Integration • Errors (Posts connection)', () => {
+describe('Error Handling', () => {
   it('GraphQL/transport error: recorded once; no empty emissions', async () => {
     const routes: Route[] = [
       {

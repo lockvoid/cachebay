@@ -6,7 +6,7 @@ import { operations, fixtures } from '@/test/helpers';
 import { createCache } from '@/src/core/internals';
 import { useFragment } from '@/src';
 
-describe('Integration • Edgecases behaviour', () => {
+describe('Edgecases behaviour', () => {
   it('grows across cursor pages; update in place; entity identity stable across updates', async () => {
     const cache = createCache();
     const renders: string[][] = [];

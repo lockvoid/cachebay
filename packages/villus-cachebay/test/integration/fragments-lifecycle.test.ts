@@ -1,114 +1,108 @@
-// test/integration/fragments-lifecycle.test.ts
 import { describe, it, expect } from "vitest";
 import { defineComponent, h, ref, isReactive } from "vue";
 import gql from "graphql-tag";
-
-import { createCache } from "@/src/core/internals";
+import { mount } from "@vue/test-utils";
+import { createCache, type CachebayInstance } from "@/src/core/internals";
+import { provideCachebay } from "@/src/core/plugin";
 import { useFragment } from "@/src/composables/useFragment";
-import { tick, type Route } from "@/test/helpers";
-import { mountWithClient } from "@/test/helpers/integration";
+import { tick } from "@/test/helpers";
+import { operations } from "@/test/helpers";
 
-describe("Integration • Fragments Behavior (selection-first, reactive readFragment)", () => {
-  it("Fragment API Basics • identify returns normalized key", () => {
-    const cache = createCache({
-      keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
-    });
-    expect((cache as any).identify({ __typename: "User", id: 1 })).toBe("User:1");
+const provide = (cache: CachebayInstance) => ({
+  install(app: any) {
+    provideCachebay(app, cache);
+  },
+});
+
+describe("Fragments lifecycle", () => {
+  it("identify returns normalized key", () => {
+    const cache: CachebayInstance = createCache();
+    expect(cache.identify({ __typename: "User", id: 1 })).toBe("User:1");
   });
 
-  it("Fragment API Basics • writeFragment → readFragment roundtrip (entity fields only, reactive)", async () => {
-    const cache = createCache({
-      keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
+  it("writeFragment → readFragment roundtrip (entity fields only, reactive)", async () => {
+    const cache: CachebayInstance = createCache();
+
+    cache.writeFragment({
+      id: "User:1",
+      fragment: operations.USER_FRAGMENT, // id + email
+      data: { __typename: "User", id: "1", email: "ann@example.com" },
     });
 
-    (cache as any).writeFragment({
+    const view = cache.readFragment({
       id: "User:1",
-      fragment: gql`fragment U on User { id name }`,
-      data: { __typename: "User", id: "1", name: "Ann" },
-    });
-
-    const out = (cache as any).readFragment({
-      id: "User:1",
-      fragment: gql`fragment U on User { id name }`,
+      fragment: operations.USER_FRAGMENT,
     });
 
     // reactive live view
-    expect(out).toEqual({ __typename: "User", id: "1", name: "Ann" });
-    expect(isReactive(out)).toBe(true);
+    expect(view).toEqual({ __typename: "User", id: "1", email: "ann@example.com" });
+    expect(isReactive(view)).toBe(true);
   });
 
-  it("Fragment API Basics • readFragment returns a reactive view and updates with further writes", async () => {
-    const cache = createCache({
-      keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
-    });
+  it("readFragment returns a reactive view and updates with further writes", async () => {
+    const cache: CachebayInstance = createCache();
 
-    (cache as any).writeFragment({
+    cache.writeFragment({
       id: "User:2",
-      fragment: gql`fragment U on User { id name }`,
-      data: { __typename: "User", id: "2", name: "Bob" },
+      fragment: operations.USER_FRAGMENT,
+      data: { __typename: "User", id: "2", email: "bob@example.com" },
     });
 
-    const view = (cache as any).readFragment({
+    const view = cache.readFragment({
       id: "User:2",
-      fragment: gql`fragment U on User { id name }`,
+      fragment: operations.USER_FRAGMENT,
     });
 
-    expect(view).toBeTruthy();
-    expect(view.name).toBe("Bob");
+    expect(view.email).toBe("bob@example.com");
     expect(isReactive(view)).toBe(true);
 
-    (cache as any).writeFragment({
+    cache.writeFragment({
       id: "User:2",
-      fragment: gql`fragment U on User { id name }`,
-      data: { __typename: "User", id: "2", name: "Bobby" },
+      fragment: operations.USER_FRAGMENT,
+      data: { email: "bobby@example.com" },
     });
     await tick();
-    expect(view.name).toBe("Bobby");
+    expect(view.email).toBe("bobby@example.com");
   });
 
-  it("Fragment API Basics • writeFragment twice updates readFragment result", async () => {
-    const cache = createCache({
-      keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
+  it("writeFragment twice updates readFragment result", async () => {
+    const cache: CachebayInstance = createCache();
+
+    cache.writeFragment({
+      id: "User:3",
+      fragment: operations.USER_FRAGMENT,
+      data: { __typename: "User", id: "3", email: "alpha@example.com" },
+    });
+    cache.writeFragment({
+      id: "User:3",
+      fragment: operations.USER_FRAGMENT,
+      data: { email: "bravo@example.com" },
     });
 
-    (cache as any).writeFragment({
+    const view = cache.readFragment({
       id: "User:3",
-      fragment: gql`fragment U on User { id name }`,
-      data: { __typename: "User", id: "3", name: "Charlie" },
+      fragment: operations.USER_FRAGMENT,
     });
-    (cache as any).writeFragment({
-      id: "User:3",
-      fragment: gql`fragment U on User { id name }`,
-      data: { __typename: "User", id: "3", name: "Charles" },
-    });
-
-    const out = (cache as any).readFragment({
-      id: "User:3",
-      fragment: gql`fragment U on User { id name }`,
-    });
-    expect(out.name).toBe("Charles");
-    expect(isReactive(out)).toBe(true);
+    expect(view.email).toBe("bravo@example.com");
+    expect(isReactive(view)).toBe(true);
   });
 
-  it("Fragment with nested field + args • writes & reads a nested connection subtree via fragment (selection stored)", () => {
-    const cache = createCache({
-      keys: {
-        User: (o: any) => (o?.id != null ? String(o.id) : null),
-        Post: (o: any) => (o?.id != null ? String(o.id) : null),
-      },
-    });
+  it("fragment with nested connection: writes & reads a page via fragment (selection stored)", () => {
+    const cache: CachebayInstance = createCache();
 
-    (cache as any).writeFragment({
-      id: "User:1",
-      fragment: gql`
-        fragment UserPostsPage on User {
-          posts(first: 2) @connection {
-            __typename
-            edges { __typename cursor node { __typename id title } }
-            pageInfo { __typename hasNextPage endCursor }
-          }
+    const FRAG_USER_POSTS_PAGE = gql`
+      fragment UserPostsPage on User {
+        posts(first: 2) @connection {
+          __typename
+          edges { __typename cursor node { __typename id title } }
+          pageInfo { __typename hasNextPage endCursor }
         }
-      `,
+      }
+    `;
+
+    cache.writeFragment({
+      id: "User:1",
+      fragment: FRAG_USER_POSTS_PAGE,
       data: {
         __typename: "User",
         id: "1",
@@ -123,42 +117,42 @@ describe("Integration • Fragments Behavior (selection-first, reactive readFrag
       },
     });
 
-    const result = (cache as any).readFragment({
+    const result = cache.readFragment({
       id: "User:1",
-      fragment: gql`
-        fragment UserPostsPage on User {
-          posts(first: 2) @connection {
-            __typename
-            edges { __typename cursor node { __typename id title } }
-            pageInfo { __typename hasNextPage endCursor }
-          }
-        }
-      `,
+      fragment: FRAG_USER_POSTS_PAGE,
     });
 
-    expect(result.posts.__typename).toBe("PostConnection");
-    expect(Array.isArray(result.posts.edges)).toBe(true);
-    expect(result.posts.edges.map((e: any) => e.node.title)).toEqual(["Hello", "World"]);
-    expect(result.posts.pageInfo).toEqual({ __typename: "PageInfo", endCursor: "c2", hasNextPage: true });
+    const snapshot = {
+      typename: result.posts.__typename,
+      titles: result.posts.edges.map((e: any) => e.node.title),
+      pageInfo: result.posts.pageInfo,
+    };
+
+    expect(snapshot).toEqual({
+      typename: "PostConnection",
+      titles: ["Hello", "World"],
+      pageInfo: { __typename: "PageInfo", endCursor: "c2", hasNextPage: true },
+    });
+
     expect(isReactive(result.posts)).toBe(true);
   });
 
-  it("Fragment Reactivity in Components (single, dynamic id) • component updates when a fragment changes", async () => {
-    const routes: Route[] = [];
-    const cache = createCache({
-      keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
-    });
+  it("component updates when a fragment changes (dynamic id)", async () => {
+    const cache: CachebayInstance = createCache();
 
-    (cache as any).writeFragment({
-      id: "User:1",
-      fragment: gql`fragment U on User { id name }`,
-      data: { __typename: "User", id: "1", name: "Initial Name" },
+    // Use a tiny local fragment for "name", since operations.USER_FRAGMENT is email-based
+    const FRAG_USER_NAME = gql`fragment U on User { id name }`;
+
+    cache.writeFragment({
+      id: "User:10",
+      fragment: FRAG_USER_NAME,
+      data: { __typename: "User", id: "10", name: "Initial Name" },
     });
 
     const Comp = defineComponent({
       setup() {
-        const id = ref("User:1");
-        const live = useFragment({ id, fragment: gql`fragment U on User { id name }` });
+        const id = ref("User:10");
+        const live = useFragment({ id, fragment: FRAG_USER_NAME });
         return { live };
       },
       render() {
@@ -166,47 +160,42 @@ describe("Integration • Fragments Behavior (selection-first, reactive readFrag
       },
     });
 
-    const { wrapper } = await mountWithClient(Comp, routes, cache);
+    const wrapper = mount(Comp, { global: { plugins: [provide(cache)] } });
     await tick();
     expect(wrapper.text()).toBe("Initial Name");
 
-    (cache as any).writeFragment({
-      id: "User:1",
-      fragment: gql`fragment U on User { id name }`,
-      data: { __typename: "User", id: "1", name: "Updated Name" },
+    cache.writeFragment({
+      id: "User:10",
+      fragment: FRAG_USER_NAME,
+      data: { name: "Updated Name" },
     });
     await tick();
     expect(wrapper.text()).toBe("Updated Name");
   });
 
-  it("Multiple fragments (manual) • read multiple via repeated readFragment calls", async () => {
-    const cache = createCache({
-      keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
-    });
+  it("multiple fragments manually • read multiple via repeated readFragment calls", async () => {
+    const cache: CachebayInstance = createCache();
 
-    (cache as any).writeFragment({
+    const FRAG_USER_NAME = gql`fragment U on User { id name }`;
+
+    cache.writeFragment({
       id: "User:1",
-      fragment: gql`fragment U on User { id name }`,
+      fragment: FRAG_USER_NAME,
       data: { __typename: "User", id: "1", name: "Alice" },
     });
-    (cache as any).writeFragment({
+    cache.writeFragment({
       id: "User:2",
-      fragment: gql`fragment U on User { id name }`,
+      fragment: FRAG_USER_NAME,
       data: { __typename: "User", id: "2", name: "Bob" },
     });
-    (cache as any).writeFragment({
+    cache.writeFragment({
       id: "User:3",
-      fragment: gql`fragment U on User { id name }`,
+      fragment: FRAG_USER_NAME,
       data: { __typename: "User", id: "3", name: "Charlie" },
     });
 
     const items = ["User:1", "User:2", "User:3"]
-      .map((k) =>
-        (cache as any).readFragment({
-          id: k,
-          fragment: gql`fragment U on User { id name }`,
-        }),
-      )
+      .map((k) => cache.readFragment({ id: k, fragment: FRAG_USER_NAME }))
       .filter(Boolean);
 
     expect(items.map((u: any) => u?.name)).toEqual(["Alice", "Bob", "Charlie"]);
@@ -215,27 +204,58 @@ describe("Integration • Fragments Behavior (selection-first, reactive readFrag
     });
   });
 
-  it("Multiple fragments (manual) • missing ones materialize as empty reactive views — filter by id to select present", () => {
-    const cache = createCache({
-      keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
-    });
+  it("multiple fragments manual • missing ones materialize as empty reactive views — filter by id to select present", () => {
+    const cache: CachebayInstance = createCache();
 
-    (cache as any).writeFragment({
+    const FRAG_USER_NAME = gql`fragment U on User { id name }`;
+
+    cache.writeFragment({
       id: "User:1",
-      fragment: gql`fragment U on User { id name }`,
+      fragment: FRAG_USER_NAME,
       data: { __typename: "User", id: "1", name: "Alice" },
     });
 
     const raws = ["User:1", "User:999", "User:2"].map((k) =>
-      (cache as any).readFragment({
-        id: k,
-        fragment: gql`fragment U on User { id name }`,
-      }),
+      cache.readFragment({ id: k, fragment: FRAG_USER_NAME }),
     );
 
     // treat reactive-empty as "missing": filter by existence of id
     const present = raws.filter((u: any) => u && u.id);
     expect(present.length).toBe(1);
     expect(present[0]?.name).toBe("Alice");
+  });
+
+  it("custom key: Comment uses uuid identity (write/read/reactive)", async () => {
+    const cache: CachebayInstance = createCache({
+      keys: { Comment: (c: any) => (c?.uuid ? String(c.uuid) : null) },
+    });
+
+    cache.writeFragment({
+      id: "Comment:abc-123",
+      fragment: operations.COMMENT_FRAGMENT,
+      data: { __typename: "Comment", uuid: "abc-123", text: "First!" },
+    });
+
+    const v1 = cache.readFragment({
+      id: "Comment:abc-123",
+      fragment: operations.COMMENT_FRAGMENT,
+    });
+
+    expect(v1).toEqual({ __typename: "Comment", uuid: "abc-123", text: "First!" });
+    expect(isReactive(v1)).toBe(true);
+
+    // reactive update
+    cache.writeFragment({
+      id: "Comment:abc-123",
+      fragment: operations.COMMENT_FRAGMENT,
+      data: { text: "Edited" },
+    });
+    await tick();
+
+    const v2 = cache.readFragment({
+      id: "Comment:abc-123",
+      fragment: operations.COMMENT_FRAGMENT,
+    });
+    expect(v2.text).toBe("Edited");
   });
 });
