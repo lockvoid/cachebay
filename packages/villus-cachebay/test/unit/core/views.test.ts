@@ -39,11 +39,7 @@ function mkField(
     fieldName: name,
     isConnection,
     buildArgs: () => ({}),
-    stringifyArgs: (vars) => stableStringify((() => {
-      // buildArgs() then stringify for parity with runtime expectations
-      const a = {};
-      return a;
-    })()),
+    stringifyArgs: () => stableStringify({}),
     selectionSet: children,
     selectionMap: children ? map : undefined,
   };
@@ -124,7 +120,7 @@ describe("views helpers", () => {
     rootFields.forEach((f) => rootMap.set(f.responseKey, f));
 
     const u1Proxy = graph.materializeRecord("User:u1")!;
-    const view = views.getEntityView(u1Proxy, rootFields, rootMap, {});
+    const view = views.getEntityView(u1Proxy, rootFields, rootMap, {}, /* canonical */ false);
 
     // __ref deref
     expect(view.bestFriend.email).toBe("u2@example.com");
@@ -173,7 +169,7 @@ describe("views helpers", () => {
       "PostConnection"
     );
 
-    const pageView = views.getConnectionView(pageKey, postsField, {});
+    const pageView = views.getConnectionView(pageKey, postsField, {}, /* canonical */ false);
     const edges1 = pageView.edges;
     const edges2 = pageView.edges;
     expect(edges1).toBe(edges2); // memoized
@@ -202,7 +198,7 @@ describe("views helpers", () => {
     const edgeKey = "@.X.edges.0";
     graph.putRecord(edgeKey, { __typename: "PostEdge", cursor: "c1", node: { __ref: "Post:p1" } });
 
-    const edgeView = views.getEdgeView(edgeKey, nodeField, {});
+    const edgeView = views.getEdgeView(edgeKey, nodeField, {}, /* canonical */ false);
     expect(edgeView.cursor).toBe("c1");
     expect(edgeView.node.title).toBe("P1");
 
@@ -211,7 +207,7 @@ describe("views helpers", () => {
     expect(edgeView.node.title).toBe("P1 (Updated)");
   });
 
-  it("getEntityView caches per (entityProxy, selection key) — different selections produce different view instances", () => {
+  it("getEntityView caches per (entityProxy, selection key) — different selections produce different view instances; canonical dimension separated", () => {
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
     const u1Proxy = graph.materializeRecord("User:u1")!;
 
@@ -226,11 +222,13 @@ describe("views helpers", () => {
       ["email", selB[1]],
     ]);
 
-    const a1 = views.getEntityView(u1Proxy, selA, mapA, {});
-    const a2 = views.getEntityView(u1Proxy, selA, mapA, {});
-    const b1 = views.getEntityView(u1Proxy, selB, mapB, {});
+    const a1 = views.getEntityView(u1Proxy, selA, mapA, {}, /* canonical */ false);
+    const a2 = views.getEntityView(u1Proxy, selA, mapA, {}, /* canonical */ false);
+    const b1 = views.getEntityView(u1Proxy, selB, mapB, {}, /* canonical */ false);
+    const aCanon = views.getEntityView(u1Proxy, selA, mapA, {}, /* canonical */ true);
 
-    expect(a1).toBe(a2);    // same view for same selection key
-    expect(a1).not.toBe(b1); // different selection → different view
+    expect(a1).toBe(a2);       // same view for same selection key & canonical
+    expect(a1).not.toBe(b1);   // different selection → different view
+    expect(a1).not.toBe(aCanon); // same selection, different canonical → different cached view
   });
 });

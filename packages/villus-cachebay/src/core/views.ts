@@ -4,24 +4,21 @@ import type { GraphInstance } from "./graph";
 import type { PlanField } from "@/src/compiler";
 
 export type ViewsInstance = ReturnType<typeof createViews>;
-
-export type ViewsDependencies = {
-  graph: GraphInstance;
-};
+export type ViewsDependencies = { graph: GraphInstance };
 
 /**
- * View helpers: shared reactive wrappers for entities, connection pages, and edges.
- * One WeakMap cache per helpers instance (usually one per createDocuments / createFragments).
+ * View helpers: reactive wrappers for entities, edges and (page/canonical) connections.
+ * Caching is explicit per (entityProxy, selectionKey, canonicalFlag).
  */
-export const createViews = (dependencies: ViewsDependencies) => {
-  const { graph } = dependencies;
-
-  // SINGLE cache for all views
+export const createViews = ({ graph }: ViewsDependencies) => {
+  // ONE cache for all views we produce
   const viewCache = new WeakMap<object, any>();
 
   /**
-   * Selection-aware entity view (memoized per (entityProxy, selection key, canonical flag))
-   * fieldsMap MUST be the compiler-provided map: rootSelectionMap or field.selectionMap
+   * Entity view memoized per (entityProxy, selectionKey, canonicalFlag).
+   * - fieldsMap MUST come from the compiler (rootSelectionMap or field.selectionMap)
+   * - canonical=true makes nested connection fields read from the canonical connection
+   *   (false → concrete page key)
    */
   const getEntityView = (
     entityProxy: any,
@@ -32,26 +29,32 @@ export const createViews = (dependencies: ViewsDependencies) => {
   ): any => {
     if (!entityProxy || typeof entityProxy !== "object") return entityProxy;
 
-    // cache bucket for this entity proxy
+    // Bucket per entity proxy. Inside, cache by selectionKey → (canonicalFlag → view)
     let bucket = viewCache.get(entityProxy);
     if (!bucket || bucket.kind !== "entity") {
-      bucket = { kind: "entity", bySelection: new Map<any, any>() };
+      bucket = { kind: "entity", bySelection: new Map<any, Map<number, any>>() };
       viewCache.set(entityProxy, bucket);
+    }
+
+    const selectionKey = fieldsMap ?? fields ?? null;
+    let byCanonical = bucket.bySelection.get(selectionKey);
+    if (!byCanonical) {
+      byCanonical = new Map<number, any>();
+      bucket.bySelection.set(selectionKey, byCanonical);
     } else {
-      const cacheKey = `${String(fieldsMap ?? fields ?? null)}|canonical:${canonical ? 1 : 0}`;
-      const hit = bucket.bySelection.get(cacheKey);
+      const hit = byCanonical.get(canonical ? 1 : 0);
       if (hit) return hit;
     }
 
     const view = new Proxy(entityProxy, {
       get(target, prop, receiver) {
-        // lookup PlanField via compiler map when available
+        // PlanField lookup (when we have a selection)
         const planField =
           fields && typeof prop === "string"
             ? fieldsMap?.get(prop as string)
             : undefined;
 
-        // Lazily materialize connection fields
+        // Connection field → lazy connection view (canonical or page)
         if (planField?.isConnection) {
           const typename = (target as any).__typename;
           const id = (target as any).id;
@@ -60,16 +63,17 @@ export const createViews = (dependencies: ViewsDependencies) => {
               ? `${typename}:${id}`
               : (graph.identify({ __typename: typename, id }) || "");
 
-          const key = canonical
+          const connKey = canonical
             ? buildConnectionCanonicalKey(planField, parentId, variables)
             : buildConnectionKey(planField, parentId, variables);
 
-          return getConnectionView(key, planField, variables, canonical);
+          return getConnectionView(connKey, planField, variables, canonical);
         }
 
+        // Plain property
         const value = Reflect.get(target, prop, receiver);
 
-        // Deref { __ref } → entity view
+        // Deref { __ref } → child entity view (keeps same canonical mode)
         if (value && typeof value === "object" && (value as any).__ref) {
           const childProxy = graph.materializeRecord((value as any).__ref);
           const sub =
@@ -78,10 +82,12 @@ export const createViews = (dependencies: ViewsDependencies) => {
               : undefined;
           const subFields = sub ? sub.selectionSet || null : null;
           const subMap = sub ? sub.selectionMap : undefined;
-          return childProxy ? getEntityView(childProxy, subFields, subMap, variables, canonical) : undefined;
+          return childProxy
+            ? getEntityView(childProxy, subFields, subMap, variables, canonical)
+            : undefined;
         }
 
-        // Arrays (map refs if we know a sub-selection)
+        // Arrays of refs → map with child entity views when we know a sub-selection
         if (Array.isArray(value)) {
           const sub =
             fields && typeof prop === "string"
@@ -115,14 +121,11 @@ export const createViews = (dependencies: ViewsDependencies) => {
       set() { return false; },
     });
 
-    const cacheKey = `${String(fieldsMap ?? fields ?? null)}|canonical:${canonical ? 1 : 0}`;
-    bucket.bySelection.set(cacheKey, view);
+    byCanonical.set(canonical ? 1 : 0, view);
     return view;
   };
 
-  /**
-   * Edge view (memoized by edge record proxy)
-   */
+  /** Edge view (memoized by edge record proxy). Node is an entity view. */
   const getEdgeView = (
     edgeKey: string,
     nodeField: PlanField | undefined,
@@ -183,9 +186,7 @@ export const createViews = (dependencies: ViewsDependencies) => {
     return view;
   };
 
-  /**
-   * Connection (page or canonical) view (memoized) + stable edges array per key
-   */
+  /** Connection (page or canonical) view (memoized) + stable edges array per key */
   const getConnectionView = (
     pageKey: string,
     field: PlanField,
