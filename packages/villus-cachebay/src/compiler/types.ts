@@ -1,45 +1,34 @@
-// src/compiler/types.ts
+export type OpKind = "query" | "mutation" | "subscription" | "fragment";
+
+/**
+ * One lowered field in a selection set.
+ * - `selectionSet` is the linearized child plan (if any)
+ * - `selectionMap` is an index by responseKey for fast lookups
+ * - `buildArgs(vars)` resolves argument AST to plain values
+ * - `stringifyArgs(vars)` returns a stable JSON string for key building
+ * - connection metadata is present when the @connection directive exists
+ */
 export type PlanField = {
-  responseKey: string;
-  fieldName: string;
+  responseKey: string;                          // alias || name
+  fieldName: string;                            // actual field name
+  selectionSet: PlanField[] | null;             // children (lowered)
+  selectionMap?: Map<string, PlanField>;        // fast lookup by responseKey
 
-  // Tagged only via @connection
+  // Arguments
+  buildArgs: (vars: Record<string, any>) => Record<string, any>;
+  stringifyArgs: (vars: Record<string, any>) => string;
+
+  // Connections (when @connection is present)
   isConnection: boolean;
-
-  // @connection metadata (identity & default behavior hint)
-  connectionMode?: string;    // "infinite" | "page" (default "infinite" if not provided)
-  connectionArgs?: string[];  // identity args (if omitted, compiler defaults to non-pagination args)
-
-  buildArgs: (vars: any) => any;
-
-  /**
-   * stringifyArgs MUST receive the raw variables object.
-   * It applies buildArgs internally and returns a stable JSON string.
-   */
-  stringifyArgs: (vars: any) => string;
-
-  // lowered child set
-  selectionSet: PlanField[] | null;
-
-  /**
-   * selectionMap is built at compile time; it maps responseKey -> PlanField
-   * for O(1) lookups at runtime.
-   */
-  selectionMap?: Map<string, PlanField>;
+  connectionKey?: string;                       // key || fieldName
+  connectionFilters?: string[];                 // names used to compute canonical key
+  connectionMode?: "infinite" | "page";         // default "page"
 };
 
 export type CachePlanV1 = {
   __kind: "CachePlanV1";
-  operation: "query" | "mutation" | "subscription" | "fragment";
-  /**
-   * For operations: "Query" | "Mutation" | "Subscription".
-   * For fragments: the fragment’s type condition (parent typename).
-   */
+  operation: OpKind;                            // "query" | "mutation" | "subscription" | "fragment"
   rootTypename: string;
-
   root: PlanField[];
   rootSelectionMap?: Map<string, PlanField>;
 };
-
-export const isCachePlanV1 = (x: any): x is CachePlanV1 =>
-  !!x && x.__kind === "CachePlanV1";

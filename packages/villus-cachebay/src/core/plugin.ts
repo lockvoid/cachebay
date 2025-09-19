@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { App } from "vue";
 import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus";
-import { CombinedError } from "villus"; // ✅ import CombinedError
+import { CombinedError } from "villus";
 import type { DocumentNode } from "graphql";
 
 import type { GraphInstance } from "./graph";
@@ -27,8 +27,12 @@ type PluginDependencies = {
 
 const deepCopy = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 
+/**
+ * Mount all connection composers for the given operation+variables — only for pages
+ * that already exist in the graph.
+ */
 function mountConnectionsForOperation(
-  deps: { graph: GraphInstance; planner: PlannerInstance; sessions: SessionsInstance },
+  deps: { graph: GraphInstance; planner: PlannerInstance },
   session: ReturnType<SessionsInstance["createSession"]>,
   docOrPlan: DocumentNode | any,
   variables: Record<string, any>
@@ -53,7 +57,7 @@ function mountConnectionsForOperation(
       composer.addPage(pageKey);
     }
 
-    // 3) Multi-parent nested under root connection nodes
+    // 1a) Multi-parent nested under root connection nodes (users.edges[].node.childConn)
     const edgesField = field.selectionMap?.get("edges");
     const nodeField = edgesField?.selectionMap?.get("node");
     if (nodeField?.selectionMap) {
@@ -70,9 +74,8 @@ function mountConnectionsForOperation(
           for (const [, childField] of nodeChildMap) {
             if (!childField.isConnection) continue;
 
-            // ✅ only mount if child page exists
             const childPageKey = buildConnectionKey(childField, parentRef, variables);
-            if (!graph.getRecord(childPageKey)) continue;
+            if (!graph.getRecord(childPageKey)) continue; // mount only if present
 
             const childIdentity = buildConnectionIdentity(childField, parentRef, variables);
             const childComposer = session.mountConnection({
@@ -95,8 +98,8 @@ function mountConnectionsForOperation(
     const childMap: Map<string, any> | undefined = parentField.selectionMap;
     if (!childMap) continue;
 
-    const linkKey = buildFieldKey(parentField, variables);
     const rootSnap = graph.getRecord(ROOT_ID) || {};
+    const linkKey = buildFieldKey(parentField, variables);
     const parentRef: string | undefined = rootSnap?.[linkKey]?.__ref;
     if (!parentRef) continue;
 
@@ -104,7 +107,7 @@ function mountConnectionsForOperation(
       if (!childField.isConnection) continue;
 
       const pageKey = buildConnectionKey(childField, parentRef, variables);
-      if (!graph.getRecord(pageKey)) continue; // ✅ skip empty
+      if (!graph.getRecord(pageKey)) continue;
 
       const identityKey = buildConnectionIdentity(childField, parentRef, variables);
       const composer = session.mountConnection({
@@ -117,10 +120,74 @@ function mountConnectionsForOperation(
   }
 }
 
+/**
+ * Overlay composer views into the materialized operation result so the UI sees
+ * unified/deduped edges instead of per-page snapshots. Works recursively via plan.
+ */
+function overlayConnections(
+  view: any,
+  plan: any, // CachePlanV1
+  session: ReturnType<SessionsInstance["createSession"]>, // ✅ use session, not sessions
+  graph: GraphInstance,
+  planner: PlannerInstance,
+  variables: Record<string, any>
+) {
+  if (!view || typeof view !== "object") return;
+
+  const applyAt = (parentValue: any, parentFields: any[] | null | undefined, parentRecordId: string) => {
+    if (!parentValue || typeof parentValue !== "object" || !parentFields) return;
+
+    for (let i = 0; i < parentFields.length; i++) {
+      const field = parentFields[i];
+
+      // Connection field → swap with composer view if available
+      if (field.isConnection) {
+        const identityKey = buildConnectionIdentity(field, parentRecordId, variables);
+        const composer = session.getConnection(identityKey);
+        if (composer) {
+          parentValue[field.responseKey] = composer.getView();
+        }
+        continue;
+      }
+
+      // Recurse into nested fields if selection exists
+      if (field.selectionSet && field.selectionSet.length > 0) {
+        const child = parentValue[field.responseKey];
+        if (!child) continue;
+
+        // Single entity (materialized with __typename/id)
+        if (child && typeof child === "object" && child.__typename && child.id != null) {
+          const nextParentId = `${child.__typename}:${child.id}`;
+          applyAt(child, field.selectionSet, nextParentId);
+          continue;
+        }
+
+        // Arrays of entities
+        if (Array.isArray(child)) {
+          for (let k = 0; k < child.length; k++) {
+            const item = child[k];
+            if (item && typeof item === "object" && item.__typename && item.id != null) {
+              const nextParentId = `${item.__typename}:${item.id}`;
+              applyAt(item, field.selectionSet, nextParentId);
+            }
+          }
+        }
+      }
+    }
+  };
+
+  applyAt(view, plan.root, ROOT_ID);
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Main plugin
+ * ────────────────────────────────────────────────────────────────────────── */
+
 export function createPlugin(options: PluginOptions, deps: PluginDependencies): ClientPlugin {
   const { addTypename = false } = options;
   const { graph, planner, documents, sessions } = deps;
 
+  // one session per operation.key
   const sessionByOpKey = new Map<number, ReturnType<SessionsInstance["createSession"]>>();
 
   return (ctx: ClientPluginContext) => {
@@ -128,10 +195,12 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     const vars: Record<string, any> = op.variables || {};
     const document: DocumentNode = op.query as DocumentNode;
 
+    // optional addTypename hook if you have a pass (left as no-op)
     if (addTypename && typeof op.query === "string") {
-      // optional hook
+      // e.g., op.query = ensureDocumentHasTypenames(op.query as any);
     }
 
+    // per-op session
     let session = sessionByOpKey.get(op.key);
     if (!session) {
       session = sessions.createSession();
@@ -144,11 +213,17 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
     const buildCachedFrame = () => {
       if (!documents.hasDocument({ document, variables: vars })) return null;
-      mountConnectionsForOperation({ graph, planner, sessions }, session!, document, vars);
+      // mount composers for whatever pages already exist
+      mountConnectionsForOperation({ graph, planner }, session!, document, vars);
+
       const view = documents.materializeDocument({ document, variables: vars });
+      const plan = planner.getPlan(document);
+      overlayConnections(view, plan, session!, graph, planner, vars);
+
       return { data: view };
     };
 
+    // cache-only
     if (policy === "cache-only") {
       const cached = buildCachedFrame();
       if (cached) return publish(cached, true);
@@ -160,16 +235,20 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       return publish({ error: err }, true);
     }
 
+    // cache-first
     if (policy === "cache-first") {
       const cached = buildCachedFrame();
       if (cached) return publish(cached, true);
+      // else fall through to network
     }
 
+    // cache-and-network: publish cached if present, then network
     if (policy === "cache-and-network") {
       const cached = buildCachedFrame();
       if (cached) publish(cached, false);
     }
 
+    // network-only or network follow-up
     const originalUseResult = ctx.useResult;
     ctx.useResult = (incoming: OperationResult, terminal?: boolean) => {
       const hasData = !!incoming?.data;
@@ -178,12 +257,18 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       if (!hasData && !hasError) return originalUseResult(incoming, false);
       if (hasError) return originalUseResult(incoming, true);
 
+      // 1) normalize result into graph
       const mutable = deepCopy(incoming.data);
       documents.normalizeDocument({ document, variables: vars, data: mutable });
 
-      mountConnectionsForOperation({ graph, planner, sessions }, session!, document, vars);
+      // 2) mount composers for any pages now present
+      mountConnectionsForOperation({ graph, planner }, session!, document, vars);
 
+      // 3) materialize + overlay (connection views via composers)
       const view = documents.materializeDocument({ document, variables: vars });
+      const plan = planner.getPlan(document);
+      overlayConnections(view, plan, session!, graph, planner, vars);
+
       return originalUseResult({ data: view }, true);
     };
   };

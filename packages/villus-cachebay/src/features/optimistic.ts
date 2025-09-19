@@ -2,19 +2,19 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { ROOT_ID } from "@/src/core/constants";
-import { buildConnectionKey } from "@/src/core/utils";
-import type { PlanField } from "@/src/compiler";
+import { buildConnectionIdentity } from "@/src/core/utils"; // <— use your util
 
 type GraphDeps = {
   identify: (obj: any) => string | null;
   getRecord: (recordId: string) => any | undefined;
   putRecord: (recordId: string, partialSnapshot: Record<string, any>) => void;
   removeRecord: (recordId: string) => void;
+  keys: () => string[]; // enumerate graph record keys
 };
 
 type Deps = { graph: GraphDeps };
 
-/** Deep clone JSON-safe (records are JSONy by construction). */
+/** Deep clone JSON-safe (records are JSONy). */
 const cloneJSON = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 
 /** Shallow copy user edge meta (ignore cursor). */
@@ -28,14 +28,15 @@ const shallowEdgeMeta = (meta: any): any => {
   return Object.keys(out).length ? out : undefined;
 };
 
-/** Find next free numeric index suffix for edge records, fallback to a big monotonic index. */
+const isCursorArg = (k: string) => k === "after" || k === "before" || k === "first" || k === "last";
+
+/** Find next free numeric edge index on a page. */
 const nextEdgeIndex = (pageKey: string, page: any): number => {
   if (!Array.isArray(page?.edges) || page.edges.length === 0) return 0;
   let maxIdx = -1;
   for (let i = 0; i < page.edges.length; i++) {
     const ref = page.edges[i]?.__ref;
     if (!ref) continue;
-    // parse trailing ".<num>"
     const m = ref.match(/\.edges\.(\d+)$/);
     if (m) {
       const n = Number(m[1]);
@@ -45,7 +46,7 @@ const nextEdgeIndex = (pageKey: string, page: any): number => {
   return maxIdx + 1;
 };
 
-/** Insert or replace by entity ref; position can be "start" or "end". */
+/** Insert/replace by entity ref; position "start"/"end". */
 const upsertEdgeRef = (
   graph: GraphDeps,
   pageKey: string,
@@ -57,7 +58,7 @@ const upsertEdgeRef = (
 ) => {
   const edges = Array.isArray(page.edges) ? page.edges : (page.edges = []);
 
-  // Update existing if present
+  // Update if present
   for (let i = 0; i < edges.length; i++) {
     const edgeRef = edges[i]?.__ref;
     if (!edgeRef) continue;
@@ -73,7 +74,7 @@ const upsertEdgeRef = (
     }
   }
 
-  // Create a new edge record
+  // Create new edge record
   const idx = nextEdgeIndex(pageKey, page);
   const edgeKey = `${pageKey}.edges.${idx}`;
   graph.putRecord(edgeKey, {
@@ -83,14 +84,11 @@ const upsertEdgeRef = (
   });
 
   const ref = { __ref: edgeKey };
-  if (position === "start") {
-    edges.unshift(ref);
-  } else {
-    edges.push(ref);
-  }
+  if (position === "start") edges.unshift(ref);
+  else edges.push(ref);
 };
 
-/** Remove first occurrence by entity key. */
+/** Remove first occurrence by entity key on page. */
 const removeEdgeByEntityKey = (graph: GraphDeps, pageKey: string, page: any, entityKey: string) => {
   const edges = Array.isArray(page.edges) ? page.edges : [];
   for (let i = 0; i < edges.length; i++) {
@@ -99,66 +97,65 @@ const removeEdgeByEntityKey = (graph: GraphDeps, pageKey: string, page: any, ent
     const edgeRec = graph.getRecord(edgeRef);
     if (edgeRec?.node?.__ref === entityKey) {
       edges.splice(i, 1);
-      // optional: do not delete the edge record; it could be reused later
-      return;
+      return true;
     }
   }
+  return false;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Transactional optimistic API
-// ─────────────────────────────────────────────────────────────────────────────
+/** Parse args JSON from "...(<json>)" pageKey */
+const argsFromPageKey = (k: string): Record<string, any> | null => {
+  const m = k.match(/\((.*)\)$/);
+  if (!m) return null;
+  try { return JSON.parse(m[1]); } catch { return null; }
+};
 
 type EntityOp =
   | { kind: "entityWrite"; recordId: string; patch: Record<string, any> }
   | { kind: "entityDelete"; recordId: string };
 
 type ConnOp =
-  | {
-    kind: "connAdd";
-    pageKey: string;
-    entityKey: string;
-    cursor: string | null;
-    meta?: any;
-    position: "start" | "end";
-  }
+  | { kind: "connAdd"; pageKey: string; entityKey: string; cursor: string | null; meta?: any; position: "start" | "end" }
   | { kind: "connRemove"; pageKey: string; entityKey: string }
   | { kind: "connPageInfo"; pageKey: string; patch: Record<string, any> };
 
 type Layer = { id: number; entityOps: EntityOp[]; connOps: ConnOp[] };
 
-type ConnectionsByPageArgs =
-  | {
-    /** Provide an explicit pageKey (best if you know exactly which page to touch). */
-    pageKey: string;
-  }
-  | {
-    /** Build the pageKey from parent + compiled field + variables. */
-    parent: "Query" | string | { __typename?: string; id?: any };
-    field: PlanField; // from compiler
-    variables: Record<string, any>;
-  };
+type ConnectionArgs = {
+  /** Provide explicit pageKey (no guessing). */
+  pageKey: string;
+};
 
-// Builder API
+type ConnectionsArgs = {
+  /** Parent can be "Query", a record id string, or an { __typename, id } object. */
+  parent: "Query" | string | { __typename?: string; id?: any };
+  /** Field name (e.g., "posts"). */
+  field: string;
+  /** Identity args (non-cursor args). Cursor args in here are ignored for identity. */
+  variables?: Record<string, any>;
+};
+
 type BuilderAPI = {
-  /** Patch entity record (entity object or recordId). */
   patch: (entityOrPartial: any, policy?: "merge" | "replace") => void;
-  /** Delete entity record (by entity ref or recordId). */
   delete: (entityRefOrRecordId: any) => void;
 
-  /**
-   * Connection editor for a specific page:
-   *   - addNode: insert or replace node edge on this page
-   *   - removeNode: remove a node edge on this page
-   *   - patch: patch pageInfo on this page
-   */
   connection: (
-    args: ConnectionsByPageArgs
+    args: ConnectionArgs
   ) => Readonly<[{
     addNode: (node: any, opts?: { cursor?: string | null; position?: "start" | "end"; edge?: any }) => void;
     removeNode: (ref: { __typename?: string; id?: any } | string) => void;
     patch: (pageInfoPatch: Record<string, any>) => void;
     pageKey: string;
+  }]>;
+
+  connections: (
+    args: ConnectionsArgs
+  ) => Readonly<[{
+    addNode: (node: any, opts?: { cursor?: string | null; position?: "start" | "end"; edge?: any }) => void;
+    removeNode: (ref: { __typename?: string; id?: any } | string) => void;
+    patch: (pageInfoPatch: Record<string, any>) => void;
+    /** The chosen pageKey resolved for this family (for debugging) */
+    pageKey: () => string | undefined;
   }]>;
 };
 
@@ -186,16 +183,13 @@ export const createModifyOptimistic = ({ graph }: Deps) => {
     const [typename, id] = recordId.split(":", 2);
 
     if (!existing) {
-      // brand-new record → always write identity with the patch
       graph.putRecord(recordId, { __typename: typename, id, ...patch });
       return;
     }
 
     if (policy === "replace") {
-      // replace: rebuild snapshot (keep identity explicit)
       graph.putRecord(recordId, { __typename: typename, id, ...patch });
     } else {
-      // merge into existing
       graph.putRecord(recordId, patch);
     }
   };
@@ -206,13 +200,11 @@ export const createModifyOptimistic = ({ graph }: Deps) => {
   };
 
   const applyConnOp = (op: ConnOp) => {
-    // ensure page exists
     captureBase(op.pageKey);
     let page = graph.getRecord(op.pageKey);
     if (!page || typeof page !== "object") {
-      page = { __typename: page?.__typename || "Connection", edges: [], pageInfo: {} };
+      page = { __typename: "Connection", edges: [], pageInfo: {} };
     } else {
-      // shallow normalize
       page = {
         ...page,
         edges: Array.isArray(page.edges) ? [...page.edges] : [],
@@ -254,7 +246,6 @@ export const createModifyOptimistic = ({ graph }: Deps) => {
   };
 
   const reapplyLayers = () => {
-    // committed (non-reverted)
     for (const L of committed) {
       if (reverted.has(L.id)) continue;
       for (const e of L.entityOps) {
@@ -263,7 +254,6 @@ export const createModifyOptimistic = ({ graph }: Deps) => {
       }
       for (const c of L.connOps) applyConnOp(c);
     }
-    // pending (in id order)
     const pend = Array.from(pending).sort((a, b) => a.id - b.id);
     for (const L of pend) {
       for (const e of L.entityOps) {
@@ -281,6 +271,72 @@ export const createModifyOptimistic = ({ graph }: Deps) => {
     }
   };
 
+  // ————————————————— helpers to resolve family pages and pick one
+  const resolveParentId = (parent: "Query" | string | { __typename?: string; id?: any }): string => {
+    if (typeof parent === "string") return parent === "Query" ? ROOT_ID : parent;
+    return parent === "Query" ? ROOT_ID : (graph.identify(parent) || ROOT_ID);
+  };
+
+  const findFamilyPageKeys = (
+    parentId: string,
+    field: string,
+    identityVars: Record<string, any> = {}
+  ): string[] => {
+    // strategy: rebuild the identity marker and match keys via comparing non-cursor arg subset
+    const all = graph.keys();
+    const prefix = parentId === ROOT_ID ? "@." : `@.${parentId}.`;
+    const out: string[] = [];
+
+    for (let i = 0; i < all.length; i++) {
+      const k = all[i];
+      if (!k.startsWith(prefix)) continue;
+      if (!k.includes(`.${field}(`)) continue;
+
+      const args = argsFromPageKey(k);
+      if (!args || typeof args !== "object") continue;
+
+      const pageIdentity: any = {};
+      for (const key of Object.keys(args)) if (!isCursorArg(key)) pageIdentity[key] = args[key];
+
+      const reqIdentity: any = {};
+      for (const key of Object.keys(identityVars || {})) if (!isCursorArg(key)) reqIdentity[key] = identityVars[key];
+
+      // compare JSON directly; keys are stable in our store
+      if (JSON.stringify(pageIdentity) === JSON.stringify(reqIdentity)) {
+        out.push(k);
+      }
+    }
+    return out;
+  };
+
+  const chooseFamilyTarget = (
+    pageKeys: string[],
+    position: "start" | "end"
+  ): string | undefined => {
+    if (pageKeys.length === 0) return undefined;
+
+    // Extract "after" arg from each page
+    const withAfter = pageKeys.map((k) => {
+      const a = argsFromPageKey(k);
+      return { key: k, after: a ? a.after ?? null : null };
+    });
+
+    if (position === "start") {
+      // prefer the page with after === null; else the first in list
+      const root = withAfter.find((x) => x.after === null);
+      return (root?.key) || withAfter[0]?.key;
+    }
+
+    // position === "end" → pick the page that looks like the "tail"
+    // choose the lexicographically greatest non-null `after`, else the last in list
+    const nonNull = withAfter.filter((x) => x.after != null);
+    if (nonNull.length > 0) {
+      nonNull.sort((a, b) => String(a.after).localeCompare(String(b.after)));
+      return nonNull[nonNull.length - 1].key;
+    }
+    return withAfter[withAfter.length - 1]?.key;
+  };
+
   return function modifyOptimistic(build: (tx: BuilderAPI) => void) {
     const layer: Layer = { id: nextId++, entityOps: [], connOps: [] };
     pending.add(layer);
@@ -294,7 +350,6 @@ export const createModifyOptimistic = ({ graph }: Deps) => {
 
         if (!recordId) return;
 
-        // compute patch (avoid rewriting identity unless replace)
         let patch: Record<string, any>;
         if (typeof entityOrPartial === "string") {
           patch = {};
@@ -318,20 +373,8 @@ export const createModifyOptimistic = ({ graph }: Deps) => {
         applyEntityDelete(recordId);
       },
 
-      connection(args: ConnectionsByPageArgs) {
-        // Resolve pageKey
-        let pageKey: string;
-        if ("pageKey" in args) {
-          pageKey = args.pageKey;
-        } else {
-          const parentId =
-            typeof args.parent === "string"
-              ? (args.parent === "Query" ? ROOT_ID : args.parent)
-              : (args.parent === "Query" ? ROOT_ID : (graph.identify(args.parent) || ROOT_ID));
-
-          pageKey = buildConnectionKey(args.field, parentId, args.variables);
-        }
-
+      connection(args: ConnectionArgs) {
+        const pageKey = args.pageKey;
         const handle = {
           addNode: (
             node: any,
@@ -340,7 +383,6 @@ export const createModifyOptimistic = ({ graph }: Deps) => {
             const entityKey = graph.identify(node);
             if (!entityKey) return;
 
-            // ensure entity patch (merge)
             const entityPatch: any = { ...node };
             delete entityPatch.__typename; delete entityPatch.id;
             layer.entityOps.push({ kind: "entityWrite", recordId: entityKey, patch: entityPatch });
@@ -378,9 +420,92 @@ export const createModifyOptimistic = ({ graph }: Deps) => {
 
         return [handle] as const;
       },
+
+      connections(args: ConnectionsArgs) {
+        const parentId = resolveParentId(args.parent);
+        const identityKey = buildConnectionIdentity(
+          // Faux PlanField-like minimal shape for identity extraction:
+          {
+            fieldName: args.field,
+            buildArgs: (v: any) => v || {},
+            connectionArgs: Object.keys(args.variables || {}).filter((k) => !isCursorArg(k)),
+          } as any,
+          parentId,
+          args.variables || {}
+        );
+        // Discover pages in this family by scanning keys & comparing arg subset
+        const familyPages = findFamilyPageKeys(parentId, args.field, args.variables || {});
+        let chosen: string | undefined;
+
+        const handle = {
+          addNode: (
+            node: any,
+            opts: { cursor?: string | null; position?: "start" | "end"; edge?: any } = {}
+          ) => {
+            if (!familyPages.length) return;
+            const targetKey = (chosen ||= chooseFamilyTarget(familyPages, opts.position === "start" ? "start" : "end"));
+            if (!targetKey) return;
+
+            const entityKey = graph.identify(node);
+            if (!entityKey) return;
+
+            const entityPatch: any = { ...node };
+            delete entityPatch.__typename; delete entityPatch.id;
+            layer.entityOps.push({ kind: "entityWrite", recordId: entityKey, patch: entityPatch });
+            applyEntityWrite(entityKey, entityPatch, "merge");
+
+            const op: ConnOp = {
+              kind: "connAdd",
+              pageKey: targetKey,
+              entityKey,
+              cursor: opts.cursor ?? null,
+              meta: shallowEdgeMeta(opts.edge),
+              position: opts.position === "start" ? "start" : "end",
+            };
+            layer.connOps.push(op);
+            applyConnOp(op);
+          },
+
+          removeNode: (ref: { __typename?: string; id?: any } | string) => {
+            if (!familyPages.length) return;
+            // Prefer chosen page if already chosen; else find the first page containing the node
+            const entityKey = typeof ref === "string" ? ref : (graph.identify(ref) || null);
+            if (!entityKey) return;
+
+            let target = chosen;
+            if (!target) {
+              for (let i = 0; i < familyPages.length; i++) {
+                const pageKey = familyPages[i];
+                const page = graph.getRecord(pageKey);
+                if (page && removeEdgeByEntityKey(graph, pageKey, { ...page, edges: [...(page.edges || [])] }, entityKey)) {
+                  target = pageKey;
+                  break;
+                }
+              }
+            }
+            // If still not found, fallback to first family page
+            const targetKey = (chosen ||= target || familyPages[0]);
+
+            const op: ConnOp = { kind: "connRemove", pageKey: targetKey, entityKey };
+            layer.connOps.push(op);
+            applyConnOp(op);
+          },
+
+          patch: (pageInfoPatch: Record<string, any>) => {
+            if (!familyPages.length || !pageInfoPatch || typeof pageInfoPatch !== "object") return;
+            const targetKey = (chosen ||= chooseFamilyTarget(familyPages, "end") || familyPages[0]);
+            const op: ConnOp = { kind: "connPageInfo", pageKey: targetKey, patch: { ...pageInfoPatch } };
+            layer.connOps.push(op);
+            applyConnOp(op);
+          },
+
+          pageKey: () => chosen,
+        } as const;
+
+        return [handle] as const;
+      },
     };
 
-    // run builder now
     build(api);
 
     return {
@@ -390,12 +515,10 @@ export const createModifyOptimistic = ({ graph }: Deps) => {
           committed.push(layer);
         }
       },
-
       revert() {
         if (pending.has(layer)) pending.delete(layer);
         const idx = committed.findIndex((L) => L.id === layer.id);
         if (idx >= 0) reverted.add(layer.id);
-
         resetToBase();
         reapplyLayers();
         cleanupIfIdle();

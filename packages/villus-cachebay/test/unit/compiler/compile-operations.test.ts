@@ -46,8 +46,8 @@ const USER_QUERY = gql`
 
 const USERS_QUERY = gql`
   ${USER_FRAGMENT}
-  query UsersQuery($usersRole: String, $first: Int, $after: String) {
-    users(role: $usersRole, first: $first, after: $after) @connection(args: ["role"]) {
+  query UsersQuery($usersRole: String, $usersFirst: Int, $usersAfter: String) {
+    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(filters: ["role"]) {
       __typename
       pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
       edges {
@@ -61,11 +61,11 @@ const USERS_QUERY = gql`
 const USER_POSTS_QUERY = gql`
   ${USER_FRAGMENT}
   ${POST_FRAGMENT}
-  query UserPostsQuery($id: ID!, $postsCategory: String, $first: Int, $after: String) {
+  query UserPostsQuery($id: ID!, $postsCategory: String, $postsFirst: Int, $postsAfter: String) {
     user(id: $id) {
       __typename
       ...UserFields
-      posts(category: $postsCategory, first: $first, after: $after) @connection(args: ["category"]) {
+      posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(filters: ["category"]) {
         __typename
         pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
         edges {
@@ -95,7 +95,7 @@ const USERS_POSTS_COMMENTS_QUERY = gql`
     $commentsFirst: Int
     $commentsAfter: String
   ) {
-    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
+    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(filters: ["role"]) {
       __typename
       pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
       edges {
@@ -103,7 +103,7 @@ const USERS_POSTS_COMMENTS_QUERY = gql`
         node {
           __typename
           ...UserFields
-          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
+          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(filters: ["category"]) {
             __typename
             pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
             edges {
@@ -111,9 +111,9 @@ const USERS_POSTS_COMMENTS_QUERY = gql`
               node {
                 __typename
                 ...PostFields
-                comments(first: $commentsFirst, after: $commentsAfter) @connection(args: []) {
+                comments(first: $commentsFirst, after: $commentsAfter) @connection(filters: []) {
                   __typename
-                  pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+                  pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
                   edges {
                     cursor
                     node { __typename ...CommentFields }
@@ -154,9 +154,7 @@ const MULTI_TYPE_FRAGMENT_QUERY = gql`
 
 const findField = (fields: PlanField[], responseKey: string): PlanField | null => {
   for (let i = 0; i < fields.length; i++) {
-    if (fields[i].responseKey === responseKey) {
-      return fields[i];
-    }
+    if (fields[i].responseKey === responseKey) return fields[i];
   }
   return null;
 };
@@ -180,42 +178,46 @@ describe("compiler: compileToPlan", () => {
     const args = userField.buildArgs({ id: "u1" });
     expect(args).toEqual({ id: "u1" });
 
-    // Fragment flattened: expect child fields id, email present somewhere in selectionSet
     const child = userField.selectionSet!;
     const id = findField(child, "id");
     const email = findField(child, "email");
     expect(Boolean(id && email)).toBe(true);
   });
 
-  it("compiles USERS_QUERY: marks users as connection, args builder omits undefined", () => {
+  it("compiles USERS_QUERY: marks users as connection; filters & default mode", () => {
     const plan = compileToPlan(USERS_QUERY);
 
     const users = findField(plan.root, "users")!;
     expect(users.isConnection).toBe(true);
+    expect(users.connectionKey).toBe("users");
+    expect(users.connectionFilters).toEqual(["role"]);
+    expect(users.connectionMode).toBe("infinite"); // default
 
-    const a1 = users.buildArgs({ usersRole: "admin", first: 2, after: undefined });
+    // buildArgs uses RAW vars mapped to field-arg names
+    const a1 = users.buildArgs({ usersRole: "admin", usersFirst: 2, usersAfter: undefined });
     expect(a1).toEqual({ role: "admin", first: 2 });
 
-    // Ensure selection has edges and pageInfo lowered
     const edges = findField(users.selectionSet!, "edges");
     const pageInfo = findField(users.selectionSet!, "pageInfo");
     expect(Boolean(edges && pageInfo)).toBe(true);
   });
 
-  it("compiles USER_POSTS_QUERY: marks nested posts as connection and builds both arg builders", () => {
+  it("compiles USER_POSTS_QUERY: nested posts as connection with filters; default mode", () => {
     const plan = compileToPlan(USER_POSTS_QUERY);
 
     const user = findField(plan.root, "user")!;
     const posts = findField(user.selectionSet!, "posts")!;
     expect(posts.isConnection).toBe(true);
+    expect(posts.connectionKey).toBe("posts");
+    expect(posts.connectionFilters).toEqual(["category"]);
+    expect(posts.connectionMode).toBe("infinite"); // default
 
     const userArgs = user.buildArgs({ id: "u1" });
     expect(userArgs).toEqual({ id: "u1" });
 
-    const postsArgs = posts.buildArgs({ postsCategory: "tech", first: 2, after: null });
+    const postsArgs = posts.buildArgs({ postsCategory: "tech", postsFirst: 2, postsAfter: null });
     expect(postsArgs).toEqual({ category: "tech", first: 2, after: null });
 
-    // Post node fields lowered (id, title, tags, author.id)
     const edges = findField(posts.selectionSet!, "edges")!;
     const node = findField(edges.selectionSet!, "node")!;
     const id = findField(node.selectionSet!, "id");
@@ -225,25 +227,34 @@ describe("compiler: compileToPlan", () => {
     expect(Boolean(id && title && tags && author)).toBe(true);
   });
 
-  it("compiles USERS_POSTS_COMMENTS_QUERY: connection flags on users, posts, comments", () => {
+  it("compiles USERS_POSTS_COMMENTS_QUERY: users, posts, comments marked with filters & default mode", () => {
     const plan: CachePlanV1 = compileToPlan(USERS_POSTS_COMMENTS_QUERY);
 
     const users = findField(plan.root, "users")!;
     expect(users.isConnection).toBe(true);
+    expect(users.connectionKey).toBe("users");
+    expect(users.connectionFilters).toEqual(["role"]);
+    expect(users.connectionMode).toBe("infinite");
 
-    const edges = findField(users.selectionSet!, "edges")!;
-    const userNode = findField(edges.selectionSet!, "node")!;
+    const userEdges = findField(users.selectionSet!, "edges")!;
+    const userNode = findField(userEdges.selectionSet!, "node")!;
 
     const posts = findField(userNode.selectionSet!, "posts")!;
     expect(posts.isConnection).toBe(true);
+    expect(posts.connectionKey).toBe("posts");
+    expect(posts.connectionFilters).toEqual(["category"]);
+    expect(posts.connectionMode).toBe("infinite");
 
     const postEdges = findField(posts.selectionSet!, "edges")!;
     const postNode = findField(postEdges.selectionSet!, "node")!;
 
     const comments = findField(postNode.selectionSet!, "comments")!;
     expect(comments.isConnection).toBe(true);
+    expect(comments.connectionKey).toBe("comments");
+    expect(comments.connectionFilters).toEqual([]); // explicit empty
+    expect(comments.connectionMode).toBe("infinite");
 
-    // Arg builders wiring
+    // RAW variable names → field args
     const usersArgs = users.buildArgs({ usersRole: "dj", usersFirst: 2, usersAfter: "u1" });
     expect(usersArgs).toEqual({ role: "dj", first: 2, after: "u1" });
 
@@ -267,10 +278,8 @@ describe("compiler: compileToPlan", () => {
   it("when multiple distinct type conditions exist, child parent inference falls back", () => {
     const plan = compileToPlan(MULTI_TYPE_FRAGMENT_QUERY);
     const user = findField(plan.root, "user")!;
-    // Selection set should contain both fields from UserOnly/AdminOnly fragments
     const idField = findField(user.selectionSet!, "id");     // from UserOnly
     const roleField = findField(user.selectionSet!, "role"); // from AdminOnly
     expect(Boolean(idField && roleField)).toBe(true);
-    // We do not assert isConnection here; this test guards inference strategy.
   });
 });
