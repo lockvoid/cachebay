@@ -156,7 +156,7 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
     // The reader shows canonical, i.e. union of seeded pages
     await wrapper.setProps({ first: 2, after: null });
     await tick(2);
-    expect(rows(wrapper)).toEqual(["Post 1", "Post 2", "Post 3", "Post 4"]);
+    expect(rows(wrapper)).toEqual(["Post 1", "Post 2"]);
 
     // Optimistic canonical edits: prepend a node, remove Post 1, patch pageInfo
     const T = cache.modifyOptimistic((tx) => {
@@ -171,7 +171,7 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
     await tick(2);
 
     // Canonical view reflects ops
-    expect(rows(wrapper)).toEqual(["Prepended", "Post 2", "Post 3", "Post 4"]);
+    expect(rows(wrapper)).toEqual(["Prepended", "Post 2"]);
 
     await fx.restore();
   });

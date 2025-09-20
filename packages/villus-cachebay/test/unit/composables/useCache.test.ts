@@ -10,8 +10,9 @@ describe("useCache()", () => {
     const Comp = defineComponent({
       setup() {
         useCache(); // should throw
-        return () => h("div");
       },
+
+      render: () => h("div"),
     });
 
     expect(() => mount(Comp)).toThrowError(

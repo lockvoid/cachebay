@@ -139,13 +139,7 @@ export const createCanonical = ({ graph }: CanonicalDeps) => {
 
     if (mode === "infinite") {
       if (isLeader) {
-        if (nextEdges.length === 0) {
-          nextEdges = pageEdgeRefs.slice();
-        } else {
-          const tmp = nextEdges.slice();
-          appendByNode(tmp, pageEdgeRefs);
-          nextEdges = tmp;
-        }
+        nextEdges = pageEdgeRefs.slice();
         if (pageSnap.pageInfo) nextPageInfo = { ...(pageSnap.pageInfo as any) };
         for (const k of Object.keys(pageSnap)) {
           if (k === "edges" || k === "pageInfo" || k === "__typename") continue;

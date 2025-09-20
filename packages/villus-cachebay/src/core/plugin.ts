@@ -42,7 +42,11 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
     const buildCachedFrame = () => {
       if (!documents.hasDocument({ document, variables: vars })) return null;
+
+      documents.prewarmDocument({ document, variables: vars });
+
       const view = documents.materializeDocument({ document, variables: vars });
+
       return { data: view };
     };
 
@@ -56,7 +60,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         graphqlErrors: [],
         response: undefined,
       });
-      return publish({ error: err }, true);
+      return publish({ error: err, data: undefined }, true);
     }
 
     // cache-first
@@ -69,6 +73,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     // cache-and-network: publish cached if present, then network
     if (policy === "cache-and-network") {
       const cached = buildCachedFrame();
+
       if (cached) publish(cached, false);
     }
 

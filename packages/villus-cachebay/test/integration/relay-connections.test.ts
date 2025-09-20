@@ -271,8 +271,7 @@ describe('Integration • Relay pagination reset & append from cache — extende
       await wrapper.setProps({ filter: 'A', first: 2 });
       await tick(2);
 
-      // Canonical union already knows p2; order is not guaranteed → compare as set
-      expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4'].sort());
+      expect(rows(wrapper).slice()).toEqual(['A-1', 'A-2']);
 
       wrapper.unmount();
       await fx.restore?.();
@@ -325,17 +324,17 @@ describe('Integration • Relay pagination reset & append from cache — extende
     // A leader — union may list p2 before p1 (order not guaranteed)
     await wrapper.setProps({ filter: 'A', first: 2 });
     await delay(51);
-    expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4'].sort());
+    expect(rows(wrapper).slice()).toEqual(['A-1', 'A-2']);
 
     // A after c2 — union p1+p2
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c2' });
     await tick(2);
-    expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4'].sort());
+    expect(rows(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4']);
 
     // A after c4 — union grows with p3
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c4' });
     await delay(51);
-    expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6'].sort());
+    expect(rows(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
 
     // Switch to B
     await wrapper.setProps({ filter: 'B', first: 2, after: undefined } as any);
@@ -345,24 +344,24 @@ describe('Integration • Relay pagination reset & append from cache — extende
     // Back to A leader — canonical union still includes previously fetched p3
     await wrapper.setProps({ filter: 'A', first: 2, after: undefined } as any);
     await tick(2);
-    expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6'].sort());
+    expect(rows(wrapper).slice()).toEqual(['A-1', 'A-2']);
 
     // A after c2 — union p1+p2
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c2' });
     await tick(2);
-    expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6'].sort());
+    expect(rows(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4']);
 
     // A after c4 — union p1+p2+p3
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c4' });
     await tick(2);
-    expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6'].sort());
+    expect(rows(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
 
     // A after c6 — revalidate slow then grow union with p4
     await wrapper.setProps({ filter: 'A', first: 2, after: 'c6' });
     await tick(2);
-    expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6'].sort());
+    expect(rows(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
     await delay(51);
-    expect(rows(wrapper).slice().sort()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6', 'A-7', 'A-8'].sort());
+    expect(rows(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6', 'A-7', 'A-8']);
 
     wrapper.unmount();
     await fx.restore?.();
