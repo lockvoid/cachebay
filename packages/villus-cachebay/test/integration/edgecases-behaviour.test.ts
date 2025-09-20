@@ -128,7 +128,6 @@ describe('Edgecases behaviour', () => {
     expect(last).toContain('Post 1 Updated');
     // update render may be just the delta page or a unioned shape; both are fine:
     //
-    console.log(last)
     expect([1, 2, 3, 4]).toContain(last.length);
 
     // Identity of first node remains stable across renders
