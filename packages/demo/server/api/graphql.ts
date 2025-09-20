@@ -26,6 +26,12 @@ builder.objectType('Spell', {
   }),
 })
 
+builder.inputType('SpellFilter', {
+  fields: (t) => ({
+    query: t.string(),
+  }),
+})
+
 builder.inputType('CreateSpellInput', {
   fields: (t) => ({
     name: t.string({ required: true }),
@@ -72,8 +78,20 @@ builder.queryType({
     spells: t.connection({
       type: 'Spell',
 
+      args: {
+        filter: t.arg({ type: 'SpellFilter' }),
+      },
+
       resolve: async (_, args: any) => {
         return resolveOffsetConnection({ args }, async ({ limit, offset }) => {
+          const filter = args.filter;
+
+          if (filter?.query) {
+            return db.prepare(
+              'SELECT * FROM spells WHERE name LIKE ? OR effect LIKE ? OR category LIKE ? ORDER BY id LIMIT ? OFFSET ?'
+            ).all(`%${filter.query}%`, `%${filter.query}%`, `%${filter.query}%`, limit, offset)
+          }
+
           return db.prepare('SELECT * FROM spells ORDER BY id LIMIT ? OFFSET ?').all(limit, offset)
         })
       },
