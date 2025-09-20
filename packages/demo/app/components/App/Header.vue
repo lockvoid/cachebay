@@ -3,62 +3,73 @@
 </script>
 
 <template>
-  <header class="flex flex-row px-6 py-3">
-    <AppLogo />
+  <header class="relative bg-gradient-to-r from-slate-900 via-purple-900 to-slate-900 border-b border-purple-500/20 shadow-lg">
+    <div class="relative flex flex-row items-center px-6 py-4">
+      <AppLogo />
 
-    <nav class="flex items-center gap-6 px-6 py-3">
-      <!--
-      <AppNavLink to="/sets">
-        Sets
-      </AppNavLink>
+      <div class="ml-auto flex items-center gap-4 px-6 py-3 bg-slate-800/50 backdrop-blur-sm border border-purple-500/20 rounded-xl shadow-lg">
+        <label class="flex items-center gap-2 text-xs">
+          <span class="text-purple-200 font-medium">
+            Cache
+          </span>
 
-      <AppNavLink to="/parts">
-        Parts
-      </AppNavLink>
-      -->
+          <select v-model="settings.cachePolicy" class="bg-slate-700 border border-purple-500/30 rounded-md px-2 py-1 text-xs text-purple-100 focus:border-purple-400 focus:ring-1 focus:ring-purple-400 focus:outline-none">
+            <option value="cache-and-network">
+              Cache & Network
+            </option>
 
-      <AppNavLink to="/spells">
-        Spells
-      </AppNavLink>
-    </nav>
+            <option value="cache-first">
+              Cache First
+            </option>
 
-    <div class="ml-auto flex items-center gap-3 px-6 py-3 text-sm bg-gray-100 rounded-full">
-      <label class="flex items-center gap-2 text-sm">
-        <span>Cache</span>
+            <option value="cache-only">
+              Cache Only
+            </option>
+          </select>
+        </label>
 
-        <select v-model="settings.cachePolicy" class="bg-white border border-gray-300 rounded-md px-1 py-1">
-          <option value="cache-and-network">Cache and Network</option>
-          <option value="cache-first">Cache first</option>
-          <option value="cache-only">Cache only</option>
-        </select>
-      </label>
+        <label class="flex items-center gap-2 text-xs">
+          <span class="text-purple-200 font-medium">
+            Relay
+          </span>
 
-      <label class="flex items-center gap-2 text-sm">
-        <span>Relay</span>
+          <select v-model="settings.relayMode" class="bg-slate-700 border border-purple-500/30 rounded-md px-2 py-1 text-xs text-purple-100 focus:border-purple-400 focus:ring-1 focus:ring-purple-400 focus:outline-none">
+            <option value="append">
+              Append
+            </option>
 
-        <select v-model="settings.relayMode" class="bg-white border border-gray-300 rounded-md px-1 py-1">
-          <option value="append">Append mode</option>
-          <option value="replace">Replace mode</option>
-        </select>
-      </label>
+            <option value="replace">
+              Replace
+            </option>
+          </select>
+        </label>
 
-      <label class="flex items-center gap-2 text-sm">
-        <input v-model="settings.ssr" type="checkbox" />
+        <div class="flex items-center gap-3 text-xs">
+          <label class="flex items-center gap-1.5 cursor-pointer group">
+            <input v-model="settings.ssr" type="checkbox" class="w-3 h-3 text-purple-500 bg-slate-700 border-purple-500/30 rounded focus:ring-purple-400 focus:ring-1" />
 
-        <span>SSR</span>
-      </label>
+            <span class="text-purple-200 group-hover:text-purple-100 transition-colors">
+              SSR
+            </span>
+          </label>
 
-      <label class="flex items-center gap-2 text-sm">
-        <input v-model="settings.suspense" type="checkbox" />
+          <label class="flex items-center gap-1.5 cursor-pointer group">
+            <input v-model="settings.suspense" type="checkbox" class="w-3 h-3 text-purple-500 bg-slate-700 border-purple-500/30 rounded focus:ring-purple-400 focus:ring-1" />
 
-        <span>Suspense</span>
-      </label>
+            <span class="text-purple-200 group-hover:text-purple-100 transition-colors">
+              Suspense
+            </span>
+          </label>
 
-      <label class="flex items-center gap-2 text-sm">
-        <input v-model="settings.optimistic" type="checkbox" />
+          <label class="flex items-center gap-1.5 cursor-pointer group">
+            <input v-model="settings.optimistic" type="checkbox" class="w-3 h-3 text-purple-500 bg-slate-700 border-purple-500/30 rounded focus:ring-purple-400 focus:ring-1" />
 
-        <span>Optimistic</span>
-      </label>
+            <span class="text-purple-200 group-hover:text-purple-100 transition-colors">
+              Optimistic
+            </span>
+          </label>
+        </div>
+      </div>
     </div>
   </header>
 </template>
