@@ -7,12 +7,20 @@
     "build": "nuxt build",
     "preview": "nuxt preview -p 4300"
   },
+  "engines": {
+    "node": "22.x",
+    "pnpm": "10.x"
+  },
   "dependencies": {
-    "@nuxt/kit": "^4.1.1",
     "@pinia/nuxt": "^0.11.2",
+    "@pothos/core": "^4.9.1",
+    "@pothos/plugin-relay": "^4.6.2",
+    "graphql-yoga": "^5.16.0",
     "nuxt": "^4.0.3",
     "pg": "^8.16.3",
     "pinia": "^3.0.3",
+    "pothos": "^0.0.1",
+    "sqlite3": "^5.1.7",
     "villus": "^3.5.2",
     "villus-cachebay": "workspace:*",
     "vue": "^3.5.18",
