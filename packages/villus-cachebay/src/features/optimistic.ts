@@ -1,8 +1,8 @@
 /* src/features/optimistic.ts */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { ROOT_ID } from "@/src/core/constants";
-import { buildConnectionCanonicalKey } from "@/src/core/utils";
+import { ROOT_ID } from "../core/constants";
+import { buildConnectionCanonicalKey } from "../core/utils";
 
 type GraphDeps = {
   identify: (obj: any) => string | null;

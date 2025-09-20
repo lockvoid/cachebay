@@ -1,5 +1,4 @@
 import type { WritePolicy } from "../types";
-import { reactive, isReactive, shallowReactive } from "vue";
 
 export type EntityKey = string;
 

@@ -1,5 +1,3 @@
-import type { CachebayInternals } from "./core/types";
-
 export type WritePolicy = "replace" | "merge";
 
 export type ReactiveMode = "shallow" | "deep";

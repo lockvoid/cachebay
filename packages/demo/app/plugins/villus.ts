@@ -7,11 +7,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   const settings = useSettings();
 
   const cachebay = createCache({
-    resolvers: ({ relay }) => ({
-      Query: {
-        colors: relay({ paginationMode: settings.relayMode }),
-      },
-    }),
+    //
   });
 
   const client = createClient({
@@ -21,7 +17,7 @@ export default defineNuxtPlugin((nuxtApp) => {
 
     use: [
       cachebay,
-      // dedupPlugin(),
+      dedupPlugin(),
       fetchPlugin(),
     ],
   });

@@ -1,6 +1,6 @@
 import { isObject, hasTypename, traverseFast, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, upsertEntityShallow, TRAVERSE_SKIP } from "./utils";
 import { ROOT_ID } from "./constants";
-import type { CachePlanV1, PlanField } from "@/src/compiler";
+import type { CachePlanV1, PlanField } from "../compiler";
 import type { DocumentNode } from "graphql";
 import type { GraphInstance } from "./graph";
 import type { ViewsInstance } from "./views";

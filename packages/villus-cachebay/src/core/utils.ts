@@ -1,6 +1,6 @@
 import { IDENTITY_FIELDS, CONNECTION_FIELDS, ROOT_ID } from "./constants";
 import type { EntityKey, RelayOptions } from "./types";
-import type { PlanField } from "@/src/compiler/types";
+import type { PlanField } from "./types";
 
 export const TRAVERSE_SKIP = Symbol('traverse:skip');
 

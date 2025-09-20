@@ -1,5 +1,5 @@
 import type { DocumentNode } from "graphql";
-import { compileToPlan, isCachePlanV1, type CachePlanV1 } from "@/src/compiler";
+import { compileToPlan, isCachePlanV1, type CachePlanV1 } from "../compiler";
 
 export type PlannerInstance = ReturnType<typeof createPlanner>;
 

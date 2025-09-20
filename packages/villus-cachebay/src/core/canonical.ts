@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { GraphInstance } from "./graph";
-import type { PlanField } from "@/src/compiler";
+import type { PlanField } from "../compiler";
 import { buildConnectionCanonicalKey } from "./utils";
 
 /* ────────────────────────────────────────────────────────────────────────── */

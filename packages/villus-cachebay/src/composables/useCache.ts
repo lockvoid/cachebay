@@ -1,5 +1,5 @@
 import { inject } from "vue";
-import { CACHEBAY_KEY } from "@/src/core/plugin";
+import { CACHEBAY_KEY } from "../core/constants";
 
 /**
  * Access the Cachebay API that was provided by `provideCachebay(app, cache)`.

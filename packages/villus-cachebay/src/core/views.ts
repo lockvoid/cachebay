@@ -1,6 +1,6 @@
 import { buildConnectionKey, buildConnectionCanonicalKey } from "./utils";
 import type { GraphInstance } from "./graph";
-import type { PlanField } from "@/src/compiler";
+import type { PlanField } from "../compiler";
 
 export type ViewsInstance = ReturnType<typeof createViews>;
 export type ViewsDependencies = { graph: GraphInstance };

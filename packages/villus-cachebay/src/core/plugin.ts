@@ -9,7 +9,7 @@ import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
 import type { DocumentsInstance } from "./documents";
 
-export const CACHEBAY_KEY: unique symbol = Symbol("CACHEBAY_KEY");
+import { CACHEBAY_KEY } from "./constants";
 
 type PluginOptions = { addTypename?: boolean };
 

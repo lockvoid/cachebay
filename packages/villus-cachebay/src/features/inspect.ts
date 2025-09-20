@@ -1,7 +1,6 @@
 /* src/features/inspect.ts */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { ReturnTypeCreateGraph } from "@/src/core/graph"; // if you don't have this, replace with your Graph type
-import type { GraphInstance } from "@/src/core/graph";
+import type { GraphInstance } from "../core/graph";
 
 /**
  * Lightweight debug/inspection helpers over the unified graph.

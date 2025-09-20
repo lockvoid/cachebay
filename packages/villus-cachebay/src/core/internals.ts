@@ -10,9 +10,9 @@ import { createCanonical } from "./canonical";
 import { createDocuments } from "./documents";
 import { createFragments } from "./fragments";
 
-import { createSSR } from "@/src/features/ssr";
-import { createModifyOptimistic } from "@/src/features/optimistic";
-import { createInspect } from "@/src/features/inspect";
+import { createSSR } from "../features/ssr";
+import { createModifyOptimistic } from "../features/optimistic";
+import { createInspect } from "../features/inspect";
 
 export type CachebayInstance = ClientPlugin & {
   // SSR
