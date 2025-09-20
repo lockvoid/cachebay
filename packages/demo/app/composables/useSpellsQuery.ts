@@ -1,5 +1,14 @@
 import { useQuery } from "villus";
 
+export const PAGE_INFO_FIELDS = `
+  fragment PageInfoFields on PageInfo {
+    startCursor
+    endCursor
+    hasNextPage
+    hasPreviousPage
+  }
+`;
+
 export const SPELL_FIELDS = `
   fragment SpellFields on Spell {
     id
@@ -15,15 +24,13 @@ export const SPELL_FIELDS = `
 `;
 
 export const SPELLS_QUERY = `
+  ${PAGE_INFO_FIELDS}
   ${SPELL_FIELDS}
 
   query Spells($after: String, $first: Int, $filter: SpellFilter) {
-    spells: spells(after: $after, first: $first, filter: $filter) {
+    spells(after: $after, first: $first, filter: $filter) {
       pageInfo {
-        startCursor
-        endCursor
-        hasNextPage
-        hasPreviousPage
+        ...PageInfoFields
       }
 
       edges {
