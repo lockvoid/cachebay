@@ -17,8 +17,8 @@
       </AppNavLink>
       -->
 
-      <AppNavLink to="/colors">
-        Colors
+      <AppNavLink to="/spells">
+        Spells
       </AppNavLink>
     </nav>
 

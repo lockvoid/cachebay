@@ -172,7 +172,6 @@ const yoga = createYoga({
 
   cors: {
     origin: '*',
-    credentials: true,
   },
 });
 

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 
-export const useColorsPagination = defineStore('colorsPagination', () => {
-  const after = ref(null);
+export const useSpellsPagination = defineStore('spellsPagination', () => {
+  const after = ref<string | null>(null);
   const first = ref(10);
 
   const filters = reactive({
@@ -44,7 +44,7 @@ export const useColorsPagination = defineStore('colorsPagination', () => {
   };
 });
 
-export const useColorsActivity = defineStore('colorsActivity', () => {
+export const useSpellsActivity = defineStore('spellsActivity', () => {
   const state = reactive({ isFetching: false })
 
   return state;
