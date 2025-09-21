@@ -44,7 +44,7 @@ const isSubmitting = ref(false);
 const validate = (): boolean => {
   let isValid = true;
   const newErrors = { ...errors.value };
-  
+
   // Validate name
   if (!form.value.name.trim()) {
     newErrors.name = 'Name is required';
@@ -101,7 +101,7 @@ const validate = (): boolean => {
 // Handle form submission
 const onSubmit = async () => {
   if (!validate()) return;
-  
+
   isSubmitting.value = true;
   try {
     await emit('submit', form.value);
@@ -129,7 +129,7 @@ if (process.dev && typeof window !== 'undefined') {
   (window as any).handleSubmit = undefined;
 }
 
-const spellTypes = [
+const SPELL_TYPES = [
   'Charm',
   'Curse',
   'Enchantment',
@@ -139,7 +139,7 @@ const spellTypes = [
   'Transfiguration'
 ];
 
-const lightColors = [
+const LIGHT_COLORS = [
   'Blue',
   'Green',
   'Red',
@@ -179,7 +179,7 @@ const lightColors = [
         <label for="type" class="block text-sm font-medium text-gray-700">Type</label>
         <select v-bind="bind('type')" id="type" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" :class="{ 'border-red-500': errors.type }">
           <option value="">Select a type</option>
-          <option v-for="type in spellTypes" :key="type" :value="type">{{ type }}</option>
+          <option v-for="type in SPELL_TYPES" :key="type" :value="type">{{ type }}</option>
         </select>
         <div v-if="errors.type" class="text-red-500 text-sm mt-1">{{ errors.type }}</div>
       </div>
@@ -188,7 +188,7 @@ const lightColors = [
         <label for="light" class="block text-sm font-medium text-gray-700">Light Color</label>
         <select v-bind="bind('light')" id="light" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" :class="{ 'border-red-500': errors.light }">
           <option value="">Select a color</option>
-          <option v-for="color in lightColors" :key="color" :value="color">{{ color }}</option>
+          <option v-for="color in LIGHT_COLORS" :key="color" :value="color">{{ color }}</option>
         </select>
         <div v-if="errors.light" class="text-red-500 text-sm mt-1">{{ errors.light }}</div>
       </div>

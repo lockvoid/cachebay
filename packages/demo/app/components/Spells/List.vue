@@ -1,8 +1,6 @@
 <script setup lang="ts">
   const settings = useSettings();
 
-  const spellsActivity = useSpellsActivity();
-
   const spellsQuery = await useSpellsQuery();
 
   const spells = computed(() => {
@@ -11,7 +9,7 @@
 </script>
 
 <template>
-  <div class="flex flex-col gap-6">
+  <div class="flex flex-col gap-12">
     <ul class="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-6">
       <SpellsItem v-for="edge in spells.edges" :key="edge.node.id" :spell="edge.node" />
     </ul>

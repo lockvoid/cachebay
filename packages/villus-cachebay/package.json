@@ -25,6 +25,7 @@
     "eslint-plugin-vue": "^10.4.0",
     "glob": "^11.0.3",
     "graphql": "^16.11.0",
+    "graphql-tag": "^2.12.6",
     "happy-dom": "^18.0.1",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.41.0",
@@ -35,16 +36,11 @@
   },
   "peerDependencies": {
     "villus": "^3.5.2",
-    "vue": "^3.5.18",
-    "vue-router": "^4.5.1"
+    "vue": "^3.5.18"
   },
   "exports": {
     ".": {
       "import": "./src/index.ts"
     }
-  },
-  "dependencies": {
-    "graphql-tag": "^2.12.6",
-    "object-hash": "^3.0.0"
   }
 }

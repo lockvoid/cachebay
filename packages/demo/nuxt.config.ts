@@ -32,9 +32,20 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: "Villus Cachebay Demo",
+      title: "Harry Potter's Spellbook",
+
+      link: [
+        { rel: "icon", type: "image/svg+xml", href: "/icon.svg" },
+        { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+        { rel: "manifest", href: "/site.webmanifest" },
+      ],
+
+      meta: [
+        { name: "theme-color", content: "#000000" },
+      ],
     },
   },
+
 
   build: {
     transpile: [

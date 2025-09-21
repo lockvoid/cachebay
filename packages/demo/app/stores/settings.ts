@@ -16,11 +16,11 @@ export const useSettings = defineStore('settings', () => {
   });
 
   const cachePolicyCookie = useCookie('settings-cache-policy', {
-    default: () => 'cache-and-network' as string
+    default: () => 'cache-first'
   });
 
   const relayModeCookie = useCookie('settings-relay-mode', {
-    default: () => 'infinite' as string
+    default: () => 'infinite'
   });
 
   const optimisticCookie = useCookie('settings-optimistic', {
