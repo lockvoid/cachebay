@@ -7,8 +7,8 @@
 <template>
   <div class="sticky top-0 z-10 flex items-center justify-between p-4 bg-white border-b border-gray-200">
     <!-- Logo -->
-    <NuxtLink to="/" class="z-10 flex-shrink-0 text-gray-800 hover:text-gray-600 transition-colors">
-      <IconsDeathlyHallows class="w-10 h-10" />
+    <NuxtLink to="/" class="z-10 flex-shrink-0">
+      <AppLogo />
     </NuxtLink>
 
     <!-- Centered Search Bar -->
