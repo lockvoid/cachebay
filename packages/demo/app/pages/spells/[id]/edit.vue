@@ -87,34 +87,22 @@ const handleDelete = async () => {
   <div class="min-h-screen bg-gray-100 py-8">
     <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="bg-white shadow overflow-hidden sm:rounded-lg">
-        <!-- Header -->
         <div class="px-4 py-5 border-b border-gray-200 sm:px-6">
           <div class="flex items-center justify-between">
             <div>
-              <h3 class="text-lg font-medium leading-6 text-gray-900">
-              1  Edit Spell
-              </h3>
-              <p class="mt-1 text-sm text-gray-500">
-                Update the details of this magical spell.
-              </p>
+              <h3 class="text-lg font-medium leading-6 text-gray-900">Edit Spell</h3>
+              <p class="mt-1 text-sm text-gray-500">Update the details of this magical spell.</p>
             </div>
-            <NuxtLink
-              :to="`/spells/${id}`"
-              class="button-secondary px-3 py-1.5"
-            >
-              Cancel
-            </NuxtLink>
+            <NuxtLink :to="`/spells/${id}`" class="button-secondary px-3 py-1.5">Cancel</NuxtLink>
           </div>
         </div>
 
-        <!-- Loading State -->
         <div v-if="isFetching" class="p-6 space-y-4">
           <div class="h-8 bg-gray-200 rounded w-1/3"></div>
           <div class="h-4 bg-gray-200 rounded w-1/4"></div>
           <div class="h-4 bg-gray-200 rounded w-1/2"></div>
         </div>
 
-        <!-- Error State -->
         <div v-else-if="error" class="p-6">
           <div class="bg-red-50 border-l-4 border-red-400 p-4">
             <div class="flex">
@@ -124,42 +112,23 @@ const handleDelete = async () => {
                 </svg>
               </div>
               <div class="ml-3">
-                <p class="text-sm text-red-700">
-                  Failed to load spell. Please try again.
-                </p>
+                <p class="text-sm text-red-700">Failed to load spell. Please try again.</p>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Edit Form -->
         <div v-else-if="spell">
           <div class="px-4 py-5 sm:p-6">
-            <SpellForm
-              :spell="{
-                name: spell.name || '',
-                incantation: '',
-                effect: spell.effect || '',
-                type: spell.category || '',
-                light: spell.light || ''
-              }"
-              :loading="isFetching || loading"
-              @submit="handleSubmit"
-              @delete="handleDelete"
-            />
+            <SpellForm :spell="{ name: spell.name || '', incantation: '', effect: spell.effect || '', type: spell.category || '', light: spell.light || '' }" :loading="isFetching || loading" @submit="handleSubmit" @delete="handleDelete" />
           </div>
         </div>
 
-        <div v-else class="p-6 text-center text-gray-600">
-          Spell not found.
-        </div>
+        <div v-else class="p-6 text-center text-gray-600">Spell not found.</div>
       </div>
 
       <div class="mt-6">
-        <NuxtLink
-          :to="spell ? `/spells/${spell.id}` : '/spells'"
-          class="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-500"
-        >
+        <NuxtLink :to="spell ? `/spells/${spell.id}` : '/spells'" class="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-500">
           <svg class="mr-1 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
           </svg>

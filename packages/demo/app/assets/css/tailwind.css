@@ -1,14 +1,31 @@
 @import "tailwindcss";
 
-@theme {
-  --color-lego-red: #da1e28;
-  --color-lego-yellow: #fdd90d;
+@utility a {
+  @apply underline decoration-2 underline-offset-4 hover:cursor-pointer;
 }
 
-@utility a {
-  @apply underline decoration-2 underline-offset-4 hover:decoration-4 hover:cursor-pointer;
+@utility button {
+  @apply inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 hover:cursor-pointer;
+}
+
+@utility button-primary {
+  @apply button text-white bg-blue-600 hover:bg-blue-700 focus:ring-blue-500;
+}
+
+@utility button-secondary {
+  @apply button text-gray-700 bg-white border-gray-300 hover:bg-gray-50 focus:ring-blue-500;
+}
+
+@utility button-danger {
+  @apply button text-white bg-red-600 hover:bg-red-700 focus:ring-red-500;
+}
+
+@utility select {
+  @apply text-xs bg-white border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500;
 }
 
 html {
+  @apply font-serif;
+
   font-size: 18px;
 }

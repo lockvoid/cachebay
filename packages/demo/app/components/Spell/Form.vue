@@ -156,115 +156,47 @@ const lightColors = [
 
 <template>
   <form @submit.prevent="onSubmit" class="space-y-6">
-    <!-- Name Field -->
     <div>
-      <label for="name" class="block text-sm font-medium text-gray-700">
-        Spell Name
-      </label>
-      <input
-        v-bind="bind('name')"
-        id="name"
-        type="text"
-        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-        :class="{ 'border-red-500': errors.name }"
-      />
-      <div v-if="errors.name" class="text-red-500 text-sm mt-1">
-        {{ errors.name }}
-      </div>
+      <label for="name" class="block text-sm font-medium text-gray-700">Spell Name</label>
+      <input v-bind="bind('name')" id="name" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" :class="{ 'border-red-500': errors.name }" />
+      <div v-if="errors.name" class="text-red-500 text-sm mt-1">{{ errors.name }}</div>
     </div>
 
-    <!-- Incantation Field -->
     <div>
-      <label for="incantation" class="block text-sm font-medium text-gray-700">
-        Incantation
-      </label>
-      <input
-        v-bind="bind('incantation')"
-        id="incantation"
-        type="text"
-        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-        :class="{ 'border-red-500': errors.incantation }"
-      />
-      <div v-if="errors.incantation" class="text-red-500 text-sm mt-1">
-        {{ errors.incantation }}
-      </div>
+      <label for="incantation" class="block text-sm font-medium text-gray-700">Incantation</label>
+      <input v-bind="bind('incantation')" id="incantation" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" :class="{ 'border-red-500': errors.incantation }" />
+      <div v-if="errors.incantation" class="text-red-500 text-sm mt-1">{{ errors.incantation }}</div>
     </div>
 
-    <!-- Effect Field -->
     <div>
-      <label for="effect" class="block text-sm font-medium text-gray-700">
-        Effect
-      </label>
-      <textarea
-        v-bind="bind('effect')"
-        id="effect"
-        rows="3"
-        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-        :class="{ 'border-red-500': errors.effect }"
-      ></textarea>
-      <div v-if="errors.effect" class="text-red-500 text-sm mt-1">
-        {{ errors.effect }}
-      </div>
+      <label for="effect" class="block text-sm font-medium text-gray-700">Effect</label>
+      <textarea v-bind="bind('effect')" id="effect" rows="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" :class="{ 'border-red-500': errors.effect }"></textarea>
+      <div v-if="errors.effect" class="text-red-500 text-sm mt-1">{{ errors.effect }}</div>
     </div>
 
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-      <!-- Type Field -->
       <div>
-        <label for="type" class="block text-sm font-medium text-gray-700">
-          Type
-        </label>
-        <select
-          v-bind="bind('type')"
-          id="type"
-          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-          :class="{ 'border-red-500': errors.type }"
-        >
+        <label for="type" class="block text-sm font-medium text-gray-700">Type</label>
+        <select v-bind="bind('type')" id="type" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" :class="{ 'border-red-500': errors.type }">
           <option value="">Select a type</option>
-          <option v-for="type in spellTypes" :key="type" :value="type">
-            {{ type }}
-          </option>
+          <option v-for="type in spellTypes" :key="type" :value="type">{{ type }}</option>
         </select>
-        <div v-if="errors.type" class="text-red-500 text-sm mt-1">
-          {{ errors.type }}
-        </div>
+        <div v-if="errors.type" class="text-red-500 text-sm mt-1">{{ errors.type }}</div>
       </div>
 
-      <!-- Light Color Field -->
       <div>
-        <label for="light" class="block text-sm font-medium text-gray-700">
-          Light Color
-        </label>
-        <select
-          v-bind="bind('light')"
-          id="light"
-          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-          :class="{ 'border-red-500': errors.light }"
-        >
+        <label for="light" class="block text-sm font-medium text-gray-700">Light Color</label>
+        <select v-bind="bind('light')" id="light" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" :class="{ 'border-red-500': errors.light }">
           <option value="">Select a color</option>
-          <option v-for="color in lightColors" :key="color" :value="color">
-            {{ color }}
-          </option>
+          <option v-for="color in lightColors" :key="color" :value="color">{{ color }}</option>
         </select>
-        <div v-if="errors.light" class="text-red-500 text-sm mt-1">
-          {{ errors.light }}
-        </div>
+        <div v-if="errors.light" class="text-red-500 text-sm mt-1">{{ errors.light }}</div>
       </div>
     </div>
 
-    <!-- Form Actions -->
     <div class="flex justify-end space-x-3">
-      <NuxtLink
-        to="/"
-        class="button-secondary px-4 py-2"
-      >
-        Cancel
-      </NuxtLink>
-      <button
-        @click="onSubmit"
-        type="submit"
-        class="button-primary py-2 px-4 disabled:opacity-50"
-        :disabled="isSubmitting || loading"
-      >
+      <NuxtLink to="/" class="button-secondary px-4 py-2">Cancel</NuxtLink>
+      <button @click="onSubmit" type="submit" class="button-primary py-2 px-4 disabled:opacity-50" :disabled="isSubmitting || loading">
         <span v-if="isSubmitting || loading" class="inline-flex items-center">
           <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>

@@ -1,7 +1,7 @@
 import { useMutation } from 'villus';
 import { useCache } from 'villus-cachebay';
 import { SPELL_FIELDS } from './useSpellQuery';
-import { useSettings } from './useSettings';
+import { useSettings } from '../stores/settings';
 
 export const CREATE_SPELL_MUTATION = `
   ${SPELL_FIELDS}
@@ -25,7 +25,6 @@ export const useCreateSpell = () => {
 
     if (settings.value.optimistic) {
       tx = cache.modifyOptimistic((state: any) => {
-        // Add the new spell to connections optimistically
         state.connections({ parent: "Query", field: "spells" }).forEach((connection: any) => {
           connection.addNode({ ...variables.input, __typename: "Spell", id: "temp-" + Date.now() });
         });

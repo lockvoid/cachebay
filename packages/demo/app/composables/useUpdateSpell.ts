@@ -1,7 +1,7 @@
 import { useMutation } from 'villus';
 import { useCache } from 'villus-cachebay';
 import { SPELL_FIELDS } from './useSpellQuery';
-import { useSettings } from './useSettings';
+import { useSettings } from '../stores/settings';
 
 export const UPDATE_SPELL_MUTATION = `
   ${SPELL_FIELDS}
