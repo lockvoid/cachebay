@@ -16,6 +16,7 @@ export const SPELL_FIELDS = `
 
 export const SPELL_QUERY = `
   ${SPELL_FIELDS}
+
   query Spell($id: ID!) {
     spell(id: $id) {
       ...SpellFields
@@ -24,5 +25,5 @@ export const SPELL_QUERY = `
 `;
 
 export const useSpellQuery = (id: Ref<string> | ComputedRef<string>) => {
-  return useQuery({  query: SPELL_QUERY,  variables: computed(() => ({ id: id.value })) });
+  return useQuery({  query: SPELL_QUERY, variables: computed(() => ({ id })) });
 };

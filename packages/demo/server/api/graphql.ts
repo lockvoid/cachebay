@@ -100,7 +100,7 @@ builder.queryType({
       },
 
       resolve: async (_, args) => {
-        await delay(3000);
+        await randomDelay();
 
         return resolveCursorConnection(
           {
