@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Broomstick from '~/components/Icons/Broomstick.vue';
+import VoldemortWand from '~/components/Icons/VoldemortWand.vue';
 
 const props = defineProps({
   spell: {
@@ -20,7 +20,7 @@ const props = defineProps({
           :alt="props.spell.name"
           class="w-full h-full object-cover"
         />
-        <Broomstick v-else class="w-16 h-16 text-gray-400" />
+        <VoldemortWand v-else class="w-16 h-16 text-gray-400" />
       </div>
 
       <!-- Meta -->
