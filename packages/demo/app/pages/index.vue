@@ -3,7 +3,7 @@
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 p-6">
+  <div class="min-h-screen bg-gray-100 p-6">
     <ErrorBoundary>
       <Suspense>
         <SpellsList v-if="settings.ssr" />

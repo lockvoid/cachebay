@@ -30,7 +30,7 @@ const goToNext = () => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50">
+  <div class="min-h-screen bg-gray-100">
     <div class="max-w-5xl mx-auto p-6">
       <NuxtLink to="/" class="text-sm text-gray-600 hover:text-gray-800">← Back</NuxtLink>
 
@@ -45,8 +45,8 @@ const goToNext = () => {
       <div v-else-if="spell" class="mt-6">
         <!-- Navigation -->
         <div class="flex justify-between items-center mb-6">
-          <button 
-            @click="goToPrevious" 
+          <button
+            @click="goToPrevious"
             :disabled="parseInt(spell.id) <= 1"
             class="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-800 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
           >
@@ -55,9 +55,9 @@ const goToNext = () => {
             </svg>
             <span>Previous</span>
           </button>
-          
-          <button 
-            @click="goToNext" 
+
+          <button
+            @click="goToNext"
             class="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
           >
             <span>Next</span>
@@ -66,7 +66,7 @@ const goToNext = () => {
             </svg>
           </button>
         </div>
-        
+
         <SpellDetail :spell="spell" />
       </div>
 

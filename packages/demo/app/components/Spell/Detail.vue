@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import VoldemortWand from '~/components/Icons/VoldemortWand.vue';
+
 const props = defineProps({
   spell: {
     type: Object,
@@ -17,13 +19,15 @@ const props = defineProps({
           :alt="props.spell.name"
           class="w-full h-full object-cover"
         />
-        <SpellLight v-else :colors="props.spell.light" size="text-3xl" />
+        <div class="w-full h-full flex items-center justify-center bg-white">
+          <VoldemortWand class="w-32 h-32 text-gray-500" />
+        </div>
       </div>
     </div>
 
     <div class="flex flex-col gap-4">
       <h1 class="text-2xl font-bold text-gray-900">{{ props.spell.name }}</h1>
-      
+
       <p class="text-gray-700 leading-relaxed">{{ props.spell.effect }}</p>
 
       <div class="space-y-2 text-sm">

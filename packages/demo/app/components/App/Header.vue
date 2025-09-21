@@ -46,7 +46,7 @@
     leave-from-class="transform opacity-100 translate-y-0"
     leave-to-class="transform opacity-0 -translate-y-2"
   >
-    <div v-show="showMobileSearch" class="md:hidden p-4 border-b border-gray-200 bg-gray-50">
+    <div v-show="showMobileSearch" class="md:hidden p-4 border-b border-gray-200 bg-gray-100">
       <UiSearchInput v-model="spellsPagination.filters.query" />
     </div>
   </Transition>
