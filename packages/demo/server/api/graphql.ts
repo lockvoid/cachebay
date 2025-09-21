@@ -2,7 +2,18 @@ import { DatabaseSync } from 'node:sqlite'
 import { createYoga } from 'graphql-yoga'
 import SchemaBuilder from '@pothos/core'
 import RelayPlugin from '@pothos/plugin-relay'
-import { resolveOffsetConnection } from '@pothos/plugin-relay'
+import { resolveCursorConnection } from '@pothos/plugin-relay'
+import type { ResolveCursorConnectionArgs } from '@pothos/plugin-relay';
+
+const randomDelay = () => {
+  if (process.env.NODE_ENV !== 'development') {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    setTimeout(() => { resolve(null) }, Math.random() * 2000);
+  });
+}
 
 const db = new DatabaseSync('./vendor/harrypotter.db');
 
@@ -71,6 +82,8 @@ builder.queryType({
       },
 
       resolve: async (_, { id }) => {
+        await randomDelay();
+
         return db.prepare('SELECT * FROM spells WHERE id = ?').get(id)
       },
     }),
@@ -82,22 +95,56 @@ builder.queryType({
         filter: t.arg({ type: 'SpellFilter' }),
       },
 
-      resolve: async (_, args: any) => {
-        return resolveOffsetConnection({ args }, async ({ limit, offset }) => {
-          const filter = args.filter;
+      resolve: async (_, args) => {
+        await randomDelay();
 
-          if (filter?.query) {
-            return db.prepare(
-              'SELECT * FROM spells WHERE name LIKE ? OR effect LIKE ? OR category LIKE ? ORDER BY id LIMIT ? OFFSET ?'
-            ).all(`%${filter.query}%`, `%${filter.query}%`, `%${filter.query}%`, limit, offset)
-          }
+        return resolveCursorConnection(
+          {
+            args,
 
-          return db.prepare('SELECT * FROM spells ORDER BY id LIMIT ? OFFSET ?').all(limit, offset)
-        })
-      },
+            toCursor: (spell: any) => {
+              return String(spell.id);
+            },
+
+            parseCursor: (cursor) => {
+              return Number(cursor);
+            },
+          },
+
+          ({ before, after, limit, inverted }: ResolveCursorConnectionArgs) => {
+            const { filter } = args as { filter?: { query?: string } };
+
+            const where = [];
+            const params = [];
+
+            if (filter?.query) {
+              where.push('(name LIKE ? OR effect LIKE ? OR category LIKE ?)');
+              params.push(`%${filter.query}%`, `%${filter.query}%`, `%${filter.query}%`);
+            }
+
+            if (after != null) {
+              where.push('id > ?');
+              params.push(after);
+            }
+
+            if (before != null) {
+              where.push('id < ?');
+              params.push(before);
+            }
+
+            const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+            const orderSQL = `ORDER BY id ${inverted ? 'DESC' : 'ASC'}`;
+            const querySql = `SELECT * FROM spells ${whereSql} ${orderSQL} LIMIT ?`;
+
+            params.push(limit);
+
+            return db.prepare(querySql).all(...params);
+          },
+        );
+      }
     }),
-  }),
-})
+  })
+});
 
 builder.mutationType({
   fields: (t) => ({
@@ -111,9 +158,9 @@ builder.mutationType({
       resolve: async (_, { input }) => {
         const { name, slug, category, creator, effect, image, light, wiki } = input;
 
-        const result = db.prepare(
-          'INSERT INTO spells (name, slug, category, creator, effect, image, light, wiki) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-        ).run(name, slug, category, creator, effect, image, light, wiki);
+        const sql = 'INSERT INTO spells (name, slug, category, creator, effect, image, light, wiki) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+
+        const result = db.prepare(sql).run(name, slug, category, creator, effect, image, light, wiki);
 
         return db.prepare('SELECT * FROM spells WHERE id = ?').get(result.lastInsertRowid)
       },
@@ -133,13 +180,9 @@ builder.mutationType({
 
         const updates = Object.keys(fields).filter(key => fields[key] !== undefined)
 
-        if (updates.length === 0) {
-          return db.prepare('SELECT * FROM spells WHERE id = ?').get(id)
-        }
+        const sql = `UPDATE spells SET ${updates.map(key => `${key} = ?`).join(', ')} WHERE id = ?`
 
-        db.prepare(
-          `UPDATE spells SET ${updates.map(key => `${key} = ?`).join(', ')} WHERE id = ?`
-        ).run(...updates.map(key => fields[key]), id)
+        const result = db.prepare(sql).run(...updates.map(key => fields[key]), id)
 
         return db.prepare('SELECT * FROM spells WHERE id = ?').get(id)
       },

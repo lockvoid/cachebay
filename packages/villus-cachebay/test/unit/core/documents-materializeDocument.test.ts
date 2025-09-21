@@ -42,8 +42,7 @@ export const USER_QUERY = gql`
   ${USER_FRAGMENT}
   query UserQuery($id: ID!) {
     user(id: $id) {
-      __typename
-      ...UserFields
+            ...UserFields
     }
   }
 `;
@@ -52,20 +51,16 @@ export const USERS_QUERY = gql`
   ${USER_FRAGMENT}
   query UsersQuery($usersRole: String, $first: Int, $after: String) {
     users(role: $usersRole, first: $first, after: $after) @connection(args: ["role"]) {
-      __typename
-      pageInfo {
-        __typename
-        startCursor
+            pageInfo {
+                startCursor
         endCursor
         hasNextPage
         hasPreviousPage
       }
       edges {
-        __typename
-        cursor
+                cursor
         node {
-          __typename
-          ...UserFields
+                    ...UserFields
         }
       }
     }
@@ -77,28 +72,22 @@ export const USER_POSTS_QUERY = gql`
   ${POST_FRAGMENT}
   query UserPostsQuery($id: ID!, $postsCategory: String, $postsFirst: Int, $postsAfter: String) {
     user(id: $id) {
-      __typename
-      ...UserFields
+            ...UserFields
       posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
-        __typename
-        totalCount
+                totalCount
         pageInfo {
-          __typename
-          startCursor
+                    startCursor
           endCursor
           hasNextPage
           hasPreviousPage
         }
         edges {
-          __typename
-          cursor
+                    cursor
           score
           node {
-            __typename
-            ...PostFields
+                        ...PostFields
             author {
-              __typename
-              id
+                            id
             }
           }
         }
@@ -119,35 +108,27 @@ export const USERS_POSTS_QUERY = gql`
     $postsAfter: String
   ) {
     users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
-      __typename
-      pageInfo {
-        __typename
-        startCursor
+            pageInfo {
+                startCursor
         endCursor
         hasNextPage
         hasPreviousPage
       }
       edges {
-        __typename
-        cursor
+                cursor
         node {
-          __typename
-          ...UserFields
+                    ...UserFields
           posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
-            __typename
-            pageInfo {
-              __typename
-              startCursor
+                        pageInfo {
+                            startCursor
               endCursor
               hasNextPage
               hasPreviousPage
             }
             edges {
-              __typename
-              cursor
+                            cursor
               node {
-                __typename
-                ...PostFields
+                                ...PostFields
               }
             }
           }
@@ -170,41 +151,31 @@ export const USER_POSTS_COMMENTS_QUERY = gql`
     $commentsAfter: String
   ) {
     user(id: $id) {
-      __typename
-      ...UserFields
+            ...UserFields
       posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
-        __typename
-        pageInfo {
-          __typename
-          startCursor
+                pageInfo {
+                    startCursor
           endCursor
           hasNextPage
           hasPreviousPage
         }
         edges {
-          __typename
-          cursor
+                    cursor
           node {
-            __typename
-            ...PostFields
+                        ...PostFields
             comments(first: $commentsFirst, after: $commentsAfter) @connection(args: []) {
-              __typename
-              pageInfo {
-                __typename
-                startCursor
+                            pageInfo {
+                                startCursor
                 endCursor
                 hasNextPage
                 hasPreviousPage
               }
               edges {
-                __typename
-                cursor
+                                cursor
                 node {
-                  __typename
-                  ...CommentFields
+                                    ...CommentFields
                   author {
-                    __typename
-                    id
+                                        id
                   }
                 }
               }
@@ -231,50 +202,38 @@ export const USERS_POSTS_COMMENTS_QUERY = gql`
     $commentsAfter: String
   ) {
     users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
-      __typename
-      pageInfo {
-        __typename
-        startCursor
+            pageInfo {
+                startCursor
         endCursor
         hasNextPage
         hasPreviousPage
       }
       edges {
-        __typename
-        cursor
+                cursor
         node {
-          __typename
-          ...UserFields
+                    ...UserFields
           posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
-            __typename
-            pageInfo {
-              __typename
-              startCursor
+                        pageInfo {
+                            startCursor
               endCursor
               hasNextPage
               hasPreviousPage
             }
             edges {
-              __typename
-              cursor
+                            cursor
               node {
-                __typename
-                ...PostFields
+                                ...PostFields
                 comments(first: $commentsFirst, after: $commentsAfter) @connection(args: []) {
-                  __typename
-                  pageInfo {
-                    __typename
-                    startCursor
+                                    pageInfo {
+                                        startCursor
                     endCursor
                     hasNextPage
                     hasPreviousPage
                   }
                   edges {
-                    __typename
-                    cursor
+                                        cursor
                     node {
-                      __typename
-                      ...CommentFields
+                                            ...CommentFields
                     }
                   }
                 }

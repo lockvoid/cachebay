@@ -25,19 +25,15 @@ const USERS_POSTS_QUERY = gql`
     $postsAfter: String
   ) {
     users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
-      __typename
-      pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
+            pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
       edges {
-        __typename
-        cursor
+                cursor
         node {
-          __typename
-          id
+                    id
           email
           posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
-            __typename
-            pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
-            edges { __typename cursor node { __typename id title } }
+                        pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+            edges { cursor node { id title } }
           }
         }
       }
@@ -48,8 +44,7 @@ const USERS_POSTS_QUERY = gql`
 const USER_QUERY = gql`
   query User($id: ID!) {
     user(id: $id) {
-      __typename
-      id
+            id
       email
     }
   }

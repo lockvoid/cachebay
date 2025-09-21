@@ -2,7 +2,8 @@ import { defineStore } from 'pinia';
 
 export const useSpellsPagination = defineStore('spellsPagination', () => {
   const after = ref<string | null>(null);
-  const first = ref(10);
+  const before = ref<string | null>(null);
+  const limit = ref(10);
 
   const filters = reactive({
     query: '' as string,
@@ -14,14 +15,21 @@ export const useSpellsPagination = defineStore('spellsPagination', () => {
 
   const setAfter = (value: string | null) => {
     after.value = value ?? null;
+    before.value = null;
+  }
+
+  const setBefore = (value: string | null) => {
+    before.value = value ?? null;
+    after.value = null;
   }
 
   const resetPagination = () => {
     after.value = null;
+    before.value = null;
   }
 
-  const setFirst = (value: number) => {
-    first.value = value;
+  const setLimit = (value: number) => {
+    limit.value = value;
   }
 
   const clearFilters = () => {
@@ -33,11 +41,13 @@ export const useSpellsPagination = defineStore('spellsPagination', () => {
   });
 
   return {
-    first,
+    limit,
     after,
+    before,
     filters,
     setAfter,
-    setFirst,
+    setBefore,
+    setLimit,
     setQuery,
     resetPagination,
     clearFilters,

@@ -30,11 +30,9 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     const op = ctx.operation;
     const vars: Record<string, any> = op.variables || {};
     const document: DocumentNode = op.query as DocumentNode;
+    const plan = planner.getPlan(document);
 
-    // Optional addTypename hook (left as a no-op placeholder)
-    if (addTypename && typeof op.query === "string") {
-      // e.g. op.query = ensureDocumentHasTypenames(op.query as any);
-    }
+    op.query = plan.networkQuery;
 
     const publish = (payload: OperationResult, terminal: boolean) => ctx.useResult(payload, terminal);
     const policy: string =

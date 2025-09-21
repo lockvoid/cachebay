@@ -34,12 +34,12 @@
           </span>
 
           <select v-model="settings.relayMode" class="bg-slate-700 border border-purple-500/30 rounded-md px-2 py-1 text-xs text-purple-100 focus:border-purple-400 focus:ring-1 focus:ring-purple-400 focus:outline-none">
-            <option value="append">
-              Append
+            <option value="infinite">
+              Infinite
             </option>
 
-            <option value="replace">
-              Replace
+            <option value="page">
+              Page
             </option>
           </select>
         </label>
@@ -50,14 +50,6 @@
 
             <span class="text-purple-200 group-hover:text-purple-100 transition-colors">
               SSR
-            </span>
-          </label>
-
-          <label class="flex items-center gap-1.5 cursor-pointer group">
-            <input v-model="settings.suspense" type="checkbox" class="w-3 h-3 text-purple-500 bg-slate-700 border-purple-500/30 rounded focus:ring-purple-400 focus:ring-1" />
-
-            <span class="text-purple-200 group-hover:text-purple-100 transition-colors">
-              Suspense
             </span>
           </label>
 

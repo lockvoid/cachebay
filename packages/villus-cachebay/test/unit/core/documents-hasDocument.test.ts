@@ -15,8 +15,7 @@ import { compileToPlan } from "@/src/compiler";
 const USER_QUERY = gql`
   query UserQuery($id: ID!) {
     user(id: $id) {
-      __typename
-      id
+            id
       email
     }
   }
@@ -25,20 +24,16 @@ const USER_QUERY = gql`
 const USERS_QUERY = gql`
   query UsersQuery($usersRole: String, $usersFirst: Int, $usersAfter: String) {
     users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
-      __typename
-      pageInfo {
-        __typename
-        startCursor
+            pageInfo {
+                startCursor
         endCursor
         hasNextPage
         hasPreviousPage
       }
       edges {
-        __typename
-        cursor
+                cursor
         node {
-          __typename
-          id
+                    id
           email
         }
       }
@@ -49,14 +44,12 @@ const USERS_QUERY = gql`
 const MIXED_QUERY = gql`
   query Mixed($id: ID!, $usersRole: String, $usersFirst: Int, $usersAfter: String) {
     user(id: $id) {
-      __typename
-      id
+            id
       email
     }
     users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
-      __typename
-      pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
-      edges { __typename cursor node { __typename id } }
+            pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+      edges { cursor node { id } }
     }
   }
 `;

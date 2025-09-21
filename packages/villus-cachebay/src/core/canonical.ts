@@ -145,15 +145,16 @@ export const createCanonical = ({ graph }: CanonicalDeps) => {
           if (k === "edges" || k === "pageInfo" || k === "__typename") continue;
           extrasPatch[k] = (pageSnap as any)[k];
         }
-        extrasPatch.__leader = pageKey;
       } else if (hasBefore) {
         const tmp = nextEdges.slice();
         prependByNode(tmp, pageEdgeRefs);
         nextEdges = tmp;
+        nextPageInfo = pageSnap.pageInfo ? { ...(pageSnap.pageInfo as any) } : {};
       } else if (hasAfter) {
         const tmp = nextEdges.slice();
         appendByNode(tmp, pageEdgeRefs);
         nextEdges = tmp;
+        nextPageInfo = pageSnap.pageInfo ? { ...(pageSnap.pageInfo as any) } : {};
       }
     } else {
       // mode === 'page' → always the last fetched page
