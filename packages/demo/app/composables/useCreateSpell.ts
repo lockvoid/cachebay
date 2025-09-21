@@ -1,20 +1,22 @@
-import { useMutation } from "villus";
-import { useCache } from "villus-cachebay";
+import { useMutation } from 'villus';
+import { useCache } from 'villus-cachebay';
 import { SPELL_FIELDS } from './useSpellQuery';
 import { useSettings } from './useSettings';
 
-export const DELETE_SPELL = `
+export const CREATE_SPELL_MUTATION = `
   ${SPELL_FIELDS}
 
-  mutation DeleteSpell($id: ID!) {
-    deleteSpell(id: $id)
+  mutation CreateSpell($input: CreateSpellInput!) {
+    createSpell(input: $input) {
+      ...SpellFields
+    }
   }
 `;
 
-export const useDeleteSpell = () => {
+export const useCreateSpell = () => {
   const settings = useSettings();
 
-  const deleteSpell = useMutation(DELETE_SPELL);
+  const createSpell = useMutation(CREATE_SPELL_MUTATION);
 
   const cache = useCache();
 
@@ -23,14 +25,15 @@ export const useDeleteSpell = () => {
 
     if (settings.value.optimistic) {
       tx = cache.modifyOptimistic((state: any) => {
+        // Add the new spell to connections optimistically
         state.connections({ parent: "Query", field: "spells" }).forEach((connection: any) => {
-          connection.removeNode({ __typename: "Spell", id: variables.id });
+          connection.addNode({ ...variables.input, __typename: "Spell", id: "temp-" + Date.now() });
         });
       });
     }
 
     try {
-      const result = await deleteSpell.execute({ id: variables.id });
+      const result = await createSpell.execute({ input: variables.input });
 
       if (result.error) {
         tx?.revert();
@@ -44,5 +47,5 @@ export const useDeleteSpell = () => {
     }
   };
 
-  return { ...deleteSpell, execute };
+  return { ...createSpell, execute };
 };

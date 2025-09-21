@@ -1,4 +1,5 @@
 import { useQuery } from "villus";
+import { SPELL_FIELDS } from "./useSpellQuery";
 
 export const PAGE_INFO_FIELDS = `
   fragment PageInfoFields on PageInfo {
@@ -6,20 +7,6 @@ export const PAGE_INFO_FIELDS = `
     endCursor
     hasNextPage
     hasPreviousPage
-  }
-`;
-
-export const SPELL_FIELDS = `
-  fragment SpellFields on Spell {
-    id
-    name
-    slug
-    category
-    creator
-    effect
-    image
-    light
-    wiki
   }
 `;
 
