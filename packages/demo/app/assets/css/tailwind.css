@@ -5,7 +5,7 @@
 }
 
 @utility button {
-  @apply inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 hover:cursor-pointer;
+  @apply text-center inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 hover:cursor-pointer disabled:opacity-50;
 }
 
 @utility button-primary {
@@ -25,7 +25,7 @@
 }
 
 html {
-  @apply font-serif;
+  @apply font-serif  bg-gray-100;
 
   font-size: 18px;
 }

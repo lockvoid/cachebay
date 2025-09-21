@@ -1,5 +1,7 @@
 <script setup lang="ts">
   const spellsPagination = useSpellsPagination();
+
+  const spellsActivity = useSpellsActivity();
 </script>
 
 <template>
@@ -8,12 +10,20 @@
       <AppLogo />
     </NuxtLink>
 
-    <div class="absolute left-1/2 transform -translate-x-1/2 w-full max-w-md px-4 hidden md:block">
+    <div class="absolute left-1/2 transform -translate-x-1/2 w-full max-w-md hidden md:block">
       <UiSearchInput v-model="spellsPagination.filters.query" placeholder="Search spells..." />
+
+      <span v-if="spellsActivity.isFetching" class="text-gray-500 text-xs absolute top-1/2 right-2 transform -translate-y-1/2">
+        Loading…
+      </span>
     </div>
 
-    <div class="flex-1 md:hidden mx-2">
+    <div class="relative flex-1 md:hidden">
       <UiSearchInput v-model="spellsPagination.filters.query" placeholder="Search..." />
+
+      <span v-if="spellsActivity.isFetching" class="text-gray-500 text-xs absolute top-1/2 right-0 transform -translate-y-1/2">
+        Loading…
+      </span>
     </div>
 
     <div class="flex items-center gap-2 ml-auto">

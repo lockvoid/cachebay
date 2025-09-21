@@ -68,6 +68,10 @@ export const useSpellsQuery = async () => {
   });
 
   watch(query.isFetching, (isFetching) => {
+    if (isFetching) {
+      return;
+    }
+
     activity.isFetching = false;
   });
 

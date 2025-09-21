@@ -16,20 +16,23 @@
       <SpellsItem v-for="edge in spells.edges" :key="edge.node.id" :spell="edge.node" />
     </ul>
 
-    <div v-if="settings.relayMode === 'page'" class="flex flex-row justify-center space-x-4">
-      <button @click="spellsQuery.loadPreviousPage()" :disabled="spellsActivity.isFetching || !spells.pageInfo.hasPreviousPage" class="button-secondary px-4 py-2 disabled:bg-gray-300 disabled:text-gray-500">
-        <span v-if="spellsActivity.isFetching">Loading…</span>
-        <span v-else>‹ Previous</span>
+    <div v-if="settings.relayMode === 'page'" class="self-center relative flex flex-row justify-center">
+      <button class="button-primary w-32" :disabled="spellsQuery.isFetching.value || !spells.pageInfo.hasPreviousPage" @click="spellsQuery.loadPreviousPage">
+        ‹ Previous
       </button>
-      <button @click="spellsQuery.loadNextPage()" :disabled="spellsActivity.isFetching || !spells.pageInfo.hasNextPage" class="button-secondary px-4 py-2 disabled:bg-gray-300 disabled:text-gray-500">
-        <span v-if="spellsActivity.isFetching">Loading…</span>
-        <span v-else>Next ›</span>
+
+      <button class="button-primary w-32 ml-4" :disabled="spellsQuery.isFetching.value || !spells.pageInfo.hasNextPage" @click="spellsQuery.loadNextPage">
+        Next ›
       </button>
+
+      <span v-if="spellsQuery.isFetching.value" class="text-sm absolute top-1/2 -right-4 transform translate-x-full -translate-y-1/2">
+        Loading…
+      </span>
     </div>
 
     <div v-else class="flex flex-row justify-center space-x-4">
-      <button v-if="spells.pageInfo.hasNextPage" class="button-primary" :disabled="spellsActivity.isFetching || !spells.pageInfo.hasNextPage" @click="spellsQuery.loadMore">
-        <span v-if="spellsActivity.isFetching">
+      <button class="button-primary" :disabled="spellsQuery.isFetching.value || !spells.pageInfo.hasNextPage" @click="spellsQuery.loadMore">
+        <span v-if="spellsQuery.isFetching.value">
           Loading…
         </span>
 

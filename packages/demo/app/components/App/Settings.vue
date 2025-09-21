@@ -67,8 +67,8 @@ onUnmounted(() => {
               Infinite
             </option>
 
-            <option value="paginated">
-              Paginated
+            <option value="page">
+              Page
             </option>
           </select>
         </label>

@@ -1,11 +1,10 @@
 <template>
-  <li class="animate-pulse">
-    <div class="block">
-      <div class="relative w-full aspect-square overflow-hidden rounded-lg bg-gray-200" />
-      <div class="mt-3 text-center">
-        <div class="h-4 w-3/4 bg-gray-200 rounded mx-auto" />
-        <div class="h-3 w-1/2 bg-gray-200 rounded mx-auto mt-1" />
-      </div>
-    </div>
-  </li>
+  <ul class="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-6">
+    <SpellsSkeletonItem class="flex md:flex" />
+    <SpellsSkeletonItem class="hidden md:flex" />
+    <SpellsSkeletonItem class="hidden md:flex" />
+    <SpellsSkeletonItem class="hidden md:hidden lg:flex" />
+    <SpellsSkeletonItem class="hidden md:hidden lg:flex" />
+    <SpellsSkeletonItem class="hidden md:hidden lg:flex" />
+  </ul>
 </template>

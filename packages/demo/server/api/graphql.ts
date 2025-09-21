@@ -5,14 +5,18 @@ import RelayPlugin from '@pothos/plugin-relay'
 import { resolveCursorConnection } from '@pothos/plugin-relay'
 import type { ResolveCursorConnectionArgs } from '@pothos/plugin-relay';
 
-const randomDelay = () => {
+const delay = (ms = 1000) => {
   if (process.env.NODE_ENV !== 'development') {
     return Promise.resolve();
   }
 
   return new Promise((resolve) => {
-    setTimeout(() => { resolve(null) }, Math.random() * 2000);
+    setTimeout(() => { resolve(null) }, ms);
   });
+}
+
+const randomDelay = () => {
+  return delay(Math.random() * 5000);
 }
 
 const db = new DatabaseSync('./vendor/harrypotter.db');
@@ -96,7 +100,7 @@ builder.queryType({
       },
 
       resolve: async (_, args) => {
-        await randomDelay();
+        await delay(3000);
 
         return resolveCursorConnection(
           {

@@ -3,15 +3,25 @@
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-100 p-6">
+  <div class=" bg-gray-100 p-6">
     <ErrorBoundary>
-      <Suspense>
-        <SpellsList v-if="settings.ssr" />
+      <Suspense v-if="settings.ssr">
+        <SpellsList />
 
-        <ClientOnly v-else fallback="Loading...">
-          <SpellsList />
-        </ClientOnly>
+        <template #fallback>
+          <SpellsSkeleton />
+        </template>
       </Suspense>
+
+      <ClientOnly v-else>
+         <Suspense>
+           <SpellsList />
+
+           <template #fallback>
+             <SpellsSkeleton />
+           </template>
+         </Suspense>
+      </ClientOnly>
     </ErrorBoundary>
   </div>
 </template>
