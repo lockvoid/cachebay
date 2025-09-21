@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onClickOutside } from '@vueuse/core';
 import { useSettings } from '../../composables/useSettings';
+import IconsPotion from '~/components/Icons/Potion.vue';
 
 const settings = useSettings();
 const showSettings = ref(false);
@@ -16,20 +17,17 @@ onClickOutside(settingsRef, () => {
 <template>
   <div class="relative" ref="settingsRef">
     <!-- Settings Toggle -->
-    <button 
-      class="p-2 text-gray-600 hover:text-gray-800 transition-colors" 
+    <button
+      class="p-2 text-gray-600 hover:text-gray-800 transition-colors hover:cursor-pointer"
       @click="showSettings = !showSettings"
       aria-label="Settings"
     >
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-      </svg>
+      <IconsPotion class="w-8 h-8" />
     </button>
 
     <!-- Settings Panel -->
-    <div 
-      v-show="showSettings" 
+    <div
+      v-show="showSettings"
       class="absolute right-0 top-full mt-2 w-80 bg-white border border-gray-200 rounded-lg p-4 z-50 shadow-lg"
     >
         <div class="flex flex-col space-y-4">
@@ -37,8 +35,8 @@ onClickOutside(settingsRef, () => {
             <span class="text-gray-700 text-sm group-hover:text-gray-800 transition-colors">
               Cache Policy:
             </span>
-            <select 
-              v-model="settings.cachePolicy" 
+            <select
+              v-model="settings.cachePolicy"
               class="text-xs bg-white border border-gray-300 rounded px-2 py-1 text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-500"
             >
               <option value="cache-first">cache-first</option>
@@ -52,8 +50,8 @@ onClickOutside(settingsRef, () => {
             <span class="text-gray-700 text-sm group-hover:text-gray-800 transition-colors">
               Relay Mode:
             </span>
-            <select 
-              v-model="settings.relayMode" 
+            <select
+              v-model="settings.relayMode"
               class="text-xs bg-white border border-gray-300 rounded px-2 py-1 text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-500"
             >
               <option value="infinite">infinite</option>
@@ -63,10 +61,10 @@ onClickOutside(settingsRef, () => {
 
           <div class="flex items-center gap-3 text-xs">
             <label class="flex items-center gap-1.5 cursor-pointer group">
-              <input 
-                v-model="settings.ssr" 
-                type="checkbox" 
-                class="w-3 h-3 text-gray-600 bg-white border-gray-300 rounded focus:ring-gray-500 focus:ring-1" 
+              <input
+                v-model="settings.ssr"
+                type="checkbox"
+                class="w-3 h-3 text-gray-600 bg-white border-gray-300 rounded focus:ring-gray-500 focus:ring-1"
               />
               <span class="text-gray-700 group-hover:text-gray-800 transition-colors">
                 SSR
@@ -74,10 +72,10 @@ onClickOutside(settingsRef, () => {
             </label>
 
             <label class="flex items-center gap-1.5 cursor-pointer group">
-              <input 
-                v-model="settings.optimistic" 
-                type="checkbox" 
-                class="w-3 h-3 text-gray-600 bg-white border-gray-300 rounded focus:ring-gray-500 focus:ring-1" 
+              <input
+                v-model="settings.optimistic"
+                type="checkbox"
+                class="w-3 h-3 text-gray-600 bg-white border-gray-300 rounded focus:ring-gray-500 focus:ring-1"
               />
               <span class="text-gray-700 group-hover:text-gray-800 transition-colors">
                 Optimistic
