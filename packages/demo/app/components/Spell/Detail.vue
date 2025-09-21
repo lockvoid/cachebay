@@ -13,9 +13,17 @@ const props = defineProps({
 
 <template>
   <div class="px-4 py-5 sm:p-6">
+    <!-- Spell Image -->
+    <div v-if="spell.image" class="mb-6">
+      <img :src="spell.image":alt="spell.name" class="w-full h-64 object-cover rounded-lg" />
+    </div>
+
     <div class="flex justify-between items-start">
       <div>
-        <h2 class="text-2xl font-bold text-gray-900">{{ spell.name }}</h2>
+        <h2 class="text-2xl font-bold text-gray-900">
+          {{ spell.name }}
+        </h2>
+
         <p class="mt-1 text-sm text-gray-500">
           {{ spell.effect }}
         </p>
