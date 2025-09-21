@@ -22,7 +22,7 @@ const props = defineProps({
       <!-- Meta -->
       <div class="mt-3 text-center">
         <h3 class="text-sm font-semibold text-gray-900">{{ props.spell.name }}</h3>
-        <p class="text-xs text-gray-600 mt-1">{{ props.spell.category }}</p>
+        <p class="text-sm text-gray-600 mt-1">{{ props.spell.category }}</p>
       </div>
     </NuxtLink>
   </li>
