@@ -61,7 +61,7 @@ const handleSubmit = async (formData: SpellForm) => {
 
 const handleDelete = async () => {
   if (!confirm('Are you sure you want to delete this spell? This action cannot be undone.')) return;
-  
+
   try {
     loading.value = true;
     const result = await deleteSpell.execute({
@@ -92,13 +92,13 @@ const handleDelete = async () => {
           <div class="flex items-center justify-between">
             <div>
               <h3 class="text-lg font-medium leading-6 text-gray-900">
-                Edit Spell
+              1  Edit Spell
               </h3>
               <p class="mt-1 text-sm text-gray-500">
                 Update the details of this magical spell.
               </p>
             </div>
-            <NuxtLink 
+            <NuxtLink
               :to="`/spells/${id}`"
               class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
@@ -106,14 +106,14 @@ const handleDelete = async () => {
             </NuxtLink>
           </div>
         </div>
-        
+
         <!-- Loading State -->
         <div v-if="isFetching" class="p-6 space-y-4">
           <div class="h-8 bg-gray-200 rounded w-1/3"></div>
           <div class="h-4 bg-gray-200 rounded w-1/4"></div>
           <div class="h-4 bg-gray-200 rounded w-1/2"></div>
         </div>
-        
+
         <!-- Error State -->
         <div v-else-if="error" class="p-6">
           <div class="bg-red-50 border-l-4 border-red-400 p-4">
@@ -131,11 +131,11 @@ const handleDelete = async () => {
             </div>
           </div>
         </div>
-        
+
         <!-- Edit Form -->
         <div v-else-if="spell">
           <div class="px-4 py-5 sm:p-6">
-            <SpellForm 
+            <SpellForm
               :spell="{
                 name: spell.name || '',
                 incantation: '',
@@ -149,15 +149,15 @@ const handleDelete = async () => {
             />
           </div>
         </div>
-        
+
         <div v-else class="p-6 text-center text-gray-600">
           Spell not found.
         </div>
       </div>
-      
+
       <div class="mt-6">
-        <NuxtLink 
-          :to="spell ? `/spells/${spell.id}` : '/spells'" 
+        <NuxtLink
+          :to="spell ? `/spells/${spell.id}` : '/spells'"
           class="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-500"
         >
           <svg class="mr-1 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">

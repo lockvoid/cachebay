@@ -1,58 +1,79 @@
 <script setup lang="ts">
-import VoldemortWand from '~/components/Icons/VoldemortWand.vue';
-
 const props = defineProps({
   spell: {
     type: Object,
     required: true,
+  },
+  showEditButton: {
+    type: Boolean,
+    default: false,
   }
 });
 </script>
 
 <template>
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-    <div class="md:col-span-2">
-      <div class="relative w-full aspect-[16/9] overflow-hidden rounded-xl">
-        <img
-          v-if="props.spell.image"
-          :src="props.spell.image"
-          :alt="props.spell.name"
-          class="w-full h-full object-cover"
-        />
-        <div class="w-full h-full flex items-center justify-center bg-white">
-          <VoldemortWand class="w-32 h-32 text-gray-500" />
-        </div>
+  <div class="px-4 py-5 sm:p-6">
+    <div class="flex justify-between items-start">
+      <div>
+        <h2 class="text-2xl font-bold text-gray-900">{{ spell.name }}</h2>
+        <p class="mt-1 text-sm text-gray-500">
+          {{ spell.effect }}
+        </p>
       </div>
+
+      <NuxtLink
+        v-if="showEditButton"
+        :to="`/spells/${spell.id}/edit`"
+        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+      >
+        Edit Spell
+      </NuxtLink>
     </div>
 
-    <div class="flex flex-col gap-4">
-      <h1 class="text-2xl font-bold text-gray-900">{{ props.spell.name }}</h1>
+    <div class="mt-6 border-t border-gray-200 pt-6">
+      <dl class="space-y-6">
+        <div v-if="spell.creator" >
+          <dt class="text-sm font-medium text-gray-500">
+            Creator
+          </dt>
 
-      <p class="text-gray-700 leading-relaxed">{{ props.spell.effect }}</p>
+          <dd class="mt-1 text-sm text-gray-900">
+            {{ spell.creator }}
+          </dd>
+        </div>
 
-      <div class="space-y-2 text-sm">
-        <div class="flex">
-          <span class="text-gray-500 w-20">Category:</span>
-          <span class="text-gray-700">{{ props.spell.category }}</span>
-        </div>
-        <div class="flex">
-          <span class="text-gray-500 w-20">Light:</span>
-          <span class="text-gray-700">{{ props.spell.light || '—' }}</span>
-        </div>
-        <div v-if="props.spell.creator" class="flex">
-          <span class="text-gray-500 w-20">Creator:</span>
-          <span class="text-gray-700">{{ props.spell.creator }}</span>
-        </div>
-      </div>
+        <div v-if="spell.category" >
+          <dt class="text-sm font-medium text-gray-500">
+            Category
+          </dt>
 
-      <div class="mt-4">
-        <a v-if="props.spell.wiki" :href="props.spell.wiki" target="_blank" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-white text-sm transition">
-          Open on Wiki
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-          </svg>
-        </a>
-      </div>
+          <dd class="mt-1 text-sm text-gray-900">
+            {{ spell.category }}
+          </dd>
+        </div>
+
+        <div v-if="spell.light" class="text-sm gap-1">
+          <dt class="text-sm font-medium text-gray-500">
+            Light
+          </dt>
+
+          <dd class="text-sm text-gray-900">
+            {{ spell.light || '—' }}
+          </dd>
+        </div>
+
+        <div v-if="spell.wiki" class="text-sm gap-1">
+          <dt class="text-sm font-medium text-gray-500">
+            Wiki Reference
+          </dt>
+
+          <dd class="mt-1">
+            <a :href="spell.wiki" target="_blank" class="text-blue-600 hover:text-blue-500">
+              Learn more
+            </a>
+          </dd>
+        </div>
+      </dl>
     </div>
   </div>
 </template>
