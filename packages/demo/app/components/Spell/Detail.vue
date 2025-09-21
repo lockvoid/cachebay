@@ -17,9 +17,7 @@ const props = defineProps({
           :alt="props.spell.name"
           class="w-full h-full object-cover"
         />
-        <div v-else class="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-          <span class="text-gray-500 text-3xl">✨</span>
-        </div>
+        <SpellLight v-else :colors="props.spell.light" size="text-3xl" />
       </div>
     </div>
 
