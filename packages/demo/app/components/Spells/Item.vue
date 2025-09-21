@@ -6,83 +6,51 @@
     }
   });
 
-  const updateSpell = useUpdateSpell();
-
-  const deleteSpell = useDeleteSpell();
-
-  const handleEdit = async () => {
-    const name = prompt('Enter new name', props.spell.name);
-
-    if (name) {
-      try {
-        const { error } = await updateSpell.execute({
-          id: props.spell.id,
-
-          input: {
-            name,
-          },
-        });
-
-        if (error) {
-          throw error;
-        }
-      } catch (error) {
-        console.log(error);
-
-        alert("Couldn't complete your request. Please try again.");
-      }
-    }
-  };
-
-  const handleDelete = async () => {
-    const confirmed = confirm('Are you sure you want to delete this spell?');
-
-    if (confirmed) {
-      try {
-        const { error } = await deleteSpell.execute({
-          id: props.spell.id,
-        });
-
-        if (error) {
-          throw error;
-        }
-      } catch (error) {
-        console.log(error);
-
-        alert("Couldn't complete your request. Please try again.");
-      }
-    }
+  // Generate magic gradient from light field colors
+  const getMagicGradient = (light: string) => {
+    if (!light) return 'bg-gradient-to-br from-gray-100 to-gray-200';
+    
+    const colors = light.split(',').map(color => color.trim().toLowerCase());
+    const colorMap: Record<string, string> = {
+      red: 'from-red-200 to-red-300',
+      green: 'from-green-200 to-green-300', 
+      blue: 'from-blue-200 to-blue-300',
+      yellow: 'from-yellow-200 to-yellow-300',
+      purple: 'from-purple-200 to-purple-300',
+      pink: 'from-pink-200 to-pink-300',
+      orange: 'from-orange-200 to-orange-300',
+      cyan: 'from-cyan-200 to-cyan-300',
+      indigo: 'from-indigo-200 to-indigo-300',
+      violet: 'from-violet-200 to-violet-300'
+    };
+    
+    // Use first recognized color or default
+    const firstColor = colors.find(color => colorMap[color]);
+    return firstColor ? `bg-gradient-to-br ${colorMap[firstColor]}` : 'bg-gradient-to-br from-gray-100 to-gray-200';
   };
 </script>
 
 <template>
-  <li class="flex flex-col items-center gap-3 group">
-    <div class="rounded w-full h-24 bg-gradient-to-br from-purple-500 to-blue-600 flex items-center justify-center">
-      <span class="text-white font-bold text-lg">✨</span>
-    </div>
-
-    <div class="relative flex flex-col items-center gap-1 w-full">
-      <div class="font-medium text-black">
-        {{ spell.name }}
+  <li class="group">
+    <NuxtLink :to="`/spells/${props.spell.id}`" class="block">
+      <!-- Image -->
+      <div class="relative w-full aspect-[4/3] overflow-hidden rounded-lg group-hover:opacity-90 transition">
+        <img
+          v-if="props.spell.image"
+          :src="props.spell.image"
+          :alt="props.spell.name"
+          class="w-full h-full object-cover"
+        />
+        <div v-else class="w-full h-full flex items-center justify-center" :class="getMagicGradient(props.spell.light)">
+          <span class="text-white text-2xl drop-shadow-sm">✨</span>
+        </div>
       </div>
 
-      <div class="text-xs text-black/75">
-        {{ spell.category }}
+      <!-- Meta -->
+      <div class="mt-3 text-center">
+        <h3 class="text-sm font-semibold text-gray-900">{{ props.spell.name }}</h3>
+        <p class="text-xs text-gray-600 mt-1">{{ props.spell.category }}</p>
       </div>
-
-      <div class="text-xs text-black/60 text-center px-2">
-        {{ spell.effect }}
-      </div>
-
-      <div class="absolute hidden group-hover:flex gap-3 text-xs text-gray-500 top-0 right-3">
-        <button type="button" class="a text-blue-500 hover:text-blue-700" @click="handleEdit">
-          Edit
-        </button>
-
-        <button type="button" class="a text-blue-500 hover:text-blue-700" @click="handleDelete">
-          Delete
-        </button>
-      </div>
-    </div>
+    </NuxtLink>
   </li>
 </template>

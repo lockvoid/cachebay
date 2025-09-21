@@ -1,7 +1,7 @@
 <template>
   <AppHeader />
 
-  <div class="p-6 font-sans flex flex-col">
+  <div class="font-sans flex flex-col bg-gray-50 min-h-screen">
     <slot />
   </div>
 </template>
