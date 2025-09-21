@@ -1,25 +1,26 @@
 <script setup lang="ts">
-  const props = defineProps({
-    spell: {
-      type: Object,
-      required: true,
-    }
-  });
+import Broomstick from '~/components/Icons/Broomstick.vue';
 
+const props = defineProps({
+  spell: {
+    type: Object,
+    required: true,
+  }
+});
 </script>
 
 <template>
   <li class="group">
     <NuxtLink :to="`/spells/${props.spell.id}`" class="block">
       <!-- Image -->
-      <div class="relative w-full aspect-square overflow-hidden rounded-lg group-hover:opacity-90 transition">
+      <div class="relative w-full aspect-square overflow-hidden rounded-lg group-hover:opacity-90 transition bg-gray-100 flex items-center justify-center">
         <img
           v-if="props.spell.image"
           :src="props.spell.image"
           :alt="props.spell.name"
           class="w-full h-full object-cover"
         />
-        <SpellLight v-else :colors="props.spell.light" />
+        <Broomstick v-else class="w-16 h-16 text-gray-400" />
       </div>
 
       <!-- Meta -->
