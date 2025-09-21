@@ -34,7 +34,7 @@
   <li class="group">
     <NuxtLink :to="`/spells/${props.spell.id}`" class="block">
       <!-- Image -->
-      <div class="relative w-full aspect-[4/3] overflow-hidden rounded-lg group-hover:opacity-90 transition">
+      <div class="relative w-full aspect-square overflow-hidden rounded-lg group-hover:opacity-90 transition">
         <img
           v-if="props.spell.image"
           :src="props.spell.image"

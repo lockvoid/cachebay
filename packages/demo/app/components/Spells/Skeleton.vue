@@ -2,7 +2,7 @@
   <li class="animate-pulse">
     <div class="block">
       <!-- Image skeleton -->
-      <div class="relative w-full aspect-[4/3] overflow-hidden rounded-lg bg-gray-200" />
+      <div class="relative w-full aspect-square overflow-hidden rounded-lg bg-gray-200" />
 
       <!-- Meta skeleton -->
       <div class="mt-3 text-center">

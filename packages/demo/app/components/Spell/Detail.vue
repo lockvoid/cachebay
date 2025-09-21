@@ -23,16 +23,24 @@ const props = defineProps({
       </div>
     </div>
 
-    <div class="flex flex-col gap-3">
+    <div class="flex flex-col gap-4">
       <h1 class="text-2xl font-bold text-gray-900">{{ props.spell.name }}</h1>
-      <div class="text-gray-600 text-sm">{{ props.spell.category }}</div>
-      <div v-if="props.spell.creator" class="text-gray-500 text-xs">by {{ props.spell.creator }}</div>
-
+      
       <p class="text-gray-700 leading-relaxed">{{ props.spell.effect }}</p>
 
-      <div class="mt-2 text-sm text-gray-600">
-        <span class="text-gray-500">Light:</span>
-        <span class="ml-2">{{ props.spell.light || '—' }}</span>
+      <div class="space-y-2 text-sm">
+        <div class="flex">
+          <span class="text-gray-500 w-20">Category:</span>
+          <span class="text-gray-700">{{ props.spell.category }}</span>
+        </div>
+        <div class="flex">
+          <span class="text-gray-500 w-20">Light:</span>
+          <span class="text-gray-700">{{ props.spell.light || '—' }}</span>
+        </div>
+        <div v-if="props.spell.creator" class="flex">
+          <span class="text-gray-500 w-20">Creator:</span>
+          <span class="text-gray-700">{{ props.spell.creator }}</span>
+        </div>
       </div>
 
       <div class="mt-4">
