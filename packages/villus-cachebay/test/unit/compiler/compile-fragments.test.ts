@@ -1,7 +1,11 @@
 // test/unit/compiler/compile-fragments.test.ts
 import { describe, it, expect } from "vitest";
 import gql from "graphql-tag";
-import { compileToPlan } from "@/src/compiler/compile";
+import { compileToPlan } from "@/src/compiler";
+import {
+  collectConnectionDirectives,
+  everySelectionSetHasTypename,
+} from "@/test/helpers";
 
 describe("compiler: compileToPlan (fragments)", () => {
   it("compiles a simple User fragment (no args) with selectionMap", () => {
@@ -22,28 +26,29 @@ describe("compiler: compileToPlan (fragments)", () => {
     const by = plan.rootSelectionMap!;
     expect(by.get("id")?.fieldName).toBe("id");
     expect(by.get("email")?.fieldName).toBe("email");
+
+    // Network doc: no @connection and __typename is materialized everywhere
+    expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
+    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
   });
 
   it("compiles a fragment with a connection using @connection; builds selectionMap on nested sets", () => {
     const FRAG = gql`
       fragment UserPosts on User {
         id
-        posts(category: $cat, first: $first, after: $after) @connection(filters: ["category"], mode: "infinite") {
-          __typename
+        posts(category: $cat, first: $first, after: $after)
+          @connection(filters: ["category"], mode: "infinite") {
           totalCount
           pageInfo {
-            __typename
             startCursor
             endCursor
             hasNextPage
             hasPreviousPage
           }
           edges {
-            __typename
             cursor
             score
             node {
-              __typename
               id
               title
             }
@@ -73,6 +78,10 @@ describe("compiler: compileToPlan (fragments)", () => {
     // stringifyArgs gets raw vars and applies buildArgs internally (uses field arg names)
     const key = `${posts.fieldName}(${posts.stringifyArgs({ cat: "tech", first: 2, after: null })})`;
     expect(key).toBe('posts({"after":null,"category":"tech","first":2})');
+
+    // Network doc: no @connection and __typename is materialized everywhere
+    expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
+    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
   });
 
   it("throws when doc has neither op nor exactly one fragment", () => {
@@ -87,9 +96,8 @@ describe("compiler: compileToPlan (fragments)", () => {
     const FRAG = gql`
       fragment UserFeed on User {
         feed(first: $first) @connection(key: "Feed") {
-          __typename
-          edges { __typename cursor node { __typename id } }
-          pageInfo { __typename endCursor hasNextPage }
+          edges { cursor node { id } }
+          pageInfo { endCursor hasNextPage }
         }
       }
     `;
@@ -99,5 +107,9 @@ describe("compiler: compileToPlan (fragments)", () => {
     expect(feed.connectionKey).toBe("Feed");
     expect(feed.connectionFilters).toEqual([]); // default
     expect(feed.connectionMode).toBe("infinite");  // default
+
+    // Network doc: no @connection and __typename is materialized everywhere
+    expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
+    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
   });
 });

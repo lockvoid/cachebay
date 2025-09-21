@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { DocumentNode } from "graphql";
+
 export type OpKind = "query" | "mutation" | "subscription" | "fragment";
 
 /**
@@ -20,9 +23,9 @@ export type PlanField = {
 
   // Connections (when @connection is present)
   isConnection: boolean;
-  connectionKey?: string;                       // key || fieldName
+  connectionKey?: string;                       // explicit key || fieldName
   connectionFilters?: string[];                 // names used to compute canonical key
-  connectionMode?: "infinite" | "page";         // default "page"
+  connectionMode?: "infinite" | "page";         // default "infinite"
 };
 
 export type CachePlanV1 = {
@@ -31,4 +34,7 @@ export type CachePlanV1 = {
   rootTypename: string;
   root: PlanField[];
   rootSelectionMap?: Map<string, PlanField>;
+
+  /** Network-safe document: __typename added; @connection stripped. */
+  networkQuery: DocumentNode;
 };

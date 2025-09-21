@@ -1,9 +1,13 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   Kind,
   parse,
+  visit,
   type DocumentNode,
   type FragmentDefinitionNode,
   type OperationDefinitionNode,
+  type SelectionSetNode,
+  type FieldNode,
 } from "graphql";
 import { lowerSelectionSet } from "./lowering/flatten";
 import type { CachePlanV1, PlanField } from "./types";
@@ -39,8 +43,55 @@ const opRootTypename = (op: OperationDefinitionNode): string => {
   }
 };
 
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Sanitizer: add __typename, strip @connection                              */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+function ensureTypename(ss: SelectionSetNode): SelectionSetNode {
+  const has = ss.selections.some(
+    s => s.kind === Kind.FIELD && s.name.value === "__typename"
+  );
+  if (has) return ss;
+  const typenameField: FieldNode = { kind: Kind.FIELD, name: { kind: Kind.NAME, value: "__typename" } };
+  return { ...ss, selections: [...ss.selections, typenameField] };
+}
+
+/** Create a network-safe copy: adds __typename to all selection sets; strips @connection. */
+function buildNetworkQuery(doc: DocumentNode): DocumentNode {
+  return visit(doc, {
+    OperationDefinition: {
+      enter(node) {
+        if (node.selectionSet) {
+          return { ...node, selectionSet: ensureTypename(node.selectionSet) };
+        }
+        return node;
+      },
+    },
+    FragmentDefinition: {
+      enter(node) {
+        return { ...node, selectionSet: ensureTypename(node.selectionSet) };
+      },
+    },
+    Field: {
+      enter(node) {
+        const directives = (node.directives || []).filter(d => d.name.value !== "connection");
+        let selectionSet = node.selectionSet;
+        if (selectionSet) selectionSet = ensureTypename(selectionSet);
+        if (directives.length !== (node.directives?.length || 0) || selectionSet !== node.selectionSet) {
+          return { ...node, directives, selectionSet };
+        }
+        return node;
+      },
+    },
+  });
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Public: compileToPlan(document)                                            */
+/* ────────────────────────────────────────────────────────────────────────── */
+
 /**
- * Compile to a flat cache plan.
+ * Compile to a flat cache plan plus a network-safe DocumentNode.
  * - If called with a precompiled plan → returned as-is (pass-through).
  * - If called with a string → parsed to DocumentNode first.
  * - If the document contains an OperationDefinition → compiled as an operation.
@@ -67,16 +118,24 @@ export const compileToPlan = (
   const operation = document.definitions.find(
     (d): d is OperationDefinitionNode => d.kind === Kind.OPERATION_DEFINITION
   );
+
   if (operation) {
     const rootTypename = opRootTypename(operation);
+
+    // Lower the ORIGINAL doc (it still has @connection) so we retain metadata
     const root = lowerSelectionSet(operation.selectionSet, rootTypename, fragmentsByName);
     const rootSelectionMap = indexByResponseKey(root);
+
+    // Build network-safe doc (strip @connection, add __typename)
+    const networkQuery = buildNetworkQuery(document);
+
     return {
       __kind: "CachePlanV1",
       operation: operation.operation,   // "query" | "mutation" | "subscription"
       rootTypename,
       root,
       rootSelectionMap,
+      networkQuery,
     };
   }
 
@@ -87,14 +146,19 @@ export const compileToPlan = (
   if (fragmentDefs.length === 1) {
     const frag = fragmentDefs[0];
     const parentTypename = frag.typeCondition.name.value;
+
     const root = lowerSelectionSet(frag.selectionSet, parentTypename, fragmentsByName);
     const rootSelectionMap = indexByResponseKey(root);
+
+    const networkQuery = buildNetworkQuery(document);
+
     return {
       __kind: "CachePlanV1",
       operation: "fragment",
       rootTypename: parentTypename,
       root,
       rootSelectionMap,
+      networkQuery,
     };
   }
 

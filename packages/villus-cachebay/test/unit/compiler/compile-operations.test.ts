@@ -1,8 +1,12 @@
 // test/unit/compiler/compile.test.ts
 import { describe, it, expect } from "vitest";
 import gql from "graphql-tag";
-import { compileToPlan } from "@/src/compiler/compile";
+import { compileToPlan } from "@/src/compiler";
 import type { CachePlanV1, PlanField } from "@/src/compiler/types";
+import {
+  collectConnectionDirectives,
+  everySelectionSetHasTypename,
+} from "@/test/helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fragments
@@ -31,14 +35,13 @@ const COMMENT_FRAGMENT = gql`
 `;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Documents
+/** Documents (without __typename; compiler will inject them for networkQuery) */
 // ─────────────────────────────────────────────────────────────────────────────
 
 const USER_QUERY = gql`
   ${USER_FRAGMENT}
   query UserQuery($id: ID!) {
     user(id: $id) {
-      __typename
       ...UserFields
     }
   }
@@ -47,12 +50,12 @@ const USER_QUERY = gql`
 const USERS_QUERY = gql`
   ${USER_FRAGMENT}
   query UsersQuery($usersRole: String, $usersFirst: Int, $usersAfter: String) {
-    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(filters: ["role"]) {
-      __typename
+    users(role: $usersRole, first: $usersFirst, after: $usersAfter)
+      @connection(filters: ["role"]) {
       pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
       edges {
         cursor
-        node { __typename ...UserFields }
+        node { ...UserFields }
       }
     }
   }
@@ -63,17 +66,15 @@ const USER_POSTS_QUERY = gql`
   ${POST_FRAGMENT}
   query UserPostsQuery($id: ID!, $postsCategory: String, $postsFirst: Int, $postsAfter: String) {
     user(id: $id) {
-      __typename
       ...UserFields
-      posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(filters: ["category"]) {
-        __typename
+      posts(category: $postsCategory, first: $postsFirst, after: $postsAfter)
+        @connection(filters: ["category"]) {
         pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
         edges {
           cursor
           node {
-            __typename
             ...PostFields
-            author { __typename id }
+            author { id }
           }
         }
       }
@@ -95,29 +96,24 @@ const USERS_POSTS_COMMENTS_QUERY = gql`
     $commentsFirst: Int
     $commentsAfter: String
   ) {
-    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(filters: ["role"]) {
-      __typename
+    users(role: $usersRole, first: $usersFirst, after: $usersAfter)
+      @connection(filters: ["role"]) {
       pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
       edges {
         cursor
         node {
-          __typename
           ...UserFields
-          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(filters: ["category"]) {
-            __typename
+          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter)
+            @connection(filters: ["category"]) {
             pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
             edges {
               cursor
               node {
-                __typename
                 ...PostFields
-                comments(first: $commentsFirst, after: $commentsAfter) @connection(filters: []) {
-                  __typename
-                  pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
-                  edges {
-                    cursor
-                    node { __typename ...CommentFields }
-                  }
+                comments(first: $commentsFirst, after: $commentsAfter)
+                  @connection(filters: []) {
+                  pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+                  edges { cursor node { ...CommentFields } }
                 }
               }
             }
@@ -131,7 +127,7 @@ const USERS_POSTS_COMMENTS_QUERY = gql`
 // Extra: alias & multi-type cases
 const ALIAS_QUERY = gql`
   query AliasQuery($id: ID!) {
-    currentUser: user(id: $id) { __typename id email }
+    currentUser: user(id: $id) { id email }
   }
 `;
 
@@ -141,7 +137,6 @@ const MULTI_TYPE_FRAGMENT_QUERY = gql`
 
   query MixedTypes($id: ID!) {
     user(id: $id) {
-      __typename
       ...UserOnly
       ...AdminOnly
     }
@@ -182,6 +177,10 @@ describe("compiler: compileToPlan", () => {
     const id = findField(child, "id");
     const email = findField(child, "email");
     expect(Boolean(id && email)).toBe(true);
+
+    // Network query checks
+    expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
+    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
   });
 
   it("compiles USERS_QUERY: marks users as connection; filters & default mode", () => {
@@ -200,6 +199,10 @@ describe("compiler: compileToPlan", () => {
     const edges = findField(users.selectionSet!, "edges");
     const pageInfo = findField(users.selectionSet!, "pageInfo");
     expect(Boolean(edges && pageInfo)).toBe(true);
+
+    // Network query checks
+    expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
+    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
   });
 
   it("compiles USER_POSTS_QUERY: nested posts as connection with filters; default mode", () => {
@@ -225,6 +228,10 @@ describe("compiler: compileToPlan", () => {
     const tags = findField(node.selectionSet!, "tags");
     const author = findField(node.selectionSet!, "author");
     expect(Boolean(id && title && tags && author)).toBe(true);
+
+    // Network query checks
+    expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
+    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
   });
 
   it("compiles USERS_POSTS_COMMENTS_QUERY: users, posts, comments marked with filters & default mode", () => {
@@ -263,6 +270,10 @@ describe("compiler: compileToPlan", () => {
 
     const commentsArgs = comments.buildArgs({ commentsFirst: 3, commentsAfter: "c2" });
     expect(commentsArgs).toEqual({ first: 3, after: "c2" });
+
+    // Network query checks
+    expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
+    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
   });
 
   // Extra coverage
@@ -273,6 +284,10 @@ describe("compiler: compileToPlan", () => {
     expect(currentUser.responseKey).toBe("currentUser");
     expect(currentUser.fieldName).toBe("user");
     expect(currentUser.buildArgs({ id: "u1" })).toEqual({ id: "u1" });
+
+    // Network query checks
+    expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
+    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
   });
 
   it("when multiple distinct type conditions exist, child parent inference falls back", () => {
@@ -281,5 +296,9 @@ describe("compiler: compileToPlan", () => {
     const idField = findField(user.selectionSet!, "id");     // from UserOnly
     const roleField = findField(user.selectionSet!, "role"); // from AdminOnly
     expect(Boolean(idField && roleField)).toBe(true);
+
+    // Network query checks
+    expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
+    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
   });
 });
