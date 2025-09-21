@@ -32,7 +32,7 @@ const props = defineProps({
       <NuxtLink
         v-if="showEditButton"
         :to="`/spells/${spell.id}/edit`"
-        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        class="button-primary"
       >
         Edit Spell
       </NuxtLink>
@@ -66,7 +66,7 @@ const props = defineProps({
           </dt>
 
           <dd class="text-sm text-gray-900">
-            {{ spell.light || '—' }}
+            {{ spell.light.split(',').map(item => titleCase(item)).join(', ') }}
           </dd>
         </div>
 
@@ -77,7 +77,7 @@ const props = defineProps({
 
           <dd class="mt-1">
             <a :href="spell.wiki" target="_blank" class="text-blue-600 hover:text-blue-500">
-              Learn more
+              Learn more →
             </a>
           </dd>
         </div>

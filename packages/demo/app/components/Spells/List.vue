@@ -20,7 +20,7 @@
       <button
         @click="spellsQuery.loadPreviousPage()"
         :disabled="spellsActivity.isFetching || !spells.pageInfo.hasPreviousPage"
-        class="px-4 py-2 bg-gray-800 hover:bg-gray-700 disabled:bg-gray-300 disabled:text-gray-500 text-white rounded-lg transition-colors"
+        class="button-secondary px-4 py-2 disabled:bg-gray-300 disabled:text-gray-500"
       >
         <span v-if="spellsActivity.isFetching">
           Loading…
@@ -34,7 +34,7 @@
       <button
         @click="spellsQuery.loadNextPage()"
         :disabled="spellsActivity.isFetching || !spells.pageInfo.hasNextPage"
-        class="px-4 py-2 bg-gray-800 hover:bg-gray-700 disabled:bg-gray-300 disabled:text-gray-500 text-white rounded-lg transition-colors"
+        class="button-secondary px-4 py-2 disabled:bg-gray-300 disabled:text-gray-500"
       >
         <span v-if="spellsActivity.isFetching">
           Loading…
@@ -47,7 +47,7 @@
     </div>
 
     <div v-else class="flex flex-row justify-center space-x-4">
-      <button v-if="spells.pageInfo.hasNextPage" class="self-center px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-white disabled:opacity-50 hover:cursor-pointer transition-colors" :disabled="spellsActivity.isFetching || !spells.pageInfo.hasNextPage" @click="spellsQuery.loadMore">
+      <button v-if="spells.pageInfo.hasNextPage" class="button-secondary self-center px-4 py-2 disabled:opacity-50" :disabled="spellsActivity.isFetching || !spells.pageInfo.hasNextPage" @click="spellsQuery.loadMore">
         <span v-if="spellsActivity.isFetching">
           Loading…
         </span>
