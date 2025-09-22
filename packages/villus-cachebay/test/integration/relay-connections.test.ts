@@ -15,7 +15,7 @@ import { fixtures } from '@/test/helpers';
 const POSTS_APPEND = gql`
   query PostsAppend($filter: String, $first: Int, $after: String, $last: Int, $before: String) {
     posts(filter: $filter, first: $first, after: $after, last: $last, before: $before)
-      @connection(mode: "append", args: ["filter"]) {
+      @connection(mode: "infinite", args: ["filter"]) {
       __typename
       edges { __typename cursor node { __typename id title } }
       pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
@@ -26,7 +26,7 @@ const POSTS_APPEND = gql`
 const POSTS_PREPEND = gql`
   query PostsPrepend($filter: String, $first: Int, $after: String, $last: Int, $before: String) {
     posts(filter: $filter, first: $first, after: $after, last: $last, before: $before)
-      @connection(mode: "prepend", args: ["filter"]) {
+      @connection(mode: "infinite", args: ["filter"]) {
       __typename
       edges { __typename cursor node { __typename id title } }
       pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }

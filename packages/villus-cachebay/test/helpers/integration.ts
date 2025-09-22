@@ -131,10 +131,15 @@ export function createWatcherComponent(
   });
 }
 
-export async function mountWithClient(component: any, routes: Route[], cacheConfig?: any) {
+export async function mountWithClient(
+  component: any,
+  routes: Route[],
+  cacheConfig?: any,
+  props?: Record<string, any>
+) {
   const { client, cache, fx } = createTestClient(routes, cacheConfig);
-
   const wrapper = mount(component, {
+    props,
     global: {
       plugins: [
         client as any,
@@ -146,7 +151,6 @@ export async function mountWithClient(component: any, routes: Route[], cacheConf
       ],
     },
   });
-
   return { wrapper, client, cache, fx };
 }
 /* ──────────────────────────────────────────────────────────────────────────
