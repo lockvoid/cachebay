@@ -87,10 +87,24 @@ describe('Integration • limit window (no leader reset) + optimistic reapply', 
           data: { __typename: 'Query', posts: fixtures.posts.connection(['A4', 'A5', 'A6'], { fromId: 4 }) },
         }),
       },
-      // 2) B page1: B1,B2
+
       {
         when: () => {
           if (requestIndex === 2) {
+            requestIndex++;
+
+            return true;
+          }
+        },
+        delay: 5,
+        respond: () => ({
+          data: { __typename: 'Query', posts: fixtures.posts.connection(['A7', 'A8', 'A9'], { fromId: 7 }) },
+        }),
+      },
+
+      {
+        when: () => {
+          if (requestIndex === 3) {
             requestIndex++;
 
             return true;
@@ -104,7 +118,7 @@ describe('Integration • limit window (no leader reset) + optimistic reapply', 
       // 3) A page1 revalidate (slow): A1,A2,A3
       {
         when: () => {
-          if (requestIndex === 3) {
+          if (requestIndex === 4) {
             requestIndex++;
 
             return true;
@@ -118,7 +132,7 @@ describe('Integration • limit window (no leader reset) + optimistic reapply', 
       // 4) A page2 replay (fast): A4,A5,A6
       {
         when: () => {
-          if (requestIndex === 4) {
+          if (requestIndex === 5) {
             requestIndex++;
 
             return true;
@@ -129,10 +143,11 @@ describe('Integration • limit window (no leader reset) + optimistic reapply', 
           data: { __typename: 'Query', posts: fixtures.posts.connection(['A4', 'A5', 'A6'], { fromId: 4 }) },
         }),
       },
+
       // 5) B page1 again: B1,B2
       {
         when: () => {
-          if (requestIndex === 5) {
+          if (requestIndex === 6) {
             requestIndex++;
 
             return true;
@@ -146,7 +161,7 @@ describe('Integration • limit window (no leader reset) + optimistic reapply', 
       // 6) A page1 (fast)
       {
         when: () => {
-          if (requestIndex === 6) {
+          if (requestIndex === 7) {
             requestIndex++;
 
             return true;
@@ -160,7 +175,7 @@ describe('Integration • limit window (no leader reset) + optimistic reapply', 
       // 7) A page2 (fast) — can be same as before; we’ll commit before late update
       {
         when: () => {
-          if (requestIndex === 7) {
+          if (requestIndex === 8) {
             requestIndex++;
 
             return true;
@@ -174,7 +189,7 @@ describe('Integration • limit window (no leader reset) + optimistic reapply', 
       // 8) LATE page2 change: A4,A6,A7
       {
         when: () => {
-          if (requestIndex === 8) {
+          if (requestIndex === 9) {
             requestIndex++;
 
             return true;
@@ -207,12 +222,18 @@ describe('Integration • limit window (no leader reset) + optimistic reapply', 
     await tick(2);
     expect(rows(wrapper)).toEqual(['A1', 'A2', 'A3', 'A4', 'A6']);
 
-    // 4) switch to B
+    // 4)
+    await wrapper.setProps({ filter: 'A', first: 3, after: 'c6' });
+    await delay(6);
+    // With limit growth wired, window shows both pages (6 items)
+    expect(rows(wrapper)).toEqual(['A1', 'A2', 'A3', 'A4', 'A6', 'A7', 'A8', 'A9']);
+
+    // 5) switch to B
     await wrapper.setProps({ filter: 'B', first: 2, after: null });
     await delay(9);
     expect(rows(wrapper)).toEqual(['B1', 'B2']);
 
-    // 5) back to A leader — should show only first window immediately (A1,A2,A3)
+    // 6) back to A leader — should show only first window immediately (A1,A2,A3)
     await wrapper.setProps({ filter: 'A', first: 3, after: null });
     await tick(2);
     expect(rows(wrapper)).toEqual(['A1', 'A2', 'A3']);
@@ -221,30 +242,30 @@ describe('Integration • limit window (no leader reset) + optimistic reapply', 
     await delay(31);
     expect(rows(wrapper)).toEqual(['A1', 'A2', 'A3']);
 
-    // 6) ask page2 again — window grows; overlay still hides A5
+    // 7) ask page2 again — window grows; overlay still hides A5
     await wrapper.setProps({ filter: 'A', first: 3, after: 'c3' });
     await tick(2);
     expect(rows(wrapper)).toEqual(['A1', 'A2', 'A3', 'A4', 'A6']);
     await delay(6);
     expect(rows(wrapper)).toEqual(['A1', 'A2', 'A3', 'A4', 'A6']); // replay didn’t resurrect A5 due to overlay
 
-    // 7) switch to B
+    // 8) switch to B
     await wrapper.setProps({ filter: 'B', first: 2, after: null });
     await delay(6);
     expect(rows(wrapper)).toEqual(['B1', 'B2']);
 
-    // 8) back to A leader — first window again
+    // 9) back to A leader — first window again
     await wrapper.setProps({ filter: 'A', first: 3, after: null });
     await tick(2);
     expect(rows(wrapper)).toEqual(['A1', 'A2', 'A3']);
 
-    // 9) commit optimistic; fetch page2 again
+    // 10) commit optimistic; fetch page2 again
     T.commit?.();
     await wrapper.setProps({ filter: 'A', first: 3, after: 'c3' });
     await tick(2);
     expect(rows(wrapper)).toEqual(['A1', 'A2', 'A3', 'A4', 'A6']);
 
-    // 10) late page2 change arrives (A4,A6,A7) → add A7
+    // 11) late page2 change arrives (A4,A6,A7) → add A7
     await delay(41);
     expect(rows(wrapper)).toEqual(['A1', 'A2', 'A3', 'A4', 'A6', 'A7']);
 
