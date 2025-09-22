@@ -3,6 +3,10 @@
 
   const spellsQuery = await useSpellsQuery();
 
+  if (spellsQuery.error.value) {
+    throw spellsQuery.error.value;
+  }
+
   const spells = computed(() => {
     return spellsQuery.data.value.spells;
   });
@@ -11,7 +15,7 @@
 <template>
   <div class="flex flex-col gap-12">
     <ul class="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-6">
-      <SpellsItem v-for="edge in spells.edges" :key="edge.node.id" :spell="edge.node" />
+      <SpellsItem v-for="edge in spells?.edges" :key="edge.node.id" :spell="edge.node" />
     </ul>
 
     <div v-if="settings.relayMode === 'page'" class="self-center relative flex flex-row justify-center">

@@ -7,10 +7,6 @@
     "build": "nuxt build",
     "preview": "nuxt preview -p 4300"
   },
-  "engines": {
-    "node": "22.x",
-    "pnpm": "10.x"
-  },
   "dependencies": {
     "@lockvoid/vue-form": "file:../../../vue-form",
     "@pinia/nuxt": "^0.11.2",

@@ -4,13 +4,12 @@ export const SPELL_FIELDS = `
   fragment SpellFields on Spell {
     id
     name
-    slug
     category
     creator
     effect
-    image
     light
-    wiki
+    imageUrl
+    wikiUrl
   }
 `;
 
@@ -24,6 +23,6 @@ export const SPELL_QUERY = `
   }
 `;
 
-export const useSpellQuery = (id: Ref<string> | ComputedRef<string>) => {
-  return useQuery({  query: SPELL_QUERY, variables: computed(() => ({ id })) });
+export const useSpellQuery = (id: string | Ref<string> | ComputedRef<string>) => {
+  return useQuery({ query: SPELL_QUERY, variables: computed(() => ({ id })) });
 };

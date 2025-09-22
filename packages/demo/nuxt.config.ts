@@ -66,10 +66,6 @@ export default defineNuxtConfig({
       },
     },
 
-    nitro: {
-      assetsInclude: ['~/server/db/**'],
-    },
-
     plugins: [
       tailwindcss(),
     ],
@@ -83,6 +79,7 @@ export default defineNuxtConfig({
     resolve: {
       alias: {
         "villus-cachebay": resolve("../villus-cachebay/src"),
+        "@lockvoid/vue-form": resolve("/Users/kochnev/Projects/Ferment/vue-form/src"),
       },
     },
   },

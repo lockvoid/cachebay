@@ -28,7 +28,7 @@
 
     <div class="flex items-center gap-2 ml-auto">
       <NuxtLink to="/spells/new" class="button-primary px-3 py-2">
-        + New Spell
+        + New spell
       </NuxtLink>
 
       <AppSettings />

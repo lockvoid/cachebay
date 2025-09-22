@@ -27,7 +27,7 @@ onUnmounted(() => {
 
 <template>
   <div class="relative" ref="settingsRef">
-    <button class="a p-2 text-sm hover:text-gray-800 transition-colors hover:cursor-pointer"@click="handleClick">
+    <button class="p-2 text-sm hover:text-blue-500 hover:cursor-pointer"@click="handleClick">
       Settings
     </button>
 

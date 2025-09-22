@@ -4,10 +4,6 @@
   "license": "MIT",
   "author": "LockVoid",
   "type": "module",
-  "engines": {
-    "node": "22.x",
-    "pnpm": "10.x"
-  },
   "scripts": {
     "test": "vitest --run",
     "test:perf": "vitest bench --run",

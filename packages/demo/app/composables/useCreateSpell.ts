@@ -8,43 +8,13 @@ export const CREATE_SPELL_MUTATION = `
 
   mutation CreateSpell($input: CreateSpellInput!) {
     createSpell(input: $input) {
-      ...SpellFields
+      spell {
+        ...SpellFields
+      }
     }
   }
 `;
 
 export const useCreateSpell = () => {
-  const settings = useSettings();
-
-  const createSpell = useMutation(CREATE_SPELL_MUTATION);
-
-  const cache = useCache();
-
-  const execute = async (variables: any) => {
-    let tx;
-
-    if (settings.value.optimistic) {
-      tx = cache.modifyOptimistic((state: any) => {
-        state.connections({ parent: "Query", field: "spells" }).forEach((connection: any) => {
-          connection.addNode({ ...variables.input, __typename: "Spell", id: "temp-" + Date.now() });
-        });
-      });
-    }
-
-    try {
-      const result = await createSpell.execute({ input: variables.input });
-
-      if (result.error) {
-        tx?.revert();
-      }
-
-      return result;
-    } catch (error) {
-      tx?.revert();
-
-      throw error;
-    }
-  };
-
-  return { ...createSpell, execute };
+  return useMutation(CREATE_SPELL_MUTATION);
 };

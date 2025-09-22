@@ -1,54 +1,42 @@
-
 <script setup lang="ts">
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
-import { useCreateSpell } from '~/composables/useCreateSpell';
+  const router = useRouter();
 
-interface SpellForm {
-  name: string;
-  incantation: string;
-  effect: string;
-  type: string;
-  light: string;
-}
+  const createSpell = useCreateSpell();
 
-const router = useRouter();
-const loading = ref(false);
+  const handleCreate = async (input) => {
+    try {
+      const result = await createSpell.execute({
+        input,
+      });
 
-const createSpell = useCreateSpell();
+      if (result.error) {
+        throw result.error;
+      }
 
-const handleSubmit = async (formData: SpellForm) => {
-  try {
-    loading.value = true;
-    const result = await createSpell.execute({
-      input: formData
-    });
+      console.log('scsdc', result )
+      await router.push(`/spell/${result.data.createSpell.spell.id}`);
+    } catch (error) {
+      console.error(error);
 
-    if (result.error) {
-      console.error('Error creating spell:', result.error);
-      return;
+      alert('An error occurred. Please try again.')
     }
-
-    await router.push('/spells');
-  } catch (err) {
-    console.error('Unexpected error:', err);
-  } finally {
-    loading.value = false;
-  }
-};
+  };
 </script>
 
 <template>
-  <div class="max-w-3xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-    <div class="bg-white shadow overflow-hidden sm:rounded-lg">
-      <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
-        <h3 class="text-lg leading-6 font-medium text-gray-900">New spell</h3>
-        <p class="mt-1 max-w-2xl text-sm text-gray-500">Fill in the details below to add a new spell to the spellbook.</p>
-      </div>
+<div class="max-w-3xl space-y-6 mx-auto flex flex-col">
+  <NuxtLink to="/spells" class="a text-sm">
+    ← Back to spells
+  </NuxtLink>
 
-      <div class="px-4 py-5 sm:p-6">
-        <SpellForm :spell="{ name: '', incantation: '', effect: '', type: '', light: '' }" :loading="loading" @submit="handleSubmit" />
-      </div>
+  <div class="bg-white shadow-sm sm:rounded-lg"   >
+    <h3 class="p-6 text-lg font-semibold border-b border-gray-200">
+      Edit spell
+    </h3>
+
+    <div class="p-6 sm:p-6">
+      <SpellForm :spell="{ name: '', effect: '', category: '' }" @submit="handleCreate"/>
     </div>
   </div>
+</div>
 </template>

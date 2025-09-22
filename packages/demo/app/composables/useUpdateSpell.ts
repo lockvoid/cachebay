@@ -6,9 +6,11 @@ import { useSettings } from '../stores/settings';
 export const UPDATE_SPELL_MUTATION = `
   ${SPELL_FIELDS}
 
-  mutation UpdateSpell($id: ID!, $input: UpdateSpellInput!) {
-    updateSpell(id: $id, input: $input) {
-      ...SpellFields
+  mutation UpdateSpell($input: UpdateSpellInput!) {
+    updateSpell(input: $input) {
+      spell {
+        ...SpellFields
+      }
     }
   }
 `;
@@ -16,31 +18,26 @@ export const UPDATE_SPELL_MUTATION = `
 export const useUpdateSpell = () => {
   const settings = useSettings();
 
-  const updateSpell = useMutation(UPDATE_SPELL_MUTATION);
-
   const cache = useCache();
 
-  const execute = async (variables: any) => {
-    let tx;
+  const updateSpell = useMutation(UPDATE_SPELL_MUTATION);
 
-    if (settings.value.optimistic) {
-      tx = cache.modifyOptimistic((state: any) => {
-        state.patch({ ...variables.input, __typename: 'Spell', id: variables.id });
+  const execute = async (variables) => {
+    if (settings.optimistic) {
+      const tx = cache.modifyOptimistic((state) => {
+        state.patch(`Spell:${variables.input.id}`, variables.input); // ...or state.patch({ __typename: "Spell", id: variables.input.id }, variables.input);
       });
-    }
 
-    try {
-      const result = await updateSpell.execute({ id: variables.id, input: variables.input });
-
-      if (result.error) {
-        tx?.revert();
-      }
-
-      return result;
-    } catch (error) {
-      tx?.revert();
-
-      throw error;
+      updateSpell.execute({ input: variables.input })
+        .then((result, error) => {
+          if (result.error || error) {
+            tx?.revert();
+          } else {
+            tx?.commit();
+          }
+        })
+    } else {
+      return updateSpell.execute({ input: variables.input });
     }
   };
 

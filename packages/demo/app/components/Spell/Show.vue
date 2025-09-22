@@ -14,15 +14,13 @@
 </script>
 
 <template>
-  <div class="py-6">
-    <div class="max-w-3xl mx-auto space-y-6">
-      <NuxtLink to="/" class="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-500">
-        ← Back to Spells
-      </NuxtLink>
+  <div class="max-w-3xl mx-auto space-y-6 flex flex-col">
+    <NuxtLink to="/" class="a text-sm">
+      ← Back to spells
+    </NuxtLink>
 
-      <div class="bg-white shadow overflow-hidden sm:rounded-lg">
-        <SpellDetail :spell="spell" />
-      </div>
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+      <SpellDetail :spell="spell" />
     </div>
   </div>
 </template>

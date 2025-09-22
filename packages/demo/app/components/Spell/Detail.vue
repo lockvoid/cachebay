@@ -9,8 +9,8 @@
 
 <template>
   <div class="p-6">
-    <div v-if="spell.image" class="mb-6">
-      <img :src="spell.image":alt="spell.name" class="w-full h-64 object-cover rounded-lg" />
+    <div v-if="spell.imageUrl" class="mb-6">
+      <img :src="spell.imageUrl" :alt="spell.name" class="w-full h-64 object-cover rounded-lg" />
     </div>
 
     <div class="flex justify-between items-start">
@@ -24,7 +24,7 @@
         </p>
       </div>
 
-      <NuxtLink :to="`/spells/${spell.id}/edit`" class="button-primary">
+      <NuxtLink :to="`/spells/${spell.id}/edit`" class="button-secondary">
         Edit Spell
       </NuxtLink>
     </div>

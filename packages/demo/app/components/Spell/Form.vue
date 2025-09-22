@@ -1,211 +1,209 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import type { Ref } from 'vue';
+  import { useForm } from '@lockvoid/vue-form'
+  import * as v from 'valibot'
 
-interface SpellForm {
-  name: string;
-  incantation: string;
-  effect: string;
-  type: string;
-  light: string;
-}
+  const SPELL_CATEGORIES = [
+    'Charm',
+    'Curse',
+    'Enchantment',
+    'Hex',
+    'Jinx',
+    'Spell',
+    'Transfiguration'
+  ];
 
-const props = defineProps<{
-  spell: Partial<SpellForm>;
-  loading?: boolean;
-}>();
+  const LIGHT_COLORS = [
+    'Blue',
+    'Green',
+    'Red',
+    'Gold',
+    'Silver',
+    'White',
+    'Black',
+    'Purple',
+    'Yellow',
+    'Orange'
+  ];
 
-const emit = defineEmits<{
-  (e: 'submit', values: SpellForm): void;
-}>();
-
-// Simple form state
-const form = ref<SpellForm>({
-  name: props.spell.name || '',
-  incantation: props.spell.incantation || '',
-  effect: props.spell.effect || '',
-  type: props.spell.type || '',
-  light: props.spell.light || ''
-});
-
-// Form errors
-const errors: Ref<Record<keyof SpellForm, string>> = ref({
-  name: '',
-  incantation: '',
-  effect: '',
-  type: '',
-  light: ''
-});
-
-// Form submission state
-const isSubmitting = ref(false);
-
-// Simple validation
-const validate = (): boolean => {
-  let isValid = true;
-  const newErrors = { ...errors.value };
-
-  // Validate name
-  if (!form.value.name.trim()) {
-    newErrors.name = 'Name is required';
-    isValid = false;
-  } else if (form.value.name.length < 2) {
-    newErrors.name = 'Name must be at least 2 characters';
-    isValid = false;
-  } else {
-    newErrors.name = '';
+  interface SpellForm {
+    id?: string;
+    name?: string;
+    effect?: string;
+    category?: string;
+    creator?: string;
+    light?: string;
+    image?: string;
+    wiki?: string;
   }
 
-  // Validate incantation
-  if (!form.value.incantation.trim()) {
-    newErrors.incantation = 'Incantation is required';
-    isValid = false;
-  } else if (form.value.incantation.length < 2) {
-    newErrors.incantation = 'Incantation must be at least 2 characters';
-    isValid = false;
-  } else {
-    newErrors.incantation = '';
-  }
+  const props = defineProps({
+    spell: {
+      type: Object as PropType<Partial<SpellForm>>,
+      required: true
+    },
 
-  // Validate effect
-  if (!form.value.effect.trim()) {
-    newErrors.effect = 'Effect is required';
-    isValid = false;
-  } else if (form.value.effect.length < 10) {
-    newErrors.effect = 'Effect must be at least 10 characters';
-    isValid = false;
-  } else {
-    newErrors.effect = '';
-  }
+    onSubmit: {
+      type: Function as PropType<(values: SpellForm) => Promise<void> | void>,
+      required: true
+    },
 
-  // Validate type
-  if (!form.value.type) {
-    newErrors.type = 'Type is required';
-    isValid = false;
-  } else {
-    newErrors.type = '';
-  }
-
-  // Validate light
-  if (!form.value.light) {
-    newErrors.light = 'Light color is required';
-    isValid = false;
-  } else {
-    newErrors.light = '';
-  }
-
-  errors.value = newErrors;
-  return isValid;
-};
-
-// Handle form submission
-const onSubmit = async () => {
-  if (!validate()) return;
-
-  isSubmitting.value = true;
-  try {
-    await emit('submit', form.value);
-  } finally {
-    isSubmitting.value = false;
-  }
-};
-
-// Bind form field to input
-const bind = (field: keyof SpellForm) => ({
-  value: form.value[field],
-  'onUpdate:value': (value: string) => {
-    form.value[field] = value;
-    // Clear error when user types
-    if (errors.value[field]) {
-      const newErrors = { ...errors.value };
-      newErrors[field] = '';
-      errors.value = newErrors;
+    onDelete: {
+      type: Function as PropType<(id: string) => Promise<void> | void>,
+      required: true
     }
-  }
-});
+  });
 
-// Clean up any potential duplicate handlers in development
-if (process.dev && typeof window !== 'undefined') {
-  (window as any).handleSubmit = undefined;
-}
+  const emit = defineEmits<{
+    (e: 'success'): void;
+  }>();
 
-const SPELL_TYPES = [
-  'Charm',
-  'Curse',
-  'Enchantment',
-  'Hex',
-  'Jinx',
-  'Spell',
-  'Transfiguration'
-];
+  const schema = v.pipe(
+    v.object({
+      name: v.pipe(v.string(), v.trim(), v.minLength(1, 'Name is required')),
+      effect: v.pipe(v.string(), v.trim(), v.minLength(1, 'Effect is required')),
+      category: v.pipe(v.string(), v.minLength(1, 'Category is required')),
+      creator: v.optional(v.string()),
+      light: v.optional(v.string()),
+      imageUrl: v.optional(v.string()),
+      wikiUrl: v.optional(v.string())
+    })
+  )
 
-const LIGHT_COLORS = [
-  'Blue',
-  'Green',
-  'Red',
-  'Gold',
-  'Silver',
-  'White',
-  'Black',
-  'Purple',
-  'Yellow',
-  'Orange'
-];
+  const form = useForm({
+    schema,
 
+    initialValues: props.spell,
+
+    onSubmit: async (values) => {
+      await props.onSubmit(values as SpellForm)
+
+      emit('success')
+    }
+  })
 </script>
 
 <template>
-  <form @submit.prevent="onSubmit" class="space-y-6">
+  <form @submit.prevent="form.submit" class="space-y-6">
     <div>
-      <label for="name" class="block text-sm font-medium text-gray-700">Spell Name</label>
-      <input v-bind="bind('name')" id="name" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" :class="{ 'border-red-500': errors.name }" />
-      <div v-if="errors.name" class="text-red-500 text-sm mt-1">{{ errors.name }}</div>
-    </div>
+      <label for="name" class="block text-sm  text-gray-700 mb-2">
+        Spell
+      </label>
 
-    <div>
-      <label for="incantation" class="block text-sm font-medium text-gray-700">Incantation</label>
-      <input v-bind="bind('incantation')" id="incantation" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" :class="{ 'border-red-500': errors.incantation }" />
-      <div v-if="errors.incantation" class="text-red-500 text-sm mt-1">{{ errors.incantation }}</div>
-    </div>
+      <input v-bind="form.bind('name')" type="text" class="text-input" />
 
-    <div>
-      <label for="effect" class="block text-sm font-medium text-gray-700">Effect</label>
-      <textarea v-bind="bind('effect')" id="effect" rows="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" :class="{ 'border-red-500': errors.effect }"></textarea>
-      <div v-if="errors.effect" class="text-red-500 text-sm mt-1">{{ errors.effect }}</div>
-    </div>
-
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-      <div>
-        <label for="type" class="block text-sm font-medium text-gray-700">Type</label>
-        <select v-bind="bind('type')" id="type" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" :class="{ 'border-red-500': errors.type }">
-          <option value="">Select a type</option>
-          <option v-for="type in SPELL_TYPES" :key="type" :value="type">{{ type }}</option>
-        </select>
-        <div v-if="errors.type" class="text-red-500 text-sm mt-1">{{ errors.type }}</div>
-      </div>
-
-      <div>
-        <label for="light" class="block text-sm font-medium text-gray-700">Light Color</label>
-        <select v-bind="bind('light')" id="light" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" :class="{ 'border-red-500': errors.light }">
-          <option value="">Select a color</option>
-          <option v-for="color in LIGHT_COLORS" :key="color" :value="color">{{ color }}</option>
-        </select>
-        <div v-if="errors.light" class="text-red-500 text-sm mt-1">{{ errors.light }}</div>
+      <div v-if="form.errors.name" class="text-red-500 text-sm mt-2">
+        {{ form.errors.name }}
       </div>
     </div>
 
-    <div class="flex justify-end space-x-3">
-      <NuxtLink to="/" class="button-secondary px-4 py-2">Cancel</NuxtLink>
-      <button @click="onSubmit" type="submit" class="button-primary py-2 px-4 disabled:opacity-50" :disabled="isSubmitting || loading">
-        <span v-if="isSubmitting || loading" class="inline-flex items-center">
-          <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          Saving...
-        </span>
-        <span v-else>Save</span>
+    <div>
+      <label for="effect" class="block text-sm   text-gray-700 mb-2">
+        Effect
+      </label>
+
+      <textarea v-bind="form.bind('effect')" rows="3" class="textarea" />
+
+      <div v-if="form.errors.effect" class="text-red-500 text-sm mt-2">
+        {{ form.errors.effect }}
+      </div>
+    </div>
+
+    <div>
+      <label for="category" class="block text-sm   text-gray-700 mb-2">
+        Category
+      </label>
+
+      <select v-bind="form.bind('category')" class="select">
+        <option value="">
+          Select a category
+        </option>
+
+        <option v-for="category in SPELL_CATEGORIES" :key="category" :value="category">
+          {{ category }}
+        </option>
+      </select>
+
+      <div v-if="form.errors.category" class="text-red-500 text-sm mt-2">
+        {{ form.errors.category }}
+      </div>
+    </div>
+
+    <div>
+      <label for="creator" class="block text-sm   text-gray-700 mb-2">
+        Creator (optional)
+      </label>
+
+      <input v-bind="form.bind('creator')" id="creator" type="text" class="text-input" />
+
+      <div v-if="form.errors.creator" class="text-red-500 text-sm mt-2">
+        {{ form.errors.creator }}
+      </div>
+    </div>
+
+    <div>
+      <label for="image" class="block text-sm   text-gray-700 mb-2">
+        Image Url (optional)
+      </label>
+
+      <input v-bind="form.bind('imageUrl')" id="image" type="url" class="text-input" />
+
+      <div v-if="form.errors.imageUrl" class="text-red-500 text-sm mt-2">
+        {{ form.errors.imageUrl }}
+      </div>
+    </div>
+
+    <div>
+      <label for="wiki" class="block text-sm   text-gray-700">
+        Wiki Url (optional)
+      </label>
+
+      <input v-bind="form.bind('wikiUrl')" id="wiki" type="url" class="text-input" />
+
+      <div v-if="form.errors.wikiUrl" class="text-red-500 text-sm mt-1">
+        {{ form.errors.wikiUrl }}
+      </div>
+    </div>
+
+    <div>
+      <label for="light" class="block text-sm   text-gray-700 mb-2">
+        Light (optional)
+      </label>
+
+      <select v-bind="form.bind('light')" id="light" class="select">
+        <option value="">
+          Select a color
+        </option>
+
+        <option v-for="color in LIGHT_COLORS" :key="color" :value="color">
+          {{ color }}
+        </option>
+      </select>
+
+      <div v-if="form.errors.light" class="text-red-500 text-sm mt-2">
+        {{ form.errors.light }}
+      </div>
+    </div>
+
+    <div class="flex flex-row">
+      <button v-if="spell.id" type="button" class="a text-sm text-red-500 hover:text-red-600" @click="onDelete">
+        Delete
       </button>
+
+      <div class="flex ms-auto space-x-6 items-center">
+        <NuxtLink :to="spell.id ? `/spells/${spell.id}` : '/'" class="a text-black text-sm">
+          Cancel
+        </NuxtLink>
+
+        <button type="submit" class="button-primary" :disabled="form.isSubmitting.value">
+          <span v-if="form.isSubmitting.value">
+            Saving...
+          </span>
+
+          <span v-else>
+            Save
+          </span>
+        </button>
+      </div>
     </div>
   </form>
 </template>
