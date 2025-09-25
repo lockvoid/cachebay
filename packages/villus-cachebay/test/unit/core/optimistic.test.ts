@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createGraph } from "@/src/core/graph";
-import { createModifyOptimistic } from "@/src/core/optimistic";
+import { createOptimistic } from "@/src/core/optimistic";
 
 const tick = () => Promise.resolve();
 
@@ -19,7 +19,7 @@ function readCanonicalEdges(graph: ReturnType<typeof createGraph>, canonicalKey:
       cursor: e?.cursor,
       meta: Object.fromEntries(
         Object.keys(e || {})
-          .filter((k) => k !== "cursor" && k !== "node")
+          .filter((k) => k !== "cursor" && k !== "node" && k !== "__typename")
           .map((k) => [k, e[k]])
       ),
     });
@@ -27,7 +27,7 @@ function readCanonicalEdges(graph: ReturnType<typeof createGraph>, canonicalKey:
   return out;
 }
 
-describe("features/optimistic (canonical connections)", () => {
+describe("features/optimistic (entities & canonical connections)", () => {
   const makeGraph = () =>
     createGraph({
       keys: {
@@ -40,12 +40,12 @@ describe("features/optimistic (canonical connections)", () => {
   describe("entity patch/delete", () => {
     it("patch(merge): object + function(prev); then replace; revert chain", async () => {
       const graph = makeGraph();
-      const optimistic = createModifyOptimistic({ graph });
+      const { modifyOptimistic } = createOptimistic({ graph });
 
       // Seed
       graph.putRecord("Post:1", { __typename: "Post", id: "1", title: "T" });
 
-      const T = optimistic((tx) => {
+      const T = modifyOptimistic((tx) => {
         // merge via object
         tx.patch("Post:1", { title: "T1" }, { mode: "merge" });
         // merge via function
@@ -65,11 +65,11 @@ describe("features/optimistic (canonical connections)", () => {
 
     it("delete removes record; revert restores", async () => {
       const graph = makeGraph();
-      const optimistic = createModifyOptimistic({ graph });
+      const { modifyOptimistic } = createOptimistic({ graph });
 
       graph.putRecord("User:9", { __typename: "User", id: "9", email: "x@x.com" });
 
-      const T = optimistic((tx) => {
+      const T = modifyOptimistic((tx) => {
         tx.delete({ __typename: "User", id: "9" });
       });
       T.commit?.();
@@ -85,11 +85,11 @@ describe("features/optimistic (canonical connections)", () => {
   describe("canonical append / prepend / remove / patch", () => {
     it("append twice (same node) dedupes by node & updates cursor/meta", () => {
       const graph = makeGraph();
-      const optimistic = createModifyOptimistic({ graph });
+      const { modifyOptimistic } = createOptimistic({ graph });
 
       const canKey = '@connection.posts({})';
 
-      const T = optimistic((tx) => {
+      const T = modifyOptimistic((tx) => {
         const c = tx.connection({ parent: "Query", key: "posts" });
         c.append({ __typename: "Post", id: 1, title: "P1" }, { cursor: "c1" });
         c.append({ __typename: "Post", id: 1, title: "P1-new" }, { cursor: "c1b", edge: { score: 42 } });
@@ -105,10 +105,10 @@ describe("features/optimistic (canonical connections)", () => {
 
     it("prepend inserts at front; append at end", () => {
       const graph = makeGraph();
-      const optimistic = createModifyOptimistic({ graph });
+      const { modifyOptimistic } = createOptimistic({ graph });
       const canKey = '@connection.posts({})';
 
-      const T = optimistic((tx) => {
+      const T = modifyOptimistic((tx) => {
         const c = tx.connection({ parent: "Query", key: "posts" });
         c.append({ __typename: "Post", id: 1, title: "P1" }, { cursor: "c1" });
         c.append({ __typename: "Post", id: 2, title: "P2" }, { cursor: "c2" });
@@ -123,10 +123,10 @@ describe("features/optimistic (canonical connections)", () => {
 
     it("remove is by node ref; removing missing is a no-op", () => {
       const graph = makeGraph();
-      const optimistic = createModifyOptimistic({ graph });
+      const { modifyOptimistic } = createOptimistic({ graph });
       const canKey = '@connection.posts({})';
 
-      const T = optimistic((tx) => {
+      const T = modifyOptimistic((tx) => {
         const c = tx.connection({ parent: "Query", key: "posts" });
         c.remove({ __typename: "Post", id: 999 });
         c.append({ __typename: "Post", id: 1, title: "A" }, { cursor: "c1" });
@@ -141,12 +141,12 @@ describe("features/optimistic (canonical connections)", () => {
 
     it("patch merges pageInfo/extras; supports function(prev)", () => {
       const graph = makeGraph();
-      const optimistic = createModifyOptimistic({ graph });
+      const { modifyOptimistic } = createOptimistic({ graph });
       const canKey = '@connection.posts({})';
 
       graph.putRecord(canKey, { __typename: "PostConnection", totalCount: 2, pageInfo: { __typename: "PageInfo", endCursor: "c2", hasNextPage: true }, edges: [] });
 
-      const T = optimistic((tx) => {
+      const T = modifyOptimistic((tx) => {
         const c = tx.connection({ parent: "Query", key: "posts" });
         c.patch({ totalCount: 3, pageInfo: { startCursor: "c1", hasNextPage: false } });
         c.patch((prev) => ({ totalCount: (prev.totalCount ?? 0) + 1 }));
@@ -162,15 +162,15 @@ describe("features/optimistic (canonical connections)", () => {
   describe("layering", () => {
     it("revert preserves later commits; revert all → baseline", async () => {
       const graph = makeGraph();
-      const optimistic = createModifyOptimistic({ graph });
+      const { modifyOptimistic } = createOptimistic({ graph });
       const canKey = '@connection.posts({})';
 
-      const T1 = optimistic((tx) => {
+      const T1 = modifyOptimistic((tx) => {
         const c = tx.connection({ parent: "Query", key: "posts" });
         c.append({ __typename: "Post", id: 1, title: "P1" }, { cursor: "c1" });
         c.append({ __typename: "Post", id: 2, title: "P2" }, { cursor: "c2" });
       });
-      const T2 = optimistic((tx) => {
+      const T2 = modifyOptimistic((tx) => {
         const c = tx.connection({ parent: "Query", key: "posts" });
         c.append({ __typename: "Post", id: 3, title: "P3" }, { cursor: "c3" });
       });
@@ -193,9 +193,9 @@ describe("features/optimistic (canonical connections)", () => {
 
     it("revert before commit is a no-op", async () => {
       const graph = makeGraph();
-      const optimistic = createModifyOptimistic({ graph });
+      const { modifyOptimistic } = createOptimistic({ graph });
 
-      const T = optimistic((tx) => {
+      const T = modifyOptimistic((tx) => {
         const c = tx.connection({ parent: "Query", key: "posts" });
         c.append({ __typename: "Post", id: 1, title: "P1" }, { cursor: "c1" });
       });
@@ -212,9 +212,9 @@ describe("features/optimistic (canonical connections)", () => {
   describe("isolation: filters & parents", () => {
     it("different filters isolate canonicals", () => {
       const graph = makeGraph();
-      const optimistic = createModifyOptimistic({ graph });
+      const { modifyOptimistic } = createOptimistic({ graph });
 
-      optimistic((tx) => {
+      modifyOptimistic((tx) => {
         tx.connection({ parent: "Query", key: "posts", filters: { category: "tech" } })
           .append({ __typename: "Post", id: 1, title: "T1" }, { cursor: "t1" });
 
@@ -231,11 +231,11 @@ describe("features/optimistic (canonical connections)", () => {
 
     it("nested parent vs root are isolated", () => {
       const graph = makeGraph();
-      const optimistic = createModifyOptimistic({ graph });
+      const { modifyOptimistic } = createOptimistic({ graph });
 
       graph.putRecord("User:42", { __typename: "User", id: "42" });
 
-      optimistic((tx) => {
+      modifyOptimistic((tx) => {
         tx.connection({ parent: "Query", key: "posts" })
           .append({ __typename: "Post", id: 10, title: "Root" }, { cursor: "cr" });
 
@@ -251,12 +251,79 @@ describe("features/optimistic (canonical connections)", () => {
     });
   });
 
+  describe("reapplyOptimistic()", () => {
+    it("returns inserted/removed for scoped connections; idempotent", () => {
+      const graph = makeGraph();
+      const { modifyOptimistic, reapplyOptimistic } = createOptimistic({ graph });
+      const canA = '@connection.posts({"category":"A"})';
+      const canB = '@connection.posts({"category":"B"})';
+
+      // Seed some canonical shells so canOps have something to touch
+      graph.putRecord(canA, { __typename: "PostConnection", edges: [], pageInfo: {} });
+      graph.putRecord(canB, { __typename: "PostConnection", edges: [], pageInfo: {} });
+
+      // Build an overlay that touches both A and B
+      modifyOptimistic((tx) => {
+        tx.connection({ parent: "Query", key: "posts", filters: { category: "A" } })
+          .append({ __typename: "Post", id: 1, title: "A1" }, { cursor: "a1" });
+        tx.connection({ parent: "Query", key: "posts", filters: { category: "B" } })
+          .remove({ __typename: "Post", id: 99 });
+      }).commit?.();
+
+      // Reapply only for connection A
+      const rA = reapplyOptimistic({ connections: [canA] });
+      expect(rA.inserted).toContain("Post:1");
+      expect(rA.removed).toHaveLength(0);
+      // B shouldn't be affected in this scoped call
+      const edgesA = readCanonicalEdges(graph, canA);
+      const edgesB = readCanonicalEdges(graph, canB);
+      expect(edgesA.map((e) => e.nodeKey)).toEqual(["Post:1"]);
+      expect(edgesB).toHaveLength(0);
+
+      // Now reapply for both
+      const rAll = reapplyOptimistic({ connections: [canA, canB] });
+      expect(rAll.inserted).toContain("Post:1");
+      // Removing a non-existing node is a no-op but should be reported in 'removed'
+      expect(rAll.removed).toContain("Post:99");
+    });
+
+    it("entity-only scope applies writes/deletes to those records", () => {
+      const graph = makeGraph();
+      const { modifyOptimistic, reapplyOptimistic } = createOptimistic({ graph });
+
+      // Seed two users
+      graph.putRecord("User:1", { __typename: "User", id: "1", name: "U1" });
+      graph.putRecord("User:2", { __typename: "User", id: "2", name: "U2" });
+
+      // Build overlay: write U1 and delete U2
+      modifyOptimistic((tx) => {
+        tx.patch("User:1", { name: "U1x" });
+        tx.delete("User:2");
+      }).commit?.();
+
+      // Simulate a base rewrite (e.g., server write) that restored User:2
+      // This mirrors the common "normalizeDocument" case where the base data changes,
+      // and we need reapplyOptimistic to selectively re-apply overlays.
+      graph.putRecord("User:2", { __typename: "User", id: "2", name: "U2" });
+
+      // Apply only to User:1
+      reapplyOptimistic({ entities: ["User:1"] });
+      expect(graph.getRecord("User:1")?.name).toBe("U1x");
+      // User:2 deletion should NOT be re-applied in this scoped call
+      expect(graph.getRecord("User:2")?.name).toBe("U2");
+
+      // Now apply to both → the delete for User:2 should take effect
+      reapplyOptimistic({ entities: ["User:1", "User:2"] });
+      expect(graph.getRecord("User:2")).toBeUndefined();
+    });
+  });
+
   describe("safety", () => {
     it("append after remove/no canonical exists → no throw, canonical created", () => {
       const graph = makeGraph();
-      const optimistic = createModifyOptimistic({ graph });
+      const { modifyOptimistic } = createOptimistic({ graph });
 
-      optimistic((tx) => {
+      modifyOptimistic((tx) => {
         const c = tx.connection({ parent: "Query", key: "posts" });
         c.remove({ __typename: "Post", id: 1 }); // no-op
         c.append({ __typename: "Post", id: 1, title: "Hello" }, { cursor: "c1" });

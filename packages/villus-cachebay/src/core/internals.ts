@@ -11,7 +11,7 @@ import { createDocuments } from "./documents";
 import { createFragments } from "./fragments";
 
 import { createSSR } from "../features/ssr";
-import { createModifyOptimistic } from "./optimistic";
+import { createOptimistic } from "./optimistic";
 import { createInspect } from "../features/inspect";
 
 export type CachebayInstance = ClientPlugin & {
@@ -56,15 +56,15 @@ export type CachebayOptions = {
 export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Core
   const graph = createGraph({ keys: options.keys || {}, interfaces: options.interfaces || {} });
+  const optimistic = createOptimistic({ graph });
   const views = createViews({ graph });
   const planner = createPlanner();
-  const canonical = createCanonical({ graph });
+  const canonical = createCanonical({ graph, optimistic });
   const documents = createDocuments({ graph, views, planner, canonical });
   const fragments = createFragments({}, { graph, views, planner });
 
   // Features
   const ssr = createSSR({ graph });
-  const modifyOptimistic = createModifyOptimistic({ graph });
   const inspect = createInspect({ graph });
 
   // Villus plugin (ClientPlugin)
@@ -83,7 +83,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   (plugin as any).writeFragment = fragments.writeFragment;
 
   // Optimistic API
-  (plugin as any).modifyOptimistic = modifyOptimistic;
+  (plugin as any).modifyOptimistic = optimistic.modifyOptimistic;
 
   // Inspect (debug)
   (plugin as any).inspect = inspect;
@@ -95,6 +95,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Internals for tests
   (plugin as any).__internals = {
     graph,
+    optimistic,
     views,
     planner,
     canonical,

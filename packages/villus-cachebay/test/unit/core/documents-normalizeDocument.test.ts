@@ -3,6 +3,7 @@ import gql from "graphql-tag";
 import { createGraph } from "@/src/core/graph";
 import { createViews } from "@/src/core/views";
 import { createPlanner } from "@/src/core/planner";
+import { createOptimistic } from "@/src/core/optimistic";
 import { createCanonical } from "@/src/core/canonical";
 import { createDocuments } from "@/src/core/documents";
 
@@ -376,6 +377,10 @@ const makeGraph = () =>
     },
   });
 
+const makeOptimistic = (graph: ReturnType<typeof createGraph>) => {
+  return createOptimistic({ graph });
+};
+
 const makeViews = (graph: ReturnType<typeof createGraph>) => {
   return createViews({ graph });
 };
@@ -385,8 +390,8 @@ const makePlanner = () => {
   return createPlanner();
 };
 
-const makeCanonical = (graph: ReturnType<typeof createGraph>) => {
-  return createCanonical({ graph });
+const makeCanonical = (graph: ReturnType<typeof createGraph>, optimistic: ReturnType<typeof makeOptimistic>) => {
+  return createCanonical({ graph, optimistic });
 };
 
 const makeDocuments = (
@@ -418,6 +423,7 @@ const canonicalNodeIds = (graph: ReturnType<typeof createGraph>, canonicalKey: s
 
 describe("normalizeDocument (progression by query)", () => {
   let graph: ReturnType<typeof createGraph>;
+  let optimistic: ReturnType<typeof makeOptimistic>;
   let planner: ReturnType<typeof createPlanner>;
   let views: ReturnType<typeof createViews>;
   let canonical: ReturnType<typeof makeCanonical>;
@@ -425,9 +431,10 @@ describe("normalizeDocument (progression by query)", () => {
 
   beforeEach(() => {
     graph = makeGraph();
+    optimistic = makeOptimistic(graph);
     views = makeViews(graph);
     planner = makePlanner();
-    canonical = makeCanonical(graph);
+    canonical = makeCanonical(graph, optimistic);
     documents = makeDocuments(graph, planner, canonical, views);
   });
 

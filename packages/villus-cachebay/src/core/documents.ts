@@ -1,4 +1,13 @@
-import { isObject, hasTypename, traverseFast, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, upsertEntityShallow, TRAVERSE_SKIP } from "./utils";
+import {
+  isObject,
+  hasTypename,
+  traverseFast,
+  buildFieldKey,
+  buildConnectionKey,
+  buildConnectionCanonicalKey,
+  upsertEntityShallow,
+  TRAVERSE_SKIP,
+} from "./utils";
 import { ROOT_ID } from "./constants";
 import type { CachePlanV1, PlanField } from "../compiler";
 import type { DocumentNode } from "graphql";
@@ -57,7 +66,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       const parentRecordId = frame.parentRecordId;
       const planField = typeof responseKey === "string" ? frame.fieldsMap.get(responseKey) : undefined;
 
-      // Connection page — store page & link; also update canonical
+      // Connection page — store page & link; then update canonical (network path)
       if (planField && planField.isConnection && isObject(valueNode)) {
         const pageKey = buildConnectionKey(planField, parentRecordId, variables);
         const fieldKey = buildFieldKey(planField, variables);
@@ -99,7 +108,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           graph.putRecord(parentRecordId, { [fieldKey]: { __ref: pageKey } });
         }
 
-        // update canonical connection (@connection) via extracted helper
+        // update canonical connection (@connection) — network path (leader may reset)
         canonical.updateConnection({
           field: planField,
           parentRecordId,
@@ -204,7 +213,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         continue;
       }
 
-      // With a sub-selection, return the selection-aware live entity view (NOT a snapshot shell)
+      // With a sub-selection, selection-aware live entity view
       result[field.responseKey] = views.getEntityView(
         entityProxy,
         field.selectionSet,
@@ -226,7 +235,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   }): boolean => {
     const plan = planner.getPlan(document);
 
-    // fragments aren't checked here; this is an operations helper
     if (plan.operation === "fragment") {
       return false;
     }
@@ -259,7 +267,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   }) => {
     const plan = planner.getPlan(document);
 
-    // Helper: if the concrete page exists in the graph, forward it to canonical.updateConnection
+    // Helper: if the concrete page exists, forward it to canonical WITHOUT leader reset.
     const tryForwardConcretePage = (field: PlanField, parentRecordId: string) => {
       const pageKey = buildConnectionKey(field, parentRecordId, variables);
       const page = graph.getRecord(pageKey);
@@ -270,11 +278,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         .map((e: any) => (e && e.__ref ? { __ref: e.__ref } : null))
         .filter(Boolean) as Array<{ __ref: string }>;
 
-      // Shallow snapshot without edges (includes __typename, pageInfo, and any extras)
+      // Shallow snapshot without edges (includes __typename, pageInfo, extras)
       const { edges, ...rest } = page;
       const pageSnap: Record<string, any> = { ...rest };
 
-      canonical.updateConnection({
+      canonical.mergeFromCache({
         field,
         parentRecordId,
         requestVars: variables,
@@ -283,7 +291,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         pageEdgeRefs,
       });
 
-      // If this field has node-level child connections, try to forward those too
+      // Nested child connections under node
       const edgesField = field.selectionMap?.get("edges");
       const nodeField = edgesField?.selectionMap?.get("node");
       if (nodeField?.selectionMap) {
@@ -306,12 +314,10 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     for (let i = 0; i < plan.root.length; i++) {
       const field = plan.root[i];
       if (!field.isConnection) continue;
-
-      // Forward the root page (if present) into canonical
       tryForwardConcretePage(field, ROOT_ID);
     }
 
-    // 2) Nested under root entity fields
+    // 2) Nested connections
     const rootSnap = graph.getRecord(ROOT_ID) || {};
     for (let i = 0; i < plan.root.length; i++) {
       const parentField = plan.root[i];
