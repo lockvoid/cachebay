@@ -5,6 +5,7 @@ import { createGraph } from "@/src/core/graph";
 import { createPlanner } from "@/src/core/planner";
 import { createViews } from "@/src/core/views";
 import { createCanonical } from "@/src/core/canonical";
+import { createOptimistic } from "@/src/core/optimistic";
 import { createDocuments } from "@/src/core/documents";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -267,6 +268,42 @@ const COMMENTS_PAGE_QUERY = gql`
     }
   }
 `;
+
+
+/** helper: write a concrete page (edges on pageKey.{edges.i}) */
+function writePageSnapshot(
+  graph: ReturnType<typeof createGraph>,
+  pageKey: string,
+  nodeIds: (number | string)[],
+  opts?: { start?: string | null; end?: string | null; hasNext?: boolean; hasPrev?: boolean }
+) {
+  const pageInfo = {
+    __typename: "PageInfo",
+    startCursor: opts?.start ?? (nodeIds.length ? `p${nodeIds[0]}` : null),
+    endCursor: opts?.end ?? (nodeIds.length ? `p${nodeIds[nodeIds.length - 1]}` : null),
+    hasNextPage: !!opts?.hasNext,
+    hasPreviousPage: !!opts?.hasPrev,
+  };
+  const edges = nodeIds.map((id, i) => {
+    const edgeKey = `${pageKey}.edges.${i}`;
+    const nodeKey = `Post:${id}`;
+    graph.putRecord(nodeKey, { __typename: "Post", id: String(id), title: `Post ${id}`, tags: [] });
+    graph.putRecord(edgeKey, { __typename: "PostEdge", cursor: `p${id}`, node: { __ref: nodeKey } });
+    return { __ref: edgeKey };
+  });
+  graph.putRecord(pageKey, { __typename: "PostConnection", pageInfo, edges });
+}
+
+const POSTS_QUERY = gql`
+  query Posts($first: Int, $after: String) {
+    posts(first: $first, after: $after) @connection(args: []) {
+      __typename
+      pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
+      edges { __typename cursor node { __typename id title } }
+    }
+  }
+`;
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Setup
@@ -690,5 +727,47 @@ describe("materializeDocument", () => {
     const v3 = documents.materializeDocument({ document: USERS_QUERY, variables: { usersRole: "qa", first: 2, after: null } });
     expect(v3.users.edges).not.toBe(edgesRef1);
     expect(v3.users.edges.length).toBe(3);
+  });
+
+  it("prewarm P1 & P2 → union 1..6; network P2 normalize keeps 1..6", () => {
+    const graph = createGraph({ interfaces: {} });
+    const planner = createPlanner();
+    const optimistic = createOptimistic({ graph });
+    const canonical = createCanonical({ graph, optimistic });
+    const views = createViews({ graph });
+    const documents = createDocuments({ graph, planner, canonical, views });
+
+    // Concrete pages in the graph (simulate return visit)
+    const p1 = '@.posts({"after":null,"first":3})';  // 1,2,3
+    const p2 = '@.posts({"after":"p3","first":3})';  // 4,5,6
+    writePageSnapshot(graph, p1, [1, 2, 3], { start: "p1", end: "p3", hasNext: true });
+    writePageSnapshot(graph, p2, [4, 5, 6], { start: "p4", end: "p6", hasNext: false, hasPrev: true });
+
+    // Prewarm both pages (cache path) → canonical union built
+    documents.prewarmDocument({ document: POSTS_QUERY, variables: { first: 3, after: null } });
+    documents.prewarmDocument({ document: POSTS_QUERY, variables: { first: 3, after: "p3" } });
+
+    // Materialize leader (after:null) → expect union 1..6
+    const toTitles = (v: any) => (v?.posts?.edges ?? []).map((e: any) => e?.node?.title);
+    let view = documents.materializeDocument({ document: POSTS_QUERY, variables: { first: 3, after: null } });
+    expect(toTitles(view)).toEqual(["Post 1", "Post 2", "Post 3", "Post 4", "Post 5", "Post 6"]);
+
+    // Network P2 arrives with identical slice → normalize; union remains 1..6
+    const netP2 = {
+      __typename: "Query",
+      posts: {
+        __typename: "PostConnection",
+        pageInfo: { __typename: "PageInfo", startCursor: "p4", endCursor: "p6", hasNextPage: false, hasPreviousPage: true },
+        edges: [
+          { __typename: "PostEdge", cursor: "p4", node: { __typename: "Post", id: "4", title: "Post 4" } },
+          { __typename: "PostEdge", cursor: "p5", node: { __typename: "Post", id: "5", title: "Post 5" } },
+          { __typename: "PostEdge", cursor: "p6", node: { __typename: "Post", id: "6", title: "Post 6" } },
+        ],
+      },
+    };
+    documents.normalizeDocument({ document: POSTS_QUERY, variables: { first: 3, after: "p3" }, data: netP2 });
+
+    view = documents.materializeDocument({ document: POSTS_QUERY, variables: { first: 3, after: null } });
+    expect(toTitles(view)).toEqual(["Post 1", "Post 2", "Post 3", "Post 4", "Post 5", "Post 6"]);
   });
 });

@@ -390,4 +390,59 @@ describe("core/canonical (flat edges[] union + per-page slice replacement)", () 
     expect(pi.startCursor).toBe("u1");
     expect(pi.endCursor).toBe("u2"); // anchored to leader
   });
+
+  it("prewarm P1,P2 from cache → network P2 arrives and union stays 1..6", () => {
+    const graph = createGraph({ interfaces: {} });
+    const optimistic = createOptimistic({ graph });
+    const canonical = createCanonical({ graph, optimistic });
+
+    const field: any = {
+      isConnection: true, connectionKey: "posts", connectionFilters: [],
+      connectionMode: "infinite", fieldName: "posts", responseKey: "posts",
+      buildArgs: (v: any) => v || {}
+    };
+
+    const canKey = '@connection.posts({})';
+
+    // P1 (leader): 1,2,3
+    const p1 = '@.posts({"after":null,"first":3})';
+    graph.putRecord("Post:1", { __typename: "Post", id: "1" });
+    graph.putRecord("Post:2", { __typename: "Post", id: "2" });
+    graph.putRecord("Post:3", { __typename: "Post", id: "3" });
+    graph.putRecord(`${p1}.edges.0`, { __typename: "PostEdge", cursor: "p1", node: { __ref: "Post:1" } });
+    graph.putRecord(`${p1}.edges.1`, { __typename: "PostEdge", cursor: "p2", node: { __ref: "Post:2" } });
+    graph.putRecord(`${p1}.edges.2`, { __typename: "PostEdge", cursor: "p3", node: { __ref: "Post:3" } });
+    const P1 = {
+      __typename: "PostConnection",
+      pageInfo: { __typename: "PageInfo", startCursor: "p1", endCursor: "p3", hasNextPage: true, hasPreviousPage: false },
+      edges: [{ __ref: `${p1}.edges.0` }, { __ref: `${p1}.edges.1` }, { __ref: `${p1}.edges.2` }],
+    };
+
+    // P2 (after): 4,5,6
+    const p2 = '@.posts({"after":"p3","first":3})';
+    graph.putRecord("Post:4", { __typename: "Post", id: "4" });
+    graph.putRecord("Post:5", { __typename: "Post", id: "5" });
+    graph.putRecord("Post:6", { __typename: "Post", id: "6" });
+    graph.putRecord(`${p2}.edges.0`, { __typename: "PostEdge", cursor: "p4", node: { __ref: "Post:4" } });
+    graph.putRecord(`${p2}.edges.1`, { __typename: "PostEdge", cursor: "p5", node: { __ref: "Post:5" } });
+    graph.putRecord(`${p2}.edges.2`, { __typename: "PostEdge", cursor: "p6", node: { __ref: "Post:6" } });
+    const P2 = {
+      __typename: "PostConnection",
+      pageInfo: { __typename: "PageInfo", startCursor: "p4", endCursor: "p6", hasNextPage: false, hasPreviousPage: true },
+      edges: [{ __ref: `${p2}.edges.0` }, { __ref: `${p2}.edges.1` }, { __ref: `${p2}.edges.2` }],
+    };
+
+    // Prewarm (cache path): P1 then P2 → union 1..6
+    canonical.mergeFromCache({ field, parentRecordId: ROOT_ID, requestVars: { first: 3, after: null }, pageKey: p1, pageSnap: P1, pageEdgeRefs: P1.edges });
+    canonical.mergeFromCache({ field, parentRecordId: ROOT_ID, requestVars: { first: 3, after: "p3" }, pageKey: p2, pageSnap: P2, pageEdgeRefs: P2.edges });
+    expect(readCanonicalNodeIds(graph, canKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+
+    // Network P2 arrives (same slice) → union still 1..6, pageInfo unchanged
+    canonical.updateConnection({ field, parentRecordId: ROOT_ID, requestVars: { first: 3, after: "p3" }, pageKey: p2, pageSnap: P2, pageEdgeRefs: P2.edges });
+    expect(readCanonicalNodeIds(graph, canKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+
+    const pi = graph.getRecord(canKey)?.pageInfo;
+    expect(pi.startCursor).toBe("p1");
+    expect(pi.endCursor).toBe("p6");
+  });
 });
