@@ -251,10 +251,10 @@ describe("features/optimistic (entities & canonical connections)", () => {
     });
   });
 
-  describe("reapplyOptimistic()", () => {
+  describe("replayOptimistic()", () => {
     it("returns inserted/removed for scoped connections; idempotent", () => {
       const graph = makeGraph();
-      const { modifyOptimistic, reapplyOptimistic } = createOptimistic({ graph });
+      const { modifyOptimistic, replayOptimistic } = createOptimistic({ graph });
       const canA = '@connection.posts({"category":"A"})';
       const canB = '@connection.posts({"category":"B"})';
 
@@ -271,7 +271,7 @@ describe("features/optimistic (entities & canonical connections)", () => {
       }).commit?.();
 
       // Reapply only for connection A
-      const rA = reapplyOptimistic({ connections: [canA] });
+      const rA = replayOptimistic({ connections: [canA] });
       expect(rA.inserted).toContain("Post:1");
       expect(rA.removed).toHaveLength(0);
       // B shouldn't be affected in this scoped call
@@ -281,7 +281,7 @@ describe("features/optimistic (entities & canonical connections)", () => {
       expect(edgesB).toHaveLength(0);
 
       // Now reapply for both
-      const rAll = reapplyOptimistic({ connections: [canA, canB] });
+      const rAll = replayOptimistic({ connections: [canA, canB] });
       expect(rAll.inserted).toContain("Post:1");
       // Removing a non-existing node is a no-op but should be reported in 'removed'
       expect(rAll.removed).toContain("Post:99");
@@ -289,7 +289,7 @@ describe("features/optimistic (entities & canonical connections)", () => {
 
     it("entity-only scope applies writes/deletes to those records", () => {
       const graph = makeGraph();
-      const { modifyOptimistic, reapplyOptimistic } = createOptimistic({ graph });
+      const { modifyOptimistic, replayOptimistic } = createOptimistic({ graph });
 
       // Seed two users
       graph.putRecord("User:1", { __typename: "User", id: "1", name: "U1" });
@@ -303,21 +303,21 @@ describe("features/optimistic (entities & canonical connections)", () => {
 
       // Simulate a base rewrite (e.g., server write) that restored User:2
       // This mirrors the common "normalizeDocument" case where the base data changes,
-      // and we need reapplyOptimistic to selectively re-apply overlays.
+      // and we need replayOptimistic to selectively re-apply overlays.
       graph.putRecord("User:2", { __typename: "User", id: "2", name: "U2" });
 
       // Apply only to User:1
-      reapplyOptimistic({ entities: ["User:1"] });
+      replayOptimistic({ entities: ["User:1"] });
       expect(graph.getRecord("User:1")?.name).toBe("U1x");
       // User:2 deletion should NOT be re-applied in this scoped call
       expect(graph.getRecord("User:2")?.name).toBe("U2");
 
       // Now apply to both → the delete for User:2 should take effect
-      reapplyOptimistic({ entities: ["User:1", "User:2"] });
+      replayOptimistic({ entities: ["User:1", "User:2"] });
       expect(graph.getRecord("User:2")).toBeUndefined();
     });
 
-    it("reapplyOptimistic(): idempotent for the same connection scope", () => {
+    it("replayOptimistic(): idempotent for the same connection scope", () => {
       const graph = makeGraph();
       const optimistic = createOptimistic({ graph });
       const canKey = '@connection.posts({})';
@@ -331,9 +331,9 @@ describe("features/optimistic (entities & canonical connections)", () => {
       T1.commit?.();
 
       const before = JSON.stringify(graph.getRecord(canKey));
-      const r1 = (optimistic as any).reapplyOptimistic({ connections: [canKey] });
+      const r1 = (optimistic as any).replayOptimistic({ connections: [canKey] });
       const after1 = JSON.stringify(graph.getRecord(canKey));
-      const r2 = (optimistic as any).reapplyOptimistic({ connections: [canKey] });
+      const r2 = (optimistic as any).replayOptimistic({ connections: [canKey] });
       const after2 = JSON.stringify(graph.getRecord(canKey));
 
       expect(r1.inserted.concat(r1.removed)).toBeDefined();

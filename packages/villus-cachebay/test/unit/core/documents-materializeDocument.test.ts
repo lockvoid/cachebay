@@ -287,7 +287,7 @@ const makeCanonical = (graph: ReturnType<typeof createGraph>) =>
   createCanonical({
     graph,
     optimistic: {
-      reapplyOptimistic: () => ({ inserted: [], removed: [] }),
+      replayOptimistic: () => ({ inserted: [], removed: [] }),
     } as any,
   });
 

@@ -4,7 +4,7 @@ import type { PlanField } from "../compiler";
 import { buildConnectionCanonicalKey } from "./utils";
 
 type OptimisticHook = {
-  reapplyOptimistic: (hint?: { connections?: string[]; entities?: string[] }) => {
+  replayOptimistic: (hint?: { connections?: string[]; entities?: string[] }) => {
     inserted: string[];
     removed: string[];
   };
@@ -189,7 +189,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDeps) => {
         pageInfo: pageSnap.pageInfo || {},
         ...extras,
       });
-      optimistic.reapplyOptimistic({ connections: [canKey] });
+      optimistic.replayOptimistic({ connections: [canKey] });
       return;
     }
 
@@ -220,7 +220,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDeps) => {
       }
     }
 
-    optimistic.reapplyOptimistic({ connections: [canKey] });
+    optimistic.replayOptimistic({ connections: [canKey] });
   };
 
   /** CACHE PATH (prewarm): never reset; record hints; rebuild union; no extras overwrite; reapply optimistic. */
@@ -243,7 +243,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDeps) => {
         pageInfo: args.pageSnap.pageInfo || {},
         // no extras on prewarm page-mode (can be added if you want)
       });
-      optimistic.reapplyOptimistic({ connections: [canKey] });
+      optimistic.replayOptimistic({ connections: [canKey] });
       return;
     }
 
@@ -260,7 +260,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDeps) => {
     const ordered = computeOrderedPages(meta);
     rebuildCanonical(canKey, ordered);
 
-    optimistic.reapplyOptimistic({ connections: [canKey] });
+    optimistic.replayOptimistic({ connections: [canKey] });
   };
 
   return { updateConnection, mergeFromCache };
