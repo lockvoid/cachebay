@@ -151,3 +151,88 @@ export const posts = {
     };
   },
 };
+export const comments = {
+  /**
+   * Build a CommentConnection (no Query wrapper).
+   * Accepts texts as strings, or objects { text, id?, extras? }.
+   * If id is provided, it is used for both node identity and the cursor (c{id}).
+   */
+  connection(
+    texts: Array<
+      | string
+      | {
+        text: string;
+        id?: string | number;
+        extras?: Record<string, any>;
+      }
+    >,
+    opts: {
+      postId?: string;
+      fromId?: number;
+      pageInfo?: Partial<{
+        __typename: "PageInfo";
+        startCursor: string | null;
+        endCursor: string | null;
+        hasNextPage: boolean;
+        hasPreviousPage: boolean;
+      }>;
+    } = {}
+  ) {
+    const fromId = opts.fromId ?? 1;
+
+    const edges = texts.map((t, i) => {
+      const isObj = typeof t === "object";
+      const text = isObj ? (t as any).text : (t as string);
+      const id =
+        isObj && (t as any).id != null ? String((t as any).id) : String(fromId + i);
+      const extras = {
+        ...(opts.postId ? { postId: opts.postId } : {}),
+        ...(isObj ? (t as any).extras ?? {} : {}),
+      };
+
+      return {
+        __typename: "CommentEdge",
+        cursor: `c${id}`,
+        node: comment(id, text, extras),
+      };
+    });
+
+    const pageInfo = {
+      __typename: "PageInfo" as const,
+      startCursor: edges.length ? edges[0].cursor : null,
+      endCursor: edges.length ? edges[edges.length - 1].cursor : null,
+      hasNextPage: false,
+      hasPreviousPage: false,
+      ...opts.pageInfo,
+    };
+
+    return {
+      __typename: "CommentConnection",
+      edges,
+      pageInfo,
+    };
+  },
+
+  /** Wrap for { data: { comments: ... } } */
+  query(
+    texts: Parameters<typeof comments.connection>[0],
+    opts?: Parameters<typeof comments.connection>[1]
+  ) {
+    return {
+      data: {
+        __typename: "Query",
+        comments: comments.connection(texts, opts),
+      },
+    };
+  },
+};
+export const singleUser = {
+  query(id: string, email: string) {
+    return {
+      data: {
+        __typename: "Query",
+        user: user(id, email),
+      },
+    };
+  },
+};

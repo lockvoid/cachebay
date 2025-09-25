@@ -22,9 +22,6 @@ type PluginDependencies = {
   ssr?: { isHydrating?: () => boolean };
 };
 
-// shallow copy to avoid mutating caller payloads
-const deepCopy = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
-
 /**
  * Decide if we must prewarm (rebuild canonical from concrete page)
  * for the current operation's **root** @connection fields.
@@ -75,20 +72,65 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     const policy: string =
       (op as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
 
-    const buildCachedFrame = () => {
-
+    function buildCachedFrame() {
       // We need the document present (links/pages/canonicals) to build a view
       if (!documents.hasDocument({ document, variables: vars })) {
-        //   console.log('Graphql document not found', graph.inspect());
         return null;
       }
 
-      documents.prewarmDocument({ document, variables: vars });
+      const plan = planner.getPlan(document);
+      const rootConnections = plan.root.filter((f) => f.isConnection);
+
+      // If no root @connection, just materialize cached entities
+      if (rootConnections.length === 0) {
+        const view = documents.materializeDocument({ document, variables: vars });
+        return { data: view };
+      }
+
+      // Helper: detect cursor role for this request
+      const detectRole = (field: any) => {
+        const req = field.buildArgs ? (field.buildArgs(vars) || {}) : (vars || {});
+        const has = (k: string) =>
+          req[k] != null ||
+          Object.keys(vars || {}).some((n) => n.toLowerCase().includes(k) && vars[n] != null);
+        return { hasAfter: has("after"), hasBefore: has("before") };
+      };
+
+      // If this request is AFTER/BEFORE, prewarm that page (so union grows immediately)
+      let didPrewarm = false;
+      for (const f of rootConnections) {
+        const { hasAfter, hasBefore } = detectRole(f);
+        if (hasAfter || hasBefore) {
+          documents.prewarmDocument({ document, variables: vars });
+          didPrewarm = true;
+          break;
+        }
+      }
+
+      // If leader request and canonicals already exist, DO NOT prewarm (preserve collapsed leader view)
+      if (!didPrewarm) {
+        const anyCanonicalReady = rootConnections.some((f) => {
+          const canKey = buildConnectionCanonicalKey(f, ROOT_ID, vars);
+          const can = graph.getRecord(canKey);
+          return Array.isArray(can?.edges) && can.edges.length > 0;
+        });
+
+        // If no canonical edges yet, try to prewarm from concrete pages (if cached)
+        if (!anyCanonicalReady) {
+          documents.prewarmDocument({ document, variables: vars });
+        }
+      }
 
       const view = documents.materializeDocument({ document, variables: vars });
 
-      return { data: view };
-    };
+      // Only emit if at least one root connection has cached edges
+      const hasEdges = rootConnections.some((f) => {
+        const v = (view as any)?.[f.responseKey];
+        return Array.isArray(v?.edges) && v.edges.length > 0;
+      });
+
+      return hasEdges ? { data: view } : null;
+    }
 
     // cache-only
     if (policy === "cache-only") {
@@ -116,7 +158,6 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
 
       if (cached) {
-        console.log("Publishing cached frame", ctx, JSON.stringify(cached));
         publish(cached, false);
       }
     }
@@ -132,8 +173,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       }
 
       // 1) Normalize the network payload into the graph
-      const mutable = deepCopy(incoming.data);
-      documents.normalizeDocument({ document, variables: vars, data: mutable });
+      documents.normalizeDocument({ document, variables: vars, data: incoming.data });
 
       // 2) Materialize from CANONICAL (ensures stable views)
       const view = documents.materializeDocument({ document, variables: vars });
