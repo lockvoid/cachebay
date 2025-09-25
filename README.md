@@ -1,7 +1,7 @@
 
 # Cachebay for Villus
 
-**Blazing-fast normalized cache + Relay-style connections for Villus.**
+**Blazing-fast normalized cache x Relay-style connections for Villus.**
 
 A tiny (12KB gzip), instance-scoped cache layer for **Villus** that gives you:
 

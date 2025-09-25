@@ -1521,10 +1521,10 @@ describe("normalizeDocument (progression by query)", () => {
     // pageInfo remains anchored to the leader (no-cursor) page
     expect(canon.pageInfo).toEqual({
       __typename: "PageInfo",
-      endCursor: "u0",
-      hasNextPage: false,
-      hasPreviousPage: true,
-      startCursor: "u0",
+      startCursor: "u0", // head
+      endCursor: "u3",   // tail
+      hasNextPage: true, // from tail
+      hasPreviousPage: true, // from head
     });
 
     // totalCount sticks from leader in infinite mode
@@ -1738,8 +1738,8 @@ describe("normalizeDocument (progression by query)", () => {
     // Anchored leader pageInfo and totalCount
     expect(canon.pageInfo).toEqual({
       __typename: "PageInfo",
-      startCursor: "c3",
-      endCursor: "c3",
+      startCursor: "c1", // head
+      endCursor: "c3",   // tail
       hasNextPage: true,
       hasPreviousPage: false,
     });
