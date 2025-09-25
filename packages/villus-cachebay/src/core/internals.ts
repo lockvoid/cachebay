@@ -11,7 +11,7 @@ import { createDocuments } from "./documents";
 import { createFragments } from "./fragments";
 
 import { createSSR } from "../features/ssr";
-import { createModifyOptimistic } from "../features/optimistic";
+import { createModifyOptimistic } from "./optimistic";
 import { createInspect } from "../features/inspect";
 
 export type CachebayInstance = ClientPlugin & {

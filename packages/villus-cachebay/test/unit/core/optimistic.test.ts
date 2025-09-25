@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createGraph } from "@/src/core/graph";
-import { createModifyOptimistic } from "@/src/features/optimistic";
+import { createModifyOptimistic } from "@/src/core/optimistic";
 
 const tick = () => Promise.resolve();
 
