@@ -521,4 +521,41 @@ describe("plugin (villus) — canonical materialization, no sessions", () => {
     expect(emissions[0].terminal).toBe(true);
     expect(JSON.stringify(graph.getRecord("@"))).toBe(beforeSnap); // unchanged
   });
+
+  it("cache-and-network when canonical missing but concrete page exists: prewarms then emits cached union", () => {
+    const plugin = createPlugin({}, { graph, planner, documents });
+
+    // Prepare root users page (u1,u2) but NO canonical
+    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "x@a" });
+    graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "y@b" });
+
+    const plan = planner.getPlan(USERS_POSTS_QUERY);
+    const usersField = plan.rootSelectionMap!.get("users")!;
+    const vars = { usersRole: "sales", usersFirst: 2, usersAfter: null, postsCategory: "tech", postsFirst: 1, postsAfter: null };
+    const pageKey = buildConnectionKey(usersField, "@", vars);
+
+    seedPage(
+      graph,
+      pageKey,
+      [{ nodeRef: "User:u1", cursor: "u1" }, { nodeRef: "User:u2", cursor: "u2" }],
+      { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: true },
+      {},
+      "UserEdge",
+      "UserConnection",
+    );
+    // canonical intentionally missing here
+
+    const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
+    const ctx: any = {
+      operation: { key: 30, query: USERS_POSTS_QUERY, variables: vars, cachePolicy: "cache-and-network" },
+      useResult: (payload: OperationResult, terminal?: boolean) => emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal }),
+    };
+
+    plugin(ctx);
+
+    // prewarm created canonical -> cached frame emitted first
+    expect(emissions.length).toBe(1);
+    expect(emissions[0].terminal).toBe(false);
+    expect(emissions[0].data.users.edges.length).toBe(2);
+  });
 });

@@ -316,6 +316,30 @@ describe("features/optimistic (entities & canonical connections)", () => {
       reapplyOptimistic({ entities: ["User:1", "User:2"] });
       expect(graph.getRecord("User:2")).toBeUndefined();
     });
+
+    it("reapplyOptimistic(): idempotent for the same connection scope", () => {
+      const graph = makeGraph();
+      const optimistic = createOptimistic({ graph });
+      const canKey = '@connection.posts({})';
+
+      // add P1,P2
+      const T1 = optimistic.modifyOptimistic((tx) => {
+        const c = tx.connection({ parent: "Query", key: "posts" });
+        c.append({ __typename: "Post", id: 1, title: "P1" }, { cursor: "c1" });
+        c.append({ __typename: "Post", id: 2, title: "P2" }, { cursor: "c2" });
+      });
+      T1.commit?.();
+
+      const before = JSON.stringify(graph.getRecord(canKey));
+      const r1 = (optimistic as any).reapplyOptimistic({ connections: [canKey] });
+      const after1 = JSON.stringify(graph.getRecord(canKey));
+      const r2 = (optimistic as any).reapplyOptimistic({ connections: [canKey] });
+      const after2 = JSON.stringify(graph.getRecord(canKey));
+
+      expect(r1.inserted.concat(r1.removed)).toBeDefined();
+      expect(after1).toBe(after2);         // 2nd reapply didn't change anything
+      expect(before).toBe(after1);         // and first reapply didn't either
+    });
   });
 
   describe("safety", () => {

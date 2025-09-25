@@ -650,4 +650,45 @@ describe("materializeDocument", () => {
     graph.putRecord("Comment:c1", { text: "Comment 1 (Updated)" });
     expect(comment0.text).toBe("Comment 1 (Updated)");
   });
+
+  it("identity stability: edges array updates only on ref list change; pageInfo identity replaced; node proxies stable", () => {
+    // Seed canonical users u1,u2
+    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@x" });
+    graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "b@x" });
+    const e0 = '@.users({"after":null,"first":2,"role":"qa"}).edges.0';
+    const e1 = '@.users({"after":null,"first":2,"role":"qa"}).edges.1';
+    graph.putRecord(e0, { __typename: "UserEdge", cursor: "u1", node: { __ref: "User:u1" } });
+    graph.putRecord(e1, { __typename: "UserEdge", cursor: "u2", node: { __ref: "User:u2" } });
+    const canKey = '@connection.users({"role":"qa"})';
+    graph.putRecord(canKey, {
+      __typename: "UserConnection",
+      pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false, hasPreviousPage: false },
+      edges: [{ __ref: e0 }, { __ref: e1 }],
+    });
+
+    const v1 = documents.materializeDocument({ document: USERS_QUERY, variables: { usersRole: "qa", first: 2, after: null } });
+    const edgesRef1 = v1.users.edges;
+    const pageInfoRef1 = v1.users.pageInfo;
+    const nodeRef1 = v1.users.edges[0].node;
+
+    // Change pageInfo only
+    graph.putRecord(canKey, { pageInfo: { endCursor: "u3" } });
+    const v2 = documents.materializeDocument({ document: USERS_QUERY, variables: { usersRole: "qa", first: 2, after: null } });
+    expect(v2.users.edges).toBe(edgesRef1);     // edges array identity stable
+    expect(v2.users.pageInfo).not.toBe(pageInfoRef1); // pageInfo replaced
+    expect(v2.users.pageInfo.endCursor).toBe("u3");
+
+    // Change underlying node (reactive), not ref list
+    graph.putRecord("User:u1", { email: "a+1@x" });
+    expect(nodeRef1.email).toBe("a+1@x");
+
+    // Change ref list: append another edge → edges array identity changes
+    const e2 = '@.users({"after":"u2","first":1,"role":"qa"}).edges.0';
+    graph.putRecord(e2, { __typename: "UserEdge", cursor: "u3", node: { __ref: "User:u2" } });
+    // simulate canonical update
+    graph.putRecord(canKey, { edges: [{ __ref: e0 }, { __ref: e1 }, { __ref: e2 }] });
+    const v3 = documents.materializeDocument({ document: USERS_QUERY, variables: { usersRole: "qa", first: 2, after: null } });
+    expect(v3.users.edges).not.toBe(edgesRef1);
+    expect(v3.users.edges.length).toBe(3);
+  });
 });

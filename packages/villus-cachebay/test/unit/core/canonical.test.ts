@@ -285,4 +285,108 @@ describe("core/canonical (flat edges[] union + per-page slice replacement)", () 
     // Overlay should be applied on top: Post:2 removed; Post:9 at front
     expect(readCanonicalNodeIds(graph, canKey)).toEqual(["9", "1", "3", "4", "5", "6"]);
   });
+
+  it("refresh of the same page updates edge meta without dupes; keeps order", () => {
+    const graph = createGraph({ interfaces: {} });
+    const optimistic = createOptimistic({ graph });
+    const canonical = createCanonical({ graph, optimistic });
+
+    // Pretend leader page P1 edges (1,2)
+    const field: any = {
+      isConnection: true, connectionKey: "posts", connectionFilters: [],
+      connectionMode: "infinite", fieldName: "posts", responseKey: "posts",
+      buildArgs: (v: any) => v || {}
+    };
+    const pageKeyP1 = '@.posts({"after":null,"first":2})';
+    graph.putRecord("Post:1", { __typename: "Post", id: "1" });
+    graph.putRecord("Post:2", { __typename: "Post", id: "2" });
+    graph.putRecord(`${pageKeyP1}.edges.0`, { __typename: "PostEdge", cursor: "c1", node: { __ref: "Post:1" }, score: 1 });
+    graph.putRecord(`${pageKeyP1}.edges.1`, { __typename: "PostEdge", cursor: "c2", node: { __ref: "Post:2" }, score: 1 });
+
+    canonical.updateConnection({
+      field, parentRecordId: "@", requestVars: { first: 2, after: null }, pageKey: pageKeyP1,
+      pageSnap: { __typename: "PostConnection", pageInfo: { __typename: "PageInfo", startCursor: "c1", endCursor: "c2" } },
+      pageEdgeRefs: [{ __ref: `${pageKeyP1}.edges.0` }, { __ref: `${pageKeyP1}.edges.1` }],
+    });
+
+    // Refresh P1 with same nodes but new meta (scores, cursors)
+    graph.putRecord(`${pageKeyP1}.edges.0`, { score: 9, cursor: "c1x", node: { __ref: "Post:1" } });
+    graph.putRecord(`${pageKeyP1}.edges.1`, { score: 8, cursor: "c2x", node: { __ref: "Post:2" } });
+
+    canonical.updateConnection({
+      field, parentRecordId: "@", requestVars: { first: 2, after: null }, pageKey: pageKeyP1,
+      pageSnap: { __typename: "PostConnection", pageInfo: { __typename: "PageInfo", startCursor: "c1x", endCursor: "c2x" } },
+      pageEdgeRefs: [{ __ref: `${pageKeyP1}.edges.0` }, { __ref: `${pageKeyP1}.edges.1` }],
+    });
+
+    const canKey = '@connection.posts({})';
+    const can = graph.getRecord(canKey);
+    expect(can.edges.length).toBe(2);
+    const e0 = graph.getRecord(can.edges[0].__ref);
+    const e1 = graph.getRecord(can.edges[1].__ref);
+    expect(e0.cursor).toBe("c1x");
+    expect(e0.score).toBe(9);
+    expect(e1.cursor).toBe("c2x");
+    expect(e1.score).toBe(8);
+    // order is still 1,2
+    const ids = can.edges.map((r: any) => graph.getRecord(graph.getRecord(r.__ref).node.__ref).id);
+    expect(ids).toEqual(["1", "2"]);
+  });
+
+  it("leader refetch after forward pages keeps leader-first order & anchored pageInfo", () => {
+    const graph = createGraph({ interfaces: {} });
+    const optimistic = createOptimistic({ graph });
+    const canonical = createCanonical({ graph, optimistic });
+
+    const field: any = {
+      isConnection: true, connectionKey: "users", connectionFilters: ["role"],
+      connectionMode: "infinite", fieldName: "users", responseKey: "users",
+      buildArgs: (v: any) => v || {}
+    };
+
+    // leader P1: u1,u2
+    ["u1", "u2", "u3", "u4"].forEach(u => graph.putRecord(`User:${u}`, { __typename: "User", id: u }));
+    const p1 = '@.users({"after":null,"first":2,"role":"admin"})';
+    graph.putRecord(`${p1}.edges.0`, { __typename: "UserEdge", cursor: "u1", node: { __ref: "User:u1" } });
+    graph.putRecord(`${p1}.edges.1`, { __typename: "UserEdge", cursor: "u2", node: { __ref: "User:u2" } });
+    canonical.updateConnection({
+      field, parentRecordId: "@",
+      requestVars: { usersRole: "admin", first: 2, after: null },
+      pageKey: p1,
+      pageSnap: { __typename: "UserConnection", pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: true, hasPreviousPage: false } },
+      pageEdgeRefs: [{ __ref: `${p1}.edges.0` }, { __ref: `${p1}.edges.1` }],
+    });
+
+    // after P2: u3,u4
+    const p2 = '@.users({"after":"u2","first":2,"role":"admin"})';
+    graph.putRecord(`${p2}.edges.0`, { __typename: "UserEdge", cursor: "u3", node: { __ref: "User:u3" } });
+    graph.putRecord(`${p2}.edges.1`, { __typename: "UserEdge", cursor: "u4", node: { __ref: "User:u4" } });
+    canonical.updateConnection({
+      field, parentRecordId: "@",
+      requestVars: { usersRole: "admin", first: 2, after: "u2" },
+      pageKey: p2,
+      pageSnap: { __typename: "UserConnection", pageInfo: { __typename: "PageInfo", startCursor: "u3", endCursor: "u4", hasNextPage: false, hasPreviousPage: true } },
+      pageEdgeRefs: [{ __ref: `${p2}.edges.0` }, { __ref: `${p2}.edges.1` }],
+    });
+
+    // leader refetch (still u1,u2)
+    canonical.updateConnection({
+      field, parentRecordId: "@",
+      requestVars: { usersRole: "admin", first: 2, after: null },
+      pageKey: p1,
+      pageSnap: { __typename: "UserConnection", pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: true, hasPreviousPage: false } },
+      pageEdgeRefs: [{ __ref: `${p1}.edges.0` }, { __ref: `${p1}.edges.1` }],
+    });
+
+    const canKey = '@connection.users({"role":"admin"})';
+    const ids = (graph.getRecord(canKey).edges || []).map((r: any) => {
+      const edge = graph.getRecord(r.__ref);
+      const node = graph.getRecord(edge.node.__ref);
+      return node.id;
+    });
+    expect(ids).toEqual(["u1", "u2", "u3", "u4"]); // leader-first order
+    const pi = graph.getRecord(canKey).pageInfo;
+    expect(pi.startCursor).toBe("u1");
+    expect(pi.endCursor).toBe("u2"); // anchored to leader
+  });
 });
