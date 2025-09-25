@@ -18,19 +18,16 @@ import { createCache } from "@/src/core/internals";
  * Helpers
  * -------------------------------------------------------------------------- */
 
-// read rows rendered with a specific CSS class (used by CanonPosts etc.)
 const rowsByClass = (wrapper: any, cls = ".row") =>
   wrapper.findAll(cls).map((n: any) => n.text());
 
-// read all <div> texts except the .pi metadata block (used by PostsHarness)
 const rowsNoPI = (wrapper: any) =>
   wrapper.findAll("div:not(.pi)").map((n: any) => n.text());
 
 /* ────────────────────────────────────────────────────────────────────────────
- * PART 1 — Integration • Optimistic updates (entities & canonical connections)
+ * PART 1 — Optimistic updates (entities & canonical connections)
  * -------------------------------------------------------------------------- */
 
-// Small reader that lists canonical posts (thanks to @connection)
 const CanonPosts = defineComponent({
   name: "CanonPosts",
   props: { first: Number, after: String },
@@ -47,27 +44,25 @@ const CanonPosts = defineComponent({
   },
 });
 
-// Minimal fragment for entity checks via cache.readFragment/writeFragment
-const FRAG_POST = operations.POST_FRAGMENT; // fragment PostFields on Post { id title tags }
+const FRAG_POST = operations.POST_FRAGMENT;
 
 describe("Integration • Optimistic updates (entities & canonical connections)", () => {
-  // ————————————————————————————————————————————————————————————————————————
-  // Entity ops
-  // ————————————————————————————————————————————————————————————————————————
   it("Entity: patch+commit then revert restores previous snapshot", async () => {
     const cache = createCache();
 
-    // baseline: missing
     const empty0 = cache.readFragment({ id: "Post:1", fragment: FRAG_POST });
-    if (empty0 === undefined) {
-      expect(empty0).toBeUndefined();
-    } else {
+    if (empty0 === undefined) expect(empty0).toBeUndefined();
+    else {
       expect(typeof empty0).toBe("object");
       expect(Object.keys(empty0).length).toBe(0);
     }
 
     const T = cache.modifyOptimistic((tx) => {
-      tx.patch("Post:1", { __typename: "Post", id: "1", title: "Post A" }, { mode: "merge" });
+      tx.patch(
+        "Post:1",
+        { __typename: "Post", id: "1", title: "Post A" },
+        { mode: "merge" }
+      );
     });
     T.commit?.();
     await tick(2);
@@ -76,9 +71,8 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
     T.revert?.();
     await tick(2);
     const empty1 = cache.readFragment({ id: "Post:1", fragment: FRAG_POST });
-    if (empty1 === undefined) {
-      expect(empty1).toBeUndefined();
-    } else {
+    if (empty1 === undefined) expect(empty1).toBeUndefined();
+    else {
       expect(typeof empty1).toBe("object");
       expect(Object.keys(empty1).length).toBe(0);
     }
@@ -88,10 +82,18 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
     const cache = createCache();
 
     const T1 = cache.modifyOptimistic((tx) => {
-      tx.patch("Post:1", { __typename: "Post", id: "1", title: "Post A" }, { mode: "merge" });
+      tx.patch(
+        "Post:1",
+        { __typename: "Post", id: "1", title: "Post A" },
+        { mode: "merge" }
+      );
     });
     const T2 = cache.modifyOptimistic((tx) => {
-      tx.patch("Post:1", { __typename: "Post", id: "1", title: "Post B" }, { mode: "merge" });
+      tx.patch(
+        "Post:1",
+        { __typename: "Post", id: "1", title: "Post B" },
+        { mode: "merge" }
+      );
     });
 
     T1.commit?.();
@@ -106,9 +108,8 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
     T2.revert?.();
     await tick(2);
     const empty = cache.readFragment({ id: "Post:1", fragment: FRAG_POST });
-    if (empty === undefined) {
-      expect(empty).toBeUndefined();
-    } else {
+    if (empty === undefined) expect(empty).toBeUndefined();
+    else {
       expect(typeof empty).toBe("object");
       expect(Object.keys(empty).length).toBe(0);
     }
@@ -118,10 +119,18 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
     const cache = createCache();
 
     const T1 = cache.modifyOptimistic((tx) => {
-      tx.patch("Post:1", { __typename: "Post", id: "1", title: "Post A" }, { mode: "merge" });
+      tx.patch(
+        "Post:1",
+        { __typename: "Post", id: "1", title: "Post A" },
+        { mode: "merge" }
+      );
     });
     const T2 = cache.modifyOptimistic((tx) => {
-      tx.patch("Post:1", { __typename: "Post", id: "1", title: "Post B" }, { mode: "merge" });
+      tx.patch(
+        "Post:1",
+        { __typename: "Post", id: "1", title: "Post B" },
+        { mode: "merge" }
+      );
     });
 
     T1.commit?.();
@@ -136,50 +145,37 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
     T1.revert?.();
     await tick(2);
     const empty = cache.readFragment({ id: "Post:1", fragment: FRAG_POST });
-    if (empty === undefined) {
-      expect(empty).toBeUndefined();
-    } else {
+    if (empty === undefined) expect(empty).toBeUndefined();
+    else {
       expect(typeof empty).toBe("object");
       expect(Object.keys(empty).length).toBe(0);
     }
   });
 
-  // ————————————————————————————————————————————————————————————————————————
-  // Canonical connection (root Query.posts — infinite union anchored at leader)
-  // ————————————————————————————————————————————————————————————————————————
-  it("Canonical connection: prepend/remove/patch; UI (canonical) updates accordingly", async () => {
+  it("Canonical connection: add/remove/patch; UI (canonical) updates accordingly", async () => {
     const cache = createCache();
 
-    // Seed two pages → canonical union is [Post 1,2,3,4]
     await seedCache(cache, {
       query: operations.POSTS_QUERY,
       variables: { first: 2, after: null },
-      data: {
-        __typename: "Query",
-        posts: fixtures.posts.connection(["Post 1", "Post 2"], { fromId: 1 }),
-      },
+      data: { __typename: "Query", posts: fixtures.posts.connection(["Post 1", "Post 2"], { fromId: 1 }) },
     });
     await seedCache(cache, {
       query: operations.POSTS_QUERY,
       variables: { first: 2, after: "c2" },
-      data: {
-        __typename: "Query",
-        posts: fixtures.posts.connection(["Post 3", "Post 4"], { fromId: 3 }),
-      },
+      data: { __typename: "Query", posts: fixtures.posts.connection(["Post 3", "Post 4"], { fromId: 3 }) },
     });
 
     const { wrapper, fx } = await mountWithClient(CanonPosts, [] as Route[], cache);
 
-    // Canonical (union) is rendered, not just leader slice
     await wrapper.setProps({ first: 2, after: null });
     await tick(2);
     expect(rowsByClass(wrapper)).toEqual(["Post 1", "Post 2", "Post 3", "Post 4"]);
 
-    // Optimistic edits: prepend P9, remove Post 1, patch pageInfo
     const T = cache.modifyOptimistic((tx) => {
       const c = tx.connection({ parent: "Query", key: "posts" });
-      c.prepend({ __typename: "Post", id: "9", title: "Prepended" }, { cursor: "c9" });
-      c.remove({ __typename: "Post", id: "1" });
+      c.addNode({ __typename: "Post", id: "9", title: "Prepended" }, { position: "start" });
+      c.removeNode({ __typename: "Post", id: "1" });
       c.patch((prev) => ({
         pageInfo: { ...(prev.pageInfo || {}), endCursor: "c9", __typename: "PageInfo" },
       }));
@@ -187,9 +183,7 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
     T.commit?.();
     await tick(2);
 
-    // Union reflects optimistic prepend/remove
     expect(rowsByClass(wrapper)).toEqual(["Prepended", "Post 2", "Post 3", "Post 4"]);
-
     await fx.restore();
   });
 
@@ -201,9 +195,8 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
 
     const T = cache.modifyOptimistic((tx) => {
       const c = tx.connection({ parent: "Query", key: "posts" });
-      // both ignored — invalid identity
-      c.append({ id: "1", title: "NoType" } as any, { cursor: "x" });
-      c.prepend({ __typename: "Post", title: "NoId" } as any, { cursor: "y" });
+      c.addNode({ id: "1", title: "NoType" } as any, { position: "end" });
+      c.addNode({ __typename: "Post", title: "NoId" } as any, { position: "start" });
     });
     T.commit?.();
     await tick(2);
@@ -217,7 +210,7 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
 
     await seedCache(cache, {
       query: operations.POSTS_QUERY,
-      variables: {}, // no cursors => canonical
+      variables: {},
       data: { __typename: "Query", posts: fixtures.posts.connection([]) },
     });
 
@@ -243,8 +236,8 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
 
     const T1 = cache.modifyOptimistic((tx) => {
       const c = tx.connection({ parent: "Query", key: "posts" });
-      c.append({ __typename: "Post", id: "1", title: "Post 1" }, { cursor: "c1" });
-      c.append({ __typename: "Post", id: "2", title: "Post 2" }, { cursor: "c2" });
+      c.addNode({ __typename: "Post", id: "1", title: "Post 1" }, { position: "end" });
+      c.addNode({ __typename: "Post", id: "2", title: "Post 2" }, { position: "end" });
       c.patch((prev) => ({
         pageInfo: { ...(prev.pageInfo || {}), endCursor: "c2", hasNextPage: true, __typename: "PageInfo" },
       }));
@@ -252,7 +245,7 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
 
     const T2 = cache.modifyOptimistic((tx) => {
       const c = tx.connection({ parent: "Query", key: "posts" });
-      c.append({ __typename: "Post", id: "3", title: "Post 3" }, { cursor: "c3" });
+      c.addNode({ __typename: "Post", id: "3", title: "Post 3" }, { position: "end" });
       c.patch((prev) => ({
         pageInfo: { ...(prev.pageInfo || {}), endCursor: "c3", hasNextPage: false, __typename: "PageInfo" },
       }));
@@ -263,12 +256,10 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
     await tick(2);
     expect(rowsByClass(wrapper)).toEqual(["Post 1", "Post 2", "Post 3"]);
 
-    // Revert T1 → keep T2 in place. Give the view a second frame to settle.
     T1.revert?.();
     await tick(2);
     expect(rowsByClass(wrapper)).toEqual(["Post 3"]);
 
-    // Revert T2 → back to baseline (empty)
     T2.revert?.();
     await tick(2);
     expect(rowsByClass(wrapper)).toEqual([]);
@@ -278,11 +269,9 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
 });
 
 /* ────────────────────────────────────────────────────────────────────────────
- * PART 2 — Integration • limit window (leader collapse + optimistic reapply)
+ * PART 2 — limit window (leader collapse + optimistic reapply)
  * -------------------------------------------------------------------------- */
 
-// Canonical/infinite: union semantics; the union grows/shrinks while leader network can
-// collapse the window to the leader slice.
 const POSTS_APPEND = gql`
   query PostsAppend($filter: String, $first: Int, $after: String) {
     posts(filter: $filter, first: $first, after: $after)
@@ -321,175 +310,106 @@ describe("Integration • limit window (leader collapse + optimistic reapply)", 
     let requestIndex = 0;
 
     const routes: Route[] = [
-      // 0) A page1: A1,A2,A3 (initial load)
       {
-        when: () => (requestIndex === 0 ? ((requestIndex += 1), true) : false),
-        delay: 5,
-        respond: () => ({
-          data: { __typename: "Query", posts: fixtures.posts.connection(["A1", "A2", "A3"], { fromId: 1 }) },
-        }),
+        when: () => (requestIndex === 0 ? ((requestIndex += 1), true) : false), delay: 5,
+        respond: () => ({ data: { __typename: "Query", posts: fixtures.posts.connection(["A1", "A2", "A3"], { fromId: 1 }) } })
       },
-      // 1) A page2: A4,A5,A6 (first time)
       {
-        when: () => (requestIndex === 1 ? ((requestIndex += 1), true) : false),
-        delay: 5,
-        respond: () => ({
-          data: { __typename: "Query", posts: fixtures.posts.connection(["A4", "A5", "A6"], { fromId: 4 }) },
-        }),
+        when: () => (requestIndex === 1 ? ((requestIndex += 1), true) : false), delay: 5,
+        respond: () => ({ data: { __typename: "Query", posts: fixtures.posts.connection(["A4", "A5", "A6"], { fromId: 4 }) } })
       },
-      // 2) A page3: A7,A8,A9 (first time)
       {
-        when: () => (requestIndex === 2 ? ((requestIndex += 1), true) : false),
-        delay: 5,
-        respond: () => ({
-          data: { __typename: "Query", posts: fixtures.posts.connection(["A7", "A8", "A9"], { fromId: 7 }) },
-        }),
+        when: () => (requestIndex === 2 ? ((requestIndex += 1), true) : false), delay: 5,
+        respond: () => ({ data: { __typename: "Query", posts: fixtures.posts.connection(["A7", "A8", "A9"], { fromId: 7 }) } })
       },
-      // 3) B page1
       {
-        when: () => (requestIndex === 3 ? ((requestIndex += 1), true) : false),
-        delay: 5,
-        respond: () => ({
-          data: { __typename: "Query", posts: fixtures.posts.connection(["B1", "B2"], { fromId: 101 }) },
-        }),
+        when: () => (requestIndex === 3 ? ((requestIndex += 1), true) : false), delay: 5,
+        respond: () => ({ data: { __typename: "Query", posts: fixtures.posts.connection(["B1", "B2"], { fromId: 101 }) } })
       },
-      // 4) A page1 slow revalidate
       {
-        when: () => (requestIndex === 4 ? ((requestIndex += 1), true) : false),
-        delay: 30,
-        respond: () => ({
-          data: { __typename: "Query", posts: fixtures.posts.connection(["A1", "A2", "A3"], { fromId: 1 }) },
-        }),
+        when: () => (requestIndex === 4 ? ((requestIndex += 1), true) : false), delay: 30,
+        respond: () => ({ data: { __typename: "Query", posts: fixtures.posts.connection(["A1", "A2", "A3"], { fromId: 1 }) } })
       },
-      // 5) A page2 replay (server still A4,A5,A6)
       {
-        when: () => (requestIndex === 5 ? ((requestIndex += 1), true) : false),
-        delay: 5,
+        when: () => (requestIndex === 5 ? ((requestIndex += 1), true) : false), delay: 5,
         respond: () => ({
           data: {
             __typename: "Query",
-            posts: fixtures.posts.connection(
-              [{ title: "A4", id: "4" }, { title: "A5", id: "5" }, { title: "A6", id: "6" }],
-            ),
-          },
-        }),
+            posts: fixtures.posts.connection([{ title: "A4", id: "4" }, { title: "A5", id: "5" }, { title: "A6", id: "6" }])
+          }
+        })
       },
-      // 6) B page1 again
       {
-        when: () => (requestIndex === 6 ? ((requestIndex += 1), true) : false),
-        delay: 5,
-        respond: () => ({
-          data: { __typename: "Query", posts: fixtures.posts.connection(["B1", "B2"], { fromId: 101 }) },
-        }),
+        when: () => (requestIndex === 6 ? ((requestIndex += 1), true) : false), delay: 5,
+        respond: () => ({ data: { __typename: "Query", posts: fixtures.posts.connection(["B1", "B2"], { fromId: 101 }) } })
       },
-      // 7) A page1 (fast)
       {
-        when: () => (requestIndex === 7 ? ((requestIndex += 1), true) : false),
-        delay: 5,
-        respond: () => ({
-          data: { __typename: "Query", posts: fixtures.posts.connection(["A1", "A2", "A3"], { fromId: 1 }) },
-        }),
+        when: () => (requestIndex === 7 ? ((requestIndex += 1), true) : false), delay: 5,
+        respond: () => ({ data: { __typename: "Query", posts: fixtures.posts.connection(["A1", "A2", "A3"], { fromId: 1 }) } })
       },
-      // 8) A page2 (fast)
       {
-        when: () => (requestIndex === 8 ? ((requestIndex += 1), true) : false),
-        delay: 5,
+        when: () => (requestIndex === 8 ? ((requestIndex += 1), true) : false), delay: 5,
         respond: () => ({
           data: {
             __typename: "Query",
-            posts: fixtures.posts.connection([{ title: "A4", id: "4" }, { title: "A6", id: "6" }, { title: "A7", id: "7" }]),
-          },
-        }),
+            posts: fixtures.posts.connection([{ title: "A4", id: "4" }, { title: "A6", id: "6" }, { title: "A7", id: "7" }])
+          }
+        })
       },
-      // 9) A page3 (A8,A9,A10)
       {
-        when: () => (requestIndex === 9 ? ((requestIndex += 1), true) : false),
-        delay: 5,
-        respond: () => ({
-          data: { __typename: "Query", posts: fixtures.posts.connection(["A8", "A9", "A10"], { fromId: 8 }) },
-        }),
+        when: () => (requestIndex === 9 ? ((requestIndex += 1), true) : false), delay: 5,
+        respond: () => ({ data: { __typename: "Query", posts: fixtures.posts.connection(["A8", "A9", "A10"], { fromId: 8 }) } })
       },
     ];
 
-    // 0) A page1 request
-    console.log("Subtest 0");
     const Comp = PostsHarness(POSTS_APPEND, "cache-and-network");
-    const { wrapper, fx, cache } = await mountWithClient(
-      Comp,
-      routes,
-      undefined,
-      { filter: "A", first: 3, after: null }
-    );
+    const { wrapper, fx, cache } = await mountWithClient(Comp, routes, undefined, { filter: "A", first: 3, after: null });
+
     await delay(6);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3"]);
 
-    // 1) A page2 request → grow union
-    console.log("Subtest 1");
     await wrapper.setProps({ filter: "A", first: 3, after: "p3" });
-
     await delay(6);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A5", "A6"]);
 
     const T = (cache as any).modifyOptimistic((tx: any) => {
-      tx.connection({ parent: "Query", key: "posts", filters: { filter: "A" } }).remove({ __typename: "Post", id: "5" });
+      tx.connection({ parent: "Query", key: "posts", filters: { filter: "A" } })
+        .removeNode({ __typename: "Post", id: "5" });
     });
-
     await tick(2);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6"]);
 
-    // 2)
-    console.log("Subtest 2");
     await wrapper.setProps({ filter: "A", first: 3, after: "p6" });
     await delay(6);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9"]);
 
-    // 3)
-    console.log("Subtest 3");
     await wrapper.setProps({ filter: "B", first: 2, after: null });
     await delay(9);
     expect(rowsNoPI(wrapper)).toEqual(["B1", "B2"]);
 
-    // 4)
-    console.log("Subtest 4");
     await wrapper.setProps({ filter: "A", first: 3, after: null });
-
     await tick(2);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9"]);
-
     await delay(31);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3"]);
 
-    // 5)
-    console.log("Subtest 5");
     await wrapper.setProps({ filter: "A", first: 3, after: "p3" });
-
     await tick(2);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6"]);
-
     await delay(41);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6"]);
 
-    // 6)
-    console.log("Subtest 6");
     await wrapper.setProps({ filter: "B", first: 2, after: null });
-
     await delay(6);
     expect(rowsNoPI(wrapper)).toEqual(["B1", "B2"]);
 
-    // 7)
-    console.log("Subtest 7");
     await wrapper.setProps({ filter: "A", first: 3, after: null });
-
     await tick(2);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6"]);
-
     await delay(6);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3"]);
 
-    // 8)
-    console.log("Subtest 8");
-    await wrapper.setProps({ filter: "A", first: 3, after: 'p3' });
-
+    await wrapper.setProps({ filter: "A", first: 3, after: "p3" });
     await tick(2);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6"]);
 
@@ -497,29 +417,23 @@ describe("Integration • limit window (leader collapse + optimistic reapply)", 
 
     const Tadd = (cache as any).modifyOptimistic((tx: any) => {
       const c = tx.connection({ parent: "Query", key: "posts", filters: { filter: "A" } });
-      c.prepend({ __typename: "Post", id: "0", title: "A0" }, { cursor: "p0" });
-      c.append({ __typename: "Post", id: "99", title: "A99" }, { cursor: "p99" });
+      c.addNode({ __typename: "Post", id: "0", title: "A0" }, { position: "start" });
+      c.addNode({ __typename: "Post", id: "99", title: "A99" }, { position: "end" });
     });
 
     await delay(6);
     expect(rowsNoPI(wrapper)).toEqual(["A0", "A1", "A2", "A3", "A4", "A6", "A7", "A99"]);
-
     await fx.restore?.();
 
-    // 9)
-    console.log("Subtest 9");
-    await wrapper.setProps({ filter: "A", first: 3, after: 'p7' });
-
+    await wrapper.setProps({ filter: "A", first: 3, after: "p7" });
     await tick(2);
     expect(rowsNoPI(wrapper)).toEqual(["A0", "A1", "A2", "A3", "A4", "A6", "A7", "A99"]);
-
     await delay(6);
     expect(rowsNoPI(wrapper)).toEqual(["A0", "A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9", "A10", "A99"]);
 
     Tadd.revert?.();
     await tick(2);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9", "A10"]);
-
     await fx.restore?.();
   });
 });

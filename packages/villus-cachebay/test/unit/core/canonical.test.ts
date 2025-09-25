@@ -264,8 +264,8 @@ describe("core/canonical (flat edges[] union + per-page slice replacement)", () 
     // Prepare overlay: remove Post:2; add Post:9 at front
     optimistic.modifyOptimistic((tx) => {
       const c = tx.connection({ parent: "Query", key: "posts" });
-      c.remove({ __typename: "Post", id: 2 });
-      c.prepend({ __typename: "Post", id: 9, title: "P9" }, { cursor: "p9" });
+      c.removeNode({ __typename: "Post", id: 2 });
+      c.addNode({ __typename: "Post", id: 9, title: "P9" }, { position: "start" });
     }).commit?.();
 
     // Prewarm out-of-order P2 then P1

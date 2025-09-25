@@ -5,7 +5,7 @@ import { buildConnectionCanonicalKey } from "./utils";
 
 type OptimisticHook = {
   replayOptimistic: (hint?: { connections?: string[]; entities?: string[] }) => {
-    inserted: string[];
+    added: string[];
     removed: string[];
   };
 };

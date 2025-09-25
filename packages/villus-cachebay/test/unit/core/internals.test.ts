@@ -52,19 +52,18 @@ describe("createCache (internals)", () => {
     expect(view.email).toBe("a+1@example.com");
 
     // ── Optimistic over CANONICAL connection ───────────────────────────────
-    // canonical key we expect to be touched by the TX
     const canKey = '@connection.User:u1.posts({"category":"tech"})';
 
     const T = cache.modifyOptimistic((tx: any) => {
       const conn = tx.connection({
-        parent: "User:u1",  // record id or "Query"
-        key: "posts",       // field/key
-        filters: { category: "tech" }, // identity filters (non-cursor)
+        parent: "User:u1",
+        key: "posts",
+        filters: { category: "tech" },
       });
 
-      // append a node and patch pageInfo
-      conn.append({ __typename: "Post", id: "p1", title: "P1" }, { cursor: "p1" });
-      conn.patch({ pageInfo: { endCursor: "p1", hasNextPage: false } });
+      // add a node (no cursor in edge meta) and patch pageInfo
+      conn.addNode({ __typename: "Post", id: "p1", title: "P1" }, { position: "end" });
+      conn.patch({ pageInfo: { __typename: "PageInfo", endCursor: "p1", hasNextPage: false } });
     });
     T.commit?.();
 
@@ -76,7 +75,7 @@ describe("createCache (internals)", () => {
 
     const edgeRef = canon.edges[0].__ref as string;
     const edge = internals.graph.getRecord(edgeRef);
-    expect(edge).toMatchObject({ __typename: "PostEdge", cursor: "p1", node: { __ref: "Post:p1" } });
+    expect(edge?.node?.__ref).toBe("Post:p1"); // cursor may be absent by design
 
     const post = internals.graph.getRecord("Post:p1");
     expect(post?.title).toBe("P1");
