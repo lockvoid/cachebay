@@ -203,6 +203,9 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDeps) => {
 
     ensureCanonicalRecord(canKey);
 
+    // make sure the page record has edges available for any path below
+    ensurePageEdges(pageKey, pageSnap, pageEdgeRefs);
+
     if (mode === "page") {
       const extras = extractExtras(pageSnap);
       graph.putRecord(canKey, {
@@ -215,18 +218,24 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDeps) => {
       return;
     }
 
-    // make sure the page record has edges so rebuild sees them
-    ensurePageEdges(pageKey, pageSnap, pageEdgeRefs);
-
     const { hasAfter, hasBefore, isLeader } = detectCursorRole(field, requestVars);
 
     if (isLeader) {
       // UNCONDITIONAL COLLAPSE to leader slice on network leader fetch
+      const page = graph.getRecord(pageKey) || {};
+      const leaderEdges =
+        Array.isArray(page.edges) && page.edges.length
+          ? page.edges
+          : (Array.isArray(pageSnap.edges) && pageSnap.edges.length
+            ? pageSnap.edges
+            : (Array.isArray(pageEdgeRefs) ? pageEdgeRefs : []));
+      const leaderPI = page.pageInfo || pageSnap.pageInfo || {};
+
       const extras = extractExtras(pageSnap);
       graph.putRecord(canKey, {
         __typename: pageSnap.__typename || "Connection",
-        edges: Array.isArray(pageSnap.edges) ? pageSnap.edges : [],
-        pageInfo: pageSnap.pageInfo || {},
+        edges: leaderEdges,
+        pageInfo: leaderPI,
         ...extras,
       });
 
@@ -273,6 +282,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDeps) => {
     const mode = field.connectionMode || "infinite";
 
     ensureCanonicalRecord(canKey);
+    ensurePageEdges(pageKey, pageSnap, pageEdgeRefs);
 
     if (mode === "page") {
       graph.putRecord(canKey, {
@@ -283,9 +293,6 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDeps) => {
       optimistic.replayOptimistic({ connections: [canKey] });
       return;
     }
-
-    // ensure page record present for rebuild
-    ensurePageEdges(pageKey, pageSnap, pageEdgeRefs);
 
     const { hasAfter, hasBefore, isLeader } = detectCursorRole(field, requestVars);
 
