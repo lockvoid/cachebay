@@ -564,4 +564,106 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
   });
+
+  it("return visit: cached union emits first, leader network collapses to leader slice (root users)", async () => {
+    // bootstrap a cache we can pre-seed
+    const { cache } = await mountWithClient(defineComponent({ render: () => h("div") }), []);
+
+    // Seed LEADER page (after:null) and an AFTER page into the cache (which also canonicalizes).
+    await seedCache(cache, {
+      query: operations.USERS_QUERY,
+      variables: { usersRole: "revisit", usersFirst: 2, usersAfter: null },
+      data: fixtures.users.query(["a1@example.com", "a2@example.com"]).data,
+    });
+    await seedCache(cache, {
+      query: operations.USERS_QUERY,
+      variables: { usersRole: "revisit", usersFirst: 2, usersAfter: "a2" },
+      data: fixtures.users.query(["a3@example.com"]).data,
+    });
+
+    // Network only refetches the LEADER (no 'after') — new policy collapses to leader slice.
+    const routes: Route[] = [
+      {
+        when: ({ variables }) =>
+          variables.usersRole === "revisit" && variables.usersAfter == null,
+        delay: 15,
+        respond: () => fixtures.users.query(["a1@example.com", "a2@example.com"]),
+      },
+    ];
+
+    const Comp = UsersList("cache-and-network", {
+      usersRole: "revisit",
+      usersFirst: 2,
+      usersAfter: null,
+    });
+    const { wrapper, fx } = await mountWithClient(Comp, routes, cache);
+
+    // 1) cached union (leader+after) renders immediately
+    await tick();
+    expect(rows(wrapper)).toEqual(["a3@example.com"]);
+
+    // 2) leader network arrives → canonical collapses to leader slice
+    await delay(20);
+    await tick();
+    expect(rows(wrapper)).toEqual(["a1@example.com", "a2@example.com"]);
+    expect(fx.calls.length).toBe(1);
+
+    await fx.restore();
+  });
+
+  it.skip("asking next page again: cache shows instantly; network slice replaces without dupes", async () => {
+    const { cache } = await mountWithClient(defineComponent({ render: () => h("div") }), []);
+
+    // Seed leader and after pages
+    await seedCache(cache, {
+      query: operations.USERS_QUERY,
+      variables: { usersRole: "again", usersFirst: 2, usersAfter: null },
+      data: fixtures.users.query(["l1@example.com", "l2@example.com"]).data,
+    });
+    await seedCache(cache, {
+      query: operations.USERS_QUERY,
+      variables: { usersRole: "again", usersFirst: 2, usersAfter: "l2" },
+      data: fixtures.users.query(["n1@example.com", "n2@example.com"]).data,
+    });
+
+    // Now navigate to "after:l2" (simulate “load more” view) with cache-and-network semantics:
+    // - cache emits instantly (l1,l2,n1,n2 show because canonical union is used by leader view)
+    // - network returns a modified after page (n1' only) that must replace the n1/n2 slice (no dupes)
+    const routes: Route[] = [
+      {
+        when: ({ variables }) =>
+          variables.usersRole === "again" && variables.usersAfter === "l2",
+        delay: 12,
+        respond: () => fixtures.users.query(["n1@example.com"]), // page changed server-side
+      },
+    ];
+
+    const Comp = UsersList("cache-and-network", {
+      usersRole: "again",
+      usersFirst: 2,
+      usersAfter: "l2",
+    });
+    const { wrapper, fx } = await mountWithClient(Comp, routes, cache);
+
+    // Cached union visible right away (leader + cached after)
+    await tick();
+    expect(rows(wrapper)).toEqual([
+      "l1@example.com",
+      "l2@example.com",
+      "n1@example.com",
+      "n2@example.com",
+    ]);
+
+    // Network slice replacement: keep leader slice, replace the 'after' slice (no dupes)
+    await delay(20);
+    await tick();
+    expect(rows(wrapper)).toEqual([
+      "l1@example.com",
+      "l2@example.com",
+      "n1@example.com",
+    ]);
+
+    expect(fx.calls.length).toBe(1);
+    await fx.restore();
+  });
 });

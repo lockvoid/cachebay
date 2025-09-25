@@ -76,15 +76,17 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       (op as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
 
     const buildCachedFrame = () => {
-      // We need the document present (links/pages/canonicals) to build a view
-      if (!documents.hasDocument({ document, variables: vars })) return null;
 
-      // Only prewarm if canonical is missing for the operation's **root** connections.
-      if (shouldPrewarmRootConnections(graph, planner, document, vars)) {
-        documents.prewarmDocument({ document, variables: vars });
+      // We need the document present (links/pages/canonicals) to build a view
+      if (!documents.hasDocument({ document, variables: vars })) {
+        //   console.log('Graphql document not found', graph.inspect());
+        return null;
       }
 
+      documents.prewarmDocument({ document, variables: vars });
+
       const view = documents.materializeDocument({ document, variables: vars });
+
       return { data: view };
     };
 
@@ -111,7 +113,12 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     // cache-and-network: publish cached (non-terminal) if present, then do network
     if (policy === "cache-and-network") {
       const cached = buildCachedFrame();
-      if (cached) publish(cached, false);
+
+
+      if (cached) {
+        console.log("Publishing cached frame", ctx, JSON.stringify(cached));
+        publish(cached, false);
+      }
     }
 
     // network-only or the network leg of cache-and-network
