@@ -14,7 +14,7 @@
       }
 
       console.log('scsdc', result )
-      await router.push(`/spell/${result.data.createSpell.spell.id}`);
+      await router.push(`/spells/${result.data.createSpell.spell.id}`);
     } catch (error) {
       console.error(error);
 

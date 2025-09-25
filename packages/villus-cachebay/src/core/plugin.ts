@@ -8,56 +8,21 @@ import type { DocumentNode } from "graphql";
 import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
 import type { DocumentsInstance } from "./documents";
+import type { SSRInstance } from "./ssr";
 
 import { CACHEBAY_KEY } from "./constants";
 import { ROOT_ID } from "./constants";
 import { buildConnectionCanonicalKey } from "./utils";
 
-type PluginOptions = { addTypename?: boolean };
-
 type PluginDependencies = {
   graph: GraphInstance;
   planner: PlannerInstance;
   documents: DocumentsInstance;
-  ssr?: { isHydrating?: () => boolean };
+  ssr?: SSRInstance,
 };
 
-/**
- * Decide if we must prewarm (rebuild canonical from concrete page)
- * for the current operation's **root** @connection fields.
- * If all root canonicals already exist, we should NOT prewarm — this preserves
- * any cached union (e.g., leader+after) for the first cache-and-network emission.
- */
-function shouldPrewarmRootConnections(
-  graph: GraphInstance,
-  planner: PlannerInstance,
-  document: DocumentNode,
-  variables: Record<string, any>
-): boolean {
-  const plan = planner.getPlan(document);
-  // If the op has no root @connection, nothing to prewarm.
-  let sawAnyConnection = false;
-
-  for (let i = 0; i < plan.root.length; i++) {
-    const field = plan.root[i];
-    if (!field.isConnection) continue;
-    sawAnyConnection = true;
-
-    const canKey = buildConnectionCanonicalKey(field, ROOT_ID, variables);
-    const exists = !!graph.getRecord(canKey);
-    // If any root canonical is missing, we should prewarm.
-    if (!exists) return true;
-  }
-  // No root @connection? Then prewarm is unnecessary for this op.
-  if (!sawAnyConnection) return false;
-
-  // All root @connection canonicals are present → no prewarm.
-  return false;
-}
-
-export function createPlugin(options: PluginOptions, deps: PluginDependencies): ClientPlugin {
-  const { addTypename = false } = options;
-  const { graph, documents, planner } = deps;
+export function createPlugin(deps: PluginDependencies): ClientPlugin {
+  const { graph, documents, planner, ssr } = deps;
 
   return (ctx: ClientPluginContext) => {
     const op = ctx.operation;
@@ -69,6 +34,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     op.query = plan.networkQuery;
 
     const publish = (payload: OperationResult, terminal: boolean) => ctx.useResult(payload, terminal);
+
     const policy: string =
       (op as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
 
@@ -130,6 +96,18 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       });
 
       return hasEdges ? { data: view } : null;
+    }
+
+    if (plan.operation === "mutation") {
+      const originalUseResult = ctx.useResult;
+      ctx.useResult = (incoming: OperationResult, _terminal?: boolean) => {
+        if (incoming?.error) return originalUseResult(incoming, true);
+        // Normalize side-effects into the graph
+        documents.normalizeDocument({ document, variables: vars, data: incoming.data });
+        // Forward original mutation payload (do NOT materialize)
+        return originalUseResult({ data: incoming.data }, true);
+      };
+      return; // skip all cache/SSR paths (mutations are network-driven)
     }
 
     // cache-only

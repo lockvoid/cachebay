@@ -114,7 +114,7 @@ describe("plugin (villus) — canonical materialization, no sessions", () => {
   });
 
   it("cache-only: hit publishes cached frame; miss publishes CacheOnlyMiss error", () => {
-    const plugin = createPlugin({}, { graph, planner, documents });
+    const plugin = createPlugin({ graph, planner, documents });
 
     graph.putRecord(ROOT_ID, {
       id: ROOT_ID,
@@ -150,7 +150,7 @@ describe("plugin (villus) — canonical materialization, no sessions", () => {
   });
 
   it("cache-first: miss → network normalized and published", () => {
-    const plugin = createPlugin({}, { graph, planner, documents });
+    const plugin = createPlugin({ graph, planner, documents });
 
     const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
     const ctx: any = {
@@ -174,7 +174,7 @@ describe("plugin (villus) — canonical materialization, no sessions", () => {
   });
 
   it("cache-and-network: cached frame first (terminal=false), then network (terminal=true)", () => {
-    const plugin = createPlugin({}, { graph, planner, documents });
+    const plugin = createPlugin({ graph, planner, documents });
 
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
     graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "b@example.com" });
@@ -245,7 +245,7 @@ describe("plugin (villus) — canonical materialization, no sessions", () => {
   });
 
   it("cache-first with nested connection seeded (page + canonical): returns nested edges from cache", () => {
-    const plugin = createPlugin({}, { graph, planner, documents });
+    const plugin = createPlugin({ graph, planner, documents });
 
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
     graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "b@example.com" });
@@ -325,7 +325,7 @@ describe("plugin (villus) — canonical materialization, no sessions", () => {
   /* ───────────────────────────── new scenarios ───────────────────────────── */
 
   it("cache-and-network (out-of-order): AFTER first → LEADER → AFTER replay converges to leader-first order", () => {
-    const plugin = createPlugin({}, { graph, planner, documents });
+    const plugin = createPlugin({ graph, planner, documents });
     const emissions: Array<{ data?: any; error?: any; terminal: boolean; key: string }> = [];
 
     // helpers
@@ -393,7 +393,7 @@ describe("plugin (villus) — canonical materialization, no sessions", () => {
   });
 
   it("cache-and-network return visit: cached union emits first, leader network resets to leader slice", () => {
-    const plugin = createPlugin({}, { graph, planner, documents });
+    const plugin = createPlugin({ graph, planner, documents });
 
     // Prepare cached leader+after union
     graph.putRecord("User:u1", { __typename: "User", id: "u1" });
@@ -426,7 +426,7 @@ describe("plugin (villus) — canonical materialization, no sessions", () => {
     };
 
     // cached union frame first
-    createPlugin({}, { graph, planner, documents })(ctx);
+    createPlugin({ graph, planner, documents })(ctx);
     expect(emissions[0].terminal).toBe(false);
     expect(emissions[0].data.users.edges.length).toBe(3);
 
@@ -450,7 +450,7 @@ describe("plugin (villus) — canonical materialization, no sessions", () => {
   });
 
   it("page-mode (replacement): out-of-order after → leader keeps only last fetched page", () => {
-    const plugin = createPlugin({}, { graph, planner, documents });
+    const plugin = createPlugin({ graph, planner, documents });
 
     const emissions: Array<{ data?: any; error?: any; terminal: boolean; tag: string }> = [];
     const tag = (t: string) => (p: OperationResult, term?: boolean) => emissions.push({ data: p.data, error: p.error, terminal: !!term, tag: t });
@@ -460,7 +460,7 @@ describe("plugin (villus) — canonical materialization, no sessions", () => {
       operation: { key: 301, query: USERS_PAGE_QUERY, variables: { usersRole: "mod", first: 2, after: "m2" }, cachePolicy: "cache-and-network" },
       useResult: tag("after"),
     };
-    createPlugin({}, { graph, planner, documents })(ctxAfter);
+    createPlugin({ graph, planner, documents })(ctxAfter);
     ctxAfter.useResult({
       data: {
         users: {
@@ -482,7 +482,7 @@ describe("plugin (villus) — canonical materialization, no sessions", () => {
       operation: { key: 302, query: USERS_PAGE_QUERY, variables: { usersRole: "mod", first: 2, after: null }, cachePolicy: "cache-and-network" },
       useResult: tag("leader"),
     };
-    createPlugin({}, { graph, planner, documents })(ctxLeader);
+    createPlugin({ graph, planner, documents })(ctxLeader);
     ctxLeader.useResult({
       data: {
         users: {
@@ -501,7 +501,7 @@ describe("plugin (villus) — canonical materialization, no sessions", () => {
   });
 
   it("network error path: terminal error, no graph writes", () => {
-    const plugin = createPlugin({}, { graph, planner, documents });
+    const plugin = createPlugin({ graph, planner, documents });
     const beforeSnap = JSON.stringify(graph.getRecord("@"));
 
     const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
@@ -523,7 +523,7 @@ describe("plugin (villus) — canonical materialization, no sessions", () => {
   });
 
   it("cache-and-network when canonical missing but concrete page exists: prewarms then emits cached union", () => {
-    const plugin = createPlugin({}, { graph, planner, documents });
+    const plugin = createPlugin({ graph, planner, documents });
 
     // Prepare root users page (u1,u2) but NO canonical
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "x@a" });

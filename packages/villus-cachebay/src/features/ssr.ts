@@ -1,13 +1,8 @@
 // src/features/ssr.ts — SSR de/hydration for the unified graph record store
+import type { GraphInstance } from "./graph";
 
-type GraphForSSR = {
-  keys: () => string[];
-  getRecord: (recordId: string) => any | undefined;
-  putRecord: (recordId: string, partialSnapshot: Record<string, any>) => void;
-  clear: () => void;
-};
 
-type Deps = { graph: GraphForSSR };
+type Deps = { graph: GraphInstance };
 
 type GraphSnapshot = {
   /** Array of [recordId, snapshot] entries; JSON-safe */
@@ -16,6 +11,8 @@ type GraphSnapshot = {
 
 /** JSON-only deep clone; safe for snapshots. */
 const cloneJSON = <T,>(data: T): T => JSON.parse(JSON.stringify(data));
+
+export type SSRInstance = ReturnType<typeof createSSR>;
 
 export const createSSR = ({ graph }: Deps) => {
   let hydrating = false;
@@ -56,6 +53,7 @@ export const createSSR = ({ graph }: Deps) => {
     };
 
     hydrating = true;
+
     try {
       if (typeof input === "function") {
         input((s) => run(s));

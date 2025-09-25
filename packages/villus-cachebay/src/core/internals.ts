@@ -57,6 +57,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Core
   const graph = createGraph({ keys: options.keys || {}, interfaces: options.interfaces || {} });
   const optimistic = createOptimistic({ graph });
+  const ssr = createSSR({ graph });
   const views = createViews({ graph });
   const planner = createPlanner();
   const canonical = createCanonical({ graph, optimistic });
@@ -64,11 +65,10 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   const fragments = createFragments({}, { graph, views, planner });
 
   // Features
-  const ssr = createSSR({ graph });
   const inspect = createInspect({ graph });
 
   // Villus plugin (ClientPlugin)
-  const plugin = createPlugin({}, { graph, planner, documents });
+  const plugin = createPlugin({ graph, planner, documents, ssr });
 
   // Vue install
   (plugin as any).install = (app: App) => {

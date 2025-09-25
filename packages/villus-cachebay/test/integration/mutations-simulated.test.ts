@@ -1,6 +1,6 @@
 // test/integration/mutations-simulated.test.ts
 import { describe, it, expect } from "vitest";
-import { defineComponent, h, watch } from "vue";
+import { defineComponent, h } from "vue";
 import gql from "graphql-tag";
 
 import { mountWithClient } from "@/test/helpers/integration";
@@ -17,7 +17,7 @@ const UPDATE_USER_MUTATION = gql/* GraphQL */ `
 `;
 
 describe("Mutations", () => {
-  it("entity updates via normalization after mutation", async () => {
+  it("entity updates via normalization after mutation, and execute() returns data", async () => {
     const App = defineComponent({
       name: "UserViewerAndMutator",
       setup() {
@@ -30,8 +30,10 @@ describe("Mutations", () => {
         });
 
         const { execute } = useMutation(UPDATE_USER_MUTATION);
+
+        // IMPORTANT: return the result so the test can assert it
         const run = async () => {
-          const res = await execute({
+          return execute({
             id: "u1",
             input: { email: "u1+updated@example.com", name: "Updated Name" },
           });
@@ -40,9 +42,7 @@ describe("Mutations", () => {
         return { data, run };
       },
       render() {
-        const txt = this.data?.user?.email || "";
-
-        return h("div", {}, txt);
+        return h("div", {}, this.data?.user?.email || "");
       },
     });
 
@@ -51,28 +51,26 @@ describe("Mutations", () => {
         when: ({ body }) =>
           typeof body === "string" && body.includes("mutation UpdateUser"),
         delay: 10,
-        respond: () => {
-          return {
-            data: {
-              __typename: "Mutation",
-              updateUser: {
-                __typename: "UpdateUserPayload",
-                user: {
-                  __typename: "User",
-                  id: "u1",
-                  email: "u1+updated@example.com",
-                  name: "Updated Name",
-                },
+        respond: () => ({
+          data: {
+            __typename: "Mutation",
+            updateUser: {
+              __typename: "UpdateUserPayload",
+              user: {
+                __typename: "User",
+                id: "u1",
+                email: "u1+updated@example.com",
+                name: "Updated Name",
               },
             },
-          };
-        },
+          },
+        }),
       },
     ];
 
     const { wrapper, cache, fx } = await mountWithClient(App, routes);
 
-    // seed initial query snapshot so cache-first renders a value
+    // seed initial query so cache-first renders a value
     await seedCache(cache, {
       query: operations.USER_QUERY,
       variables: { id: "u1" },
@@ -82,21 +80,15 @@ describe("Mutations", () => {
       },
     });
     await tick();
-
     expect(wrapper.text()).toBe("u1@example.com");
 
-    // trigger the mutation (no optimistic)
-    await (wrapper.vm as any).run();
+    // run mutation and assert the returned payload
+    const res = await (wrapper.vm as any).run();
+    await fx.waitAll?.();        // wait transport
+    await tick(2);               // let views re-materialize
 
-    // Wait for the mock transport to complete (no guessing with fixed delay)
-    await fx.waitAll?.();
-
-    // One (or two) ticks to let the cache view re-materialize if needed
-    await tick(2);
-
-    // Debug: peek the entity snapshot (OK to log internals while debugging)
-    const snap = (cache as any).__internals?.graph?.getRecord("User:u1");
-
+    expect(res?.error).toBeFalsy();
+    expect(res?.data?.updateUser?.user?.email).toBe("u1+updated@example.com");
     expect(wrapper.text()).toBe("u1+updated@example.com");
 
     await fx.restore?.();

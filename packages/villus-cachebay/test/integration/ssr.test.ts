@@ -1,4 +1,3 @@
-// test/integration/ssr.test.ts
 import { describe, it, expect } from "vitest";
 import { defineComponent, h, Suspense } from "vue";
 import { operations, fixtures, seedCache, mountWithClient } from "@/test/helpers";
@@ -7,11 +6,10 @@ import { createCache } from "@/src/core/internals";
 
 const rows = (wrapper: any) => wrapper.findAll("div[data-row]").map((d: any) => d.text());
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Readers
-// ─────────────────────────────────────────────────────────────────────────────
-
-function makeNonSuspenseApp(cachePolicy: "cache-and-network" | "cache-first" | "network-only" | "cache-only") {
+function makeNonSuspenseApp(
+  cachePolicy: "cache-and-network" | "cache-first" | "network-only" | "cache-only"
+) {
   return defineComponent({
     name: "NonSuspensePosts",
     setup() {
@@ -23,13 +21,15 @@ function makeNonSuspenseApp(cachePolicy: "cache-and-network" | "cache-first" | "
       });
       return () =>
         (data?.value?.posts?.edges ?? []).map((e: any) =>
-          h("div", { "data-row": "" }, e?.node?.title ?? ""),
+          h("div", { "data-row": "" }, e?.node?.title ?? "")
         );
     },
   });
 }
 
-function makeSuspenseApp(cachePolicy: "cache-and-network" | "cache-first" | "network-only" | "cache-only") {
+function makeSuspenseApp(
+  cachePolicy: "cache-and-network" | "cache-first" | "network-only" | "cache-only"
+) {
   const Inner = defineComponent({
     name: "SuspenseInner",
     async setup() {
@@ -41,7 +41,7 @@ function makeSuspenseApp(cachePolicy: "cache-and-network" | "cache-first" | "net
       });
       return () =>
         (data?.value?.posts?.edges ?? []).map((e: any) =>
-          h("div", { "data-row": "" }, e?.node?.title ?? ""),
+          h("div", { "data-row": "" }, e?.node?.title ?? "")
         );
     },
   });
@@ -56,34 +56,24 @@ function makeSuspenseApp(cachePolicy: "cache-and-network" | "cache-first" | "net
           {
             default: () => h(Inner),
             fallback: () => h("div", { "data-row": "" }, "…loading"),
-          },
+          }
         );
     },
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SSR helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function ssrRoundTripAndMount(
-  App: any,
-  routes: Route[],
-  seedTitles: string[]
-) {
-  // "server": seed & dehydrate
+async function ssrRoundTripAndMount(App: any, routes: Route[], seedTitles: string[]) {
+  // server: seed & dehydrate
   const serverCache = createCache();
   await seedCache(serverCache, {
     query: operations.POSTS_QUERY,
     variables: { first: 2, after: null },
-    data: {
-      __typename: "Query",
-      posts: fixtures.posts.connection(seedTitles, { fromId: 1 }),
-    },
+    data: { __typename: "Query", posts: fixtures.posts.connection(seedTitles, { fromId: 1 }) },
   });
   const snap = (serverCache as any).dehydrate();
 
-  // "client": hydrate & mount
+  // client: hydrate & mount
   const clientCache = createCache();
   (clientCache as any).hydrate(snap);
 
@@ -96,93 +86,76 @@ function makePostsRoute(match: (v: any) => boolean, titles: string[], delayMs = 
     when: ({ variables }) => match(variables),
     delay: delayMs,
     respond: () => ({
-      data: {
-        __typename: "Query",
-        posts: fixtures.posts.connection(titles, { fromId: 10 }),
-      },
+      data: { __typename: "Query", posts: fixtures.posts.connection(titles, { fromId: 10 }) },
     }),
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Matrix
-// ─────────────────────────────────────────────────────────────────────────────
-
 describe("SSR Matrix", () => {
   // Suspense
   describe("Suspense", () => {
     describe("cache-and-network", () => {
-      it("hydrates from cache immediately, then 1 request after hydrate (Suspense may issue 2)", async () => {
+      it("hydrates from cache; 0 requests during hydration", async () => {
         const App = makeSuspenseApp("cache-and-network");
         const routes: Route[] = [
           makePostsRoute(v => v?.first === 2 && v?.after == null, ["Fresh A", "Fresh B"]),
         ];
-
         const { wrapper, fx } = await ssrRoundTripAndMount(App, routes, ["Ssr A", "Ssr B"]);
 
         await tick();
         expect(rows(wrapper)).toEqual(["Ssr A", "Ssr B"]);
 
-        // Suspense + async setup can re-run, producing 1–2 fetches post-hydrate.
         await delay(20); await tick();
-        expect(fx.calls.length === 1 || fx.calls.length === 2).toBe(true);
-        expect(rows(wrapper)).toEqual(["Fresh A", "Fresh B"]);
+        expect(fx.calls.length).toBe(0);
+        expect(rows(wrapper)).toEqual(["Ssr A", "Ssr B"]);
 
         await fx.restore();
       });
     });
 
     describe("cache-first", () => {
-      it("hydrates from cache and does NOT request after hydrate", async () => {
+      it("hydrates from cache; 0 requests", async () => {
         const App = makeSuspenseApp("cache-first");
-        const routes: Route[] = [
-          makePostsRoute(() => true, ["Should Not Be Used"]),
-        ];
-
+        const routes: Route[] = [makePostsRoute(() => true, ["Should Not Be Used"])];
         const { wrapper, fx } = await ssrRoundTripAndMount(App, routes, ["Ssr A", "Ssr B"]);
+
         await tick();
         expect(rows(wrapper)).toEqual(["Ssr A", "Ssr B"]);
 
         await delay(20); await tick();
         expect(fx.calls.length).toBe(0);
         expect(rows(wrapper)).toEqual(["Ssr A", "Ssr B"]);
-
         await fx.restore();
       });
     });
 
     describe("network-only", () => {
-      it("does a request after hydrate; final render is network result (Suspense may issue 2)", async () => {
+      it("1 request after hydrate; final is network", async () => {
         const App = makeSuspenseApp("network-only");
         const routes: Route[] = [
           makePostsRoute(v => v?.first === 2 && v?.after == null, ["Net A", "Net B"]),
         ];
-
         const { wrapper, fx } = await ssrRoundTripAndMount(App, routes, ["Ssr A", "Ssr B"]);
 
-        await delay(16); await tick();
-        // again, allow 1–2 due to Suspense retry behavior
-        expect(fx.calls.length === 1 || fx.calls.length === 2).toBe(true);
+        await delay(20); await tick();
+        expect(fx.calls.length).toBe(1);
         expect(rows(wrapper)).toEqual(["Net A", "Net B"]);
-
         await fx.restore();
       });
     });
 
     describe("cache-only", () => {
-      it("hydrates from cache and never hits network", async () => {
+      it("hydrates from cache; 0 requests", async () => {
         const App = makeSuspenseApp("cache-only");
-        const routes: Route[] = [
-          makePostsRoute(() => true, ["Should Not Hit"]),
-        ];
-
+        const routes: Route[] = [makePostsRoute(() => true, ["Should Not Hit"])];
         const { wrapper, fx } = await ssrRoundTripAndMount(App, routes, ["Ssr A", "Ssr B"]);
+
         await tick();
         expect(rows(wrapper)).toEqual(["Ssr A", "Ssr B"]);
 
         await delay(20); await tick();
         expect(fx.calls.length).toBe(0);
-
         await fx.restore();
       });
     });
@@ -191,73 +164,64 @@ describe("SSR Matrix", () => {
   // Non-suspense
   describe("Non-suspense", () => {
     describe("cache-and-network", () => {
-      it("hydrates from cache immediately, then 1 request after hydrate", async () => {
+      it("hydrates from cache; 0 requests", async () => {
         const App = makeNonSuspenseApp("cache-and-network");
         const routes: Route[] = [
           makePostsRoute(v => v?.first === 2 && v?.after == null, ["Fresh A", "Fresh B"]),
         ];
-
         const { wrapper, fx } = await ssrRoundTripAndMount(App, routes, ["Ssr A", "Ssr B"]);
+
         await tick();
         expect(rows(wrapper)).toEqual(["Ssr A", "Ssr B"]);
 
         await delay(15); await tick();
-        expect(fx.calls.length).toBe(1);
-        expect(rows(wrapper)).toEqual(["Fresh A", "Fresh B"]);
-
+        expect(fx.calls.length).toBe(0);
+        expect(rows(wrapper)).toEqual(["Ssr A", "Ssr B"]);
         await fx.restore();
       });
     });
 
     describe("cache-first", () => {
-      it("hydrates from cache and does NOT request after hydrate", async () => {
+      it("hydrates from cache; 0 requests", async () => {
         const App = makeNonSuspenseApp("cache-first");
-        const routes: Route[] = [
-          makePostsRoute(() => true, ["Should Not Be Used"]),
-        ];
-
+        const routes: Route[] = [makePostsRoute(() => true, ["Should Not Be Used"])];
         const { wrapper, fx } = await ssrRoundTripAndMount(App, routes, ["Ssr A", "Ssr B"]);
+
         await tick();
         expect(rows(wrapper)).toEqual(["Ssr A", "Ssr B"]);
 
         await delay(20); await tick();
         expect(fx.calls.length).toBe(0);
-
         await fx.restore();
       });
     });
 
     describe("network-only", () => {
-      it("requests after hydrate; final render is network result", async () => {
+      it("1 request after hydrate; final is network", async () => {
         const App = makeNonSuspenseApp("network-only");
         const routes: Route[] = [
           makePostsRoute(v => v?.first === 2 && v?.after == null, ["Net A", "Net B"]),
         ];
-
         const { wrapper, fx } = await ssrRoundTripAndMount(App, routes, ["Ssr A", "Ssr B"]);
 
         await delay(12); await tick();
         expect(fx.calls.length).toBe(1);
         expect(rows(wrapper)).toEqual(["Net A", "Net B"]);
-
         await fx.restore();
       });
     });
 
     describe("cache-only", () => {
-      it("hydrates from cache and never hits network", async () => {
+      it("hydrates from cache; 0 requests", async () => {
         const App = makeNonSuspenseApp("cache-only");
-        const routes: Route[] = [
-          makePostsRoute(() => true, ["Should Not Hit"]),
-        ];
-
+        const routes: Route[] = [makePostsRoute(() => true, ["Should Not Hit"])];
         const { wrapper, fx } = await ssrRoundTripAndMount(App, routes, ["Ssr A", "Ssr B"]);
+
         await tick();
         expect(rows(wrapper)).toEqual(["Ssr A", "Ssr B"]);
 
         await delay(20); await tick();
         expect(fx.calls.length).toBe(0);
-
         await fx.restore();
       });
     });

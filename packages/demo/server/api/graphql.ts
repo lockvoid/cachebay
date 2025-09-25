@@ -173,7 +173,7 @@ builder.mutationType({
       },
 
       resolve: async (_, { input }) => {
-        const { name, effect, category, creator = null, light = null, imageUrl = null, wikiUrl = null } = input;
+        const { name = '', effect = '', category = '', creator = '', light = '', imageUrl = '', wikiUrl = '' } = input;
 
         const sql = 'INSERT INTO spells (name, category, creator, effect, light, imageUrl, wikiUrl) VALUES (?, ?, ?, ?, ?, ?, ?)';
 
