@@ -82,35 +82,54 @@ export const users = {
     };
   },
 };
-
 export const posts = {
   /**
    * Build a PostConnection (no Query wrapper).
-   * You may inject per-node extras (e.g. { comments: comments.connection([...]) }).
+   * Accepts titles as strings, or objects { title, id?, typename?, extras? }.
+   * If id is provided, it is used for both node identity and the cursor (p{id}).
    */
   connection(
-    titles: Array<string | { title: string; typename?: "Post" | "AudioPost" | "VideoPost"; extras?: Record<string, any> }>,
-    opts: { fromId?: number; pageInfo?: Partial<{ __typename: "PageInfo"; startCursor: string | null; endCursor: string | null; hasNextPage: boolean; hasPreviousPage: boolean; }> } = {}
+    titles: Array<
+      | string
+      | {
+        title: string;
+        id?: string | number;
+        typename?: "Post" | "AudioPost" | "VideoPost";
+        extras?: Record<string, any>;
+      }
+    >,
+    opts: {
+      fromId?: number;
+      pageInfo?: Partial<{
+        __typename: "PageInfo";
+        startCursor: string | null;
+        endCursor: string | null;
+        hasNextPage: boolean;
+        hasPreviousPage: boolean;
+      }>;
+    } = {}
   ) {
     const fromId = opts.fromId ?? 1;
 
     const edges = titles.map((t, i) => {
       const isObj = typeof t === "object";
       const title = isObj ? (t as any).title : (t as string);
+      const id =
+        isObj && (t as any).id != null ? String((t as any).id) : String(fromId + i);
       const typename = isObj ? (t as any).typename ?? "Post" : "Post";
       const extras = isObj ? (t as any).extras ?? {} : {};
 
       return {
         __typename: "PostEdge",
-        cursor: `p${fromId + i}`,
-        node: post(String(fromId + i), title, typename, extras),
+        cursor: `p${id}`,
+        node: post(id, title, typename, extras),
       };
     });
 
     const pageInfo = {
       __typename: "PageInfo" as const,
-      startCursor: titles.length ? `p${fromId}` : null,
-      endCursor: titles.length ? `p${fromId + titles.length - 1}` : null,
+      startCursor: edges.length ? edges[0].cursor : null,
+      endCursor: edges.length ? edges[edges.length - 1].cursor : null,
       hasNextPage: false,
       hasPreviousPage: false,
       ...opts.pageInfo,
@@ -123,71 +142,11 @@ export const posts = {
     };
   },
 
-  /** Optional helper: wrap in { data: { post: ... } } for single post query */
   singleQuery(title: string, id = "1", typename: "Post" | "AudioPost" | "VideoPost" = "Post") {
     return {
       data: {
         __typename: "Query",
         post: post(id, title, typename),
-      },
-    };
-  },
-};
-
-export const comments = {
-  /**
-   * Build a CommentConnection (no Query wrapper).
-   * We use uuid as identity; we also copy postId into nodes if provided.
-   */
-  connection(
-    texts: string[],
-    opts: {
-      postId?: string;
-      fromId?: number;
-      pageInfo?: Partial<{ __typename: "PageInfo"; startCursor: string | null; endCursor: string | null; hasNextPage: boolean; hasPreviousPage: boolean; }>;
-    } = {}
-  ) {
-    const fromId = opts.fromId ?? 1;
-
-    const edges = texts.map((text, i) => ({
-      __typename: "CommentEdge",
-      cursor: `c${fromId + i}`,
-      node: comment(String(fromId + i), text, opts.postId ? { postId: opts.postId } : {}),
-    }));
-
-    const pageInfo = {
-      __typename: "PageInfo" as const,
-      startCursor: texts.length ? `c${fromId}` : null,
-      endCursor: texts.length ? `c${fromId + texts.length - 1}` : null,
-      hasNextPage: false,
-      hasPreviousPage: false,
-      ...opts.pageInfo,
-    };
-
-    return {
-      __typename: "CommentConnection",
-      edges,
-      pageInfo,
-    };
-  },
-
-  /** Wrap for { data: { comments: ... } } */
-  query(texts: string[], opts?: Parameters<typeof comments.connection>[1]) {
-    return {
-      data: {
-        __typename: "Query",
-        comments: comments.connection(texts, opts),
-      },
-    };
-  },
-};
-
-export const singleUser = {
-  query(id: string, email: string) {
-    return {
-      data: {
-        __typename: "Query",
-        user: user(id, email),
       },
     };
   },

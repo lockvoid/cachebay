@@ -317,7 +317,7 @@ const PostsHarness = (
   });
 
 describe("Integration • limit window (leader collapse + optimistic reapply)", () => {
-  it.only("full flow: pages, optimistic remove, filters, window growth, late page change", async () => {
+  it("full flow: pages, optimistic remove, filters, window growth, late page change", async () => {
     let requestIndex = 0;
 
     const routes: Route[] = [
