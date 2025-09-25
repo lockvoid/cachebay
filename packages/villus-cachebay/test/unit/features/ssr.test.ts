@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createGraph } from "@/src/core/graph";
 import { createSSR } from "@/src/features/ssr";
+import { delay } from "@/test/helpers";
 
 // Small seeding helper: create a connection page (+ edges)
 function seedPage(
@@ -43,7 +44,7 @@ describe("SSR (graph records)", () => {
     graph = createGraph({
       interfaces: { Post: ["AudioPost", "VideoPost"] },
     });
-    ssr = createSSR({ graph });
+    ssr = createSSR({ hydrationTimeout: 0 }, { graph });
   });
 
   it("dehydrate/hydrate roundtrips all records", async () => {
@@ -78,7 +79,7 @@ describe("SSR (graph records)", () => {
     // 3) hydrate
     ssr.hydrate(snapshot);
     expect(ssr.isHydrating()).toBe(true);
-    await Promise.resolve();
+    await delay();
     expect(ssr.isHydrating()).toBe(false);
 
     // 4) verify restored records
@@ -112,7 +113,7 @@ describe("SSR (graph records)", () => {
 
     expect(emitted).toBe(true);
     expect(ssr.isHydrating()).toBe(true);
-    await Promise.resolve();
+    await delay(0)
     expect(ssr.isHydrating()).toBe(false);
 
     const root = graph.getRecord("@");
@@ -122,13 +123,13 @@ describe("SSR (graph records)", () => {
 
   it("hydrates gracefully on malformed snapshots (no throw)", async () => {
     ssr.hydrate({} as any);
-    await Promise.resolve();
+    await delay(0)
     expect(graph.keys().length).toBe(0);
 
     ssr.hydrate({
       records: [null as any, ["User:x", null], ["User:y", 123], ["User:z", { __typename: "User", id: "z" }]],
     });
-    await Promise.resolve();
+    await delay(0)
     expect(graph.getRecord("User:z")?.id).toBe("z");
   });
 
@@ -139,7 +140,7 @@ describe("SSR (graph records)", () => {
         ["User:u1", { __typename: "User", id: "u1", email: "a@example.com" }],
       ],
     });
-    await Promise.resolve();
+    await delay(0)
 
     graph.putRecord("User:u1", { email: "a+1@example.com" });
 

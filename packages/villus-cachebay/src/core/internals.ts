@@ -51,13 +51,14 @@ export type CachebayInstance = ClientPlugin & {
 export type CachebayOptions = {
   keys?: Record<string, (obj: any) => string | null>;
   interfaces?: Record<string, string[]>;
+  hydrationTimeout?: number;
 };
 
 export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Core
   const graph = createGraph({ keys: options.keys || {}, interfaces: options.interfaces || {} });
   const optimistic = createOptimistic({ graph });
-  const ssr = createSSR({ graph });
+  const ssr = createSSR({ hydrationTimeout: options.hydrationTimeout }, { graph });
   const views = createViews({ graph });
   const planner = createPlanner();
   const canonical = createCanonical({ graph, optimistic });

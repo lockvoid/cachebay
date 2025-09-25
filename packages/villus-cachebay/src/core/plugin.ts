@@ -134,9 +134,8 @@ export function createPlugin(deps: PluginDependencies): ClientPlugin {
     if (policy === "cache-and-network") {
       const cached = buildCachedFrame();
 
-
       if (cached) {
-        publish(cached, false);
+        publish(cached, ssr.isHydrating());
       }
     }
 

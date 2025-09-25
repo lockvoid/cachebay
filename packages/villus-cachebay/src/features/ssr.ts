@@ -14,8 +14,13 @@ const cloneJSON = <T,>(data: T): T => JSON.parse(JSON.stringify(data));
 
 export type SSRInstance = ReturnType<typeof createSSR>;
 
-export const createSSR = ({ graph }: Deps) => {
+type SSROptions = {
+  hydrationTimeout?: number;
+};
+
+export const createSSR = (options: SSROptions = {}, { graph }: Deps) => {
   let hydrating = false;
+  const { hydrationTimeout = 100 } = options;
 
   /** Serialize all graph records. */
   const dehydrate = (): GraphSnapshot => {
@@ -61,9 +66,9 @@ export const createSSR = ({ graph }: Deps) => {
         run(input);
       }
     } finally {
-      queueMicrotask(() => {
+      setTimeout(() => {
         hydrating = false;
-      });
+      }, hydrationTimeout);
     }
   };
 

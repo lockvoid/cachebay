@@ -1,4 +1,8 @@
 <script setup lang="ts">
+  import { SPELL_QUERY } from '@/composables/useSpellQuery';
+
+  const { $villus } = useNuxtApp();
+
   const router = useRouter();
 
   const createSpell = useCreateSpell();
@@ -13,7 +17,15 @@
         throw result.error;
       }
 
-      console.log('scsdc', result )
+      // NOTE: Comment it out to show Suspense fallback on spell detail page.
+      await $villus.executeQuery({
+        query: SPELL_QUERY,
+
+        variables: {
+          id: result.data.createSpell.spell.id,
+        },
+      });
+
       await router.push(`/spells/${result.data.createSpell.spell.id}`);
     } catch (error) {
       console.error(error);

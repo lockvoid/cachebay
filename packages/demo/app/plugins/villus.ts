@@ -10,7 +10,7 @@ export default defineNuxtPlugin((nuxtApp) => {
     //
   });
 
-  const client = createClient({
+  const villus = createClient({
     url: config.public.graphqlEndpoint,
 
     cachePolicy: settings.cachePolicy,
@@ -22,10 +22,13 @@ export default defineNuxtPlugin((nuxtApp) => {
     ],
   });
 
-  nuxtApp.vueApp.use(client);
+  nuxtApp.vueApp.use(villus);
   nuxtApp.vueApp.use(cachebay);
 
-  if (import.meta.client) {
+  nuxtApp.provide('villus', villus);
+  nuxtApp.provide('cachebay', cachebay);
+
+  if (import.meta.client && settings.ssr) {
     const state = useState<any>('cachebay').value;
 
     if (state) {

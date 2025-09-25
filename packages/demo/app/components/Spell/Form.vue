@@ -49,7 +49,7 @@
 
     onDelete: {
       type: Function as PropType<(id: string) => Promise<void> | void>,
-      required: true
+      required: false
     }
   });
 
