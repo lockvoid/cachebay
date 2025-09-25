@@ -10,6 +10,8 @@ import type { PlannerInstance } from "./planner";
 import type { DocumentsInstance } from "./documents";
 
 import { CACHEBAY_KEY } from "./constants";
+import { ROOT_ID } from "./constants";
+import { buildConnectionCanonicalKey } from "./utils";
 
 type PluginOptions = { addTypename?: boolean };
 
@@ -20,11 +22,45 @@ type PluginDependencies = {
   ssr?: { isHydrating?: () => boolean };
 };
 
+// shallow copy to avoid mutating caller payloads
 const deepCopy = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
+
+/**
+ * Decide if we must prewarm (rebuild canonical from concrete page)
+ * for the current operation's **root** @connection fields.
+ * If all root canonicals already exist, we should NOT prewarm — this preserves
+ * any cached union (e.g., leader+after) for the first cache-and-network emission.
+ */
+function shouldPrewarmRootConnections(
+  graph: GraphInstance,
+  planner: PlannerInstance,
+  document: DocumentNode,
+  variables: Record<string, any>
+): boolean {
+  const plan = planner.getPlan(document);
+  // If the op has no root @connection, nothing to prewarm.
+  let sawAnyConnection = false;
+
+  for (let i = 0; i < plan.root.length; i++) {
+    const field = plan.root[i];
+    if (!field.isConnection) continue;
+    sawAnyConnection = true;
+
+    const canKey = buildConnectionCanonicalKey(field, ROOT_ID, variables);
+    const exists = !!graph.getRecord(canKey);
+    // If any root canonical is missing, we should prewarm.
+    if (!exists) return true;
+  }
+  // No root @connection? Then prewarm is unnecessary for this op.
+  if (!sawAnyConnection) return false;
+
+  // All root @connection canonicals are present → no prewarm.
+  return false;
+}
 
 export function createPlugin(options: PluginOptions, deps: PluginDependencies): ClientPlugin {
   const { addTypename = false } = options;
-  const { documents, planner } = deps;
+  const { graph, documents, planner } = deps;
 
   return (ctx: ClientPluginContext) => {
     const op = ctx.operation;
@@ -32,6 +68,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     const document: DocumentNode = op.query as DocumentNode;
     const plan = planner.getPlan(document);
 
+    // always use compiled networkQuery (strips @connection etc.)
     op.query = plan.networkQuery;
 
     const publish = (payload: OperationResult, terminal: boolean) => ctx.useResult(payload, terminal);
@@ -39,12 +76,15 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       (op as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
 
     const buildCachedFrame = () => {
+      // We need the document present (links/pages/canonicals) to build a view
       if (!documents.hasDocument({ document, variables: vars })) return null;
 
-      documents.prewarmDocument({ document, variables: vars });
+      // Only prewarm if canonical is missing for the operation's **root** connections.
+      if (shouldPrewarmRootConnections(graph, planner, document, vars)) {
+        documents.prewarmDocument({ document, variables: vars });
+      }
 
       const view = documents.materializeDocument({ document, variables: vars });
-
       return { data: view };
     };
 
@@ -68,27 +108,27 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       // else fall through to network
     }
 
-    // cache-and-network: publish cached if present, then network
+    // cache-and-network: publish cached (non-terminal) if present, then do network
     if (policy === "cache-and-network") {
       const cached = buildCachedFrame();
-
       if (cached) publish(cached, false);
     }
 
-    // network-only or network follow-up
+    // network-only or the network leg of cache-and-network
     const originalUseResult = ctx.useResult;
     ctx.useResult = (incoming: OperationResult, terminal?: boolean) => {
       const hasError = !!incoming?.error;
 
       if (hasError) {
+        // On error we just pass it through; no graph writes
         return originalUseResult(incoming, true);
       }
 
-      // 1) Normalize into the graph
+      // 1) Normalize the network payload into the graph
       const mutable = deepCopy(incoming.data);
       documents.normalizeDocument({ document, variables: vars, data: mutable });
 
-      // 2) Materialize directly (reads canonical @connection views)
+      // 2) Materialize from CANONICAL (ensures stable views)
       const view = documents.materializeDocument({ document, variables: vars });
 
       return originalUseResult({ data: view }, true);

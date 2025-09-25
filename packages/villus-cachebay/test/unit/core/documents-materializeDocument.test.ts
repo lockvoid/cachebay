@@ -1,4 +1,3 @@
-// test/unit/core/documents-materializeDocument.test.ts
 import { describe, it, expect, beforeEach } from "vitest";
 import { isReactive } from "vue";
 import gql from "graphql-tag";
@@ -42,7 +41,7 @@ export const USER_QUERY = gql`
   ${USER_FRAGMENT}
   query UserQuery($id: ID!) {
     user(id: $id) {
-            ...UserFields
+      ...UserFields
     }
   }
 `;
@@ -51,16 +50,16 @@ export const USERS_QUERY = gql`
   ${USER_FRAGMENT}
   query UsersQuery($usersRole: String, $first: Int, $after: String) {
     users(role: $usersRole, first: $first, after: $after) @connection(args: ["role"]) {
-            pageInfo {
-                startCursor
+      pageInfo {
+        startCursor
         endCursor
         hasNextPage
         hasPreviousPage
       }
       edges {
-                cursor
+        cursor
         node {
-                    ...UserFields
+          ...UserFields
         }
       }
     }
@@ -72,22 +71,22 @@ export const USER_POSTS_QUERY = gql`
   ${POST_FRAGMENT}
   query UserPostsQuery($id: ID!, $postsCategory: String, $postsFirst: Int, $postsAfter: String) {
     user(id: $id) {
-            ...UserFields
+      ...UserFields
       posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
-                totalCount
+        totalCount
         pageInfo {
-                    startCursor
+          startCursor
           endCursor
           hasNextPage
           hasPreviousPage
         }
         edges {
-                    cursor
+          cursor
           score
           node {
-                        ...PostFields
+            ...PostFields
             author {
-                            id
+              id
             }
           }
         }
@@ -108,27 +107,27 @@ export const USERS_POSTS_QUERY = gql`
     $postsAfter: String
   ) {
     users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
-            pageInfo {
-                startCursor
+      pageInfo {
+        startCursor
         endCursor
         hasNextPage
         hasPreviousPage
       }
       edges {
-                cursor
+        cursor
         node {
-                    ...UserFields
+          ...UserFields
           posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
-                        pageInfo {
-                            startCursor
+            pageInfo {
+              startCursor
               endCursor
               hasNextPage
               hasPreviousPage
             }
             edges {
-                            cursor
+              cursor
               node {
-                                ...PostFields
+                ...PostFields
               }
             }
           }
@@ -151,31 +150,31 @@ export const USER_POSTS_COMMENTS_QUERY = gql`
     $commentsAfter: String
   ) {
     user(id: $id) {
-            ...UserFields
+      ...UserFields
       posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
-                pageInfo {
-                    startCursor
+        pageInfo {
+          startCursor
           endCursor
           hasNextPage
           hasPreviousPage
         }
         edges {
-                    cursor
+          cursor
           node {
-                        ...PostFields
+            ...PostFields
             comments(first: $commentsFirst, after: $commentsAfter) @connection(args: []) {
-                            pageInfo {
-                                startCursor
+              pageInfo {
+                startCursor
                 endCursor
                 hasNextPage
                 hasPreviousPage
               }
               edges {
-                                cursor
+                cursor
                 node {
-                                    ...CommentFields
+                  ...CommentFields
                   author {
-                                        id
+                    id
                   }
                 }
               }
@@ -202,38 +201,38 @@ export const USERS_POSTS_COMMENTS_QUERY = gql`
     $commentsAfter: String
   ) {
     users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
-            pageInfo {
-                startCursor
+      pageInfo {
+        startCursor
         endCursor
         hasNextPage
         hasPreviousPage
       }
       edges {
-                cursor
+        cursor
         node {
-                    ...UserFields
+          ...UserFields
           posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
-                        pageInfo {
-                            startCursor
+            pageInfo {
+              startCursor
               endCursor
               hasNextPage
               hasPreviousPage
             }
             edges {
-                            cursor
+              cursor
               node {
-                                ...PostFields
+                ...PostFields
                 comments(first: $commentsFirst, after: $commentsAfter) @connection(args: []) {
-                                    pageInfo {
-                                        startCursor
+                  pageInfo {
+                    startCursor
                     endCursor
                     hasNextPage
                     hasPreviousPage
                   }
                   edges {
-                                        cursor
+                    cursor
                     node {
-                                            ...CommentFields
+                      ...CommentFields
                     }
                   }
                 }
@@ -241,6 +240,29 @@ export const USERS_POSTS_COMMENTS_QUERY = gql`
             }
           }
         }
+      }
+    }
+  }
+`;
+
+// NEW: Page-mode versions (for replacement canonical behavior)
+const USERS_PAGE_QUERY = gql`
+  query UsersPage($usersRole: String, $first: Int, $after: String, $before: String, $last: Int) {
+    users(role: $usersRole, first: $first, after: $after, before: $before, last: $last)
+      @connection(args: ["role"], mode: "page") {
+      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+      edges { cursor node { id email } }
+    }
+  }
+`;
+
+const COMMENTS_PAGE_QUERY = gql`
+  query CommentsPage($postId: ID!, $first: Int, $after: String, $before: String, $last: Int) {
+    post(id: $postId) {
+      id
+      comments(first: $first, after: $after, before: $before, last: $last) @connection(args: [], mode: "page") {
+        pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+        edges { cursor node { id text } }
       }
     }
   }
@@ -257,17 +279,17 @@ const makeGraph = () =>
     },
   });
 
-const makePlanner = () => {
-  return createPlanner(); // compiler uses @connection in documents
-};
+const makePlanner = () => createPlanner();
+const makeViews = (graph: ReturnType<typeof createGraph>) => createViews({ graph });
 
-const makeViews = (graph: ReturnType<typeof createGraph>) => {
-  return createViews({ graph });
-};
-
-const makeCanonical = (graph: ReturnType<typeof createGraph>) => {
-  return createCanonical({ graph });
-};
+// NOTE: canonical needs an optimistic hook; for materialization-only tests we provide a no-op.
+const makeCanonical = (graph: ReturnType<typeof createGraph>) =>
+  createCanonical({
+    graph,
+    optimistic: {
+      reapplyOptimistic: () => ({ inserted: [], removed: [] }),
+    } as any,
+  });
 
 const makeDocuments = (
   graph: ReturnType<typeof createGraph>,
@@ -296,7 +318,7 @@ describe("materializeDocument", () => {
   beforeEach(() => {
     graph = makeGraph();
     planner = makePlanner();
-    canonical = makeCanonical();
+    canonical = makeCanonical(graph); // <-- pass graph in
     views = makeViews(graph);
     documents = makeDocuments(graph, planner, canonical, views);
   });
@@ -373,7 +395,7 @@ describe("materializeDocument", () => {
     graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", tags: [], author: { __ref: "User:u1" } });
     graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "Post 2", tags: [], author: { __ref: "User:u1" } });
 
-    // Concrete page edge records (not strictly required for canonical test, but realistic)
+    // Concrete page edge records
     const pe0 = '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0';
     const pe1 = '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.1';
     graph.putRecord(pe0, { __typename: "PostEdge", cursor: "p1", score: 0.5, node: { __ref: "Post:p1" } });
