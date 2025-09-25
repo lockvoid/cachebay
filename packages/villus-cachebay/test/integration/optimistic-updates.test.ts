@@ -150,7 +150,7 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
   it("Canonical connection: prepend/remove/patch; UI (canonical) updates accordingly", async () => {
     const cache = createCache();
 
-    // Seed two pages → canonical union already P1,P2,P3,P4 (anchored at leader)
+    // Seed two pages → canonical union is [Post 1,2,3,4]
     await seedCache(cache, {
       query: operations.POSTS_QUERY,
       variables: { first: 2, after: null },
@@ -170,12 +170,12 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
 
     const { wrapper, fx } = await mountWithClient(CanonPosts, [] as Route[], cache);
 
-    // The reader shows canonical, i.e. union of seeded pages
+    // Canonical (union) is rendered, not just leader slice
     await wrapper.setProps({ first: 2, after: null });
     await tick(2);
-    expect(rowsByClass(wrapper)).toEqual(["Post 1", "Post 2"]);
+    expect(rowsByClass(wrapper)).toEqual(["Post 1", "Post 2", "Post 3", "Post 4"]);
 
-    // Optimistic canonical edits: prepend a node, remove Post 1, patch pageInfo
+    // Optimistic edits: prepend P9, remove Post 1, patch pageInfo
     const T = cache.modifyOptimistic((tx) => {
       const c = tx.connection({ parent: "Query", key: "posts" });
       c.prepend({ __typename: "Post", id: "9", title: "Prepended" }, { cursor: "c9" });
@@ -187,8 +187,8 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
     T.commit?.();
     await tick(2);
 
-    // Canonical view reflects ops
-    expect(rowsByClass(wrapper)).toEqual(["Prepended", "Post 2"]);
+    // Union reflects optimistic prepend/remove
+    expect(rowsByClass(wrapper)).toEqual(["Prepended", "Post 2", "Post 3", "Post 4"]);
 
     await fx.restore();
   });
@@ -495,8 +495,14 @@ describe("Integration • limit window (leader collapse + optimistic reapply)", 
 
     T.commit?.();
 
+    const Tadd = (cache as any).modifyOptimistic((tx: any) => {
+      const c = tx.connection({ parent: "Query", key: "posts", filters: { filter: "A" } });
+      c.prepend({ __typename: "Post", id: "0", title: "A0" }, { cursor: "p0" });
+      c.append({ __typename: "Post", id: "99", title: "A99" }, { cursor: "p99" });
+    });
+
     await delay(6);
-    expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6", "A7"]);
+    expect(rowsNoPI(wrapper)).toEqual(["A0", "A1", "A2", "A3", "A4", "A6", "A7", "A99"]);
 
     await fx.restore?.();
 
@@ -505,11 +511,13 @@ describe("Integration • limit window (leader collapse + optimistic reapply)", 
     await wrapper.setProps({ filter: "A", first: 3, after: 'p7' });
 
     await tick(2);
-    expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6", "A7"]);
-
-    T.commit?.();
+    expect(rowsNoPI(wrapper)).toEqual(["A0", "A1", "A2", "A3", "A4", "A6", "A7", "A99"]);
 
     await delay(6);
+    expect(rowsNoPI(wrapper)).toEqual(["A0", "A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9", "A10", "A99"]);
+
+    Tadd.revert?.();
+    await tick(2);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9", "A10"]);
 
     await fx.restore?.();
