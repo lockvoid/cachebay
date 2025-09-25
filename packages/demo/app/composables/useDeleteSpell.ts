@@ -20,17 +20,17 @@ export const useDeleteSpell = () => {
       const tx = cache.modifyOptimistic((state) => {
         const connection = state.connection({ parent: "Query", key: "spells" });
 
-        connection.remove(`Spell:${variables.input.id}`); // ...or connection.remove({ __typename: "Spell", id: variables.input.id });
+        connection.removeNode(`Spell:${variables.input.id}`); // ...or connection.remove({ __typename: "Spell", id: variables.input.id });
       });
 
-      // deleteSpell.execute({ input: variables.input })
-      //   .then((result, error) => {
-      //     if (result.error || error) {
-      //       //   tx?.revert();
-      //     } else {
-      //       tx?.commit();
-      //     }
-      //   });
+      return deleteSpell.execute({ input: variables.input })
+        .then((result, error) => {
+          if (result.error || error) {
+            tx?.revert();
+          } else {
+            tx?.commit();
+          }
+        });
     } else {
       return deleteSpell.execute({ id: variables.id });
     }
