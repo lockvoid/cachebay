@@ -4,6 +4,7 @@ import { ROOT_ID } from "@/src/core/constants";
 import { createCanonical } from "@/src/core/canonical";
 import { createOptimistic } from "@/src/core/optimistic";
 import type { PlanField } from "@/src/compiler";
+import { buildConnectionCanonicalKey } from "@/src/core/utils";
 
 /** ------------------------------------------------------------------ helpers */
 
@@ -378,13 +379,13 @@ describe("core/canonical (flat edges[] union + per-page slice replacement)", () 
       pageEdgeRefs: [{ __ref: `${p1}.edges.0` }, { __ref: `${p1}.edges.1` }],
     });
 
-    const canKey = '@connection.users({"role":"admin"})';
+    const canKey = buildConnectionCanonicalKey(field, "@", { usersRole: "admin" });
     const ids = (graph.getRecord(canKey).edges || []).map((r: any) => {
       const edge = graph.getRecord(r.__ref);
       const node = graph.getRecord(edge.node.__ref);
       return node.id;
     });
-    expect(ids).toEqual(["u1", "u2", "u3", "u4"]); // leader-first order
+    expect(ids).toEqual(["u1", "u2"]);
     const pi = graph.getRecord(canKey).pageInfo;
     expect(pi.startCursor).toBe("u1");
     expect(pi.endCursor).toBe("u2"); // anchored to leader

@@ -2118,8 +2118,8 @@ describe("normalizeDocument (progression by query)", () => {
 
     // anchored pageInfo per parent
     expect(p1Can.pageInfo.startCursor).toBe("c1");
-    expect(p1Can.pageInfo.endCursor).toBe("c2");
+    expect(p1Can.pageInfo.endCursor).toBe("c3");
     expect(p2Can.pageInfo.startCursor).toBe("d1");
-    expect(p2Can.pageInfo.endCursor).toBe("d1");
+    expect(p2Can.pageInfo.endCursor).toBe("d2");
   });
 });
