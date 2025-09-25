@@ -201,24 +201,26 @@ const computeOrderedPagesFromMeta = (meta: any): string[] => {
 const nodeRefOfEdge = (graph: GraphDeps, edgeRef: string): string | null =>
   (graph.getRecord(edgeRef)?.node?.__ref as string) || null;
 
+/** Clear edges when there are no pages; otherwise rebuild from ordered pages. */
 const rebuildCanonicalFromPages = (graph: GraphDeps, canKey: string) => {
   const meta = graph.getRecord(metaKeyOf(canKey));
   const ordered = computeOrderedPagesFromMeta(meta);
-  if (!ordered.length) return;
 
   const nextEdges: Array<{ __ref: string }> = [];
   const seenNode = new Set<string>();
 
-  for (const pk of ordered) {
-    const page = graph.getRecord(pk);
-    const refs: Array<{ __ref: string }> = Array.isArray(page?.edges) ? page.edges : [];
-    for (let i = 0; i < refs.length; i++) {
-      const eref = refs[i]?.__ref;
-      if (!eref) continue;
-      const nref = nodeRefOfEdge(graph, eref);
-      if (!nref || seenNode.has(nref)) continue;
-      seenNode.add(nref);
-      nextEdges.push({ __ref: eref });
+  if (ordered.length > 0) {
+    for (const pk of ordered) {
+      const page = graph.getRecord(pk);
+      const refs: Array<{ __ref: string }> = Array.isArray(page?.edges) ? page.edges : [];
+      for (let i = 0; i < refs.length; i++) {
+        const eref = refs[i]?.__ref;
+        if (!eref) continue;
+        const nref = nodeRefOfEdge(graph, eref);
+        if (!nref || seenNode.has(nref)) continue;
+        seenNode.add(nref);
+        nextEdges.push({ __ref: eref });
+      }
     }
   }
 
@@ -477,7 +479,6 @@ export const createOptimistic = ({ graph }: Deps) => {
       };
       for (const L of committed) collect(L);
       for (const L of pending) if (L.id !== excludeLayerId) collect(L);
-      // also consider any canonical ids we captured earlier
       for (const id of baseSnap.keys()) if (isCanonicalKey(id)) touched.add(id);
 
       for (const canKey of touched) rebuildCanonicalFromPages(graph, canKey);
