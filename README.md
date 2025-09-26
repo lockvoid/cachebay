@@ -1,4 +1,8 @@
 
+Here’s your README with a new **“Cachebay Options”** section added (everything else left exactly as-is):
+
+---
+
 # Cachebay for Villus
 
 **Blazing-fast normalized cache x Relay-style connections for Villus.**
@@ -23,7 +27,6 @@ A tiny (20KB gzip), instance-scoped cache layer for **Villus** that gives you:
 
 ## Documentation
 
-- 👉 **[Getting started](./docs/GETTING_STARTED.md)** — quick start guide
 - 👉 **[Cache options](./docs/CACHE_OPTIONS.md)** — configuration & tips
 - 👉 **[Relay connections](./docs/RELAY_CONNECTIONS.md)** — `@connection` directive, append/prepend/replace, de-dup, policy matrix
 - 👉 **[Optimistic updates](./docs/OPTIMISTIC_UPDATES.md)** — layering, rollback, entity ops, connection ops (`addNode` / `removeNode` / `patch`)
@@ -57,7 +60,9 @@ import { createClient } from 'villus'
 import { createCachebay } from 'villus-cachebay'
 import { fetch as fetchPlugin } from 'villus'
 
-export const cache = createCachebay()
+export const cache = createCachebay({
+  // e.g. keys: { Post: (post) => post.id }
+})
 
 export const client = createClient({
   url: '/graphql',
@@ -70,6 +75,32 @@ export const client = createClient({
   ],
 })
 ```
+
+### Cachebay Options
+
+```ts
+import { createCachebay } from 'villus-cachebay'
+
+const cache = createCachebay({
+  // Keys per concrete type: return a stable id or null to skip
+  keys: {
+    // e.g. AudioPost: (post) => post?.id ?? null
+  },
+
+  // Parent → concrete implementors for address-by-interface
+  interfaces: {
+    // e.g. Post: ['AudioPost','VideoPost']
+  },
+
+  hydrationTimeout: 100, // default
+  suspensionTimeout: 1000, // default
+})
+```
+
+- **keys / interfaces**: how identity and interface reads work → see **[Fragments](./docs/FRAGMENTS.md)**.
+- **hydrationTimeout / suspensionTimeout**: how SSR & Suspense windows are handled → see **[SSR](./docs/SSR.md)**.
+
+---
 
 Query with Relay connection:
 
@@ -243,8 +274,6 @@ writeFragment({
   },
 })
 ```
-
-
 
 See **[Cache fragments](./docs/CACHE_FRAGMENTS.md)** for a concise API (`identify`, `readFragment`, `writeFragment`) and simple examples.
 
