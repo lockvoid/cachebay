@@ -10,19 +10,27 @@ import type { PlannerInstance } from "./planner";
 import type { DocumentsInstance } from "./documents";
 import type { SSRInstance } from "./ssr";
 
-import { CACHEBAY_KEY } from "./constants";
-import { ROOT_ID } from "./constants";
+import { CACHEBAY_KEY, ROOT_ID } from "./constants";
 import { buildConnectionCanonicalKey } from "./utils";
 
 type PluginDependencies = {
   graph: GraphInstance;
   planner: PlannerInstance;
   documents: DocumentsInstance;
-  ssr?: SSRInstance,
+  ssr: SSRInstance;
 };
 
-export function createPlugin(deps: PluginDependencies): ClientPlugin {
+export type PluginOptions = {
+  /** Time window (ms) after a successful result in which repeat Suspense re-execs are served from cache & do not refetch */
+  suspensionTimeout?: number;
+};
+
+export function createPlugin(options: PluginOptions, deps: PluginDependencies): ClientPlugin {
   const { graph, documents, planner, ssr } = deps;
+  const { suspensionTimeout = 1000 } = options ?? {};
+
+  // After-result window per op key
+  const lastResultAtMs = new Map<number, number>();
 
   return (ctx: ClientPluginContext) => {
     const op = ctx.operation;
@@ -30,39 +38,33 @@ export function createPlugin(deps: PluginDependencies): ClientPlugin {
     const document: DocumentNode = op.query as DocumentNode;
     const plan = planner.getPlan(document);
 
-    // always use compiled networkQuery (strips @connection etc.)
+    // Always use compiled networkQuery (strips @connection, adds __typename)
     op.query = plan.networkQuery;
 
     const publish = (payload: OperationResult, terminal: boolean) => ctx.useResult(payload, terminal);
+    const policy: "cache-and-network" | "cache-first" | "network-only" | "cache-only" =
+      ((op as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network") as any;
 
-    const policy: string =
-      (op as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network";
+    const buildCachedFrame = () => {
+      if (!documents.hasDocument({ document, variables: vars })) return null;
 
-    function buildCachedFrame() {
-      // We need the document present (links/pages/canonicals) to build a view
-      if (!documents.hasDocument({ document, variables: vars })) {
-        return null;
-      }
-
-      const plan = planner.getPlan(document);
       const rootConnections = plan.root.filter((f) => f.isConnection);
 
-      // If no root @connection, just materialize cached entities
+      // No root @connection → just materialize entities
       if (rootConnections.length === 0) {
-        const view = documents.materializeDocument({ document, variables: vars });
-        return { data: view };
+        const data = documents.materializeDocument({ document, variables: vars });
+        return { data };
       }
 
-      // Helper: detect cursor role for this request
+      // Determine cursor role
       const detectRole = (field: any) => {
         const req = field.buildArgs ? (field.buildArgs(vars) || {}) : (vars || {});
         const has = (k: string) =>
-          req[k] != null ||
-          Object.keys(vars || {}).some((n) => n.toLowerCase().includes(k) && vars[n] != null);
+          req[k] != null || Object.keys(vars || {}).some((n) => n.toLowerCase().includes(k) && vars[n] != null);
         return { hasAfter: has("after"), hasBefore: has("before") };
       };
 
-      // If this request is AFTER/BEFORE, prewarm that page (so union grows immediately)
+      // Prewarm AFTER/BEFORE so the union grows immediately
       let didPrewarm = false;
       for (const f of rootConnections) {
         const { hasAfter, hasBefore } = detectRole(f);
@@ -73,42 +75,65 @@ export function createPlugin(deps: PluginDependencies): ClientPlugin {
         }
       }
 
-      // If leader request and canonicals already exist, DO NOT prewarm (preserve collapsed leader view)
+      // Leader request: prewarm only if canonical is empty
       if (!didPrewarm) {
         const anyCanonicalReady = rootConnections.some((f) => {
           const canKey = buildConnectionCanonicalKey(f, ROOT_ID, vars);
           const can = graph.getRecord(canKey);
           return Array.isArray(can?.edges) && can.edges.length > 0;
         });
-
-        // If no canonical edges yet, try to prewarm from concrete pages (if cached)
         if (!anyCanonicalReady) {
           documents.prewarmDocument({ document, variables: vars });
         }
       }
 
-      const view = documents.materializeDocument({ document, variables: vars });
+      const data = documents.materializeDocument({ document, variables: vars });
 
-      // Only emit if at least one root connection has cached edges
+      // Emit only if at least one root connection has edges
       const hasEdges = rootConnections.some((f) => {
-        const v = (view as any)?.[f.responseKey];
+        const v = (data as any)?.[f.responseKey];
         return Array.isArray(v?.edges) && v.edges.length > 0;
       });
 
-      return hasEdges ? { data: view } : null;
-    }
+      return hasEdges ? { data } : null;
+    };
 
     if (plan.operation === "mutation") {
       const originalUseResult = ctx.useResult;
       ctx.useResult = (incoming: OperationResult, _terminal?: boolean) => {
         if (incoming?.error) return originalUseResult(incoming, true);
-        // Normalize side-effects into the graph
         documents.normalizeDocument({ document, variables: vars, data: incoming.data });
-        // Forward original mutation payload (do NOT materialize)
         return originalUseResult({ data: incoming.data }, true);
       };
-      return; // skip all cache/SSR paths (mutations are network-driven)
+      return;
     }
+
+    if (plan.operation === "subscription") {
+      const originalUseResult = ctx.useResult;
+      ctx.useResult = (incoming: OperationResult, terminal?: boolean) => {
+        if (incoming?.error) return originalUseResult(incoming, true);
+
+        if (incoming?.data) {
+          documents.normalizeDocument({ document, variables: vars, data: incoming.data });
+        }
+
+        // Do not force terminal; let the source control it
+        return originalUseResult({ data: incoming.data }, !!terminal);
+      };
+      return;
+    }
+
+    // SSR: during hydrate, for non-network-only policies serve cached and stop; for network-only allow network
+    if (ssr?.isHydrating?.()) {
+      if (policy !== "network-only") {
+        const cached = buildCachedFrame();
+        return publish(cached ?? { data: undefined }, true);
+      }
+    }
+
+    const key = op.key as number;
+    const last = lastResultAtMs.get(key);
+    const withinSuspension = last != null && performance.now() - last <= suspensionTimeout;
 
     // cache-only
     if (policy === "cache-only") {
@@ -126,36 +151,63 @@ export function createPlugin(deps: PluginDependencies): ClientPlugin {
     // cache-first
     if (policy === "cache-first") {
       const cached = buildCachedFrame();
-      if (cached) return publish(cached, true);
-      // else fall through to network
+
+      if (cached) {
+        publish(cached, true);
+
+        return;
+      }
+
+      lastResultAtMs.set(key, performance.now());
     }
 
-    // cache-and-network: publish cached (non-terminal) if present, then do network
+    // cache-and-network
     if (policy === "cache-and-network") {
       const cached = buildCachedFrame();
 
       if (cached) {
-        publish(cached, ssr.isHydrating());
+        if (withinSuspension) {
+          publish(cached, true);
+
+          return;
+        }
+
+        publish(cached, false);
+
+        lastResultAtMs.set(key, performance.now());
       }
     }
 
-    // network-only or the network leg of cache-and-network
-    const originalUseResult = ctx.useResult;
-    ctx.useResult = (incoming: OperationResult, terminal?: boolean) => {
-      const hasError = !!incoming?.error;
+    // network-only (and the network leg of cache-and-network)
+    // If within suspension window, skip a duplicate fetch (prior result just landed)
+    if (policy === "network-only") {
+      if (withinSuspension) {
+        const cached = buildCachedFrame();
 
-      if (hasError) {
-        // On error we just pass it through; no graph writes
+        if (cached) {
+          publish(cached, true);
+
+          return;
+        }
+      }
+    }
+
+    const originalUseResult = ctx.useResult;
+
+    ctx.useResult = (incoming: OperationResult, _terminal?: boolean) => {
+      lastResultAtMs.set(key, performance.now());
+
+      if (incoming?.error) {
         return originalUseResult(incoming, true);
       }
 
-      // 1) Normalize the network payload into the graph
+      // Normalize & materialize for queries
       documents.normalizeDocument({ document, variables: vars, data: incoming.data });
+      const data = documents.materializeDocument({ document, variables: vars });
 
-      // 2) Materialize from CANONICAL (ensures stable views)
-      const view = documents.materializeDocument({ document, variables: vars });
+      // Stamp completion time for the suspension window
 
-      return originalUseResult({ data: view }, true);
+      return originalUseResult({ data }, true);
     };
   };
 }

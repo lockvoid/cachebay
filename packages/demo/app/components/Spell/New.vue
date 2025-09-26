@@ -17,7 +17,7 @@
         throw result.error;
       }
 
-      // NOTE: Comment it out to show Suspense fallback on spell detail page.
+      // NOTE: Comment it out to show Suspense fallback right after the redirect.
       await $villus.executeQuery({
         query: SPELL_QUERY,
 

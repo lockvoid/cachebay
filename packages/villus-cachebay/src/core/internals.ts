@@ -52,6 +52,7 @@ export type CachebayOptions = {
   keys?: Record<string, (obj: any) => string | null>;
   interfaces?: Record<string, string[]>;
   hydrationTimeout?: number;
+  suspensionTimeout?: number;
 };
 
 export function createCache(options: CachebayOptions = {}): CachebayInstance {
@@ -69,7 +70,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   const inspect = createInspect({ graph });
 
   // Villus plugin (ClientPlugin)
-  const plugin = createPlugin({ graph, planner, documents, ssr });
+  const plugin = createPlugin({ suspensionTimeout: options.suspensionTimeout }, { graph, planner, documents, ssr });
 
   // Vue install
   (plugin as any).install = (app: App) => {
