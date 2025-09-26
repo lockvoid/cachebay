@@ -5,12 +5,12 @@ export const useSpellsPagination = defineStore('spellsPagination', () => {
   const before = ref<string | null>(null);
   const limit = ref(10);
 
-  const filters = reactive({
+  const filter = reactive({
     query: '' as string,
   });
 
   const setQuery = (value: string) => {
-    filters.query = value ?? '';
+    filter.query = value ?? '';
   }
 
   const setAfter = (value: string | null) => {
@@ -23,20 +23,25 @@ export const useSpellsPagination = defineStore('spellsPagination', () => {
     after.value = null;
   }
 
+  const setLimit = (value: number) => {
+    limit.value = value;
+  }
+
   const resetPagination = () => {
     after.value = null;
     before.value = null;
   }
 
-  const setLimit = (value: number) => {
-    limit.value = value;
+  const resetFilter = () => {
+    filter.query = '';
   }
 
-  const clearFilters = () => {
-    filters.query = '';
+  const reset = () => {
+    resetPagination();
+    resetFilter();
   }
 
-  watch(filters, () => {
+  watch(filter, () => {
     resetPagination();
   });
 
@@ -44,13 +49,14 @@ export const useSpellsPagination = defineStore('spellsPagination', () => {
     limit,
     after,
     before,
-    filters,
+    filter,
     setAfter,
     setBefore,
     setLimit,
     setQuery,
     resetPagination,
-    clearFilters,
+    resetFilter,
+    reset,
   };
 });
 

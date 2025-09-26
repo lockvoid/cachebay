@@ -54,6 +54,8 @@ export function createTestClient(routes: Route[], cacheConfig?: any) {
         Comment: (o: any) => (o?.uuid != null ? String(o.uuid) : null),
       },
       interfaces: { Post: ['AudioPost', 'VideoPost'] },
+
+      suspensionTimeout: 0,
     });
 
   const fx = createFetchMock(routes);

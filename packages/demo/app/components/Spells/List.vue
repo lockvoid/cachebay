@@ -1,6 +1,8 @@
 <script setup lang="ts">
   const settings = useSettings();
 
+  const spellsPagination = useSpellsPagination();
+
   const spellsQuery = await useSpellsQuery();
 
   if (spellsQuery.error.value) {
@@ -9,6 +11,10 @@
 
   const spells = computed(() => {
     return spellsQuery.data.value.spells;
+  });
+
+  onUnmounted(() => {
+    spellsPagination.resetPagination();
   });
 </script>
 

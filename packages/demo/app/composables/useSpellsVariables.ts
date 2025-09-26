@@ -6,13 +6,13 @@ export const useSpellsQueryVariables = () => {
 
     if (pagination.before) {
       Object.assign(results, { before: pagination.before, last: pagination.limit });
-    } else  {
+    } else {
       Object.assign(results, { after: pagination.after, first: pagination.limit });
     }
 
-    if (pagination.filters.query) {
+    if (pagination.filter.query) {
       results.filter = {
-        query: pagination.filters.query
+        query: pagination.filter.query
       }
     }
 
