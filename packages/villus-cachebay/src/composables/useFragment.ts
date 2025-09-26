@@ -1,7 +1,7 @@
-import { ref, unref, watchEffect, readonly, type Ref, shallowRef } from "vue";
+import { unref, watchEffect, readonly, type Ref, shallowRef } from "vue";
 import { useCache } from "./useCache";
-
-export type UseFragmentParams = {
+    
+export type UseFragmentOptions   = {
   id: string | Ref<string>;
   fragment: any; // string | DocumentNode | CachePlanV1
   variables?: Record<string, any> | Ref<Record<string, any> | undefined>;
@@ -12,7 +12,7 @@ export type UseFragmentParams = {
  * - Uses cache.readFragment (which returns a reactive entity/selection view).
  * - Updates when id/fragment/variables change.
  */
-export function useFragment(params: UseFragmentParams): Readonly<Ref<any>> {
+export function useFragment(options: UseFragmentOptions): Readonly<Ref<any>> {
   const cache = useCache() as any; // must expose readFragment()
 
   if (typeof cache?.readFragment !== "function") {
@@ -22,8 +22,8 @@ export function useFragment(params: UseFragmentParams): Readonly<Ref<any>> {
   const data = shallowRef<any>(undefined);
 
   watchEffect(() => {
-    const id = unref(params.id);
-    const vars = unref(params.variables) || {};
+    const id = unref(options.id);
+    const vars = unref(options.variables) || {};
     if (!id) {
       data.value = undefined;
       return;
@@ -31,7 +31,7 @@ export function useFragment(params: UseFragmentParams): Readonly<Ref<any>> {
     // readFragment returns a reactive view; we keep it as-is
     const view = cache.readFragment({
       id,
-      fragment: params.fragment,
+      fragment: options.fragment,
       variables: vars,
     });
     data.value = view;

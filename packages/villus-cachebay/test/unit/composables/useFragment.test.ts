@@ -1,221 +1,218 @@
-import { describe, it, expect } from "vitest";
-import { defineComponent, h } from "vue";
+import { describe, it, expect, vi } from "vitest";
+import { defineComponent, h, ref, nextTick } from "vue";
 import { mount } from "@vue/test-utils";
-import gql from "graphql-tag";
-import { tick, delay } from '@/test/helpers/concurrency';
-import { createGraph } from "@/src/core/graph";
-import { createViews } from "@/src/core/views";
-import { createPlanner } from "@/src/core/planner";
-import { createFragments } from "@/src/core/fragments";
 import { provideCachebay } from "@/src/core/plugin";
+import { createCache } from "@/src/core/internals";
 import { useFragment } from "@/src/composables/useFragment";
+import { USER_FIELDS_FRAGMENT_COMPILER } from "@/test/helpers";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Fragments
-// ─────────────────────────────────────────────────────────────────────────────
+describe("useFragment", () => {
+  let cache: ReturnType<typeof createCache>;
 
-const USER_FRAGMENT = gql`
-  fragment UserFields on User {
-    id
-    email
-  }
-`;
-
-const USER_POSTS_FRAGMENT = gql`
-  fragment UserPosts on User {
-    id
-    posts(first: $first, after: $after) @connection {
-      __typename
-      totalCount
-      pageInfo {
-        __typename
-        endCursor
-        hasNextPage
-      }
-      edges {
-        __typename
-        cursor
-        node {
-          __typename
-          id
-          title
-        }
-      }
-    }
-  }
-`;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-const makeCache = () => {
-  const graph = createGraph({
-    keys: {
-      User: (o: any) => (o?.id != null ? String(o.id) : null),
-      Post: (o: any) => (o?.id != null ? String(o.id) : null),
-    },
+  beforeEach(() => {
+    cache = createCache();
   });
 
-  const views = createViews({ graph });
-  const planner = createPlanner({
-    // tests rely on these fields being flagged as connections
-    connections: {
-      User: { posts: { mode: "infinite", args: [] } },
-    },
-  });
+  it("returns readonly ref with fragment data from cache", () => {
+    const readFragmentSpy = vi.spyOn(cache as any, "readFragment").mockReturnValue({ id: "u1", email: "test@example.com" });
 
-  const fragments = createFragments({ graph, planner, views });
+    let fragmentData: any;
 
-  const cache = {
-    readFragment: fragments.readFragment,
-    writeFragment: fragments.writeFragment,
-    __graph: graph,
-  };
-
-  return { cache, graph };
-};
-
-const provide = (cache: any) => ({
-  install(app: any) {
-    provideCachebay(app, cache);
-  },
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tests
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("useFragment()", () => {
-  it("reactive view for simple fragment; updates propagate", async () => {
-    const { cache, graph } = makeCache();
-
-    // seed entity
-    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
-
-    const Comp = defineComponent({
+    const App = defineComponent({
       setup() {
-        const data = useFragment({
+        fragmentData = useFragment({
           id: "User:u1",
-          fragment: USER_FRAGMENT,
+          fragment: USER_FIELDS_FRAGMENT_COMPILER,
           variables: {},
         });
-        return () => h("div", {}, data.value?.email || "");
+
+        return () => h("div");
       },
     });
 
-    const wrapper = mount(Comp, { global: { plugins: [provide(cache)] } });
+    mount(App, {
+      global: {
+        plugins: [cache],
+      },
+    });
 
-    await tick();
-    expect(wrapper.text()).toBe("u1@example.com");
-
-    // update → reflected
-    graph.putRecord("User:u1", { email: "u1+updated@example.com" });
-    await tick();
-    expect(wrapper.text()).toBe("u1+updated@example.com");
+    expect(readFragmentSpy).toHaveBeenCalledWith({
+      id: "User:u1",
+      fragment: USER_FIELDS_FRAGMENT_COMPILER,
+      variables: {},
+    });
+    expect(fragmentData.value).toEqual({ id: "u1", email: "test@example.com" });
   });
 
-  it("reactive connection fields: edges and nodes are live", async () => {
-    const { cache, graph } = makeCache();
+  it("handles empty id by setting data to undefined", () => {
+    const readFragmentSpy = vi.spyOn(cache as any, "readFragment");
 
-    // seed user + page with 1 edge
-    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "x@example.com" });
-    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1" });
+    let fragmentData: any;
 
-    const pageKey = '@.User:u1.posts({"after":null,"first":2})';
-    graph.putRecord(`${pageKey}.edges.0`, {
-      __typename: "PostEdge",
-      cursor: "p1",
-      node: { __ref: "Post:p1" },
-    });
-    graph.putRecord(pageKey, {
-      __typename: "PostConnection",
-      totalCount: 1,
-      pageInfo: { __typename: "PageInfo", endCursor: "p1", hasNextPage: false },
-      edges: [{ __ref: `${pageKey}.edges.0` }],
-    });
-
-    const Comp = defineComponent({
+    const App = defineComponent({
       setup() {
-        const data = useFragment({
+        fragmentData = useFragment({
+          id: "",
+          fragment: USER_FIELDS_FRAGMENT_COMPILER,
+        });
+
+        return () => h("div");
+      },
+    });
+
+    mount(App, {
+      global: {
+        plugins: [cache],
+      },
+    });
+
+    expect(readFragmentSpy).not.toHaveBeenCalled();
+    expect(fragmentData.value).toBeUndefined();
+  });
+
+  it("reacts to changes in reactive id parameter", async () => {
+    const readFragmentSpy = vi.spyOn(cache as any, "readFragment").mockReturnValue({ id: "u1", email: "test@example.com" });
+
+    const userId = ref("User:u1");
+
+    let fragmentData: any;
+
+    const App = defineComponent({
+      setup() {
+        fragmentData = useFragment({
+          id: userId,
+          fragment: USER_FIELDS_FRAGMENT_COMPILER,
+        });
+
+        return () => h("div");
+      },
+    });
+
+    mount(App, {
+      global: {
+        plugins: [cache],
+      },
+    });
+
+    expect(readFragmentSpy).toHaveBeenCalledTimes(1);
+
+    // 1. Change the reactive id parameter
+    userId.value = "User:u2";
+    await nextTick();
+
+    // 2. Verify useFragment reacted to the id change
+    expect(readFragmentSpy).toHaveBeenCalledTimes(2);
+    expect(readFragmentSpy).toHaveBeenLastCalledWith({
+      id: "User:u2",
+      fragment: USER_FIELDS_FRAGMENT_COMPILER,
+      variables: {},
+    });
+  });
+
+  it("reacts to changes in reactive variables parameter", async () => {
+    const cache = createCache();
+
+    const readFragmentSpy = vi.spyOn(cache as any, "readFragment").mockReturnValue({ id: "u1", email: "test@example.com" });
+
+    const variables = ref({ first: 10 });
+
+    let fragmentData: any;
+
+    const App = defineComponent({
+      setup() {
+        fragmentData = useFragment({
           id: "User:u1",
-          fragment: USER_POSTS_FRAGMENT,
-          variables: { first: 2, after: null },
+          fragment: USER_FIELDS_FRAGMENT_COMPILER,
+          variables,
         });
-        return () =>
-          h(
-            "ul",
-            {},
-            (data.value?.posts?.edges ?? []).map((e: any) =>
-              h("li", {}, e?.node?.title || "")
-            )
-          );
+
+        return () => h("div");
       },
     });
 
-    const wrapper = mount(Comp, { global: { plugins: [provide(cache)] } });
-    await tick();
-
-    // initial list
-    let items = wrapper.findAll("li").map((li) => li.text());
-    expect(items).toEqual(["P1"]);
-
-    // update node → reflected
-    graph.putRecord("Post:p1", { title: "P1 (Updated)" });
-    await tick();
-    items = wrapper.findAll("li").map((li) => li.text());
-    expect(items).toEqual(["P1 (Updated)"]);
-
-    // add another edge (p2)
-    graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "P2" });
-    graph.putRecord(`${pageKey}.edges.1`, {
-      __typename: "PostEdge",
-      cursor: "p2",
-      node: { __ref: "Post:p2" },
-    });
-    const pageSnapshot = graph.getRecord(pageKey)!;
-    graph.putRecord(pageKey, {
-      ...pageSnapshot,
-      totalCount: 2,
-      edges: [...pageSnapshot.edges, { __ref: `${pageKey}.edges.1` }],
+    mount(App, {
+      global: {
+        plugins: [cache],
+      },
     });
 
-    await tick();
-    items = wrapper.findAll("li").map((li) => li.text());
-    expect(items).toEqual(["P1 (Updated)", "P2"]);
+    expect(readFragmentSpy).toHaveBeenCalledWith({
+      id: "User:u1",
+      fragment: USER_FIELDS_FRAGMENT_COMPILER,
+      variables: { first: 10 },
+    });
 
-    // update p2 title → reflected
-    graph.putRecord("Post:p2", { title: "P2 (New)" });
-    await tick();
-    items = wrapper.findAll("li").map((li) => li.text());
-    expect(items).toEqual(["P1 (Updated)", "P2 (New)"]);
+    // 1. Change the reactive variables parameter
+    variables.value = { first: 20 };
+    await nextTick();
+
+    // 2. Verify useFragment reacted to the variables change
+    expect(readFragmentSpy).toHaveBeenCalledTimes(2);
+    expect(readFragmentSpy).toHaveBeenLastCalledWith({
+      id: "User:u1",
+      fragment: USER_FIELDS_FRAGMENT_COMPILER,
+      variables: { first: 20 },
+    });
   });
 
-  it("returns undefined (or reactive empty) when entity is missing", async () => {
-    const { cache } = makeCache();
+  it("handles undefined variables by defaulting to empty object", () => {
+    const cache = createCache();
 
-    const Comp = defineComponent({
+    const readFragmentSpy = vi.spyOn(cache as any, "readFragment").mockReturnValue({ id: "u1", email: "test@example.com" });
+
+    let fragmentData: any;
+
+    const App = defineComponent({
       setup() {
-        const data = useFragment({
-          id: "User:missing",
-          fragment: USER_FRAGMENT,
-          variables: {},
+        fragmentData = useFragment({
+          id: "User:u1",
+          fragment: USER_FIELDS_FRAGMENT_COMPILER,
         });
-        return () => h("div", {}, data.value ? JSON.stringify(data.value) : "undefined");
+
+        return () => h("div");
       },
     });
 
-    const wrapper = mount(Comp, { global: { plugins: [provide(cache)] } });
-    await tick();
+    mount(App, {
+      global: {
+        plugins: [cache],
+      },
+    });
 
-    // Depending on graph implementation, it may be 'undefined' or '{}' (reactive empty proxy)
-    const txt = wrapper.text();
-    if (txt === "undefined") {
-      expect(txt).toBe("undefined");
-    } else {
-      expect(() => JSON.parse(txt)).not.toThrow();
-      const obj = JSON.parse(txt);
-      expect(typeof obj).toBe("object");
-    }
+    expect(readFragmentSpy).toHaveBeenCalledWith({
+      id: "User:u1",
+      fragment: USER_FIELDS_FRAGMENT_COMPILER,
+      variables: {},
+    });
+  });
+
+  it("throws if cache doesn't have readFragment method", () => {
+    const invalidCache = {
+      identify: vi.fn(),
+
+      writeFragment: vi.fn(),
+
+      install: (app: any) => {
+        provideCachebay(app, { identify: vi.fn(), writeFragment: vi.fn() });
+      }
+    };
+
+    const App = defineComponent({
+      setup() {
+        useFragment({
+          id: "User:u1",
+          fragment: USER_FIELDS_FRAGMENT_COMPILER,
+        });
+      },
+      render: () => h("div"),
+    });
+
+    expect(() =>
+      mount(App, {
+        global: {
+          plugins: [invalidCache],
+        },
+      })
+    ).toThrowError("[useFragment] cache must expose readFragment()");
   });
 });

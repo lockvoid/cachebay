@@ -5,11 +5,11 @@ import { provideCachebay } from "@/src/core/plugin";
 import { createCache } from "@/src/core/internals";
 import { useCache } from "@/src/composables/useCache";
 
-describe("useCache()", () => {
+describe("useCache", () => {
   it("throws if used without provider", () => {
     const App = defineComponent({
       setup() {
-        useCache(); // should throw
+        useCache();
       },
 
       render: () => h("div"),
@@ -20,13 +20,14 @@ describe("useCache()", () => {
     );
   });
 
-  it("returns the cache instance; writeFragment is shimmed to return tx-like object", () => {
+  it("returns the cache instance directly by reference", () => {
     const cache = createCache();
 
-    let apiFromSetup: any;
+    let cacheApi: any;
+    
     const App = defineComponent({
       setup() {
-        apiFromSetup = useCache();
+        cacheApi = useCache();
         return () => h("div");
       },
     });
@@ -42,26 +43,10 @@ describe("useCache()", () => {
         ],
       },
     });
-
-    expect(wrapper.exists()).toBe(true);
-    expect(typeof apiFromSetup.identify).toBe("function");
-    expect(typeof apiFromSetup.readFragment).toBe("function");
-    expect(typeof apiFromSetup.writeFragment).toBe("function");
-
-    const spy = vi.spyOn(cache as any, "writeFragment");
-
-    const tx = apiFromSetup.writeFragment({
-      id: "User:u1",
-      fragment: `
-        fragment UserFields on User { id email }
-      `,
-      data: { __typename: "User", id: "u1", email: "x@example.com" },
-      variables: {},
-    });
-
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(typeof tx).toBe("object");
-    expect(typeof tx.commit).toBe("function");
-    expect(typeof tx.revert).toBe("function");
+    
+    expect(cacheApi).toBe(cache);
+    expect(cacheApi.identify).toBe(cache.identify);
+    expect(cacheApi.readFragment).toBe(cache.readFragment);
+    expect(cacheApi.writeFragment).toBe(cache.writeFragment);
   });
 });
