@@ -1718,14 +1718,23 @@ describe("documents.normalizeDocument", () => {
 
     const user1PostsComments_page3 = {
       user: {
-        __typename: "User", id: "u1",
+        __typename: "User",
+        id: "u1",
+
         posts: {
           __typename: "PostConnection",
-          edges: [{
-            __typename: "PostEdge", cursor: "p1", node: {
-              __typename: "Post", id: "p1",
-              comments: {
-                __typename: "CommentConnection",
+
+          edges: [
+            {
+              __typename: "PostEdge",
+              cursor: "p1",
+
+              node: {
+                __typename: "Post",
+                id: "p1",
+
+                comments: {
+                  __typename: "CommentConnection",
                 pageInfo: {
                   __typename: "PageInfo",
                   startCursor: "c3",
