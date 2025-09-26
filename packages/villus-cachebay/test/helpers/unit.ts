@@ -863,6 +863,13 @@ export const USER_FEED_FRAGMENT_COMPILER = gql`
   }
 `;
 
+export const USER_FIELDS_FRAGMENT_COMPILER = gql`
+  fragment UserFields on User {
+    id
+    email
+  }
+`;
+
 export const POSTS_SELECTION_MAPS_QUERY = gql`
   query Q($category: String, $first: Int, $after: String) {
     posts(category: $category, first: $first, after: $after)

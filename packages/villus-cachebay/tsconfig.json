@@ -4,6 +4,10 @@
 
     "paths": {
       "@/*": ["*"]
-    }
+    },
+
+    "types": [
+      "vitest/globals"
+    ]
   }
 }
