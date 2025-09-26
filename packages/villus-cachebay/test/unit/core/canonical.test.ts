@@ -1,8 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
 import { createGraph } from "@/src/core/graph";
 import { createCanonical } from "@/src/core/canonical";
 import { createOptimistic } from "@/src/core/optimistic";
-import { buildConnectionCanonicalKey } from "@/src/core/utils";
 import { ROOT_ID } from "@/src/core/constants";
 import { writePageSnapshot } from "@/test/helpers/unit";
 import type { PlanField } from "@/src/compiler";
@@ -169,21 +167,24 @@ describe('canonical', () => {
     );
 
     canonical.mergeFromCache({
-      field: POSTS_PLAN_FIELD, parentRecordId: ROOT_ID,
+      field: POSTS_PLAN_FIELD,
+      parentRecordId: ROOT_ID,
       requestVars: { first: 3, after: "p3" },
       pageKey: '@.posts({"after":"p3","first":3})',
       pageSnap: page2,
       pageEdgeRefs: page2EdgeRefs,
     });
     canonical.mergeFromCache({
-      field: POSTS_PLAN_FIELD, parentRecordId: ROOT_ID,
+      field: POSTS_PLAN_FIELD,
+      parentRecordId: ROOT_ID,
       requestVars: { last: 3, before: "p1" },
       pageKey: '@.posts({"before":"p1","last":3})',
       pageSnap: page0,
       pageEdgeRefs: page0EdgeRefs,
     });
     canonical.mergeFromCache({
-      field: POSTS_PLAN_FIELD, parentRecordId: ROOT_ID,
+      field: POSTS_PLAN_FIELD,
+      parentRecordId: ROOT_ID,
       requestVars: { first: 3, after: null },
       pageKey: '@.posts({"after":null,"first":3})',
       pageSnap: page1,
@@ -221,7 +222,8 @@ describe('canonical', () => {
     );
 
     canonical.updateConnection({
-      field: POSTS_PLAN_FIELD, parentRecordId: ROOT_ID,
+      field: POSTS_PLAN_FIELD,
+      parentRecordId: ROOT_ID,
       requestVars: { first: 3, after: "p3" },
       pageKey: '@.posts({"after":"p3","first":3})',
       pageSnap: page1,
@@ -573,13 +575,34 @@ describe('canonical', () => {
       { hasNext: false, hasPrev: true }
     );
 
-    canonical.mergeFromCache({ field: POSTS_PLAN_FIELD, parentRecordId: ROOT_ID, requestVars: { first: 3, after: null }, pageKey: '@.posts({"after":null,"first":3})', pageSnap: P1, pageEdgeRefs: P1EdgeRefs });
-    canonical.mergeFromCache({ field: POSTS_PLAN_FIELD, parentRecordId: ROOT_ID, requestVars: { first: 3, after: "p3" }, pageKey: '@.posts({"after":"p3","first":3})', pageSnap: P2, pageEdgeRefs: P2EdgeRefs });
+    canonical.mergeFromCache({
+      field: POSTS_PLAN_FIELD,
+      parentRecordId: ROOT_ID,
+      requestVars: { first: 3, after: null },
+      pageKey: '@.posts({"after":null,"first":3})',
+      pageSnap: P1,
+      pageEdgeRefs: P1EdgeRefs
+    });
+    canonical.mergeFromCache({
+      field: POSTS_PLAN_FIELD,
+      parentRecordId: ROOT_ID,
+      requestVars: { first: 3, after: "p3" },
+      pageKey: '@.posts({"after":"p3","first":3})',
+      pageSnap: P2,
+      pageEdgeRefs: P2EdgeRefs
+    });
 
     const nodeIds = getNodeIds(canKey);
     expect(nodeIds).toEqual(["1", "2", "3", "4", "5", "6"]);
 
-    canonical.updateConnection({ field: POSTS_PLAN_FIELD, parentRecordId: ROOT_ID, requestVars: { first: 3, after: "p3" }, pageKey: '@.posts({"after":"p3","first":3})', pageSnap: P2, pageEdgeRefs: P2EdgeRefs });
+    canonical.updateConnection({
+      field: POSTS_PLAN_FIELD,
+      parentRecordId: ROOT_ID,
+      requestVars: { first: 3, after: "p3" },
+      pageKey: '@.posts({"after":"p3","first":3})',
+      pageSnap: P2,
+      pageEdgeRefs: P2EdgeRefs
+    });
 
     const nodeIdsAfter = getNodeIds(canKey);
     expect(nodeIdsAfter).toEqual(["1", "2", "3", "4", "5", "6"]);
