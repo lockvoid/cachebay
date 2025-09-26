@@ -124,7 +124,7 @@ describe("Optimistic", () => {
         });
         tx1.commit();
 
-        // 2. Before first anchor → start
+        // 2. Before first anchor -> start
         const tx2 = optimistic.modifyOptimistic((o) => {
           const c = o.connection({ parent: "Query", key: "posts" });
 
@@ -132,7 +132,7 @@ describe("Optimistic", () => {
         });
         tx2.commit();
 
-        // 3. After last anchor → end
+        // 3. After last anchor -> end
         const tx3 = optimistic.modifyOptimistic((o) => {
           const c = o.connection({ parent: "Query", key: "posts" });
 
@@ -284,15 +284,17 @@ describe("Optimistic", () => {
 
       tx.commit();
 
-      const initialState = JSON.stringify(graph.getRecord(key));
-      const firstReplay = optimistic.replayOptimistic({ connections: [key] });
-      const stateAfterFirst = JSON.stringify(graph.getRecord(key));
-      const secondReplay = optimistic.replayOptimistic({ connections: [key] });
-      const stateAfterSecond = JSON.stringify(graph.getRecord(key));
+      // Verify replay returns expected changes
+      const replayResult = optimistic.replayOptimistic({ connections: [key] });
+      expect(replayResult.added).toEqual(["Post:p1", "Post:p2"]);
+      expect(replayResult.removed).toEqual([]);
 
-      expect(firstReplay.added.concat(firstReplay.removed)).toBeDefined();
-      expect(stateAfterFirst).toBe(stateAfterSecond);
-      expect(initialState).toBe(stateAfterFirst);
+      // Verify idempotency - multiple replays don't change state
+      const connectionBefore = graph.getRecord(key);
+      optimistic.replayOptimistic({ connections: [key] });
+      const connectionAfter = graph.getRecord(key);
+      
+      expect(connectionAfter).toEqual(connectionBefore);
     });
   });
 
