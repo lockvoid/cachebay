@@ -2,6 +2,7 @@ import { visit, Kind, type DocumentNode } from "graphql";
 import gql from "graphql-tag";
 import { compilePlan } from "@/src/compiler/compile";
 import { ROOT_ID } from "@/src/core/constants";
+import { createGraph } from "@/src/core/graph";
 
 export const collectConnectionDirectives = (doc: DocumentNode): string[] => {
   const hits: string[] = [];
@@ -478,6 +479,39 @@ export const TEST_QUERIES = {
   `,
 } as const;
 
+export const POSTS_QUERY = gql`
+  query Posts($first: Int, $after: String) {
+    posts(first: $first, after: $after) @connection(args: []) {
+      __typename
+      pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
+      edges { __typename cursor node { __typename id title } }
+    }
+  }
+`;
+
 export const createTestPlan = (query: DocumentNode) => {
   return compilePlan(query);
 };
+
+export function writePageSnapshot(
+  graph: ReturnType<typeof createGraph>,
+  pageKey: string,
+  nodeIds: (number | string)[],
+  opts?: { start?: string | null; end?: string | null; hasNext?: boolean; hasPrev?: boolean }
+) {
+  const pageInfo = {
+    __typename: "PageInfo",
+    startCursor: opts?.start ?? (nodeIds.length ? `p${nodeIds[0]}` : null),
+    endCursor: opts?.end ?? (nodeIds.length ? `p${nodeIds[nodeIds.length - 1]}` : null),
+    hasNextPage: !!opts?.hasNext,
+    hasPreviousPage: !!opts?.hasPrev,
+  };
+  const edges = nodeIds.map((id, i) => {
+    const edgeKey = `${pageKey}.edges.${i}`;
+    const nodeKey = `Post:${id}`;
+    graph.putRecord(nodeKey, { __typename: "Post", id: String(id), title: `Post ${id}`, tags: [] });
+    graph.putRecord(edgeKey, { __typename: "PostEdge", cursor: `p${id}`, node: { __ref: nodeKey } });
+    return { __ref: edgeKey };
+  });
+  graph.putRecord(pageKey, { __typename: "PostConnection", pageInfo, edges });
+}

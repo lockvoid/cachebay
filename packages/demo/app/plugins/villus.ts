@@ -28,19 +28,19 @@ export default defineNuxtPlugin((nuxtApp) => {
   nuxtApp.provide('villus', villus);
   nuxtApp.provide('cachebay', cachebay);
 
+  if (import.meta.server) {
+    nuxtApp.hook("app:rendered", () => {
+      useState("cachebay").value = cachebay.dehydrate();
+    });
+  };
+
   if (import.meta.client && settings.ssr) {
-    const state = useState<any>('cachebay').value;
+    const state = useState('cachebay').value;
 
     if (state) {
       cachebay.hydrate(state);
     }
   }
-
-  nuxtApp.hook("app:rendered", () => {
-    if (import.meta.server) {
-      useState("cachebay").value = cachebay.dehydrate();
-    }
-  });
 
   if (import.meta.client) {
     window.CACHEBAY = cachebay;
