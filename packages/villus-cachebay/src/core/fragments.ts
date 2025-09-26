@@ -102,14 +102,14 @@ export const createFragments = (
         }
 
         const { edges, pageInfo, ...connRest } = subtree as any;
-        const pageSnap: Record<string, any> = {
+        const pageSnapshot: Record<string, any> = {
           __typename: (subtree as any).__typename || "Connection",
           ...connRest, // e.g. totalCount
           edges: edgeRefs,
         };
-        if (pageInfo) pageSnap.pageInfo = { ...(pageInfo as any) };
+        if (pageInfo) pageSnapshot.pageInfo = { ...(pageInfo as any) };
 
-        graph.putRecord(pageKey, pageSnap);
+        graph.putRecord(pageKey, pageSnapshot);
         continue;
       }
 

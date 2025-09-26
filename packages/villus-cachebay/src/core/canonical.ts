@@ -43,11 +43,11 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDeps) => {
     if (Object.keys(patch).length) graph.putRecord(dstEdgeRef, patch);
   };
 
-  const extractExtras = (pageSnap: Record<string, any>) => {
+  const extractExtras = (pageSnapshot: Record<string, any>) => {
     const extras: Record<string, any> = {};
-    for (const k of Object.keys(pageSnap || {})) {
+    for (const k of Object.keys(pageSnapshot || {})) {
       if (k === "edges" || k === "pageInfo" || k === "__typename") continue;
-      extras[k] = pageSnap[k];
+      extras[k] = pageSnapshot[k];
     }
     return extras;
   };
@@ -69,19 +69,19 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDeps) => {
   };
 
   // Classify role from request vars (not identity args)
-  const detectCursorRole = (field: PlanField, requestVars: Record<string, any>) => {
-    const req = field.buildArgs ? (field.buildArgs(requestVars) || {}) : (requestVars || {});
+  const detectCursorRole = (field: PlanField, variables: Record<string, any>) => {
+    const req = field.buildArgs ? (field.buildArgs(variables) || {}) : (variables || {});
     let hasAfter = req.after != null;
     let hasBefore = req.before != null;
 
     if (!hasAfter) {
-      for (const k of Object.keys(requestVars || {})) {
-        if (k.toLowerCase().includes("after") && requestVars[k] != null) { hasAfter = true; break; }
+      for (const k of Object.keys(variables || {})) {
+        if (k.toLowerCase().includes("after") && variables[k] != null) { hasAfter = true; break; }
       }
     }
     if (!hasBefore) {
-      for (const k of Object.keys(requestVars || {})) {
-        if (k.toLowerCase().includes("before") && requestVars[k] != null) { hasBefore = true; break; }
+      for (const k of Object.keys(variables || {})) {
+        if (k.toLowerCase().includes("before") && variables[k] != null) { hasBefore = true; break; }
       }
     }
     return { hasAfter, hasBefore, isLeader: !hasAfter && !hasBefore };
@@ -167,13 +167,13 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDeps) => {
   };
 
   // Ensure a concrete page record exists with edges so rebuild can read it
-  const ensurePageEdges = (pageKey: string, pageSnap: any, pageEdgeRefs: Array<{ __ref: string }>) => {
+  const ensurePageEdges = (pageKey: string, pageSnapshot: any, pageEdgeRefs: Array<{ __ref: string }>) => {
     const rec = graph.getRecord(pageKey) || {};
     const hasEdges = Array.isArray(rec.edges) && rec.edges.length > 0;
     if (!hasEdges && Array.isArray(pageEdgeRefs) && pageEdgeRefs.length > 0) {
       graph.putRecord(pageKey, {
-        __typename: rec.__typename || pageSnap?.__typename || "Connection",
-        pageInfo: rec.pageInfo || pageSnap?.pageInfo || {},
+        __typename: rec.__typename || pageSnapshot?.__typename || "Connection",
+        pageInfo: rec.pageInfo || pageSnapshot?.pageInfo || {},
         edges: pageEdgeRefs,
       });
     }
@@ -191,34 +191,34 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDeps) => {
   /** NETWORK PATH */
   const updateConnection = (args: {
     field: PlanField;
-    parentRecordId: string;
-    requestVars: Record<string, any>;
+    parentId: string;
+    variables: Record<string, any>;
     pageKey: string;
-    pageSnap: Record<string, any>;
+    pageSnapshot: Record<string, any>;
     pageEdgeRefs: Array<{ __ref: string }>;
   }) => {
-    const { field, parentRecordId, requestVars, pageKey, pageSnap, pageEdgeRefs } = args;
-    const canKey = buildConnectionCanonicalKey(field, parentRecordId, requestVars);
+    const { field, parentId, variables, pageKey, pageSnapshot, pageEdgeRefs } = args;
+    const canKey = buildConnectionCanonicalKey(field, parentId, variables);
     const mode = field.connectionMode || "infinite";
 
     ensureCanonicalRecord(canKey);
 
     // make sure the page record has edges available for any path below
-    ensurePageEdges(pageKey, pageSnap, pageEdgeRefs);
+    ensurePageEdges(pageKey, pageSnapshot, pageEdgeRefs);
 
     if (mode === "page") {
-      const extras = extractExtras(pageSnap);
+      const extras = extractExtras(pageSnapshot);
       graph.putRecord(canKey, {
-        __typename: pageSnap.__typename || "Connection",
-        edges: pageSnap.edges || [],
-        pageInfo: pageSnap.pageInfo || {},
+        __typename: pageSnapshot.__typename || "Connection",
+        edges: pageSnapshot.edges || [],
+        pageInfo: pageSnapshot.pageInfo || {},
         ...extras,
       });
       optimistic.replayOptimistic({ connections: [canKey] });
       return;
     }
 
-    const { hasAfter, hasBefore, isLeader } = detectCursorRole(field, requestVars);
+    const { hasAfter, hasBefore, isLeader } = detectCursorRole(field, variables);
 
     if (isLeader) {
       // UNCONDITIONAL COLLAPSE to leader slice on network leader fetch
@@ -226,14 +226,14 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDeps) => {
       const leaderEdges =
         Array.isArray(page.edges) && page.edges.length
           ? page.edges
-          : (Array.isArray(pageSnap.edges) && pageSnap.edges.length
-            ? pageSnap.edges
+          : (Array.isArray(pageSnapshot.edges) && pageSnapshot.edges.length
+            ? pageSnapshot.edges
             : (Array.isArray(pageEdgeRefs) ? pageEdgeRefs : []));
-      const leaderPI = page.pageInfo || pageSnap.pageInfo || {};
+      const leaderPI = page.pageInfo || pageSnapshot.pageInfo || {};
 
-      const extras = extractExtras(pageSnap);
+      const extras = extractExtras(pageSnapshot);
       graph.putRecord(canKey, {
-        __typename: pageSnap.__typename || "Connection",
+        __typename: pageSnapshot.__typename || "Connection",
         edges: leaderEdges,
         pageInfo: leaderPI,
         ...extras,
@@ -271,30 +271,30 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDeps) => {
   /** CACHE PATH (prewarm) */
   const mergeFromCache = (args: {
     field: PlanField;
-    parentRecordId: string;
-    requestVars: Record<string, any>;
+    parentId: string;
+    variables: Record<string, any>;
     pageKey: string;
-    pageSnap: Record<string, any>;
+    pageSnapshot: Record<string, any>;
     pageEdgeRefs: Array<{ __ref: string }>;
   }) => {
-    const { field, parentRecordId, requestVars, pageKey, pageSnap, pageEdgeRefs } = args;
-    const canKey = buildConnectionCanonicalKey(field, parentRecordId, requestVars);
+    const { field, parentId, variables, pageKey, pageSnapshot, pageEdgeRefs } = args;
+    const canKey = buildConnectionCanonicalKey(field, parentId, variables);
     const mode = field.connectionMode || "infinite";
 
     ensureCanonicalRecord(canKey);
-    ensurePageEdges(pageKey, pageSnap, pageEdgeRefs);
+    ensurePageEdges(pageKey, pageSnapshot, pageEdgeRefs);
 
     if (mode === "page") {
       graph.putRecord(canKey, {
-        __typename: args.pageSnap.__typename || "Connection",
-        edges: args.pageSnap.edges || [],
-        pageInfo: args.pageSnap.pageInfo || {},
+        __typename: args.pageSnapshot.__typename || "Connection",
+        edges: args.pageSnapshot.edges || [],
+        pageInfo: args.pageSnapshot.pageInfo || {},
       });
       optimistic.replayOptimistic({ connections: [canKey] });
       return;
     }
 
-    const { hasAfter, hasBefore, isLeader } = detectCursorRole(field, requestVars);
+    const { hasAfter, hasBefore, isLeader } = detectCursorRole(field, variables);
 
     const meta = writeMeta(canKey, (m) => {
       if (!m.pages.includes(pageKey)) m.pages.push(pageKey);

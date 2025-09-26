@@ -173,11 +173,11 @@ describe("useFragment()", () => {
       cursor: "p2",
       node: { __ref: "Post:p2" },
     });
-    const pageSnap = graph.getRecord(pageKey)!;
+    const pageSnapshot = graph.getRecord(pageKey)!;
     graph.putRecord(pageKey, {
-      ...pageSnap,
+      ...pageSnapshot,
       totalCount: 2,
-      edges: [...pageSnap.edges, { __ref: `${pageKey}.edges.1` }],
+      edges: [...pageSnapshot.edges, { __ref: `${pageKey}.edges.1` }],
     });
 
     await tick();

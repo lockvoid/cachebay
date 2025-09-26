@@ -36,9 +36,17 @@ A tiny (20KB gzip), instance-scoped cache layer for **Villus** that gives you:
 
 ---
 
+## Keynotes
+
+A quick architectural overview of how Cachebay works — see **[Keynotes](./docs/KEYNOTES.md)**.
+
+---
+
 ## Demo app
 
 👉 **[Nuxt 4 demo](./demo)**
+
+Here’s a small **Keynotes** section you can drop into the README (I’d place it **right after “Documentation” and before “Demo app”** so evaluators see the architecture at a glance):
 
 ---
 

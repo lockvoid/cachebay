@@ -47,14 +47,14 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const isQuery = plan.operation === "query";
 
     type Frame = {
-      parentRecordId: string;
+      parentId: string;
       fields: PlanField[];
       fieldsMap: Map<string, PlanField>;
       insideConnection: boolean;
     };
 
     const initialFrame: Frame = {
-      parentRecordId: ROOT_ID,
+      parentId: ROOT_ID,
       fields: plan.root,
       fieldsMap: plan.rootSelectionMap ?? new Map<string, PlanField>(),
       insideConnection: false,
@@ -63,12 +63,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     traverseFast(data, initialFrame, (_parentNode, valueNode, responseKey, frame) => {
       if (!frame) return;
 
-      const parentRecordId = frame.parentRecordId;
+      const parentId = frame.parentId;
       const planField = typeof responseKey === "string" ? frame.fieldsMap.get(responseKey) : undefined;
 
       // Connection page — store page & link; then update canonical (network path)
       if (planField && planField.isConnection && isObject(valueNode)) {
-        const pageKey = buildConnectionKey(planField, parentRecordId, variables);
+        const pageKey = buildConnectionKey(planField, parentId, variables);
         const fieldKey = buildFieldKey(planField, variables);
 
         const edgesIn: any[] = Array.isArray((valueNode as any).edges) ? (valueNode as any).edges : [];
@@ -93,35 +93,35 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         }
 
         const { edges, pageInfo, ...connRest } = valueNode as any;
-        const pageSnap: Record<string, any> = {
+        const pageSnapshot: Record<string, any> = {
           __typename: (valueNode as any).__typename,
           ...connRest,
         };
-        if (pageInfo) pageSnap.pageInfo = { ...(pageInfo as any) };
-        pageSnap.edges = edgeRefs;
+        if (pageInfo) pageSnapshot.pageInfo = { ...(pageInfo as any) };
+        pageSnapshot.edges = edgeRefs;
 
         // write the concrete page record
-        graph.putRecord(pageKey, pageSnap);
+        graph.putRecord(pageKey, pageSnapshot);
 
         // link only on queries (field link from parent to this concrete page)
         if (isQuery) {
-          graph.putRecord(parentRecordId, { [fieldKey]: { __ref: pageKey } });
+          graph.putRecord(parentId, { [fieldKey]: { __ref: pageKey } });
         }
 
         // update canonical connection (@connection) — network path (leader may reset)
         canonical.updateConnection({
           field: planField,
-          parentRecordId,
-          requestVars: variables,
+          parentId,
+          variables: variables,
           pageKey,
-          pageSnap,
+          pageSnapshot,
           pageEdgeRefs: edgeRefs,
         });
 
         // Descend into the connection's selection
         const nextFields = planField.selectionSet || [];
         const nextMap = planField.selectionMap || frame.fieldsMap;
-        return { parentRecordId, fields: nextFields, fieldsMap: nextMap, insideConnection: true } as Frame;
+        return { parentId, fields: nextFields, fieldsMap: nextMap, insideConnection: true } as Frame;
       }
 
       // Arrays — switch scope to the array field's item selection
@@ -129,7 +129,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const pf = frame.fieldsMap.get(responseKey);
         const nextFields = pf?.selectionSet || frame.fields;
         const nextMap = pf?.selectionMap || frame.fieldsMap;
-        return { parentRecordId, fields: nextFields, fieldsMap: nextMap, insideConnection: frame.insideConnection } as Frame;
+        return { parentId, fields: nextFields, fieldsMap: nextMap, insideConnection: frame.insideConnection } as Frame;
       }
 
       // Identifiable entity — upsert & optionally link (only on queries)
@@ -140,16 +140,16 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           const hasArgs = argObj && Object.keys(argObj).length > 0;
           const shouldLink = isQuery &&
             !(frame.insideConnection && planField.responseKey === "node") &&
-            (parentRecordId === ROOT_ID ? true : hasArgs);
+            (parentId === ROOT_ID ? true : hasArgs);
 
           if (shouldLink) {
             const parentFieldKey = buildFieldKey(planField, variables);
-            graph.putRecord(parentRecordId, { [parentFieldKey]: { __ref: entityKey } });
+            graph.putRecord(parentId, { [parentFieldKey]: { __ref: entityKey } });
           }
 
           const nextFields = planField.selectionSet || [];
           const nextMap = planField.selectionMap || frame.fieldsMap;
-          return { parentRecordId: entityKey, fields: nextFields, fieldsMap: nextMap, insideConnection: false } as Frame;
+          return { parentId: entityKey, fields: nextFields, fieldsMap: nextMap, insideConnection: false } as Frame;
         }
         return TRAVERSE_SKIP;
       }
@@ -158,7 +158,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       if (isObject(valueNode)) {
         const nextFields = planField?.selectionSet || frame.fields;
         const nextMap = planField?.selectionMap || frame.fieldsMap;
-        return { parentRecordId, fields: nextFields, fieldsMap: nextMap, insideConnection: frame.insideConnection } as Frame;
+        return { parentId, fields: nextFields, fieldsMap: nextMap, insideConnection: frame.insideConnection } as Frame;
       }
 
       return;
@@ -268,8 +268,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const plan = planner.getPlan(document);
 
     // Helper: if the concrete page exists, forward it to canonical WITHOUT leader reset.
-    const tryForwardConcretePage = (field: PlanField, parentRecordId: string) => {
-      const pageKey = buildConnectionKey(field, parentRecordId, variables);
+    const tryForwardConcretePage = (field: PlanField, parentId: string) => {
+      const pageKey = buildConnectionKey(field, parentId, variables);
       const page = graph.getRecord(pageKey);
       if (!page || !Array.isArray(page.edges)) return;
 
@@ -280,14 +280,14 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
       // Shallow snapshot without edges (includes __typename, pageInfo, extras)
       const { edges, ...rest } = page;
-      const pageSnap: Record<string, any> = { ...rest };
+      const pageSnapshot: Record<string, any> = { ...rest };
 
       canonical.mergeFromCache({
         field,
-        parentRecordId,
-        requestVars: variables,
+        parentId,
+        variables: variables,
         pageKey,
-        pageSnap,
+        pageSnapshot,
         pageEdgeRefs,
       });
 

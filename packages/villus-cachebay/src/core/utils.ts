@@ -122,10 +122,10 @@ export const buildFieldKey = (field: PlanField, variables: Record<string, any>):
  */
 export const buildConnectionKey = (
   field: PlanField,
-  parentRecordId: string,
+  parentId: string,
   variables: Record<string, any>
 ): string => {
-  const prefix = parentRecordId === ROOT_ID ? "@." : `@.${parentRecordId}.`;
+  const prefix = parentId === ROOT_ID ? "@." : `@.${parentId}.`;
   return `${prefix}${field.fieldName}(${field.stringifyArgs(variables)})`;
 };
 
@@ -140,7 +140,7 @@ export const buildConnectionKey = (
  */
 export const buildConnectionCanonicalKey = (
   field: PlanField,
-  parentRecordId: string,
+  parentId: string,
   variables: Record<string, any>
 ): string => {
   const allArgs = field.buildArgs(variables) || {};
@@ -157,7 +157,7 @@ export const buildConnectionCanonicalKey = (
   }
 
   const keyPart = field.connectionKey || field.fieldName; // prefer directive key; fallback to field
-  const parentPart = parentRecordId === ROOT_ID ? "@connection." : `@connection.${parentRecordId}.`;
+  const parentPart = parentId === ROOT_ID ? "@connection." : `@connection.${parentId}.`;
   return `${parentPart}${keyPart}(${stableStringify(identity)})`;
 };
 
