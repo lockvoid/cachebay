@@ -915,3 +915,44 @@ export const POSTS_SELECTION_MAPS_QUERY = gql`
 export const createTestPlan = (query: DocumentNode) => {
   return compilePlan(query);
 };
+
+export const USERS_POSTS_QUERY_PLUGIN = gql`
+  query UsersPosts(
+    $usersRole: String
+    $usersFirst: Int
+    $usersAfter: String
+    $postsCategory: String
+    $postsFirst: Int
+    $postsAfter: String
+  ) {
+    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
+      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+      edges {
+        cursor
+        node {
+          id
+          email
+          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
+            pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+            edges { cursor node { id title } }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const USER_QUERY_PLUGIN = gql`
+  query User($id: ID!) {
+    user(id: $id) { id email }
+  }
+`;
+
+export const USERS_PAGE_QUERY_PLUGIN = gql`
+  query UsersPage($usersRole: String, $first: Int, $after: String) {
+    users(role: $usersRole, first: $first, after: $after) @connection(args: ["role"], mode: "page") {
+      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+      edges { cursor node { id email } }
+    }
+  }
+`;
