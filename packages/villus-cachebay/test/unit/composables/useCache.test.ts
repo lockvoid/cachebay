@@ -7,7 +7,7 @@ import { useCache } from "@/src/composables/useCache";
 
 describe("useCache()", () => {
   it("throws if used without provider", () => {
-    const Comp = defineComponent({
+    const App = defineComponent({
       setup() {
         useCache(); // should throw
       },
@@ -15,7 +15,7 @@ describe("useCache()", () => {
       render: () => h("div"),
     });
 
-    expect(() => mount(Comp)).toThrowError(
+    expect(() => mount(App)).toThrowError(
       "[cachebay] useCache() called before provideCachebay()"
     );
   });
@@ -24,14 +24,14 @@ describe("useCache()", () => {
     const cache = createCache();
 
     let apiFromSetup: any;
-    const Comp = defineComponent({
+    const App = defineComponent({
       setup() {
         apiFromSetup = useCache();
         return () => h("div");
       },
     });
 
-    const wrapper = mount(Comp, {
+    const wrapper = mount(App, {
       global: {
         plugins: [
           {

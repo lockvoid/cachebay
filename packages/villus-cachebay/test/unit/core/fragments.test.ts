@@ -113,6 +113,7 @@ describe('Fragments', () => {
         __typename: "PostEdge",
         cursor: "p2",
         score: 0.7,
+
         node: {
           __typename: "Post",
           id: "p2",
@@ -205,6 +206,7 @@ describe('Fragments', () => {
       expect(commentsFragment.comments.edges[0]).toEqual({
         __typename: "CommentEdge",
         cursor: "c1",
+
         node: {
           __typename: "Comment",
           id: "c1",
@@ -219,6 +221,7 @@ describe('Fragments', () => {
       expect(commentsFragment.comments.edges[1]).toEqual({
         __typename: "CommentEdge",
         cursor: "c2",
+
         node: {
           __typename: "Comment",
           id: "c2",

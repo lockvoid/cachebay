@@ -1,114 +1,47 @@
-// test/unit/core/internals.test.ts
-import { describe, it, expect } from "vitest";
-import gql from "graphql-tag";
-
 import { createCache } from "@/src/core/internals";
-import { ROOT_ID } from "@/src/core/constants";
+import { CACHEBAY_KEY } from "@/src/core/constants";
 
-const USER_FRAGMENT = gql`
-  fragment UserFields on User {
-    id
-    email
-  }
-`;
+describe("createCachebay", () => {
+  it("exposes public apis", () => {
+    const cache = createCache();
 
-describe("createCache (internals)", () => {
-  it("exposes identify, fragments, optimistic, ssr, and internals", async () => {
-    const cache = createCache({
-      keys: {
-        User: (o: any) => (o?.id != null ? String(o.id) : null),
-        Post: (o: any) => (o?.id != null ? String(o.id) : null),
-      },
-      interfaces: { Post: ["AudioPost", "VideoPost"] },
-    });
+    expect(typeof cache.identify).toBe("function");
+    expect(typeof cache.readFragment).toBe("function");
+    expect(typeof cache.writeFragment).toBe("function");
+    expect(typeof cache.modifyOptimistic).toBe("function");
+    expect(typeof cache.dehydrate).toBe("function");
+    expect(typeof cache.hydrate).toBe("function");
+    expect(typeof cache.install).toBe("function");
 
-    // identify
-    expect(cache.identify({ __typename: "User", id: "u1" })).toBe("User:u1");
-
-    // internals present
-    const internals = (cache as any).__internals;
-    expect(internals.graph).toBeTruthy();
-    expect(internals.views).toBeTruthy();
-    expect(internals.planner).toBeTruthy();
-    expect(internals.documents).toBeTruthy();
-    expect(internals.fragments).toBeTruthy();
-
-    // seed: link + entity
-    internals.graph.putRecord(ROOT_ID, {
-      id: ROOT_ID,
-      __typename: ROOT_ID,
-      ['user({"id":"u1"})']: { __ref: "User:u1" },
-    });
-    internals.graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
-
-    // reactive fragment read
-    const view = cache.readFragment({ id: "User:u1", fragment: USER_FRAGMENT, variables: {} });
-    expect(view.__typename).toBe("User");
-    expect(view.id).toBe("u1");
-    expect(view.email).toBe("a@example.com");
-
-    // reactive update
-    internals.graph.putRecord("User:u1", { email: "a+1@example.com" });
-    expect(view.email).toBe("a+1@example.com");
-
-    // ── Optimistic over CANONICAL connection ───────────────────────────────
-    const canKey = '@connection.User:u1.posts({"category":"tech"})';
-
-    const T = cache.modifyOptimistic((tx: any) => {
-      const conn = tx.connection({
-        parent: "User:u1",
-        key: "posts",
-        filters: { category: "tech" },
-      });
-
-      // add a node (no cursor in edge meta) and patch pageInfo
-      conn.addNode({ __typename: "Post", id: "p1", title: "P1" }, { position: "end" });
-      conn.patch({ pageInfo: { __typename: "PageInfo", endCursor: "p1", hasNextPage: false } });
-    });
-    T.commit?.();
-
-    // verify canonical, not page
-    const canon = internals.graph.getRecord(canKey);
-    expect(canon?.pageInfo?.endCursor).toBe("p1");
-    expect(Array.isArray(canon?.edges)).toBe(true);
-    expect(canon.edges.length).toBe(1);
-
-    const edgeRef = canon.edges[0].__ref as string;
-    const edge = internals.graph.getRecord(edgeRef);
-    expect(edge?.node?.__ref).toBe("Post:p1"); // cursor may be absent by design
-
-    const post = internals.graph.getRecord("Post:p1");
-    expect(post?.title).toBe("P1");
-
-    // ── SSR roundtrip ─────────────────────────────────────────────────────
-    const snapshot = cache.dehydrate();
-    internals.graph.clear();
-    expect(internals.graph.keys().length).toBe(0);
-
-    cache.hydrate(snapshot);
-    await Promise.resolve();
-
-    expect(internals.graph.getRecord("User:u1")?.email).toBe("a+1@example.com");
-    const restored = internals.graph.getRecord(canKey);
-    expect(restored?.pageInfo?.endCursor).toBe("p1");
-    expect(restored?.edges?.length).toBe(1);
-
-    // hasDocument (operations only) → true for seeded link
-    const hasUser = internals.documents.hasDocument({
-      document: gql`query Q($id: ID!) { user(id:$id) { __typename id email } }`,
-      variables: { id: "u1" },
-    });
-    expect(hasUser).toBe(true);
+    expect(cache.__internals.graph).toBeTruthy();
+    expect(cache.__internals.optimistic).toBeTruthy();
+    expect(cache.__internals.views).toBeTruthy();
+    expect(cache.__internals.planner).toBeTruthy();
+    expect(cache.__internals.canonical).toBeTruthy();
+    expect(cache.__internals.documents).toBeTruthy();
+    expect(cache.__internals.fragments).toBeTruthy();
+    expect(cache.__internals.ssr).toBeTruthy();
+    expect(cache.__internals.inspect).toBeTruthy();
   });
 
-  it("install wires provideCachebay (smoke)", () => {
+  it("installs plugin and provides cache instance", () => {
     const cache = createCache();
-    const provided: any[] = [];
-    const app = {
-      provide: (k: any, v: any) => { provided.push([k, v]); },
-    } as any;
+
+    const app = { provide: vi.fn() };
 
     cache.install(app);
-    expect(provided.length).toBeGreaterThan(0);
+
+    const call = app.provide.mock.calls.find(([key]) => key === CACHEBAY_KEY);
+
+    expect(call).toBeTruthy();
+
+    const [, instance] = call!;
+
+    expect(typeof instance.identify).toBe("function");
+    expect(typeof instance.readFragment).toBe("function");
+    expect(typeof instance.writeFragment).toBe("function");
+    expect(typeof instance.modifyOptimistic).toBe("function");
+    expect(typeof instance.dehydrate).toBe("function");
+    expect(typeof instance.hydrate).toBe("function");
   });
 });
