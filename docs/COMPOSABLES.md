@@ -1,25 +1,25 @@
 # Composables
 
-Cachebay ships a small set of Vue composables that sit on top of the normalized cache. They are available **after** you install the cache as a Vue plugin:
+Cachebay ships a small set of Vue composables that sit on top of the normalized cache. They are available **after** you install Cachebay as a Vue plugin:
 
 ```ts
 import { createApp } from 'vue'
-import { createCache } from 'villus-cachebay'
+import { createCachebay } from 'villus-cachebay'
 
 const app = createApp(App)
-const cache = createCache({ /* keys, resolvers, … */ })
 
-app.use(cache) // <-- provides composables
+const cachebay = createCachebay()
+
+app.use(cachebay) // <-- provides composables
 app.mount('#app')
 ```
 
 The key composables are:
 
-- **`useCache()`** – low-level cache API (identify/read/write/optimistic/inspect).
-- **`useFragment()`** – read one entity by key (reactive proxy by default).
-- **`useFragments()`** – read a list by selector (e.g. `'Asset:*'` or interfaces like `'Node:*'`).
+- **`useCache()`** – low-level cache API (identify / read / write / optimistic)
+- **`useFragment()`** – read one entity by key (reactive proxy)
 
-> You still use Villus’ `useQuery()` / `useMutation()` for data fetching. Cachebay only covers the cache & normalization layer.
+> Fetching still uses Villus’ `useQuery()` / `useMutation()` — Cachebay covers the cache & normalization layer.
 
 ---
 
@@ -30,191 +30,130 @@ import { useCache } from 'villus-cachebay'
 
 const {
   identify,
-  readFragment,     // (key, materialized=true?) => entity
-  writeFragment,    // (obj) => { commit, revert }
-  modifyOptimistic, // (build) => { commit, revert }
-  listEntityKeys,   // ('Asset' | 'Node' | selector[]) => string[]
-  listEntities,     // (selector, materialized=true?) => any[]
-  inspect,          // low-level inspect helpers (debug only)
+  readFragment,
+  writeFragment,
+  modifyOptimistic,
 } = useCache()
 ```
 
 ### Identify
 
 ```ts
-const k = identify({ __typename:'Asset', id: 42 }) // → "Asset:42" | null
+import { useCache } from 'villus-cachebay'
+
+const { identify } = useCache()
+
+identify({ __typename: 'User', id: 'u1' }) // → "User:u1"
 ```
 
-Supports `id`, `_id`, and any per-type `keys()` you configured.
+### Read (reactive)
 
-### Read
+```ts
+import { useCache } from 'villus-cachebay'
 
-- **Materialized** (default): `readFragment('Asset:42')` returns a **reactive proxy** that updates when new snapshots arrive.
-- **Raw snapshot**: `readFragment('Asset:42', false)` returns a plain object copy (non-reactive).
+const { readFragment } = useCache()
+
+const post = readFragment('Post:42') // Vue proxy that stays in sync
+```
 
 ### Write
 
 ```ts
-writeFragment({ __typename:'Asset', id: 42, name:'Renamed' }).commit?.()
-```
+import { useCache } from 'villus-cachebay'
 
-You can `.revert?.()` in tests; for writes, `commit()` is effectively a no-op (already applied).
+const { writeFragment } = useCache()
+
+writeFragment({ __typename: 'User', id: 'u1', name: 'Updated' })
+```
 
 ### Optimistic
 
 ```ts
-const tx = modifyOptimistic(c => {
-  c.patch({ __typename:'Asset', id: 999, name:'Draft' }, 'merge')
-  const [conn] = c.connections({ parent:'Query', field:'assets' })
-  conn.addNode({ __typename:'Asset', id: 999, name:'Draft' }, { position:'start', cursor:null })
-  conn.patch('hasNextPage', false)
+import { useCache } from 'villus-cachebay'
+
+const { modifyOptimistic } = useCache()
+
+const tx = modifyOptimistic((o) => {
+  // Patch entity
+  o.patch({ __typename: 'Post', id: '42', title: 'Draft…' }, 'merge')
+
+  // Connection edits
+  const c = o.connection({ parent: 'Query', key: 'posts' })
+
+  c.addNode(
+    { __typename: 'Post', id: 'tmp:1', title: 'Creating…' },
+    { position: 'start' },
+  )
+
+  c.patch(prev => ({ pageInfo: { ...prev.pageInfo, hasNextPage: false } }))
 })
+
+// Success::
 tx.commit?.()
-// later: tx.revert?.()
+
+// Error:
+tx.revert?.()
 ```
 
-See **[OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)** for details.
+See **[OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)** for the full API.
 
 ---
 
-## `useFragment(source, options?)`
+## `useFragment(source)`
 
-Read a single entity by key (or a reactive source for the key).
+Read a single entity by key (string or reactive key). Returns the **entity proxy directly**.
+
+**Static key**
 
 ```ts
 import { useFragment } from 'villus-cachebay'
 
-/** 1) Static key → reactive proxy */
-const asset = useFragment('Asset:42')  // proxy; asset.name updates as cache changes
-
-/** 2) Dynamic key (ref/computed) */
-const currentKey = ref<string | null>('Asset:42')
-const current = useFragment(currentKey) // swaps automatically when key changes
-
-/** 3) Options: materialized/raw & snapshot shape */
-const snap = useFragment('Asset:42', {
-  asObject: true,      // <- return a stable non-ref object
-  materialized: false, // <- raw snapshot rather than a proxy
-})
+const post = useFragment('Post:42') // proxy; post.title stays in sync
 ```
 
-### Options
+**Dynamic key (ref/computed)**
 
 ```ts
-type UseFragmentOptions = {
-  asObject?: boolean        // default false; when true returns a non-ref object
-  materialized?: boolean    // default true; false returns a raw snapshot
-}
+import { useFragment } from 'villus-cachebay'
+
+const keyRef = ref<string | null>('Post:42')
+
+const currentKey = useFragment(keyRef) // swaps automatically when key changes
 ```
 
-- **Default** (`materialized: true`): returns a **live proxy**; mutate via `writeFragment` to avoid proxy pitfalls.
-- **`asObject: true`** + `materialized: false`: returns a stable copy that doesn’t change under your feet (handy for static display/compare).
-
-> In tests, remember updates are **microtask-batched**. Call `await tick()` after a write to observe changes.
+Use `writeFragment` to update fields rather than mutating proxies directly.
 
 ---
 
-## `useFragments(selector, options?)`
+## Nuxt 4
 
-Read a **list** of entities from the cache.
-
-```ts
-import { useFragments } from 'villus-cachebay'
-
-// 1) Concrete type
-const assets = useFragments('Asset:*')        // array of proxies
-
-// 2) Interface selection
-const nodes  = useFragments('Node:*')         // proxies for Image, Video, …
-
-// 3) Raw snapshots (non-reactive) – update on add/remove (tick bump)
-const rawTs  = useFragments('Tag:*', { materialized: false })
-```
-
-### Options
-
-```ts
-type UseFragmentsOptions = {
-  materialized?: boolean   // default true
-}
-```
-
-- **Materialized** (default): returns an array of **proxies**, each of which updates when that entity changes.
-- **Raw** (`materialized: false`): returns a **snapshot array**; updates appear when the set changes (add/remove). Editing raw items won’t change the cache; use `writeFragment`.
-
-> The selector is a concrete typename with `:*` or an interface name you configured in `createCache({ interfaces: () => ({ Node: ['Image','Video'] }) })`.
-
----
-
-## Patterns
-
-### Mutations: optimistic + final fragment write
-
-```ts
-const { modifyOptimistic, writeFragment } = useCache()
-
-// optimistic
-const tx = modifyOptimistic(c => {
-  c.patch({ __typename:'Asset', id:'tmp:1', name:'Creating…' }, 'merge')
-  const [conn] = c.connections({ parent:'Query', field:'assets' })
-  conn.addNode({ __typename:'Asset', id:'tmp:1', name:'Creating…' }, { position:'start' })
-})
-tx.commit?.()
-
-// server success: upsert real entity
-writeFragment({ __typename:'Asset', id:123, name:'Created' }).commit?.()
-// (optional) revert the optimistic layer; end state is the same either way
-```
-
-### Subscriptions: streaming frames (plain objects)
-
-If your transport does not provide an Observable, you can push frames directly and Cachebay will normalize them and stream non-terminating updates:
-
-```ts
-// inside a custom sub handler / test harness:
-ctx.useResult({ data: { color: { __typename:'Color', id:1, name:'C1' } } }, false)
-ctx.useResult({ data: { color: { __typename:'Color', id:1, name:'C1b' } } }, false)
-// readFragment('Color:1').name → "C1b"
-```
-
----
-
-## Nuxt 3
-
-With the plugin pattern from **[SSR.md](./SSR.md)**, these composables are available in any component once you `app.use(cache)` in your Nuxt plugin.
+With the plugin pattern from your Nuxt setup (installing Cachebay and Villus in a single plugin), these composables are available in any component once you `app.use(cachebay)`.
 
 ```vue
 <script setup lang="ts">
-import { useFragments, useFragment, useCache } from 'villus-cachebay'
+import { useFragment, useCache } from 'villus-cachebay'
 
-const list = useFragments('Asset:*')
-const asset = useFragment('Asset:42')
+const post = useFragment('Post:42')
+
 const { writeFragment } = useCache()
 
-function rename() {
-  writeFragment({ __typename:'Asset', id:42, name:'New name' }).commit?.()
+const handleRename = () => {
+  writeFragment({ __typename:'Post', id:'42', title:'New title' })
 }
 </script>
+
+<template>
+  <article>
+    <h1>{{ post?.title }}</h1>
+    <button @click="handleRename">Rename</button>
+  </article>
+</template>
 ```
-
----
-
-## Troubleshooting
-
-- **“My proxy didn’t update after write”**
-  Ensure you wrote to the same entity key (`__typename:id`). In tests, add `await tick()`.
-
-- **“useFragments(raw) didn’t change on field update”**
-  Raw lists update on membership changes (add/remove). For live field updates, use materialized lists.
-
-- **“Interface selector returns empty”**
-  Check your `interfaces()` config and that concrete implementors are actually in the store.
 
 ---
 
 ## See also
 
-- **Fragments & low-level API** – read/write/inspect: [CACHE_FRAGMENTS.md](./CACHE_FRAGMENTS.md)
-- **Optimistic updates** – `patch`/`delete`, connection helpers: [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)
-- **SSR** – hydrate/dehydrate and CN first-mount behavior: [SSR.md](./SSR.md)
-- **Relay connections** – modes, dedup, view limits, patching pageInfo/meta: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)
+- **Fragments** — overview & usage patterns: [FRAGMENTS.md](./FRAGMENTS.md)
+- **Relay connections** — directive, merge modes, policy matrix: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)
+- **Optimistic updates** — layering, entity ops, `addNode` / `removeNode` / `patch`: [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)

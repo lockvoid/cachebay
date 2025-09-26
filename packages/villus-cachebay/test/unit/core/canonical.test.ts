@@ -49,6 +49,7 @@ describe('canonical', () => {
   });
 
   it("replaces leader on refetch, appends forward pages, and aggregates pageInfo head/tail", () => {
+    // 1. Create and update initial leader page (1,2,3)
     const { page: page0, edgeRefs: page0EdgeRefs } = writePageSnapshot(
       graph,
       '@.posts({"after":null,"first":3})',
@@ -65,12 +66,14 @@ describe('canonical', () => {
       pageEdgeRefs: page0EdgeRefs,
     });
 
+    // 2. Verify initial state
     const nodeIdsBefore = getNodeIds('@connection.posts({})');
     expect(nodeIdsBefore).toEqual(["1", "2", "3"]);
 
     const pageInfoBefore = graph.getRecord('@connection.posts({})')?.pageInfo;
     expect(pageInfoBefore?.endCursor).toBe("p3");
 
+    // 3. Create and append forward page (4,5,6)
     const { page: page1, edgeRefs: page1EdgeRefs } = writePageSnapshot(
       graph,
       '@.posts({"after":"p3","first":3})',
@@ -87,6 +90,7 @@ describe('canonical', () => {
       pageEdgeRefs: page1EdgeRefs,
     });
 
+    // 4. Verify final aggregated state
     const nodeIdsAfter = getNodeIds('@connection.posts({})');
     expect(nodeIdsAfter).toEqual(["1", "2", "3", "4", "5", "6"]);
 
@@ -97,6 +101,7 @@ describe('canonical', () => {
   });
 
   it("merges multiple out-of-order pages from cache and maintains leader-first order", () => {
+    // 1. Create pages in reverse order (P1, P0, P2)
     const { page: page1, edgeRefs: page1EdgeRefs } = writePageSnapshot(
       graph,
       '@.posts({"after":"p3","first":3})',
@@ -116,28 +121,33 @@ describe('canonical', () => {
       { start: "p7", end: "p8", hasNext: false }
     );
 
+    // 2. Merge pages out of order (P1 first, then P2, then P0)
     canonical.mergeFromCache({
-      field: POSTS_PLAN_FIELD, parentRecordId: ROOT_ID,
+      field: POSTS_PLAN_FIELD,
+      parentRecordId: ROOT_ID,
       requestVars: { first: 3, after: "p3" },
       pageKey: '@.posts({"after":"p3","first":3})',
       pageSnap: page1,
       pageEdgeRefs: page1EdgeRefs,
     });
     canonical.mergeFromCache({
-      field: POSTS_PLAN_FIELD, parentRecordId: ROOT_ID,
+      field: POSTS_PLAN_FIELD,
+      parentRecordId: ROOT_ID,
       requestVars: { first: 3, after: "p6" },
       pageKey: '@.posts({"after":"p6","first":3})',
       pageSnap: page2,
       pageEdgeRefs: page2EdgeRefs,
     });
     canonical.mergeFromCache({
-      field: POSTS_PLAN_FIELD, parentRecordId: ROOT_ID,
+      field: POSTS_PLAN_FIELD,
+      parentRecordId: ROOT_ID,
       requestVars: { first: 3, after: null },
       pageKey: '@.posts({"after":null,"first":3})',
       pageSnap: page0,
       pageEdgeRefs: page0EdgeRefs,
     });
 
+    // 3. Verify correct leader-first order (P0, P1, P2)
     const nodeIds = getNodeIds('@connection.posts({})');
     expect(nodeIds).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
 
@@ -147,6 +157,7 @@ describe('canonical', () => {
   });
 
   it("yields consistent order P0,P1,P2 when prewarming with BEFORE and AFTER pages", () => {
+    // 1. Create pages with BEFORE/AFTER cursors
     const { page: page1, edgeRefs: page1EdgeRefs } = writePageSnapshot(
       graph,
       '@.posts({"after":null,"first":3})',
@@ -166,6 +177,7 @@ describe('canonical', () => {
       { start: "p4", end: "p5", hasNext: true }
     );
 
+    // 2. Merge pages in mixed order (P2, P0, P1)
     canonical.mergeFromCache({
       field: POSTS_PLAN_FIELD,
       parentRecordId: ROOT_ID,
@@ -191,6 +203,7 @@ describe('canonical', () => {
       pageEdgeRefs: page1EdgeRefs,
     });
 
+    // 3. Verify consistent P0,P1,P2 order
     const nodeIds = getNodeIds('@connection.posts({})');
     expect(nodeIds).toEqual(["-2", "-1", "0", "1", "2", "3", "4", "5"]);
 
@@ -200,6 +213,7 @@ describe('canonical', () => {
   });
 
   it("replaces edges when reloading a slice (remove 5, add 7)", () => {
+    // 1. Create and update initial pages (1,2,3) and (4,5,6)
     const { page: page0, edgeRefs: page0EdgeRefs } = writePageSnapshot(
       graph,
       '@.posts({"after":null,"first":3})',
@@ -230,6 +244,7 @@ describe('canonical', () => {
       pageEdgeRefs: page1EdgeRefs,
     });
 
+    // 2. Verify initial state (1,2,3,4,5,6)
     const nodeIdsBefore = getNodeIds('@connection.posts({})');
     expect(nodeIdsBefore).toEqual(["1", "2", "3", "4", "5", "6"]);
 
@@ -237,6 +252,7 @@ describe('canonical', () => {
     expect(pageInfoBefore?.endCursor).toBe("p6");
     expect(pageInfoBefore?.hasNextPage).toBe(true);
 
+    // 3. Reload slice with changes (remove 5, add 7)
     const { page: updatedPage1, edgeRefs: updatedPage1EdgeRefs } = writePageSnapshot(
       graph,
       '@.posts({"after":"p3","first":3})',
@@ -252,6 +268,7 @@ describe('canonical', () => {
       pageEdgeRefs: updatedPage1EdgeRefs,
     });
 
+    // 4. Verify updated state (1,2,3,4,6,7)
     const nodeIdsAfter = getNodeIds('@connection.posts({})');
     expect(nodeIdsAfter).toEqual(["1", "2", "3", "4", "6", "7"]);
 
@@ -261,6 +278,7 @@ describe('canonical', () => {
   });
 
   it("resets to leader slice only when network call occurs after prewarm", () => {
+    // 1. Create pages for prewarming
     const { page: page0, edgeRefs: page0EdgeRefs } = writePageSnapshot(
       graph,
       '@.posts({"after":null,"first":3})',
@@ -274,6 +292,7 @@ describe('canonical', () => {
       { end: "p6", hasNext: false }
     );
 
+    // 2. Prewarm cache with both pages
     canonical.mergeFromCache({
       field: POSTS_PLAN_FIELD, parentRecordId: ROOT_ID,
       requestVars: { first: 3, after: null },
@@ -289,9 +308,11 @@ describe('canonical', () => {
       pageEdgeRefs: page1EdgeRefs,
     });
 
+    // 3. Verify prewarmed state (1,2,3,4,5,6)
     const nodeIdsBefore = getNodeIds('@connection.posts({})');
     expect(nodeIdsBefore).toEqual(["1", "2", "3", "4", "5", "6"]);
 
+    // 4. Network call for leader page (should reset to leader only)
     canonical.updateConnection({
       field: POSTS_PLAN_FIELD, parentRecordId: ROOT_ID,
       requestVars: { first: 3, after: null },
@@ -300,11 +321,13 @@ describe('canonical', () => {
       pageEdgeRefs: page0EdgeRefs,
     });
 
+    // 5. Verify reset to leader slice only (1,2,3)
     const nodeIdsAfter = getNodeIds('@connection.posts({})');
     expect(nodeIdsAfter).toEqual(["1", "2", "3"]);
   });
 
   it("refreshes edge meta without duplication when duplicate node appears in P2", () => {
+    // 1. Create and update initial page (1,2,3)
     const { page: page0, edgeRefs: page0EdgeRefs } = writePageSnapshot(
       graph,
       '@.posts({"after":null,"first":3})',
@@ -320,6 +343,7 @@ describe('canonical', () => {
       pageEdgeRefs: page0EdgeRefs,
     });
 
+    // 2. Create page with duplicate node 3 (3,4,5)
     const { page: page1, edgeRefs: page1EdgeRefs } = writePageSnapshot(
       graph,
       '@.posts({"after":"p3","first":3})',
@@ -335,11 +359,13 @@ describe('canonical', () => {
       pageEdgeRefs: page1EdgeRefs,
     });
 
+    // 3. Verify no duplication (1,2,3,4,5)
     const nodeIds = getNodeIds('@connection.posts({})');
     expect(nodeIds).toEqual(["1", "2", "3", "4", "5"]);
   });
 
   it("re-applies optimistic overlay after base writes and prewarm", () => {
+    // 1. Apply optimistic updates (remove 2, add 9 at start)
     const tx = optimistic.modifyOptimistic((o) => {
       const c = o.connection({ parent: "Query", key: "posts" });
 
@@ -349,6 +375,7 @@ describe('canonical', () => {
 
     tx.commit?.();
 
+    // 2. Create base pages for cache merge
     const { page: page1, edgeRefs: page1EdgeRefs } = writePageSnapshot(
       graph,
       '@.posts({"after":"p3","first":3})',
@@ -362,6 +389,7 @@ describe('canonical', () => {
       { end: "p3", hasNext: true }
     );
 
+    // 3. Merge base pages from cache
     canonical.mergeFromCache({
       field: POSTS_PLAN_FIELD, parentRecordId: ROOT_ID,
       requestVars: { first: 3, after: "p3" },
@@ -377,12 +405,13 @@ describe('canonical', () => {
       pageEdgeRefs: page0EdgeRefs,
     });
 
+    // 4. Verify optimistic overlay is re-applied (9 at start, 2 removed)
     const nodeIds = getNodeIds('@connection.posts({})');
     expect(nodeIds).toEqual(["9", "1", "3", "4", "5", "6"]);
   });
 
   it("updates edge meta without dupes and maintains order when refreshing same page", () => {
-    // Create initial page snapshot with custom cursors and scores
+    // 1. Create initial page snapshot with custom cursors and scores
     const { page: initialPage, edgeRefs: initialEdgeRefs } = writePageSnapshot(
       graph,
       '@.posts({"after":null,"first":2})',
@@ -413,7 +442,7 @@ describe('canonical', () => {
       pageEdgeRefs: initialEdgeRefs,
     });
 
-    // Update edge records with new cursors and scores
+    // 2. Update edge records with new cursors and scores
     graph.putRecord('@.posts({"after":null,"first":2}).edges.0', {
       score: 9,
       cursor: "c1x",
@@ -425,7 +454,7 @@ describe('canonical', () => {
       node: { __ref: "Post:2" }
     });
 
-    // Create updated page snapshot with new cursors
+    // 3. Create updated page snapshot with new cursors
     const updatedPage = {
       __typename: "PostConnection",
       pageInfo: {
@@ -447,6 +476,7 @@ describe('canonical', () => {
       pageEdgeRefs: initialEdgeRefs,
     });
 
+    // 4. Verify edge meta is updated without duplication
     const canonicalConnection = graph.getRecord('@connection.posts({})');
     expect(canonicalConnection.edges.length).toBe(2);
 
@@ -462,6 +492,7 @@ describe('canonical', () => {
   });
 
   it("maintains leader-first order and anchored pageInfo when refetching leader after forward pages", () => {
+    // 1. Create User entities and first page edges
     graph.putRecord("User:u1", { __typename: "User", id: "u1" });
     graph.putRecord("User:u2", { __typename: "User", id: "u2" });
     graph.putRecord("User:u3", { __typename: "User", id: "u3" });
@@ -494,6 +525,7 @@ describe('canonical', () => {
       edges: page0EdgeRefs
     };
 
+    // 2. Update connection with first page (u1, u2)
     canonical.updateConnection({
       field: USERS_PLAN_FIELD,
       parentRecordId: "@",
@@ -503,6 +535,7 @@ describe('canonical', () => {
       pageEdgeRefs: page0EdgeRefs,
     });
 
+    // 3. Create second page edges (u3, u4)
     const page1EdgeRefs = [
       { __ref: '@.users({"after":"u2","first":2,"role":"admin"}).edges.0' },
       { __ref: '@.users({"after":"u2","first":2,"role":"admin"}).edges.1' },
@@ -530,6 +563,7 @@ describe('canonical', () => {
       edges: page1EdgeRefs
     };
 
+    // 4. Update connection with second page (u3, u4)
     canonical.updateConnection({
       field: USERS_PLAN_FIELD,
       parentRecordId: "@",
@@ -539,6 +573,7 @@ describe('canonical', () => {
       pageEdgeRefs: page1EdgeRefs,
     });
 
+    // 5. Refetch leader page (should reset to leader only)
     canonical.updateConnection({
       field: USERS_PLAN_FIELD,
       parentRecordId: "@",
@@ -548,6 +583,7 @@ describe('canonical', () => {
       pageEdgeRefs: page0EdgeRefs,
     });
 
+    // 6. Verify leader-first order and anchored pageInfo
     const canKey = '@connection.users({"role":"admin"})';
     const userIds = getNodeIds(canKey);
     expect(userIds).toEqual(["u1", "u2"]);
@@ -558,9 +594,9 @@ describe('canonical', () => {
   });
 
   it("maintains union 1..6 when network P2 arrives after prewarming P1,P2 from cache", () => {
-
     const canKey = '@connection.posts({})';
 
+    // 1. Create P1 (leader) and P2 (forward) pages
     const { page: P1, edgeRefs: P1EdgeRefs } = writePageSnapshot(
       graph,
       '@.posts({"after":null,"first":3})',
@@ -575,6 +611,7 @@ describe('canonical', () => {
       { hasNext: false, hasPrev: true }
     );
 
+    // 2. Prewarm cache with both pages
     canonical.mergeFromCache({
       field: POSTS_PLAN_FIELD,
       parentRecordId: ROOT_ID,
@@ -592,9 +629,11 @@ describe('canonical', () => {
       pageEdgeRefs: P2EdgeRefs
     });
 
+    // 3. Verify prewarmed union
     const nodeIds = getNodeIds(canKey);
     expect(nodeIds).toEqual(["1", "2", "3", "4", "5", "6"]);
 
+    // 4. Network call for P2 arrives (should maintain union)
     canonical.updateConnection({
       field: POSTS_PLAN_FIELD,
       parentRecordId: ROOT_ID,
@@ -604,6 +643,7 @@ describe('canonical', () => {
       pageEdgeRefs: P2EdgeRefs
     });
 
+    // 5. Verify union is maintained
     const nodeIdsAfter = getNodeIds(canKey);
     expect(nodeIdsAfter).toEqual(["1", "2", "3", "4", "5", "6"]);
 
