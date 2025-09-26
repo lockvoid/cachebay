@@ -10,11 +10,6 @@ import type { ViewsInstance } from "./views";
 import type { GraphInstance } from "./graph";
 import { isObject, hasTypename, upsertEntityShallow, buildConnectionKey, buildConnectionCanonicalKey } from "./utils";
 
-export type FragmentsOptions = {
-  // kept for API compatibility; ignored (compiler uses @connection)
-  connections?: Record<string, Record<string, { mode?: "infinite" | "page"; args?: string[] }>>;
-};
-
 export type FragmentsDependencies = {
   graph: GraphInstance;
   planner: PlannerInstance;
@@ -35,7 +30,6 @@ export type WriteFragmentArgs = {
 };
 
 export const createFragments = (
-  _options: FragmentsOptions,
   deps: FragmentsDependencies
 ) => {
   const { graph, planner, views } = deps;

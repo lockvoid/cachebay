@@ -65,7 +65,7 @@ const makeCache = () => {
     },
   });
 
-  const fragments = createFragments({}, { graph, planner, views });
+  const fragments = createFragments({ graph, planner, views });
 
   const cache = {
     readFragment: fragments.readFragment,

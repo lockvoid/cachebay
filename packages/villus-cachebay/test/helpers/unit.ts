@@ -1,8 +1,121 @@
 import { visit, Kind, type DocumentNode } from "graphql";
 import gql from "graphql-tag";
+import type { PlanField } from "@/src/compiler";
 import { compilePlan } from "@/src/compiler/compile";
 import { ROOT_ID } from "@/src/core/constants";
 import { createGraph } from "@/src/core/graph";
+
+const stableStringify = (obj: any) => {
+  if (obj === null || typeof obj !== "object") return JSON.stringify(obj);
+  if (Array.isArray(obj)) return `[${obj.map(stableStringify).join(",")}]`;
+  const keys = Object.keys(obj).sort();
+  return `{${keys.map((k) => JSON.stringify(k) + ":" + stableStringify(obj[k])).join(",")}}`;
+};
+
+export const createPlanField = (
+  name: string,
+  isConnection = false,
+  children: PlanField[] | null = null
+): PlanField => {
+  const map = new Map<string, PlanField>();
+  if (children) {
+    for (let i = 0; i < children.length; i++) {
+      map.set(children[i].responseKey, children[i]);
+    }
+  }
+  return {
+    responseKey: name,
+    fieldName: name,
+    isConnection,
+    buildArgs: () => ({}),
+    stringifyArgs: () => stableStringify({}),
+    selectionSet: children,
+    selectionMap: children ? map : undefined,
+  };
+};
+
+export const createConnectionPlanField = (name: string): PlanField => {
+  // connection needs edges.node at minimum
+  const node = createPlanField("node", false, [createPlanField("id"), createPlanField("__typename")]);
+  const edges = createPlanField("edges", false, [createPlanField("__typename"), createPlanField("cursor"), node]);
+  return createPlanField(name, true, [createPlanField("__typename"), createPlanField("pageInfo"), edges]);
+};
+
+/** Seed a connection page and its edge records */
+export const seedConnectionPage = (
+  graph: ReturnType<typeof createGraph>,
+  pageKey: string,
+  edges: Array<{ nodeRef: string; cursor?: string; extra?: Record<string, any> }>,
+  pageInfo?: Record<string, any>,
+  extra?: Record<string, any>,
+  edgeTypename = "Edge",
+  connectionTypename = "Connection"
+) => {
+  const edgeRefs: Array<{ __ref: string }> = [];
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
+    const edgeKey = `${pageKey}.edges.${i}`;
+    graph.putRecord(edgeKey, {
+      __typename: edgeTypename,
+      cursor: e.cursor ?? null,
+      ...(e.extra || {}),
+      node: { __ref: e.nodeRef },
+    });
+    edgeRefs.push({ __ref: edgeKey });
+  }
+
+  const snap: Record<string, any> = { __typename: connectionTypename, edges: edgeRefs };
+  if (pageInfo) snap.pageInfo = { ...(pageInfo as any) };
+  if (extra) Object.assign(snap, extra);
+
+  graph.putRecord(pageKey, snap);
+};
+
+export const writePageSnapshot = (
+  graph: ReturnType<typeof createGraph>,
+  pageKey: string,
+  nodeIds: number[],
+  pageInfo?: { start?: string; end?: string; hasNext?: boolean; hasPrev?: boolean }
+) => {
+  const edgeRefs: Array<{ __ref: string }> = [];
+
+  for (let i = 0; i < nodeIds.length; i++) {
+    const nodeId = nodeIds[i];
+    const edgeKey = `${pageKey}.edges.${i}`;
+    const cursor = `p${nodeId}`;
+
+    graph.putRecord(`Post:${nodeId}`, {
+      __typename: "Post",
+      id: String(nodeId),
+      title: `Post ${nodeId}`,
+      tags: [],
+    });
+
+    graph.putRecord(edgeKey, {
+      __typename: "PostEdge",
+      cursor,
+      node: { __ref: `Post:${nodeId}` },
+    });
+
+    edgeRefs.push({ __ref: edgeKey });
+  }
+
+  const page = {
+    __typename: "PostConnection",
+    pageInfo: {
+      __typename: "PageInfo",
+      startCursor: pageInfo?.start || `p${nodeIds[0]}`,
+      endCursor: pageInfo?.end || `p${nodeIds[nodeIds.length - 1]}`,
+      hasNextPage: pageInfo?.hasNext ?? false,
+      hasPreviousPage: pageInfo?.hasPrev ?? false,
+    },
+    edges: edgeRefs,
+  };
+
+  graph.putRecord(pageKey, page);
+
+  return { page, edgeRefs };
+};
 
 export const collectConnectionDirectives = (doc: DocumentNode): string[] => {
   const hits: string[] = [];
@@ -55,6 +168,65 @@ export const COMMENT_FRAGMENT = gql`
   fragment CommentFields on Comment {
     id
     text
+  }
+`;
+
+export const USER_POSTS_FRAGMENT = gql`
+  fragment UserPosts on User {
+    id
+    email
+    posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
+      __typename
+      totalCount
+      pageInfo {
+        __typename
+        startCursor
+        endCursor
+        hasNextPage
+        hasPreviousPage
+      }
+      edges {
+        __typename
+        cursor
+        score
+        node {
+          __typename
+          id
+          title
+          tags
+        }
+      }
+    }
+  }
+`;
+
+export const POST_COMMENTS_FRAGMENT = gql`
+  fragment PostWithComments on Post {
+    id
+    title
+    comments(first: $commentsFirst, after: $commentsAfter) @connection(args: []) {
+      __typename
+      pageInfo {
+        __typename
+        startCursor
+        endCursor
+        hasNextPage
+        hasPreviousPage
+      }
+      edges {
+        __typename
+        cursor
+        node {
+          __typename
+          id
+          text
+          author {
+            __typename
+            id
+          }
+        }
+      }
+    }
   }
 `;
 
@@ -492,28 +664,3 @@ export const POSTS_QUERY = gql`
 export const createTestPlan = (query: DocumentNode) => {
   return compilePlan(query);
 };
-
-export function writePageSnapshot(
-  graph: ReturnType<typeof createGraph>,
-  pageKey: string,
-  nodeIds: (number | string)[],
-  opts?: { start?: string | null; end?: string | null; hasNext?: boolean; hasPrev?: boolean; typename?: string }
-) {
-  const pageInfo = {
-    __typename: "PageInfo",
-    startCursor: opts?.start ?? (nodeIds.length ? `p${nodeIds[0]}` : null),
-    endCursor: opts?.end ?? (nodeIds.length ? `p${nodeIds[nodeIds.length - 1]}` : null),
-    hasNextPage: !!opts?.hasNext,
-    hasPreviousPage: !!opts?.hasPrev,
-  };
-  const edgeRefs = nodeIds.map((id, i) => {
-    const edgeKey = `${pageKey}.edges.${i}`;
-    const nodeKey = `Post:${id}`;
-    graph.putRecord(nodeKey, { __typename: "Post", id: String(id), title: `Post ${id}`, tags: [] });
-    graph.putRecord(edgeKey, { __typename: "PostEdge", cursor: `p${id}`, node: { __ref: nodeKey } });
-    return { __ref: edgeKey };
-  });
-  const page = { __typename: opts?.typename ?? "PostConnection", edges: edgeRefs, pageInfo };
-  graph.putRecord(pageKey, page);
-  return { page, edgeRefs };
-}

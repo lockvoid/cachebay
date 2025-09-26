@@ -64,7 +64,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   const planner = createPlanner();
   const canonical = createCanonical({ graph, optimistic });
   const documents = createDocuments({ graph, views, planner, canonical });
-  const fragments = createFragments({}, { graph, views, planner });
+  const fragments = createFragments({ graph, views, planner });
 
   // Features
   const inspect = createInspect({ graph });
