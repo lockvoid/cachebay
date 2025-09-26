@@ -2,12 +2,9 @@
 import { describe, it, expect } from "vitest";
 import gql from "graphql-tag";
 import { compilePlan } from "@/src/compiler";
-import {
-  collectConnectionDirectives,
-  everySelectionSetHasTypename,
-} from "@/test/helpers";
+import { collectConnectionDirectives, hasTypenames } from "@/test/helpers";
 
-describe("compiler: compilePlan (fragments)", () => {
+describe("Compiler x Fragments", () => {
   it("compiles a simple User fragment (no args) with selectionMap", () => {
     const FRAG = gql`
       fragment UserFields on User {
@@ -29,7 +26,7 @@ describe("compiler: compilePlan (fragments)", () => {
 
     // Network doc: no @connection and __typename is materialized everywhere
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
-    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
 
   it("compiles a fragment with a connection using @connection; builds selectionMap on nested sets", () => {
@@ -81,7 +78,7 @@ describe("compiler: compilePlan (fragments)", () => {
 
     // Network doc: no @connection and __typename is materialized everywhere
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
-    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
 
   it("throws when doc has neither op nor exactly one fragment", () => {
@@ -110,6 +107,6 @@ describe("compiler: compilePlan (fragments)", () => {
 
     // Network doc: no @connection and __typename is materialized everywhere
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
-    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
 });

@@ -134,7 +134,7 @@ export const selectionSetHasTypename = (node: any): boolean => {
   return ss.selections.some((s: any) => s.kind === Kind.FIELD && s.name?.value === "__typename");
 };
 
-export const everySelectionSetHasTypename = (doc: DocumentNode): boolean => {
+export const hasTypenames = (doc: DocumentNode): boolean => {
   let ok = true;
   visit(doc, {
     SelectionSet(node) {
@@ -657,6 +657,229 @@ export const POSTS_QUERY = gql`
       __typename
       pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
       edges { __typename cursor node { __typename id title } }
+    }
+  }
+`;
+
+// Compiler-specific versions (to avoid conflicts with existing queries)
+export const USERS_QUERY_COMPILER = gql`
+  ${USER_FRAGMENT}
+  query UsersQuery($usersRole: String, $usersFirst: Int, $usersAfter: String) {
+    users(role: $usersRole, first: $usersFirst, after: $usersAfter)
+      @connection(filters: ["role"]) {
+      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+      edges {
+        cursor
+        node { ...UserFields }
+      }
+    }
+  }
+`;
+
+export const USER_POSTS_QUERY_COMPILER = gql`
+  ${USER_FRAGMENT}
+  ${POST_FRAGMENT}
+  query UserPostsQuery($id: ID!, $postsCategory: String, $postsFirst: Int, $postsAfter: String) {
+    user(id: $id) {
+      ...UserFields
+      posts(category: $postsCategory, first: $postsFirst, after: $postsAfter)
+        @connection(filters: ["category"]) {
+        pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+        edges {
+          cursor
+          node {
+            ...PostFields
+            author { id }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const USERS_POSTS_COMMENTS_QUERY_COMPILER = gql`
+  ${USER_FRAGMENT}
+  ${POST_FRAGMENT}
+  ${COMMENT_FRAGMENT}
+  query UsersPostsCommentsQuery(
+    $usersRole: String
+    $usersFirst: Int
+    $usersAfter: String
+    $postsCategory: String
+    $postsFirst: Int
+    $postsAfter: String
+    $commentsFirst: Int
+    $commentsAfter: String
+  ) {
+    users(role: $usersRole, first: $usersFirst, after: $usersAfter)
+      @connection(filters: ["role"]) {
+      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+      edges {
+        cursor
+        node {
+          ...UserFields
+          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter)
+            @connection(filters: ["category"]) {
+            pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+            edges {
+              cursor
+              node {
+                ...PostFields
+                comments(first: $commentsFirst, after: $commentsAfter)
+                  @connection(filters: []) {
+                  pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+                  edges { cursor node { ...CommentFields } }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+// Extra queries for compiler tests
+export const ALIAS_QUERY = gql`
+  query AliasQuery($id: ID!) {
+    currentUser: user(id: $id) { id email }
+  }
+`;
+
+export const MULTI_TYPE_FRAGMENT_QUERY = gql`
+  fragment UserOnly on User { id }
+  fragment AdminOnly on Admin { role }
+
+  query MixedTypes($id: ID!) {
+    user(id: $id) {
+      ...UserOnly
+      ...AdminOnly
+    }
+  }
+`;
+
+// Connection-specific queries and fragments (to avoid conflicts)
+export const POSTS_PAGE_CONNECTION_QUERY = gql`
+  query UserList($postsCategory: String, $postsFirst: Int, $postsAfter: String) {
+    posts(category: $postsCategory, first: $postsFirst, after: $postsAfter)
+      @connection(mode: "page", args: ["category"]) {
+      totalCount
+      pageInfo {
+        startCursor
+        endCursor
+        hasNextPage
+        hasPreviousPage
+      }
+      edges {
+        cursor
+        node {
+          id
+          title
+        }
+      }
+    }
+  }
+`;
+
+export const POSTS_DEFAULT_CONNECTION_QUERY = gql`
+  query UserList($category: String, $sort: String, $first: Int, $after: String) {
+    posts(category: $category, sort: $sort, first: $first, after: $after) @connection {
+      edges { cursor node { id } }
+      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+    }
+  }
+`;
+
+export const USERS_NO_CONNECTION_QUERY = gql`
+  query HeuristicLike {
+    users {
+      edges { cursor node { id } }
+      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+    }
+  }
+`;
+
+export const POSTS_EXPLICIT_KEY_QUERY = gql`
+  query UserList($category: String, $first: Int, $after: String) {
+    posts(category: $category, first: $first, after: $after)
+      @connection(key: "ProjectsList", args: ["category"]) {
+      edges { cursor node { id } }
+      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+    }
+  }
+`;
+
+export const POSTS_FIELD_KEY_QUERY = gql`
+  query UserList($category: String, $first: Int, $after: String) {
+    posts(category: $category, first: $first, after: $after)
+      @connection(args: ["category"]) {
+      edges { cursor node { id } }
+      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+    }
+  }
+`;
+
+export const POST_COMMENTS_FRAGMENT_COMPILER = gql`
+  fragment PostComments on Post {
+    id
+    comments(first: $first, after: $after)
+      @connection(key: "PostComments", args: []) {
+      edges { cursor node { id } }
+      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+    }
+  }
+`;
+
+export const USER_POSTS_FRAGMENT_COMPILER = gql`
+  fragment UserPosts on User {
+    id
+    posts(category: $cat, first: $first, after: $after)
+      @connection(filters: ["category"], mode: "infinite") {
+      totalCount
+      pageInfo {
+        startCursor
+        endCursor
+        hasNextPage
+        hasPreviousPage
+      }
+      edges {
+        cursor
+        score
+        node {
+          id
+          title
+        }
+      }
+    }
+  }
+`;
+
+export const USER_FEED_FRAGMENT_COMPILER = gql`
+  fragment UserFeed on User {
+    feed(first: $first) @connection(key: "Feed") {
+      edges { cursor node { id } }
+      pageInfo { endCursor hasNextPage }
+    }
+  }
+`;
+
+export const POSTS_SELECTION_MAPS_QUERY = gql`
+  query Q($category: String, $first: Int, $after: String) {
+    posts(category: $category, first: $first, after: $after)
+      @connection(args: ["category"]) {
+      pageInfo {
+        startCursor
+        endCursor
+        hasNextPage
+        hasPreviousPage
+      }
+      edges {
+        cursor
+        node {
+          id
+          title
+        }
+      }
     }
   }
 `;

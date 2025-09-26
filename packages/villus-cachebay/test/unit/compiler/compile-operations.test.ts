@@ -1,164 +1,16 @@
-// test/unit/compiler/compile.test.ts
-import { describe, it, expect } from "vitest";
-import gql from "graphql-tag";
 import { compilePlan } from "@/src/compiler";
+import { collectConnectionDirectives, hasTypenames, USER_QUERY, USERS_QUERY_COMPILER, USER_POSTS_QUERY_COMPILER, USERS_POSTS_COMMENTS_QUERY_COMPILER, ALIAS_QUERY, MULTI_TYPE_FRAGMENT_QUERY } from "@/test/helpers";
 import type { CachePlanV1, PlanField } from "@/src/compiler/types";
-import {
-  collectConnectionDirectives,
-  everySelectionSetHasTypename,
-} from "@/test/helpers";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Fragments
-// ─────────────────────────────────────────────────────────────────────────────
-
-const USER_FRAGMENT = gql`
-  fragment UserFields on User {
-    id
-    email
-  }
-`;
-
-const POST_FRAGMENT = gql`
-  fragment PostFields on Post {
-    id
-    title
-    tags
-  }
-`;
-
-const COMMENT_FRAGMENT = gql`
-  fragment CommentFields on Comment {
-    id
-    text
-  }
-`;
-
-// ─────────────────────────────────────────────────────────────────────────────
-/** Documents (without __typename; compiler will inject them for networkQuery) */
-// ─────────────────────────────────────────────────────────────────────────────
-
-const USER_QUERY = gql`
-  ${USER_FRAGMENT}
-  query UserQuery($id: ID!) {
-    user(id: $id) {
-      ...UserFields
-    }
-  }
-`;
-
-const USERS_QUERY = gql`
-  ${USER_FRAGMENT}
-  query UsersQuery($usersRole: String, $usersFirst: Int, $usersAfter: String) {
-    users(role: $usersRole, first: $usersFirst, after: $usersAfter)
-      @connection(filters: ["role"]) {
-      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
-      edges {
-        cursor
-        node { ...UserFields }
-      }
-    }
-  }
-`;
-
-const USER_POSTS_QUERY = gql`
-  ${USER_FRAGMENT}
-  ${POST_FRAGMENT}
-  query UserPostsQuery($id: ID!, $postsCategory: String, $postsFirst: Int, $postsAfter: String) {
-    user(id: $id) {
-      ...UserFields
-      posts(category: $postsCategory, first: $postsFirst, after: $postsAfter)
-        @connection(filters: ["category"]) {
-        pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
-        edges {
-          cursor
-          node {
-            ...PostFields
-            author { id }
-          }
-        }
-      }
-    }
-  }
-`;
-
-const USERS_POSTS_COMMENTS_QUERY = gql`
-  ${USER_FRAGMENT}
-  ${POST_FRAGMENT}
-  ${COMMENT_FRAGMENT}
-  query UsersPostsCommentsQuery(
-    $usersRole: String
-    $usersFirst: Int
-    $usersAfter: String
-    $postsCategory: String
-    $postsFirst: Int
-    $postsAfter: String
-    $commentsFirst: Int
-    $commentsAfter: String
-  ) {
-    users(role: $usersRole, first: $usersFirst, after: $usersAfter)
-      @connection(filters: ["role"]) {
-      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
-      edges {
-        cursor
-        node {
-          ...UserFields
-          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter)
-            @connection(filters: ["category"]) {
-            pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
-            edges {
-              cursor
-              node {
-                ...PostFields
-                comments(first: $commentsFirst, after: $commentsAfter)
-                  @connection(filters: []) {
-                  pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
-                  edges { cursor node { ...CommentFields } }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-`;
-
-// Extra: alias & multi-type cases
-const ALIAS_QUERY = gql`
-  query AliasQuery($id: ID!) {
-    currentUser: user(id: $id) { id email }
-  }
-`;
-
-const MULTI_TYPE_FRAGMENT_QUERY = gql`
-  fragment UserOnly on User { id }
-  fragment AdminOnly on Admin { role }
-
-  query MixedTypes($id: ID!) {
-    user(id: $id) {
-      ...UserOnly
-      ...AdminOnly
-    }
-  }
-`;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 const findField = (fields: PlanField[], responseKey: string): PlanField | null => {
   for (let i = 0; i < fields.length; i++) {
     if (fields[i].responseKey === responseKey) return fields[i];
   }
+
   return null;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Tests
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("compiler: compilePlan", () => {
+describe("Compiler x Operations", () => {
   it("compiles USER_QUERY: flattens fragments and builds arg pickers", () => {
     const plan = compilePlan(USER_QUERY);
     expect(plan.__kind).toBe("CachePlanV1");
@@ -170,50 +22,48 @@ describe("compiler: compilePlan", () => {
     expect(userField.fieldName).toBe("user");
     expect(userField.isConnection).toBe(false);
 
-    const args = userField.buildArgs({ id: "u1" });
-    expect(args).toEqual({ id: "u1" });
+    const userArgs = userField.buildArgs({ id: "u1" });
+    expect(userArgs).toEqual({ id: "u1" });
 
-    const child = userField.selectionSet!;
-    const id = findField(child, "id");
-    const email = findField(child, "email");
-    expect(Boolean(id && email)).toBe(true);
+    const id = findField(userField.selectionSet!, "id");
+    const email = findField(userField.selectionSet!, "email");
+    expect(id).toBeTruthy();
+    expect(email).toBeTruthy();
 
-    // Network query checks
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
-    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
 
   it("compiles USERS_QUERY: marks users as connection; filters & default mode", () => {
-    const plan = compilePlan(USERS_QUERY);
+    const plan = compilePlan(USERS_QUERY_COMPILER);
 
     const users = findField(plan.root, "users")!;
     expect(users.isConnection).toBe(true);
     expect(users.connectionKey).toBe("users");
     expect(users.connectionFilters).toEqual(["role"]);
-    expect(users.connectionMode).toBe("infinite"); // default
+    expect(users.connectionMode).toBe("infinite");
 
-    // buildArgs uses RAW vars mapped to field-arg names
-    const a1 = users.buildArgs({ usersRole: "admin", usersFirst: 2, usersAfter: undefined });
-    expect(a1).toEqual({ role: "admin", first: 2 });
+    const usersArgs = users.buildArgs({ usersRole: "admin", usersFirst: 2, usersAfter: undefined });
+    expect(usersArgs).toEqual({ role: "admin", first: 2 });
 
     const edges = findField(users.selectionSet!, "edges");
     const pageInfo = findField(users.selectionSet!, "pageInfo");
-    expect(Boolean(edges && pageInfo)).toBe(true);
+    expect(edges).toBeTruthy();
+    expect(pageInfo).toBeTruthy();
 
-    // Network query checks
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
-    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
 
   it("compiles USER_POSTS_QUERY: nested posts as connection with filters; default mode", () => {
-    const plan = compilePlan(USER_POSTS_QUERY);
+    const plan = compilePlan(USER_POSTS_QUERY_COMPILER);
 
     const user = findField(plan.root, "user")!;
     const posts = findField(user.selectionSet!, "posts")!;
     expect(posts.isConnection).toBe(true);
     expect(posts.connectionKey).toBe("posts");
     expect(posts.connectionFilters).toEqual(["category"]);
-    expect(posts.connectionMode).toBe("infinite"); // default
+    expect(posts.connectionMode).toBe("infinite");
 
     const userArgs = user.buildArgs({ id: "u1" });
     expect(userArgs).toEqual({ id: "u1" });
@@ -227,15 +77,17 @@ describe("compiler: compilePlan", () => {
     const title = findField(node.selectionSet!, "title");
     const tags = findField(node.selectionSet!, "tags");
     const author = findField(node.selectionSet!, "author");
-    expect(Boolean(id && title && tags && author)).toBe(true);
+    expect(id).toBeTruthy();
+    expect(title).toBeTruthy();
+    expect(tags).toBeTruthy();
+    expect(author).toBeTruthy();
 
-    // Network query checks
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
-    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
 
   it("compiles USERS_POSTS_COMMENTS_QUERY: users, posts, comments marked with filters & default mode", () => {
-    const plan: CachePlanV1 = compilePlan(USERS_POSTS_COMMENTS_QUERY);
+    const plan: CachePlanV1 = compilePlan(USERS_POSTS_COMMENTS_QUERY_COMPILER);
 
     const users = findField(plan.root, "users")!;
     expect(users.isConnection).toBe(true);
@@ -258,10 +110,9 @@ describe("compiler: compilePlan", () => {
     const comments = findField(postNode.selectionSet!, "comments")!;
     expect(comments.isConnection).toBe(true);
     expect(comments.connectionKey).toBe("comments");
-    expect(comments.connectionFilters).toEqual([]); // explicit empty
+    expect(comments.connectionFilters).toEqual([]);
     expect(comments.connectionMode).toBe("infinite");
 
-    // RAW variable names → field args
     const usersArgs = users.buildArgs({ usersRole: "dj", usersFirst: 2, usersAfter: "u1" });
     expect(usersArgs).toEqual({ role: "dj", first: 2, after: "u1" });
 
@@ -271,34 +122,32 @@ describe("compiler: compilePlan", () => {
     const commentsArgs = comments.buildArgs({ commentsFirst: 3, commentsAfter: "c2" });
     expect(commentsArgs).toEqual({ first: 3, after: "c2" });
 
-    // Network query checks
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
-    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
-
-  // Extra coverage
 
   it("preserves alias as responseKey and field name as fieldName", () => {
     const plan = compilePlan(ALIAS_QUERY);
+
     const currentUser = findField(plan.root, "currentUser")!;
     expect(currentUser.responseKey).toBe("currentUser");
     expect(currentUser.fieldName).toBe("user");
     expect(currentUser.buildArgs({ id: "u1" })).toEqual({ id: "u1" });
 
-    // Network query checks
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
-    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
 
   it("when multiple distinct type conditions exist, child parent inference falls back", () => {
     const plan = compilePlan(MULTI_TYPE_FRAGMENT_QUERY);
-    const user = findField(plan.root, "user")!;
-    const idField = findField(user.selectionSet!, "id");     // from UserOnly
-    const roleField = findField(user.selectionSet!, "role"); // from AdminOnly
-    expect(Boolean(idField && roleField)).toBe(true);
 
-    // Network query checks
+    const user = findField(plan.root, "user")!;
+    const id = findField(user.selectionSet!, "id");
+    const role = findField(user.selectionSet!, "role");
+    expect(id).toBeTruthy();
+    expect(role).toBeTruthy();
+
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
-    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
 });

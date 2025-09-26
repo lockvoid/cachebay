@@ -4,10 +4,10 @@ import gql from "graphql-tag";
 import { compilePlan } from "@/src/compiler";
 import {
   collectConnectionDirectives,
-  everySelectionSetHasTypename,
+  hasTypenames,
 } from "@/test/helpers";
 
-describe("compiler: compilePlan — accepts string | gql(DocumentNode) | plan", () => {
+describe("Compiler x Formats", () => {
   it("accepts a raw GraphQL string", () => {
     const QUERY_STR = `
       query User($id: ID!) {
@@ -30,7 +30,7 @@ describe("compiler: compilePlan — accepts string | gql(DocumentNode) | plan", 
 
     // Network doc: no @connection and __typename is materialized everywhere
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
-    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
 
   it("accepts a DocumentNode produced by graphql-tag's gql", () => {
@@ -54,7 +54,7 @@ describe("compiler: compilePlan — accepts string | gql(DocumentNode) | plan", 
 
     // Network doc: no @connection and __typename is materialized everywhere
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
-    expect(everySelectionSetHasTypename(plan.networkQuery)).toBe(true);
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
 
   it("accepts a precompiled plan (pass-through identity)", () => {
@@ -71,6 +71,6 @@ describe("compiler: compilePlan — accepts string | gql(DocumentNode) | plan", 
 
     // Network doc still meets the invariants
     expect(collectConnectionDirectives(plan2.networkQuery)).toEqual([]);
-    expect(everySelectionSetHasTypename(plan2.networkQuery)).toBe(true);
+    expect(hasTypenames(plan2.networkQuery)).toBe(true);
   });
 });
