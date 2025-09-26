@@ -89,10 +89,58 @@ describe('Fragments', () => {
 
       expect(postsFragment.posts.totalCount).toBe(2);
 
+      expect(postsFragment.posts.pageInfo).toEqual({
+        __typename: "PageInfo",
+        startCursor: "p1",
+        endCursor: "p2",
+        hasNextPage: true,
+        hasPreviousPage: false,
+      });
+
+      expect(postsFragment.posts.edges[0]).toEqual({
+        __typename: "PostEdge",
+        cursor: "p1",
+        score: 0.5,
+        node: {
+          __typename: "Post",
+          id: "p1",
+          title: "P1",
+          tags: []
+        }
+      });
+
+      expect(postsFragment.posts.edges[1]).toEqual({
+        __typename: "PostEdge",
+        cursor: "p2",
+        score: 0.7,
+        node: {
+          __typename: "Post",
+          id: "p2",
+          title: "P2",
+          tags: []
+        }
+      });
+
       expect(postsFragment.posts.edges[0].node).toEqual({
         __typename: "Post",
         id: "p1",
         title: "P1",
+        tags: []
+      });
+
+      expect(postsFragment.posts.edges[1].node).toEqual({
+        __typename: "Post",
+        id: "p2",
+        title: "P2",
+        tags: []
+      });
+
+      graph.putRecord("Post:p1", { title: "P1 (Updated)" });
+
+      expect(postsFragment.posts.edges[0].node).toEqual({
+        __typename: "Post",
+        id: "p1",
+        title: "P1 (Updated)",
         tags: []
       });
 
@@ -145,6 +193,42 @@ describe('Fragments', () => {
       expect(isReactive(commentsFragment.comments.edges[0].node)).toBe(true);
       expect(isReactive(commentsFragment.comments.edges[1])).toBe(true);
       expect(isReactive(commentsFragment.comments.edges[1].node)).toBe(true);
+
+      expect(commentsFragment.comments.pageInfo).toEqual({
+        __typename: "PageInfo",
+        startCursor: "c1",
+        endCursor: "c2",
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+
+      expect(commentsFragment.comments.edges[0]).toEqual({
+        __typename: "CommentEdge",
+        cursor: "c1",
+        node: {
+          __typename: "Comment",
+          id: "c1",
+          text: "C1",
+          author: {
+            __typename: "User",
+            id: "u2"
+          }
+        }
+      });
+
+      expect(commentsFragment.comments.edges[1]).toEqual({
+        __typename: "CommentEdge",
+        cursor: "c2",
+        node: {
+          __typename: "Comment",
+          id: "c2",
+          text: "C2",
+          author: {
+            __typename: "User",
+            id: "u3"
+          }
+        }
+      });
 
       expect(commentsFragment.comments.edges[0].node).toEqual({
         __typename: "Comment",
@@ -222,6 +306,8 @@ describe('Fragments', () => {
         id: "User:u1",
         fragment: USER_FRAGMENT,
       });
+
+      expect(isReactive(userFragment)).toBe(true);
 
       expect(graph.getRecord("User:u1")).toEqual({
         __typename: "User",
