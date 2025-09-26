@@ -49,7 +49,7 @@ describe('documents.hasDocument', () => {
   });
 
   it('returns true when the root connection page exists', () => {
-    graph.putRecord('@.users({"after":null,"first":2,"role":"dj"})', {
+    graph.putRecord('@.users({"after":null,"first":2,"role":"admin"})', {
       __typename: "UserConnection",
 
       pageInfo: {
@@ -67,7 +67,7 @@ describe('documents.hasDocument', () => {
       document: TEST_QUERIES.USERS_SIMPLE,
 
       variables: {
-        usersRole: "dj",
+        usersRole: "admin",
         usersFirst: 2,
         usersAfter: null,
       },
@@ -81,7 +81,7 @@ describe('documents.hasDocument', () => {
       document: TEST_QUERIES.USERS_SIMPLE,
 
       variables: {
-        usersRole: "dj",
+        usersRole: "admin",
         usersFirst: 2,
         usersAfter: null,
       },
@@ -93,20 +93,20 @@ describe('documents.hasDocument', () => {
   it('returns false when multiple root types have missing parts and true when both present', () => {
     graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID, 'user({"id":"u1"})': { __ref: "User:u1" } });
 
-    let mixedDoc = documents.hasDocument({
-      document: TEST_QUERIES.USER_USERS_MIXED,
+    let multipleDoc = documents.hasDocument({
+      document: TEST_QUERIES.USER_USERS_MULTIPLE_QUERY,
 
       variables: {
         id: "u1",
-        usersRole: "dj",
+        usersRole: "admin",
         usersFirst: 2,
         usersAfter: null,
       },
     });
 
-    expect(mixedDoc).toBe(false);
+    expect(multipleDoc).toBe(false);
 
-    graph.putRecord('@.users({"after":null,"first":2,"role":"dj"})', {
+    graph.putRecord('@.users({"after":null,"first":2,"role":"admin"})', {
       __typename: "UserConnection",
 
       pageInfo: {
@@ -120,24 +120,24 @@ describe('documents.hasDocument', () => {
       edges: [],
     });
 
-    mixedDoc = documents.hasDocument({
-      document: TEST_QUERIES.USER_USERS_MIXED,
+    multipleDoc = documents.hasDocument({
+      document: TEST_QUERIES.USER_USERS_MULTIPLE_QUERY,
 
       variables: {
         id: "u1",
-        usersRole: "dj",
+        usersRole: "admin",
         usersFirst: 2,
         usersAfter: null,
       },
     });
 
-    expect(mixedDoc).toBe(true);
+    expect(multipleDoc).toBe(true);
   });
 
-  it('accepts precompiled plan (CachePlanV1)', () => {
+  it('accepts precompiled plan', () => {
     const plan = compilePlan(TEST_QUERIES.USERS_SIMPLE);
 
-    graph.putRecord('@.users({"after":null,"first":2,"role":"dj"})', {
+    graph.putRecord('@.users({"after":null,"first":2,"role":"admin"})', {
       __typename: "UserConnection",
 
       pageInfo: {
@@ -155,7 +155,7 @@ describe('documents.hasDocument', () => {
       document: plan,
 
       variables: {
-        usersRole: "dj",
+        usersRole: "admin",
         usersFirst: 2,
         usersAfter: null,
       },
@@ -165,7 +165,7 @@ describe('documents.hasDocument', () => {
   });
 
   it('returns different results when variables change the page key', () => {
-    graph.putRecord('@.users({"after":null,"first":2,"role":"dj"})', {
+    graph.putRecord('@.users({"after":null,"first":2,"role":"admin"})', {
       __typename: "UserConnection",
 
       pageInfo: {
