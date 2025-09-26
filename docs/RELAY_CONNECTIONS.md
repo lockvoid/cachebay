@@ -1,7 +1,7 @@
 
 # Relay Connections — How to use them
 
-Cachebay provides first-class support for Relay-style, cursor-based pagination— making it straightforward to request, cache, and navigate paginated data using standardized connection patterns.
+Cachebay provides first-class support for Relay-style, cursor-based pagination—making it straightforward to request, cache, and navigate paginated data using standardized connection patterns.
 
 ---
 

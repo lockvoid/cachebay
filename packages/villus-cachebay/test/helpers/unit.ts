@@ -497,7 +497,7 @@ export function writePageSnapshot(
   graph: ReturnType<typeof createGraph>,
   pageKey: string,
   nodeIds: (number | string)[],
-  opts?: { start?: string | null; end?: string | null; hasNext?: boolean; hasPrev?: boolean }
+  opts?: { start?: string | null; end?: string | null; hasNext?: boolean; hasPrev?: boolean; typename?: string }
 ) {
   const pageInfo = {
     __typename: "PageInfo",
@@ -506,12 +506,14 @@ export function writePageSnapshot(
     hasNextPage: !!opts?.hasNext,
     hasPreviousPage: !!opts?.hasPrev,
   };
-  const edges = nodeIds.map((id, i) => {
+  const edgeRefs = nodeIds.map((id, i) => {
     const edgeKey = `${pageKey}.edges.${i}`;
     const nodeKey = `Post:${id}`;
     graph.putRecord(nodeKey, { __typename: "Post", id: String(id), title: `Post ${id}`, tags: [] });
     graph.putRecord(edgeKey, { __typename: "PostEdge", cursor: `p${id}`, node: { __ref: nodeKey } });
     return { __ref: edgeKey };
   });
-  graph.putRecord(pageKey, { __typename: "PostConnection", pageInfo, edges });
+  const page = { __typename: opts?.typename ?? "PostConnection", edges: edgeRefs, pageInfo };
+  graph.putRecord(pageKey, page);
+  return { page, edgeRefs };
 }
