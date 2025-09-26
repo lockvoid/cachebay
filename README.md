@@ -15,6 +15,7 @@ A tiny (20KB gzip), instance-scoped cache layer for **Villus** that gives you:
 - **Tiny composables** — `useFragment`, `useFragments`, `useCache`
 - **Subscriptions** — plain frames get normalized and stream as non-terminating updates.
 - **Suspense** — first-class support.
+- **Compiller mode (alpha)** — boost performance by pre-compiling fragments and queries.
 
 ![Cachebay](https://pub-464e6b9480014239a02034726cf0073c.r2.dev/cachebay.jpg)
 
@@ -218,7 +219,7 @@ const { identify, readFragment, writeFragment } = useCache()
 
 identify({ __typename: 'Post', id: 42 }) // → "Post:42"
 
-const asset = readFragment({
+const post = readFragment({
   id: 'Post:42',
 
   fragment: `fragment PostFields on Post {
@@ -259,7 +260,7 @@ const tx = cache.modifyOptimistic((tx) => {
   tx.delete('Post:999')
 
   // Connection edits
-  const connection = tx.connection({ parent:'Query', key:'assets' })
+  const connection = tx.connection({ parent:'Query', key:'posts' })
 
   // Add a node
   connection.addNode({ __typename:'Asset', id:'999', name:'New (optimistic)' }, { position:'start' })
