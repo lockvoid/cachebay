@@ -1,7 +1,7 @@
 // test/unit/compiler/compile-connections.test.ts
 import { describe, it, expect } from "vitest";
 import gql from "graphql-tag";
-import { compileToPlan } from "@/src/compiler";
+import { compilePlan } from "@/src/compiler";
 import { collectConnectionDirectives, selectionSetHasTypename, everySelectionSetHasTypename } from '@/test/helpers';
 
 describe("compiler: @connection directive (explicit-only)", () => {
@@ -28,7 +28,7 @@ describe("compiler: @connection directive (explicit-only)", () => {
       }
     `;
 
-    const plan = compileToPlan(DOC);
+    const plan = compilePlan(DOC);
     expect(plan.operation).toBe("query");
     expect(plan.rootTypename).toBe("Query");
 
@@ -64,7 +64,7 @@ describe("compiler: @connection directive (explicit-only)", () => {
       }
     `;
 
-    const plan = compileToPlan(DOC);
+    const plan = compilePlan(DOC);
     const posts = plan.rootSelectionMap!.get("posts")!;
     expect(posts.isConnection).toBe(true);
     expect(posts.connectionMode).toBe("infinite");
@@ -85,7 +85,7 @@ describe("compiler: @connection directive (explicit-only)", () => {
         }
       }
     `;
-    const plan = compileToPlan(DOC);
+    const plan = compilePlan(DOC);
     const users = plan.rootSelectionMap!.get("users")!;
     expect(users.isConnection).toBe(false);
     expect(users.connectionMode).toBeUndefined();
@@ -107,7 +107,7 @@ describe("compiler: @connection directive (explicit-only)", () => {
       }
     `;
 
-    const plan = compileToPlan(DOC);
+    const plan = compilePlan(DOC);
     const posts = plan.rootSelectionMap!.get("posts")!;
     expect(posts.isConnection).toBe(true);
     expect(posts.connectionKey).toBe("ProjectsList");
@@ -129,7 +129,7 @@ describe("compiler: @connection directive (explicit-only)", () => {
       }
     `;
 
-    const plan = compileToPlan(DOC);
+    const plan = compilePlan(DOC);
     const posts = plan.rootSelectionMap!.get("posts")!;
     expect(posts.isConnection).toBe(true);
     // default key = fieldName
@@ -153,7 +153,7 @@ describe("compiler: @connection directive (explicit-only)", () => {
       }
     `;
 
-    const plan = compileToPlan(FRAG);
+    const plan = compilePlan(FRAG);
     expect(plan.operation).toBe("fragment");
     expect(plan.rootTypename).toBe("Post");
 
@@ -190,7 +190,7 @@ describe("compiler: @connection directive (explicit-only)", () => {
       }
     `;
 
-    const plan = compileToPlan(DOC);
+    const plan = compilePlan(DOC);
     const posts = plan.rootSelectionMap!.get("posts")!;
     expect(posts.isConnection).toBe(true);
 

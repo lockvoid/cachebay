@@ -1,13 +1,13 @@
 // test/unit/compiler/compile-fragments.test.ts
 import { describe, it, expect } from "vitest";
 import gql from "graphql-tag";
-import { compileToPlan } from "@/src/compiler";
+import { compilePlan } from "@/src/compiler";
 import {
   collectConnectionDirectives,
   everySelectionSetHasTypename,
 } from "@/test/helpers";
 
-describe("compiler: compileToPlan (fragments)", () => {
+describe("compiler: compilePlan (fragments)", () => {
   it("compiles a simple User fragment (no args) with selectionMap", () => {
     const FRAG = gql`
       fragment UserFields on User {
@@ -16,7 +16,7 @@ describe("compiler: compileToPlan (fragments)", () => {
       }
     `;
 
-    const plan = compileToPlan(FRAG);
+    const plan = compilePlan(FRAG);
 
     expect(plan.__kind).toBe("CachePlanV1");
     expect(plan.operation).toBe("fragment");
@@ -57,7 +57,7 @@ describe("compiler: compileToPlan (fragments)", () => {
       }
     `;
 
-    const plan = compileToPlan(FRAG);
+    const plan = compilePlan(FRAG);
 
     expect(plan.operation).toBe("fragment");
     expect(plan.rootTypename).toBe("User");
@@ -89,7 +89,7 @@ describe("compiler: compileToPlan (fragments)", () => {
       fragment A on User { id }
       fragment B on User { email }
     `;
-    expect(() => compileToPlan(DOC)).toThrowError();
+    expect(() => compilePlan(DOC)).toThrowError();
   });
 
   it("fragment with explicit @connection(key: ...) captures the key", () => {
@@ -101,7 +101,7 @@ describe("compiler: compileToPlan (fragments)", () => {
         }
       }
     `;
-    const plan = compileToPlan(FRAG);
+    const plan = compilePlan(FRAG);
     const feed = plan.rootSelectionMap!.get("feed")!;
     expect(feed.isConnection).toBe(true);
     expect(feed.connectionKey).toBe("Feed");

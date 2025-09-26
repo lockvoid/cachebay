@@ -1,13 +1,13 @@
 // test/unit/compiler/compile-formats.test.ts
 import { describe, it, expect } from "vitest";
 import gql from "graphql-tag";
-import { compileToPlan } from "@/src/compiler";
+import { compilePlan } from "@/src/compiler";
 import {
   collectConnectionDirectives,
   everySelectionSetHasTypename,
 } from "@/test/helpers";
 
-describe("compiler: compileToPlan — accepts string | gql(DocumentNode) | plan", () => {
+describe("compiler: compilePlan — accepts string | gql(DocumentNode) | plan", () => {
   it("accepts a raw GraphQL string", () => {
     const QUERY_STR = `
       query User($id: ID!) {
@@ -18,7 +18,7 @@ describe("compiler: compileToPlan — accepts string | gql(DocumentNode) | plan"
       }
     `;
 
-    const plan = compileToPlan(QUERY_STR);
+    const plan = compilePlan(QUERY_STR);
 
     expect(plan.__kind).toBe("CachePlanV1");
     expect(plan.operation).toBe("query");
@@ -43,7 +43,7 @@ describe("compiler: compileToPlan — accepts string | gql(DocumentNode) | plan"
       }
     `;
 
-    const plan = compileToPlan(QUERY_GQL);
+    const plan = compilePlan(QUERY_GQL);
 
     expect(plan.__kind).toBe("CachePlanV1");
     expect(plan.operation).toBe("query");
@@ -61,8 +61,8 @@ describe("compiler: compileToPlan — accepts string | gql(DocumentNode) | plan"
     const DOC = `
       query Q { ping { value } }
     `;
-    const plan1 = compileToPlan(DOC);
-    const plan2 = compileToPlan(plan1);
+    const plan1 = compilePlan(DOC);
+    const plan2 = compilePlan(plan1);
 
     // exact same object instance is passed through
     expect(plan2).toBe(plan1);

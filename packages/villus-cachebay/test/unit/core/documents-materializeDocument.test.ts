@@ -345,7 +345,7 @@ const canComments = (postId: string) => `@connection.Post:${postId}.comments({})
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("materializeDocument", () => {
+describe('MaterializeDocument', () => {
   let graph: ReturnType<typeof createGraph>;
   let planner: ReturnType<typeof createPlanner>;
   let canonical: ReturnType<typeof makeCanonical>;
@@ -360,24 +360,24 @@ describe("materializeDocument", () => {
     documents = makeDocuments(graph, planner, canonical, views);
   });
 
-  it("USER_QUERY — user node reactive when read directly; materialized shape ok", () => {
+  it('materializes user node reactively with correct shape', () => {
     graph.putRecord("@", { id: "@", __typename: "@", 'user({"id":"u1"})': { __ref: "User:u1" } });
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
 
-    const view = documents.materializeDocument({ document: USER_QUERY, variables: { id: "u1" } });
+    const userView = documents.materializeDocument({ document: USER_QUERY, variables: { id: "u1" } });
 
-    expect(view).toEqual({
+    expect(userView).toEqual({
       user: { __typename: "User", id: "u1", email: "u1@example.com" },
     });
 
-    const userProxy = graph.materializeRecord("User:u1");
-    expect(isReactive(userProxy)).toBe(true);
+    const userRecord = graph.materializeRecord("User:u1");
+    expect(isReactive(userRecord)).toBe(true);
 
     graph.putRecord("User:u1", { email: "u1+updated@example.com" });
-    expect(userProxy.email).toBe("u1+updated@example.com");
+    expect(userRecord.email).toBe("u1+updated@example.com");
   });
 
-  it("USERS_QUERY — canonical connection reactive (edges reactive; pageInfo not); node reactive; updates flow via canonical", () => {
+  it('materializes users connection with reactive edges and nodes', () => {
     // Seed edge records for the leader page (after:null)
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
     graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "u2@example.com" });
@@ -401,26 +401,23 @@ describe("materializeDocument", () => {
       edges: [{ __ref: e0 }, { __ref: e1 }],
     });
 
-    const view = documents.materializeDocument({
+    const usersView = documents.materializeDocument({
       document: USERS_QUERY,
       variables: { usersRole: "admin", first: 2, after: null },
     });
 
-    // Canonical view
-    expect(isReactive(view.users)).toBe(true);
-    expect(isReactive(view.users.pageInfo)).toBe(false);
+    expect(isReactive(usersView.users)).toBe(true);
+    expect(isReactive(usersView.users.pageInfo)).toBe(false);
 
-    // edges reactive; node reactive
-    expect(isReactive(view.users.edges[0])).toBe(true);
-    const node0 = view.users.edges[0].node;
-    expect(isReactive(node0)).toBe(true);
+    expect(isReactive(usersView.users.edges[0])).toBe(true);
+    const userNode = usersView.users.edges[0].node;
+    expect(isReactive(userNode)).toBe(true);
 
-    // reactive update through CANONICAL
     graph.putRecord(canKey, { pageInfo: { endCursor: "u3" } });
-    expect(view.users.pageInfo.endCursor).toBe("u3");
+    expect(usersView.users.pageInfo.endCursor).toBe("u3");
 
     graph.putRecord("User:u1", { email: "u1+updated@example.com" });
-    expect(node0.email).toBe("u1+updated@example.com");
+    expect(userNode.email).toBe("u1+updated@example.com");
   });
 
   it("USER_POSTS_QUERY — nested posts connection (canonical) reactive; totals/score reactive; node & author reactive", () => {

@@ -87,7 +87,7 @@ function buildNetworkQuery(doc: DocumentNode): DocumentNode {
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
-/* Public: compileToPlan(document)                                            */
+/* Public: compilePlan(document)                                            */
 /* ────────────────────────────────────────────────────────────────────────── */
 
 /**
@@ -98,7 +98,7 @@ function buildNetworkQuery(doc: DocumentNode): DocumentNode {
  * - Else if it has exactly one FragmentDefinition → compiled as a "fragment".
  * - Else → throws.
  */
-export const compileToPlan = (
+export const compilePlan = (
   documentOrStringOrPlan: string | DocumentNode | CachePlanV1
 ): CachePlanV1 => {
   // Precompiled plan? done.
@@ -162,5 +162,5 @@ export const compileToPlan = (
     };
   }
 
-  throw new Error("compileToPlan: document has no OperationDefinition.");
+  throw new Error("compilePlan: document has no OperationDefinition.");
 };

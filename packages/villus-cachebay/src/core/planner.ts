@@ -1,5 +1,5 @@
 import type { DocumentNode } from "graphql";
-import { compileToPlan, isCachePlanV1, type CachePlanV1 } from "../compiler";
+import { compilePlan, isCachePlanV1, type CachePlanV1 } from "../compiler";
 
 export type PlannerInstance = ReturnType<typeof createPlanner>;
 
@@ -17,7 +17,7 @@ export const createPlanner = () => {
     if (typeof docOrPlan === "string") {
       const hit = strCache.get(docOrPlan);
       if (hit) return hit;
-      const plan = compileToPlan(docOrPlan); // compileToPlan now accepts strings
+      const plan = compilePlan(docOrPlan); // compilePlan now accepts strings
       strCache.set(docOrPlan, plan);
       return plan;
     }
@@ -25,7 +25,7 @@ export const createPlanner = () => {
     // DocumentNode: use WeakMap
     const hit = docCache.get(docOrPlan);
     if (hit) return hit;
-    const plan = compileToPlan(docOrPlan);
+    const plan = compilePlan(docOrPlan);
     docCache.set(docOrPlan, plan);
     return plan;
   };

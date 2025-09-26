@@ -1,6 +1,6 @@
 import { visit, Kind, type DocumentNode } from "graphql";
 import gql from "graphql-tag";
-import { compileToPlan } from "@/src/compiler/compile";
+import { compilePlan } from "@/src/compiler/compile";
 import { ROOT_ID } from "@/src/core/constants";
 
 export const collectConnectionDirectives = (doc: DocumentNode): string[] => {
@@ -32,6 +32,45 @@ export const everySelectionSetHasTypename = (doc: DocumentNode): boolean => {
 
 
 export const TEST_QUERIES = {
+  USER_SIMPLE: gql`
+    query UserQuery($id: ID!) {
+      user(id: $id) {
+        id
+        email
+      }
+    }
+  `,
+  USERS_SIMPLE: gql`
+    query UsersQuery($usersRole: String, $usersFirst: Int, $usersAfter: String) {
+      users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
+        pageInfo {
+          startCursor
+          endCursor
+          hasNextPage
+          hasPreviousPage
+        }
+        edges {
+          cursor
+          node {
+            id
+            email
+          }
+        }
+      }
+    }
+  `,
+  USER_USERS_MIXED: gql`
+    query Mixed($id: ID!, $usersRole: String, $usersFirst: Int, $usersAfter: String) {
+      user(id: $id) {
+        id
+        email
+      }
+      users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
+        pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+        edges { cursor node { id } }
+      }
+    }
+  `,
   POSTS_WITH_CONNECTION: gql`
     query Q($postsCategory: String, $postsFirst: Int, $postsAfter: String) {
       posts(category: $postsCategory, first: $postsFirst, after: $postsAfter)
@@ -81,5 +120,5 @@ export const TEST_QUERIES = {
 } as const;
 
 export const createTestPlan = (query: DocumentNode) => {
-  return compileToPlan(query);
+  return compilePlan(query);
 };
