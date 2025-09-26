@@ -5,6 +5,27 @@ import { compilePlan } from "@/src/compiler/compile";
 import { ROOT_ID } from "@/src/core/constants";
 import { createGraph } from "@/src/core/graph";
 
+export function readCanonicalEdges(graph: ReturnType<typeof createGraph>, canonicalKey: string) {
+  const page = graph.getRecord(canonicalKey) || {};
+  const refs = Array.isArray(page.edges) ? page.edges : [];
+  const out: Array<{ edgeRef: string; nodeKey: string; meta: Record<string, any> }> = [];
+  for (let i = 0; i < refs.length; i++) {
+    const edgeRef = refs[i]?.__ref;
+    if (!edgeRef) continue;
+    const e = graph.getRecord(edgeRef) || {};
+    out.push({
+      edgeRef,
+      nodeKey: e?.node?.__ref,
+      meta: Object.fromEntries(
+        Object.keys(e || {})
+          .filter((k) => k !== "cursor" && k !== "node" && k !== "__typename")
+          .map((k) => [k, e[k]])
+      ),
+    });
+  }
+  return out;
+}
+
 const stableStringify = (obj: any) => {
   if (obj === null || typeof obj !== "object") return JSON.stringify(obj);
   if (Array.isArray(obj)) return `[${obj.map(stableStringify).join(",")}]`;

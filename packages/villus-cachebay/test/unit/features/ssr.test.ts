@@ -9,7 +9,7 @@ describe("SSR", () => {
   let ssr: ReturnType<typeof createSSR>;
 
   beforeEach(() => {
-    graph = createGraph({});
+    graph = createGraph();
     ssr = createSSR({ hydrationTimeout: 0 }, { graph });
   });
 

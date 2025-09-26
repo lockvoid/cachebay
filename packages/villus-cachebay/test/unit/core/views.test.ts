@@ -8,7 +8,7 @@ describe("Views", () => {
   let views: ReturnType<typeof createViews>;
 
   beforeEach(() => {
-    graph = createGraph({});
+    graph = createGraph();
     views = createViews({ graph });
   });
 

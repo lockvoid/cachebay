@@ -43,7 +43,7 @@ describe('Canonical', () => {
   }
 
   beforeEach(() => {
-    graph = createGraph({});
+    graph = createGraph();
     optimistic = createOptimistic({ graph });
     canonical = createCanonical({ graph, optimistic });
   });

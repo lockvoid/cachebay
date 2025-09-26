@@ -8,7 +8,7 @@ describe("Inspect", () => {
   let inspect: ReturnType<typeof createInspect>;
 
   beforeEach(() => {
-    graph = createGraph({});
+    graph = createGraph();
     inspect = createInspect({ graph });
   });
 
@@ -23,7 +23,7 @@ describe("Inspect", () => {
       graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1" });
 
       const connectionPageKey = '@.User:u1.posts({"after":null,"category":"tech","first":1})';
-      
+
       seedConnectionPage(
         graph,
         connectionPageKey,
@@ -39,7 +39,7 @@ describe("Inspect", () => {
       expect(graphRecordKeys).toContain("User:u1");
       expect(graphRecordKeys).toContain("Post:p1");
       expect(graphRecordKeys).toContain(connectionPageKey);
-      
+
       const edgeRecordKeys = graphRecordKeys.filter((key) => key.includes(".edges."));
       expect(edgeRecordKeys.length).toBe(1);
     });
@@ -129,7 +129,7 @@ describe("Inspect", () => {
     it("filters all edge records when no pageKey provided", () => {
       const userPostsPageKey = '@.User:u1.posts({"first":1})';
       const techPostsPageKey = '@.posts({"category":"tech"})';
-      
+
       seedConnectionPage(
         graph,
         userPostsPageKey,
@@ -152,7 +152,7 @@ describe("Inspect", () => {
     it("filters edge records for specific page when pageKey provided", () => {
       const userPostsPageKey = '@.User:u1.posts({"first":2})';
       const techPostsPageKey = '@.posts({"category":"tech"})';
-      
+
       seedConnectionPage(
         graph,
         userPostsPageKey,
