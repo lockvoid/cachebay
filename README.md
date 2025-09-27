@@ -6,7 +6,6 @@ A tiny (20KB gzip), instance-scoped cache layer for **Villus** that gives you:
 
 - **Small & focused APIs.** Fragments, optimistic edits, and Relay connections — without ceremony.
 - **Fast rendering.** Microtask-batched updates; stable Relay views that don’t churn arrays and minimize re-renders.
-- **Normalized entities** — one source of truth keyed by `__typename:id`.
 - **Relay-style connections** — append/prepend/replace, edge de-duplication by node key, reactive `pageInfo`/meta, and **no array churn**.
 - **Optimistic updates that stack** — layered commits/reverts for entities *and* connections (add/remove/update pageInfo) with clean rollback.
 - **SSR that just works** — dehydrate/hydrate; first client mount renders from cache without a duplicate request; clean Suspense behavior.
