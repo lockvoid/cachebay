@@ -1,4 +1,3 @@
-// test/integration/optimistic.integration.test.ts
 import { describe, it, expect } from "vitest";
 import { defineComponent, h, computed } from "vue";
 import gql from "graphql-tag";
@@ -11,38 +10,13 @@ import {
   type Route,
   fixtures,
   operations,
+  rowsByClass,
+  rowsNoPI,
+  CanonPosts,
+  PostsHarness,
+  POSTS_APPEND_OPTIMISTIC,
 } from "@/test/helpers";
 import { createCache } from "@/src/core/internals";
-
-/* ────────────────────────────────────────────────────────────────────────────
- * Helpers
- * -------------------------------------------------------------------------- */
-
-const rowsByClass = (wrapper: any, cls = ".row") =>
-  wrapper.findAll(cls).map((n: any) => n.text());
-
-const rowsNoPI = (wrapper: any) =>
-  wrapper.findAll("div:not(.pi)").map((n: any) => n.text());
-
-/* ────────────────────────────────────────────────────────────────────────────
- * PART 1 — Optimistic updates (entities & canonical connections)
- * -------------------------------------------------------------------------- */
-
-const CanonPosts = defineComponent({
-  name: "CanonPosts",
-  props: { first: Number, after: String },
-  setup(props) {
-    const { data } = useQuery({
-      query: operations.POSTS_QUERY,
-      variables: props,
-      cachePolicy: "cache-first",
-    });
-    return () =>
-      (data.value?.posts?.edges || []).map((e: any) =>
-        h("div", { class: "row", key: e?.node?.id }, e?.node?.title || "")
-      );
-  },
-});
 
 const FRAG_POST = operations.POST_FRAGMENT;
 
@@ -272,38 +246,7 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
  * PART 2 — limit window (leader collapse + optimistic reapply)
  * -------------------------------------------------------------------------- */
 
-const POSTS_APPEND = gql`
-  query PostsAppend($filter: String, $first: Int, $after: String) {
-    posts(filter: $filter, first: $first, after: $after)
-      @connection(mode: "infinite", args: ["filter"]) {
-      __typename
-      edges { __typename cursor node { __typename id title } }
-      pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
-    }
-  }
-`;
 
-const PostsHarness = (
-  queryDoc: any,
-  cachePolicy: "cache-first" | "cache-and-network" | "network-only" = "cache-and-network"
-) =>
-  defineComponent({
-    name: "PostsHarness",
-    props: { filter: String, first: Number, after: String },
-    setup(props) {
-      const vars = computed(() => {
-        const v: Record<string, any> = { filter: props.filter, first: props.first, after: props.after };
-        Object.keys(v).forEach((k) => v[k] === undefined && delete v[k]);
-        return v;
-      });
-      const { data } = useQuery({ query: queryDoc, variables: vars, cachePolicy });
-      return () => {
-        const edges = (data?.value?.posts?.edges ?? []).map((e: any) => h("div", {}, e?.node?.title || ""));
-        const pi = h("div", { class: "pi" }, JSON.stringify(data?.value?.posts?.pageInfo ?? {}));
-        return [...edges, pi];
-      };
-    },
-  });
 
 describe("Integration • limit window (leader collapse + optimistic reapply)", () => {
   it("full flow: pages, optimistic remove, filters, window growth, late page change", async () => {
@@ -362,7 +305,7 @@ describe("Integration • limit window (leader collapse + optimistic reapply)", 
       },
     ];
 
-    const Comp = PostsHarness(POSTS_APPEND, "cache-and-network");
+    const Comp = PostsHarness(POSTS_APPEND_OPTIMISTIC, "cache-and-network");
     const { wrapper, fx, cache } = await mountWithClient(Comp, routes, undefined, { filter: "A", first: 3, after: null });
 
     await delay(6);

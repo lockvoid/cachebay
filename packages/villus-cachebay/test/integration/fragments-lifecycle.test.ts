@@ -1,12 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { defineComponent, h, ref, isReactive } from "vue";
-import gql from "graphql-tag";
+import { defineComponent, ref, isReactive, h } from "vue";
 import { mount } from "@vue/test-utils";
-import { createCache, type CachebayInstance } from "@/src/core/internals";
+import { createCache } from "@/src/core/internals";
+import { operations, fixtures, FRAG_USER_POSTS_PAGE, FRAG_USER_NAME, tick } from "@/test/helpers";
+import type { CachebayInstance } from "@/src/core/types";
 import { provideCachebay } from "@/src/core/plugin";
 import { useFragment } from "@/src/composables/useFragment";
-import { tick } from "@/test/helpers";
-import { operations } from "@/test/helpers";
 
 const provide = (cache: CachebayInstance) => ({
   install(app: any) {
@@ -90,15 +89,6 @@ describe("Fragments lifecycle", () => {
   it("fragment with nested connection: writes & reads a page via fragment (selection stored)", () => {
     const cache: CachebayInstance = createCache();
 
-    const FRAG_USER_POSTS_PAGE = gql`
-      fragment UserPostsPage on User {
-        posts(first: 2) @connection {
-          __typename
-          edges { __typename cursor node { __typename id title } }
-          pageInfo { __typename hasNextPage endCursor }
-        }
-      }
-    `;
 
     cache.writeFragment({
       id: "User:1",
@@ -141,7 +131,6 @@ describe("Fragments lifecycle", () => {
     const cache: CachebayInstance = createCache();
 
     // Use a tiny local fragment for "name", since operations.USER_FRAGMENT is email-based
-    const FRAG_USER_NAME = gql`fragment U on User { id name }`;
 
     cache.writeFragment({
       id: "User:10",
@@ -176,7 +165,6 @@ describe("Fragments lifecycle", () => {
   it("multiple fragments manually • read multiple via repeated readFragment calls", async () => {
     const cache: CachebayInstance = createCache();
 
-    const FRAG_USER_NAME = gql`fragment U on User { id name }`;
 
     cache.writeFragment({
       id: "User:1",
@@ -207,7 +195,6 @@ describe("Fragments lifecycle", () => {
   it("multiple fragments manual • missing ones materialize as empty reactive views — filter by id to select present", () => {
     const cache: CachebayInstance = createCache();
 
-    const FRAG_USER_NAME = gql`fragment U on User { id name }`;
 
     cache.writeFragment({
       id: "User:1",

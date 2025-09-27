@@ -1,73 +1,7 @@
-// test/integration/error-handling.test.ts
 import { describe, it, expect } from 'vitest';
-import { defineComponent, h, computed, watch } from 'vue';
-import { mountWithClient, delay, type Route } from '@/test/helpers';
-import { operations, fixtures } from '@/test/helpers';
-
-/* -----------------------------------------------------------------------------
- * Harness: records non-empty renders and error events
- * -------------------------------------------------------------------------- */
-function MakeHarness(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-network') {
-  return defineComponent({
-    props: {
-      first: Number,
-      after: String,
-      renders: Array,
-      errors: Array,
-      empties: Array,
-      name: String,
-    },
-    setup(props) {
-      const { useQuery } = require('villus');
-
-      const vars = computed(() => {
-        const v: any = {};
-        if (props.first != null) v.first = props.first;
-        if (props.after != null) v.after = props.after;
-        return v;
-      });
-
-      const { data, error } = useQuery({
-        query: operations.POSTS_QUERY, // DocumentNode
-        variables: vars,
-        cachePolicy,
-      });
-
-      // Record meaningful payloads
-      watch(
-        () => data.value,
-        (v) => {
-          const edges = v?.posts?.edges;
-          if (Array.isArray(edges) && edges.length > 0) {
-            (props.renders as any[]).push(edges.map((e: any) => e?.node?.title || ''));
-          } else if (v && v.posts && Array.isArray(v.posts.edges) && v.posts.edges.length === 0) {
-            (props.empties as any[]).push('empty');
-          }
-        },
-        { immediate: true },
-      );
-
-      // Record GraphQL/transport errors once
-      watch(
-        () => error.value,
-        (e) => {
-          if (e) (props.errors as any[]).push(e.message || 'error');
-        },
-        { immediate: true },
-      );
-
-      // Render simple rows (no outer wrapper)
-      return () =>
-        (data?.value?.posts?.edges ?? []).map((e: any) =>
-          h('div', {}, e?.node?.title || ''),
-        );
-    },
-  });
-}
-
-/* -----------------------------------------------------------------------------
- * Tests
- * -------------------------------------------------------------------------- */
+import { defineComponent, h } from 'vue';
+import { mountWithClient, type Route, MakeHarnessErrorHandling } from '@/test/helpers/integration';
+import { operations, fixtures, delay } from '@/test/helpers';
 
 describe('Error Handling', () => {
   it('GraphQL/transport error: recorded once; no empty emissions', async () => {
@@ -83,7 +17,7 @@ describe('Error Handling', () => {
     const errors: string[] = [];
     const empties: string[] = [];
 
-    const App = MakeHarness('network-only');
+    const App = MakeHarnessErrorHandling('network-only');
     const { fx } = await mountWithClient(
       defineComponent({
         setup() {
@@ -126,7 +60,7 @@ describe('Error Handling', () => {
     const errors: string[] = [];
     const empties: string[] = [];
 
-    const App = MakeHarness('network-only');
+    const App = MakeHarnessErrorHandling('network-only');
     const { wrapper, fx } = await mountWithClient(
       defineComponent({
         props: ['first'],
@@ -178,7 +112,7 @@ describe('Error Handling', () => {
     const errors: string[] = [];
     const empties: string[] = [];
 
-    const App = MakeHarness('network-only');
+    const App = MakeHarnessErrorHandling('network-only');
     const { wrapper, fx } = await mountWithClient(
       defineComponent({
         props: ['first', 'after'],
@@ -245,7 +179,7 @@ describe('Error Handling', () => {
     const errors: string[] = [];
     const empties: string[] = [];
 
-    const App = MakeHarness('network-only');
+    const App = MakeHarnessErrorHandling('network-only');
     const { wrapper, fx } = await mountWithClient(
       defineComponent({
         props: ['first'],

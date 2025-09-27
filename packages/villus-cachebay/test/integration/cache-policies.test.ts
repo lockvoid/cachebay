@@ -8,71 +8,11 @@ import {
   type Route,
   fixtures,
   operations,
+  rows,
+  UsersList,
+  UserTitle,
+  UserPostComments,
 } from "@/test/helpers";
-
-// tiny helper to read rendered rows (each row is a bare <div> with text)
-const rows = (wrapper: any) =>
-  wrapper.findAll("div").map((n: any) => n.text()).filter((t: string) => t !== "");
-
-/* -----------------------------------------------------------------------------
- * Components
- * -------------------------------------------------------------------------- */
-
-const UsersList = (
-  policy: "cache-first" | "cache-and-network" | "network-only" | "cache-only",
-  vars: any
-) =>
-  defineComponent({
-    name: "UsersList",
-    setup() {
-      const { useQuery } = require("villus");
-      const { data } = useQuery({ query: operations.USERS_QUERY, variables: vars, cachePolicy: policy });
-      return () => {
-        const usersEdges = data.value?.users?.edges ?? [];
-        return usersEdges.map((e: any) => h("div", {}, e?.node?.email ?? ""));
-      };
-    },
-  });
-
-const UserTitle = (
-  policy: "cache-first" | "cache-and-network" | "network-only" | "cache-only",
-  id: string
-) =>
-  defineComponent({
-    name: "UserTitle",
-    setup() {
-      const { useQuery } = require("villus");
-      const { data } = useQuery({ query: operations.USER_QUERY, variables: { id }, cachePolicy: policy });
-      return () => h("div", {}, data.value?.user?.email ?? "");
-    },
-  });
-
-// Nested: User -> Posts(tech) -> first post -> Comments (uuid identity)
-// Renders comment texts
-const UserPostComments = (
-  policy: "cache-first" | "cache-and-network" | "network-only" | "cache-only"
-) =>
-  defineComponent({
-    name: "UserPostComments",
-    setup() {
-      const { useQuery } = require("villus");
-      const vars = {
-        id: "u1",
-        postsCategory: "tech",
-        postsFirst: 1,
-        postsAfter: null,
-        commentsFirst: 2,
-        commentsAfter: null,
-      };
-      const { data } = useQuery({ query: operations.USER_POSTS_COMMENTS_QUERY, variables: vars, cachePolicy: policy });
-      return () => {
-        const postEdges = data.value?.user?.posts?.edges ?? [];
-        const firstPost = postEdges[0]?.node;
-        const commentEdges = firstPost?.comments?.edges ?? [];
-        return commentEdges.map((e: any) => h("div", {}, e?.node?.text ?? ""));
-      };
-    },
-  });
 
 /* -----------------------------------------------------------------------------
  * Tests
