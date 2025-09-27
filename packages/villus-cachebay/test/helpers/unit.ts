@@ -916,6 +916,39 @@ export const createTestPlan = (query: DocumentNode) => {
   return compilePlan(query);
 };
 
+// Helper to create field selection with automatic mapping
+export const createSelection = (config: Record<string, any>): { fields: PlanField[], map: Map<string, PlanField> } => {
+  const fields: PlanField[] = [];
+  const map = new Map<string, PlanField>();
+  
+  const processField = (name: string, spec: any): PlanField => {
+    if (spec === true || spec === null || spec === undefined) {
+      // Simple field
+      return createPlanField(name);
+    } else if (spec === 'connection') {
+      // Connection field
+      return createConnectionPlanField(name);
+    } else if (Array.isArray(spec)) {
+      // Field with children (array of field names)
+      const children = spec.map(childName => createPlanField(childName));
+      return createPlanField(name, false, children);
+    } else if (typeof spec === 'object') {
+      // Nested object - recursively process
+      const childSelection = createSelection(spec);
+      return createPlanField(name, false, childSelection.fields);
+    }
+    return createPlanField(name);
+  };
+  
+  for (const [name, spec] of Object.entries(config)) {
+    const field = processField(name, spec);
+    fields.push(field);
+    map.set(field.responseKey, field);
+  }
+  
+  return { fields, map };
+};
+
 export const USERS_POSTS_QUERY_PLUGIN = gql`
   query UsersPosts(
     $usersRole: String

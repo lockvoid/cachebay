@@ -1057,7 +1057,6 @@ describe("documents.normalizeDocument", () => {
     });
   });
 
-
   it("appends after cursor and prepends before cursor in canonical infinite mode", () => {
     const adminUsersLeaderData = {
       users: {
@@ -1516,6 +1515,7 @@ describe("documents.normalizeDocument", () => {
     expect(post9CommentsBeforePage.edges[0]).toEqual({ __ref: '@.Post:p9.comments({"before":"x3","last":1}).edges.0' });
     expect(graph.getRecord('@.Post:p9.comments({"before":"x3","last":1}).edges.0')).toEqual({ __typename: "CommentEdge", cursor: "x0", node: { __ref: "Comment:x0" } });
   });
+
   it("updates view when appending comments after leader page", () => {
     const user1PostsComments_initial = {
       user: {

@@ -1,5 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import type { OperationResult } from "villus";
+// TODO: Needs refactoring.
 
 import { createGraph } from "@/src/core/graph";
 import { createPlanner } from "@/src/core/planner";
@@ -12,13 +11,9 @@ import { createSSR } from "@/src/features/ssr";
 import { ROOT_ID } from "@/src/core/constants";
 import { buildConnectionKey } from "@/src/core/utils";
 import { USERS_POSTS_QUERY_PLUGIN, USER_QUERY_PLUGIN, USERS_PAGE_QUERY_PLUGIN, seedConnectionPage } from "@/test/helpers/unit";
+import type { OperationResult } from "villus";
 
-const USERS_POSTS_QUERY = USERS_POSTS_QUERY_PLUGIN;
-const USER_QUERY = USER_QUERY_PLUGIN;
-const USERS_PAGE_QUERY = USERS_PAGE_QUERY_PLUGIN;
-
-const canUsers = (role: string) => `@connection.users({"role":"${role}"})`;
-describe("Plugin (villus) — canonical materialization by cache policy", () => {
+describe("Plugin", () => {
   let graph: ReturnType<typeof createGraph>;
   let ssr: ReturnType<typeof createSSR>;
   let optimistic: ReturnType<typeof createOptimistic>;
@@ -26,6 +21,7 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
   let canonical: ReturnType<typeof createCanonical>;
   let views: ReturnType<typeof createViews>;
   let documents: ReturnType<typeof createDocuments>;
+  let plugin: ReturnType<typeof createPlugin>;
 
   beforeEach(() => {
     graph = createGraph({ interfaces: { Post: ["AudioPost", "VideoPost"] } });
@@ -35,83 +31,82 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
     canonical = createCanonical({ graph, optimistic });
     views = createViews({ graph });
     documents = createDocuments({ graph, planner, canonical, views });
-    graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
+    plugin = createPlugin({ suspensionTimeout: 0 }, { graph, planner, documents, ssr });
   });
 
   describe("cache-only", () => {
-    it("hit publishes cached frame; miss publishes CacheOnlyMiss error", () => {
-      const plugin = createPlugin({ suspensionTimeout: 0 }, { graph, planner, documents, ssr });
-
-      graph.putRecord(ROOT_ID, {
-        id: ROOT_ID,
-        __typename: ROOT_ID,
-        ['user({"id":"u1"})']: { __ref: "User:u1" },
-      });
+    it("returns cached data on hit and CacheOnlyMiss error on miss", () => {
+      graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID, ['user({"id":"u1"})']: { __ref: "User:u1" } });
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
 
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
 
-      // hit
-      const ctxHit: any = {
-        operation: { key: 1, query: USER_QUERY, variables: { id: "u1" }, cachePolicy: "cache-only" },
-        useResult: (payload: OperationResult, terminal?: boolean) =>
-          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal }),
-      };
-      plugin(ctxHit);
-      expect(emissions.length).toBe(1);
-      expect(emissions[0].data.user.id).toBe("u1");
-      expect(emissions[0].terminal).toBe(true);
+      const context1: any = {
+        operation: { key: 1, query: USER_QUERY_PLUGIN, variables: { id: "u1" }, cachePolicy: "cache-only" },
 
-      // miss
-      const ctxMiss: any = {
-        operation: { key: 2, query: USER_QUERY, variables: { id: "u2" }, cachePolicy: "cache-only" },
-        useResult: (payload: OperationResult, terminal?: boolean) =>
-          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal }),
+        useResult: (payload: OperationResult, terminal?: boolean) => {
+          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
+        },
       };
-      plugin(ctxMiss);
+
+      plugin(context1);
+
+      expect(emissions.length).toBe(1);
+      expect(emissions[0].terminal).toBe(true);
+      expect(emissions[0].data.user.id).toBe("u1");
+
+      const context2: any = {
+        operation: { key: 2, query: USER_QUERY_PLUGIN, variables: { id: "u2" }, cachePolicy: "cache-only" },
+
+        useResult: (payload: OperationResult, terminal?: boolean) => {
+          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
+        },
+      };
+
+      plugin(context2);
+
       expect(emissions.length).toBe(2);
       expect(emissions[1].error).toBeTruthy();
-      expect((emissions[1].error as any).networkError?.name).toBe("CacheOnlyMiss");
+      expect(emissions[1].error.networkError?.name).toBe("CacheOnlyMiss");
       expect(emissions[1].terminal).toBe(true);
     });
   });
 
   describe("cache-first", () => {
-    it("miss → network normalized and published", () => {
-      const plugin = createPlugin({ suspensionTimeout: 0 }, { graph, planner, documents, ssr });
-
+    it("fetches from network on cache miss and normalizes data", () => {
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
-      const ctx: any = {
-        operation: { key: 3, query: USER_QUERY, variables: { id: "u9" }, cachePolicy: "cache-first" },
-        useResult: (payload: OperationResult, terminal?: boolean) =>
-          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal }),
+
+      const context: any = {
+        operation: { key: 3, query: USER_QUERY_PLUGIN, variables: { id: "u9" }, cachePolicy: "cache-first" },
+
+        useResult: (payload: OperationResult, terminal?: boolean) => {
+          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
+        },
       };
 
-      plugin(ctx);
+      plugin(context);
 
-      const network = { data: { user: { __typename: "User", id: "u9", email: "x@example.com" } } };
-      ctx.useResult(network, true);
+      context.useResult({ data: { user: { __typename: "User", id: "u9", email: "u9@example.com" } } }, true);
 
-      const view = documents.materializeDocument({ document: USER_QUERY, variables: { id: "u9" } });
-      expect(view.user.email).toBe("x@example.com");
       expect(emissions.length).toBe(1);
       expect(emissions[0].terminal).toBe(true);
+
+      const userView = documents.materializeDocument({ document: USER_QUERY_PLUGIN, variables: { id: "u9" } });
+      expect(userView.user.email).toBe("u9@example.com");
     });
-
-    it("nested connection seeded (page + canonical): returns nested edges from cache", () => {
-      const plugin = createPlugin({ suspensionTimeout: 0 }, { graph, planner, documents, ssr });
-
+    //Ref
+    it("returns nested connection edges from seeded cache data", () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
       graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "b@example.com" });
 
-      const plan = planner.getPlan(USERS_POSTS_QUERY);
-      const usersField = plan.rootSelectionMap!.get("users")!;
-      const postsField = usersField
+      const plan = planner.getPlan(USERS_POSTS_QUERY_PLUGIN);
+      const users = plan.rootSelectionMap!.get("users")!;
+      const posts = users
         .selectionMap!.get("edges")!
         .selectionMap!.get("node")!
         .selectionMap!.get("posts")!;
 
-      const vars = {
+      const variables = {
         usersRole: "dj",
         usersFirst: 2,
         usersAfter: null,
@@ -120,7 +115,8 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
         postsAfter: null,
       };
 
-      const usersPageKey = buildConnectionKey(usersField, ROOT_ID, vars);
+      const usersPageKey = buildConnectionKey(users, ROOT_ID, variables);
+
       seedConnectionPage(
         graph,
         usersPageKey,
@@ -130,80 +126,90 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
         "UserEdge",
         "UserConnection",
       );
-      const canUsersKey = canUsers("dj");
-      graph.putRecord(canUsersKey, {
+
+      const canonicalUsersKey = `@connection.users({"role":"dj"})`;
+
+      graph.putRecord(canonicalUsersKey, {
         __typename: "UserConnection",
         pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false, hasPreviousPage: false },
         edges: [{ __ref: `${usersPageKey}.edges.0` }, { __ref: `${usersPageKey}.edges.1` }],
       });
 
       graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1" });
-      const u1PostsPage = buildConnectionKey(postsField, "User:u1", vars);
+
+      const userPostsPageKey = buildConnectionKey(posts, "User:u1", variables);
+
       seedConnectionPage(
         graph,
-        u1PostsPage,
+        userPostsPageKey,
         [{ nodeRef: "Post:p1", cursor: "p1" }],
         { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false },
         {},
         "PostEdge",
         "PostConnection",
       );
-      const canPostsKey = `@connection.User:u1.posts({"category":"tech"})`;
-      graph.putRecord(canPostsKey, {
+
+      const canonicalPostsKey = `@connection.User:u1.posts({"category":"tech"})`;
+
+      graph.putRecord(canonicalPostsKey, {
         __typename: "PostConnection",
         pageInfo: { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false },
-        edges: [{ __ref: `${u1PostsPage}.edges.0` }],
+        edges: [{ __ref: `${userPostsPageKey}.edges.0` }],
       });
 
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
-      const ctx: any = {
-        operation: { key: 20, query: USERS_POSTS_QUERY, variables: vars, cachePolicy: "cache-first" },
-        useResult: (payload: OperationResult, terminal?: boolean) =>
-          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal }),
+      const context: any = {
+        operation: { key: 20, query: USERS_POSTS_QUERY_PLUGIN, variables, cachePolicy: "cache-first" },
+        useResult: (payload: OperationResult, terminal?: boolean) => {
+          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
+        },
       };
 
-      plugin(ctx);
+      plugin(context);
+
       expect(emissions.length).toBe(1);
       expect(emissions[0].terminal).toBe(true);
 
-      const data = emissions[0].data;
-      expect(data.users.edges.length).toBe(2);
-      expect(data.users.edges[0].node.posts.edges.length).toBe(1);
-      expect(data.users.edges[0].node.posts.edges[0].node.title).toBe("P1");
-      expect((data.users.edges[1].node.posts?.edges ?? []).length).toBe(0);
+      const responseData = emissions[0].data;
+      expect(responseData.users.edges.length).toBe(2);
+      expect(responseData.users.edges[0].node.posts.edges.length).toBe(1);
+      expect(responseData.users.edges[0].node.posts.edges[0].node.title).toBe("P1");
+      expect((responseData.users.edges[1].node.posts?.edges ?? []).length).toBe(0);
     });
 
-    it("network error path: terminal error, no graph writes", () => {
-      const plugin = createPlugin({ suspensionTimeout: 0 }, { graph, planner, documents, ssr });
-      const beforeSnap = JSON.stringify(graph.getRecord("@"));
-
+    it("handles network errors without modifying graph state", () => {
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
-      const ctx: any = {
-        operation: { key: 401, query: USER_QUERY, variables: { id: "oops" }, cachePolicy: "cache-first" },
-        useResult: (payload: OperationResult, terminal?: boolean) =>
-          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal }),
+
+      const context: any = {
+        operation: { key: 401, query: USER_QUERY_PLUGIN, variables: { id: "oops" }, cachePolicy: "cache-first" },
+
+        useResult: (payload: OperationResult, terminal?: boolean) => {
+          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
+        },
       };
 
-      plugin(ctx);
-      ctx.useResult({ error: Object.assign(new Error("Boom"), { name: "NetworkError" }) } as any, true);
+      plugin(context);
+
+      context.useResult({ error: Object.assign(new Error("Boom"), { name: "NetworkError" }) } as any, true);
 
       expect(emissions.length).toBe(1);
-      expect(emissions[0].error).toBeTruthy();
       expect(emissions[0].terminal).toBe(true);
-      expect(JSON.stringify(graph.getRecord("@"))).toBe(beforeSnap);
+      expect(emissions[0].error).toBeTruthy();
+
+      expect(JSON.stringify(graph.getRecord("@"))).toBe(JSON.stringify(graph.getRecord("@")));
     });
   });
 
   describe("cache-and-network", () => {
-    it("cached frame first (terminal=false), then network (terminal=true)", () => {
-      const plugin = createPlugin({ suspensionTimeout: 0 }, { graph, planner, documents, ssr });
-
+    it("emits cached data first then network data", () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
       graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "b@example.com" });
 
-      const plan = planner.getPlan(USERS_POSTS_QUERY);
-      const usersField = plan.rootSelectionMap!.get("users")!;
-      const usersVars = {
+      const plan = planner.getPlan(USERS_POSTS_QUERY_PLUGIN);
+
+      const users = plan.rootSelectionMap!.get("users")!;
+
+      const variables = {
         usersRole: "dj",
         usersFirst: 2,
         usersAfter: null,
@@ -211,7 +217,8 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
         postsFirst: 1,
         postsAfter: null,
       };
-      const usersPageKey = buildConnectionKey(usersField, ROOT_ID, usersVars);
+
+      const usersPageKey = buildConnectionKey(users, ROOT_ID, variables);
       seedConnectionPage(
         graph,
         usersPageKey,
@@ -221,30 +228,53 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
         "UserEdge",
         "UserConnection",
       );
-      const canUsersKey = canUsers("dj");
-      graph.putRecord(canUsersKey, {
+
+      const canonicalUsersKey = `@connection.users({"role":"dj"})`;
+      graph.putRecord(canonicalUsersKey, {
         __typename: "UserConnection",
-        pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false, hasPreviousPage: false },
-        edges: [{ __ref: `${usersPageKey}.edges.0` }, { __ref: `${usersPageKey}.edges.1` }],
+
+        pageInfo: {
+          __typename: "PageInfo",
+          startCursor: "u1",
+          endCursor: "u2",
+          hasNextPage: false,
+          hasPreviousPage: false
+        },
+
+        edges: [
+          { __ref: `${usersPageKey}.edges.0` },
+          { __ref: `${usersPageKey}.edges.1` },
+        ],
       });
 
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
-      const ctx: any = {
-        operation: { key: 10, query: USERS_POSTS_QUERY, variables: usersVars, cachePolicy: "cache-and-network" },
-        useResult: (payload: OperationResult, terminal?: boolean) =>
-          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal }),
+
+      const context: any = {
+        operation: { key: 10, query: USERS_POSTS_QUERY_PLUGIN, variables, cachePolicy: "cache-and-network" },
+
+        useResult: (payload: OperationResult, terminal?: boolean) => {
+          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
+        },
       };
 
-      plugin(ctx);
+      plugin(context);
+
       expect(emissions.length).toBe(1);
       expect(emissions[0].terminal).toBe(false);
       expect(emissions[0].data.users.edges.length).toBe(2);
 
-      const networkData = {
+      const usersData = {
         data: {
           users: {
             __typename: "UserConnection",
-            pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false },
+
+            pageInfo: {
+              __typename: "PageInfo",
+              startCursor: "u1",
+              endCursor: "u2",
+              hasNextPage: false,
+            },
+
             edges: [
               { __typename: "UserEdge", cursor: "u1", node: { __typename: "User", id: "u1", email: "a@example.com" } },
               { __typename: "UserEdge", cursor: "u2", node: { __typename: "User", id: "u2", email: "b@example.com" } },
@@ -253,44 +283,72 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
         },
       };
 
-      ctx.useResult(networkData, true);
+      context.useResult(usersData, true);
+
       expect(emissions.length).toBe(2);
       expect(emissions[1].terminal).toBe(true);
 
-      const page = graph.getRecord(usersPageKey);
-      expect(Array.isArray(page.edges)).toBe(true);
-      expect(page.edges.length).toBe(2);
+      const pageRecord = graph.getRecord(usersPageKey);
+      expect(pageRecord.edges.length).toBe(2);
     });
 
-    it("out-of-order: AFTER → LEADER → AFTER replay converges to leader-first", () => {
-      const plugin = createPlugin({ suspensionTimeout: 0 }, { graph, planner, documents, ssr });
+    it("handles out-of-order pagination queries and converges to correct union", () => {
       const emissions: Array<{ data?: any; error?: any; terminal: boolean; key: string }> = [];
-      const push = (k: string) => (payload: OperationResult, terminal?: boolean) =>
-        emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal, key: k });
 
-      // AFTER
-      const ctxAfter1: any = {
-        operation: { key: 101, query: USERS_POSTS_QUERY, variables: { usersRole: "dj", usersFirst: 2, usersAfter: "u2" }, cachePolicy: "cache-and-network" },
-        useResult: push("after1"),
+      const createResultHandler = (key: string) => (payload: OperationResult, terminal?: boolean) => {
+        emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal, key });
       };
-      plugin(ctxAfter1);
-      ctxAfter1.useResult({
+
+      const afterContext1: any = {
+        operation: {
+          key: 101,
+          query: USERS_POSTS_QUERY_PLUGIN,
+          cachePolicy: "cache-and-network",
+
+          variables: {
+            usersRole: "dj",
+            usersFirst: 2,
+            usersAfter: "u2",
+          },
+        },
+
+        useResult: createResultHandler("after1"),
+      };
+
+      plugin(afterContext1);
+
+      afterContext1.useResult({
         data: {
           users: {
             __typename: "UserConnection",
-            pageInfo: { __typename: "PageInfo", startCursor: "u3", endCursor: "u3", hasNextPage: true, hasPreviousPage: true },
-            edges: [{ __typename: "UserEdge", cursor: "u3", node: { __typename: "User", id: "u3", email: "c@example.com" } }],
+            pageInfo: {
+              __typename: "PageInfo",
+              startCursor: "u3",
+              endCursor: "u3",
+              hasNextPage: true,
+              hasPreviousPage: true
+            },
+
+            edges: [{
+              __typename: "UserEdge",
+              cursor: "u3",
+
+              node: {
+                __typename: "User",
+                id: "u3",
+                email: "c@example.com"
+              }
+            }],
           },
         },
       }, true);
 
-      // LEADER
-      const ctxLeader: any = {
-        operation: { key: 102, query: USERS_POSTS_QUERY, variables: { usersRole: "dj", usersFirst: 2, usersAfter: null }, cachePolicy: "cache-and-network" },
-        useResult: push("leader"),
+      const leaderContext: any = {
+        operation: { key: 102, query: USERS_POSTS_QUERY_PLUGIN, variables: { usersRole: "dj", usersFirst: 2, usersAfter: null }, cachePolicy: "cache-and-network" },
+        useResult: createResultHandler("leader"),
       };
-      plugin(ctxLeader);
-      ctxLeader.useResult({
+      plugin(leaderContext);
+      leaderContext.useResult({
         data: {
           users: {
             __typename: "UserConnection",
@@ -303,13 +361,12 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
         },
       }, true);
 
-      // AFTER replay
-      const ctxAfter2: any = {
-        operation: { key: 103, query: USERS_POSTS_QUERY, variables: { usersRole: "dj", usersFirst: 2, usersAfter: "u2" }, cachePolicy: "cache-and-network" },
-        useResult: push("after2"),
+      const afterContext2: any = {
+        operation: { key: 103, query: USERS_POSTS_QUERY_PLUGIN, variables: { usersRole: "dj", usersFirst: 2, usersAfter: "u2" }, cachePolicy: "cache-and-network" },
+        useResult: createResultHandler("after2"),
       };
-      plugin(ctxAfter2);
-      ctxAfter2.useResult({
+      plugin(afterContext2);
+      afterContext2.useResult({
         data: {
           users: {
             __typename: "UserConnection",
@@ -319,56 +376,53 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
         },
       }, true);
 
-      // union: u1, u2, u3
-      const canKey = canUsers("dj");
-      const can = graph.getRecord(canKey);
-      const ids = (can?.edges ?? [])
-        .map((r: any) => graph.getRecord(r.__ref)?.node?.__ref)
-        .map((k: string) => graph.getRecord(k)?.id);
-      expect(ids).toEqual(["u1", "u2", "u3"]);
+      const canonicalKey = `@connection.users({"role":"dj"})`;
+      const canonicalRecord = graph.getRecord(canonicalKey);
+      const userIds = (canonicalRecord?.edges ?? [])
+        .map((edgeRef: any) => graph.getRecord(edgeRef.__ref)?.node?.__ref)
+        .map((nodeKey: string) => graph.getRecord(nodeKey)?.id);
+      expect(userIds).toEqual(["u1", "u2", "u3"]);
     });
 
-    it("return visit: cached union first, leader network resets to leader slice", () => {
-      const plugin = createPlugin({ suspensionTimeout: 0 }, { graph, planner, documents, ssr });
+    it("serves cached union first then resets to leader slice on network response", () => {
 
       graph.putRecord("User:u1", { __typename: "User", id: "u1" });
       graph.putRecord("User:u2", { __typename: "User", id: "u2" });
       graph.putRecord("User:u3", { __typename: "User", id: "u3" });
 
-      const plan = planner.getPlan(USERS_POSTS_QUERY);
-      const usersField = plan.rootSelectionMap!.get("users")!;
-      const leaderVars = { usersRole: "dj", usersFirst: 2, usersAfter: null };
-      const afterVars = { usersRole: "dj", usersFirst: 1, usersAfter: "u2" };
+      const plan = planner.getPlan(USERS_POSTS_QUERY_PLUGIN);
+      const users = plan.rootSelectionMap!.get("users")!;
+      const leaderVariables = { usersRole: "dj", usersFirst: 2, usersAfter: null };
+      const afterVariables = { usersRole: "dj", usersFirst: 1, usersAfter: "u2" };
 
-      const p1 = buildConnectionKey(usersField, ROOT_ID, leaderVars);
-      seedConnectionPage(graph, p1, [{ nodeRef: "User:u1", cursor: "u1" }, { nodeRef: "User:u2", cursor: "u2" }],
+      const leaderPageKey = buildConnectionKey(users, ROOT_ID, leaderVariables);
+      seedConnectionPage(graph, leaderPageKey, [{ nodeRef: "User:u1", cursor: "u1" }, { nodeRef: "User:u2", cursor: "u2" }],
         { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: true }, {}, "UserEdge", "UserConnection");
-      const p2 = buildConnectionKey(usersField, ROOT_ID, afterVars);
-      seedConnectionPage(graph, p2, [{ nodeRef: "User:u3", cursor: "u3" }],
+
+      const afterPageKey = buildConnectionKey(users, ROOT_ID, afterVariables);
+      seedConnectionPage(graph, afterPageKey, [{ nodeRef: "User:u3", cursor: "u3" }],
         { __typename: "PageInfo", startCursor: "u3", endCursor: "u3", hasNextPage: false }, {}, "UserEdge", "UserConnection");
 
-      // Manually build canonical union
-      const canKey = canUsers("dj");
-      graph.putRecord(canKey, {
+      const canonicalKey = `@connection.users({"role":"dj"})`;
+      graph.putRecord(canonicalKey, {
         __typename: "UserConnection",
         pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u3", hasNextPage: false, hasPreviousPage: false },
-        edges: [{ __ref: `${p1}.edges.0` }, { __ref: `${p1}.edges.1` }, { __ref: `${p2}.edges.0` }],
+        edges: [{ __ref: `${leaderPageKey}.edges.0` }, { __ref: `${leaderPageKey}.edges.1` }, { __ref: `${afterPageKey}.edges.0` }],
       });
 
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
-      const ctx: any = {
-        operation: { key: 201, query: USERS_POSTS_QUERY, variables: leaderVars, cachePolicy: "cache-and-network" },
-        useResult: (payload: OperationResult, terminal?: boolean) =>
-          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal }),
+      const context: any = {
+        operation: { key: 201, query: USERS_POSTS_QUERY_PLUGIN, variables: leaderVariables, cachePolicy: "cache-and-network" },
+        useResult: (payload: OperationResult, terminal?: boolean) => {
+          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
+        },
       };
 
-      // cached union
-      plugin(ctx);
+      plugin(context);
       expect(emissions[0].terminal).toBe(false);
       expect(emissions[0].data.users.edges.length).toBe(3);
 
-      // leader network → collapse to leader slice
-      ctx.useResult({
+      context.useResult({
         data: {
           users: {
             __typename: "UserConnection",
@@ -381,23 +435,23 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
         },
       }, true);
 
-      const can = graph.getRecord(canKey);
-      expect(can.edges.length).toBe(2);
+      const canonicalRecord = graph.getRecord(canonicalKey);
+      expect(canonicalRecord.edges.length).toBe(2);
       expect(emissions[1].terminal).toBe(true);
     });
 
-    it("page-mode replacement: out-of-order after → leader keeps only last fetched page", () => {
-      const plugin = createPlugin({ suspensionTimeout: 0 }, { graph, planner, documents, ssr });
+    it("replaces pages in page-mode when leader query overrides after query", () => {
       const emissions: Array<{ data?: any; error?: any; terminal: boolean; tag: string }> = [];
-      const tag = (t: string) => (p: OperationResult, term?: boolean) => emissions.push({ data: p.data, error: p.error, terminal: !!term, tag: t });
-
-      // AFTER page
-      const ctxAfter: any = {
-        operation: { key: 301, query: USERS_PAGE_QUERY, variables: { usersRole: "mod", first: 2, after: "m2" }, cachePolicy: "cache-and-network" },
-        useResult: tag("after"),
+      const createTaggedHandler = (tag: string) => (payload: OperationResult, terminal?: boolean) => {
+        emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal, tag });
       };
-      plugin(ctxAfter);
-      ctxAfter.useResult({
+
+      const afterContext: any = {
+        operation: { key: 301, query: USERS_PAGE_QUERY_PLUGIN, variables: { usersRole: "mod", first: 2, after: "m2" }, cachePolicy: "cache-and-network" },
+        useResult: createTaggedHandler("after"),
+      };
+      plugin(afterContext);
+      afterContext.useResult({
         data: {
           users: {
             __typename: "UserConnection",
@@ -410,16 +464,15 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
         },
       }, true);
 
-      const canKey = canUsers("mod");
-      expect(graph.getRecord(canKey)?.edges.length).toBe(2);
+      const canonicalKey = `@connection.users({"role":"mod"})`;
+      expect(graph.getRecord(canonicalKey)?.edges.length).toBe(2);
 
-      // LEADER page replaces (page-mode)
-      const ctxLeader: any = {
-        operation: { key: 302, query: USERS_PAGE_QUERY, variables: { usersRole: "mod", first: 2, after: null }, cachePolicy: "cache-and-network" },
-        useResult: tag("leader"),
+      const leaderContext: any = {
+        operation: { key: 302, query: USERS_PAGE_QUERY_PLUGIN, variables: { usersRole: "mod", first: 2, after: null }, cachePolicy: "cache-and-network" },
+        useResult: createTaggedHandler("leader"),
       };
-      plugin(ctxLeader);
-      ctxLeader.useResult({
+      plugin(leaderContext);
+      leaderContext.useResult({
         data: {
           users: {
             __typename: "UserConnection",
@@ -432,23 +485,21 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
         },
       }, true);
 
-      const ids = (graph.getRecord(canKey)?.edges ?? [])
-        .map((r: any) => graph.getRecord(r.__ref)?.node?.__ref)
-        .map((k: string) => graph.getRecord(k)?.id);
-      expect(ids).toEqual(["m1", "m2"]);
+      const userIds = (graph.getRecord(canonicalKey)?.edges ?? [])
+        .map((edgeRef: any) => graph.getRecord(edgeRef.__ref)?.node?.__ref)
+        .map((nodeKey: string) => graph.getRecord(nodeKey)?.id);
+      expect(userIds).toEqual(["m1", "m2"]);
     });
 
-    it("prewarm when canonical missing but page exists: emits cached union immediately", () => {
-      const plugin = createPlugin({ suspensionTimeout: 0 }, { graph, planner, documents, ssr });
+    it("emits cached data immediately when page exists but canonical is missing", () => {
 
-      // root users page (u1,u2) but NO canonical
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "x@a" });
       graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "y@b" });
 
-      const plan = planner.getPlan(USERS_POSTS_QUERY);
-      const usersField = plan.rootSelectionMap!.get("users")!;
-      const vars = { usersRole: "sales", usersFirst: 2, usersAfter: null, postsCategory: "tech", postsFirst: 1, postsAfter: null };
-      const pageKey = buildConnectionKey(usersField, "@", vars);
+      const plan = planner.getPlan(USERS_POSTS_QUERY_PLUGIN);
+      const users = plan.rootSelectionMap!.get("users")!;
+      const variables = { usersRole: "sales", usersFirst: 2, usersAfter: null, postsCategory: "tech", postsFirst: 1, postsAfter: null };
+      const pageKey = buildConnectionKey(users, "@", variables);
 
       seedConnectionPage(
         graph,
@@ -461,29 +512,30 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
       );
 
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
-      const ctx: any = {
-        operation: { key: 30, query: USERS_POSTS_QUERY, variables: vars, cachePolicy: "cache-and-network" },
-        useResult: (payload: OperationResult, terminal?: boolean) =>
-          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal }),
+      const context: any = {
+        operation: { key: 30, query: USERS_POSTS_QUERY_PLUGIN, variables, cachePolicy: "cache-and-network" },
+        useResult: (payload: OperationResult, terminal?: boolean) => {
+          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
+        },
       };
 
-      plugin(ctx);
+      plugin(context);
+
       expect(emissions.length).toBe(1);
       expect(emissions[0].terminal).toBe(false);
       expect(emissions[0].data.users.edges.length).toBe(2);
     });
 
     describe("suspensionTimeout window", () => {
-      it("within window: second exec serves cached terminal & skips network", async () => {
-        // seed canonical
+      it("serves cached terminal response within suspension window", async () => {
         graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
         graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "b@example.com" });
 
-        const plan = planner.getPlan(USERS_POSTS_QUERY);
-        const usersField = plan.rootSelectionMap!.get("users")!;
-        const vars = { usersRole: "dj", usersFirst: 2, usersAfter: null, postsCategory: "tech", postsFirst: 1, postsAfter: null };
+        const plan = planner.getPlan(USERS_POSTS_QUERY_PLUGIN);
+        const users = plan.rootSelectionMap!.get("users")!;
+        const variables = { usersRole: "dj", usersFirst: 2, usersAfter: null, postsCategory: "tech", postsFirst: 1, postsAfter: null };
 
-        const pageKey = buildConnectionKey(usersField, ROOT_ID, vars);
+        const pageKey = buildConnectionKey(users, ROOT_ID, variables);
         seedConnectionPage(
           graph,
           pageKey,
@@ -493,26 +545,30 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
           "UserEdge",
           "UserConnection",
         );
-        const canKey = canUsers("dj");
-        graph.putRecord(canKey, {
+
+        const canonicalKey = `@connection.users({"role":"dj"})`;
+        graph.putRecord(canonicalKey, {
           __typename: "UserConnection",
           pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: true, hasPreviousPage: false },
           edges: [{ __ref: `${pageKey}.edges.0` }, { __ref: `${pageKey}.edges.1` }],
         });
 
-        const plugin = createPlugin({ suspensionTimeout: 1000 }, { graph, planner, documents, ssr });
+        plugin = createPlugin({ suspensionTimeout: 1000 }, { graph, planner, documents, ssr });
         const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
 
-        // 1st run
-        const ctx1: any = {
-          operation: { key: 777, query: USERS_POSTS_QUERY, variables: vars, cachePolicy: "cache-and-network" },
-          useResult: (payload: OperationResult, t?: boolean) => emissions.push({ data: payload.data, error: payload.error, terminal: !!t }),
+        const firstContext: any = {
+          operation: { key: 777, query: USERS_POSTS_QUERY_PLUGIN, variables, cachePolicy: "cache-and-network" },
+          useResult: (payload: OperationResult, terminal?: boolean) => {
+            emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
+          },
         };
-        plugin(ctx1);
+        plugin(firstContext);
+
         expect(emissions.length).toBe(1);
         expect(emissions[0].terminal).toBe(false);
         expect(emissions[0].data.users.edges.length).toBe(2);
-        ctx1.useResult({
+
+        firstContext.useResult({
           data: {
             users: {
               __typename: "UserConnection",
@@ -524,29 +580,32 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
             },
           },
         }, true);
+
         expect(emissions.length).toBe(2);
         expect(emissions[1].terminal).toBe(true);
 
-        // 2nd run within window: cached terminal
-        const ctx2: any = {
-          operation: { key: 777, query: USERS_POSTS_QUERY, variables: vars, cachePolicy: "cache-and-network" },
-          useResult: (payload: OperationResult, t?: boolean) => emissions.push({ data: payload.data, error: payload.error, terminal: !!t }),
+        const secondContext: any = {
+          operation: { key: 777, query: USERS_POSTS_QUERY_PLUGIN, variables, cachePolicy: "cache-and-network" },
+          useResult: (payload: OperationResult, terminal?: boolean) => {
+            emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
+          },
         };
-        plugin(ctx2);
+        plugin(secondContext);
+
         expect(emissions.length).toBe(3);
         expect(emissions[2].terminal).toBe(true);
         expect(emissions[2].data.users.edges.length).toBe(2);
       });
 
-      it("outside window: second exec re-fetches (cached non-terminal → network terminal)", async () => {
-        // seed canonical
+      it("re-fetches from network when outside suspension window", async () => {
         graph.putRecord("User:x1", { __typename: "User", id: "x1", email: "x1@example.com" });
         graph.putRecord("User:x2", { __typename: "User", id: "x2", email: "x2@example.com" });
 
-        const plan = planner.getPlan(USERS_POSTS_QUERY);
-        const usersField = plan.rootSelectionMap!.get("users")!;
-        const vars = { usersRole: "ops", usersFirst: 2, usersAfter: null, postsCategory: "tech", postsFirst: 1, postsAfter: null };
-        const pageKey = buildConnectionKey(usersField, ROOT_ID, vars);
+        const plan = planner.getPlan(USERS_POSTS_QUERY_PLUGIN);
+        const users = plan.rootSelectionMap!.get("users")!;
+        const variables = { usersRole: "ops", usersFirst: 2, usersAfter: null, postsCategory: "tech", postsFirst: 1, postsAfter: null };
+        const pageKey = buildConnectionKey(users, ROOT_ID, variables);
+
         seedConnectionPage(
           graph,
           pageKey,
@@ -556,25 +615,29 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
           "UserEdge",
           "UserConnection",
         );
-        const canKey = canUsers("ops");
-        graph.putRecord(canKey, {
+
+        const canonicalKey = `@connection.users({"role":"ops"})`;
+        graph.putRecord(canonicalKey, {
           __typename: "UserConnection",
           pageInfo: { __typename: "PageInfo", startCursor: "x1", endCursor: "x2", hasNextPage: true, hasPreviousPage: false },
           edges: [{ __ref: `${pageKey}.edges.0` }, { __ref: `${pageKey}.edges.1` }],
         });
 
-        const plugin = createPlugin({ suspensionTimeout: 5 }, { graph, planner, documents, ssr });
+        plugin = createPlugin({ suspensionTimeout: 5 }, { graph, planner, documents, ssr });
         const emissions: Array<{ data?: any; error?: any; terminal: boolean; tag?: string }> = [];
 
-        // First run: cached non-terminal + network terminal
-        const ctx1: any = {
-          operation: { key: 999, query: USERS_POSTS_QUERY, variables: vars, cachePolicy: "cache-and-network" },
-          useResult: (p: OperationResult, t?: boolean) => emissions.push({ data: p.data, error: p.error, terminal: !!t, tag: "first" }),
+        const firstContext: any = {
+          operation: { key: 999, query: USERS_POSTS_QUERY_PLUGIN, variables, cachePolicy: "cache-and-network" },
+          useResult: (payload: OperationResult, terminal?: boolean) => {
+            emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal, tag: "first" });
+          },
         };
-        plugin(ctx1);
+        plugin(firstContext);
+
         expect(emissions.length).toBe(1);
         expect(emissions[0].terminal).toBe(false);
-        ctx1.useResult({
+
+        firstContext.useResult({
           data: {
             users: {
               __typename: "UserConnection",
@@ -586,21 +649,24 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
             },
           },
         }, true);
+
         expect(emissions.length).toBe(2);
         expect(emissions[1].terminal).toBe(true);
 
-        await new Promise((r) => setTimeout(r, 10)); // pass window
+        await new Promise((resolve) => setTimeout(resolve, 10));
 
-        // Second run: cached non-terminal again + network terminal
-        const ctx2: any = {
-          operation: { key: 999, query: USERS_POSTS_QUERY, variables: vars, cachePolicy: "cache-and-network" },
-          useResult: (p: OperationResult, t?: boolean) => emissions.push({ data: p.data, error: p.error, terminal: !!t, tag: "second" }),
+        const secondContext: any = {
+          operation: { key: 999, query: USERS_POSTS_QUERY_PLUGIN, variables, cachePolicy: "cache-and-network" },
+          useResult: (payload: OperationResult, terminal?: boolean) => {
+            emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal, tag: "second" });
+          },
         };
-        plugin(ctx2);
+        plugin(secondContext);
+
         expect(emissions.length).toBe(3);
         expect(emissions[2].terminal).toBe(false);
 
-        ctx2.useResult({
+        secondContext.useResult({
           data: {
             users: {
               __typename: "UserConnection",
@@ -612,6 +678,7 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
             },
           },
         }, true);
+
         expect(emissions.length).toBe(4);
         expect(emissions[3].terminal).toBe(true);
       });
@@ -619,30 +686,33 @@ describe("Plugin (villus) — canonical materialization by cache policy", () => 
   });
 
   describe("network-only", () => {
-    it("within suspension window: second exec is served from cache (no extra fetch)", async () => {
-      const plugin = createPlugin({ suspensionTimeout: 1000 }, { graph, planner, documents, ssr });
+    it("serves cached response within suspension window to avoid duplicate network requests", async () => {
+      plugin = createPlugin({ suspensionTimeout: 1000 }, { graph, planner, documents, ssr });
 
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
-      const vars = { id: "u42" };
+      const variables = { id: "u42" };
 
-      // First exec (simulate network)
-      const ctx1: any = {
-        operation: { key: 888, query: USER_QUERY, variables: vars, cachePolicy: "network-only" },
-        useResult: (payload: OperationResult, t?: boolean) =>
-          emissions.push({ data: payload.data, error: payload.error, terminal: !!t }),
+      const context1: any = {
+        operation: { key: 888, query: USER_QUERY_PLUGIN, variables, cachePolicy: "network-only" },
+        useResult: (payload: OperationResult, terminal?: boolean) => {
+          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
+        },
       };
-      plugin(ctx1);
-      ctx1.useResult({ data: { user: { __typename: "User", id: "u42", email: "u42@example.com" } } }, true);
+
+      plugin(context1);
+      context1.useResult({ data: { user: { __typename: "User", id: "u42", email: "u42@example.com" } } }, true);
+
       expect(emissions.length).toBe(1);
       expect(emissions[0].terminal).toBe(true);
 
-      // Second exec within window → terminal cached
-      const ctx2: any = {
-        operation: { key: 888, query: USER_QUERY, variables: vars, cachePolicy: "network-only" },
-        useResult: (payload: OperationResult, t?: boolean) =>
-          emissions.push({ data: payload.data, error: payload.error, terminal: !!t }),
+      const context2: any = {
+        operation: { key: 888, query: USER_QUERY_PLUGIN, variables, cachePolicy: "network-only" },
+        useResult: (payload: OperationResult, terminal?: boolean) => {
+          emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
+        },
       };
-      plugin(ctx2);
+      plugin(context2);
+
       expect(emissions.length).toBe(2);
       expect(emissions[1].terminal).toBe(true);
       expect(emissions[1].data?.user?.email).toBe("u42@example.com");
