@@ -1,8 +1,3 @@
-
-Here’s your README with a new **“Cachebay Options”** section added (everything else left exactly as-is):
-
----
-
 # Cachebay for Villus
 
 **Blazing-fast normalized cache x Relay-style connections for Villus.**
