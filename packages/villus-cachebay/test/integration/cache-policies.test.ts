@@ -1,18 +1,29 @@
 import { describe, it, expect } from "vitest";
 import { defineComponent, h, watch } from "vue";
 import {
-  mountWithClient,
-  seedCache,
-  tick,
-  delay,
-  type Route,
+  mountWithClient, 
+  createTestClient,
   fixtures,
+  harnessEdges,
+  PostsHarness,
+  rowsRelayConnections,
+  readPI,
+  POSTS_APPEND_RELAY,
+  POSTS_PREPEND,
+  POSTS_REPLACE,
+  FRAG_POST_RELAY,
+  UsersDiffTracker,
+  EmptyDivComponent,
+  seedCache,
   operations,
-  rows,
   UsersList,
   UserTitle,
   UserPostComments,
-} from "@/test/helpers";
+  delay,
+  tick,
+  type Route,
+  rows,
+} from '@/test/helpers';
 
 /* -----------------------------------------------------------------------------
  * Tests
@@ -46,7 +57,7 @@ describe("Cache Policies Behavior", () => {
     });
 
     it("hit emits cached and terminates, no network call (root users)", async () => {
-      const cache = (await mountWithClient(defineComponent({ render: () => h("div") }), [])).cache;
+      const cache = (await mountWithClient(EmptyDivComponent, [])).cache;
 
       await seedCache(cache, {
         query: operations.USERS_QUERY,
@@ -84,7 +95,7 @@ describe("Cache Policies Behavior", () => {
     });
 
     it("single object • hit emits cached and terminates, no network (User)", async () => {
-      const cache = (await mountWithClient(defineComponent({ render: () => h("div") }), [])).cache;
+      const cache = (await mountWithClient(EmptyDivComponent, [])).cache;
 
       await seedCache(cache, {
         query: operations.USER_QUERY,
@@ -109,7 +120,7 @@ describe("Cache Policies Behavior", () => {
   // ────────────────────────────────────────────────────────────────────────────
   describe("cache-and-network policy", () => {
     it("hit → immediate cached render then network refresh once (root users)", async () => {
-      const cache = (await mountWithClient(defineComponent({ render: () => h("div") }), [])).cache;
+      const cache = (await mountWithClient(EmptyDivComponent, [])).cache;
 
       await seedCache(cache, {
         query: operations.USERS_QUERY,
@@ -141,7 +152,7 @@ describe("Cache Policies Behavior", () => {
     });
 
     it("identical network as cache → single render", async () => {
-      const cache = (await mountWithClient(defineComponent({ render: () => h("div") }), [])).cache;
+      const cache = (await mountWithClient(EmptyDivComponent, [])).cache;
       const cached = fixtures.users.query(["same.user@example.com"]).data;
 
       await seedCache(cache, {
@@ -170,7 +181,7 @@ describe("Cache Policies Behavior", () => {
     });
 
     it("different network → two renders (recorded)", async () => {
-      const cache = (await mountWithClient(defineComponent({ render: () => h("div") }), [])).cache;
+      const cache = (await mountWithClient(EmptyDivComponent, [])).cache;
 
       await seedCache(cache, {
         query: operations.USERS_QUERY,
@@ -185,26 +196,7 @@ describe("Cache Policies Behavior", () => {
       ];
 
       const renders: string[][] = [];
-      const Comp = defineComponent({
-        name: "UsersDiff",
-        setup() {
-          const { useQuery } = require("villus");
-          const { data } = useQuery({
-            query: operations.USERS_QUERY,
-            variables: { usersRole: "diff", usersFirst: 2, usersAfter: null },
-            cachePolicy: "cache-and-network",
-          });
-          watch(
-            () => data.value,
-            (v) => {
-              const emails = (v?.users?.edges ?? []).map((e: any) => e?.node?.email ?? "");
-              if (emails.length) renders.push(emails);
-            },
-            { immediate: true }
-          );
-          return () => (data.value?.users?.edges ?? []).map((e: any) => h("div", {}, e?.node?.email ?? ""));
-        },
-      });
+      const Comp = UsersDiffTracker(renders);
 
       const { wrapper, fx } = await mountWithClient(Comp, routes, cache);
 
@@ -239,7 +231,7 @@ describe("Cache Policies Behavior", () => {
 
     it("nested Post→Comments (uuid) • hit then refresh", async () => {
       // bootstrap a cache instance we can seed directly
-      const { cache } = await mountWithClient(defineComponent({ render: () => h("div") }), []);
+      const { cache } = await mountWithClient(EmptyDivComponent, []);
 
       // Seed: User u1 with Posts(tech) page → P1 that already has Comments(C1, C2) canonicalized
       await seedCache(cache, {
@@ -395,7 +387,7 @@ describe("Cache Policies Behavior", () => {
   // ────────────────────────────────────────────────────────────────────────────
   describe("cache-only policy", () => {
     it("hit renders cached data, no network call (users)", async () => {
-      const cache = (await mountWithClient(defineComponent({ render: () => h("div") }), [])).cache;
+      const cache = (await mountWithClient(EmptyDivComponent, [])).cache;
 
       await seedCache(cache, {
         query: operations.USERS_QUERY,

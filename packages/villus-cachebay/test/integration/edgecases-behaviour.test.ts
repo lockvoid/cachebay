@@ -1,7 +1,7 @@
 // test/integration/edgecases-behaviour.test.ts
 import { describe, it, expect } from 'vitest';
 import { defineComponent, h, computed, watch } from 'vue';
-import { mountWithClient, delay, tick, type Route } from '@/test/helpers';
+import { mountWithClient, delay, tick, type Route, PostListTracker } from '@/test/helpers';
 import { operations, fixtures } from '@/test/helpers';
 import { createCache } from '@/src/core/internals';
 import { useFragment } from '@/src';
@@ -13,43 +13,7 @@ describe('Edgecases behaviour', () => {
     const firstNodeIds: string[] = [];
 
     // Component that tracks post updates
-    const PostList = defineComponent({
-      name: 'PostList',
-      props: { first: Number, after: String },
-      setup(props) {
-        const vars = computed(() => {
-          const v: Record<string, any> = {};
-          if (props.first != null) v.first = props.first;
-          if (props.after != null) v.after = props.after;
-          return v;
-        });
-
-        const { useQuery } = require('villus');
-        const { data } = useQuery({
-          query: operations.POSTS_QUERY, // @connection on posts
-          variables: vars,
-          cachePolicy: 'network-only',
-        });
-
-        watch(
-          () => data.value,
-          (v) => {
-            const conn = v?.posts;
-            const edges = Array.isArray(conn?.edges) ? conn!.edges : [];
-            if (edges.length > 0) {
-              const titles = edges.map((e: any) => e?.node?.title || '');
-              renders.push(titles);
-              if (edges[0]?.node?.id != null) firstNodeIds.push(String(edges[0].node.id));
-            }
-          },
-          { immediate: true }
-        );
-
-        return () => (data.value?.posts?.edges || []).map((e: any) =>
-          h('div', { key: e.node.id }, e?.node?.title || '')
-        );
-      },
-    });
+    const PostList = PostListTracker(renders, firstNodeIds);
 
     const routes: Route[] = [
       // page 1

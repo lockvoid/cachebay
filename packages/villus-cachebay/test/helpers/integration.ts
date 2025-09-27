@@ -488,7 +488,7 @@ export const POSTS_APPEND_OPTIMISTIC = gql`
 
 // From relay-connections.test.ts
 export const POSTS_APPEND_RELAY = gql`
-  query PostsAppendRelay($filter: String, $first: Int, $after: String, $last: Int, $before: String) {
+  query PostsAppend($filter: String, $first: Int, $after: String, $last: Int, $before: String) {
     posts(filter: $filter, first: $first, after: $after, last: $last, before: $before)
       @connection(mode: "infinite", args: ["filter"]) {
       __typename
@@ -499,7 +499,7 @@ export const POSTS_APPEND_RELAY = gql`
 `;
 
 export const POSTS_PREPEND = gql`
-  query PostsPrepend($filter: String, $first: Int, $after: String, $last: Int, $before: String) {
+  query PostsAppend($filter: String, $first: Int, $after: String, $last: Int, $before: String) {
     posts(filter: $filter, first: $first, after: $after, last: $last, before: $before)
       @connection(mode: "prepend", args: ["filter"]) {
       __typename
@@ -545,3 +545,73 @@ export const FRAG_USER_NAME = gql`
     name 
   }
 `;
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Shared Components from Integration Tests
+ * ------------------------------------------------------------------------ */
+
+// From edgecases-behaviour.test.ts
+export const PostListTracker = (renders: string[][], firstNodeIds: string[]) => 
+  defineComponent({
+    name: 'PostList',
+    props: { first: Number, after: String },
+    setup(props) {
+      const vars = computed(() => {
+        const v: Record<string, any> = {};
+        if (props.first != null) v.first = props.first;
+        if (props.after != null) v.after = props.after;
+        return v;
+      });
+
+      const { useQuery } = require('villus');
+      const { data } = useQuery({
+        query: operations.POSTS_QUERY, // @connection on posts
+        variables: vars,
+        cachePolicy: 'network-only',
+      });
+
+      watch(
+        () => data.value,
+        (v) => {
+          const conn = v?.posts;
+          const edges = Array.isArray(conn?.edges) ? conn!.edges : [];
+          if (edges.length > 0) {
+            const titles = edges.map((e: any) => e?.node?.title || '');
+            renders.push(titles);
+            if (edges[0]?.node?.id != null) firstNodeIds.push(String(edges[0].node.id));
+          }
+        },
+        { immediate: true }
+      );
+
+      return () => (data.value?.posts?.edges || []).map((e: any) =>
+        h('div', { key: e.node.id }, e?.node?.title || '')
+      );
+    },
+  });
+
+// From cache-policies.test.ts
+export const UsersDiffTracker = (renders: string[][]) =>
+  defineComponent({
+    name: "UsersDiff",
+    setup() {
+      const { useQuery } = require("villus");
+      const { data } = useQuery({
+        query: operations.USERS_QUERY,
+        variables: { usersRole: "diff", usersFirst: 2, usersAfter: null },
+        cachePolicy: "cache-and-network",
+      });
+      watch(
+        () => data.value,
+        (v) => {
+          const emails = (v?.users?.edges ?? []).map((e: any) => e?.node?.email ?? "");
+          if (emails.length) renders.push(emails);
+        },
+        { immediate: true }
+      );
+      return () => (data.value?.users?.edges ?? []).map((e: any) => h("div", {}, e?.node?.email ?? ""));
+    },
+  });
+
+// Simple empty div component for cache-only tests
+export const EmptyDivComponent = defineComponent({ render: () => h("div") });
