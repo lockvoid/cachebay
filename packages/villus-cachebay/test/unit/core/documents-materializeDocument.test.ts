@@ -6,16 +6,7 @@ import { createCanonical } from "@/src/core/canonical";
 import { createViews } from "@/src/core/views";
 import { createDocuments } from "@/src/core/documents";
 import { createOptimistic } from "@/src/core/optimistic";
-import {
-  USER_QUERY,
-  USERS_QUERY,
-  USER_POSTS_QUERY,
-  USERS_POSTS_QUERY,
-  USER_POSTS_COMMENTS_QUERY,
-  USERS_POSTS_COMMENTS_QUERY,
-  POSTS_QUERY,
-  writePageSnapshot
-} from "@/test/helpers/unit";
+import { operations, writePageSnapshot } from "@/test/helpers";
 
 describe('documents.materializeDocument', () => {
   let graph: ReturnType<typeof createGraph>;
@@ -38,7 +29,7 @@ describe('documents.materializeDocument', () => {
     graph.putRecord("@", { id: "@", __typename: "@", 'user({"id":"u1"})': { __ref: "User:u1" } });
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
 
-    const userView = documents.materializeDocument({ document: USER_QUERY, variables: { id: "u1" } });
+    const userView = documents.materializeDocument({ document: operations.USER_QUERY, variables: { id: "u1" } });
     expect(userView).toEqual({ user: { __typename: "User", id: "u1", email: "u1@example.com" } });
 
     const userRecord = graph.materializeRecord("User:u1");
@@ -75,7 +66,7 @@ describe('documents.materializeDocument', () => {
     });
 
     const usersView = documents.materializeDocument({
-      document: USERS_QUERY,
+      document: operations.USERS_QUERY,
 
       variables: {
         usersRole: "admin",
@@ -130,7 +121,7 @@ describe('documents.materializeDocument', () => {
     });
 
     const userPostsView = documents.materializeDocument({
-      document: USER_POSTS_QUERY,
+      document: operations.USER_POSTS_QUERY,
 
       variables: {
         id: "u1",
@@ -216,7 +207,7 @@ describe('documents.materializeDocument', () => {
     });
 
     const view = documents.materializeDocument({
-      document: USERS_POSTS_QUERY,
+      document: operations.USERS_POSTS_QUERY,
 
       variables: {
         usersRole: "dj",
@@ -303,7 +294,7 @@ describe('documents.materializeDocument', () => {
     });
 
     const userPostsCommentsView = documents.materializeDocument({
-      document: USER_POSTS_COMMENTS_QUERY,
+      document: operations.USER_POSTS_COMMENTS_QUERY,
 
       variables: {
         id: "u1",
@@ -397,7 +388,7 @@ describe('documents.materializeDocument', () => {
     });
 
     const usersPostsCommentsView = documents.materializeDocument({
-      document: USERS_POSTS_COMMENTS_QUERY,
+      document: operations.USERS_POSTS_COMMENTS_QUERY,
 
       variables: {
         usersRole: "admin",
@@ -462,7 +453,7 @@ describe('documents.materializeDocument', () => {
     });
 
     const firstUsersView = documents.materializeDocument({
-      document: USERS_QUERY,
+      document: operations.USERS_QUERY,
 
       variables: {
         usersRole: "admin",
@@ -478,7 +469,7 @@ describe('documents.materializeDocument', () => {
     graph.putRecord('@connection.users({"role":"admin"})', { pageInfo: { endCursor: "u3" } });
 
     const secondUsersView = documents.materializeDocument({
-      document: USERS_QUERY,
+      document: operations.USERS_QUERY,
 
       variables: {
         usersRole: "admin",
@@ -498,7 +489,7 @@ describe('documents.materializeDocument', () => {
     graph.putRecord('@connection.users({"role":"admin"})', { edges: [{ __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.0' }, { __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.1' }, { __ref: '@.users({"after":"u2","first":1,"role":"admin"}).edges.0' }] });
 
     const thirdUsersView = documents.materializeDocument({
-      document: USERS_QUERY,
+      document: operations.USERS_QUERY,
 
       variables: {
         usersRole: "admin",
@@ -515,10 +506,10 @@ describe('documents.materializeDocument', () => {
     writePageSnapshot(graph, '@.posts({"after":null,"first":3})', [1, 2, 3], { start: "p1", end: "p3", hasNext: true });
     writePageSnapshot(graph, '@.posts({"after":"p3","first":3})', [4, 5, 6], { start: "p4", end: "p6", hasNext: false, hasPrev: true });
 
-    documents.prewarmDocument({ document: POSTS_QUERY, variables: { first: 3, after: null } });
-    documents.prewarmDocument({ document: POSTS_QUERY, variables: { first: 3, after: "p3" } });
+    documents.prewarmDocument({ document: operations.POSTS_QUERY, variables: { first: 3, after: null } });
+    documents.prewarmDocument({ document: operations.POSTS_QUERY, variables: { first: 3, after: "p3" } });
 
-    let postsView = documents.materializeDocument({ document: POSTS_QUERY, variables: { first: 3, after: null } });
+    let postsView = documents.materializeDocument({ document: operations.POSTS_QUERY, variables: { first: 3, after: null } });
     expect(postsView).toEqual({
       posts: {
         __typename: "Connection",
@@ -559,9 +550,9 @@ describe('documents.materializeDocument', () => {
       },
     };
 
-    documents.normalizeDocument({ document: POSTS_QUERY, variables: { first: 3, after: "p3" }, data: networkPage2Data });
+    documents.normalizeDocument({ document: operations.POSTS_QUERY, variables: { first: 3, after: "p3" }, data: networkPage2Data });
 
-    postsView = documents.materializeDocument({ document: POSTS_QUERY, variables: { first: 3, after: null } });
+    postsView = documents.materializeDocument({ document: operations.POSTS_QUERY, variables: { first: 3, after: null } });
 
     expect(postsView).toEqual({
       posts: {

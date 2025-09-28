@@ -1,16 +1,22 @@
-import gql from 'graphql-tag';
+import { gql } from 'graphql-tag';
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Fragments
- * ------------------------------------------------------------------------ */
-export const USER_FRAGMENT = gql`
+export const PAGE_INFO_FRAGMENT = `
+  fragment PageInfoFields on PageInfo {
+    startCursor
+    endCursor
+    hasNextPage
+    hasPreviousPage
+  }
+`
+
+export const USER_FRAGMENT = `
   fragment UserFields on User {
     id
     email
   }
 `;
 
-export const POST_FRAGMENT = gql`
+export const POST_FRAGMENT = `
   fragment PostFields on Post {
     id
     title
@@ -18,7 +24,7 @@ export const POST_FRAGMENT = gql`
   }
 `;
 
-export const AUDIO_POST_FRAGMENT = gql`
+export const AUDIO_POST_FRAGMENT = `
   fragment AudioPostFields on AudioPost {
     id
     title
@@ -26,7 +32,7 @@ export const AUDIO_POST_FRAGMENT = gql`
   }
 `;
 
-export const VIDEO_POST_FRAGMENT = gql`
+export const VIDEO_POST_FRAGMENT = `
   fragment VideoPostFields on VideoPost {
     id
     title
@@ -34,119 +40,260 @@ export const VIDEO_POST_FRAGMENT = gql`
   }
 `;
 
-export const COMMENT_FRAGMENT = gql`
+export const COMMENT_FRAGMENT = `
   fragment CommentFields on Comment {
     uuid
     text
   }
 `;
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Queries (use @connection)
- * ------------------------------------------------------------------------ */
+export const USER_POSTS_FRAGMENT = `
+  ${PAGE_INFO_FRAGMENT}
+  ${USER_FRAGMENT}
+  ${POST_FRAGMENT}
+
+  fragment UserPosts on User {
+    ...UserFields
+
+    posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
+      totalCount
+
+      pageInfo {
+      ...PageInfoFields
+      }
+
+      edges {
+        cursor
+        score
+
+        node {
+          ...PostFields
+        }
+      }
+    }
+  }
+`;
+
+export const USER_POSTS_WITH_KEY_FRAGMENT = `
+  ${PAGE_INFO_FRAGMENT}
+  ${USER_FRAGMENT}
+  ${POST_FRAGMENT}
+
+  fragment UserPosts on User {
+    ...UserFields
+
+    posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(key: "UserPosts", args: ["category"]) {
+      totalCount
+
+      pageInfo {
+      ...PageInfoFields
+      }
+
+      edges {
+        cursor
+        score
+
+        node {
+          ...PostFields
+        }
+      }
+    }
+  }
+`;
+
+export const POST_COMMENTS_FRAGMENT = `
+  ${PAGE_INFO_FRAGMENT}
+
+  fragment PostComments on Post {
+    id
+
+    comments(first: $commentsFirst, after: $commentsAfter) @connection(key: "PostComments") {
+      pageInfo {
+        ...PageInfoFields
+      }
+
+      edges {
+        cursor
+
+        node {
+          id
+        }
+      }
+    }
+  }
+`;
+
+export const MULTIPLE_USER_FRAGMENT = gql`
+  fragment UserOnly on User {
+    id
+  }
+
+  fragment AdminOnly on Admin {
+    role
+  }
+
+  query MixedTypes($id: ID!) {
+    user(id: $id) {
+      ...UserOnly
+      ...AdminOnly
+    }
+  }
+`;
+
 export const USER_QUERY = gql`
   ${USER_FRAGMENT}
+
   query UserQuery($id: ID!) {
     user(id: $id) {
-            ...UserFields
+      ...UserFields
+    }
+  }
+`;
+
+export const USER_WITH_ALIAS_QUERY = gql`
+  ${USER_FRAGMENT}
+
+  query UserWithAliasQuery($id: ID!) {
+    currentUser: user(id: $id) {
+      ...UserFields
     }
   }
 `;
 
 export const USERS_QUERY = gql`
+  ${PAGE_INFO_FRAGMENT}
   ${USER_FRAGMENT}
-  query UsersQuery($usersRole: String, $first: Int, $after: String) {
-    users(role: $usersRole, first: $first, after: $after) @connection(args: ["role"]) {
-            pageInfo {
-                startCursor
-        endCursor
-        hasNextPage
-        hasPreviousPage
+
+  query UsersQuery($role: String, $first: Int, $after: String) {
+    users(role: $role, first: $first, after: $after) @connection(filters: ["role"]) {
+      pageInfo {
+        ...PageInfoFields
       }
+
       edges {
-                cursor
+        cursor
+
         node {
-                    ...UserFields
+          ...UserFields
         }
       }
     }
   }
 `;
 
-/** Root posts connection (used by error-handling & cache-policy tests). */
-export const POSTS_QUERY = gql`
+export const POSTS_QUERY = `
+  ${PAGE_INFO_FRAGMENT}
   ${POST_FRAGMENT}
-  query Posts($filter: String, $first: Int, $after: String) {
-    posts(filter: $filter, first: $first, after: $after) @connection(args: ["filter"]) {
-            pageInfo {
-                startCursor
-        endCursor
-        hasNextPage
-        hasPreviousPage
+
+  query Posts($category: String, $sort: String, $first: Int, $after: String) {
+    posts(category: $category, sort: $sort, first: $first, after: $after) @connection(filters: ["category", "sort"]) {
+      pageInfo {
+        ...PageInfoFields
       }
+
       edges {
-                cursor
+        cursor
+
         node {
-                    ...PostFields
+          ...PostFields
         }
       }
     }
   }
 `;
 
-export const USER_POSTS_QUERY = gql`
+export const POSTS_WITHOUT_CONNECTION_QUERY = `
+  ${PAGE_INFO_FRAGMENT}
+  ${POST_FRAGMENT}
+
+  query Posts($category: String, $sort: String, $first: Int, $after: String) {
+    posts(category: $category, sort: $sort, first: $first, after: $after) {
+      pageInfo {
+        ...PageInfoFields
+      }
+
+      edges {
+        cursor
+
+        node {
+          ...PostFields
+        }
+      }
+    }
+  }
+`;
+
+export const POSTS_WITH_DEFAULTS_QUERY = `
+  ${PAGE_INFO_FRAGMENT}
+  ${POST_FRAGMENT}
+
+  query Posts($category: String, $sort: String, $first: Int, $after: String) {
+    posts(category: $category, sort: $sort, first: $first, after: $after) @connection {
+      pageInfo {
+        ...PageInfoFields
+      }
+
+      edges {
+        cursor
+
+        node {
+          ...PostFields
+        }
+      }
+    }
+  }
+`;
+
+export const POSTS_WITH_KEY_QUERY = `
+  ${PAGE_INFO_FRAGMENT}
+  ${POST_FRAGMENT}
+
+  query Posts($category: String, $sort: String, $first: Int, $after: String) {
+    posts(category: $category, sort: $sort, first: $first, after: $after) @connection(filters: ["category", "sort"], key: "KeyedPosts") {
+      pageInfo {
+        ...PageInfoFields
+      }
+
+      edges {
+        cursor
+
+        node {
+          ...PostFields
+        }
+      }
+    }
+  }
+`;
+
+export const USER_POSTS_QUERY = `
+  ${PAGE_INFO_FRAGMENT}
   ${USER_FRAGMENT}
   ${POST_FRAGMENT}
   ${AUDIO_POST_FRAGMENT}
   ${VIDEO_POST_FRAGMENT}
-  query UserPostsQuery($id: ID!, $postsCategory: String, $postsFirst: Int, $postsAfter: String) {
+
+  query UserPostsQuery($id: ID!, $postsCategory: String, $postsSort: String, $postsFirst: Int, $postsAfter: String) {
     user(id: $id) {
-            ...UserFields
-      posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
-                totalCount
+      ...UserFields
+
+      posts(category: $postsCategory, sort: $postsSort, first: $postsFirst, after: $postsAfter) @connection(filters: ["category", "sort"]) {
+        totalCount
+
         pageInfo {
-                    startCursor
-          endCursor
-          hasNextPage
-          hasPreviousPage
+          ...PageInfoFields
         }
+
         edges {
-                    cursor
+          cursor
           score
+
           node {
-                        ...PostFields
+            ...PostFields
             ...AudioPostFields
             ...VideoPostFields
-            author { id }
-          }
-        }
-      }
-    }
-  }
-`;
 
-export const USERS_POSTS_QUERY = gql`
-  ${USER_FRAGMENT}
-  ${POST_FRAGMENT}
-  query UsersPostsQuery(
-    $usersRole: String
-    $usersFirst: Int
-    $usersAfter: String
-    $postsCategory: String
-    $postsFirst: Int
-    $postsAfter: String
-  ) {
-    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
-            pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
-      edges {
-                cursor
-        node {
-                    ...UserFields
-          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
-                        pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
-            edges {
-                            cursor
-              node { ...PostFields }
+            author {
+              id
             }
           }
         }
@@ -155,10 +302,55 @@ export const USERS_POSTS_QUERY = gql`
   }
 `;
 
-export const USER_POSTS_COMMENTS_QUERY = gql`
+export const USERS_POSTS_QUERY = `
+  ${PAGE_INFO_FRAGMENT}
+  ${USER_FRAGMENT}
+  ${POST_FRAGMENT}
+
+  query UsersPostsQuery(
+    $usersRole: String
+    $usersFirst: Int
+    $usersAfter: String
+    $postsCategory: String
+    $postsFirst: Int
+    $postsAfter: String
+  ) {
+    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(filters: ["role"]) {
+      pageInfo {
+        ...PageInfoFields
+      }
+
+      edges {
+        cursor
+
+        node {
+          ...UserFields
+
+          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(filters: ["category"]) {
+            pageInfo {
+              ...PageInfoFields
+            }
+
+            edges {
+              cursor
+
+              node {
+                ...PostFields
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const USER_POSTS_COMMENTS_QUERY = `
+  ${PAGE_INFO_FRAGMENT}
   ${USER_FRAGMENT}
   ${POST_FRAGMENT}
   ${COMMENT_FRAGMENT}
+
   query UserPostsCommentsQuery(
     $id: ID!
     $postsCategory: String
@@ -168,20 +360,33 @@ export const USER_POSTS_COMMENTS_QUERY = gql`
     $commentsAfter: String
   ) {
     user(id: $id) {
-            ...UserFields
-      posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
-                pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+      ...UserFields
+
+      posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(filters: ["category"]) {
+        pageInfo {
+          ...PageInfoFields
+        }
+
         edges {
-                    cursor
+          cursor
+
           node {
-                        ...PostFields
-            comments(first: $commentsFirst, after: $commentsAfter) @connection(args: []) {
-                            pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+            ...PostFields
+
+            comments(first: $commentsFirst, after: $commentsAfter) @connection(filters: []) {
+              pageInfo {
+                ...PageInfoFields
+              }
+
               edges {
-                                cursor
+                cursor
+
                 node {
-                                    ...CommentFields
-                  author { id }
+                  ...CommentFields
+
+                  author {
+                    id
+                  }
                 }
               }
             }
@@ -192,10 +397,12 @@ export const USER_POSTS_COMMENTS_QUERY = gql`
   }
 `;
 
-export const USERS_POSTS_COMMENTS_QUERY = gql`
+export const USERS_POSTS_COMMENTS_QUERY = `
+  ${PAGE_INFO_FRAGMENT}
   ${USER_FRAGMENT}
   ${POST_FRAGMENT}
   ${COMMENT_FRAGMENT}
+
   query UsersPostsCommentsQuery(
     $usersRole: String
     $usersFirst: Int
@@ -206,26 +413,112 @@ export const USERS_POSTS_COMMENTS_QUERY = gql`
     $commentsFirst: Int
     $commentsAfter: String
   ) {
-    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
-            pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(filters: ["role"]) {
+      pageInfo {
+        ...PageInfoFields
+      }
+
       edges {
-                cursor
+        cursor
+
         node {
-                    ...UserFields
-          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
-                        pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
+          ...UserFields
+
+          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(filters: ["category"]) {
+            pageInfo {
+              ...PageInfoFields
+            }
+
             edges {
-                            cursor
+              cursor
+
               node {
-                                ...PostFields
-                comments(first: $commentsFirst, after: $commentsAfter) @connection(args: []) {
-                                    pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
-                  edges { cursor node { ...CommentFields } }
+                ...PostFields
+
+                comments(first: $commentsFirst, after: $commentsAfter) @connection {
+                  pageInfo {
+                    ...PageInfoFields
+                  }
+
+                  edges {
+                    cursor
+
+                    node {
+                      ...CommentFields
+                    }
+                  }
                 }
               }
             }
           }
         }
+      }
+    }
+  }
+`;
+
+export const MULTIPLE_USERS_QUERY = `
+  ${PAGE_INFO_FRAGMENT}
+  ${USER_FRAGMENT}
+
+  query Multiple($userId: ID!, $usersRole: String, $usersFirst: Int, $usersAfter: String) {
+    user(id: $userId) {
+      ...UserFields
+    }
+
+    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection {
+      pageInfo {
+        ...PageInfoFields
+      }
+
+      edges {
+        cursor
+
+        node {
+          ...UserFields
+        }
+      }
+    }
+  }
+`;
+
+export const UPDATE_USER_MUTATION = gql`
+  ${USER_FRAGMENT}
+
+  mutation UpdateUserMutation($input: UpdateUserInput!, $postCategory: String!, $postFirst: Int!, $postAfter: String!) {
+    updateUser(id: $id, input: $input) {
+
+      user {
+        ...UserFields
+
+        posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection {
+          pageInfo {
+            startCursor
+            endCursor
+            hasNextPage
+            hasPreviousPage
+          }
+
+          edges {
+            cursor
+
+            node {
+              ...PostFields
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const USER_UPDATED_SUBSCRIPTION = gql`
+  ${USER_FRAGMENT}
+
+  subscription UserUpdatedSubscription($id: ID!) {
+    userUpdated(id: $id) {
+      user {
+        ...UserFields
       }
     }
   }

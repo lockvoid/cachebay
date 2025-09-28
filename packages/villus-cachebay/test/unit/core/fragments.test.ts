@@ -4,7 +4,7 @@ import { createGraph } from "@/src/core/graph";
 import { createPlanner } from "@/src/core/planner";
 import { createViews } from "@/src/core/views";
 import { createFragments } from "@/src/core/fragments";
-import { USER_FRAGMENT, USER_POSTS_FRAGMENT, POST_COMMENTS_FRAGMENT, seedConnectionPage } from "@/test/helpers/unit";
+import { operations, seedConnectionPage } from "@/test/helpers";
 
 describe('Fragments', () => {
   let graph: ReturnType<typeof createGraph>;
@@ -25,7 +25,7 @@ describe('Fragments', () => {
 
       const userFragment = fragments.readFragment({
         id: "User:u1",
-        fragment: USER_FRAGMENT,
+        fragment: operations.USER_FRAGMENT,
         variables: {},
       });
 
@@ -72,7 +72,8 @@ describe('Fragments', () => {
 
       const postsFragment = fragments.readFragment({
         id: "User:u1",
-        fragment: USER_POSTS_FRAGMENT,
+        fragment: operations.USER_POSTS_FRAGMENT,
+        fragmentName: "UserPosts",
 
         variables: {
           postsCategory: "tech",
@@ -155,8 +156,8 @@ describe('Fragments', () => {
 
     it("returns reactive nested comments connection", () => {
       graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1", tags: [] });
-      graph.putRecord("Comment:c1", { __typename: "Comment", id: "c1", text: "C1", author: { __ref: "User:u2" } });
-      graph.putRecord("Comment:c2", { __typename: "Comment", id: "c2", text: "C2", author: { __ref: "User:u3" } });
+      graph.putRecord("Comment:c1", { __typename: "Comment", id: "c1", text: "Comment 1", author: { __ref: "User:u2" } });
+      graph.putRecord("Comment:c2", { __typename: "Comment", id: "c2", text: "Comment 2", author: { __ref: "User:u3" } });
       graph.putRecord("User:u2", { __typename: "User", id: "u2" });
       graph.putRecord("User:u3", { __typename: "User", id: "u3" });
 
@@ -181,7 +182,8 @@ describe('Fragments', () => {
 
       const commentsFragment = fragments.readFragment({
         id: "Post:p1",
-        fragment: POST_COMMENTS_FRAGMENT,
+        fragment: operations.POST_COMMENTS_FRAGMENT,
+        fragmentName: "PostComments",
 
         variables: {
           commentsFirst: 2,
@@ -210,7 +212,7 @@ describe('Fragments', () => {
         node: {
           __typename: "Comment",
           id: "c1",
-          text: "C1",
+          text: "Comment 1",
           author: {
             __typename: "User",
             id: "u2"
@@ -225,7 +227,7 @@ describe('Fragments', () => {
         node: {
           __typename: "Comment",
           id: "c2",
-          text: "C2",
+          text: "Comment 2",
           author: {
             __typename: "User",
             id: "u3"
@@ -236,7 +238,7 @@ describe('Fragments', () => {
       expect(commentsFragment.comments.edges[0].node).toEqual({
         __typename: "Comment",
         id: "c1",
-        text: "C1",
+        text: "Comment 1",
 
         author: {
           __typename: "User",
@@ -247,7 +249,7 @@ describe('Fragments', () => {
       expect(commentsFragment.comments.edges[1].node).toEqual({
         __typename: "Comment",
         id: "c2",
-        text: "C2",
+        text: "Comment 2",
 
         author: {
           __typename: "User",
@@ -255,12 +257,12 @@ describe('Fragments', () => {
         }
       });
 
-      graph.putRecord("Comment:c1", { text: "C1 (Updated)" });
+      graph.putRecord("Comment:c1", { text: "Comment 1 (Updated)" });
 
       expect(commentsFragment.comments.edges[0].node).toEqual({
         __typename: "Comment",
         id: "c1",
-        text: "C1 (Updated)",
+        text: "Comment 1 (Updated)",
 
         author: {
           __typename: "User",
@@ -271,7 +273,7 @@ describe('Fragments', () => {
       expect(commentsFragment.comments.edges[1].node).toEqual({
         __typename: "Comment",
         id: "c2",
-        text: "C2",
+        text: "Comment 2",
 
         author: {
           __typename: "User",
@@ -283,7 +285,7 @@ describe('Fragments', () => {
     it("returns reactive empty fragment when entity is missing", () => {
       const missingFragment = fragments.readFragment({
         id: "User:missing",
-        fragment: USER_FRAGMENT,
+        fragment: operations.USER_FRAGMENT,
         variables: {},
       });
 
@@ -296,7 +298,7 @@ describe('Fragments', () => {
     it("writes entity fields shallowly and maintains reactivity", () => {
       fragments.writeFragment({
         id: "User:u1",
-        fragment: USER_FRAGMENT,
+        fragment: operations.USER_FRAGMENT,
 
         data: {
           __typename: "User",
@@ -307,7 +309,7 @@ describe('Fragments', () => {
 
       const userFragment = fragments.readFragment({
         id: "User:u1",
-        fragment: USER_FRAGMENT,
+        fragment: operations.USER_FRAGMENT,
       });
 
       expect(isReactive(userFragment)).toBe(true);
@@ -326,7 +328,7 @@ describe('Fragments', () => {
 
       fragments.writeFragment({
         id: "User:u1",
-        fragment: USER_FRAGMENT,
+        fragment: operations.USER_FRAGMENT,
         variables: {},
         data: { email: "seed2@example.com" },
       });
@@ -349,7 +351,8 @@ describe('Fragments', () => {
 
       fragments.writeFragment({
         id: "User:u1",
-        fragment: USER_POSTS_FRAGMENT,
+        fragment: operations.USER_POSTS_FRAGMENT,
+        fragmentName: "UserPosts",
 
         variables: {
           postsCategory: "tech",
@@ -393,7 +396,8 @@ describe('Fragments', () => {
 
       const postsFragment = fragments.readFragment({
         id: "User:u1",
-        fragment: USER_POSTS_FRAGMENT,
+        fragment: operations.USER_POSTS_FRAGMENT,
+        fragmentName: "UserPosts",
 
         variables: {
           postsCategory: "tech",

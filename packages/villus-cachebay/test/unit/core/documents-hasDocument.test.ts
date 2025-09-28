@@ -5,7 +5,7 @@ import { createPlanner } from "@/src/core/planner";
 import { createCanonical } from "@/src/core/canonical";
 import { ROOT_ID } from "@/src/core/constants";
 import { compilePlan } from "@/src/compiler";
-import { TEST_QUERIES } from "@/test/helpers";
+import { operations } from "@/test/helpers";
 
 describe('documents.hasDocument', () => {
   let graph: ReturnType<typeof createGraph>;
@@ -26,7 +26,7 @@ describe('documents.hasDocument', () => {
     graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID, 'user({"id":"u1"})': { __ref: "User:u1" } });
 
     const userDoc = documents.hasDocument({
-      document: TEST_QUERIES.USER_SIMPLE,
+      document: operations.USER_QUERY,
 
       variables: {
         id: "u1",
@@ -38,7 +38,7 @@ describe('documents.hasDocument', () => {
 
   it('returns false when a root entity link is missing', () => {
     const userDoc = documents.hasDocument({
-      document: TEST_QUERIES.USER_SIMPLE,
+      document: operations.USER_QUERY,
 
       variables: {
         id: "u1",
@@ -63,22 +63,22 @@ describe('documents.hasDocument', () => {
       edges: [],
     });
 
-    const usersDoc = documents.hasDocument({
-      document: TEST_QUERIES.USERS_SIMPLE,
+    const result = documents.hasDocument({
+      document: operations.USERS_QUERY,
 
       variables: {
-        usersRole: "admin",
-        usersFirst: 2,
-        usersAfter: null,
+        role: "admin",
+        first: 2,
+        after: null,
       },
     });
 
-    expect(usersDoc).toBe(true);
+    expect(result).toBe(true);
   });
 
   it('returns false when the root connection page is missing', () => {
     const usersDoc = documents.hasDocument({
-      document: TEST_QUERIES.USERS_SIMPLE,
+      document: operations.USERS_QUERY,
 
       variables: {
         usersRole: "admin",
@@ -93,18 +93,18 @@ describe('documents.hasDocument', () => {
   it('returns false when multiple root types have missing parts and true when both present', () => {
     graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID, 'user({"id":"u1"})': { __ref: "User:u1" } });
 
-    let multipleDoc = documents.hasDocument({
-      document: TEST_QUERIES.USER_USERS_MULTIPLE_QUERY,
+    const result1 = documents.hasDocument({
+      document: operations.MULTIPLE_USERS_QUERY,
 
       variables: {
-        id: "u1",
+        userId: "u1",
         usersRole: "admin",
         usersFirst: 2,
         usersAfter: null,
       },
     });
 
-    expect(multipleDoc).toBe(false);
+    expect(result1).toBe(false);
 
     graph.putRecord('@.users({"after":null,"first":2,"role":"admin"})', {
       __typename: "UserConnection",
@@ -120,23 +120,21 @@ describe('documents.hasDocument', () => {
       edges: [],
     });
 
-    multipleDoc = documents.hasDocument({
-      document: TEST_QUERIES.USER_USERS_MULTIPLE_QUERY,
+    const result2 = documents.hasDocument({
+      document: operations.MULTIPLE_USERS_QUERY,
 
       variables: {
-        id: "u1",
+        userId: "u1",
         usersRole: "admin",
         usersFirst: 2,
         usersAfter: null,
       },
     });
 
-    expect(multipleDoc).toBe(true);
+    expect(result2).toBe(true);
   });
 
   it('accepts precompiled plan', () => {
-    const plan = compilePlan(TEST_QUERIES.USERS_SIMPLE);
-
     graph.putRecord('@.users({"after":null,"first":2,"role":"admin"})', {
       __typename: "UserConnection",
 
@@ -151,17 +149,17 @@ describe('documents.hasDocument', () => {
       edges: [],
     });
 
-    const planDoc = documents.hasDocument({
-      document: plan,
+    const result = documents.hasDocument({
+      document: compilePlan(operations.USERS_QUERY),
 
       variables: {
-        usersRole: "admin",
-        usersFirst: 2,
-        usersAfter: null,
+        role: "admin",
+        first: 2,
+        after: null,
       },
     });
 
-    expect(planDoc).toBe(true);
+    expect(result).toBe(true);
   });
 
   it('returns different results when variables change the page key', () => {
@@ -179,19 +177,19 @@ describe('documents.hasDocument', () => {
       edges: [],
     });
 
-    const usersDoc = documents.hasDocument({
-      document: TEST_QUERIES.USERS_SIMPLE,
+    const result1 = documents.hasDocument({
+      document: operations.USERS_QUERY,
 
       variables: {
-        usersRole: "mod",
-        usersFirst: 2,
-        usersAfter: null,
+        role: "mod",
+        first: 2,
+        after: null,
       },
     });
 
-    expect(usersDoc).toBe(false);
+    expect(result1).toBe(false);
 
-    graph.putRecord('@.users({"after":null,"first":2,"role":"mod"})', {
+    graph.putRecord('@.users({"after":null,"first":2,"role":"moderator"})', {
       __typename: "UserConnection",
 
       pageInfo: {
@@ -205,24 +203,24 @@ describe('documents.hasDocument', () => {
       edges: [],
     });
 
-    const usersDocAfter = documents.hasDocument({
-      document: TEST_QUERIES.USERS_SIMPLE,
+    const result2 = documents.hasDocument({
+      document: operations.USERS_QUERY,
 
       variables: {
-        usersRole: "mod",
-        usersFirst: 2,
-        usersAfter: null,
+        role: "moderator",
+        first: 2,
+        after: null,
       },
     });
 
-    expect(usersDocAfter).toBe(true);
+    expect(result2).toBe(true);
   });
 
   it('returns true when link present but entity snapshot missing (by design)', () => {
     graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID, 'user({"id":"u1"})': { __ref: "User:u1" } });
 
     const userDoc = documents.hasDocument({
-      document: TEST_QUERIES.USER_SIMPLE,
+      document: operations.USER_QUERY,
 
       variables: {
         id: "u1",

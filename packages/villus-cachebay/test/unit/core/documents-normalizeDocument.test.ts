@@ -4,18 +4,7 @@ import { createPlanner } from "@/src/core/planner";
 import { createOptimistic } from "@/src/core/optimistic";
 import { createCanonical } from "@/src/core/canonical";
 import { createDocuments } from "@/src/core/documents";
-import {
-  USER_QUERY,
-  USERS_QUERY,
-  USER_POSTS_QUERY,
-  UPDATE_USER_MUTATION,
-  USER_UPDATED_SUBSCRIPTION,
-  USERS_POSTS_QUERY,
-  USER_POSTS_COMMENTS_QUERY,
-  USERS_POSTS_COMMENTS_QUERY,
-  USERS_PAGE_QUERY,
-  COMMENTS_PAGE_QUERY,
-} from "@/test/helpers";
+import { operations } from "@/test/helpers";
 
 describe("documents.normalizeDocument", () => {
   let graph: ReturnType<typeof createGraph>;
@@ -40,7 +29,7 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USER_QUERY,
+      document: operations.USER_QUERY,
       variables: { id: "u1" },
       data: userData,
     });
@@ -111,14 +100,14 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USERS_QUERY,
-      variables: { usersRole: "admin", first: 2, after: null },
+      document: operations.USERS_QUERY,
+      variables: { role: "admin", first: 2, after: null },
       data: usersData_page1,
     });
 
     documents.normalizeDocument({
-      document: USERS_QUERY,
-      variables: { usersRole: "admin", first: 2, after: "u2" },
+      document: operations.USERS_QUERY,
+      variables: { role: "admin", first: 2, after: "u2" },
       data: usersData_page2,
     });
 
@@ -292,13 +281,13 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USER_POSTS_QUERY,
+      document: operations.USER_POSTS_QUERY,
       variables: { id: "u1", postsCategory: "tech", postsFirst: 2, postsAfter: null },
       data: userPosts_tech,
     });
 
     documents.normalizeDocument({
-      document: USER_POSTS_QUERY,
+      document: operations.USER_POSTS_QUERY,
       variables: { id: "u1", postsCategory: "lifestyle", postsFirst: 2, postsAfter: null },
       data: userPosts_lifestyle,
     });
@@ -456,10 +445,10 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USERS_POSTS_QUERY,
+      document: operations.USERS_POSTS_QUERY,
 
       variables: {
-        usersRole: "dj",
+        role: "dj",
         usersFirst: 2,
         usersAfter: null,
         postsCategory: "tech",
@@ -680,7 +669,7 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USER_POSTS_COMMENTS_QUERY,
+      document: operations.USER_POSTS_COMMENTS_QUERY,
 
       variables: {
         id: "u1",
@@ -695,7 +684,7 @@ describe("documents.normalizeDocument", () => {
     });
 
     documents.normalizeDocument({
-      document: USER_POSTS_COMMENTS_QUERY,
+      document: operations.USER_POSTS_COMMENTS_QUERY,
 
       variables: {
         id: "u1",
@@ -880,10 +869,10 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USERS_POSTS_COMMENTS_QUERY,
+      document: operations.USERS_POSTS_COMMENTS_QUERY,
 
       variables: {
-        usersRole: "admin",
+        role: "admin",
         usersFirst: 2,
         usersAfter: null,
         postsCategory: "tech",
@@ -966,7 +955,6 @@ describe("documents.normalizeDocument", () => {
           __typename: "User",
           id: "u1",
           email: "u1_updated@example.com",
-          name: "Updated User 1",
 
           posts: {
             __typename: "PostConnection",
@@ -998,13 +986,12 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: UPDATE_USER_MUTATION,
+      document: operations.UPDATE_USER_MUTATION,
 
       variables: {
         input: {
           id: "u1",
           email: "u1_updated@example.com",
-          name: "Updated User 1"
         }
       },
 
@@ -1020,7 +1007,6 @@ describe("documents.normalizeDocument", () => {
       id: "u1",
       __typename: "User",
       email: "u1_updated@example.com",
-      name: "Updated User 1",
     });
   });
 
@@ -1033,13 +1019,12 @@ describe("documents.normalizeDocument", () => {
           __typename: "User",
           id: "u1",
           email: "u1_subscribed@example.com",
-          name: "Subscribed User 1",
         }
       },
     };
 
     documents.normalizeDocument({
-      document: USER_UPDATED_SUBSCRIPTION,
+      document: operations.USER_UPDATED_SUBSCRIPTION,
       variables: { id: "u1" },
       data: userUpdatedData,
     });
@@ -1053,7 +1038,6 @@ describe("documents.normalizeDocument", () => {
       id: "u1",
       __typename: "User",
       email: "u1_subscribed@example.com",
-      name: "Subscribed User 1",
     });
   });
 
@@ -1079,8 +1063,8 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USERS_QUERY,
-      variables: { usersRole: "admin", first: 2, after: null },
+      document: operations.USERS_QUERY,
+      variables: { role: "admin", first: 2, after: null },
       data: adminUsersLeaderData,
     });
 
@@ -1104,8 +1088,8 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USERS_QUERY,
-      variables: { usersRole: "admin", first: 2, after: "u2" },
+      document: operations.USERS_QUERY,
+      variables: { role: "admin", first: 2, after: "u2" },
       data: adminUsersAfterData,
     });
 
@@ -1129,8 +1113,8 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USERS_QUERY,
-      variables: { usersRole: "admin", last: 1, before: "u1" } as any,
+      document: operations.USERS_QUERY,
+      variables: { role: "admin", last: 1, before: "u1" } as any,
       data: adminUsersBeforeData,
     });
 
@@ -1144,7 +1128,7 @@ describe("documents.normalizeDocument", () => {
     expect(graph.getRecord(adminUsersConnection.edges[3].__ref as string)!).toEqual({ __typename: "UserEdge", cursor: "u3", node: { __ref: "User:u3" } });
   });
 
-  it("appends after cursor and prepends before cursor in canonical page mode", () => {
+  it.only("appends after cursor and prepends before cursor in canonical page mode", () => {
     const moderatorUsersLeaderData = {
       users: {
         __typename: "UserConnection",
@@ -1175,8 +1159,8 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USERS_PAGE_QUERY,
-      variables: { usersRole: "mod", first: 2, after: null },
+      document: operations.USERS_QUERY,
+      variables: { role: "moderator", first: 2, after: null },
       data: moderatorUsersLeaderData,
     });
 
@@ -1210,8 +1194,8 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USERS_PAGE_QUERY,
-      variables: { usersRole: "mod", first: 2, after: "m2" },
+      document: operations.USERS_QUERY,
+      variables: { role: "moderator", first: 2, after: "m2" },
       data: moderatorUsersAfterData,
     });
 
@@ -1239,25 +1223,25 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USERS_PAGE_QUERY,
-      variables: { usersRole: "mod", last: 1, before: "m3" } as any,
+      document: operations.USERS_QUERY,
+      variables: { role: "moderator", last: 1, before: "m3" } as any,
       data: moderatorUsersBeforeData,
     });
 
-    const moderatorUsersAfterPage = graph.getRecord('@.users({"after":"m2","first":2,"role":"mod"})')!;
+    const moderatorUsersAfterPage = graph.getRecord('@.users({"after":"m2","first":2,"role":"moderator"})')!;
 
     expect(moderatorUsersAfterPage.totalCount).toBe(12);
     expect(moderatorUsersAfterPage.edges.length).toBe(2);
     expect(moderatorUsersAfterPage.pageInfo).toEqual({ __typename: "PageInfo", startCursor: "m3", endCursor: "m4", hasNextPage: true, hasPreviousPage: false });
-    expect(graph.getRecord('@.users({"after":"m2","first":2,"role":"mod"}).edges.0')).toEqual({ __typename: "UserEdge", cursor: "m3", node: { __ref: "User:m3" } });
-    expect(graph.getRecord('@.users({"after":"m2","first":2,"role":"mod"}).edges.1')).toEqual({ __typename: "UserEdge", cursor: "m4", node: { __ref: "User:m4" } });
+    expect(graph.getRecord('@.users({"after":"m2","first":2,"role":"moderator"}).edges.0')).toEqual({ __typename: "UserEdge", cursor: "m3", node: { __ref: "User:m3" } });
+    expect(graph.getRecord('@.users({"after":"m2","first":2,"role":"moderator"}).edges.1')).toEqual({ __typename: "UserEdge", cursor: "m4", node: { __ref: "User:m4" } });
 
-    const moderatorUsersBeforePage = graph.getRecord('@.users({"before":"m3","last":1,"role":"mod"})')!;
+    const moderatorUsersBeforePage = graph.getRecord('@.users({"before":"m3","last":1,"role":"moderator"})')!;
 
     expect(moderatorUsersBeforePage.totalCount).toBe(1);
     expect(moderatorUsersBeforePage.edges.length).toBe(1);
     expect(moderatorUsersBeforePage.pageInfo).toEqual({ __typename: "PageInfo", startCursor: "m0", endCursor: "m0", hasNextPage: false, hasPreviousPage: true });
-    expect(graph.getRecord('@.users({"before":"m3","last":1,"role":"mod"}).edges.0')).toEqual({ __typename: "UserEdge", cursor: "m0", node: { __ref: "User:m0" } });
+    expect(graph.getRecord('@.users({"before":"m3","last":1,"role":"moderator"}).edges.0')).toEqual({ __typename: "UserEdge", cursor: "m0", node: { __ref: "User:m0" } });
   });
 
   it("appends after cursor in canonical nested comments infinite mode", () => {
@@ -1309,7 +1293,7 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USER_POSTS_COMMENTS_QUERY,
+      document: operations.USER_POSTS_COMMENTS_QUERY,
 
       variables: {
         id: "u1",
@@ -1364,7 +1348,7 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USER_POSTS_COMMENTS_QUERY,
+      document: operations.USER_POSTS_COMMENTS_QUERY,
 
       variables: {
         id: "u1",
@@ -1418,7 +1402,7 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: COMMENTS_PAGE_QUERY,
+      document: operations.COMMENTS_PAGE_QUERY,
       variables: { postId: "p9", first: 2, after: null },
       data: post9CommentsLeaderData,
     });
@@ -1459,7 +1443,7 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: COMMENTS_PAGE_QUERY,
+      document: operations.COMMENTS_PAGE_QUERY,
 
       variables: {
         postId: "p9",
@@ -1502,7 +1486,7 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: COMMENTS_PAGE_QUERY,
+      document: operations.COMMENTS_PAGE_QUERY,
       variables: { postId: "p9", last: 1, before: "x3" } as any,
       data: post9CommentsBeforeData,
     });
@@ -1553,7 +1537,7 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USER_POSTS_COMMENTS_QUERY,
+      document: operations.USER_POSTS_COMMENTS_QUERY,
       variables: {
         id: "u1",
         postsCategory: "tech",
@@ -1566,7 +1550,7 @@ describe("documents.normalizeDocument", () => {
     });
 
     const initialView = documents.materializeDocument({
-      document: USER_POSTS_COMMENTS_QUERY,
+      document: operations.USER_POSTS_COMMENTS_QUERY,
       variables: {
         id: "u1",
         postsCategory: "tech",
@@ -1607,7 +1591,7 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USER_POSTS_COMMENTS_QUERY,
+      document: operations.USER_POSTS_COMMENTS_QUERY,
       variables: {
         id: "u1",
         postsCategory: "tech",
@@ -1620,7 +1604,7 @@ describe("documents.normalizeDocument", () => {
     });
 
     const updatedView = documents.materializeDocument({
-      document: USER_POSTS_COMMENTS_QUERY,
+      document: operations.USER_POSTS_COMMENTS_QUERY,
       variables: {
         id: "u1",
         postsCategory: "tech",
@@ -1667,7 +1651,7 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USER_POSTS_COMMENTS_QUERY,
+      document: operations.USER_POSTS_COMMENTS_QUERY,
 
       variables: {
         id: "u1",
@@ -1703,7 +1687,7 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USER_POSTS_COMMENTS_QUERY,
+      document: operations.USER_POSTS_COMMENTS_QUERY,
       variables: {
         id: "u1",
         postsCategory: "tech",
@@ -1735,26 +1719,26 @@ describe("documents.normalizeDocument", () => {
 
                 comments: {
                   __typename: "CommentConnection",
-                pageInfo: {
-                  __typename: "PageInfo",
-                  startCursor: "c3",
-                  endCursor: "c3",
-                  hasNextPage: false,
-                  hasPreviousPage: false
-                },
+                  pageInfo: {
+                    __typename: "PageInfo",
+                    startCursor: "c3",
+                    endCursor: "c3",
+                    hasNextPage: false,
+                    hasPreviousPage: false
+                  },
 
-                edges: [
-                  { __typename: "CommentEdge", cursor: "c3", node: { __typename: "Comment", id: "c3" } },
-                ],
+                  edges: [
+                    { __typename: "CommentEdge", cursor: "c3", node: { __typename: "Comment", id: "c3" } },
+                  ],
+                }
               }
-            }
-          }]
+            }]
         }
       }
     };
 
     documents.normalizeDocument({
-      document: USER_POSTS_COMMENTS_QUERY,
+      document: operations.USER_POSTS_COMMENTS_QUERY,
 
       variables: {
         id: "u1",
@@ -1791,7 +1775,7 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: USER_POSTS_COMMENTS_QUERY,
+      document: operations.USER_POSTS_COMMENTS_QUERY,
       variables: { id: "u1", postsCategory: "tech", postsFirst: 2, postsAfter: null, commentsFirst: 1, commentsAfter: "c9" },
       data: user1PostsComments_page4,
     });

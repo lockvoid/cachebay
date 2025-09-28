@@ -19,6 +19,7 @@ export type FragmentsDependencies = {
 export type ReadFragmentArgs = {
   id: string;                       // canonical record id, e.g. "User:u1"
   fragment: DocumentNode | CachePlanV1;
+  fragmentName?: string;
   variables?: Record<string, any>;
 };
 
@@ -35,8 +36,8 @@ export const createFragments = (
   const { graph, planner, views } = deps;
 
   /** Reactive read of a fragment selection over an entity. */
-  const readFragment = ({ id, fragment, variables = {} }: ReadFragmentArgs): any => {
-    const plan = planner.getPlan(fragment);
+  const readFragment = ({ id, fragment, fragmentName, variables = {} }: ReadFragmentArgs): any => {
+    const plan = planner.getPlan(fragment, { fragmentName });
     const proxy = graph.materializeRecord(id);
     if (!proxy) return undefined; // if your graph returns a reactive empty proxy, this will be truthy
     // pass selectionSet AND selectionMap per views signature
@@ -44,10 +45,10 @@ export const createFragments = (
   };
 
   /** Targeted write of entity/connection fields covered by the fragment selection. */
-  const writeFragment = ({ id, fragment, data, variables = {} }: WriteFragmentArgs): void => {
+  const writeFragment = ({ id, fragment, fragmentName, data, variables = {} }: WriteFragmentArgs): void => {
     if (!data || typeof data !== "object") return;
 
-    const plan = planner.getPlan(fragment);
+    const plan = planner.getPlan(fragment, { fragmentName });
 
     // Ensure the parent record exists (entity id or any arbitrary record id)
     const parentProxy = graph.materializeRecord(id);

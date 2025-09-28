@@ -165,7 +165,7 @@ export const hasTypenames = (doc: DocumentNode): boolean => {
   return ok;
 };
 
-
+/*
 // ─────────────────────────────────────────────────────────────────────────────
 // GraphQL Fragments
 // ─────────────────────────────────────────────────────────────────────────────
@@ -584,16 +584,7 @@ export const COMMENTS_PAGE_QUERY = gql`
   }
 `;
 
-export const TEST_QUERIES = {
-  USER_SIMPLE: gql`
-    query UserQuery($id: ID!) {
-      user(id: $id) {
-        id
-        email
-      }
-    }
-  `,
-  USERS_SIMPLE: gql`
+export const USERS_SIMPLE = gql`
     query UsersQuery($usersRole: String, $usersFirst: Int, $usersAfter: String) {
       users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
         pageInfo {
@@ -611,8 +602,9 @@ export const TEST_QUERIES = {
         }
       }
     }
-  `,
-  USER_USERS_MULTIPLE_QUERY: gql`
+  `;
+
+export const USER_USERS_MULTIPLE_QUERY = gql`
     query Mixed($id: ID!, $usersRole: String, $usersFirst: Int, $usersAfter: String) {
       user(id: $id) {
         id
@@ -623,25 +615,18 @@ export const TEST_QUERIES = {
         edges { cursor node { id } }
       }
     }
-  `,
-  POSTS_WITH_CONNECTION: gql`
-    query Q($postsCategory: String, $postsFirst: Int, $postsAfter: String) {
-      posts(category: $postsCategory, first: $postsFirst, after: $postsAfter)
-        @connection(filters: ["category"]) {
-        edges { cursor node { id __typename } __typename }
-        pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
-      }
-    }
-  `,
-  POSTS_SIMPLE: gql`
+  `;
+
+
+export const POSTS_SIMPLE = gql`
     query Q($first: Int, $after: String) {
       posts(first: $first, after: $after) @connection {
         edges { cursor node { id __typename } __typename }
         pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
       }
     }
-  `,
-  USER_POSTS_NESTED: gql`
+  `;
+export const USER_POSTS_NESTED = gql`
     query Q($id: ID!, $first: Int, $after: String) {
       user(id: $id) {
         __typename id
@@ -651,8 +636,8 @@ export const TEST_QUERIES = {
         }
       }
     }
-  `,
-  POSTS_WITH_KEY: gql`
+  `;
+export const POSTS_WITH_KEY = gql`
     query Q($cat: String, $first: Int, $after: String) {
       posts(category: $cat, first: $first, after: $after)
         @connection(key: "PostsList", filters: ["category"]) {
@@ -660,27 +645,7 @@ export const TEST_QUERIES = {
         pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
       }
     }
-  `,
-  POSTS_WITH_FILTERS: gql`
-    query Q($category: String, $sort: String, $first: Int, $after: String) {
-      posts(category: $category, sort: $sort, first: $first, after: $after)
-        @connection {
-        edges { cursor node { id __typename } __typename }
-        pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
-      }
-    }
-  `,
-} as const;
-
-export const POSTS_QUERY = gql`
-  query Posts($first: Int, $after: String) {
-    posts(first: $first, after: $after) @connection(args: []) {
-      __typename
-      pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
-      edges { __typename cursor node { __typename id title } }
-    }
-  }
-`;
+  `;
 
 // Compiler-specific versions (to avoid conflicts with existing queries)
 export const USERS_QUERY_COMPILER = gql`
@@ -840,16 +805,6 @@ export const POSTS_FIELD_KEY_QUERY = gql`
   }
 `;
 
-export const POST_COMMENTS_FRAGMENT_COMPILER = gql`
-  fragment PostComments on Post {
-    id
-    comments(first: $first, after: $after)
-      @connection(key: "PostComments", args: []) {
-      edges { cursor node { id } }
-      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
-    }
-  }
-`;
 
 export const USER_POSTS_FRAGMENT_COMPILER = gql`
   fragment UserPosts on User {
@@ -857,6 +812,7 @@ export const USER_POSTS_FRAGMENT_COMPILER = gql`
     posts(category: $cat, first: $first, after: $after)
       @connection(filters: ["category"], mode: "infinite") {
       totalCount
+
       pageInfo {
         startCursor
         endCursor
@@ -911,7 +867,7 @@ export const POSTS_SELECTION_MAPS_QUERY = gql`
     }
   }
 `;
-
+*/
 export const createTestPlan = (query: DocumentNode) => {
   return compilePlan(query);
 };
@@ -920,7 +876,7 @@ export const createTestPlan = (query: DocumentNode) => {
 export const createSelection = (config: Record<string, any>): { fields: PlanField[], map: Map<string, PlanField> } => {
   const fields: PlanField[] = [];
   const map = new Map<string, PlanField>();
-  
+
   const processField = (name: string, spec: any): PlanField => {
     if (spec === true || spec === null || spec === undefined) {
       // Simple field
@@ -939,53 +895,12 @@ export const createSelection = (config: Record<string, any>): { fields: PlanFiel
     }
     return createPlanField(name);
   };
-  
+
   for (const [name, spec] of Object.entries(config)) {
     const field = processField(name, spec);
     fields.push(field);
     map.set(field.responseKey, field);
   }
-  
+
   return { fields, map };
 };
-
-export const USERS_POSTS_QUERY_PLUGIN = gql`
-  query UsersPosts(
-    $usersRole: String
-    $usersFirst: Int
-    $usersAfter: String
-    $postsCategory: String
-    $postsFirst: Int
-    $postsAfter: String
-  ) {
-    users(role: $usersRole, first: $usersFirst, after: $usersAfter) @connection(args: ["role"]) {
-      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
-      edges {
-        cursor
-        node {
-          id
-          email
-          posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
-            pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
-            edges { cursor node { id title } }
-          }
-        }
-      }
-    }
-  }
-`;
-
-export const USER_QUERY_PLUGIN = gql`
-  query User($id: ID!) {
-    user(id: $id) { id email }
-  }
-`;
-
-export const USERS_PAGE_QUERY_PLUGIN = gql`
-  query UsersPage($usersRole: String, $first: Int, $after: String) {
-    users(role: $usersRole, first: $first, after: $after) @connection(args: ["role"], mode: "page") {
-      pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
-      edges { cursor node { id email } }
-    }
-  }
-`;

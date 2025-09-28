@@ -95,11 +95,13 @@ function buildNetworkQuery(doc: DocumentNode): DocumentNode {
  * - If called with a precompiled plan → returned as-is (pass-through).
  * - If called with a string → parsed to DocumentNode first.
  * - If the document contains an OperationDefinition → compiled as an operation.
- * - Else if it has exactly one FragmentDefinition → compiled as a "fragment".
- * - Else → throws.
+ * - Else if it has one or more FragmentDefinitions:
+ *    - with a single fragment → compiled as that fragment
+ *    - with multiple fragments → requires opts.fragmentName to select
  */
 export const compilePlan = (
-  documentOrStringOrPlan: string | DocumentNode | CachePlanV1
+  documentOrStringOrPlan: string | DocumentNode | CachePlanV1,
+  opts?: { fragmentName?: string }
 ): CachePlanV1 => {
   // Precompiled plan? done.
   if (isCachePlanV1(documentOrStringOrPlan)) {
@@ -139,12 +141,34 @@ export const compilePlan = (
     };
   }
 
-  // Single-fragment path
+  // Fragment path (single or multiple)
   const fragmentDefs = document.definitions.filter(
     (d): d is FragmentDefinitionNode => d.kind === Kind.FRAGMENT_DEFINITION
   );
-  if (fragmentDefs.length === 1) {
-    const frag = fragmentDefs[0];
+
+  if (fragmentDefs.length >= 1) {
+    let frag: FragmentDefinitionNode | undefined;
+
+    if (fragmentDefs.length === 1) {
+      frag = fragmentDefs[0];
+    } else {
+      if (!opts?.fragmentName) {
+        const names = fragmentDefs.map(f => f.name.value).join(", ");
+        throw new Error(
+          `compilePlan: document contains multiple fragments [${names}]; ` +
+          `pass { fragmentName: "<one-of>" }`
+        );
+      }
+      frag = fragmentDefs.find(f => f.name.value === opts.fragmentName);
+      if (!frag) {
+        const names = fragmentDefs.map(f => f.name.value).join(", ");
+        throw new Error(
+          `compilePlan: fragment "${opts.fragmentName}" not found. ` +
+          `Available: [${names}]`
+        );
+      }
+    }
+
     const parentTypename = frag.typeCondition.name.value;
 
     const root = lowerSelectionSet(frag.selectionSet, parentTypename, fragmentsByName);

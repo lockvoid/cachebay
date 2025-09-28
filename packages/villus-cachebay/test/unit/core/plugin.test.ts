@@ -10,7 +10,7 @@ import { createPlugin } from "@/src/core/plugin";
 import { createSSR } from "@/src/features/ssr";
 import { ROOT_ID } from "@/src/core/constants";
 import { buildConnectionKey } from "@/src/core/utils";
-import { USERS_POSTS_QUERY_PLUGIN, USER_QUERY_PLUGIN, USERS_PAGE_QUERY_PLUGIN, seedConnectionPage } from "@/test/helpers/unit";
+import { operations, seedConnectionPage } from "@/test/helpers";
 import type { OperationResult } from "villus";
 
 describe("Plugin", () => {
@@ -42,7 +42,7 @@ describe("Plugin", () => {
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
 
       const context1: any = {
-        operation: { key: 1, query: USER_QUERY_PLUGIN, variables: { id: "u1" }, cachePolicy: "cache-only" },
+        operation: { key: 1, query: operations.USER_QUERY, variables: { id: "u1" }, cachePolicy: "cache-only" },
 
         useResult: (payload: OperationResult, terminal?: boolean) => {
           emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
@@ -56,7 +56,7 @@ describe("Plugin", () => {
       expect(emissions[0].data.user.id).toBe("u1");
 
       const context2: any = {
-        operation: { key: 2, query: USER_QUERY_PLUGIN, variables: { id: "u2" }, cachePolicy: "cache-only" },
+        operation: { key: 2, query: operations.USER_QUERY, variables: { id: "u2" }, cachePolicy: "cache-only" },
 
         useResult: (payload: OperationResult, terminal?: boolean) => {
           emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
@@ -77,7 +77,7 @@ describe("Plugin", () => {
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
 
       const context: any = {
-        operation: { key: 3, query: USER_QUERY_PLUGIN, variables: { id: "u9" }, cachePolicy: "cache-first" },
+        operation: { key: 3, query: operations.USER_QUERY, variables: { id: "u9" }, cachePolicy: "cache-first" },
 
         useResult: (payload: OperationResult, terminal?: boolean) => {
           emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
@@ -91,7 +91,7 @@ describe("Plugin", () => {
       expect(emissions.length).toBe(1);
       expect(emissions[0].terminal).toBe(true);
 
-      const userView = documents.materializeDocument({ document: USER_QUERY_PLUGIN, variables: { id: "u9" } });
+      const userView = documents.materializeDocument({ document: operations.USER_QUERY, variables: { id: "u9" } });
       expect(userView.user.email).toBe("u9@example.com");
     });
     //Ref
@@ -99,7 +99,7 @@ describe("Plugin", () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
       graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "b@example.com" });
 
-      const plan = planner.getPlan(USERS_POSTS_QUERY_PLUGIN);
+      const plan = planner.getPlan(operations.USERS_POSTS_QUERY);
       const users = plan.rootSelectionMap!.get("users")!;
       const posts = users
         .selectionMap!.get("edges")!
@@ -159,7 +159,7 @@ describe("Plugin", () => {
 
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
       const context: any = {
-        operation: { key: 20, query: USERS_POSTS_QUERY_PLUGIN, variables, cachePolicy: "cache-first" },
+        operation: { key: 20, query: operations.USERS_POSTS_QUERY, variables, cachePolicy: "cache-first" },
         useResult: (payload: OperationResult, terminal?: boolean) => {
           emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
         },
@@ -181,7 +181,7 @@ describe("Plugin", () => {
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
 
       const context: any = {
-        operation: { key: 401, query: USER_QUERY_PLUGIN, variables: { id: "oops" }, cachePolicy: "cache-first" },
+        operation: { key: 401, query: operations.USER_QUERY, variables: { id: "oops" }, cachePolicy: "cache-first" },
 
         useResult: (payload: OperationResult, terminal?: boolean) => {
           emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
@@ -205,7 +205,7 @@ describe("Plugin", () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
       graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "b@example.com" });
 
-      const plan = planner.getPlan(USERS_POSTS_QUERY_PLUGIN);
+      const plan = planner.getPlan(operations.USERS_POSTS_QUERY);
 
       const users = plan.rootSelectionMap!.get("users")!;
 
@@ -250,7 +250,7 @@ describe("Plugin", () => {
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
 
       const context: any = {
-        operation: { key: 10, query: USERS_POSTS_QUERY_PLUGIN, variables, cachePolicy: "cache-and-network" },
+        operation: { key: 10, query: operations.USERS_POSTS_QUERY, variables, cachePolicy: "cache-and-network" },
 
         useResult: (payload: OperationResult, terminal?: boolean) => {
           emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
@@ -302,7 +302,7 @@ describe("Plugin", () => {
       const afterContext1: any = {
         operation: {
           key: 101,
-          query: USERS_POSTS_QUERY_PLUGIN,
+          query: operations.USERS_POSTS_QUERY,
           cachePolicy: "cache-and-network",
 
           variables: {
@@ -344,7 +344,7 @@ describe("Plugin", () => {
       }, true);
 
       const leaderContext: any = {
-        operation: { key: 102, query: USERS_POSTS_QUERY_PLUGIN, variables: { usersRole: "dj", usersFirst: 2, usersAfter: null }, cachePolicy: "cache-and-network" },
+        operation: { key: 102, query: operations.USERS_POSTS_QUERY, variables: { usersRole: "dj", usersFirst: 2, usersAfter: null }, cachePolicy: "cache-and-network" },
         useResult: createResultHandler("leader"),
       };
       plugin(leaderContext);
@@ -362,7 +362,7 @@ describe("Plugin", () => {
       }, true);
 
       const afterContext2: any = {
-        operation: { key: 103, query: USERS_POSTS_QUERY_PLUGIN, variables: { usersRole: "dj", usersFirst: 2, usersAfter: "u2" }, cachePolicy: "cache-and-network" },
+        operation: { key: 103, query: operations.USERS_POSTS_QUERY, variables: { usersRole: "dj", usersFirst: 2, usersAfter: "u2" }, cachePolicy: "cache-and-network" },
         useResult: createResultHandler("after2"),
       };
       plugin(afterContext2);
@@ -390,7 +390,7 @@ describe("Plugin", () => {
       graph.putRecord("User:u2", { __typename: "User", id: "u2" });
       graph.putRecord("User:u3", { __typename: "User", id: "u3" });
 
-      const plan = planner.getPlan(USERS_POSTS_QUERY_PLUGIN);
+      const plan = planner.getPlan(operations.USERS_POSTS_QUERY);
       const users = plan.rootSelectionMap!.get("users")!;
       const leaderVariables = { usersRole: "dj", usersFirst: 2, usersAfter: null };
       const afterVariables = { usersRole: "dj", usersFirst: 1, usersAfter: "u2" };
@@ -412,7 +412,7 @@ describe("Plugin", () => {
 
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
       const context: any = {
-        operation: { key: 201, query: USERS_POSTS_QUERY_PLUGIN, variables: leaderVariables, cachePolicy: "cache-and-network" },
+        operation: { key: 201, query: operations.USERS_POSTS_QUERY, variables: leaderVariables, cachePolicy: "cache-and-network" },
         useResult: (payload: OperationResult, terminal?: boolean) => {
           emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
         },
@@ -447,7 +447,7 @@ describe("Plugin", () => {
       };
 
       const afterContext: any = {
-        operation: { key: 301, query: USERS_PAGE_QUERY_PLUGIN, variables: { usersRole: "mod", first: 2, after: "m2" }, cachePolicy: "cache-and-network" },
+        operation: { key: 301, query: operations.USERS_QUERY, variables: { role: "moderator", first: 2, after: "m2" }, cachePolicy: "cache-and-network" },
         useResult: createTaggedHandler("after"),
       };
       plugin(afterContext);
@@ -464,11 +464,11 @@ describe("Plugin", () => {
         },
       }, true);
 
-      const canonicalKey = `@connection.users({"role":"mod"})`;
+      const canonicalKey = `@connection.users({"role":"moderator"})`;
       expect(graph.getRecord(canonicalKey)?.edges.length).toBe(2);
 
       const leaderContext: any = {
-        operation: { key: 302, query: USERS_PAGE_QUERY_PLUGIN, variables: { usersRole: "mod", first: 2, after: null }, cachePolicy: "cache-and-network" },
+        operation: { key: 302, query: operations.USERS_QUERY, variables: { role: "moderator", first: 2, after: null }, cachePolicy: "cache-and-network" },
         useResult: createTaggedHandler("leader"),
       };
       plugin(leaderContext);
@@ -496,7 +496,7 @@ describe("Plugin", () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "x@a" });
       graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "y@b" });
 
-      const plan = planner.getPlan(USERS_POSTS_QUERY_PLUGIN);
+      const plan = planner.getPlan(operations.USERS_POSTS_QUERY);
       const users = plan.rootSelectionMap!.get("users")!;
       const variables = { usersRole: "sales", usersFirst: 2, usersAfter: null, postsCategory: "tech", postsFirst: 1, postsAfter: null };
       const pageKey = buildConnectionKey(users, "@", variables);
@@ -513,7 +513,7 @@ describe("Plugin", () => {
 
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
       const context: any = {
-        operation: { key: 30, query: USERS_POSTS_QUERY_PLUGIN, variables, cachePolicy: "cache-and-network" },
+        operation: { key: 30, query: operations.USERS_POSTS_QUERY, variables, cachePolicy: "cache-and-network" },
         useResult: (payload: OperationResult, terminal?: boolean) => {
           emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
         },
@@ -531,7 +531,7 @@ describe("Plugin", () => {
         graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
         graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "b@example.com" });
 
-        const plan = planner.getPlan(USERS_POSTS_QUERY_PLUGIN);
+        const plan = planner.getPlan(operations.USERS_POSTS_QUERY);
         const users = plan.rootSelectionMap!.get("users")!;
         const variables = { usersRole: "dj", usersFirst: 2, usersAfter: null, postsCategory: "tech", postsFirst: 1, postsAfter: null };
 
@@ -557,7 +557,7 @@ describe("Plugin", () => {
         const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
 
         const firstContext: any = {
-          operation: { key: 777, query: USERS_POSTS_QUERY_PLUGIN, variables, cachePolicy: "cache-and-network" },
+          operation: { key: 777, query: operations.USERS_POSTS_QUERY, variables, cachePolicy: "cache-and-network" },
           useResult: (payload: OperationResult, terminal?: boolean) => {
             emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
           },
@@ -585,7 +585,7 @@ describe("Plugin", () => {
         expect(emissions[1].terminal).toBe(true);
 
         const secondContext: any = {
-          operation: { key: 777, query: USERS_POSTS_QUERY_PLUGIN, variables, cachePolicy: "cache-and-network" },
+          operation: { key: 777, query: operations.USERS_POSTS_QUERY, variables, cachePolicy: "cache-and-network" },
           useResult: (payload: OperationResult, terminal?: boolean) => {
             emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
           },
@@ -601,7 +601,7 @@ describe("Plugin", () => {
         graph.putRecord("User:x1", { __typename: "User", id: "x1", email: "x1@example.com" });
         graph.putRecord("User:x2", { __typename: "User", id: "x2", email: "x2@example.com" });
 
-        const plan = planner.getPlan(USERS_POSTS_QUERY_PLUGIN);
+        const plan = planner.getPlan(operations.USERS_POSTS_QUERY);
         const users = plan.rootSelectionMap!.get("users")!;
         const variables = { usersRole: "ops", usersFirst: 2, usersAfter: null, postsCategory: "tech", postsFirst: 1, postsAfter: null };
         const pageKey = buildConnectionKey(users, ROOT_ID, variables);
@@ -627,7 +627,7 @@ describe("Plugin", () => {
         const emissions: Array<{ data?: any; error?: any; terminal: boolean; tag?: string }> = [];
 
         const firstContext: any = {
-          operation: { key: 999, query: USERS_POSTS_QUERY_PLUGIN, variables, cachePolicy: "cache-and-network" },
+          operation: { key: 999, query: operations.USERS_POSTS_QUERY, variables, cachePolicy: "cache-and-network" },
           useResult: (payload: OperationResult, terminal?: boolean) => {
             emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal, tag: "first" });
           },
@@ -656,7 +656,7 @@ describe("Plugin", () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
 
         const secondContext: any = {
-          operation: { key: 999, query: USERS_POSTS_QUERY_PLUGIN, variables, cachePolicy: "cache-and-network" },
+          operation: { key: 999, query: operations.USERS_POSTS_QUERY, variables, cachePolicy: "cache-and-network" },
           useResult: (payload: OperationResult, terminal?: boolean) => {
             emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal, tag: "second" });
           },
@@ -693,7 +693,7 @@ describe("Plugin", () => {
       const variables = { id: "u42" };
 
       const context1: any = {
-        operation: { key: 888, query: USER_QUERY_PLUGIN, variables, cachePolicy: "network-only" },
+        operation: { key: 888, query: operations.USER_QUERY, variables, cachePolicy: "network-only" },
         useResult: (payload: OperationResult, terminal?: boolean) => {
           emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
         },
@@ -706,7 +706,7 @@ describe("Plugin", () => {
       expect(emissions[0].terminal).toBe(true);
 
       const context2: any = {
-        operation: { key: 888, query: USER_QUERY_PLUGIN, variables, cachePolicy: "network-only" },
+        operation: { key: 888, query: operations.USER_QUERY, variables, cachePolicy: "network-only" },
         useResult: (payload: OperationResult, terminal?: boolean) => {
           emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
         },

@@ -1,10 +1,10 @@
 import gql from "graphql-tag";
 import { compilePlan } from "@/src/compiler";
-import { collectConnectionDirectives, hasTypenames, USER_FIELDS_FRAGMENT_COMPILER, USER_POSTS_FRAGMENT_COMPILER, USER_FEED_FRAGMENT_COMPILER } from "@/test/helpers";
+import { collectConnectionDirectives, hasTypenames, operations } from "@/test/helpers";
 
 describe("Compiler x Fragments", () => {
   it("compiles a simple User fragment (no args) with selectionMap", () => {
-    const plan = compilePlan(USER_FIELDS_FRAGMENT_COMPILER);
+    const plan = compilePlan(operations.USER_FRAGMENT);
 
     expect(plan.__kind).toBe("CachePlanV1");
     expect(plan.operation).toBe("fragment");
@@ -20,7 +20,7 @@ describe("Compiler x Fragments", () => {
   });
 
   it("compiles a fragment with a connection using @connection; builds selectionMap on nested sets", () => {
-    const plan = compilePlan(USER_POSTS_FRAGMENT_COMPILER);
+    const plan = compilePlan(operations.USER_POSTS_FRAGMENT, { fragmentName: "UserPosts" });
 
     expect(plan.operation).toBe("fragment");
     expect(plan.rootTypename).toBe("User");
@@ -35,7 +35,7 @@ describe("Compiler x Fragments", () => {
     const node = edges.selectionMap!.get("node")!;
     expect(node.fieldName).toBe("node");
 
-    const postsKey = `${posts.fieldName}(${posts.stringifyArgs({ cat: "tech", first: 2, after: null })})`;
+    const postsKey = `${posts.fieldName}(${posts.stringifyArgs({ postsCategory: "tech", postsFirst: 2, postsAfter: null })})`;
     expect(postsKey).toBe('posts({"after":null,"category":"tech","first":2})');
 
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
@@ -47,17 +47,17 @@ describe("Compiler x Fragments", () => {
       fragment A on User { id }
       fragment B on User { email }
     `;
-    
+
     expect(() => compilePlan(DOC)).toThrowError();
   });
 
   it("fragment with explicit @connection(key: ...) captures the key", () => {
-    const plan = compilePlan(USER_FEED_FRAGMENT_COMPILER);
+    const plan = compilePlan(operations.USER_POSTS_WITH_KEY_FRAGMENT, { fragmentName: "UserPosts" });
 
-    const feed = plan.rootSelectionMap!.get("feed")!;
+    const feed = plan.rootSelectionMap!.get("posts")!;
     expect(feed.isConnection).toBe(true);
-    expect(feed.connectionKey).toBe("Feed");
-    expect(feed.connectionFilters).toEqual([]);
+    expect(feed.connectionKey).toBe("UserPosts");
+    expect(feed.connectionFilters).toEqual(["category"]);
     expect(feed.connectionMode).toBe("infinite");
 
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);

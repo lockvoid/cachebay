@@ -1,6 +1,6 @@
 import { traverseFast, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, TRAVERSE_SKIP, isObject } from '@/src/core/utils';
 import { ROOT_ID } from "@/src/core/constants";
-import { TEST_QUERIES, createTestPlan } from "@/test/helpers/unit";
+import { operations, createTestPlan } from "@/test/helpers";
 
 describe('Utils', () => {
   describe('traverseFast', () => {
@@ -205,59 +205,58 @@ describe('Utils', () => {
 
   describe("buildFieldKey", () => {
     it("uses field.stringifyArgs with raw variables mapped to field argument names", () => {
-      const plan = createTestPlan(TEST_QUERIES.POSTS_WITH_CONNECTION);
+      const plan = createTestPlan(operations.POSTS_QUERY);
       const posts = plan.rootSelectionMap!.get("posts")!;
 
-      const postsKey = buildFieldKey(posts, { postsCategory: "tech", postsFirst: 2, postsAfter: null, });
+      const postsKey = buildFieldKey(posts, { category: "tech", first: 2, after: null });
       expect(postsKey).toBe(`posts({"after":null,"category":"tech","first":2})`);
     });
   });
 
   describe("buildConnectionKey", () => {
     it("builds concrete page key for root parent", () => {
-      const plan = createTestPlan(TEST_QUERIES.POSTS_SIMPLE);
+      const plan = createTestPlan(operations.POSTS_QUERY);
       const posts = plan.rootSelectionMap!.get("posts")!;
 
-      const postsKey = buildConnectionKey(posts, ROOT_ID, { first: 2, after: null });
-      expect(postsKey).toBe(`@.posts({"after":null,"first":2})`);
+      const postsKey = buildConnectionKey(posts, ROOT_ID, { category: "tech", first: 2, after: null });
+      expect(postsKey).toBe(`@.posts({"after":null,"category":"tech","first":2})`);
     });
 
     it("builds concrete page key for nested parent", () => {
-      const plan = createTestPlan(TEST_QUERIES.USER_POSTS_NESTED);
+      const plan = createTestPlan(operations.USER_POSTS_QUERY);
       const user = plan.rootSelectionMap!.get("user")!;
       const posts = user.selectionMap!.get("posts")!;
 
-      const userPostsKey = buildConnectionKey(posts, "User:u1", { id: "u1", first: 1, after: "p2" });
+      const userPostsKey = buildConnectionKey(posts, "User:u1", { id: "u1", postsFirst: 1, postsAfter: "p2" });
       expect(userPostsKey).toBe(`@.User:u1.posts({"after":"p2","first":1})`);
     });
   });
 
   describe("buildConnectionCanonicalKey", () => {
     it("respects filters and uses directive key under @connection", () => {
-      const plan = createTestPlan(TEST_QUERIES.POSTS_WITH_KEY);
+      const plan = createTestPlan(operations.POSTS_WITH_KEY_QUERY);
       const posts = plan.rootSelectionMap!.get("posts")!;
 
-      const postsKey = buildConnectionCanonicalKey(posts, ROOT_ID, { cat: "tech", first: 2, after: null });
-      expect(postsKey).toBe(`@connection.PostsList({"category":"tech"})`);
+      const postsKey = buildConnectionCanonicalKey(posts, ROOT_ID, { category: "tech", first: 2, after: null });
+      expect(postsKey).toBe(`@connection.KeyedPosts({"category":"tech"})`);
 
-      const userPostsKey = buildConnectionCanonicalKey(posts, "User:u1", { cat: "tech", first: 2, after: "p2" });
-      expect(userPostsKey).toBe(`@connection.User:u1.PostsList({"category":"tech"})`);
+      const userPostsKey = buildConnectionCanonicalKey(posts, "User:u1", { category: "tech", first: 2, after: "p2" });
+      expect(userPostsKey).toBe(`@connection.User:u1.KeyedPosts({"category":"tech"})`);
     });
 
     it("defaults filters to all non-pagination args when filters omitted", () => {
-      const plan = createTestPlan(TEST_QUERIES.POSTS_WITH_FILTERS);
+      const plan = createTestPlan(operations.POSTS_QUERY);
       const posts = plan.rootSelectionMap!.get("posts")!;
 
-      const postsKey = buildConnectionCanonicalKey(posts, ROOT_ID, { category: "tech", first: 2, sort: "hot", after: null });
-      expect(postsKey).toBe(`@connection.posts({"category":"tech","sort":"hot"})`);
+      const postsKey = buildConnectionCanonicalKey(posts, ROOT_ID, { category: "tech", first: 2, after: null });
+      expect(postsKey).toBe(`@connection.posts({"category":"tech"})`);
     });
 
     it("produces stable stringify identity regardless of variable order", () => {
-      const plan = createTestPlan(TEST_QUERIES.POSTS_WITH_FILTERS);
+      const plan = createTestPlan(operations.POSTS_QUERY);
       const posts = plan.rootSelectionMap!.get("posts")!;
 
       const keyA = buildConnectionCanonicalKey(posts, ROOT_ID, {
-        sort: "hot",
         category: "tech",
         first: 2,
         after: null,
@@ -265,12 +264,11 @@ describe('Utils', () => {
       const keyB = buildConnectionCanonicalKey(posts, ROOT_ID, {
         category: "tech",
         after: null,
-        sort: "hot",
         first: 2,
       });
 
       expect(keyA).toBe(keyB);
-      expect(keyA).toBe(`@connection.posts({"category":"tech","sort":"hot"})`);
+      expect(keyA).toBe(`@connection.posts({"category":"tech"})`);
     });
   });
 });

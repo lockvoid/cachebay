@@ -1,5 +1,5 @@
 import { compilePlan } from "@/src/compiler";
-import { collectConnectionDirectives, hasTypenames, USER_QUERY, USERS_QUERY_COMPILER, USER_POSTS_QUERY_COMPILER, USERS_POSTS_COMMENTS_QUERY_COMPILER, ALIAS_QUERY, MULTI_TYPE_FRAGMENT_QUERY } from "@/test/helpers";
+import { operations, collectConnectionDirectives, hasTypenames } from "@/test/helpers";
 import type { CachePlanV1, PlanField } from "@/src/compiler/types";
 
 const findField = (fields: PlanField[], responseKey: string): PlanField | null => {
@@ -12,7 +12,7 @@ const findField = (fields: PlanField[], responseKey: string): PlanField | null =
 
 describe("Compiler x Operations", () => {
   it("compiles USER_QUERY: flattens fragments and builds arg pickers", () => {
-    const plan = compilePlan(USER_QUERY);
+    const plan = compilePlan(operations.USER_QUERY);
     expect(plan.__kind).toBe("CachePlanV1");
     expect(plan.operation).toBe("query");
     expect(plan.rootTypename).toBe("Query");
@@ -35,7 +35,7 @@ describe("Compiler x Operations", () => {
   });
 
   it("compiles USERS_QUERY: marks users as connection; filters & default mode", () => {
-    const plan = compilePlan(USERS_QUERY_COMPILER);
+    const plan = compilePlan(operations.USERS_QUERY);
 
     const users = findField(plan.root, "users")!;
     expect(users.isConnection).toBe(true);
@@ -43,7 +43,7 @@ describe("Compiler x Operations", () => {
     expect(users.connectionFilters).toEqual(["role"]);
     expect(users.connectionMode).toBe("infinite");
 
-    const usersArgs = users.buildArgs({ usersRole: "admin", usersFirst: 2, usersAfter: undefined });
+    const usersArgs = users.buildArgs({ role: "admin", first: 2, after: undefined });
     expect(usersArgs).toEqual({ role: "admin", first: 2 });
 
     const edges = findField(users.selectionSet!, "edges");
@@ -56,13 +56,13 @@ describe("Compiler x Operations", () => {
   });
 
   it("compiles USER_POSTS_QUERY: nested posts as connection with filters; default mode", () => {
-    const plan = compilePlan(USER_POSTS_QUERY_COMPILER);
+    const plan = compilePlan(operations.USER_POSTS_QUERY);
 
     const user = findField(plan.root, "user")!;
     const posts = findField(user.selectionSet!, "posts")!;
     expect(posts.isConnection).toBe(true);
     expect(posts.connectionKey).toBe("posts");
-    expect(posts.connectionFilters).toEqual(["category"]);
+    expect(posts.connectionFilters).toEqual(["category", "sort"]);
     expect(posts.connectionMode).toBe("infinite");
 
     const userArgs = user.buildArgs({ id: "u1" });
@@ -87,7 +87,7 @@ describe("Compiler x Operations", () => {
   });
 
   it("compiles USERS_POSTS_COMMENTS_QUERY: users, posts, comments marked with filters & default mode", () => {
-    const plan: CachePlanV1 = compilePlan(USERS_POSTS_COMMENTS_QUERY_COMPILER);
+    const plan: CachePlanV1 = compilePlan(operations.USERS_POSTS_COMMENTS_QUERY);
 
     const users = findField(plan.root, "users")!;
     expect(users.isConnection).toBe(true);
@@ -127,7 +127,7 @@ describe("Compiler x Operations", () => {
   });
 
   it("preserves alias as responseKey and field name as fieldName", () => {
-    const plan = compilePlan(ALIAS_QUERY);
+    const plan = compilePlan(operations.USER_WITH_ALIAS_QUERY);
 
     const currentUser = findField(plan.root, "currentUser")!;
     expect(currentUser.responseKey).toBe("currentUser");
@@ -139,7 +139,7 @@ describe("Compiler x Operations", () => {
   });
 
   it("when multiple distinct type conditions exist, child parent inference falls back", () => {
-    const plan = compilePlan(MULTI_TYPE_FRAGMENT_QUERY);
+    const plan = compilePlan(operations.MULTIPLE_USER_FRAGMENT);
 
     const user = findField(plan.root, "user")!;
     const id = findField(user.selectionSet!, "id");
