@@ -164,8 +164,8 @@ export const USERS_QUERY = gql`
   ${PAGE_INFO_FRAGMENT}
   ${USER_FRAGMENT}
 
-  query UsersQuery($role: String, $first: Int, $after: String) {
-    users(role: $role, first: $first, after: $after) @connection(filters: ["role"]) {
+  query UsersQuery($role: String, $first: Int, $after: String, $last: Int, $before: String) {
+    users(role: $role, first: $first, after: $after, last: $last, before: $before) @connection(filters: ["role"]) {
       pageInfo {
         ...PageInfoFields
       }
@@ -272,11 +272,11 @@ export const USER_POSTS_QUERY = `
   ${AUDIO_POST_FRAGMENT}
   ${VIDEO_POST_FRAGMENT}
 
-  query UserPostsQuery($id: ID!, $postsCategory: String, $postsSort: String, $postsFirst: Int, $postsAfter: String) {
+  query UserPostsQuery($id: ID!, $postsCategory: String, $postsSort: String, $postsFirst: Int, $postsAfter: String, $postsLast: Int, $postsBefore: String) {
     user(id: $id) {
       ...UserFields
 
-      posts(category: $postsCategory, sort: $postsSort, first: $postsFirst, after: $postsAfter) @connection(filters: ["category", "sort"]) {
+      posts(category: $postsCategory, sort: $postsSort, first: $postsFirst, after: $postsAfter, last: $postsLast, before: $postsBefore) @connection(filters: ["category", "sort"]) {
         totalCount
 
         pageInfo {
@@ -519,6 +519,29 @@ export const USER_UPDATED_SUBSCRIPTION = gql`
     userUpdated(id: $id) {
       user {
         ...UserFields
+      }
+    }
+  }
+`;
+
+export const POST_COMMENTS_QUERY = gql`
+  ${PAGE_INFO_FRAGMENT}
+  ${COMMENT_FRAGMENT}
+
+  query PostCommentsQuery($postId: ID!, $first: Int, $after: String, $last: Int, $before: String) {
+    post(id: $postId) {
+      id
+      comments(first: $first, after: $after, last: $last, before: $before) @connection(filters: [], mode: "page") {
+        totalCount
+        pageInfo {
+          ...PageInfoFields
+        }
+        edges {
+          cursor
+          node {
+            ...CommentFields
+          }
+        }
       }
     }
   }

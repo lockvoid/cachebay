@@ -448,7 +448,7 @@ describe("documents.normalizeDocument", () => {
       document: operations.USERS_POSTS_QUERY,
 
       variables: {
-        role: "dj",
+        usersRole: "dj",
         usersFirst: 2,
         usersAfter: null,
         postsCategory: "tech",
@@ -872,7 +872,7 @@ describe("documents.normalizeDocument", () => {
       document: operations.USERS_POSTS_COMMENTS_QUERY,
 
       variables: {
-        role: "admin",
+        usersRole: "admin",
         usersFirst: 2,
         usersAfter: null,
         postsCategory: "tech",
@@ -1128,7 +1128,7 @@ describe("documents.normalizeDocument", () => {
     expect(graph.getRecord(adminUsersConnection.edges[3].__ref as string)!).toEqual({ __typename: "UserEdge", cursor: "u3", node: { __ref: "User:u3" } });
   });
 
-  it.only("appends after cursor and prepends before cursor in canonical page mode", () => {
+  it("appends after cursor and prepends before cursor in canonical page mode", () => {
     const moderatorUsersLeaderData = {
       users: {
         __typename: "UserConnection",
@@ -1402,7 +1402,7 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: operations.COMMENTS_PAGE_QUERY,
+      document: operations.POST_COMMENTS_QUERY,
       variables: { postId: "p9", first: 2, after: null },
       data: post9CommentsLeaderData,
     });
@@ -1443,7 +1443,7 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: operations.COMMENTS_PAGE_QUERY,
+      document: operations.POST_COMMENTS_QUERY,
 
       variables: {
         postId: "p9",
@@ -1486,7 +1486,7 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: operations.COMMENTS_PAGE_QUERY,
+      document: operations.POST_COMMENTS_QUERY,
       variables: { postId: "p9", last: 1, before: "x3" } as any,
       data: post9CommentsBeforeData,
     });
