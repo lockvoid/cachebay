@@ -1,4 +1,4 @@
-// test/integration/edgecases-behaviour.test.ts
+
 import { describe, it, expect } from 'vitest';
 import { defineComponent, h, computed, watch } from 'vue';
 import { mountWithClient, delay, tick, type Route, PostListTracker } from '@/test/helpers';
@@ -12,11 +12,10 @@ describe('Edgecases behaviour', () => {
     const renders: string[][] = [];
     const firstNodeIds: string[] = [];
 
-    // Component that tracks post updates
     const PostList = PostListTracker(renders, firstNodeIds);
 
     const routes: Route[] = [
-      // page 1
+
       {
         when: ({ variables }) => variables.first === 2 && !variables.after,
         delay: 5,
@@ -27,7 +26,7 @@ describe('Edgecases behaviour', () => {
           },
         }),
       },
-      // page 2 (append) — canonical “infinite” will union p1+p2
+
       {
         when: ({ variables }) => variables.first === 2 && variables.after === 'c2',
         delay: 10,
@@ -38,7 +37,7 @@ describe('Edgecases behaviour', () => {
           },
         }),
       },
-      // update Post 1 via a cursor page (first=1 after c4) — entity should update in place
+
       {
         when: ({ variables }) => variables.after === 'c4' && variables.first === 1,
         delay: 10,
@@ -69,13 +68,11 @@ describe('Edgecases behaviour', () => {
 
     const { wrapper, fx } = await mountWithClient(PostList, routes, cache);
 
-    // leader
     await wrapper.setProps({ first: 2 });
     await delay(8);
     expect(renders).toEqual([['Post 1', 'Post 2']]);
     expect(renders[0].length).toBe(2);
 
-    // after → union: canonical infinite shows p1+p2 in the second render
     await wrapper.setProps({ first: 2, after: 'c2' });
     await delay(12);
     expect(renders).toEqual([
@@ -84,17 +81,14 @@ describe('Edgecases behaviour', () => {
     ]);
     expect(renders[1].length).toBe(4);
 
-    // update Post 1 (first=1 after=c4) — entity 1 title should update
     await wrapper.setProps({ first: 1, after: 'c4' });
     await delay(12);
 
     const last = renders.at(-1)!;
     expect(last).toContain('Post 1 Updated');
-    // update render may be just the delta page or a unioned shape; both are fine:
-    //
+
     expect([1, 2, 3, 4]).toContain(last.length);
 
-    // Identity of first node remains stable across renders
     expect(firstNodeIds[0]).toBe('1');
     expect(firstNodeIds.at(-1)).toBe(firstNodeIds[0]);
 
@@ -104,7 +98,6 @@ describe('Edgecases behaviour', () => {
   it('two live fragments show concrete implementors (materialized), no phantom keys', async () => {
     const cache = createCache();
 
-    // seed two entities using exported fragments
     (cache as any).writeFragment({
       id: 'Post:1',
       fragment: operations.POST_FRAGMENT,
@@ -141,7 +134,6 @@ describe('Edgecases behaviour', () => {
   it('hides removed entity in live readers (no wildcard)', async () => {
     const cache = createCache();
 
-    // seed
     (cache as any).writeFragment({
       id: 'Post:1',
       fragment: operations.POST_FRAGMENT,
@@ -188,14 +180,12 @@ describe('Edgecases behaviour', () => {
     expect(wrapper.find('.a').text()).toBe('T1');
     expect(wrapper.find('.b').text()).toBe('T2');
 
-    // delete Post:1 optimistically
     const t = (cache as any).modifyOptimistic((tx: any) => {
       tx.delete('Post:1');
     });
     t.commit?.();
     await tick();
 
-    // A disappears; B remains
     expect(wrapper.find('.a').text()).toBe('');
     expect(wrapper.find('.b').text()).toBe('T2');
   });

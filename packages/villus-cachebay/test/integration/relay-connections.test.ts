@@ -3,12 +3,12 @@ import { isReactive } from 'vue';
 import gql from 'graphql-tag';
 import { useQuery } from 'villus';
 
-import { 
-  delay, 
-  tick, 
-  seedCache, 
-  type Route, 
-  mountWithClient, 
+import {
+  delay,
+  tick,
+  seedCache,
+  type Route,
+  mountWithClient,
   createTestClient,
   fixtures,
   harnessEdges,
@@ -20,18 +20,6 @@ import {
   POSTS_REPLACE,
   FRAG_POST_RELAY,
 } from '@/test/helpers';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Queries (@connection)
-// ─────────────────────────────────────────────────────────────────────────────
-
-
-
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Flows
-// ─────────────────────────────────────────────────────────────────────────────
 
 describe('Integration • Relay flows (@connection) • Posts', () => {
   it('append mode: adds at end; pageInfo from tail (leader head, after tail)', async () => {
@@ -50,12 +38,12 @@ describe('Integration • Relay flows (@connection) • Posts', () => {
 
     await tick(2);
     expect(rowsRelayConnections(wrapper)).toEqual(['A1', 'A2']);
-    expect(readPI(wrapper).endCursor).toBe('p2'); // head (leader) end
+    expect(readPI(wrapper).endCursor).toBe('p2');
 
     await wrapper.setProps({ first: 2, after: 'p2' });
     await tick(2);
     expect(rowsRelayConnections(wrapper)).toEqual(['A1', 'A2', 'A3', 'A4']);
-    // tail end
+
     expect(readPI(wrapper).endCursor).toBe('p4');
 
     await fx.restore?.();
@@ -86,7 +74,7 @@ describe('Integration • Relay flows (@connection) • Posts', () => {
     await wrapper.setProps({ last: 2, before: 'p1' });
     await tick(2);
     expect(rowsRelayConnections(wrapper)).toEqual(['A-1', 'A0', 'A1', 'A2']);
-    // new head (from before page)
+
     expect(readPI(wrapper).startCursor).toBe('p-1');
 
     await fx.restore?.();
@@ -103,7 +91,7 @@ describe('Integration • Relay flows (@connection) • Posts', () => {
         respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A3', 'A4'], { fromId: 3 }) } })
       },
       {
-        when: ({ variables }) => !variables.after && variables.first === 2, // later revalidate leader
+        when: ({ variables }) => !variables.after && variables.first === 2,
         respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A1-new', 'A2'], { fromId: 1 }) } })
       },
     ];
@@ -166,7 +154,7 @@ describe('Integration • Relay flows (@connection) • Posts', () => {
 
 describe('Integration • Relay pagination reset & append from cache — extended', () => {
   it('A→(p2,p3) → B → A (reset) → paginate p2,p3,p4 from cache; slow revalidate; pageInfo tail anchored', async () => {
-    // Quick register A p1 + seed p2 into the same cache
+
     {
       const fast: Route[] = [{
         when: ({ variables }) => variables.filter === 'A' && !variables.after && variables.first === 2,
@@ -191,7 +179,6 @@ describe('Integration • Relay pagination reset & append from cache — extende
       await fx.restore?.();
     }
 
-    // Slow revalidate routes for second mount
     const slowRoutes: Route[] = [
       {
         delay: 50,
@@ -234,31 +221,26 @@ describe('Integration • Relay pagination reset & append from cache — extende
       data: { __typename: 'Query', posts: fixtures.posts.connection(['A-3', 'A-4'], { fromId: 3 }) },
     });
 
-    // A leader
     await wrapper.setProps({ filter: 'A', first: 2 });
     await delay(51);
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2']);
     expect(readPI(wrapper).endCursor).toBe('p2');
 
-    // A after p2 — union p1+p2
     await wrapper.setProps({ filter: 'A', first: 2, after: 'p2' });
     await tick(2);
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4']);
     expect(readPI(wrapper).endCursor).toBe('p4');
 
-    // A after p4 — union grows with p3
     await wrapper.setProps({ filter: 'A', first: 2, after: 'p4' });
     await delay(51);
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
     expect(readPI(wrapper).endCursor).toBe('p6');
 
-    // Switch to B
     await wrapper.setProps({ filter: 'B', first: 2, after: undefined } as any);
     await delay(51);
     expect(rowsRelayConnections(wrapper)).toEqual(['B-1', 'B-2']);
     expect(readPI(wrapper).endCursor).toBe('p101');
 
-    // Back to A leader — leader slice
     await wrapper.setProps({ filter: 'A', first: 2, after: undefined } as any);
     await tick(2);
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
@@ -269,7 +251,6 @@ describe('Integration • Relay pagination reset & append from cache — extende
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2']);
     expect(readPI(wrapper).endCursor).toBe('p2');
 
-    // A after p2 — union p1+p2
     await wrapper.setProps({ filter: 'A', first: 2, after: 'p2' });
     await tick(2);
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4']);
@@ -280,7 +261,6 @@ describe('Integration • Relay pagination reset & append from cache — extende
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4']);
     expect(readPI(wrapper).endCursor).toBe('p4');
 
-    // A after p4 — union p1+p2+p3
     await wrapper.setProps({ filter: 'A', first: 2, after: 'p4' });
     await tick(2);
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
@@ -291,7 +271,6 @@ describe('Integration • Relay pagination reset & append from cache — extende
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
     expect(readPI(wrapper).endCursor).toBe('p6');
 
-    // A after p6 — slow grow with p4
     await wrapper.setProps({ filter: 'A', first: 2, after: 'p6' });
     await tick(2);
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
@@ -305,9 +284,6 @@ describe('Integration • Relay pagination reset & append from cache — extende
   });
 });
 
-/* -------------------------------------------------------------------------- */
-/* Proxy shape invariants & identity stability */
-/* -------------------------------------------------------------------------- */
 describe('Integration • Proxy shape invariants & identity (Posts)', () => {
   it('View A (page1) and View B (page1+page2) stable & reactive (edges reactive, pageInfo not)', async () => {
     const routes: Route[] = [

@@ -1,20 +1,10 @@
-// test/integration/mutations-simulated.test.ts
+
 import { describe, it, expect } from "vitest";
 import { defineComponent, h } from "vue";
-import gql from "graphql-tag";
 
 import { mountWithClient } from "@/test/helpers/integration";
 import { seedCache, tick, type Route } from "@/test/helpers";
-import { operations } from "@/test/helpers";
-
-const UPDATE_USER_MUTATION = gql/* GraphQL */ `
-  mutation UpdateUser($id: ID!, $input: UpdateUserInput!) {
-    updateUser(id: $id, input: $input) {
-      __typename
-      user { __typename id email name }
-    }
-  }
-`;
+import { operations, UPDATE_USER_MUTATION } from "@/test/helpers";
 
 describe("Mutations", () => {
   it("entity updates via normalization after mutation, and execute() returns data", async () => {
@@ -31,7 +21,6 @@ describe("Mutations", () => {
 
         const { execute } = useMutation(UPDATE_USER_MUTATION);
 
-        // IMPORTANT: return the result so the test can assert it
         const run = async () => {
           return execute({
             id: "u1",
@@ -70,7 +59,6 @@ describe("Mutations", () => {
 
     const { wrapper, cache, fx } = await mountWithClient(App, routes);
 
-    // seed initial query so cache-first renders a value
     await seedCache(cache, {
       query: operations.USER_QUERY,
       variables: { id: "u1" },
@@ -82,10 +70,9 @@ describe("Mutations", () => {
     await tick();
     expect(wrapper.text()).toBe("u1@example.com");
 
-    // run mutation and assert the returned payload
     const res = await (wrapper.vm as any).run();
-    await fx.waitAll?.();        // wait transport
-    await tick(2);               // let views re-materialize
+    await fx.waitAll?.();
+    await tick(2);
 
     expect(res?.error).toBeFalsy();
     expect(res?.data?.updateUser?.user?.email).toBe("u1+updated@example.com");

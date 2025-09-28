@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { defineComponent, h, watch } from "vue";
 import {
-  mountWithClient, 
+  mountWithClient,
   createTestClient,
   fixtures,
   harnessEdges,
@@ -25,14 +25,8 @@ import {
   rows,
 } from '@/test/helpers';
 
-/* -----------------------------------------------------------------------------
- * Tests
- * -------------------------------------------------------------------------- */
-
 describe("Cache Policies Behavior", () => {
-  // ────────────────────────────────────────────────────────────────────────────
-  // cache-first
-  // ────────────────────────────────────────────────────────────────────────────
+
   describe("cache-first policy", () => {
     it("miss → one network then render (root users connection)", async () => {
       const routes: Route[] = [
@@ -115,9 +109,6 @@ describe("Cache Policies Behavior", () => {
     });
   });
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // cache-and-network
-  // ────────────────────────────────────────────────────────────────────────────
   describe("cache-and-network policy", () => {
     it("hit → immediate cached render then network refresh once (root users)", async () => {
       const cache = (await mountWithClient(EmptyDivComponent, [])).cache;
@@ -230,10 +221,9 @@ describe("Cache Policies Behavior", () => {
     });
 
     it("nested Post→Comments (uuid) • hit then refresh", async () => {
-      // bootstrap a cache instance we can seed directly
+
       const { cache } = await mountWithClient(EmptyDivComponent, []);
 
-      // Seed: User u1 with Posts(tech) page → P1 that already has Comments(C1, C2) canonicalized
       await seedCache(cache, {
         query: operations.USER_POSTS_COMMENTS_QUERY,
         variables: {
@@ -266,8 +256,6 @@ describe("Cache Policies Behavior", () => {
 
       await delay(5);
 
-      // Network: we revalidate the SAME leader (no cursor) and server now includes C3 as well.
-      // (We don't auto-fire an 'after' request; canonical union grows because the leader payload changed.)
       const routes: Route[] = [
         {
           when: ({ variables }) =>
@@ -302,7 +290,6 @@ describe("Cache Policies Behavior", () => {
         },
       ];
 
-      // Component that reads: User(u1) → posts(tech first:1) → edges[0].node.comments(first:2, after:null)
       const Comp = defineComponent({
         name: "UserPostComments",
         setup() {
@@ -329,13 +316,10 @@ describe("Cache Policies Behavior", () => {
 
       const { wrapper, fx } = await mountWithClient(Comp, routes, cache);
 
-      // Immediate cached render (C1, C2)
       await tick();
       expect(wrapper.findAll("div").map((d) => d.text())).toEqual(["Comment 1", "Comment 2"]);
 
-      // After network revalidate, canonical shows C1, C2, C3
       await delay(125);
-
 
       expect(wrapper.findAll("div").map((d) => d.text())).toEqual(["Comment 1", "Comment 2", "Comment 3"]);
 
@@ -343,9 +327,6 @@ describe("Cache Policies Behavior", () => {
     });
   });
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // network-only
-  // ────────────────────────────────────────────────────────────────────────────
   describe("network-only policy", () => {
     it("no cache, renders only on network (users)", async () => {
       const routes: Route[] = [
@@ -382,9 +363,6 @@ describe("Cache Policies Behavior", () => {
     });
   });
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // cache-only
-  // ────────────────────────────────────────────────────────────────────────────
   describe("cache-only policy", () => {
     it("hit renders cached data, no network call (users)", async () => {
       const cache = (await mountWithClient(EmptyDivComponent, [])).cache;
@@ -438,9 +416,6 @@ describe("Cache Policies Behavior", () => {
     });
   });
 
-  // ────────────────────────────────────────────────────────────────────────────
-  // cursor replay (simple smoke via network-only)
-  // ────────────────────────────────────────────────────────────────────────────
   describe("cursor replay (network-only) — nested comments page", () => {
     it("publishes terminally — simple smoke via network-only", async () => {
       const routes: Route[] = [
@@ -498,10 +473,9 @@ describe("Cache Policies Behavior", () => {
   });
 
   it("return visit: cached union emits first, leader network collapses to leader slice (root users)", async () => {
-    // bootstrap a cache we can pre-seed
+
     const { cache } = await mountWithClient(defineComponent({ render: () => h("div") }), []);
 
-    // Seed LEADER page (after:null) and an AFTER page into the cache (which also canonicalizes).
     await seedCache(cache, {
       query: operations.USERS_QUERY,
       variables: { usersRole: "revisit", usersFirst: 2, usersAfter: null },
@@ -513,7 +487,6 @@ describe("Cache Policies Behavior", () => {
       data: fixtures.users.query(["a3@example.com"]).data,
     });
 
-    // Network only refetches the LEADER (no 'after') — new policy collapses to leader slice.
     const routes: Route[] = [
       {
         when: ({ variables }) =>
@@ -530,11 +503,9 @@ describe("Cache Policies Behavior", () => {
     });
     const { wrapper, fx } = await mountWithClient(Comp, routes, cache);
 
-    // 1) cached union (leader+after) renders immediately
     await tick();
     expect(rows(wrapper)).toEqual(["a3@example.com"]);
 
-    // 2) leader network arrives → canonical collapses to leader slice
     await delay(20);
     await tick();
     expect(rows(wrapper)).toEqual(["a1@example.com", "a2@example.com"]);
@@ -546,7 +517,6 @@ describe("Cache Policies Behavior", () => {
   it.skip("asking next page again: cache shows instantly; network slice replaces without dupes", async () => {
     const { cache } = await mountWithClient(defineComponent({ render: () => h("div") }), []);
 
-    // Seed leader and after pages
     await seedCache(cache, {
       query: operations.USERS_QUERY,
       variables: { usersRole: "again", usersFirst: 2, usersAfter: null },
@@ -558,15 +528,12 @@ describe("Cache Policies Behavior", () => {
       data: fixtures.users.query(["n1@example.com", "n2@example.com"]).data,
     });
 
-    // Now navigate to "after:l2" (simulate “load more” view) with cache-and-network semantics:
-    // - cache emits instantly (l1,l2,n1,n2 show because canonical union is used by leader view)
-    // - network returns a modified after page (n1' only) that must replace the n1/n2 slice (no dupes)
     const routes: Route[] = [
       {
         when: ({ variables }) =>
           variables.usersRole === "again" && variables.usersAfter === "l2",
         delay: 12,
-        respond: () => fixtures.users.query(["n1@example.com"]), // page changed server-side
+        respond: () => fixtures.users.query(["n1@example.com"]),
       },
     ];
 
@@ -577,7 +544,6 @@ describe("Cache Policies Behavior", () => {
     });
     const { wrapper, fx } = await mountWithClient(Comp, routes, cache);
 
-    // Cached union visible right away (leader + cached after)
     await tick();
     expect(rows(wrapper)).toEqual([
       "l1@example.com",
@@ -586,7 +552,6 @@ describe("Cache Policies Behavior", () => {
       "n2@example.com",
     ]);
 
-    // Network slice replacement: keep leader slice, replace the 'after' slice (no dupes)
     await delay(20);
     await tick();
     expect(rows(wrapper)).toEqual([

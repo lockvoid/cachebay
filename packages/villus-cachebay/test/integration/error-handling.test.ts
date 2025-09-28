@@ -37,13 +37,13 @@ describe('Error Handling', () => {
 
   it('Latest-only gating (non-cursor): older error is dropped; newer data renders', async () => {
     const routes: Route[] = [
-      // Older op (first=2) – slow error
+
       {
         when: ({ variables }) => variables.first === 2 && !variables.after,
         delay: 30,
         respond: () => ({ error: new Error('Older error') }),
       },
-      // Newer op (first=3) – fast data
+
       {
         when: ({ variables }) => variables.first === 3 && !variables.after,
         delay: 5,
@@ -71,7 +71,6 @@ describe('Error Handling', () => {
       routes,
     );
 
-    // Newer leader (first=3)
     await wrapper.setProps({ first: 3 });
 
     await delay(14);
@@ -79,7 +78,6 @@ describe('Error Handling', () => {
     expect(errors.length).toBe(0);
     expect(empties.length).toBe(0);
 
-    // Older error arrives later → dropped
     await delay(25);
     expect(errors.length).toBe(0);
     expect(renders).toEqual([['NEW']]);
@@ -89,7 +87,7 @@ describe('Error Handling', () => {
 
   it('Cursor-page error is dropped (no replay); latest success remains', async () => {
     const routes: Route[] = [
-      // Newer (no cursor) fast success
+
       {
         when: ({ variables }) => !variables.after && variables.first === 2,
         delay: 5,
@@ -100,7 +98,7 @@ describe('Error Handling', () => {
           },
         }),
       },
-      // Older cursor op (after='c1') slow error -> DROPPED
+
       {
         when: ({ variables }) => variables.after === 'c1' && variables.first === 2,
         delay: 30,
@@ -123,18 +121,15 @@ describe('Error Handling', () => {
       routes,
     );
 
-    // Start with older cursor op in-flight…
     await wrapper.setProps({ first: 2, after: 'c1' });
-    // …then issue the newer leader (no cursor)
+
     await wrapper.setProps({ first: 2, after: undefined });
 
-    // Newer success arrives
     await delay(14);
     expect(renders).toEqual([['NEW']]);
     expect(errors.length).toBe(0);
     expect(empties.length).toBe(0);
 
-    // Cursor error arrives later — dropped
     await delay(25);
     expect(errors.length).toBe(0);
     expect(renders).toEqual([['NEW']]);
@@ -145,7 +140,7 @@ describe('Error Handling', () => {
 
   it('Transport reordering: O1 slow success, O2 fast error, O3 medium success → final is O3; errors dropped; no empties', async () => {
     const routes: Route[] = [
-      // O1: first=2 (slow success)
+
       {
         when: ({ variables }) => variables.first === 2 && !variables.after,
         delay: 50,
@@ -156,13 +151,13 @@ describe('Error Handling', () => {
           },
         }),
       },
-      // O2: first=3 (fast error)
+
       {
         when: ({ variables }) => variables.first === 3 && !variables.after,
         delay: 5,
         respond: () => ({ error: new Error('O2 err') }),
       },
-      // O3: first=4 (medium success)
+
       {
         when: ({ variables }) => variables.first === 4 && !variables.after,
         delay: 20,
@@ -190,23 +185,19 @@ describe('Error Handling', () => {
       routes,
     );
 
-    // Start with O1
     await wrapper.setProps({ first: 2 });
-    // enqueue O2 then O3
+
     await wrapper.setProps({ first: 3 });
     await wrapper.setProps({ first: 4 });
 
-    // Fast error arrives (dropped), medium still pending
     await delay(12);
     expect(errors.length).toBe(0);
     expect(renders.length).toBe(0);
     expect(empties.length).toBe(0);
 
-    // O3 arrives
     await delay(18);
     expect(renders).toEqual([['O3']]);
 
-    // O1 comes last — ignored (older)
     await delay(40);
     expect(renders).toEqual([['O3']]);
     expect(errors.length).toBe(0);

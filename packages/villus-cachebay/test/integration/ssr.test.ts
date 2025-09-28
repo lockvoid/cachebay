@@ -6,7 +6,6 @@ import { createCache } from "@/src/core/internals";
 
 const rows = (wrapper: any) => wrapper.findAll("div[data-row]").map((d: any) => d.text());
 
-// Readers
 function makeNonSuspenseApp(
   cachePolicy: "cache-and-network" | "cache-first" | "network-only" | "cache-only"
 ) {
@@ -62,9 +61,8 @@ function makeSuspenseApp(
   });
 }
 
-// SSR helpers
 async function ssrRoundTripAndMount(App: any, routes: Route[], seedTitles: string[]) {
-  // server: seed & dehydrate
+
   const serverCache = createCache();
   await seedCache(serverCache, {
     query: operations.POSTS_QUERY,
@@ -73,7 +71,6 @@ async function ssrRoundTripAndMount(App: any, routes: Route[], seedTitles: strin
   });
   const snap = (serverCache as any).dehydrate();
 
-  // client: hydrate & mount
   const clientCache = createCache();
   (clientCache as any).hydrate(snap);
 
@@ -91,9 +88,8 @@ function makePostsRoute(match: (v: any) => boolean, titles: string[], delayMs = 
   };
 }
 
-// Matrix
 describe("SSR Matrix", () => {
-  // Suspense
+
   describe("Suspense", () => {
     describe("cache-and-network", () => {
       it("hydrates from cache; 0 requests during hydration", async () => {
@@ -161,7 +157,6 @@ describe("SSR Matrix", () => {
     });
   });
 
-  // Non-suspense
   describe("Non-suspense", () => {
     describe("cache-and-network", () => {
       it("hydrates from cache; 0 requests", async () => {

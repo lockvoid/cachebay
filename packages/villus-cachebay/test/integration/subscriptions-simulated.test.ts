@@ -7,10 +7,7 @@ import { createCache, type CachebayInstance } from "@/src/core/internals";
 import { useFragment } from "@/src";
 
 describe("Subscriptions", () => {
-  /**
-   * 1) Simulate subscription frames by updating cache directly.
-   *    Use a live reader (useFragment) so the UI follows writes.
-   */
+
   it("simulates subscription frames by updating cache directly", async () => {
     const cache: CachebayInstance = createCache();
 
@@ -18,7 +15,7 @@ describe("Subscriptions", () => {
       name: "PostDisplay",
       setup() {
         const key = ref("Post:1");
-        // live fragment — reacts to writeFragment calls below
+
         const post = useFragment({ id: key, fragment: operations.POST_FRAGMENT });
         return () =>
           h("div", [h("div", { class: "title" }, post.value?.title || "No post")]);
@@ -27,7 +24,6 @@ describe("Subscriptions", () => {
 
     const { wrapper } = await mountWithClient(PostDisplay, [] as Route[], cache);
 
-    // Frame 0: initial write (entity appears)
     cache.writeFragment({
       id: "Post:1",
       fragment: operations.POST_FRAGMENT,
@@ -36,7 +32,6 @@ describe("Subscriptions", () => {
     await tick();
     expect(wrapper.find(".title").text()).toBe("Initial Title");
 
-    // Frame 1
     cache.writeFragment({
       id: "Post:1",
       fragment: operations.POST_FRAGMENT,
@@ -45,7 +40,6 @@ describe("Subscriptions", () => {
     await tick();
     expect(wrapper.find(".title").text()).toBe("Updated via subscription");
 
-    // Frame 2
     cache.writeFragment({
       id: "Post:1",
       fragment: operations.POST_FRAGMENT,
@@ -55,9 +49,6 @@ describe("Subscriptions", () => {
     expect(wrapper.find(".title").text()).toBe("Second update");
   });
 
-  /**
-   * 2) Subscription-like error states in the UI (pure local simulation).
-   */
   it("handles subscription-like error states in UI", async () => {
     const cache: CachebayInstance = createCache();
 
@@ -67,7 +58,6 @@ describe("Subscriptions", () => {
         const error = ref<Error | null>(null);
         const data = ref<{ message: string } | null>(null);
 
-        // Simulate a push stream: success then error
         setTimeout(() => {
           data.value = { message: "Success" };
         }, 20);
@@ -86,25 +76,18 @@ describe("Subscriptions", () => {
 
     const { wrapper } = await mountWithClient(ErrorHandlingComponent, [] as Route[], cache);
 
-    // Initially no data or error
     expect(wrapper.find(".error").text()).toBe("No error");
     expect(wrapper.find(".data").text()).toBe("No data");
 
-    // Wait for success frame
     await delay(25);
     expect(wrapper.find(".error").text()).toBe("No error");
     expect(wrapper.find(".data").text()).toBe("Success");
 
-    // Wait for error frame
     await delay(25);
     expect(wrapper.find(".error").text()).toBe("Connection lost");
     expect(wrapper.find(".data").text()).toBe("No data");
   });
 
-  /**
-   * 3) Apply subscription frames and update cache + UI (entity case).
-   *    Use live reader (useFragment) so the UI follows writes.
-   */
   it("applies subscription-like frames and updates entities in cache", async () => {
     const cache: CachebayInstance = createCache();
 
@@ -122,7 +105,6 @@ describe("Subscriptions", () => {
     await delay(10);
     expect(wrapper.find(".current").text()).toBe("Waiting...");
 
-    // Frame 1
     cache.writeFragment({
       id: "Post:1",
       fragment: operations.POST_FRAGMENT,
@@ -131,11 +113,9 @@ describe("Subscriptions", () => {
     await tick();
     expect(wrapper.find(".current").text()).toBe("Post 1");
 
-    // Verify read API sees the same (reactive view from readFragment)
     const snap1 = cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT });
     expect(snap1?.title).toBe("Post 1");
 
-    // Frame 2
     cache.writeFragment({
       id: "Post:1",
       fragment: operations.POST_FRAGMENT,
@@ -148,9 +128,6 @@ describe("Subscriptions", () => {
     expect(snap2?.title).toBe("Post 1 Updated");
   });
 
-  /**
-   * 4) Subscription error display (pure local simulation).
-   */
   it("handles subscription errors properly", async () => {
     const cache: CachebayInstance = createCache();
 
@@ -160,7 +137,6 @@ describe("Subscriptions", () => {
         const error = ref<Error | null>(null);
         const data = ref<{ ping: string } | null>(null);
 
-        // Simulate an error frame
         setTimeout(() => {
           error.value = new Error("Subscription failed");
         }, 15);
@@ -182,10 +158,6 @@ describe("Subscriptions", () => {
     expect(wrapper.find(".error").text()).toBe("Subscription failed");
   });
 
-  /**
-   * 5) Multiple subscription-like frames (non-entity messages).
-   *    Adjust frame timings so expectations don't overlap the next frame.
-   */
   it("handles multiple subscription-like frames with different data", async () => {
     const cache: CachebayInstance = createCache();
 
@@ -195,7 +167,6 @@ describe("Subscriptions", () => {
         const messages = ref<string[]>([]);
         const latest = ref<string>("No messages");
 
-        // Frames at 5ms, 20ms, 40ms
         setTimeout(() => {
           latest.value = "Message 1";
           messages.value.push("Message 1");
@@ -224,10 +195,10 @@ describe("Subscriptions", () => {
     await delay(10);
     expect(wrapper.find(".latest").text()).toBe("Message 1");
 
-    await delay(15); // total ~25ms < 40ms
+    await delay(15);
     expect(wrapper.find(".latest").text()).toBe("Message 2");
 
-    await delay(20); // total ~45ms > 40ms
+    await delay(20);
     expect(wrapper.find(".latest").text()).toBe("Message 3");
 
     const history = wrapper.findAll(".row").map((d) => d.text());

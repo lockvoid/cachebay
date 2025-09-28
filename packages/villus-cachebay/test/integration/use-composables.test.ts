@@ -8,7 +8,6 @@ import { provideCachebay } from "@/src/core/plugin";
 import { useFragment } from "@/src/composables/useFragment";
 import { useCache } from "@/src/composables/useCache";
 
-/** tiny helper to provide our cache instance in VTU */
 const provide = (cache: any) => ({
   install(app: any) {
     provideCachebay(app, cache);
@@ -21,7 +20,6 @@ describe("Composables", () => {
       keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
     }) as any;
 
-    // seed entity via graph
     const graph = (cache as any).__internals.graph;
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
 
@@ -30,7 +28,7 @@ describe("Composables", () => {
       setup() {
         const ref = useFragment({
           id: "User:u1",
-          fragment: operations.USER_FRAGMENT, // reuse exported fragment
+          fragment: operations.USER_FRAGMENT,
           variables: {},
         });
         return () => h("div", {}, ref.value?.email || "");
@@ -41,7 +39,6 @@ describe("Composables", () => {
     await tick();
     expect(wrapper.text()).toBe("u1@example.com");
 
-    // update → reactive
     graph.putRecord("User:u1", { email: "u1+updated@example.com" });
     await tick();
     expect(wrapper.text()).toBe("u1+updated@example.com");
@@ -57,7 +54,6 @@ describe("Composables", () => {
 
     const graph = (cache as any).__internals.graph;
 
-    // seed user and one page (after:null, first:2) with 1 edge
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "x@example.com" });
     graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1" });
 
@@ -74,8 +70,7 @@ describe("Composables", () => {
       edges: [{ __ref: `${pageKey}.edges.0` }],
     });
 
-    // minimal fragment for User→posts connection (works with useFragment)
-    const USER_POSTS_FRAGMENT = /* GraphQL */ `
+    const USER_POSTS_FRAGMENT =  `
       fragment UserPosts on User {
         id
         posts(first: $first, after: $after) @connection {
@@ -95,7 +90,7 @@ describe("Composables", () => {
           fragment: USER_POSTS_FRAGMENT,
           variables: { first: 2, after: null },
         });
-        // render simple rows, no <ul>/<li>
+
         return () => (ref.value?.posts?.edges ?? []).map((e: any) =>
           h("div", {}, e?.node?.title || "")
         );
@@ -107,20 +102,18 @@ describe("Composables", () => {
     let rows = wrapper.findAll("div").map(d => d.text());
     expect(rows).toEqual(["P1"]);
 
-    // update node → reflected
     graph.putRecord("Post:p1", { title: "P1 (Updated)" });
     await tick();
     rows = wrapper.findAll("div").map(d => d.text());
     expect(rows).toEqual(["P1 (Updated)"]);
 
-    // add edge p2 → edges view updates
     graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "P2" });
     graph.putRecord(`${pageKey}.edges.1`, {
       __typename: "PostEdge",
       cursor: "p2",
       node: { __ref: "Post:p2" },
     });
-    // note: write a new edges array so the page's edges refs change
+
     const prev = graph.getRecord(pageKey)!;
     graph.putRecord(pageKey, {
       ...prev,
@@ -132,7 +125,6 @@ describe("Composables", () => {
     rows = wrapper.findAll("div").map(d => d.text());
     expect(rows).toEqual(["P1 (Updated)", "P2"]);
 
-    // p2 update → reactive
     graph.putRecord("Post:p2", { title: "P2 (New)" });
     await tick();
     rows = wrapper.findAll("div").map(d => d.text());
@@ -150,14 +142,14 @@ describe("Composables", () => {
       name: "UseCacheComp",
       setup() {
         const c = useCache<any>();
-        // writeFragment via composable
+
         const tx = c.writeFragment({
           id: "User:u7",
           fragment: operations.USER_FRAGMENT,
           variables: {},
           data: { __typename: "User", id: "u7", email: "seed@example.com" },
         });
-        tx?.commit?.(); // should be a no-op but callable
+        tx?.commit?.();
 
         const ident = c.identify({ __typename: "User", id: "u7" }) || "";
         return () => h("div", {}, ident);
@@ -167,17 +159,14 @@ describe("Composables", () => {
     const wrapper = mount(Comp, { global: { plugins: [provide(cache)] } });
     await tick();
 
-    // identify result in DOM
     expect(wrapper.text()).toBe("User:u7");
 
-    // snapshot present
     expect(graph.getRecord("User:u7")).toMatchObject({
       __typename: "User",
       id: "u7",
       email: "seed@example.com",
     });
 
-    // update via writeFragment again
     const Comp2 = defineComponent({
       setup() {
         const c = useCache<any>();

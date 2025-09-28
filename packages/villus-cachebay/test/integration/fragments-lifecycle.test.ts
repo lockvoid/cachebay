@@ -24,7 +24,7 @@ describe("Fragments lifecycle", () => {
 
     cache.writeFragment({
       id: "User:1",
-      fragment: operations.USER_FRAGMENT, // id + email
+      fragment: operations.USER_FRAGMENT,
       data: { __typename: "User", id: "1", email: "ann@example.com" },
     });
 
@@ -33,7 +33,6 @@ describe("Fragments lifecycle", () => {
       fragment: operations.USER_FRAGMENT,
     });
 
-    // reactive live view
     expect(view).toEqual({ __typename: "User", id: "1", email: "ann@example.com" });
     expect(isReactive(view)).toBe(true);
   });
@@ -89,7 +88,6 @@ describe("Fragments lifecycle", () => {
   it("fragment with nested connection: writes & reads a page via fragment (selection stored)", () => {
     const cache: CachebayInstance = createCache();
 
-
     cache.writeFragment({
       id: "User:1",
       fragment: FRAG_USER_POSTS_PAGE,
@@ -130,8 +128,6 @@ describe("Fragments lifecycle", () => {
   it("component updates when a fragment changes (dynamic id)", async () => {
     const cache: CachebayInstance = createCache();
 
-    // Use a tiny local fragment for "name", since operations.USER_FRAGMENT is email-based
-
     cache.writeFragment({
       id: "User:10",
       fragment: FRAG_USER_NAME,
@@ -165,7 +161,6 @@ describe("Fragments lifecycle", () => {
   it("multiple fragments manually • read multiple via repeated readFragment calls", async () => {
     const cache: CachebayInstance = createCache();
 
-
     cache.writeFragment({
       id: "User:1",
       fragment: FRAG_USER_NAME,
@@ -195,7 +190,6 @@ describe("Fragments lifecycle", () => {
   it("multiple fragments manual • missing ones materialize as empty reactive views — filter by id to select present", () => {
     const cache: CachebayInstance = createCache();
 
-
     cache.writeFragment({
       id: "User:1",
       fragment: FRAG_USER_NAME,
@@ -206,7 +200,6 @@ describe("Fragments lifecycle", () => {
       cache.readFragment({ id: k, fragment: FRAG_USER_NAME }),
     );
 
-    // treat reactive-empty as "missing": filter by existence of id
     const present = raws.filter((u: any) => u && u.id);
     expect(present.length).toBe(1);
     expect(present[0]?.name).toBe("Alice");
@@ -231,7 +224,6 @@ describe("Fragments lifecycle", () => {
     expect(v1).toEqual({ __typename: "Comment", uuid: "abc-123", text: "First!" });
     expect(isReactive(v1)).toBe(true);
 
-    // reactive update
     cache.writeFragment({
       id: "Comment:abc-123",
       fragment: operations.COMMENT_FRAGMENT,

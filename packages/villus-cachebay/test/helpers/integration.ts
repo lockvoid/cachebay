@@ -546,6 +546,16 @@ export const FRAG_USER_NAME = gql`
   }
 `;
 
+// From mutations-simulated.test.ts
+export const UPDATE_USER_MUTATION = gql`
+  mutation UpdateUser($id: ID!, $input: UpdateUserInput!) {
+    updateUser(id: $id, input: $input) {
+      __typename
+      user { __typename id email name }
+    }
+  }
+`;
+
 /* ──────────────────────────────────────────────────────────────────────────
  * Shared Components from Integration Tests
  * ------------------------------------------------------------------------ */
