@@ -69,7 +69,7 @@ describe('documents.materializeDocument', () => {
       document: operations.USERS_QUERY,
 
       variables: {
-        usersRole: "admin",
+        role: "admin",
         first: 2,
         after: null
       },
@@ -456,7 +456,7 @@ describe('documents.materializeDocument', () => {
       document: operations.USERS_QUERY,
 
       variables: {
-        usersRole: "admin",
+        role: "admin",
         first: 2,
         after: null
       }
@@ -472,7 +472,7 @@ describe('documents.materializeDocument', () => {
       document: operations.USERS_QUERY,
 
       variables: {
-        usersRole: "admin",
+        role: "admin",
         first: 2,
         after: null
       }
@@ -492,7 +492,7 @@ describe('documents.materializeDocument', () => {
       document: operations.USERS_QUERY,
 
       variables: {
-        usersRole: "admin",
+        role: "admin",
         first: 2,
         after: null
       }
