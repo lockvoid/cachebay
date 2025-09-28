@@ -13,7 +13,7 @@ const findField = (fields: PlanField[], responseKey: string): PlanField | null =
 describe("Compiler x Operations", () => {
   it("compiles USER_QUERY: flattens fragments and builds arg pickers", () => {
     const plan = compilePlan(operations.USER_QUERY);
-    expect(plan.__kind).toBe("CachePlanV1");
+    expect(plan.kind).toBe("CachePlanV1");
     expect(plan.operation).toBe("query");
     expect(plan.rootTypename).toBe("Query");
 

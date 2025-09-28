@@ -25,7 +25,7 @@ export const createPlanner = () => {
       const hit = strCache.get(key);
       if (hit) return hit;
 
-      const plan = compilePlan(docOrPlan, opts);
+      const plan = compilePlan(docOrPlan, opts ?? {});
       strCache.set(key, plan);
       return plan;
     }
@@ -40,7 +40,7 @@ export const createPlanner = () => {
     const hit = inner.get(fragKey);
     if (hit) return hit;
 
-    const plan = compilePlan(docOrPlan, opts);
+    const plan = compilePlan(docOrPlan, opts ?? {});
     inner.set(fragKey, plan);
     return plan;
   };

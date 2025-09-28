@@ -6,7 +6,7 @@ describe("Compiler x Fragments", () => {
   it("compiles a simple User fragment (no args) with selectionMap", () => {
     const plan = compilePlan(operations.USER_FRAGMENT);
 
-    expect(plan.__kind).toBe("CachePlanV1");
+    expect(plan.kind).toBe("CachePlanV1");
     expect(plan.operation).toBe("fragment");
     expect(plan.rootTypename).toBe("User");
     expect(Array.isArray(plan.root)).toBe(true);

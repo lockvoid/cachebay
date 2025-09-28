@@ -29,7 +29,7 @@ export type PlanField = {
 };
 
 export type CachePlanV1 = {
-  __kind: "CachePlanV1";
+  kind: "CachePlanV1";
   operation: OpKind;                            // "query" | "mutation" | "subscription" | "fragment"
   rootTypename: string;
   root: PlanField[];

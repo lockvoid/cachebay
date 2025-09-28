@@ -132,7 +132,7 @@ export const compilePlan = (
     const networkQuery = buildNetworkQuery(document);
 
     return {
-      __kind: "CachePlanV1",
+      kind: "CachePlanV1",
       operation: operation.operation,   // "query" | "mutation" | "subscription"
       rootTypename,
       root,
@@ -177,7 +177,7 @@ export const compilePlan = (
     const networkQuery = buildNetworkQuery(document);
 
     return {
-      __kind: "CachePlanV1",
+      kind: "CachePlanV1",
       operation: "fragment",
       rootTypename: parentTypename,
       root,

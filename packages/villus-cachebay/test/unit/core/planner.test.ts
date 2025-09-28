@@ -1,112 +1,108 @@
-import { describe, it, expect } from "vitest";
-import gql from "graphql-tag";
-import { createPlanner } from "@/src/core/planner";
-import { compilePlan } from "@/src/compiler";
+import type { DocumentNode } from 'graphql'
 
-describe("Planner", () => {
-  describe('getPlan', () => {
-    it("returns cached plan for DocumentNode operations (identity stable)", () => {
-      const planner = createPlanner();
+vi.mock('@/src/compiler', () => {
+  const compilePlan = vi.fn(() => Object.freeze({
+    kind: 'CachePlanV1' as const,
+    operation: 'query' as const,
+    rootTypename: 'Query',
+    root: [],
+    rootSelectionMap: undefined,
+    networkQuery: {},
+  }))
 
-      const DOC = gql`
-        query Q { user(id: "1") { id } }
-      `;
+  const isCachePlanV1 = (x: any) => !!x && x.kind === 'CachePlanV1'
 
-      const p1 = planner.getPlan(DOC);
-      const p2 = planner.getPlan(DOC);
+  return { compilePlan, isCachePlanV1 }
+})
 
-      expect(p1).toBeDefined();
-      expect(p1.operation).toBe("query");
-      expect(p1.rootTypename).toBe("Query");
-      expect(p2).toBe(p1); // identity from cache
-    });
+import { createPlanner } from '@/src/core/planner'
+import { compilePlan } from '@/src/compiler'
 
-    it("returns cached plan for string operations (identity stable)", () => {
-      const planner = createPlanner();
+const compileSpy = vi.mocked(compilePlan)
 
-      const STR = `query Q { user(id: "1") { id } }`;
+describe('planner.getPlan (memo & routing)', () => {
+  beforeEach(() => {
+    compileSpy.mockClear()
+  })
 
-      const p1 = planner.getPlan(STR);
-      const p2 = planner.getPlan(STR);
+  it('returns a precompiled plan as-is (no compile call)', () => {
+    const planner = createPlanner()
 
-      expect(p1).toBeDefined();
-      expect(p1.operation).toBe("query");
-      expect(p2).toBe(p1);
-    });
+    const plan = Object.freeze({
+      kind: 'CachePlanV1' as const,
+      operation: 'query' as const,
+      rootTypename: 'Query',
+      root: [],
+      rootSelectionMap: undefined,
+      networkQuery: {},
+    })
 
-    it("compiles a single-fragment document (operation = 'fragment')", () => {
-      const planner = createPlanner();
+    const result = planner.getPlan(plan)
 
-      const FRAG = gql`
-        fragment PostFields on Post { id title }
-      `;
+    expect(result).toBe(plan)
+    expect(compileSpy).not.toHaveBeenCalled()
+  })
 
-      const plan = planner.getPlan(FRAG);
-      expect(plan.operation).toBe("fragment");
-      expect(plan.rootTypename).toBe("Post");
-      expect(plan.networkQuery).toBeTruthy();
-    });
+  describe('DocumentNode memoization', () => {
+    it('memoizes by DocumentNode identity + fragmentName', () => {
+      const planner = createPlanner()
 
-    it("throws for multi-fragment docs without fragmentName", () => {
-      const planner = createPlanner();
+      const docA = { kind: 'Document', __name: 'A', __id: 1 } as any as DocumentNode
+      const docB = { kind: 'Document', __name: 'B', __id: 2 } as any as DocumentNode
 
-      const MULTI = gql`
-        fragment A on Post { id }
-        fragment B on User { id }
-      `;
+      const p1 = planner.getPlan(docA, { fragmentName: 'Frag' })
+      const p2 = planner.getPlan(docA, { fragmentName: 'Frag' })
+      expect(p1).toBe(p2)
 
-      expect(() => planner.getPlan(MULTI)).toThrow(/fragmentName/i);
-    });
+      const p3 = planner.getPlan(docA, { fragmentName: 'Other' })
+      expect(p3).not.toBe(p1)
 
-    it("selects fragment by name for multi-fragment docs; caches per fragment", () => {
-      const planner = createPlanner();
+      const p4 = planner.getPlan(docB, { fragmentName: 'Frag' })
+      expect(p4).not.toBe(p1)
 
-      const MULTI = gql`
-        fragment A on Post { id title }
-        fragment B on User { id email }
-      `;
+      expect(compileSpy).toHaveBeenCalledTimes(3)
+      expect(compileSpy).toHaveBeenNthCalledWith(1, docA, { fragmentName: 'Frag' })
+      expect(compileSpy).toHaveBeenNthCalledWith(2, docA, { fragmentName: 'Other' })
+      expect(compileSpy).toHaveBeenNthCalledWith(3, docB, { fragmentName: 'Frag' })
+    })
+  })
 
-      const planA1 = planner.getPlan(MULTI, { fragmentName: "A" });
-      const planA2 = planner.getPlan(MULTI, { fragmentName: "A" });
-      const planB1 = planner.getPlan(MULTI, { fragmentName: "B" });
-      const planB2 = planner.getPlan(MULTI, { fragmentName: "B" });
+  describe('string memoization', () => {
+    it('memoizes by source string + fragmentName', () => {
+      const planner = createPlanner()
 
-      expect(planA1.operation).toBe("fragment");
-      expect(planA1.rootTypename).toBe("Post");
-      expect(planA2).toBe(planA1); // cached identity
+      const src = 'fragment X on Y { id }'
 
-      expect(planB1.operation).toBe("fragment");
-      expect(planB1.rootTypename).toBe("User");
-      expect(planB2).toBe(planB1); // cached identity
+      const p1 = planner.getPlan(src, { fragmentName: 'X' })
+      const p2 = planner.getPlan(src, { fragmentName: 'X' })      
+      const p3 = planner.getPlan(src, { fragmentName: 'Z' })
 
-      expect(planA1).not.toBe(planB1); // different cache entries
-    });
+      expect(p1).toBe(p2)
+      expect(p3).not.toBe(p1)
+      
+      expect(compileSpy).toHaveBeenCalledTimes(2)
+      expect(compileSpy).toHaveBeenNthCalledWith(1, src, { fragmentName: 'X' })
+      expect(compileSpy).toHaveBeenNthCalledWith(2, src, { fragmentName: 'Z' })
+    })
+  })
 
-    it("accepts precompiled plans and returns them as-is", () => {
-      const planner = createPlanner();
+  it('handles mixed inputs consistently (doc vs string)', () => {
+    const planner = createPlanner()
 
-      const DOC = gql`query X { user(id:"1"){ id } }`;
-      const pre = compilePlan(DOC);
+    const src = 'query Q { me { id } }'
+    const doc = { kind: 'Document', __name: 'Q', __id: 99 } as any as DocumentNode
 
-      const got = planner.getPlan(pre);
-      expect(got).toBe(pre);
-    });
+    const a = planner.getPlan(src)
+    const b = planner.getPlan(src)
+    const c = planner.getPlan(doc)
+    const d = planner.getPlan(doc)
 
-    it("supports fragmentName with string sources (multi-fragment)", () => {
-      const planner = createPlanner();
+    expect(a).toBe(b)
+    expect(c).toBe(d)
+    expect(a).not.toBe(c)
 
-      const STR = `
-        fragment A on Post { id title }
-        fragment B on User { id email }
-      `;
-
-      const planA = planner.getPlan(STR, { fragmentName: "A" });
-      const planB = planner.getPlan(STR, { fragmentName: "B" });
-
-      expect(planA.operation).toBe("fragment");
-      expect(planA.rootTypename).toBe("Post");
-      expect(planB.operation).toBe("fragment");
-      expect(planB.rootTypename).toBe("User");
-    });
-  });
-});
+    expect(compileSpy).toHaveBeenCalledTimes(2)
+    expect(compileSpy).toHaveBeenNthCalledWith(1, src, { fragmentName: undefined })
+    expect(compileSpy).toHaveBeenNthCalledWith(2, doc, { fragmentName: undefined })
+  })
+})
