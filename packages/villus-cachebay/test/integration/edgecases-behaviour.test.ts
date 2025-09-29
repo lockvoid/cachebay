@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils';
 import { createTestClient, createConnectionComponent, getEdges, fixtures, operations, delay } from '@/test/helpers';
 
-describe('Edge Cases Behavior', () => {
+describe('Edge cases', () => {
   it('maintains entity identity across paginated updates and in-place modifications', async () => {
     const PostList = createConnectionComponent(operations.POSTS_QUERY, {
       cachePolicy: 'cache-and-network',
@@ -10,41 +10,54 @@ describe('Edge Cases Behavior', () => {
 
     const routes = [
       {
-        when: ({ variables }) => variables.first === 2 && !variables.after,
-        respond: () => ({
-          data: {
-            __typename: 'Query',
-            posts: fixtures.posts.buildConnection([
-              { title: 'Post 1', id: '1' },
-              { title: 'Post 2', id: '2' }
-            ]),
-          },
-        }),
+        when: ({ variables }) => {
+          return variables.first === 2 && !variables.after;
+        },
+        respond: () => {
+          return {
+            data: {
+              __typename: 'Query',
+
+              posts: fixtures.posts.buildConnection([
+                { title: 'Post 1', id: '1' },
+                { title: 'Post 2', id: '2' }
+              ]),
+            },
+          }
+        },
         delay: 5,
       },
       {
-        when: ({ variables }) => variables.first === 2 && variables.after === 'c2',
-        respond: () => ({
-          data: {
-            __typename: 'Query',
-            posts: fixtures.posts.buildConnection([
-              { title: 'Post 3', id: '3' },
-              { title: 'Post 4', id: '4' }
-            ]),
-          },
-        }),
+        when: ({ variables }) => {
+          return variables.first === 2 && variables.after === 'c2';
+        },
+        respond: () => {
+          return {
+            data: {
+              __typename: 'Query',
+              posts: fixtures.posts.buildConnection([
+                { title: 'Post 3', id: '3' },
+                { title: 'Post 4', id: '4' }
+              ]),
+            },
+          };
+        },
         delay: 10,
       },
       {
-        when: ({ variables }) => variables.after === 'c4' && variables.first === 1,
-        respond: () => ({
-          data: {
-            __typename: 'Query',
-            posts: fixtures.posts.buildConnection([
-              { title: 'Post 1 Updated', id: '1', content: 'Updated content', authorId: '1' }
-            ]),
-          },
-        }),
+        when: ({ variables }) => {
+          return variables.after === 'c4' && variables.first === 1;
+        },
+        respond: () => {
+          return {
+            data: {
+              __typename: 'Query',
+              posts: fixtures.posts.buildConnection([
+                { title: 'Post 1 Updated', id: '1', content: 'Updated content', authorId: '1' }
+              ]),
+            },
+          };
+        },
         delay: 10,
       },
     ];
