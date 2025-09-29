@@ -33,8 +33,6 @@ export function createTestClient({ routes = [], cache }: { routes?: Route[], cac
     suspensionTimeout: 0,
   });
 
-  console.log(finalCache.inten)
-
   const fx = createFetchMock(routes);
 
   const client = createClient({

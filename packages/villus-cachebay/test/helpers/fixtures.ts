@@ -38,7 +38,6 @@ export const post = ({ id, title, tags = [], typename = "Post", ...extras }: Pos
 
 export const comment = ({ uuid, text, typename = "Comment", ...extras }: CommentNode) => ({
   __typename: typename,
-  // id: uuid,
   uuid,
   text,
   ...extras,
@@ -111,6 +110,7 @@ export const posts = {
     };
   },
 };
+
 export const comments = {
   buildNode(commentData: Partial<CommentNode>, index = 0) {
     const { text, uuid = `c${index + 1}`, ...extras } = commentData;

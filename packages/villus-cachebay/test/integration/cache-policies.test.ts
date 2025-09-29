@@ -471,7 +471,6 @@ describe("Cache Policies Behavior", () => {
           ]),
         }),
       };
-      //   console.log(JSON.stringify(data1, null, 2));
 
       await seedCache(cache, {
         query: operations.USER_POSTS_COMMENTS_QUERY,
@@ -525,9 +524,6 @@ describe("Cache Policies Behavior", () => {
           plugins: [client],
         },
       });
-
-      console.log("HEHEHE")
-      console.log(cache.__internals.graph.inspect().records)
 
       await tick();
       expect(getEdges(wrapper, "text")).toEqual(["Comment 1", "Comment 2"]);
@@ -767,7 +763,6 @@ describe("Cache Policies Behavior", () => {
 
       await delay(12);
 
-      console.log(cache.__internals.graph.inspect())
       expect(getEdges(wrapper, "text")).toEqual(["Comment 3", "Comment 4"]);
 
       await fx.restore();

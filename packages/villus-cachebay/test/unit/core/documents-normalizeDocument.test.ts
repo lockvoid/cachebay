@@ -15,7 +15,7 @@ describe("documents.normalizeDocument", () => {
   let documents: ReturnType<typeof createDocuments>;
 
   beforeEach(() => {
-    graph = createGraph({ interfaces: { Post: ["AudioPost", "VideoPost"] } });
+    graph = createGraph({ keys: { Profile: (profile) => profile.slug }, interfaces: { Post: ["AudioPost", "VideoPost"] } });
     optimistic = createOptimistic({ graph });
     views = createViews({ graph });
     planner = createPlanner();
@@ -1794,4 +1794,39 @@ describe("documents.normalizeDocument", () => {
     expect(post2CommentsConnection.pageInfo.startCursor).toBe("c9");
     expect(post2CommentsConnection.pageInfo.endCursor).toBe("c10");
   });
+
+  it('stores and links entities by custom key (slug) when id is absent', () => {
+    graph.putRecord('@', { id: '@', __typename: '@' })
+
+    const PROFILE_QUERY = `
+      query Profile($slug: String!) {
+        profile(slug: $slug) {
+          slug
+          name
+        }
+      }
+    `
+    documents.normalizeDocument({
+      document: PROFILE_QUERY,
+
+      variables: {
+        slug: 'dimitri',
+      },
+
+      data: {
+        __typename: 'Query',
+
+        profile: {
+          __typename: 'Profile',
+          slug: 'dimitri',
+          name: 'Dimitri',
+        },
+      },
+    })
+
+    const profile = graph.getRecord('Profile:dimitri')
+
+    expect(profile).toBeTruthy()
+    expect(profile.name).toBe('Dimitri')
+  })
 });
