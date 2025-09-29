@@ -158,12 +158,12 @@ export const createConnectionComponent = (
   options: {
     cachePolicy: "cache-first" | "cache-and-network" | "network-only" | "cache-only";
     connectionFn: (data: any) => any;
-    renders?: any[][];
   }
 ) => {
-  const { cachePolicy, connectionFn, renders } = options;
+  const { cachePolicy, connectionFn } = options;
+  const renders: any[][] = [];
 
-  return defineComponent({
+  const component = defineComponent({
     name: "ListComponent",
 
     inheritAttrs: false,
@@ -185,15 +185,12 @@ export const createConnectionComponent = (
         return connectionFn(data.value);
       });
 
-      if (renders) {
-        watch(data, (value) => {
-          if (!value) {
-            return;
-          }
-
-          renders.push(connectionFn(value));
-        }, { immediate: true });
-      }
+      watch(data, (value) => {
+        if (!value) {
+          return;
+        }
+        renders.push(connectionFn(value));
+      }, { immediate: true });
 
       return () => {
         if (isFetching.value) {
@@ -227,6 +224,9 @@ export const createConnectionComponent = (
       };
     },
   });
+
+  (component as any).renders = renders;
+  return component;
 };
 
 export const createConnectionComponentSuspense = (
@@ -266,15 +266,12 @@ export const createConnectionComponentSuspense = (
         return connectionFn(data.value);
       });
 
-      if (renders) {
-        watch(data, (value) => {
-          if (!value) {
-            return;
-          }
-
-          renders.push(connectionFn(value));
-        }, { immediate: true });
-      }
+      watch(data, (value) => {
+        if (!value) {
+          return;
+        }
+        renders.push(connectionFn(value));
+      }, { immediate: true });
 
       return () => {
         return h("div", {}, [
@@ -379,6 +376,9 @@ export const createDetailComponent = (
       };
     },
   });
+
+  (component as any).renders = renders;
+  return component;
 };
 
 export const createDetailComponentSuspense = (

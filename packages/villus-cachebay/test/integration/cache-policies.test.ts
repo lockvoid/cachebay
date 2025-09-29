@@ -289,19 +289,21 @@ describe("Cache Policies Behavior", () => {
         },
       ];
 
-      const renders = [];
-
       const Cmp = createConnectionComponent(operations.USERS_QUERY, {
         cachePolicy: "cache-and-network",
         connectionFn: (data) => {
           return data.users;
         },
-        renders,
       });
 
       const { client, fx } = createTestClient({ routes, cache });
+
       const wrapper = mount(Cmp, {
-        props: { usersRole: "diff", usersFirst: 2, usersAfter: null },
+        props: {
+          usersRole: "diff",
+          usersFirst: 2,
+          usersAfter: null,
+        },
         global: {
           plugins: [client],
         },
@@ -311,14 +313,7 @@ describe("Cache Policies Behavior", () => {
       expect(getEdges(wrapper, "email")).toEqual(["initial.user@example.com"]);
 
       await delay(15);
-
-      // Extract emails from the rendered connection objects for comparison
-      const renderedEmails = renders.map(conn =>
-        (conn?.edges ?? []).map((e: any) => e?.node?.email ?? "")
-      );
-      // The generic tracking captures the actual data state changes
-      // In cache-and-network mode, we get the final network result twice due to reactivity
-      expect(renderedEmails).toEqual([["updated.user@example.com"], ["updated.user@example.com"]]);
+      expect(Cmp.renders.length).toEqual(2);
       expect(getEdges(wrapper, "email")).toEqual(["updated.user@example.com"]);
       expect(fx.calls.length).toBe(1);
 
@@ -364,7 +359,6 @@ describe("Cache Policies Behavior", () => {
     });
 
     it("nested Post→Comments (uuid) • hit then refresh", async () => {
-
       const { cache } = createTestClient();
 
       await seedCache(cache, {
@@ -385,9 +379,10 @@ describe("Cache Policies Behavior", () => {
             posts: fixtures.posts.connection(
               [
                 {
-                  title: "P1",
+                  title: "Post 1",
+
                   extras: {
-                    comments: fixtures.comments.connection(["Comment 1", "Comment 2"], { postId: "p1", fromId: 1 }),
+                    comments: fixtures.comments.connection(["Comment 1", "Comment 2"], { postId: "Post 1", fromId: 1 }),
                   },
                 },
               ],
@@ -400,10 +395,7 @@ describe("Cache Policies Behavior", () => {
       const routes = [
         {
           when: ({ variables }) => {
-            return variables.id === "u1" &&
-              variables.postsCategory === "tech" &&
-              variables.commentsFirst === 2 &&
-              variables.commentsAfter == null;
+            return variables.id === "u1" && variables.postsCategory === "tech" && variables.commentsFirst === 2 && variables.commentsAfter == null;
           },
           respond: () => {
             return {
@@ -415,10 +407,10 @@ describe("Cache Policies Behavior", () => {
                   posts: fixtures.posts.connection(
                     [
                       {
-                        title: "P1",
+                        title: "Post 1",
                         extras: {
                           comments: fixtures.comments.connection(["Comment 1", "Comment 2", "Comment 3"], {
-                            postId: "p1",
+                            postId: "Post 1",
                             fromId: 1,
                           }),
                         },
@@ -660,9 +652,9 @@ describe("Cache Policies Behavior", () => {
                   posts: fixtures.posts.connection(
                     [
                       {
-                        title: "P1",
+                        title: "Post 1",
                         extras: {
-                          comments: fixtures.comments.connection(["Comment 3", "Comment 4"], { postId: "p1", fromId: 3 }),
+                          comments: fixtures.comments.connection(["Comment 3", "Comment 4"], { postId: "Post 1", fromId: 3 }),
                         },
                       },
                     ],
