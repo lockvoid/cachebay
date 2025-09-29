@@ -305,6 +305,68 @@ export const rowsByClass = (wrapper: any, cls = ".row") =>
 export const rowsNoPI = (wrapper: any) =>
   wrapper.findAll("div:not(.pi)").map((n: any) => n.text());
 
+// Generic component factory for connection queries
+export const createConnectionComponent = (
+  query: any,
+
+  options: {
+    cachePolicy: "cache-first" | "cache-and-network" | "network-only" | "cache-only";
+    connectionFn: (data: any) => any; // fn(data) => connection with edges/pageInfo
+  }
+) => {
+  const { cachePolicy, connectionFn } = options;
+
+  return defineComponent({
+    name: "ListComponent",
+    
+    props: {
+      // Accept any props that will be passed as variables
+    },
+    setup(props) {
+      const { useQuery } = require("villus");
+      const { data, isFetching, error } = useQuery({ query,  variables: props, cachePolicy });
+
+      const connection = computed(() => {
+        if (!data.value) {
+          return null;
+        }
+
+        return connectionFn(data.value);
+      });
+
+      return () => {
+        if (isFetching.value) {
+          return h("div", { class: "loading" }, "Loading...");
+        }
+
+        if (error.value) {
+          return h("div", { class: "error" }, JSON.stringify(error.value));
+        }
+
+        return h("div", {}, [
+          h("div", { class: "pageInfo" }, 
+            Object.entries(connection.value?.pageInfo ?? {}).map(([key, value]) =>
+              h("div", { class: key }, String(value))
+            )
+          ),
+
+          h("ul", { class: "edges" },
+            (connection.value?.edges ?? []).map((edge: any, index: number) => {
+              const node = edge?.node ?? {};
+
+              return h("li", { class: "edge", key: node.id || index },
+                Object.keys(node).map(field => 
+                  h("div", { class: field }, String(node[field]))
+                )
+              );
+            })
+          )
+        ]);
+      };
+    },
+  });
+};
+
 // Shared component helpers from integration tests
 export const UsersList = (
   policy: "cache-first" | "cache-and-network" | "network-only" | "cache-only",
@@ -401,10 +463,9 @@ export function harnessEdges(
         Object.keys(v).forEach((k) => v[k] === undefined && delete v[k]);
         return v;
       });
-      const { data } = useQuery({ query: queryDoc, variables: vars, cachePolicy });
-      return () => {
-        const edges = (data?.value?.posts?.edges ?? []).map((e: any) =>
-          h('div', {}, e?.node?.title || '')
+      const connection = computed(() => {
+        if (!data.value) return null;
+        return extractConnection(data.value);
         );
         const pi = h('div', { class: 'pi' }, JSON.stringify(data?.value?.posts?.pageInfo ?? {}));
         return [...edges, pi];
