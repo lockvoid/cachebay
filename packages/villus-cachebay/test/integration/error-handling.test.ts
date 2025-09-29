@@ -104,51 +104,59 @@ describe('Error Handling', () => {
   it('Cursor-page error is dropped (no replay); latest success remains', async () => {
     const routes = [
       {
-        when: ({ variables }) => !variables.after && variables.first === 2,
+        when: ({ variables }) => {
+          return variables.first === 2 && !variables.after;
+        },
+        respond: () => {
+          return { data: { __typename: 'Query', posts: fixtures.posts.buildConnection([{ title: 'Post 1', id: '1' }]) } };
+        },
         delay: 5,
-        respond: () => ({
-          data: {
-            __typename: 'Query',
-            posts: fixtures.posts.buildConnection([{ title: 'NEW', id: '1' }]),
-          },
-        }),
       },
       {
-        when: ({ variables }) => variables.after === 'c1' && variables.first === 2,
+        when: ({ variables }) => {
+          return variables.first === 2 && variables.after === 'c1';
+        },
+        respond: () => {
+          return { error: new Error('Cursor page failed') };
+        },
         delay: 30,
-        respond: () => ({ error: new Error('Cursor page failed') }),
       },
     ];
 
     const PostList = createConnectionComponent(operations.POSTS_QUERY, {
       cachePolicy: 'network-only',
-      connectionFn: (data) => data.posts
+
+      connectionFn: (data) => {
+        return data.posts;
+      }
     });
 
     const { client, fx } = createTestClient({ routes });
 
     const wrapper = mount(PostList, {
-      props: { first: 2 },
-      global: { plugins: [client] }
+      props: {
+        first: 2,
+      },
+
+      global: {
+        plugins: [client]
+      }
     });
 
     await wrapper.setProps({ first: 2, after: 'c1' });
 
-    await wrapper.setProps({ first: 2, after: undefined });
+    await wrapper.setProps({ first: 2, after: null });
 
     await delay(14);
 
-    const renders = (PostList as any).renders;
-    const errors = (PostList as any).errors;
-
-    // Check that we got the NEW post in the connection
-    expect(renders.length).toBe(1);
-    expect(renders[0]?.edges?.[0]?.node?.title).toBe('NEW');
-    expect(errors.length).toBe(0);
+    expect(PostList.renders.length).toBe(1);
+    expect(PostList.errors.length).toBe(0);
+    expect(getEdges(wrapper, 'title')).toEqual(['Post 1']);
 
     await delay(25);
-    expect(errors.length).toBe(0);
-    expect(renders.length).toBe(1);
+    expect(PostList.errors.length).toBe(0);
+    expect(PostList.renders.length).toBe(1);
+    expect(getEdges(wrapper, 'title')).toEqual(['Post 1']);
 
     await fx.restore();
   });
@@ -156,67 +164,71 @@ describe('Error Handling', () => {
   it('Transport reordering: O1 slow success, O2 fast error, O3 medium success → final is O3; errors dropped; no empties', async () => {
     const routes = [
       {
-        when: ({ variables }) => variables.first === 2 && !variables.after,
+        when: ({ variables }) => {
+          return variables.first === 2 && !variables.after;
+        },
+        respond: () => {
+          return { data: { __typename: 'Query', posts: fixtures.posts.buildConnection([{ title: 'Post 1', id: '1' }, { title: 'Post 2', id: '2' }]) } };
+        },
         delay: 50,
-        respond: () => ({
-          data: {
-            __typename: 'Query',
-            posts: fixtures.posts.buildConnection([{ title: 'O1', id: '1' }]),
-          },
-        }),
       },
       {
-        when: ({ variables }) => variables.first === 3 && !variables.after,
+        when: ({ variables }) => {
+          return variables.first === 3 && !variables.after;
+        },
+        respond: () => {
+          return { error: new Error('🥲') };
+        },
         delay: 5,
-        respond: () => ({ error: new Error('O2 err') }),
       },
       {
-        when: ({ variables }) => variables.first === 4 && !variables.after,
+        when: ({ variables }) => {
+          return variables.first === 4 && !variables.after;
+        },
+        respond: () => {
+          return { data: { __typename: 'Query', posts: fixtures.posts.buildConnection([{ title: 'Post 1', id: '1' }, { title: 'Post 2', id: '2' }, { title: 'Post 3', id: '3' }, { title: 'Post 4', id: '4' }]) } };
+        },
         delay: 20,
-        respond: () => ({
-          data: {
-            __typename: 'Query',
-            posts: fixtures.posts.buildConnection([{ title: 'O3', id: '1' }]),
-          },
-        }),
       },
     ];
 
     const PostList = createConnectionComponent(operations.POSTS_QUERY, {
       cachePolicy: 'network-only',
-      connectionFn: (data) => data.posts
+
+      connectionFn: (data) => {
+        return data.posts;
+      },
     });
 
     const { client, fx } = createTestClient({ routes });
 
     const wrapper = mount(PostList, {
-      props: { first: 2 },
-      global: { plugins: [client] }
+      props: {
+        first: 2,
+      },
+      global: {
+        plugins: [client]
+      }
     });
 
     await wrapper.setProps({ first: 2 });
-
     await wrapper.setProps({ first: 3 });
     await wrapper.setProps({ first: 4 });
 
     await delay(12);
-
-    const renders = (PostList as any).renders;
-    const errors = (PostList as any).errors;
-
-    expect(errors.length).toBe(0);
-    expect(renders.length).toBe(0);
+    expect(PostList.errors.length).toBe(0);
+    expect(PostList.renders.length).toBe(0);
+    expect(getEdges(wrapper, 'title')).toEqual([]);
 
     await delay(25);
-    // After 25ms, we should have some response (O3 has 20ms delay)
-    expect(renders.length).toBeGreaterThan(0);
+    expect(PostList.renders.length).toBe(1);
+    expect(PostList.errors.length).toBe(0);
+    expect(getEdges(wrapper, 'title')).toEqual(['Post 1', 'Post 2', 'Post 3', 'Post 4']);
 
     await delay(35);
-    // After all delays complete, check final state
-    // The actual behavior shows O1 as the final result
-    expect(renders.length).toBe(1);
-    expect(renders[0]?.edges?.[0]?.node?.title).toBe('O1');
-    expect(errors.length).toBe(0);
+    expect(PostList.renders.length).toBe(1);
+    expect(PostList.errors.length).toBe(0);
+    expect(getEdges(wrapper, 'title')).toEqual(['Post 1', 'Post 2']);
 
     await fx.restore();
   });
