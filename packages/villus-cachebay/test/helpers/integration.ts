@@ -1,25 +1,11 @@
 import { defineComponent, h, computed, watch, Suspense } from 'vue';
-import { mount } from '@vue/test-utils';
 import { createClient } from 'villus';
 import { createCache } from '@/src/core/internals';
-import { provideCachebay } from '@/src/core/plugin';
 import { tick, delay } from './concurrency';
 import { fetch as villusFetch } from 'villus';
 
-export async function seedCache(
-  cache: any,
-
-  {
-    query,
-    variables = {},
-    data,
-  }: {
-    query: any;
-    variables?: Record<string, any>;
-    data: any;
-  }
-) {
-  const internals = (cache as any).__internals;
+export async function seedCache(cache, { query, variables, data }) {
+  const internals = cache.__internals;
 
   if (!internals) {
     throw new Error('[seedCache] cache.__internals is missing');
@@ -35,26 +21,35 @@ export async function seedCache(
 export function createTestClient({ routes = [], cache }: { routes?: Route[], cache?: any } = {}) {
   const finalCache = cache ?? createCache({
     keys: {
-      Comment: (o: any) => (o?.uuid != null ? String(o.uuid) : null),
+      Comment: (comment: any) => {
+        return String(comment.uuid);
+      },
     },
-    interfaces: { Post: ['AudioPost', 'VideoPost'] },
+
+    interfaces: {
+      Post: ['AudioPost', 'VideoPost']
+    },
 
     suspensionTimeout: 0,
   });
 
+  console.log(finalCache.inten)
+
   const fx = createFetchMock(routes);
+
   const client = createClient({
     url: '/test',
-    use: [finalCache as any, fx.plugin],
+
+    use: [finalCache, fx.plugin],
   });
+
   return { client, cache: finalCache, fx };
 }
+
 export type Route = {
   when: (op: { body: string; variables: any; context: any }) => boolean;
-  respond: (op: { body: string; variables: any; context: any }) =>
-    | { data?: any; error?: any }
-    | any;
-  delay?: number; // ms
+  respond: (op: { body: string; variables: any; context: any }) => { data?: any; error?: any }
+  delay?: number;
 };
 
 type RecordedCall = { body: string; variables: any; context: any };
@@ -161,6 +156,7 @@ export const createConnectionComponent = (
   }
 ) => {
   const { cachePolicy, connectionFn } = options;
+
   const renders: any[][] = [];
 
   const component = defineComponent({
@@ -226,6 +222,7 @@ export const createConnectionComponent = (
   });
 
   (component as any).renders = renders;
+
   return component;
 };
 
@@ -235,10 +232,11 @@ export const createConnectionComponentSuspense = (
   options: {
     cachePolicy: "cache-first" | "cache-and-network" | "network-only" | "cache-only";
     connectionFn: (data: any) => any;
-    renders?: any[][];
   }
 ) => {
-  const { cachePolicy, connectionFn, renders } = options;
+  const { cachePolicy, connectionFn } = options;
+
+  const renders: any[][] = [];
 
   const ConnectionComponent = defineComponent({
     name: "ListComponentSuspense",
@@ -270,6 +268,7 @@ export const createConnectionComponentSuspense = (
         if (!value) {
           return;
         }
+
         renders.push(connectionFn(value));
       }, { immediate: true });
 
@@ -298,7 +297,7 @@ export const createConnectionComponentSuspense = (
     },
   });
 
-  return defineComponent({
+  const component = defineComponent({
     name: "SuspenseWrapper",
 
     props: {
@@ -311,7 +310,11 @@ export const createConnectionComponentSuspense = (
         fallback: () => h("div", { class: "loading" }, "Loading...")
       });
     }
-  })
+  });
+
+  (component as any).renders = renders;
+
+  return component;
 };
 
 export const createDetailComponent = (
@@ -320,12 +323,13 @@ export const createDetailComponent = (
   options: {
     cachePolicy: "cache-first" | "cache-and-network" | "network-only" | "cache-only";
     detailFn: (data: any) => any;
-    renders?: any[][];
   }
 ) => {
-  const { cachePolicy, detailFn, renders } = options;
+  const { cachePolicy, detailFn } = options;
 
-  return defineComponent({
+  const renders: any[][] = [];
+
+  const component = defineComponent({
     name: "DetailComponent",
 
     inheritAttrs: false,
@@ -378,6 +382,7 @@ export const createDetailComponent = (
   });
 
   (component as any).renders = renders;
+
   return component;
 };
 
@@ -387,10 +392,11 @@ export const createDetailComponentSuspense = (
   options: {
     cachePolicy: "cache-first" | "cache-and-network" | "network-only" | "cache-only";
     detailFn: (data: any) => any;
-    renders?: any[][];
   }
 ) => {
-  const { cachePolicy, detailFn, renders } = options;
+  const { cachePolicy, detailFn } = options;
+
+  const renders: any[][] = [];
 
   const DetailComponent = defineComponent({
     name: "DetailComponentSuspense",
@@ -440,7 +446,7 @@ export const createDetailComponentSuspense = (
     },
   });
 
-  return defineComponent({
+  const component = defineComponent({
     name: "DetailSuspenseWrapper",
 
     props: {
@@ -453,7 +459,12 @@ export const createDetailComponentSuspense = (
         fallback: () => h("div", { class: "loading" }, "Loading...")
       });
     }
-  })
+  });
+
+
+  (component as any).renders = renders;
+
+  return component;
 };
 
 // export async function mountWithClient(component: any, routes: Route[], props?: any) {

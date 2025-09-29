@@ -38,6 +38,7 @@ export const post = ({ id, title, tags = [], typename = "Post", ...extras }: Pos
 
 export const comment = ({ uuid, text, typename = "Comment", ...extras }: CommentNode) => ({
   __typename: typename,
+  // id: uuid,
   uuid,
   text,
   ...extras,
@@ -52,12 +53,12 @@ export const users = {
 
   buildConnection(items: Array<Partial<UserNode>>) {
     const edges = items.map((itemData, i) => {
-      const { email, id = `u${i + 1}` } = itemData;
+      const node = users.buildNode(itemData, i);
 
       return {
         __typename: "UserEdge",
-        cursor: `c${id}`,
-        node: users.buildNode(itemData, i),
+        cursor: node.id,
+        node,
       };
     });
 
@@ -90,7 +91,7 @@ export const posts = {
 
       return {
         __typename: "PostEdge",
-        cursor: `p${node.id}`,
+        cursor: node.id,
         node,
       };
     });
@@ -112,7 +113,8 @@ export const posts = {
 };
 export const comments = {
   buildNode(commentData: Partial<CommentNode>, index = 0) {
-    const { text, uuid = String(index + 1), ...extras } = commentData;
+    const { text, uuid = `c${index + 1}`, ...extras } = commentData;
+
     return comment({ uuid, text, ...extras });
   },
 
@@ -122,7 +124,7 @@ export const comments = {
 
       return {
         __typename: "CommentEdge",
-        cursor: `c${node.uuid}`,
+        cursor: node.uuid,
         node,
       };
     });

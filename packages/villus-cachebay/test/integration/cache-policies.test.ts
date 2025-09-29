@@ -416,36 +416,40 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it.only("nested Post→Comments (uuid) • hit then refresh", async () => {
+    it("nested Post→Comments (uuid) • hit then refresh", async () => {
       const { cache } = createTestClient();
 
       const data1 = {
         __typename: "Query",
 
-        user: {
-          ...fixtures.user({ id: "u1", email: "u1@example.com" }),
+        user: fixtures.user({
+          id: "u1",
+          email: "u1@example.com",
+
           posts: fixtures.posts.buildConnection([
             {
               title: "Post 1",
               comments: fixtures.comments.buildConnection([
                 {
-                  uuid: "1",
+                  uuid: "c1",
                   text: "Comment 1"
                 },
                 {
-                  uuid: "2",
+                  uuid: "c2",
                   text: "Comment 2"
                 }
               ]),
             },
           ]),
-        },
+        }),
       };
 
       const data2 = {
         __typename: "Query",
-        user: {
-          ...fixtures.user({ id: "u1", email: "u1@example.com" }),
+        user: fixtures.user({
+          id: "u1",
+          email: "u1@example.com",
+
           posts: fixtures.posts.buildConnection([
             {
               title: "Post 1",
@@ -465,9 +469,9 @@ describe("Cache Policies Behavior", () => {
               ]),
             },
           ]),
-        },
+        }),
       };
-      console.log(JSON.stringify(data1, null, 2));
+      //   console.log(JSON.stringify(data1, null, 2));
 
       await seedCache(cache, {
         query: operations.USER_POSTS_COMMENTS_QUERY,
@@ -478,11 +482,12 @@ describe("Cache Policies Behavior", () => {
           postsFirst: 1,
           postsAfter: null,
           commentsFirst: 2,
-          commentsAfter: "c2",
+          commentsAfter: null,
         },
 
         data: data1,
       });
+
 
       const routes = [
         {
@@ -521,6 +526,9 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
+      console.log("HEHEHE")
+      console.log(cache.__internals.graph.inspect().records)
+
       await tick();
       expect(getEdges(wrapper, "text")).toEqual(["Comment 1", "Comment 2"]);
 
@@ -550,7 +558,6 @@ describe("Cache Policies Behavior", () => {
 
       await seedCache(cache, {
         query: operations.USERS_QUERY,
-
         variables: {
           usersRole: "admin",
           usersFirst: 2,
