@@ -185,8 +185,8 @@ export const POSTS_QUERY = `
   ${PAGE_INFO_FRAGMENT}
   ${POST_FRAGMENT}
 
-  query Posts($category: String, $sort: String, $first: Int, $after: String) {
-    posts(category: $category, sort: $sort, first: $first, after: $after) @connection(filters: ["category", "sort"]) {
+  query Posts($category: String, $sort: String, $first: Int, $after: String, $last: Int, $before: String) {
+    posts(category: $category, sort: $sort, first: $first, after: $after, last: $last, before: $before) @connection(filters: ["category", "sort"]) {
       pageInfo {
         ...PageInfoFields
       }
@@ -206,8 +206,8 @@ export const POSTS_WITHOUT_CONNECTION_QUERY = `
   ${PAGE_INFO_FRAGMENT}
   ${POST_FRAGMENT}
 
-  query Posts($category: String, $sort: String, $first: Int, $after: String) {
-    posts(category: $category, sort: $sort, first: $first, after: $after) {
+  query Posts($category: String, $sort: String, $first: Int, $after: String, $last: Int, $before: String) {
+    posts(category: $category, sort: $sort, first: $first, after: $after, last: $last, before: $before) {
       pageInfo {
         ...PageInfoFields
       }
@@ -227,8 +227,8 @@ export const POSTS_WITH_DEFAULTS_QUERY = `
   ${PAGE_INFO_FRAGMENT}
   ${POST_FRAGMENT}
 
-  query Posts($category: String, $sort: String, $first: Int, $after: String) {
-    posts(category: $category, sort: $sort, first: $first, after: $after) @connection {
+  query Posts($category: String, $sort: String, $first: Int, $after: String, $last: Int, $before: String) {
+    posts(category: $category, sort: $sort, first: $first, after: $after, last: $last, before: $before) @connection {
       pageInfo {
         ...PageInfoFields
       }
@@ -248,8 +248,8 @@ export const POSTS_WITH_KEY_QUERY = `
   ${PAGE_INFO_FRAGMENT}
   ${POST_FRAGMENT}
 
-  query Posts($category: String, $sort: String, $first: Int, $after: String) {
-    posts(category: $category, sort: $sort, first: $first, after: $after) @connection(filters: ["category", "sort"], key: "KeyedPosts") {
+  query Posts($category: String, $sort: String, $first: Int, $after: String, $last: Int, $before: String) {
+    posts(category: $category, sort: $sort, first: $first, after: $after, last: $last, before: $before) @connection(filters: ["category", "sort"], key: "KeyedPosts") {
       pageInfo {
         ...PageInfoFields
       }

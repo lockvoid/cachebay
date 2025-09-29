@@ -156,28 +156,6 @@ export async function mountWithClient(
   });
   return { wrapper, client, cache, fx };
 }
-/* ──────────────────────────────────────────────────────────────────────────
- * Publish helper (pushes a payload through the plugin pipeline)
- * ------------------------------------------------------------------------ */
-export function publish(
-  cache: any,
-  data: any,
-  query: string = 'query Q { __typename }',
-  variables: Record<string, any> = {},
-) {
-  const plugin = cache;
-  let published: any = null;
-
-  const ctx: any = {
-    operation: { type: 'query', query, variables, cachePolicy: 'cache-and-network', context: {} },
-    useResult: (payload: any) => { published = payload; },
-    afterQuery: () => { },
-  };
-
-  plugin(ctx);
-  ctx.useResult({ data });
-  return published;
-}
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Embedded transport mock (was ./transport.ts)
@@ -446,11 +424,11 @@ export const PostsHarness = (
 ) =>
   defineComponent({
     name: 'PostsHarness',
-    props: { filter: String, first: Number, after: String },
+    props: { category: String, first: Number, after: String },
     setup(props) {
       const { useQuery } = require('villus');
       const vars = computed(() => {
-        const v: Record<string, any> = { filter: props.filter, first: props.first, after: props.after };
+        const v: Record<string, any> = { ...props };
         Object.keys(v).forEach((k) => v[k] === undefined && delete v[k]);
         return v;
       });
@@ -470,98 +448,13 @@ export const readPI = (w: any) => {
   try { return JSON.parse(t || '{}'); } catch { return {}; }
 };
 
-/* ──────────────────────────────────────────────────────────────────────────
- * GraphQL Queries and Fragments from Integration Tests
- * ------------------------------------------------------------------------ */
-
-// From optimistic-updates.test.ts
-export const POSTS_APPEND_OPTIMISTIC = gql`
-  query PostsAppend($filter: String, $first: Int, $after: String) {
-    posts(filter: $filter, first: $first, after: $after)
-      @connection(mode: "infinite", args: ["filter"]) {
-      __typename
-      edges { __typename cursor node { __typename id title } }
-      pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
-    }
-  }
-`;
-
-// From relay-connections.test.ts
-export const POSTS_APPEND_RELAY = gql`
-  query PostsAppend($filter: String, $first: Int, $after: String, $last: Int, $before: String) {
-    posts(filter: $filter, first: $first, after: $after, last: $last, before: $before)
-      @connection(mode: "infinite", args: ["filter"]) {
-      __typename
-      edges { __typename cursor node { __typename id title } }
-      pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
-    }
-  }
-`;
-
-export const POSTS_PREPEND = gql`
-  query PostsAppend($filter: String, $first: Int, $after: String, $last: Int, $before: String) {
-    posts(filter: $filter, first: $first, after: $after, last: $last, before: $before)
-      @connection(mode: "prepend", args: ["filter"]) {
-      __typename
-      edges { __typename cursor node { __typename id title } }
-      pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
-    }
-  }
-`;
-
-export const POSTS_REPLACE = gql`
-  query PostsReplace($filter: String, $first: Int, $after: String, $last: Int, $before: String) {
-    posts(filter: $filter, first: $first, after: $after, last: $last, before: $before)
-      @connection(mode: "page", args: ["filter"]) {
-      __typename
-      edges { __typename cursor node { __typename id title } }
-      pageInfo { __typename startCursor endCursor hasNextPage hasPreviousPage }
-    }
-  }
-`;
-
-export const FRAG_POST_RELAY = gql`
-  fragment Post on Post {
-    __typename
-    id
-    title
-  }
-`;
-
-// From fragments-lifecycle.test.ts
-export const FRAG_USER_POSTS_PAGE = gql`
-  fragment UserPostsPage on User {
-    posts(first: 2) @connection {
-      __typename
-      edges { __typename cursor node { __typename id title } }
-      pageInfo { __typename hasNextPage endCursor }
-    }
-  }
-`;
-
-export const FRAG_USER_NAME = gql`
-  fragment U on User { 
-    id 
-    name 
-  }
-`;
-
-// From mutations-simulated.test.ts
-export const UPDATE_USER_MUTATION = gql`
-  mutation UpdateUser($id: ID!, $input: UpdateUserInput!) {
-    updateUser(id: $id, input: $input) {
-      __typename
-      user { __typename id email name }
-    }
-  }
-`;
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Shared Components from Integration Tests
  * ------------------------------------------------------------------------ */
 
 // From edgecases-behaviour.test.ts
-export const PostListTracker = (renders: string[][], firstNodeIds: string[]) => 
+export const PostListTracker = (renders: string[][], firstNodeIds: string[]) =>
   defineComponent({
     name: 'PostList',
     props: { first: Number, after: String },

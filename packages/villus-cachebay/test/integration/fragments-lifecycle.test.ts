@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { defineComponent, ref, isReactive, h } from "vue";
 import { mount } from "@vue/test-utils";
 import { createCache } from "@/src/core/internals";
-import { operations, fixtures, FRAG_USER_POSTS_PAGE, FRAG_USER_NAME, tick } from "@/test/helpers";
+import { operations, fixtures, tick } from "@/test/helpers";
 import type { CachebayInstance } from "@/src/core/types";
 import { provideCachebay } from "@/src/core/plugin";
 import { useFragment } from "@/src/composables/useFragment";
@@ -90,7 +90,8 @@ describe("Fragments lifecycle", () => {
 
     cache.writeFragment({
       id: "User:1",
-      fragment: FRAG_USER_POSTS_PAGE,
+      fragment: operations.USER_POSTS_FRAGMENT,
+      fragmentName: "UserPosts",
       data: {
         __typename: "User",
         id: "1",
@@ -107,7 +108,8 @@ describe("Fragments lifecycle", () => {
 
     const result = cache.readFragment({
       id: "User:1",
-      fragment: FRAG_USER_POSTS_PAGE,
+      fragment: operations.USER_POSTS_FRAGMENT,
+      fragmentName: "UserPosts",
     });
 
     const snapshot = {
@@ -130,14 +132,15 @@ describe("Fragments lifecycle", () => {
 
     cache.writeFragment({
       id: "User:10",
-      fragment: FRAG_USER_NAME,
+      fragment: operations.USER_FRAGMENT,
+      fragmentName: "UserFields",
       data: { __typename: "User", id: "10", name: "Initial Name" },
     });
 
     const Comp = defineComponent({
       setup() {
         const id = ref("User:10");
-        const live = useFragment({ id, fragment: FRAG_USER_NAME });
+        const live = useFragment({ id, fragment: operations.USER_FRAGMENT, fragmentName: "UserFields" });
         return { live };
       },
       render() {
@@ -151,7 +154,8 @@ describe("Fragments lifecycle", () => {
 
     cache.writeFragment({
       id: "User:10",
-      fragment: FRAG_USER_NAME,
+      fragment: operations.USER_FRAGMENT,
+      fragmentName: "UserFields",
       data: { name: "Updated Name" },
     });
     await tick();
@@ -163,22 +167,25 @@ describe("Fragments lifecycle", () => {
 
     cache.writeFragment({
       id: "User:1",
-      fragment: FRAG_USER_NAME,
+      fragment: operations.USER_FRAGMENT,
+      fragmentName: "UserFields",
       data: { __typename: "User", id: "1", name: "Alice" },
     });
     cache.writeFragment({
       id: "User:2",
-      fragment: FRAG_USER_NAME,
+      fragment: operations.USER_FRAGMENT,
+      fragmentName: "UserFields",
       data: { __typename: "User", id: "2", name: "Bob" },
     });
     cache.writeFragment({
       id: "User:3",
-      fragment: FRAG_USER_NAME,
+      fragment: operations.USER_FRAGMENT,
+      fragmentName: "UserFields",
       data: { __typename: "User", id: "3", name: "Charlie" },
     });
 
     const items = ["User:1", "User:2", "User:3"]
-      .map((k) => cache.readFragment({ id: k, fragment: FRAG_USER_NAME }))
+      .map((k) => cache.readFragment({ id: k, fragment: operations.USER_FRAGMENT, fragmentName: "UserFields" }))
       .filter(Boolean);
 
     expect(items.map((u: any) => u?.name)).toEqual(["Alice", "Bob", "Charlie"]);
@@ -192,12 +199,13 @@ describe("Fragments lifecycle", () => {
 
     cache.writeFragment({
       id: "User:1",
-      fragment: FRAG_USER_NAME,
+      fragment: operations.USER_FRAGMENT,
+      fragmentName: "UserFields",
       data: { __typename: "User", id: "1", name: "Alice" },
     });
 
     const raws = ["User:1", "User:999", "User:2"].map((k) =>
-      cache.readFragment({ id: k, fragment: FRAG_USER_NAME }),
+      cache.readFragment({ id: k, fragment: operations.USER_FRAGMENT, fragmentName: "UserFields" }),
     );
 
     const present = raws.filter((u: any) => u && u.id);

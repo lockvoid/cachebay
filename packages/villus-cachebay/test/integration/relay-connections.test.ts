@@ -11,14 +11,11 @@ import {
   mountWithClient,
   createTestClient,
   fixtures,
+  operations,
   harnessEdges,
   PostsHarness,
   rowsRelayConnections,
   readPI,
-  POSTS_APPEND_RELAY,
-  POSTS_PREPEND,
-  POSTS_REPLACE,
-  FRAG_POST_RELAY,
 } from '@/test/helpers';
 
 describe('Integration • Relay flows (@connection) • Posts', () => {
@@ -33,7 +30,7 @@ describe('Integration • Relay flows (@connection) • Posts', () => {
         respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A3', 'A4'], { fromId: 3 }) } })
       },
     ];
-    const Comp = harnessEdges(POSTS_APPEND_RELAY, 'network-only');
+    const Comp = harnessEdges(operations.POSTS_QUERY, 'network-only');
     const { wrapper, fx } = await mountWithClient(Comp, routes);
 
     await tick(2);
@@ -64,7 +61,7 @@ describe('Integration • Relay flows (@connection) • Posts', () => {
         })
       },
     ];
-    const Comp = harnessEdges(POSTS_PREPEND, 'network-only');
+    const Comp = harnessEdges(operations.POSTS_QUERY, 'network-only');
     const { wrapper, fx } = await mountWithClient(Comp, routes);
 
     await tick(2);
@@ -96,7 +93,7 @@ describe('Integration • Relay flows (@connection) • Posts', () => {
       },
     ];
 
-    const Comp = harnessEdges(POSTS_REPLACE, 'cache-and-network');
+    const Comp = harnessEdges(operations.POSTS_QUERY, 'cache-and-network');
     const { wrapper, fx } = await mountWithClient(Comp, routes);
 
     await tick(2);
@@ -136,7 +133,7 @@ describe('Integration • Relay flows (@connection) • Posts', () => {
         })
       },
     ];
-    const Comp = harnessEdges(POSTS_APPEND_RELAY, 'network-only');
+    const Comp = harnessEdges(operations.POSTS_QUERY, 'network-only');
     const { wrapper, fx } = await mountWithClient(Comp, routes);
 
     await tick(2);
@@ -161,11 +158,11 @@ describe('Integration • Relay pagination reset & append from cache — extende
         respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-1', 'A-2'], { fromId: 1 }) } }),
       }];
 
-      const AppQuick = PostsHarness(POSTS_APPEND_RELAY, 'cache-and-network');
+      const AppQuick = PostsHarness(operations.POSTS_QUERY, 'cache-and-network');
       const { wrapper, fx, cache } = await mountWithClient(AppQuick, fast);
 
       await seedCache(cache, {
-        query: POSTS_APPEND_RELAY,
+        query: operations.POSTS_QUERY,
         variables: { filter: 'A', first: 2, after: 'p2' },
         data: { __typename: 'Query', posts: fixtures.posts.connection(['A-3', 'A-4'], { fromId: 3 }) },
       });
@@ -212,11 +209,11 @@ describe('Integration • Relay pagination reset & append from cache — extende
       },
     ];
 
-    const App = PostsHarness(POSTS_APPEND_RELAY, 'cache-and-network');
+    const App = PostsHarness(operations.POSTS_QUERY, 'cache-and-network');
     const { wrapper, fx, cache } = await mountWithClient(App, slowRoutes);
 
     await seedCache(cache, {
-      query: POSTS_APPEND_RELAY,
+      query: operations.POSTS_QUERY,
       variables: { filter: 'A', first: 2, after: 'p2' },
       data: { __typename: 'Query', posts: fixtures.posts.connection(['A-3', 'A-4'], { fromId: 3 }) },
     });
@@ -299,13 +296,13 @@ describe('Integration • Proxy shape invariants & identity (Posts)', () => {
 
     const { client, fx, cache } = createTestClient(routes);
 
-    const r1 = await client.execute({ query: POSTS_APPEND_RELAY, variables: { filter: 'A', first: 2 } });
+    const r1 = await client.execute({ query: operations.POSTS_QUERY, variables: { filter: 'A', first: 2 } });
     const connA = (r1.data as any).posts;
     expect(isReactive(connA.edges[0])).toBe(true);
     expect(isReactive(connA.pageInfo)).toBe(false);
     const edgesRefA = connA.edges;
 
-    const r2 = await client.execute({ query: POSTS_APPEND_RELAY, variables: { filter: 'A', first: 2, after: 'p2' } });
+    const r2 = await client.execute({ query: operations.POSTS_QUERY, variables: { filter: 'A', first: 2, after: 'p2' } });
     const connB = (r2.data as any).posts;
     const edgesRefB = connB.edges;
 
@@ -314,7 +311,7 @@ describe('Integration • Proxy shape invariants & identity (Posts)', () => {
     expect(connB.edges.map((e: any) => e.node.title)).toEqual(['A1', 'A2', 'A3', 'A4']);
 
     const node = connB.edges[0].node;
-    const same = (cache as any).readFragment({ id: `Post:${node.id}`, fragment: FRAG_POST_RELAY });
+    const same = (cache as any).readFragment({ id: `Post:${node.id}`, fragment: operations.POST_FRAGMENT });
     expect(isReactive(node)).toBe(true);
     expect(same.id).toBe(node.id);
 
@@ -335,14 +332,14 @@ describe('Integration • Proxy shape invariants & identity (Posts)', () => {
 
     const { client, fx, cache } = createTestClient(routes);
 
-    const r1 = await client.execute({ query: POSTS_APPEND_RELAY, variables: { first: 2 } });
+    const r1 = await client.execute({ query: operations.POSTS_QUERY, variables: { first: 2 } });
     const n1 = (r1.data as any).posts.edges[0].node;
-    const f1 = (cache as any).readFragment({ id: 'Post:1', fragment: FRAG_POST_RELAY });
+    const f1 = (cache as any).readFragment({ id: 'Post:1', fragment: operations.POST_FRAGMENT });
     expect(n1.id).toBe(f1.id);
 
-    const r2 = await client.execute({ query: POSTS_APPEND_RELAY, variables: { first: 2 } });
+    const r2 = await client.execute({ query: operations.POSTS_QUERY, variables: { first: 2 } });
     const n2 = (r2.data as any).posts.edges[0].node;
-    const f2 = (cache as any).readFragment({ id: 'Post:1', fragment: FRAG_POST_RELAY });
+    const f2 = (cache as any).readFragment({ id: 'Post:1', fragment: operations.POST_FRAGMENT });
 
     expect(n2.id).toBe(n1.id);
     expect(f2.id).toBe(f1.id);

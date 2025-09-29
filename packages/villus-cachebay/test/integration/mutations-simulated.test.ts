@@ -4,7 +4,7 @@ import { defineComponent, h } from "vue";
 
 import { mountWithClient } from "@/test/helpers/integration";
 import { seedCache, tick, type Route } from "@/test/helpers";
-import { operations, UPDATE_USER_MUTATION } from "@/test/helpers";
+import { operations } from "@/test/helpers";
 
 describe("Mutations", () => {
   it("entity updates via normalization after mutation, and execute() returns data", async () => {
@@ -19,7 +19,7 @@ describe("Mutations", () => {
           cachePolicy: "cache-first",
         });
 
-        const { execute } = useMutation(UPDATE_USER_MUTATION);
+        const { execute } = useMutation(operations.UPDATE_USER_MUTATION);
 
         const run = async () => {
           return execute({

@@ -14,7 +14,6 @@ import {
   rowsNoPI,
   CanonPosts,
   PostsHarness,
-  POSTS_APPEND_OPTIMISTIC,
 } from "@/test/helpers";
 import { createCache } from "@/src/core/internals";
 
@@ -240,16 +239,8 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
 
     await fx.restore();
   });
-});
 
-/* ────────────────────────────────────────────────────────────────────────────
- * PART 2 — limit window (leader collapse + optimistic reapply)
- * -------------------------------------------------------------------------- */
-
-
-
-describe("Integration • limit window (leader collapse + optimistic reapply)", () => {
-  it("full flow: pages, optimistic remove, filters, window growth, late page change", async () => {
+  it.only("full flow: pages, optimistic remove, filters, window growth, late page change", async () => {
     let requestIndex = 0;
 
     const routes: Route[] = [
@@ -305,63 +296,62 @@ describe("Integration • limit window (leader collapse + optimistic reapply)", 
       },
     ];
 
-    const Comp = PostsHarness(POSTS_APPEND_OPTIMISTIC, "cache-and-network");
-    const { wrapper, fx, cache } = await mountWithClient(Comp, routes, undefined, { filter: "A", first: 3, after: null });
+    const Comp = PostsHarness(operations.POSTS_QUERY, "cache-and-network");
+    const { wrapper, fx, cache } = await mountWithClient(Comp, routes, undefined, { category: "A", first: 3, after: null });
 
     await delay(6);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3"]);
 
-    await wrapper.setProps({ filter: "A", first: 3, after: "p3" });
+    await wrapper.setProps({ category: "A", first: 3, after: "p3" });
     await delay(6);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A5", "A6"]);
 
     const removeTx = (cache as any).modifyOptimistic((o: any) => {
-      const c = o.connection({ parent: "Query", key: "posts", filters: { filter: "A" } })
-
+      const c = o.connection({ parent: "Query", key: "posts", filters: { category: "A" } })
       c.removeNode({ __typename: "Post", id: "5" });
     });
 
     await tick(2);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6"]);
 
-    await wrapper.setProps({ filter: "A", first: 3, after: "p6" });
+    await wrapper.setProps({ category: "A", first: 3, after: "p6" });
     await delay(6);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9"]);
 
-    await wrapper.setProps({ filter: "B", first: 2, after: null });
+    await wrapper.setProps({ category: "B", first: 2, after: null });
     await delay(9);
     expect(rowsNoPI(wrapper)).toEqual(["B1", "B2"]);
 
-    await wrapper.setProps({ filter: "A", first: 3, after: null });
+    await wrapper.setProps({ category: "A", first: 3, after: null });
     await tick(2);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9"]);
     await delay(31);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3"]);
 
-    await wrapper.setProps({ filter: "A", first: 3, after: "p3" });
+    await wrapper.setProps({ category: "A", first: 3, after: "p3" });
     await tick(2);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6"]);
     await delay(41);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6"]);
 
-    await wrapper.setProps({ filter: "B", first: 2, after: null });
+    await wrapper.setProps({ category: "B", first: 2, after: null });
     await delay(6);
     expect(rowsNoPI(wrapper)).toEqual(["B1", "B2"]);
 
-    await wrapper.setProps({ filter: "A", first: 3, after: null });
+    await wrapper.setProps({ category: "A", first: 3, after: null });
     await tick(2);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6"]);
     await delay(6);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3"]);
 
-    await wrapper.setProps({ filter: "A", first: 3, after: "p3" });
+    await wrapper.setProps({ category: "A", first: 3, after: "p3" });
     await tick(2);
     expect(rowsNoPI(wrapper)).toEqual(["A1", "A2", "A3", "A4", "A6"]);
 
     removeTx.commit?.();
 
     const addTx = (cache as any).modifyOptimistic((o: any) => {
-      const c = o.connection({ parent: "Query", key: "posts", filters: { filter: "A" } });
+      const c = o.connection({ parent: "Query", key: "posts", filters: { category: "A" } });
 
       c.addNode({ __typename: "Post", id: "0", title: "A0" }, { position: "start" });
       c.addNode({ __typename: "Post", id: "99", title: "A99" }, { position: "end" });
@@ -371,7 +361,7 @@ describe("Integration • limit window (leader collapse + optimistic reapply)", 
     expect(rowsNoPI(wrapper)).toEqual(["A0", "A1", "A2", "A3", "A4", "A6", "A7", "A99"]);
     await fx.restore?.();
 
-    await wrapper.setProps({ filter: "A", first: 3, after: "p7" });
+    await wrapper.setProps({ category: "A", first: 3, after: "p7" });
     await tick(2);
     expect(rowsNoPI(wrapper)).toEqual(["A0", "A1", "A2", "A3", "A4", "A6", "A7", "A99"]);
     await delay(6);
