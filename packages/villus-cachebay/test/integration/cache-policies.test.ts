@@ -422,34 +422,30 @@ describe("Cache Policies Behavior", () => {
       const data1 = {
         __typename: "Query",
 
-        user: fixtures.user({
-          id: "u1",
-          email: "u1@example.com",
-
+        user: {
+          ...fixtures.user({ id: "u1", email: "u1@example.com" }),
           posts: fixtures.posts.buildConnection([
             {
               title: "Post 1",
               comments: fixtures.comments.buildConnection([
                 {
-                  uuid: "c1",
+                  uuid: "1",
                   text: "Comment 1"
                 },
                 {
-                  uuid: "c2",
+                  uuid: "2",
                   text: "Comment 2"
                 }
               ]),
             },
           ]),
-        }),
+        },
       };
 
       const data2 = {
         __typename: "Query",
-        user: fixtures.user({
-          id: "u1",
-          email: "u1@example.com",
-
+        user: {
+          ...fixtures.user({ id: "u1", email: "u1@example.com" }),
           posts: fixtures.posts.buildConnection([
             {
               title: "Post 1",
@@ -469,7 +465,7 @@ describe("Cache Policies Behavior", () => {
               ]),
             },
           ]),
-        }),
+        },
       };
       console.log(JSON.stringify(data1, null, 2));
 
@@ -487,7 +483,6 @@ describe("Cache Policies Behavior", () => {
 
         data: data1,
       });
-
 
       const routes = [
         {
@@ -529,7 +524,7 @@ describe("Cache Policies Behavior", () => {
       await tick();
       expect(getEdges(wrapper, "text")).toEqual(["Comment 1", "Comment 2"]);
 
-      await delay(125);
+      await delay(15);
       expect(getEdges(wrapper, "text")).toEqual(["Comment 1", "Comment 2", "Comment 3"]);
 
       await fx.restore();
@@ -555,6 +550,7 @@ describe("Cache Policies Behavior", () => {
 
       await seedCache(cache, {
         query: operations.USERS_QUERY,
+
         variables: {
           usersRole: "admin",
           usersFirst: 2,
