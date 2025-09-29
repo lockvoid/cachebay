@@ -1,13 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { defineComponent, ref, isReactive, h } from "vue";
 import { mount } from "@vue/test-utils";
-import { createCache } from "@/src/core/internals";
-import { operations, tick } from "@/test/helpers";
-import type { CachebayInstance } from "@/src/core/types";
-import { provideCachebay } from "@/src/core/plugin";
+import { createTestClient, operations, tick } from "@/test/helpers";
 import { useFragment } from "@/src/composables/useFragment";
+import { provideCachebay } from "@/src/core/plugin";
 
-const provide = (cache: CachebayInstance) => ({
+const provide = (cache: any) => ({
   install(app: any) {
     provideCachebay(app, cache);
   },
@@ -16,7 +14,7 @@ const provide = (cache: CachebayInstance) => ({
 describe("Fragments lifecycle", () => {
   describe("identify", () => {
     it("returns normalized key", () => {
-      const cache = createCache();
+      const { cache } = createTestClient();
 
       expect(cache.identify({ __typename: "User", id: 1 })).toBe("User:1");
     });
@@ -24,7 +22,7 @@ describe("Fragments lifecycle", () => {
 
   describe("writeFragment", () => {
     it("writes and reads fragment roundtrip with reactive result", async () => {
-      const cache = createCache();
+      const { cache } = createTestClient();
 
       cache.writeFragment({
         id: "User:1",
@@ -42,7 +40,7 @@ describe("Fragments lifecycle", () => {
     });
 
     it("updates existing fragments with partial data", async () => {
-      const cache = createCache();
+      const { cache } = createTestClient();
 
       cache.writeFragment({
         id: "User:2",
@@ -69,7 +67,7 @@ describe("Fragments lifecycle", () => {
     });
 
     it("applies multiple writes correctly with latest data winning", async () => {
-      const cache = createCache();
+      const { cache } = createTestClient();
 
       cache.writeFragment({
         id: "User:3",
@@ -92,7 +90,7 @@ describe("Fragments lifecycle", () => {
     });
 
     it("handles nested connections with pageInfo correctly", () => {
-      const cache = createCache();
+      const { cache } = createTestClient();
 
       cache.writeFragment({
         id: "User:1",
@@ -134,8 +132,10 @@ describe("Fragments lifecycle", () => {
     });
 
     it("supports custom entity keys", async () => {
-      const cache = createCache({
-        keys: { Comment: (c: any) => (c?.uuid ? String(c.uuid) : null) },
+      const { cache } = createTestClient({
+        cacheOptions: {
+          keys: { Comment: (c: any) => (c?.uuid ? String(c.uuid) : null) },
+        },
       });
 
       cache.writeFragment({
@@ -168,7 +168,7 @@ describe("Fragments lifecycle", () => {
 
   describe("readFragment", () => {
     it("reads multiple fragments via repeated calls", async () => {
-      const cache = createCache();
+      const { cache } = createTestClient();
 
       cache.writeFragment({
         id: "User:1",
@@ -197,7 +197,7 @@ describe("Fragments lifecycle", () => {
     });
 
     it("filters missing fragments and returns only present ones", () => {
-      const cache = createCache();
+      const { cache } = createTestClient();
 
       cache.writeFragment({
         id: "User:1",
@@ -217,7 +217,7 @@ describe("Fragments lifecycle", () => {
 
   describe("useFragment", () => {
     it("updates component when fragment data changes", async () => {
-      const cache = createCache();
+      const { cache, client } = createTestClient();
 
       cache.writeFragment({
         id: "User:10",
@@ -240,6 +240,7 @@ describe("Fragments lifecycle", () => {
       });
 
       const wrapper = mount(Cmp, { global: { plugins: [provide(cache)] } });
+      await tick();
 
       expect(wrapper.text()).toBe("u1@example.com");
 
@@ -248,6 +249,7 @@ describe("Fragments lifecycle", () => {
         fragment: operations.USER_FRAGMENT,
         data: { email: "u1+updated@example.com" },
       });
+      await tick();
 
       expect(wrapper.text()).toBe("u1+updated@example.com");
     });
