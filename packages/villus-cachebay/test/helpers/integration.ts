@@ -1,11 +1,10 @@
-import { defineComponent, h, watch, computed, Suspense } from 'vue';
+import { defineComponent, h, computed, Suspense } from 'vue';
 import { mount } from '@vue/test-utils';
 import { createClient } from 'villus';
 import { createCache } from '@/src/core/internals';
 import { provideCachebay } from '@/src/core/plugin';
 import { tick, delay } from './concurrency';
 import { fetch as villusFetch } from 'villus';
-import * as operations from './operations';
 
 export async function seedCache(
   cache: any,
@@ -188,15 +187,17 @@ export const createConnectionComponent = (
 
   return defineComponent({
     name: "ListComponent",
+    
+    inheritAttrs: false,
 
-    props: {
-      // Accept any props that will be passed as variables
-    },
-
-    setup(props) {
+    setup(props, { attrs }) {
       const { useQuery } = require("villus");
 
-      const { data, isFetching, error } = useQuery({ query, variables: props, cachePolicy });
+      const { data, error, isFetching } = useQuery({ 
+        query, 
+        variables: computed(() => attrs), 
+        cachePolicy 
+      });
 
       const connection = computed(() => {
         if (!data.value) {
@@ -327,15 +328,17 @@ export const createDetailComponent = (
 
   return defineComponent({
     name: "DetailComponent",
+    
+    inheritAttrs: false,
 
-    props: {
-      // Accept any props that will be passed as variables
-    },
-
-    setup(props) {
+    setup(props, { attrs }) {
       const { useQuery } = require("villus");
 
-      const { data, isFetching, error } = useQuery({ query, variables: props, cachePolicy });
+      const { data, isFetching, error } = useQuery({ 
+        query, 
+        variables: computed(() => attrs), 
+        cachePolicy 
+      });
 
       const detail = computed(() => {
         if (!data.value) {
