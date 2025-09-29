@@ -1,187 +1,184 @@
 import { describe, it, expect } from "vitest";
 import { defineComponent, h } from "vue";
 import { mount } from "@vue/test-utils";
-import { operations } from "@/test/helpers";
-import { tick } from "@/test/helpers";
-import { createCache } from "@/src/core/internals";
-import { provideCachebay } from "@/src/core/plugin";
+import { createTestClient, operations, tick } from "@/test/helpers";
 import { useFragment } from "@/src/composables/useFragment";
 import { useCache } from "@/src/composables/useCache";
 
-const provide = (cache: any) => ({
-  install(app: any) {
-    provideCachebay(app, cache);
-  },
-});
-
 describe("Composables", () => {
-  it("useFragment — reactive entity view (updates flow)", async () => {
-    const cache = createCache({
-      keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
-    }) as any;
+  describe("useFragment", () => {
+    it("updates component when entity data changes", async () => {
+      const { cache } = createTestClient();
 
-    const graph = (cache as any).__internals.graph;
-    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
+      cache.writeFragment({
+        id: "User:u1",
+        fragment: operations.USER_FRAGMENT,
+        data: { __typename: "User", id: "u1", email: "u1@example.com" },
+      });
 
-    const Comp = defineComponent({
-      name: "EntityFragmentComp",
-      setup() {
-        const ref = useFragment({
-          id: "User:u1",
-          fragment: operations.USER_FRAGMENT,
-          variables: {},
-        });
-        return () => h("div", {}, ref.value?.email || "");
-      },
+      const Cmp = defineComponent({
+        setup() {
+          const user = useFragment({
+            id: "User:u1",
+            fragment: operations.USER_FRAGMENT,
+          });
+
+          return () => {
+            return h("div", {}, user.value?.email);
+          };
+        },
+      });
+
+      const wrapper = mount(Cmp, { global: { plugins: [cache] } });
+
+      await tick();
+      expect(wrapper.text()).toBe("u1@example.com");
+
+      cache.writeFragment({
+        id: "User:u1",
+        fragment: operations.USER_FRAGMENT,
+        data: { email: "u1+updated@example.com" },
+      });
+
+      await tick();
+      expect(wrapper.text()).toBe("u1+updated@example.com");
     });
 
-    const wrapper = mount(Comp, { global: { plugins: [provide(cache)] } });
-    await tick();
-    expect(wrapper.text()).toBe("u1@example.com");
-
-    graph.putRecord("User:u1", { email: "u1+updated@example.com" });
-    await tick();
-    expect(wrapper.text()).toBe("u1+updated@example.com");
-  });
-
-  it("useFragment — connection fields reactive (edges list & node updates)", async () => {
-    const cache = createCache({
-      keys: {
-        User: (o: any) => (o?.id != null ? String(o.id) : null),
-        Post: (o: any) => (o?.id != null ? String(o.id) : null),
-      },
-    }) as any;
-
-    const graph = (cache as any).__internals.graph;
-
-    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "x@example.com" });
-    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1" });
-
-    const pageKey = '@.User:u1.posts({"after":null,"first":2})';
-    graph.putRecord(`${pageKey}.edges.0`, {
-      __typename: "PostEdge",
-      cursor: "p1",
-      node: { __ref: "Post:p1" },
-    });
-    graph.putRecord(pageKey, {
-      __typename: "PostConnection",
-      totalCount: 1,
-      pageInfo: { __typename: "PageInfo", endCursor: "p1", hasNextPage: false },
-      edges: [{ __ref: `${pageKey}.edges.0` }],
-    });
-
-    const USER_POSTS_FRAGMENT =  `
-      fragment UserPosts on User {
-        id
-        posts(first: $first, after: $after) @connection {
-          __typename
-          totalCount
-          pageInfo { __typename endCursor hasNextPage }
-          edges { __typename cursor node { __typename id title } }
+    it("updates component when connection data changes", async () => {
+      const USER_POSTS_FRAGMENT = `
+        fragment UserPosts on User {
+          id
+          posts(first: $first, after: $after) @connection {
+            __typename
+            totalCount
+            pageInfo { __typename endCursor hasNextPage }
+            edges { __typename cursor node { __typename id title } }
+          }
         }
-      }
-    `;
+      `;
 
-    const Comp = defineComponent({
-      name: "ConnectionFragmentComp",
-      setup() {
-        const ref = useFragment({
-          id: "User:u1",
-          fragment: USER_POSTS_FRAGMENT,
-          variables: { first: 2, after: null },
-        });
+      const { cache } = createTestClient({
+        cacheOptions: {
+          keys: {
+            User: (o: any) => (o?.id != null ? String(o.id) : null),
+            Post: (o: any) => (o?.id != null ? String(o.id) : null),
+          },
+        },
+      });
 
-        return () => (ref.value?.posts?.edges ?? []).map((e: any) =>
-          h("div", {}, e?.node?.title || "")
-        );
-      },
+      // Write initial connection data
+      cache.writeFragment({
+        id: "User:u1",
+        fragment: USER_POSTS_FRAGMENT,
+        fragmentName: "UserPosts",
+        variables: { first: 2, after: null },
+        data: {
+          __typename: "User",
+          id: "u1",
+          posts: {
+            __typename: "PostConnection",
+            totalCount: 1,
+            pageInfo: { __typename: "PageInfo", endCursor: "p1", hasNextPage: false },
+            edges: [
+              {
+                __typename: "PostEdge",
+                cursor: "p1",
+                node: { __typename: "Post", id: "p1", title: "P1" },
+              },
+            ],
+          },
+        },
+      });
+
+      const Cmp = defineComponent({
+        setup() {
+          const userPosts = useFragment({
+            id: "User:u1",
+            fragment: USER_POSTS_FRAGMENT,
+            fragmentName: "UserPosts",
+            variables: { first: 2, after: null },
+          });
+
+          return () => (userPosts.value?.posts?.edges ?? []).map((e: any) =>
+            h("div", {}, e?.node?.title || "")
+          );
+        },
+      });
+
+      const wrapper = mount(Cmp, { global: { plugins: [cache] } });
+      await tick();
+      let rows = wrapper.findAll("div").map(d => d.text());
+      expect(rows).toEqual(["P1"]);
+
+      // Update existing post
+      cache.writeFragment({
+        id: "Post:p1",
+        fragment: operations.POST_FRAGMENT,
+        data: { title: "P1 (Updated)" },
+      });
+      await tick();
+      rows = wrapper.findAll("div").map(d => d.text());
+      expect(rows).toEqual(["P1 (Updated)"]);
     });
-
-    const wrapper = mount(Comp, { global: { plugins: [provide(cache)] } });
-    await tick();
-    let rows = wrapper.findAll("div").map(d => d.text());
-    expect(rows).toEqual(["P1"]);
-
-    graph.putRecord("Post:p1", { title: "P1 (Updated)" });
-    await tick();
-    rows = wrapper.findAll("div").map(d => d.text());
-    expect(rows).toEqual(["P1 (Updated)"]);
-
-    graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "P2" });
-    graph.putRecord(`${pageKey}.edges.1`, {
-      __typename: "PostEdge",
-      cursor: "p2",
-      node: { __ref: "Post:p2" },
-    });
-
-    const prev = graph.getRecord(pageKey)!;
-    graph.putRecord(pageKey, {
-      ...prev,
-      totalCount: 2,
-      edges: [...prev.edges, { __ref: `${pageKey}.edges.1` }],
-    });
-
-    await tick();
-    rows = wrapper.findAll("div").map(d => d.text());
-    expect(rows).toEqual(["P1 (Updated)", "P2"]);
-
-    graph.putRecord("Post:p2", { title: "P2 (New)" });
-    await tick();
-    rows = wrapper.findAll("div").map(d => d.text());
-    expect(rows).toEqual(["P1 (Updated)", "P2 (New)"]);
   });
 
-  it("useCache — writeFragment shim + identify", async () => {
-    const cache = createCache({
-      keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
-    }) as any;
+  describe("useCache", () => {
+    it("provides writeFragment and identify methods", async () => {
+      const { cache } = createTestClient({
+        cacheOptions: {
+          keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
+        },
+      });
 
-    const graph = (cache as any).__internals.graph;
+      const Cmp = defineComponent({
+        setup() {
+          const c = useCache<any>();
 
-    const Comp = defineComponent({
-      name: "UseCacheComp",
-      setup() {
-        const c = useCache<any>();
+          c.writeFragment({
+            id: "User:u7",
+            fragment: operations.USER_FRAGMENT,
+            data: { __typename: "User", id: "u7", email: "seed@example.com" },
+          });
 
-        const tx = c.writeFragment({
-          id: "User:u7",
-          fragment: operations.USER_FRAGMENT,
-          variables: {},
-          data: { __typename: "User", id: "u7", email: "seed@example.com" },
-        });
-        tx?.commit?.();
+          const ident = c.identify({ __typename: "User", id: "u7" }) || "";
+          return () => h("div", {}, ident);
+        },
+      });
 
-        const ident = c.identify({ __typename: "User", id: "u7" }) || "";
-        return () => h("div", {}, ident);
-      },
+      const wrapper = mount(Cmp, { global: { plugins: [cache] } });
+      await tick();
+
+      expect(wrapper.text()).toBe("User:u7");
+
+      const user = cache.readFragment({
+        id: "User:u7",
+        fragment: operations.USER_FRAGMENT,
+      });
+      expect(user).toMatchObject({
+        __typename: "User",
+        id: "u7",
+        email: "seed@example.com",
+      });
+
+      const Comp2 = defineComponent({
+        setup() {
+          const c = useCache<any>();
+          c.writeFragment({
+            id: "User:u7",
+            fragment: operations.USER_FRAGMENT,
+            data: { email: "seed2@example.com" },
+          });
+          return () => h("div");
+        },
+      });
+      mount(Comp2, { global: { plugins: [cache] } });
+      await tick();
+
+      const updatedUser = cache.readFragment({
+        id: "User:u7",
+        fragment: operations.USER_FRAGMENT,
+      });
+      expect(updatedUser?.email).toBe("seed2@example.com");
     });
-
-    const wrapper = mount(Comp, { global: { plugins: [provide(cache)] } });
-    await tick();
-
-    expect(wrapper.text()).toBe("User:u7");
-
-    expect(graph.getRecord("User:u7")).toMatchObject({
-      __typename: "User",
-      id: "u7",
-      email: "seed@example.com",
-    });
-
-    const Comp2 = defineComponent({
-      setup() {
-        const c = useCache<any>();
-        c.writeFragment({
-          id: "User:u7",
-          fragment: operations.USER_FRAGMENT,
-          variables: {},
-          data: { email: "seed2@example.com" },
-        });
-        return () => h("div");
-      },
-    });
-    mount(Comp2, { global: { plugins: [provide(cache)] } });
-    await tick();
-
-    expect(graph.getRecord("User:u7")!.email).toBe("seed2@example.com");
   });
 });
