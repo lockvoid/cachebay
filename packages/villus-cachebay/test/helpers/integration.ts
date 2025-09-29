@@ -1,11 +1,9 @@
-// test/helpers/integration.ts
 import { defineComponent, h, watch, computed } from 'vue';
 import { mount } from '@vue/test-utils';
 import { createClient } from 'villus';
 import { createCache } from '@/src/core/internals';
 import { provideCachebay } from '@/src/core/plugin';
 import { tick, delay } from './concurrency';
-import gql from 'graphql-tag';
 import { fetch as villusFetch } from 'villus';
 import * as operations from './operations';
 
@@ -28,10 +26,7 @@ export async function seedCache(
   if (!internals) throw new Error('[seedCache] cache.__internals is missing');
   const { documents } = internals;
 
-  const document =
-    typeof query === 'string'
-      ? (gql as any)([query] as any)
-      : query;
+  const document = query;
 
   documents.normalizeDocument({
     document,
