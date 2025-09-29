@@ -1,83 +1,89 @@
 
 import { describe, it, expect } from "vitest";
 import { defineComponent, h } from "vue";
-
-import { mountWithClient } from "@/test/helpers/integration";
-import { seedCache, tick, type Route } from "@/test/helpers";
+import { mount } from "@vue/test-utils";
+import { createTestClient, seedCache, tick, fixtures } from "@/test/helpers";
 import { operations } from "@/test/helpers";
 
 describe("Mutations", () => {
-  it("entity updates via normalization after mutation, and execute() returns data", async () => {
-    const App = defineComponent({
-      name: "UserViewerAndMutator",
+  it("updates entity through normalization and returns mutation data", async () => {
+    const { cache, client, fx } = createTestClient({
+      routes: [
+        {
+          when: ({ body }) => {
+            return body?.includes?.("mutation UpdateUser");
+          },
+
+          respond: () => {
+            return {
+              data: {
+                __typename: "Mutation",
+
+                updateUser: {
+                  __typename: "UpdateUserPayload",
+
+                  user: fixtures.users.buildNode({ id: "u1", email: "u1+updated@example.com" }),
+                },
+              },
+            }
+          },
+
+          delay: 10,
+        },
+      ],
+    });
+
+    const Cmp = defineComponent({
       setup() {
         const { useQuery, useMutation } = require("villus");
 
-        const { data } = useQuery({
-          query: operations.USER_QUERY,
-          variables: { id: "u1" },
-          cachePolicy: "cache-first",
-        });
+        const { data } = useQuery({ query: operations.USER_QUERY, variables: { id: "u1" }, cachePolicy: "cache-first" });
 
         const { execute } = useMutation(operations.UPDATE_USER_MUTATION);
 
         const run = async () => {
           return execute({
             id: "u1",
-            input: { email: "u1+updated@example.com", name: "Updated Name" },
+
+            input: {
+              email: "u1+updated@example.com"
+            },
           });
         };
 
         return { data, run };
       },
+
       render() {
         return h("div", {}, this.data?.user?.email || "");
       },
     });
 
-    const routes: Route[] = [
-      {
-        when: ({ body }) =>
-          typeof body === "string" && body.includes("mutation UpdateUser"),
-        delay: 10,
-        respond: () => ({
-          data: {
-            __typename: "Mutation",
-            updateUser: {
-              __typename: "UpdateUserPayload",
-              user: {
-                __typename: "User",
-                id: "u1",
-                email: "u1+updated@example.com",
-                name: "Updated Name",
-              },
-            },
-          },
-        }),
-      },
-    ];
-
-    const { wrapper, cache, fx } = await mountWithClient(App, routes);
+    const wrapper = mount(Cmp, { global: { plugins: [cache, client] } });
 
     await seedCache(cache, {
       query: operations.USER_QUERY,
-      variables: { id: "u1" },
+
+      variables: {
+        id: "u1"
+      },
+
       data: {
         __typename: "Query",
-        user: { __typename: "User", id: "u1", email: "u1@example.com" },
+        user: fixtures.users.buildNode({ id: "u1", email: "u1@example.com" }),
       },
     });
+
     await tick();
     expect(wrapper.text()).toBe("u1@example.com");
 
-    const res = await (wrapper.vm as any).run();
-    await fx.waitAll?.();
-    await tick(2);
+    const response = await wrapper.vm.run();
 
-    expect(res?.error).toBeFalsy();
-    expect(res?.data?.updateUser?.user?.email).toBe("u1+updated@example.com");
+    await tick(2);
+    expect(response.error).toBeFalsy();
+    expect(response.data.updateUser.user.email).toBe("u1+updated@example.com");
     expect(wrapper.text()).toBe("u1+updated@example.com");
 
-    await fx.restore?.();
+    await fx.restore();
   });
 });
