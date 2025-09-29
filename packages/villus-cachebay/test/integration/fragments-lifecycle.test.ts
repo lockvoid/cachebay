@@ -3,13 +3,6 @@ import { defineComponent, ref, isReactive, h } from "vue";
 import { mount } from "@vue/test-utils";
 import { createTestClient, operations, tick } from "@/test/helpers";
 import { useFragment } from "@/src/composables/useFragment";
-import { provideCachebay } from "@/src/core/plugin";
-
-const provide = (cache: any) => ({
-  install(app: any) {
-    provideCachebay(app, cache);
-  },
-});
 
 describe("Fragments lifecycle", () => {
   describe("identify", () => {
@@ -186,17 +179,20 @@ describe("Fragments lifecycle", () => {
         data: { __typename: "User", id: "3", email: "charlie@example.com" },
       });
 
-      const items = ["User:1", "User:2", "User:3"]
-        .map((k) => cache.readFragment({ id: k, fragment: operations.USER_FRAGMENT }))
-        .filter(Boolean);
+      const user1 = cache.readFragment({ id: "User:1", fragment: operations.USER_FRAGMENT });
+      const user2 = cache.readFragment({ id: "User:2", fragment: operations.USER_FRAGMENT });
+      const user3 = cache.readFragment({ id: "User:3", fragment: operations.USER_FRAGMENT });
 
-      expect(items.map((u: any) => u?.email)).toEqual(["alice@example.com", "bob@example.com", "charlie@example.com"]);
-      items.forEach((u: any) => {
-        if (u) expect(isReactive(u)).toBe(true);
-      });
+      expect(user1?.email).toBe("alice@example.com");
+      expect(user2?.email).toBe("bob@example.com");
+      expect(user3?.email).toBe("charlie@example.com");
+
+      expect(isReactive(user1)).toBe(true);
+      expect(isReactive(user2)).toBe(true);
+      expect(isReactive(user3)).toBe(true);
     });
 
-    it("filters missing fragments and returns only present ones", () => {
+    it("returns empty objects for missing fragments", () => {
       const { cache } = createTestClient();
 
       cache.writeFragment({
@@ -205,19 +201,17 @@ describe("Fragments lifecycle", () => {
         data: { __typename: "User", id: "1", email: "alice@example.com" },
       });
 
-      const raws = ["User:1", "User:999", "User:2"].map((k) =>
-        cache.readFragment({ id: k, fragment: operations.USER_FRAGMENT }),
-      );
+      const user1 = cache.readFragment({ id: "User:1", fragment: operations.USER_FRAGMENT });
+      const user2 = cache.readFragment({ id: "User:2", fragment: operations.USER_FRAGMENT });
 
-      const present = raws.filter((u: any) => u && u.id);
-      expect(present.length).toBe(1);
-      expect(present[0]?.email).toBe("alice@example.com");
+      expect(user1?.email).toBe("alice@example.com");
+      expect(user2).toEqual({});
     });
   });
 
   describe("useFragment", () => {
     it("updates component when fragment data changes", async () => {
-      const { cache, client } = createTestClient();
+      const { client, cache } = createTestClient();
 
       cache.writeFragment({
         id: "User:10",
@@ -239,9 +233,9 @@ describe("Fragments lifecycle", () => {
         },
       });
 
-      const wrapper = mount(Cmp, { global: { plugins: [provide(cache)] } });
-      await tick();
+      const wrapper = mount(Cmp, { global: { plugins: [client, cache] } });
 
+      await tick();
       expect(wrapper.text()).toBe("u1@example.com");
 
       cache.writeFragment({
@@ -249,8 +243,8 @@ describe("Fragments lifecycle", () => {
         fragment: operations.USER_FRAGMENT,
         data: { email: "u1+updated@example.com" },
       });
-      await tick();
 
+      await tick();
       expect(wrapper.text()).toBe("u1+updated@example.com");
     });
   });

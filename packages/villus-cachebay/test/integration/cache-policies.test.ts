@@ -594,6 +594,7 @@ describe("Cache Policies Behavior", () => {
           usersFirst: 2,
           usersAfter: null,
         },
+
         global: {
           plugins: [client],
         },
