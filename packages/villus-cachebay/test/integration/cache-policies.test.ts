@@ -56,7 +56,7 @@ describe("Cache Policies Behavior", () => {
       await seedCache(cache, {
         query: operations.USERS_QUERY,
         variables: { usersRole: "cached", usersFirst: 2, usersAfter: null },
-        data: fixtures.users.query(["cached.user@example.com"]).data,
+        data: fixtures.users.query(["cached.user@example.com"]),
       });
 
       const { client, fx } = createTestClient({ cache });
@@ -135,7 +135,7 @@ describe("Cache Policies Behavior", () => {
       await seedCache(cache, {
         query: operations.USER_QUERY,
         variables: { id: "7" },
-        data: fixtures.singleUser.query("7", "cached@example.com").data,
+        data: fixtures.singleUser.query("7", "cached@example.com"),
       });
 
       const { client, fx } = createTestClient({ cache });
@@ -172,7 +172,7 @@ describe("Cache Policies Behavior", () => {
       await seedCache(cache, {
         query: operations.USERS_QUERY,
         variables: { usersRole: "news", usersFirst: 2, usersAfter: null },
-        data: fixtures.users.query(["old.news@example.com"]).data,
+        data: fixtures.users.query(["old.news@example.com"]),
       });
 
       const routes = [
@@ -274,7 +274,7 @@ describe("Cache Policies Behavior", () => {
       await seedCache(cache, {
         query: operations.USERS_QUERY,
         variables: { usersRole: "diff", usersFirst: 2, usersAfter: null },
-        data: fixtures.users.query(["initial.user@example.com"]).data,
+        data: fixtures.users.query(["initial.user@example.com"]),
       });
 
       const routes = [
@@ -369,7 +369,7 @@ describe("Cache Policies Behavior", () => {
           postsFirst: 1,
           postsAfter: null,
           commentsFirst: 2,
-          commentsAfter: null,
+          commentsAfter: "c2",
         },
         data: {
           __typename: "Query",
@@ -426,43 +426,34 @@ describe("Cache Policies Behavior", () => {
         },
       ];
 
-      const Cmp = defineComponent({
-        name: "UserPostComments",
-        setup() {
-          const { useQuery } = require("villus");
-          const { data } = useQuery({
-            query: operations.USER_POSTS_COMMENTS_QUERY,
-            variables: {
-              id: "u1",
-              postsCategory: "tech",
-              postsFirst: 1,
-              postsAfter: null,
-              commentsFirst: 2,
-              commentsAfter: null,
-            },
-            cachePolicy: "cache-and-network",
-          });
-          return () => {
-            const edges =
-              data.value?.user?.posts?.edges?.[0]?.node?.comments?.edges ?? [];
-            return edges.map((e: any) => h("div", {}, e?.node?.text ?? ""));
-          };
-        },
+      const Cmp = createConnectionComponent(operations.USER_POSTS_COMMENTS_QUERY, {
+        cachePolicy: "cache-and-network",
+        connectionFn: (data) => {
+          return data.user?.posts?.edges?.[0]?.node?.comments;
+        }
       });
 
       const { client, fx } = createTestClient({ routes, cache });
       const wrapper = mount(Cmp, {
+        props: {
+          id: "u1",
+          postsCategory: "tech",
+          postsFirst: 1,
+          postsAfter: null,
+          commentsFirst: 2,
+          commentsAfter: null,
+        },
         global: {
           plugins: [client],
         },
       });
 
       await tick();
-      expect(wrapper.findAll("div").map((d) => d.text())).toEqual(["Comment 1", "Comment 2"]);
+      expect(getEdges(wrapper, "text")).toEqual(["Comment 1", "Comment 2"]);
 
       await delay(125);
 
-      expect(wrapper.findAll("div").map((d) => d.text())).toEqual(["Comment 1", "Comment 2", "Comment 3"]);
+      expect(getEdges(wrapper, "text")).toEqual(["Comment 1", "Comment 2", "Comment 3"]);
 
 
       await fx.restore();
@@ -554,7 +545,7 @@ describe("Cache Policies Behavior", () => {
       await seedCache(cache, {
         query: operations.USERS_QUERY,
         variables: { usersRole: "hit", usersFirst: 2, usersAfter: null },
-        data: fixtures.users.query(["hit.user@example.com"]).data,
+        data: fixtures.users.query(["hit.user@example.com"]),
       });
 
       const Cmp = createConnectionComponent(operations.USERS_QUERY, {
@@ -619,6 +610,14 @@ describe("Cache Policies Behavior", () => {
       });
 
       const wrapper = mount(Cmp, {
+        props: {
+          id: "u1",
+          postsCategory: "tech",
+          postsFirst: 1,
+          postsAfter: null,
+          commentsFirst: 2,
+          commentsAfter: "c2",
+        },
         global: {
           plugins: [client],
         },
@@ -668,48 +667,48 @@ describe("Cache Policies Behavior", () => {
         },
       ];
 
-      const Cmp = defineComponent({
-        name: "NetworkOnlyComments",
-        setup() {
-          const { useQuery } = require("villus");
-          const vars = { id: "u1", postsCategory: "tech", postsFirst: 1, postsAfter: null, commentsFirst: 2, commentsAfter: "c2" };
-          const { data } = useQuery({ query: operations.USER_POSTS_COMMENTS_QUERY, variables: vars, cachePolicy: "network-only" });
-          return () => {
-            const postEdges = data.value?.user?.posts?.edges ?? [];
-            const first = postEdges[0]?.node;
-            const commentEdges = first?.comments?.edges ?? [];
-            return commentEdges.map((e: any) => h("div", {}, e?.node?.text ?? ""));
-          };
-        },
+      const Cmp = createConnectionComponent(operations.USER_POSTS_COMMENTS_QUERY, {
+        cachePolicy: "network-only",
+        connectionFn: (data) => {
+          return data.user?.posts?.edges?.[0]?.node?.comments;
+        }
       });
 
       const { client, fx } = createTestClient({ routes });
       const wrapper = mount(Cmp, {
+        props: {
+          id: "u1",
+          postsCategory: "tech",
+          postsFirst: 1,
+          postsAfter: null,
+          commentsFirst: 2,
+          commentsAfter: "c2",
+        },
         global: {
           plugins: [client],
         },
       });
 
       await delay(12);
-      expect(wrapper.findAll("div").map((d) => d.text())).toEqual(["Comment 3", "Comment 4"]);
+      expect(getEdges(wrapper, "text")).toEqual(["Comment 3", "Comment 4"]);
 
       await fx.restore();
     });
   });
 
   it("return visit: cached union emits first, leader network collapses to leader slice (root users)", async () => {
-
     const { cache } = createTestClient();
 
     await seedCache(cache, {
       query: operations.USERS_QUERY,
       variables: { usersRole: "revisit", usersFirst: 2, usersAfter: null },
-      data: fixtures.users.query(["a1@example.com", "a2@example.com"]).data,
+      data: fixtures.users.query(["a1@example.com", "a2@example.com"]),
     });
+
     await seedCache(cache, {
       query: operations.USERS_QUERY,
       variables: { usersRole: "revisit", usersFirst: 2, usersAfter: "a2" },
-      data: fixtures.users.query(["a3@example.com"]).data,
+      data: fixtures.users.query(["a3@example.com"]),
     });
 
     const routes = [
@@ -731,10 +730,14 @@ describe("Cache Policies Behavior", () => {
       }
     });
 
-    // Create client with existing cache
     const { client, fx } = createTestClient({ routes, cache });
+
     const wrapper = mount(Cmp, {
-      props: { usersRole: "revisit", usersFirst: 2, usersAfter: null },
+      props: {
+        usersRole: "revisit",
+        usersFirst: 2,
+        usersAfter: null,
+      },
       global: {
         plugins: [client],
       },
@@ -747,7 +750,6 @@ describe("Cache Policies Behavior", () => {
     expect(getEdges(wrapper, "email")).toEqual(["a1@example.com", "a2@example.com"]);
     expect(fx.calls.length).toBe(1);
 
-
     await fx.restore();
   });
 
@@ -757,12 +759,13 @@ describe("Cache Policies Behavior", () => {
     await seedCache(cache, {
       query: operations.USERS_QUERY,
       variables: { usersRole: "again", usersFirst: 2, usersAfter: null },
-      data: fixtures.users.query(["l1@example.com", "l2@example.com"]).data,
+      data: fixtures.users.query(["l1@example.com", "l2@example.com"]),
     });
+
     await seedCache(cache, {
       query: operations.USERS_QUERY,
       variables: { usersRole: "again", usersFirst: 2, usersAfter: "l2" },
-      data: fixtures.users.query(["n1@example.com", "n2@example.com"]).data,
+      data: fixtures.users.query(["n1@example.com", "n2@example.com"]),
     });
 
     const routes = [
@@ -784,10 +787,14 @@ describe("Cache Policies Behavior", () => {
       }
     });
 
-    // Create client with existing cache
     const { client, fx } = createTestClient({ routes, cache });
+
     const wrapper = mount(Cmp, {
-      props: { usersRole: "again", usersFirst: 2, usersAfter: "l2" },
+      props: {
+        usersRole: "again",
+        usersFirst: 2,
+        usersAfter: "l2",
+      },
       global: {
         plugins: [client],
       },
