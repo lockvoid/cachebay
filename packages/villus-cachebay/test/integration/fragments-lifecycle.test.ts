@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { defineComponent, ref, isReactive, h } from "vue";
 import { mount } from "@vue/test-utils";
 import { createCache } from "@/src/core/internals";
-import { operations, fixtures, tick } from "@/test/helpers";
+import { operations, tick } from "@/test/helpers";
 import type { CachebayInstance } from "@/src/core/types";
 import { provideCachebay } from "@/src/core/plugin";
 import { useFragment } from "@/src/composables/useFragment";
@@ -222,31 +222,34 @@ describe("Fragments lifecycle", () => {
       cache.writeFragment({
         id: "User:10",
         fragment: operations.USER_FRAGMENT,
-        data: { __typename: "User", id: "10", email: "initial@example.com" },
+        data: { __typename: "User", id: "10", email: "u1@example.com" },
       });
 
-      const Comp = defineComponent({
+      const Cmp = defineComponent({
         setup() {
           const id = ref("User:10");
-          const live = useFragment({ id, fragment: operations.USER_FRAGMENT });
-          return { live };
+
+          const user = useFragment({ id, fragment: operations.USER_FRAGMENT });
+
+          return { user };
         },
+
         render() {
-          return h("div", {}, this.live?.email || "");
+          return h("div", {}, this.user?.email || "");
         },
       });
 
-      const wrapper = mount(Comp, { global: { plugins: [provide(cache)] } });
-      await tick();
-      expect(wrapper.text()).toBe("initial@example.com");
+      const wrapper = mount(Cmp, { global: { plugins: [provide(cache)] } });
+
+      expect(wrapper.text()).toBe("u1@example.com");
 
       cache.writeFragment({
         id: "User:10",
         fragment: operations.USER_FRAGMENT,
-        data: { email: "updated@example.com" },
+        data: { email: "u1+updated@example.com" },
       });
-      await tick();
-      expect(wrapper.text()).toBe("updated@example.com");
+
+      expect(wrapper.text()).toBe("u1+updated@example.com");
     });
   });
 });
