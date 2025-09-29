@@ -5,16 +5,16 @@ import { createTestClient, createConnectionComponent, createDetailComponent, see
 
 describe("Cache Policies Behavior", () => {
   describe("cache-first policy", () => {
-    it("miss → one network then render (root users connection)", async () => {
+    it("miss -> one network then render (root users connection)", async () => {
       const routes = [
         {
           when: ({ variables }) => {
             return variables.usersRole === "tech";
           },
-          delay: 30,
           respond: () => {
             return fixtures.users.query(["tech.user@example.com"]);
           },
+          delay: 30,
         },
       ];
 
@@ -22,7 +22,9 @@ describe("Cache Policies Behavior", () => {
 
       const Cmp = createConnectionComponent(operations.USERS_QUERY, {
         cachePolicy: "cache-first",
-        connectionFn: (data) => data.users
+        connectionFn: (data) => {
+          return data.users;
+        }
       });
 
       const wrapper = mount(Cmp, {
@@ -42,8 +44,8 @@ describe("Cache Policies Behavior", () => {
       expect(fx.calls.length).toBe(1);
 
       await delay(40);
-      await tick();
       expect(getEdges(wrapper, "email")).toEqual(["tech.user@example.com"]);
+
 
       await fx.restore();
     });
@@ -57,16 +59,23 @@ describe("Cache Policies Behavior", () => {
         data: fixtures.users.query(["cached.user@example.com"]).data,
       });
 
-      await delay(5);
-
       const { client, fx } = createTestClient({ cache });
+
       const Cmp = createConnectionComponent(operations.USERS_QUERY, {
         cachePolicy: "cache-first",
-        connectionFn: (data) => data.users
+
+        connectionFn: (data) => {
+          return data.users;
+        },
       });
 
       const wrapper = mount(Cmp, {
-        props: { usersRole: "cached", usersFirst: 2, usersAfter: null },
+        props: {
+          usersRole: "cached",
+          usersFirst: 2,
+          usersAfter: null,
+        },
+
         global: {
           plugins: [client],
         },
@@ -75,6 +84,7 @@ describe("Cache Policies Behavior", () => {
       await delay(10);
       expect(getEdges(wrapper, "email")).toEqual(["cached.user@example.com"]);
       expect(fx.calls.length).toBe(0);
+
       await fx.restore();
     });
 
@@ -84,21 +94,26 @@ describe("Cache Policies Behavior", () => {
           when: ({ variables }) => {
             return variables.id === "42";
           },
-          delay: 15,
           respond: () => {
             return fixtures.singleUser.query("42", "answer@example.com");
-          }
+          },
+          delay: 15
         },
       ];
 
       const { client, fx } = createTestClient({ routes });
+
       const Cmp = createDetailComponent(operations.USER_QUERY, {
         cachePolicy: "cache-first",
-        detailFn: (data) => data.user
+        detailFn: (data) => {
+          return data.user;
+        }
       });
 
       const wrapper = mount(Cmp, {
-        props: { id: "42" },
+        props: {
+          id: "42",
+        },
         global: {
           plugins: [client],
         },
@@ -109,8 +124,8 @@ describe("Cache Policies Behavior", () => {
       expect(fx.calls.length).toBe(1);
 
       await delay(20);
-      await tick();
       expect(getEdges(wrapper, "email")).toEqual(["answer@example.com"]);
+
       await fx.restore();
     });
 
@@ -123,16 +138,19 @@ describe("Cache Policies Behavior", () => {
         data: fixtures.singleUser.query("7", "cached@example.com").data,
       });
 
-      await delay(5);
-
       const { client, fx } = createTestClient({ cache });
+
       const Cmp = createDetailComponent(operations.USER_QUERY, {
         cachePolicy: "cache-first",
-        detailFn: (data) => data.user
+        detailFn: (data) => {
+          return data.user;
+        }
       });
 
       const wrapper = mount(Cmp, {
-        props: { id: "7" },
+        props: {
+          id: "7"
+        },
         global: {
           plugins: [client],
         },
@@ -141,6 +159,8 @@ describe("Cache Policies Behavior", () => {
       await delay(10);
       expect(getEdges(wrapper, "email")).toEqual(["cached@example.com"]);
       expect(fx.calls.length).toBe(0);
+
+
       await fx.restore();
     });
   });
@@ -155,27 +175,33 @@ describe("Cache Policies Behavior", () => {
         data: fixtures.users.query(["old.news@example.com"]).data,
       });
 
-      await delay(5);
-
       const routes = [
         {
           when: ({ variables }) => {
             return variables.usersRole === "news";
           },
-          delay: 15,
           respond: () => {
             return fixtures.users.query(["fresh.news@example.com"]);
           },
+          delay: 15,
         },
       ];
 
       const { client, fx } = createTestClient({ routes, cache });
+
       const Cmp = createConnectionComponent(operations.USERS_QUERY, {
         cachePolicy: "cache-and-network",
-        connectionFn: (data) => data.users
+        connectionFn: (data) => {
+          return data.users;
+        }
       });
+
       const wrapper = mount(Cmp, {
-        props: { usersRole: "news", usersFirst: 2, usersAfter: null },
+        props: {
+          usersRole: "news",
+          usersFirst: 2,
+          usersAfter: null,
+        },
         global: {
           plugins: [client],
         },
@@ -185,45 +211,48 @@ describe("Cache Policies Behavior", () => {
       expect(getEdges(wrapper, "email")).toEqual(["old.news@example.com"]);
 
       await delay(20);
-      await tick();
       expect(getEdges(wrapper, "email")).toEqual(["fresh.news@example.com"]);
       expect(fx.calls.length).toBe(1);
+
       await fx.restore();
     });
 
     it("identical network as cache → single render", async () => {
       const { cache } = createTestClient();
-      const cached = fixtures.users.query(["same.user@example.com"]).data;
 
       await seedCache(cache, {
         query: operations.USERS_QUERY,
         variables: { usersRole: "same", usersFirst: 2, usersAfter: null },
-        data: cached,
+        data: fixtures.users.query(["same.user@example.com"]),
       });
 
-      await delay(5);
-
-      const routes: Route[] = [
+      const routes = [
         {
           when: ({ variables }) => {
             return variables.usersRole === "same";
           },
-          delay: 10,
           respond: () => {
-            return { data: cached };
-          }
+            return { data: fixtures.users.query(["same.user@example.com"]) };
+          },
+          delay: 10
         },
       ];
 
       const Cmp = createConnectionComponent(operations.USERS_QUERY, {
         cachePolicy: "cache-and-network",
-        connectionFn: (data) => data.users
+        connectionFn: (data) => {
+          return data.users;
+        }
       });
 
-      // Create client with existing cache
       const { client, fx } = createTestClient({ routes, cache });
+
       const wrapper = mount(Cmp, {
-        props: { usersRole: "same", usersFirst: 2, usersAfter: null },
+        props: {
+          usersRole: "same",
+          usersFirst: 2,
+          usersAfter: null,
+        },
         global: {
           plugins: [client],
         },
@@ -233,9 +262,9 @@ describe("Cache Policies Behavior", () => {
       expect(getEdges(wrapper, "email")).toEqual(["same.user@example.com"]);
 
       await delay(15);
-      await tick();
       expect(getEdges(wrapper, "email")).toEqual(["same.user@example.com"]);
       expect(fx.calls.length).toBe(1);
+
       await fx.restore();
     });
 
@@ -248,30 +277,28 @@ describe("Cache Policies Behavior", () => {
         data: fixtures.users.query(["initial.user@example.com"]).data,
       });
 
-      await delay(5);
-
-      const routes: Route[] = [
+      const routes = [
         {
           when: ({ variables }) => {
             return variables.usersRole === "diff";
           },
-          delay: 10,
           respond: () => {
             return fixtures.users.query(["updated.user@example.com"]);
-          }
+          },
+          delay: 10
         },
       ];
 
-      const renders: string[][] = [];
+      const renders = [];
 
-      // Create a tracking component using our generic createConnectionComponent with renders tracking
       const Cmp = createConnectionComponent(operations.USERS_QUERY, {
         cachePolicy: "cache-and-network",
-        connectionFn: (data) => data.users,
-        renders
+        connectionFn: (data) => {
+          return data.users;
+        },
+        renders,
       });
 
-      // Create client with existing cache
       const { client, fx } = createTestClient({ routes, cache });
       const wrapper = mount(Cmp, {
         props: { usersRole: "diff", usersFirst: 2, usersAfter: null },
@@ -284,7 +311,6 @@ describe("Cache Policies Behavior", () => {
       expect(getEdges(wrapper, "email")).toEqual(["initial.user@example.com"]);
 
       await delay(15);
-      await tick();
 
       // Extract emails from the rendered connection objects for comparison
       const renderedEmails = renders.map(conn =>
@@ -295,6 +321,7 @@ describe("Cache Policies Behavior", () => {
       expect(renderedEmails).toEqual([["updated.user@example.com"], ["updated.user@example.com"]]);
       expect(getEdges(wrapper, "email")).toEqual(["updated.user@example.com"]);
       expect(fx.calls.length).toBe(1);
+
       await fx.restore();
     });
 
@@ -304,17 +331,19 @@ describe("Cache Policies Behavior", () => {
           when: ({ variables }) => {
             return variables.usersRole === "miss";
           },
-          delay: 5,
           respond: () => {
             return fixtures.users.query(["new.user@example.com"]);
-          }
+          },
+          delay: 5
         },
       ];
 
       const { client, fx } = createTestClient({ routes });
       const Cmp = createConnectionComponent(operations.USERS_QUERY, {
         cachePolicy: "cache-and-network",
-        connectionFn: (data) => data.users
+        connectionFn: (data) => {
+          return data.users;
+        }
       });
 
       const wrapper = mount(Cmp, {
@@ -328,9 +357,9 @@ describe("Cache Policies Behavior", () => {
       expect(getEdges(wrapper, "email")).toEqual([]);
 
       await delay(8);
-      await tick();
       expect(getEdges(wrapper, "email")).toEqual(["new.user@example.com"]);
       expect(fx.calls.length).toBe(1);
+
       await fx.restore();
     });
 
@@ -368,9 +397,7 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await delay(5);
-
-      const routes: Route[] = [
+      const routes = [
         {
           when: ({ variables }) => {
             return variables.id === "u1" &&
@@ -378,7 +405,6 @@ describe("Cache Policies Behavior", () => {
               variables.commentsFirst === 2 &&
               variables.commentsAfter == null;
           },
-          delay: 12,
           respond: () => {
             return {
               data: {
@@ -404,6 +430,7 @@ describe("Cache Policies Behavior", () => {
               },
             };
           },
+          delay: 12,
         },
       ];
 
@@ -445,6 +472,7 @@ describe("Cache Policies Behavior", () => {
 
       expect(wrapper.findAll("div").map((d) => d.text())).toEqual(["Comment 1", "Comment 2", "Comment 3"]);
 
+
       await fx.restore();
     });
   });
@@ -456,17 +484,19 @@ describe("Cache Policies Behavior", () => {
           when: ({ variables }) => {
             return variables.usersRole === "network";
           },
-          delay: 20,
           respond: () => {
             return fixtures.users.query(["network.user@example.com"]);
-          }
+          },
+          delay: 20
         },
       ];
 
       const { client, fx } = createTestClient({ routes });
       const Cmp = createConnectionComponent(operations.USERS_QUERY, {
         cachePolicy: "network-only",
-        connectionFn: (data) => data.users
+        connectionFn: (data) => {
+          return data.users;
+        }
       });
 
       const wrapper = mount(Cmp, {
@@ -482,6 +512,7 @@ describe("Cache Policies Behavior", () => {
 
       await delay(25);
       expect(getEdges(wrapper, "email")).toEqual(["network.user@example.com"]);
+
       await fx.restore();
     });
 
@@ -491,17 +522,19 @@ describe("Cache Policies Behavior", () => {
           when: ({ variables }) => {
             return variables.id === "501";
           },
-          delay: 15,
           respond: () => {
             return fixtures.singleUser.query("501", "net@example.com");
-          }
+          },
+          delay: 15
         },
       ];
 
       const { client, fx } = createTestClient({ routes });
       const Cmp = createDetailComponent(operations.USER_QUERY, {
         cachePolicy: "network-only",
-        detailFn: (data) => data.user
+        detailFn: (data) => {
+          return data.user;
+        }
       });
 
       const wrapper = mount(Cmp, {
@@ -517,6 +550,7 @@ describe("Cache Policies Behavior", () => {
 
       await delay(20);
       expect(getEdges(wrapper, "email")).toEqual(["net@example.com"]);
+
       await fx.restore();
     });
   });
@@ -531,11 +565,11 @@ describe("Cache Policies Behavior", () => {
         data: fixtures.users.query(["hit.user@example.com"]).data,
       });
 
-      await delay(5);
-
       const Cmp = createConnectionComponent(operations.USERS_QUERY, {
         cachePolicy: "cache-only",
-        connectionFn: (data) => data.users
+        connectionFn: (data) => {
+          return data.users;
+        }
       });
 
       // Create client with existing cache
@@ -550,6 +584,7 @@ describe("Cache Policies Behavior", () => {
       await delay(10);
       expect(getEdges(wrapper, "email")).toEqual(["hit.user@example.com"]);
       expect(fx.calls.length).toBe(0);
+
       await fx.restore();
     });
 
@@ -557,7 +592,9 @@ describe("Cache Policies Behavior", () => {
       const { client, fx } = createTestClient();
       const Cmp = createConnectionComponent(operations.USERS_QUERY, {
         cachePolicy: "cache-only",
-        connectionFn: (data) => data.users
+        connectionFn: (data) => {
+          return data.users;
+        }
       });
 
       const wrapper = mount(Cmp, {
@@ -570,6 +607,7 @@ describe("Cache Policies Behavior", () => {
       await tick();
       expect(getEdges(wrapper, "email").length).toBe(0);
       expect(fx.calls.length).toBe(0);
+
       await fx.restore();
     });
 
@@ -597,13 +635,14 @@ describe("Cache Policies Behavior", () => {
       await tick();
       expect(wrapper.text()).toContain("CacheOnlyMiss");
       expect(fx.calls.length).toBe(0);
+
       await fx.restore();
     });
   });
 
   describe("cursor replay (network-only) — nested comments page", () => {
     it("publishes terminally — simple smoke via network-only", async () => {
-      const routes: Route[] = [
+      const routes = [
         {
           when: ({ variables }) => {
             return variables.id === "u1" &&
@@ -611,7 +650,6 @@ describe("Cache Policies Behavior", () => {
               variables.commentsFirst === 2 &&
               variables.commentsAfter === "c2";
           },
-          delay: 10,
           respond: () => {
             return {
               data: {
@@ -634,6 +672,7 @@ describe("Cache Policies Behavior", () => {
               },
             };
           },
+          delay: 10,
         },
       ];
 
@@ -660,8 +699,8 @@ describe("Cache Policies Behavior", () => {
       });
 
       await delay(12);
-      await tick();
       expect(wrapper.findAll("div").map((d) => d.text())).toEqual(["Comment 3", "Comment 4"]);
+
       await fx.restore();
     });
   });
@@ -681,21 +720,23 @@ describe("Cache Policies Behavior", () => {
       data: fixtures.users.query(["a3@example.com"]).data,
     });
 
-    const routes: Route[] = [
+    const routes = [
       {
         when: ({ variables }) => {
           return variables.usersRole === "revisit" && variables.usersAfter == null;
         },
-        delay: 15,
         respond: () => {
           return fixtures.users.query(["a1@example.com", "a2@example.com"]);
         },
+        delay: 15,
       },
     ];
 
     const Cmp = createConnectionComponent(operations.USERS_QUERY, {
       cachePolicy: "cache-and-network",
-      connectionFn: (data) => data.users
+      connectionFn: (data) => {
+        return data.users;
+      }
     });
 
     // Create client with existing cache
@@ -711,9 +752,9 @@ describe("Cache Policies Behavior", () => {
     expect(getEdges(wrapper, "email")).toEqual(["a3@example.com"]);
 
     await delay(20);
-    await tick();
     expect(getEdges(wrapper, "email")).toEqual(["a1@example.com", "a2@example.com"]);
     expect(fx.calls.length).toBe(1);
+
 
     await fx.restore();
   });
@@ -732,21 +773,23 @@ describe("Cache Policies Behavior", () => {
       data: fixtures.users.query(["n1@example.com", "n2@example.com"]).data,
     });
 
-    const routes: Route[] = [
+    const routes = [
       {
         when: ({ variables }) => {
           return variables.usersRole === "again" && variables.usersAfter === "l2";
         },
-        delay: 12,
         respond: () => {
           return fixtures.users.query(["n1@example.com"]);
         },
+        delay: 12,
       },
     ];
 
     const Cmp = createConnectionComponent(operations.USERS_QUERY, {
       cachePolicy: "cache-and-network",
-      connectionFn: (data) => data.users
+      connectionFn: (data) => {
+        return data.users;
+      }
     });
 
     // Create client with existing cache
@@ -767,7 +810,6 @@ describe("Cache Policies Behavior", () => {
     ]);
 
     await delay(20);
-    await tick();
     expect(getEdges(wrapper, "email")).toEqual([
       "l1@example.com",
       "l2@example.com",
@@ -775,6 +817,7 @@ describe("Cache Policies Behavior", () => {
     ]);
 
     expect(fx.calls.length).toBe(1);
+
     await fx.restore();
   });
 });
