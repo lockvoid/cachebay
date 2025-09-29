@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { defineComponent, h } from "vue";
 import { mount } from "@vue/test-utils";
-import { createTestClient, operations, tick } from "@/test/helpers";
+import { createTestClient, operations, tick, fixtures, getEdges } from "@/test/helpers";
 import { useFragment } from "@/src/composables/useFragment";
 import { useCache } from "@/src/composables/useCache";
 
@@ -13,7 +13,7 @@ describe("Composables", () => {
       cache.writeFragment({
         id: "User:u1",
         fragment: operations.USER_FRAGMENT,
-        data: { __typename: "User", id: "u1", email: "u1@example.com" },
+        data: fixtures.users.buildNode({ id: "u1", email: "u1@example.com" }),
       });
 
       const Cmp = defineComponent({
@@ -45,102 +45,84 @@ describe("Composables", () => {
     });
 
     it("updates component when connection data changes", async () => {
-      const USER_POSTS_FRAGMENT = `
-        fragment UserPosts on User {
-          id
-          posts(first: $first, after: $after) @connection {
-            __typename
-            totalCount
-            pageInfo { __typename endCursor hasNextPage }
-            edges { __typename cursor node { __typename id title } }
-          }
-        }
-      `;
+      const { cache } = createTestClient();
 
-      const { cache } = createTestClient({
-        cacheOptions: {
-          keys: {
-            User: (o: any) => (o?.id != null ? String(o.id) : null),
-            Post: (o: any) => (o?.id != null ? String(o.id) : null),
-          },
-        },
-      });
-
-      // Write initial connection data
       cache.writeFragment({
         id: "User:u1",
-        fragment: USER_POSTS_FRAGMENT,
+        fragment: operations.USER_POSTS_FRAGMENT,
         fragmentName: "UserPosts",
-        variables: { first: 2, after: null },
-        data: {
-          __typename: "User",
-          id: "u1",
-          posts: {
-            __typename: "PostConnection",
-            totalCount: 1,
-            pageInfo: { __typename: "PageInfo", endCursor: "p1", hasNextPage: false },
-            edges: [
-              {
-                __typename: "PostEdge",
-                cursor: "p1",
-                node: { __typename: "Post", id: "p1", title: "P1" },
-              },
-            ],
-          },
+
+        variables: {
+          first: 2,
+          after: null,
         },
+
+        data: fixtures.users.buildNode({
+          id: "u1",
+
+          posts: fixtures.posts.buildConnection([
+            { id: "p1", title: "Post 1" },
+            { id: "p2", title: "Post 2" },
+          ]),
+        }),
       });
 
       const Cmp = defineComponent({
         setup() {
           const userPosts = useFragment({
             id: "User:u1",
-            fragment: USER_POSTS_FRAGMENT,
+            fragment: operations.USER_POSTS_FRAGMENT,
             fragmentName: "UserPosts",
-            variables: { first: 2, after: null },
+
+            variables: {
+              first: 2,
+              after: null,
+            },
           });
 
-          return () => (userPosts.value?.posts?.edges ?? []).map((e: any) =>
-            h("div", {}, e?.node?.title || "")
-          );
+          return () => {
+            const edges = userPosts.value?.posts?.edges ?? [];
+
+            return h("ul", {}, edges.map((edge: any) =>
+              h("li", { class: "edge" }, [
+                h("div", { class: "title" }, edge?.node?.title || "")
+              ])
+            ));
+          };
         },
       });
 
       const wrapper = mount(Cmp, { global: { plugins: [cache] } });
-      await tick();
-      let rows = wrapper.findAll("div").map(d => d.text());
-      expect(rows).toEqual(["P1"]);
 
-      // Update existing post
+      await tick();
+      expect(getEdges(wrapper, "title")).toEqual(["Post 1", "Post 2"]);
+
       cache.writeFragment({
         id: "Post:p1",
         fragment: operations.POST_FRAGMENT,
-        data: { title: "P1 (Updated)" },
+        data: { title: "Post 1 (Updated)" },
       });
+
       await tick();
-      rows = wrapper.findAll("div").map(d => d.text());
-      expect(rows).toEqual(["P1 (Updated)"]);
+      expect(getEdges(wrapper, "title")).toEqual(["Post 1 (Updated)", "Post 2"]);
     });
   });
 
   describe("useCache", () => {
     it("provides writeFragment and identify methods", async () => {
-      const { cache } = createTestClient({
-        cacheOptions: {
-          keys: { User: (o: any) => (o?.id != null ? String(o.id) : null) },
-        },
-      });
+      const { cache } = createTestClient();
 
       const Cmp = defineComponent({
         setup() {
-          const c = useCache<any>();
+          const cache = useCache<any>();
 
-          c.writeFragment({
+          cache.writeFragment({
             id: "User:u7",
             fragment: operations.USER_FRAGMENT,
             data: { __typename: "User", id: "u7", email: "seed@example.com" },
           });
 
-          const ident = c.identify({ __typename: "User", id: "u7" }) || "";
+          const ident = cache.identify({ __typename: "User", id: "u7" }) || "";
           return () => h("div", {}, ident);
         },
       });
