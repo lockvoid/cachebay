@@ -38,6 +38,7 @@ export const post = ({ id, title, tags = [], typename = "Post", ...extras }: Pos
 
 export const comment = ({ uuid, text, typename = "Comment", ...extras }: CommentNode) => ({
   __typename: typename,
+  // id: uuid,
   uuid,
   text,
   ...extras,

@@ -5,7 +5,7 @@ import { createTestClient, createConnectionComponent, createDetailComponent, see
 
 describe("Cache Policies Behavior", () => {
   describe("cache-first policy", () => {
-    it("admin -> one network then render (root users connection)", async () => {
+    it("makes network request and renders when cache is empty", async () => {
       const routes = [
         {
           when: ({ variables }) => {
@@ -51,7 +51,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it("hit emits cached and terminates, no network call (root users)", async () => {
+    it("returns cached data immediately without network request", async () => {
       const { cache } = createTestClient();
 
       await seedCache(cache, {
@@ -98,7 +98,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it("single object • admin → one network then render (User)", async () => {
+    it("fetches single user from network when not cached", async () => {
       const routes = [
         {
           when: ({ variables }) => {
@@ -145,7 +145,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it("single object • hit emits cached and terminates, no network (User)", async () => {
+    it("returns cached single user without network request", async () => {
       const { cache } = createTestClient();
 
       await seedCache(cache, {
@@ -189,7 +189,7 @@ describe("Cache Policies Behavior", () => {
   });
 
   describe("cache-and-network policy", () => {
-    it("hit → immediate cached render then network refresh once (root users)", async () => {
+    it("renders cached data first then updates with network response", async () => {
       const { cache } = createTestClient();
 
       await seedCache(cache, {
@@ -251,7 +251,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it("identical network as cache → single render", async () => {
+    it("renders only once when network data matches cache", async () => {
       const { cache } = createTestClient();
 
       await seedCache(cache, {
@@ -310,7 +310,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it("different network → two renders (recorded)", async () => {
+    it("renders twice when network data differs from cache", async () => {
       const { cache } = createTestClient();
 
       await seedCache(cache, {
@@ -372,7 +372,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it("one render on network response (root users)", async () => {
+    it("renders once when cache is empty and network responds", async () => {
       const routes = [
         {
           when: ({ variables }) => {
@@ -416,7 +416,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it("nested Post→Comments (uuid) • hit then refresh", async () => {
+    it("handles nested comments with custom uuid keys", async () => {
       const { cache } = createTestClient();
 
       const data1 = {
@@ -534,7 +534,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it("return visit: cached union emits first, leader network collapses to leader slice (root users)", async () => {
+    it("merges paginated cache data with network response", async () => {
       const { cache } = createTestClient();
 
       await seedCache(cache, {
@@ -611,7 +611,7 @@ describe("Cache Policies Behavior", () => {
   });
 
   describe("network-only policy", () => {
-    it("no cache, renders only on network (users)", async () => {
+    it("ignores cache and always fetches from network", async () => {
       const routes = [
         {
           when: ({ variables }) => {
@@ -655,7 +655,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it("single object • no cache, renders on network (User)", async () => {
+    it("fetches single user from network ignoring cache", async () => {
       const routes = [
         {
           when: ({ variables }) => {
@@ -697,7 +697,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it("publishes terminally — simple smoke via network-only", async () => {
+    it("handles paginated comments with cursor-based navigation", async () => {
       const data1 = {
         __typename: "Query",
 
@@ -770,7 +770,7 @@ describe("Cache Policies Behavior", () => {
   });
 
   describe("cache-only policy", () => {
-    it("hit renders cached data, no network call (users)", async () => {
+    it("returns cached data without making network requests", async () => {
       const { cache } = createTestClient();
 
       await seedCache(cache, {
@@ -817,7 +817,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it("renders nothing and does not network", async () => {
+    it("renders empty state when cache is empty", async () => {
       const { client, fx } = createTestClient();
 
       const Cmp = createConnectionComponent(operations.USERS_QUERY, {
@@ -847,7 +847,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it("yields CacheOnlyMiss error", async () => {
+    it("displays error when cache miss occurs", async () => {
       const { client, fx } = createTestClient();
 
       const Cmp = createConnectionComponent(operations.USERS_QUERY, {
