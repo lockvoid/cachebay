@@ -458,6 +458,64 @@ describe("Cache Policies Behavior", () => {
 
       await fx.restore();
     });
+
+
+    it("return visit: cached union emits first, leader network collapses to leader slice (root users)", async () => {
+      const { cache } = createTestClient();
+
+      await seedCache(cache, {
+        query: operations.USERS_QUERY,
+        variables: { usersRole: "revisit", usersFirst: 2, usersAfter: null },
+        data: fixtures.users.query(["a1@example.com", "a2@example.com"]),
+      });
+
+      await seedCache(cache, {
+        query: operations.USERS_QUERY,
+        variables: { usersRole: "revisit", usersFirst: 2, usersAfter: "a2" },
+        data: fixtures.users.query(["a3@example.com"]),
+      });
+
+      const routes = [
+        {
+          when: ({ variables }) => {
+            return variables.usersRole === "revisit" && variables.usersAfter == null;
+          },
+          respond: () => {
+            return fixtures.users.query(["a1@example.com", "a2@example.com"]);
+          },
+          delay: 15,
+        },
+      ];
+
+      const Cmp = createConnectionComponent(operations.USERS_QUERY, {
+        cachePolicy: "cache-and-network",
+        connectionFn: (data) => {
+          return data.users;
+        }
+      });
+
+      const { client, fx } = createTestClient({ routes, cache });
+
+      const wrapper = mount(Cmp, {
+        props: {
+          usersRole: "revisit",
+          usersFirst: 2,
+          usersAfter: null,
+        },
+        global: {
+          plugins: [client],
+        },
+      });
+
+      await tick();
+      expect(getEdges(wrapper, "email")).toEqual(["a3@example.com"]);
+
+      await delay(20);
+      expect(getEdges(wrapper, "email")).toEqual(["a1@example.com", "a2@example.com"]);
+      expect(fx.calls.length).toBe(1);
+
+      await fx.restore();
+    });
   });
 
   describe("network-only policy", () => {
@@ -596,27 +654,19 @@ describe("Cache Policies Behavior", () => {
 
     it("miss yields CacheOnlyMiss error", async () => {
       const { client, fx } = createTestClient();
-      const Cmp = defineComponent({
-        name: "CacheOnlyMissComp",
-        setup() {
-          const { useQuery } = require("villus");
-          const { data, error } = useQuery({
-            query: operations.USERS_QUERY,
-            variables: { usersRole: "miss", usersFirst: 2, usersAfter: null },
-            cachePolicy: "cache-only",
-          });
-          return () => h("div", {}, error.value ? JSON.stringify(error.value) : "no error");
-        },
+
+      const Cmp = createConnectionComponent(operations.USERS_QUERY, {
+        cachePolicy: "cache-only",
+        connectionFn: (data) => {
+          return data.users;
+        }
       });
 
       const wrapper = mount(Cmp, {
         props: {
-          id: "u1",
-          postsCategory: "tech",
-          postsFirst: 1,
-          postsAfter: null,
-          commentsFirst: 2,
-          commentsAfter: "c2",
+          usersRole: "miss",
+          usersFirst: 2,
+          usersAfter: null,
         },
         global: {
           plugins: [client],
@@ -694,129 +744,5 @@ describe("Cache Policies Behavior", () => {
 
       await fx.restore();
     });
-  });
-
-  it("return visit: cached union emits first, leader network collapses to leader slice (root users)", async () => {
-    const { cache } = createTestClient();
-
-    await seedCache(cache, {
-      query: operations.USERS_QUERY,
-      variables: { usersRole: "revisit", usersFirst: 2, usersAfter: null },
-      data: fixtures.users.query(["a1@example.com", "a2@example.com"]),
-    });
-
-    await seedCache(cache, {
-      query: operations.USERS_QUERY,
-      variables: { usersRole: "revisit", usersFirst: 2, usersAfter: "a2" },
-      data: fixtures.users.query(["a3@example.com"]),
-    });
-
-    const routes = [
-      {
-        when: ({ variables }) => {
-          return variables.usersRole === "revisit" && variables.usersAfter == null;
-        },
-        respond: () => {
-          return fixtures.users.query(["a1@example.com", "a2@example.com"]);
-        },
-        delay: 15,
-      },
-    ];
-
-    const Cmp = createConnectionComponent(operations.USERS_QUERY, {
-      cachePolicy: "cache-and-network",
-      connectionFn: (data) => {
-        return data.users;
-      }
-    });
-
-    const { client, fx } = createTestClient({ routes, cache });
-
-    const wrapper = mount(Cmp, {
-      props: {
-        usersRole: "revisit",
-        usersFirst: 2,
-        usersAfter: null,
-      },
-      global: {
-        plugins: [client],
-      },
-    });
-
-    await tick();
-    expect(getEdges(wrapper, "email")).toEqual(["a3@example.com"]);
-
-    await delay(20);
-    expect(getEdges(wrapper, "email")).toEqual(["a1@example.com", "a2@example.com"]);
-    expect(fx.calls.length).toBe(1);
-
-    await fx.restore();
-  });
-
-  it.skip("asking next page again: cache shows instantly; network slice replaces without dupes", async () => {
-    const { cache } = createTestClient();
-
-    await seedCache(cache, {
-      query: operations.USERS_QUERY,
-      variables: { usersRole: "again", usersFirst: 2, usersAfter: null },
-      data: fixtures.users.query(["l1@example.com", "l2@example.com"]),
-    });
-
-    await seedCache(cache, {
-      query: operations.USERS_QUERY,
-      variables: { usersRole: "again", usersFirst: 2, usersAfter: "l2" },
-      data: fixtures.users.query(["n1@example.com", "n2@example.com"]),
-    });
-
-    const routes = [
-      {
-        when: ({ variables }) => {
-          return variables.usersRole === "again" && variables.usersAfter === "l2";
-        },
-        respond: () => {
-          return fixtures.users.query(["n1@example.com"]);
-        },
-        delay: 12,
-      },
-    ];
-
-    const Cmp = createConnectionComponent(operations.USERS_QUERY, {
-      cachePolicy: "cache-and-network",
-      connectionFn: (data) => {
-        return data.users;
-      }
-    });
-
-    const { client, fx } = createTestClient({ routes, cache });
-
-    const wrapper = mount(Cmp, {
-      props: {
-        usersRole: "again",
-        usersFirst: 2,
-        usersAfter: "l2",
-      },
-      global: {
-        plugins: [client],
-      },
-    });
-
-    await tick();
-    expect(getEdges(wrapper, "email")).toEqual([
-      "l1@example.com",
-      "l2@example.com",
-      "n1@example.com",
-      "n2@example.com",
-    ]);
-
-    await delay(20);
-    expect(getEdges(wrapper, "email")).toEqual([
-      "l1@example.com",
-      "l2@example.com",
-      "n1@example.com",
-    ]);
-
-    expect(fx.calls.length).toBe(1);
-
-    await fx.restore();
   });
 });
