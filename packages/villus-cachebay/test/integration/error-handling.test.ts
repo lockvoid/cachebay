@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils';
 import { createTestClient, createConnectionComponent, getEdges, fixtures, operations, delay } from '@/test/helpers';
 
 describe('Error Handling', () => {
-  it('GraphQL/transport error: recorded once; no empty emissions', async () => {
+  it('records transport errors without empty emissions', async () => {
     const routes = [
       {
         when: ({ variables }) => {
@@ -44,7 +44,7 @@ describe('Error Handling', () => {
     await fx.restore();
   });
 
-  it('Latest-only gating (non-cursor): older error is dropped; newer data renders', async () => {
+  it('drops older errors when newer data arrives', async () => {
     const routes = [
       {
         when: ({ variables }) => {
@@ -101,7 +101,7 @@ describe('Error Handling', () => {
     await fx.restore();
   });
 
-  it('Cursor-page error is dropped (no replay); latest success remains', async () => {
+  it('ignores cursor page errors and preserves successful data', async () => {
     const routes = [
       {
         when: ({ variables }) => {
@@ -144,7 +144,6 @@ describe('Error Handling', () => {
     });
 
     await wrapper.setProps({ first: 2, after: 'c1' });
-
     await wrapper.setProps({ first: 2, after: null });
 
     await delay(14);
@@ -161,7 +160,7 @@ describe('Error Handling', () => {
     await fx.restore();
   });
 
-  it('Transport reordering: O1 slow success, O2 fast error, O3 medium success → final is O3; errors dropped; no empties', async () => {
+  it('handles transport reordering with later responses overwriting earlier ones', async () => {
     const routes = [
       {
         when: ({ variables }) => {
