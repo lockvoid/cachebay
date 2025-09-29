@@ -156,6 +156,8 @@ export const createConnectionComponent = (
   const { cachePolicy, connectionFn } = options;
 
   const renders: any[][] = [];
+  const errors: string[] = [];
+  const empties: string[] = [];
 
   const component = defineComponent({
     name: "ListComponent",
@@ -183,7 +185,17 @@ export const createConnectionComponent = (
         if (!value) {
           return;
         }
-        renders.push(connectionFn(value));
+        const conn = connectionFn(value);
+        const edges = conn?.edges;
+        if (Array.isArray(edges) && edges.length > 0) {
+          renders.push(edges.map((e: any) => e?.node?.title || ''));
+        } else if (conn && Array.isArray(edges) && edges.length === 0) {
+          empties.push('empty');
+        }
+      }, { immediate: true });
+
+      watch(error, (e) => {
+        if (e) errors.push(e.message || 'error');
       }, { immediate: true });
 
       return () => {
@@ -220,6 +232,8 @@ export const createConnectionComponent = (
   });
 
   (component as any).renders = renders;
+  (component as any).errors = errors;
+  (component as any).empties = empties;
 
   return component;
 };
@@ -266,7 +280,6 @@ export const createConnectionComponentSuspense = (
         if (!value) {
           return;
         }
-
         renders.push(connectionFn(value));
       }, { immediate: true });
 
