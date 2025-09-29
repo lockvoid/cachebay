@@ -17,13 +17,11 @@ import {
 } from "@/test/helpers";
 import { createCache } from "@/src/core/internals";
 
-const FRAG_POST = operations.POST_FRAGMENT;
-
 describe("Integration • Optimistic updates (entities & canonical connections)", () => {
   it("Entity: patch+commit then revert restores previous snapshot", async () => {
     const cache = createCache();
 
-    const empty0 = cache.readFragment({ id: "Post:1", fragment: FRAG_POST });
+    const empty0 = cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT });
     if (empty0 === undefined) expect(empty0).toBeUndefined();
     else {
       expect(typeof empty0).toBe("object");
@@ -39,11 +37,11 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
     });
     tx.commit?.();
     await tick(2);
-    expect(cache.readFragment({ id: "Post:1", fragment: FRAG_POST })?.title).toBe("Post A");
+    expect(cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT })?.title).toBe("Post A");
 
     tx.revert?.();
     await tick(2);
-    const empty1 = cache.readFragment({ id: "Post:1", fragment: FRAG_POST });
+    const empty1 = cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT });
     if (empty1 === undefined) expect(empty1).toBeUndefined();
     else {
       expect(typeof empty1).toBe("object");
@@ -72,15 +70,15 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
     tx1.commit?.();
     tx2.commit?.();
     await tick(2);
-    expect(cache.readFragment({ id: "Post:1", fragment: FRAG_POST })?.title).toBe("Post B");
+    expect(cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT })?.title).toBe("Post B");
 
     tx1.revert?.();
     await tick(2);
-    expect(cache.readFragment({ id: "Post:1", fragment: FRAG_POST })?.title).toBe("Post B");
+    expect(cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT })?.title).toBe("Post B");
 
     tx2.revert?.();
     await tick(2);
-    const empty = cache.readFragment({ id: "Post:1", fragment: FRAG_POST });
+    const empty = cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT });
     if (empty === undefined) expect(empty).toBeUndefined();
     else {
       expect(typeof empty).toBe("object");
@@ -109,15 +107,15 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
     tx1.commit?.();
     tx2.commit?.();
     await tick(2);
-    expect(cache.readFragment({ id: "Post:1", fragment: FRAG_POST })?.title).toBe("Post B");
+    expect(cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT })?.title).toBe("Post B");
 
     tx2.revert?.();
     await tick(2);
-    expect(cache.readFragment({ id: "Post:1", fragment: FRAG_POST })?.title).toBe("Post A");
+    expect(cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT })?.title).toBe("Post A");
 
     tx1.revert?.();
     await tick(2);
-    const empty = cache.readFragment({ id: "Post:1", fragment: FRAG_POST });
+    const empty = cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT });
     if (empty === undefined) expect(empty).toBeUndefined();
     else {
       expect(typeof empty).toBe("object");
