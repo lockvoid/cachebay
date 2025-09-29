@@ -1,4 +1,4 @@
-import { defineComponent, h, computed, Suspense } from 'vue';
+import { defineComponent, h, computed, watch, Suspense } from 'vue';
 import { mount } from '@vue/test-utils';
 import { createClient } from 'villus';
 import { createCache } from '@/src/core/internals';
@@ -32,23 +32,22 @@ export async function seedCache(
   await tick();
 }
 
-export function createTestClient(routes: Route[]) {
-  const cache =
-    createCache({
-      keys: {
-        Comment: (o: any) => (o?.uuid != null ? String(o.uuid) : null),
-      },
-      interfaces: { Post: ['AudioPost', 'VideoPost'] },
+export function createTestClient({ routes = [], cache }: { routes?: Route[], cache?: any } = {}) {
+  const finalCache = cache ?? createCache({
+    keys: {
+      Comment: (o: any) => (o?.uuid != null ? String(o.uuid) : null),
+    },
+    interfaces: { Post: ['AudioPost', 'VideoPost'] },
 
-      suspensionTimeout: 0,
-    });
+    suspensionTimeout: 0,
+  });
 
   const fx = createFetchMock(routes);
   const client = createClient({
     url: '/test',
-    use: [cache as any, fx.plugin],
+    use: [finalCache as any, fx.plugin],
   });
-  return { client, cache, fx };
+  return { client, cache: finalCache, fx };
 }
 export type Route = {
   when: (op: { body: string; variables: any; context: any }) => boolean;
@@ -134,28 +133,6 @@ export function createFetchMock(routes: Route[]) {
   };
 }
 
-export async function mountWithClient(component: any, routes: Route[], props?: any) {
-  const { client, cache, fx } = createTestClient(routes);
-
-  const wrapper = mount(component, {
-    props,
-
-    global: {
-      plugins: [
-        client,
-
-        {
-          install(app) {
-            provideCachebay(app, cache);
-          },
-        },
-      ],
-    },
-  });
-
-  return { wrapper, client, cache, fx };
-}
-
 export const getEdges = (wrapper: any, fieldName: string) => {
   return wrapper.findAll(`li.edge div.${fieldName}`).map((field: any) => field.text());
 }
@@ -181,23 +158,24 @@ export const createConnectionComponent = (
   options: {
     cachePolicy: "cache-first" | "cache-and-network" | "network-only" | "cache-only";
     connectionFn: (data: any) => any;
+    renders?: any[][];
   }
 ) => {
-  const { cachePolicy, connectionFn } = options;
+  const { cachePolicy, connectionFn, renders } = options;
 
   return defineComponent({
     name: "ListComponent",
-    
+
     inheritAttrs: false,
 
     setup(props, { attrs }) {
       const { useQuery } = require("villus");
 
-      const { data, error, isFetching } = useQuery({ 
-        query, 
-        variables: computed(() => attrs), 
-        cachePolicy 
+      const variables = computed(() => {
+        return attrs;
       });
+
+      const { data, error, isFetching } = useQuery({ query, variables, cachePolicy });
 
       const connection = computed(() => {
         if (!data.value) {
@@ -206,6 +184,16 @@ export const createConnectionComponent = (
 
         return connectionFn(data.value);
       });
+
+      if (renders) {
+        watch(data, (value) => {
+          if (!value) {
+            return;
+          }
+
+          renders.push(connectionFn(value));
+        }, { immediate: true });
+      }
 
       return () => {
         if (isFetching.value) {
@@ -247,21 +235,24 @@ export const createConnectionComponentSuspense = (
   options: {
     cachePolicy: "cache-first" | "cache-and-network" | "network-only" | "cache-only";
     connectionFn: (data: any) => any;
+    renders?: any[][];
   }
 ) => {
-  const { cachePolicy, connectionFn } = options;
+  const { cachePolicy, connectionFn, renders } = options;
 
   const ConnectionComponent = defineComponent({
     name: "ListComponentSuspense",
 
-    props: {
-      // Accept any props that will be passed as variables
-    },
+    inheritAttrs: false,
 
-    async setup(props) {
+    async setup(props, { attrs }) {
       const { useQuery } = require("villus");
 
-      const { data, error } = await useQuery({ query, variables: props, cachePolicy });
+      const variables = computed(() => {
+        return attrs;
+      });
+
+      const { data, error } = await useQuery({ query, variables, cachePolicy });
 
       if (error.value) {
         throw error.value;
@@ -274,6 +265,16 @@ export const createConnectionComponentSuspense = (
 
         return connectionFn(data.value);
       });
+
+      if (renders) {
+        watch(data, (value) => {
+          if (!value) {
+            return;
+          }
+
+          renders.push(connectionFn(value));
+        }, { immediate: true });
+      }
 
       return () => {
         return h("div", {}, [
@@ -322,23 +323,24 @@ export const createDetailComponent = (
   options: {
     cachePolicy: "cache-first" | "cache-and-network" | "network-only" | "cache-only";
     detailFn: (data: any) => any;
+    renders?: any[][];
   }
 ) => {
-  const { cachePolicy, detailFn } = options;
+  const { cachePolicy, detailFn, renders } = options;
 
   return defineComponent({
     name: "DetailComponent",
-    
+
     inheritAttrs: false,
 
     setup(props, { attrs }) {
       const { useQuery } = require("villus");
 
-      const { data, isFetching, error } = useQuery({ 
-        query, 
-        variables: computed(() => attrs), 
-        cachePolicy 
+      const variables = computed(() => {
+        return attrs;
       });
+
+      const { data, isFetching, error } = useQuery({ query, variables, cachePolicy });
 
       const detail = computed(() => {
         if (!data.value) {
@@ -347,6 +349,16 @@ export const createDetailComponent = (
 
         return detailFn(data.value);
       });
+
+      if (renders) {
+        watch(data, (value) => {
+          if (!value) {
+            return;
+          }
+
+          renders.push(detailFn(value));
+        }, { immediate: true });
+      }
 
       return () => {
         if (isFetching.value) {
@@ -357,11 +369,13 @@ export const createDetailComponent = (
           return h("div", { class: "error" }, JSON.stringify(error.value));
         }
 
-        return h("ul", {},
-          Object.keys(detail.value ?? {}).map(fieldName =>
-            h("li", { class: fieldName }, String(detail.value[fieldName]))
+        return h("ul", { class: "edges" }, [
+          h("li", { class: "edge" },
+            Object.keys(detail.value ?? {}).map(fieldName =>
+              h("div", { class: fieldName }, String(detail.value[fieldName]))
+            )
           )
-        );
+        ]);
       };
     },
   });
@@ -373,21 +387,24 @@ export const createDetailComponentSuspense = (
   options: {
     cachePolicy: "cache-first" | "cache-and-network" | "network-only" | "cache-only";
     detailFn: (data: any) => any;
+    renders?: any[][];
   }
 ) => {
-  const { cachePolicy, detailFn } = options;
+  const { cachePolicy, detailFn, renders } = options;
 
   const DetailComponent = defineComponent({
     name: "DetailComponentSuspense",
 
-    props: {
-      // Accept any props that will be passed as variables
-    },
+    inheritAttrs: false,
 
-    async setup(props) {
+    async setup(props, { attrs }) {
       const { useQuery } = require("villus");
 
-      const { data, error } = await useQuery({ query, variables: props, cachePolicy });
+      const variables = computed(() => {
+        return attrs;
+      });
+
+      const { data, error } = await useQuery({ query, variables, cachePolicy });
 
       if (error.value) {
         throw error.value;
@@ -401,12 +418,24 @@ export const createDetailComponentSuspense = (
         return detailFn(data.value);
       });
 
+      if (renders) {
+        watch(data, (value) => {
+          if (!value) {
+            return;
+          }
+
+          renders.push(detailFn(value));
+        }, { immediate: true });
+      }
+
       return () => {
-        return h("ul", {},
-          Object.keys(detail.value ?? {}).map(fieldName =>
-            h("li", { class: fieldName }, String(detail.value[fieldName]))
+        return h("ul", { class: "edges" }, [
+          h("li", { class: "edge" },
+            Object.keys(detail.value ?? {}).map(fieldName =>
+              h("div", { class: fieldName }, String(detail.value[fieldName]))
+            )
           )
-        );
+        ]);
       };
     },
   });
@@ -427,6 +456,29 @@ export const createDetailComponentSuspense = (
   })
 };
 
+// export async function mountWithClient(component: any, routes: Route[], props?: any) {
+//   const { client, cache, fx } = createTestClient(routes);
+//
+//   const wrapper = mount(component, {
+//     props,
+//
+//     global: {
+//       plugins: [
+//         client,
+//
+//         {
+//           install(app) {
+//             provideCachebay(app, cache);
+//           },
+//         },
+//       ],
+//     },
+//   });
+//
+//   return { wrapper, client, cache, fx };
+// }
+//
+//
 // /* ──────────────────────────────────────────────────────────────────────────
 //  * Test client (cache + mocked fetch)
 //  * - default cache keys include Comment keyed by `uuid`
