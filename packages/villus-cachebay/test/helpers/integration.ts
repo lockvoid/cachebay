@@ -1,4 +1,4 @@
-import { defineComponent, h, watch, computed } from 'vue';
+import { defineComponent, h, watch, computed, Suspense } from 'vue';
 import { mount } from '@vue/test-utils';
 import { createClient } from 'villus';
 import { createCache } from '@/src/core/internals';
@@ -7,11 +7,9 @@ import { tick, delay } from './concurrency';
 import { fetch as villusFetch } from 'villus';
 import * as operations from './operations';
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Seed via normalize (like the plugin path)
- * ------------------------------------------------------------------------ */
 export async function seedCache(
   cache: any,
+
   {
     query,
     variables = {},
@@ -23,25 +21,18 @@ export async function seedCache(
   }
 ) {
   const internals = (cache as any).__internals;
-  if (!internals) throw new Error('[seedCache] cache.__internals is missing');
+
+  if (!internals) {
+    throw new Error('[seedCache] cache.__internals is missing');
+  }
+
   const { documents } = internals;
 
-  const document = query;
-
-  documents.normalizeDocument({
-    document,
-    variables,
-    data: data?.data ?? data,
-  });
+  documents.normalizeDocument({ document: query, variables, data });
 
   await tick();
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Test client (cache + mocked fetch)
- * - default cache keys include Comment keyed by `uuid`
- * - default interfaces include Post: ['AudioPost','VideoPost']
- * ------------------------------------------------------------------------ */
 export function createTestClient(routes: Route[], cacheConfig?: any) {
   const cache =
     cacheConfig ||
@@ -61,100 +52,6 @@ export function createTestClient(routes: Route[], cacheConfig?: any) {
   });
   return { client, cache, fx };
 }
-
-/* ──────────────────────────────────────────────────────────────────────────
- * Mount helpers
- * ------------------------------------------------------------------------ */
-export function createListComponent(
-  query: any,
-  variables: any = {},
-  options: {
-    cachePolicy?: 'cache-first' | 'cache-and-network' | 'network-only' | 'cache-only';
-    dataPath?: string;
-    itemPath?: string;
-    keyPath?: string;
-  } = {}
-) {
-  const { cachePolicy, dataPath = 'posts', itemPath = 'edges', keyPath = 'node.title' } = options;
-
-  return defineComponent({
-    name: 'TestList',
-    setup() {
-      const { useQuery } = require('villus');
-      const { data } = useQuery({ query, variables, cachePolicy });
-
-      return () => {
-        const items = (data?.value?.[dataPath]?.[itemPath]) ?? [];
-        return h(
-          'div',
-          {},
-          items.map((item: any) => {
-            const value = keyPath.split('.').reduce((obj, key) => obj?.[key], item);
-            return h('div', {}, value || '');
-          })
-        );
-      };
-    },
-  });
-}
-
-export function createWatcherComponent(
-  query: any,
-  variables: any = {},
-  options: {
-    cachePolicy?: 'cache-first' | 'cache-and-network' | 'network-only' | 'cache-only';
-    onData?: (data: any) => void;
-    onError?: (error: any) => void;
-  } = {}
-) {
-  return defineComponent({
-    name: 'TestWatcher',
-    setup() {
-      const { useQuery } = require('villus');
-      const { data, error } = useQuery({ query, variables, cachePolicy: options.cachePolicy });
-
-      watch(
-        data,
-        (v) => { if (v && options.onData) options.onData(v); },
-        { immediate: true }
-      );
-      watch(
-        error,
-        (e) => { if (e && options.onError) options.onError(e); },
-        { immediate: true }
-      );
-
-      return () => h('div', {}, JSON.stringify(data.value));
-    },
-  });
-}
-
-export async function mountWithClient(
-  component: any,
-  routes: Route[],
-  cacheConfig?: any,
-  props?: Record<string, any>
-) {
-  const { client, cache, fx } = createTestClient(routes, cacheConfig);
-  const wrapper = mount(component, {
-    props,
-    global: {
-      plugins: [
-        client as any,
-        {
-          install(app) {
-            provideCachebay(app as any, cache);
-          }
-        }
-      ],
-    },
-  });
-  return { wrapper, client, cache, fx };
-}
-
-/* ──────────────────────────────────────────────────────────────────────────
- * Embedded transport mock (was ./transport.ts)
- * ------------------------------------------------------------------------ */
 export type Route = {
   when: (op: { body: string; variables: any; context: any }) => boolean;
   respond: (op: { body: string; variables: any; context: any }) =>
@@ -239,6 +136,272 @@ export function createFetchMock(routes: Route[]) {
   };
 }
 
+export async function mountWithClient(
+  component: any,
+  routes: Route[],
+  cacheConfig?: any,
+  props?: Record<string, any>
+) {
+  const { client, cache, fx } = createTestClient(routes, cacheConfig);
+  const wrapper = mount(component, {
+    props,
+    global: {
+      plugins: [
+        client as any,
+        {
+          install(app) {
+            provideCachebay(app as any, cache);
+          }
+        }
+      ],
+    },
+  });
+  return { wrapper, client, cache, fx };
+}
+
+export const getEdges = (wrapper: any, fieldName: string) => {
+  return wrapper.findAll(`li.edge div.${fieldName}`).map((field: any) => field.text());
+}
+
+export const getPageInfo = (wrapper: any) => {
+  const pageInfoDiv = wrapper.find("div.pageInfo");
+
+  if (!pageInfoDiv.exists()) {
+    return {};
+  }
+
+  return {
+    startCursor: pageInfoDiv.find("div.startCursor").text() || null,
+    endCursor: pageInfoDiv.find("div.endCursor").text() || null,
+    hasNextPage: pageInfoDiv.find("div.hasNextPage").text() === "true",
+    hasPreviousPage: pageInfoDiv.find("div.hasPreviousPage").text() === "true"
+  };
+};
+
+export const createConnectionComponent = (
+  query: any,
+
+  options: {
+    cachePolicy: "cache-first" | "cache-and-network" | "network-only" | "cache-only";
+    connectionFn: (data: any) => any;
+  }
+) => {
+  const { cachePolicy, connectionFn } = options;
+
+  return defineComponent({
+    name: "ListComponent",
+
+    props: {
+      // Accept any props that will be passed as variables
+    },
+
+    setup(props) {
+      const { useQuery } = require("villus");
+
+      const { data, isFetching, error } = useQuery({ query, variables: props, cachePolicy });
+
+      const connection = computed(() => {
+        if (!data.value) {
+          return null;
+        }
+
+        return connectionFn(data.value);
+      });
+
+      return () => {
+        if (isFetching.value) {
+          return h("div", { class: "loading" }, "Loading...");
+        }
+
+        if (error.value) {
+          return h("div", { class: "error" }, JSON.stringify(error.value));
+        }
+
+        return h("div", {}, [
+          h("div", { class: "pageInfo" }, [
+            h("div", { class: "startCursor" }, String(connection.value?.pageInfo?.startCursor ?? "")),
+            h("div", { class: "endCursor" }, String(connection.value?.pageInfo?.endCursor ?? "")),
+            h("div", { class: "hasNextPage" }, String(connection.value?.pageInfo?.hasNextPage ?? false)),
+            h("div", { class: "hasPreviousPage" }, String(connection.value?.pageInfo?.hasPreviousPage ?? false))
+          ]),
+
+          h("ul", { class: "edges" },
+            (connection.value?.edges ?? []).map((edge: any, index: number) => {
+              const node = edge?.node ?? {};
+
+              return h("li", { class: "edge", key: node.id || index },
+                Object.keys(node).map(field =>
+                  h("div", { class: field }, String(node[field]))
+                )
+              );
+            })
+          )
+        ]);
+      };
+    },
+  });
+};
+
+export const createConnectionComponentSuspense = (
+  query: any,
+
+  options: {
+    cachePolicy: "cache-first" | "cache-and-network" | "network-only" | "cache-only";
+    connectionFn: (data: any) => any;
+  }
+) => {
+  const { cachePolicy, connectionFn } = options;
+
+  const ConnectionComponent = defineComponent({
+    name: "ListComponentSuspense",
+
+    props: {
+      // Accept any props that will be passed as variables
+    },
+
+    async setup(props) {
+      const { useQuery } = require("villus");
+
+      const { data, error } = await useQuery({ query, variables: props, cachePolicy });
+
+      if (error.value) {
+        throw error.value;
+      }
+
+      const connection = computed(() => {
+        if (!data.value) {
+          return null;
+        }
+
+        return connectionFn(data.value);
+      });
+
+      return () => {
+        return h("div", {}, [
+          h("div", { class: "pageInfo" }, [
+            h("div", { class: "startCursor" }, String(connection.value?.pageInfo?.startCursor ?? "")),
+            h("div", { class: "endCursor" }, String(connection.value?.pageInfo?.endCursor ?? "")),
+            h("div", { class: "hasNextPage" }, String(connection.value?.pageInfo?.hasNextPage ?? false)),
+            h("div", { class: "hasPreviousPage" }, String(connection.value?.pageInfo?.hasPreviousPage ?? false))
+          ]),
+
+          h("ul", { class: "edges" },
+            (connection.value?.edges ?? []).map((edge: any, index: number) => {
+              const node = edge?.node ?? {};
+
+              return h("li", { class: "edge", key: node.id || index },
+                Object.keys(node).map(field =>
+                  h("div", { class: field }, String(node[field]))
+                )
+              );
+            })
+          )
+        ]);
+      };
+    },
+  });
+
+  return defineComponent({
+    name: "SuspenseWrapper",
+
+    props: {
+      // Accept any props that will be passed to the inner component
+    },
+
+    setup(props) {
+      return () => h(Suspense, {}, {
+        default: () => h(ConnectionComponent, props),
+        fallback: () => h("div", { class: "loading" }, "Loading...")
+      });
+    }
+  })
+};
+
+
+
+/// LEGACY LEGACY LEGACY
+
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Test client (cache + mocked fetch)
+ * - default cache keys include Comment keyed by `uuid`
+ * - default interfaces include Post: ['AudioPost','VideoPost']
+ * ------------------------------------------------------------------------ */
+
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Mount helpers
+ * ------------------------------------------------------------------------ */
+export function createListComponent(
+  query: any,
+  variables: any = {},
+  options: {
+    cachePolicy?: 'cache-first' | 'cache-and-network' | 'network-only' | 'cache-only';
+    dataPath?: string;
+    itemPath?: string;
+    keyPath?: string;
+  } = {}
+) {
+  const { cachePolicy, dataPath = 'posts', itemPath = 'edges', keyPath = 'node.title' } = options;
+
+  return defineComponent({
+    name: 'TestList',
+    setup() {
+      const { useQuery } = require('villus');
+      const { data } = useQuery({ query, variables, cachePolicy });
+
+      return () => {
+        const items = (data?.value?.[dataPath]?.[itemPath]) ?? [];
+        return h(
+          'div',
+          {},
+          items.map((item: any) => {
+            const value = keyPath.split('.').reduce((obj, key) => obj?.[key], item);
+            return h('div', {}, value || '');
+          })
+        );
+      };
+    },
+  });
+}
+
+export function createWatcherComponent(
+  query: any,
+  variables: any = {},
+  options: {
+    cachePolicy?: 'cache-first' | 'cache-and-network' | 'network-only' | 'cache-only';
+    onData?: (data: any) => void;
+    onError?: (error: any) => void;
+  } = {}
+) {
+  return defineComponent({
+    name: 'TestWatcher',
+    setup() {
+      const { useQuery } = require('villus');
+      const { data, error } = useQuery({ query, variables, cachePolicy: options.cachePolicy });
+
+      watch(
+        data,
+        (v) => { if (v && options.onData) options.onData(v); },
+        { immediate: true }
+      );
+      watch(
+        error,
+        (e) => { if (e && options.onError) options.onError(e); },
+        { immediate: true }
+      );
+
+      return () => h('div', {}, JSON.stringify(data.value));
+    },
+  });
+}
+
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Embedded transport mock (was ./transport.ts)
+ * ------------------------------------------------------------------------ */
+
+
 export function MakeHarnessErrorHandling(cachePolicy: 'network-only' | 'cache-first' | 'cache-and-network') {
   return defineComponent({
     props: {
@@ -295,7 +458,8 @@ export function MakeHarnessErrorHandling(cachePolicy: 'network-only' | 'cache-fi
   });
 }
 
-// Shared helper functions from integration tests
+
+// Legacy helpers (deprecated - use getEdges instead)
 export const rows = (wrapper: any) =>
   wrapper.findAll("div").map((n: any) => n.text()).filter((t: string) => t !== "");
 
@@ -304,69 +468,6 @@ export const rowsByClass = (wrapper: any, cls = ".row") =>
 
 export const rowsNoPI = (wrapper: any) =>
   wrapper.findAll("div:not(.pi)").map((n: any) => n.text());
-
-// Generic component factory for connection queries
-export const createConnectionComponent = (
-  query: any,
-
-  options: {
-    cachePolicy: "cache-first" | "cache-and-network" | "network-only" | "cache-only";
-    connectionFn: (data: any) => any; // fn(data) => connection with edges/pageInfo
-  }
-) => {
-  const { cachePolicy, connectionFn } = options;
-
-  return defineComponent({
-    name: "ListComponent",
-    
-    props: {
-      // Accept any props that will be passed as variables
-    },
-    setup(props) {
-      const { useQuery } = require("villus");
-      const { data, isFetching, error } = useQuery({ query,  variables: props, cachePolicy });
-
-      const connection = computed(() => {
-        if (!data.value) {
-          return null;
-        }
-
-        return connectionFn(data.value);
-      });
-
-      return () => {
-        if (isFetching.value) {
-          return h("div", { class: "loading" }, "Loading...");
-        }
-
-        if (error.value) {
-          return h("div", { class: "error" }, JSON.stringify(error.value));
-        }
-
-        return h("div", {}, [
-          h("div", { class: "pageInfo" }, 
-            Object.entries(connection.value?.pageInfo ?? {}).map(([key, value]) =>
-              h("div", { class: key }, String(value))
-            )
-          ),
-
-          h("ul", { class: "edges" },
-            (connection.value?.edges ?? []).map((edge: any, index: number) => {
-              const node = edge?.node ?? {};
-
-              return h("li", { class: "edge", key: node.id || index },
-                Object.keys(node).map(field => 
-                  h("div", { class: field }, String(node[field]))
-                )
-              );
-            })
-          )
-        ]);
-      };
-    },
-  });
-};
-
 // Shared component helpers from integration tests
 export const UsersList = (
   policy: "cache-first" | "cache-and-network" | "network-only" | "cache-only",
@@ -463,13 +564,12 @@ export function harnessEdges(
         Object.keys(v).forEach((k) => v[k] === undefined && delete v[k]);
         return v;
       });
-      const connection = computed(() => {
-        if (!data.value) return null;
-        return extractConnection(data.value);
-        );
-        const pi = h('div', { class: 'pi' }, JSON.stringify(data?.value?.posts?.pageInfo ?? {}));
-        return [...edges, pi];
-      };
+      // const connection = computed(() => {
+      //   if (!data.value) return null;
+      //   return extractConnection(data.value);
+      //   const pi = h('div', { class: 'pi' }, JSON.stringify(data?.value?.posts?.pageInfo ?? {}));
+      //   return [...edges, pi];
+      // };
     },
   });
 }
