@@ -202,6 +202,27 @@ export const POSTS_QUERY = `
   }
 `;
 
+export const POSTS_WITH_PAGE_QUERY = `
+  ${PAGE_INFO_FRAGMENT}
+  ${POST_FRAGMENT}
+
+  query Posts($category: String, $sort: String, $first: Int, $after: String, $last: Int, $before: String) {
+    posts(category: $category, sort: $sort, first: $first, after: $after, last: $last, before: $before) @connection(filters: ["category", "sort"], mode: "page") {
+      pageInfo {
+        ...PageInfoFields
+      }
+
+      edges {
+        cursor
+
+        node {
+          ...PostFields
+        }
+      }
+    }
+  }
+`;
+
 export const POSTS_WITHOUT_CONNECTION_QUERY = `
   ${PAGE_INFO_FRAGMENT}
   ${POST_FRAGMENT}

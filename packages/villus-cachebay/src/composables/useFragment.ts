@@ -1,9 +1,10 @@
 import { unref, watchEffect, readonly, type Ref, shallowRef } from "vue";
 import { useCache } from "./useCache";
-    
-export type UseFragmentOptions   = {
+
+export type UseFragmentOptions = {
   id: string | Ref<string>;
   fragment: any; // string | DocumentNode | CachePlanV1
+  fragmentName?: string;
   variables?: Record<string, any> | Ref<Record<string, any> | undefined>;
 };
 
@@ -32,6 +33,7 @@ export function useFragment(options: UseFragmentOptions): Readonly<Ref<any>> {
     const view = cache.readFragment({
       id,
       fragment: options.fragment,
+      fragmentName: options.fragmentName,
       variables: vars,
     });
     data.value = view;

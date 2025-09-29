@@ -93,7 +93,7 @@ describe('Integration • Relay flows (@connection) • Posts', () => {
       },
     ];
 
-    const Comp = harnessEdges(operations.POSTS_QUERY, 'cache-and-network');
+    const Comp = harnessEdges(operations.POSTS_WITH_PAGE_QUERY, 'cache-and-network');
     const { wrapper, fx } = await mountWithClient(Comp, routes);
 
     await tick(2);
@@ -154,7 +154,7 @@ describe('Integration • Relay pagination reset & append from cache — extende
 
     {
       const fast: Route[] = [{
-        when: ({ variables }) => variables.filter === 'A' && !variables.after && variables.first === 2,
+        when: ({ variables }) => variables.category === 'A' && !variables.after && variables.first === 2,
         respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-1', 'A-2'], { fromId: 1 }) } }),
       }];
 
@@ -163,11 +163,11 @@ describe('Integration • Relay pagination reset & append from cache — extende
 
       await seedCache(cache, {
         query: operations.POSTS_QUERY,
-        variables: { filter: 'A', first: 2, after: 'p2' },
+        variables: { category: 'A', first: 2, after: 'p2' },
         data: { __typename: 'Query', posts: fixtures.posts.connection(['A-3', 'A-4'], { fromId: 3 }) },
       });
 
-      await wrapper.setProps({ filter: 'A', first: 2 });
+      await wrapper.setProps({ category: 'A', first: 2 });
       await tick(2);
       expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2']);
       expect(readPI(wrapper).endCursor).toBe('p2');
@@ -179,32 +179,32 @@ describe('Integration • Relay pagination reset & append from cache — extende
     const slowRoutes: Route[] = [
       {
         delay: 50,
-        when: ({ variables }) => variables.filter === 'A' && !variables.after && variables.first === 2,
+        when: ({ variables }) => variables.category === 'A' && !variables.after && variables.first === 2,
         respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-1', 'A-2'], { fromId: 1 }) } }),
       },
       {
         delay: 50,
-        when: ({ variables }) => variables.filter === 'A' && variables.after === 'p2' && variables.first === 2,
+        when: ({ variables }) => variables.category === 'A' && variables.after === 'p2' && variables.first === 2,
         respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-3', 'A-4'], { fromId: 3 }) } }),
       },
       {
         delay: 50,
-        when: ({ variables }) => variables.filter === 'A' && variables.after === 'p4' && variables.first === 2,
+        when: ({ variables }) => variables.category === 'A' && variables.after === 'p4' && variables.first === 2,
         respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-5', 'A-6'], { fromId: 5 }) } }),
       },
       {
         delay: 50,
-        when: ({ variables }) => variables.filter === 'A' && variables.after === 'p6' && variables.first === 2,
+        when: ({ variables }) => variables.category === 'A' && variables.after === 'p6' && variables.first === 2,
         respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-7', 'A-8'], { fromId: 7 }) } }),
       },
       {
         delay: 50,
-        when: ({ variables }) => variables.filter === 'A' && variables.after === 'p8' && variables.first === 2,
+        when: ({ variables }) => variables.category === 'A' && variables.after === 'p8' && variables.first === 2,
         respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-9', 'A-10'], { fromId: 9 }) } }),
       },
       {
         delay: 50,
-        when: ({ variables }) => variables.filter === 'B' && !variables.after && variables.first === 2,
+        when: ({ variables }) => variables.category === 'B' && !variables.after && variables.first === 2,
         respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['B-1', 'B-2'], { fromId: 100 }) } }),
       },
     ];
@@ -214,31 +214,31 @@ describe('Integration • Relay pagination reset & append from cache — extende
 
     await seedCache(cache, {
       query: operations.POSTS_QUERY,
-      variables: { filter: 'A', first: 2, after: 'p2' },
+      variables: { category: 'A', first: 2, after: 'p2' },
       data: { __typename: 'Query', posts: fixtures.posts.connection(['A-3', 'A-4'], { fromId: 3 }) },
     });
 
-    await wrapper.setProps({ filter: 'A', first: 2 });
+    await wrapper.setProps({ category: 'A', first: 2 });
     await delay(51);
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2']);
     expect(readPI(wrapper).endCursor).toBe('p2');
 
-    await wrapper.setProps({ filter: 'A', first: 2, after: 'p2' });
+    await wrapper.setProps({ category: 'A', first: 2, after: 'p2' });
     await tick(2);
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4']);
     expect(readPI(wrapper).endCursor).toBe('p4');
 
-    await wrapper.setProps({ filter: 'A', first: 2, after: 'p4' });
+    await wrapper.setProps({ category: 'A', first: 2, after: 'p4' });
     await delay(51);
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
     expect(readPI(wrapper).endCursor).toBe('p6');
 
-    await wrapper.setProps({ filter: 'B', first: 2, after: undefined } as any);
+    await wrapper.setProps({ category: 'B', first: 2, after: undefined } as any);
     await delay(51);
     expect(rowsRelayConnections(wrapper)).toEqual(['B-1', 'B-2']);
     expect(readPI(wrapper).endCursor).toBe('p101');
 
-    await wrapper.setProps({ filter: 'A', first: 2, after: undefined } as any);
+    await wrapper.setProps({ category: 'A', first: 2, after: undefined } as any);
     await tick(2);
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
     expect(readPI(wrapper).endCursor).toBe('p6');
@@ -248,7 +248,7 @@ describe('Integration • Relay pagination reset & append from cache — extende
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2']);
     expect(readPI(wrapper).endCursor).toBe('p2');
 
-    await wrapper.setProps({ filter: 'A', first: 2, after: 'p2' });
+    await wrapper.setProps({ category: 'A', first: 2, after: 'p2' });
     await tick(2);
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4']);
     expect(readPI(wrapper).endCursor).toBe('p4');
@@ -258,7 +258,7 @@ describe('Integration • Relay pagination reset & append from cache — extende
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4']);
     expect(readPI(wrapper).endCursor).toBe('p4');
 
-    await wrapper.setProps({ filter: 'A', first: 2, after: 'p4' });
+    await wrapper.setProps({ category: 'A', first: 2, after: 'p4' });
     await tick(2);
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
     expect(readPI(wrapper).endCursor).toBe('p6');
@@ -268,7 +268,7 @@ describe('Integration • Relay pagination reset & append from cache — extende
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
     expect(readPI(wrapper).endCursor).toBe('p6');
 
-    await wrapper.setProps({ filter: 'A', first: 2, after: 'p6' });
+    await wrapper.setProps({ category: 'A', first: 2, after: 'p6' });
     await tick(2);
     expect(rowsRelayConnections(wrapper).slice()).toEqual(['A-1', 'A-2', 'A-3', 'A-4', 'A-5', 'A-6']);
     expect(readPI(wrapper).endCursor).toBe('p6');
@@ -285,24 +285,24 @@ describe('Integration • Proxy shape invariants & identity (Posts)', () => {
   it('View A (page1) and View B (page1+page2) stable & reactive (edges reactive, pageInfo not)', async () => {
     const routes: Route[] = [
       {
-        when: ({ variables }) => variables.filter === 'A' && !variables.after && variables.first === 2,
+        when: ({ variables }) => variables.category === 'A' && !variables.after && variables.first === 2,
         delay: 0, respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A1', 'A2'], { fromId: 1 }) } })
       },
       {
-        when: ({ variables }) => variables.filter === 'A' && variables.after === 'p2' && variables.first === 2,
+        when: ({ variables }) => variables.category === 'A' && variables.after === 'p2' && variables.first === 2,
         delay: 10, respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A3', 'A4'], { fromId: 3 }) } })
       },
     ];
 
     const { client, fx, cache } = createTestClient(routes);
 
-    const r1 = await client.execute({ query: operations.POSTS_QUERY, variables: { filter: 'A', first: 2 } });
+    const r1 = await client.execute({ query: operations.POSTS_QUERY, variables: { category: 'A', first: 2 } });
     const connA = (r1.data as any).posts;
     expect(isReactive(connA.edges[0])).toBe(true);
     expect(isReactive(connA.pageInfo)).toBe(false);
     const edgesRefA = connA.edges;
 
-    const r2 = await client.execute({ query: operations.POSTS_QUERY, variables: { filter: 'A', first: 2, after: 'p2' } });
+    const r2 = await client.execute({ query: operations.POSTS_QUERY, variables: { category: 'A', first: 2, after: 'p2' } });
     const connB = (r2.data as any).posts;
     const edgesRefB = connB.edges;
 
