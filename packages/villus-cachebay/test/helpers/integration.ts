@@ -155,9 +155,8 @@ export const createConnectionComponent = (
 ) => {
   const { cachePolicy, connectionFn } = options;
 
-  const renders: any[][] = [];
-  const errors: string[] = [];
-  const empties: string[] = [];
+  const renders: any[] = [];
+  const errors: any[] = [];
 
   const component = defineComponent({
     name: "ListComponent",
@@ -185,17 +184,13 @@ export const createConnectionComponent = (
         if (!value) {
           return;
         }
-        const conn = connectionFn(value);
-        const edges = conn?.edges;
-        if (Array.isArray(edges) && edges.length > 0) {
-          renders.push(edges.map((e: any) => e?.node?.title || ''));
-        } else if (conn && Array.isArray(edges) && edges.length === 0) {
-          empties.push('empty');
-        }
+        renders.push(connectionFn(value));
       }, { immediate: true });
 
-      watch(error, (e) => {
-        if (e) errors.push(e.message || 'error');
+      watch(error, (value) => {
+        if (value) {
+          errors.push(value);
+        }
       }, { immediate: true });
 
       return () => {
@@ -233,7 +228,6 @@ export const createConnectionComponent = (
 
   (component as any).renders = renders;
   (component as any).errors = errors;
-  (component as any).empties = empties;
 
   return component;
 };
@@ -249,6 +243,7 @@ export const createConnectionComponentSuspense = (
   const { cachePolicy, connectionFn } = options;
 
   const renders: any[][] = [];
+  const errors: any[] = [];
 
   const ConnectionComponent = defineComponent({
     name: "ListComponentSuspense",
@@ -265,6 +260,8 @@ export const createConnectionComponentSuspense = (
       const { data, error } = await useQuery({ query, variables, cachePolicy });
 
       if (error.value) {
+        errors.push(error.value);
+
         throw error.value;
       }
 
@@ -324,6 +321,7 @@ export const createConnectionComponentSuspense = (
   });
 
   (component as any).renders = renders;
+  (component as any).errors = errors;
 
   return component;
 };
@@ -339,6 +337,7 @@ export const createDetailComponent = (
   const { cachePolicy, detailFn } = options;
 
   const renders: any[][] = [];
+  const errors: any[] = [];
 
   const component = defineComponent({
     name: "DetailComponent",
@@ -362,15 +361,19 @@ export const createDetailComponent = (
         return detailFn(data.value);
       });
 
-      if (renders) {
-        watch(data, (value) => {
-          if (!value) {
-            return;
-          }
+      watch(data, (value) => {
+        if (!value) {
+          return;
+        }
 
-          renders.push(detailFn(value));
-        }, { immediate: true });
-      }
+        renders.push(detailFn(value));
+      }, { immediate: true });
+
+      watch(error, (value) => {
+        if (value) {
+          errors.push(value);
+        }
+      }, { immediate: true });
 
       return () => {
         if (isFetching.value) {
@@ -393,6 +396,7 @@ export const createDetailComponent = (
   });
 
   (component as any).renders = renders;
+  (component as any).errors = errors;
 
   return component;
 };
@@ -408,6 +412,7 @@ export const createDetailComponentSuspense = (
   const { cachePolicy, detailFn } = options;
 
   const renders: any[][] = [];
+  const errors: any[] = [];
 
   const DetailComponent = defineComponent({
     name: "DetailComponentSuspense",
@@ -424,6 +429,8 @@ export const createDetailComponentSuspense = (
       const { data, error } = await useQuery({ query, variables, cachePolicy });
 
       if (error.value) {
+        errors.push(error.value);
+
         throw error.value;
       }
 
@@ -472,8 +479,8 @@ export const createDetailComponentSuspense = (
     }
   });
 
-
   (component as any).renders = renders;
+  (component as any).errors = errors;
 
   return component;
 };
