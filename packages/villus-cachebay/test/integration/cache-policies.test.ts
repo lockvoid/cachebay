@@ -1,26 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { defineComponent, h, watch, computed } from "vue";
+import { defineComponent, h } from "vue";
 import { mount } from '@vue/test-utils';
-import {
-  createTestClient,
-  fixtures,
-  seedCache,
-  operations,
-  delay,
-  tick,
-  getEdges,
-  createConnectionComponent,
-  createDetailComponent,
-} from '@/test/helpers';
+import { createTestClient, createConnectionComponent, createDetailComponent, seedCache, fixtures, operations, delay, tick, getEdges } from '@/test/helpers';
 
 describe("Cache Policies Behavior", () => {
   describe("cache-first policy", () => {
     it("miss → one network then render (root users connection)", async () => {
       const routes = [
         {
-          when: ({ variables }) => variables.usersRole === "tech",
+          when: ({ variables }) => {
+            return variables.usersRole === "tech";
+          },
           delay: 30,
-          respond: () => fixtures.users.query(["tech.user@example.com"]),
+          respond: () => {
+            return fixtures.users.query(["tech.user@example.com"]);
+          },
         },
       ];
 
@@ -86,7 +80,15 @@ describe("Cache Policies Behavior", () => {
 
     it("single object • miss → one network then render (User)", async () => {
       const routes = [
-        { when: ({ variables }) => variables.id === "42", delay: 15, respond: () => fixtures.singleUser.query("42", "answer@example.com") },
+        {
+          when: ({ variables }) => {
+            return variables.id === "42";
+          },
+          delay: 15,
+          respond: () => {
+            return fixtures.singleUser.query("42", "answer@example.com");
+          }
+        },
       ];
 
       const { client, fx } = createTestClient({ routes });
@@ -157,9 +159,13 @@ describe("Cache Policies Behavior", () => {
 
       const routes = [
         {
-          when: ({ variables }) => variables.usersRole === "news",
+          when: ({ variables }) => {
+            return variables.usersRole === "news";
+          },
           delay: 15,
-          respond: () => fixtures.users.query(["fresh.news@example.com"]),
+          respond: () => {
+            return fixtures.users.query(["fresh.news@example.com"]);
+          },
         },
       ];
 
@@ -198,7 +204,15 @@ describe("Cache Policies Behavior", () => {
       await delay(5);
 
       const routes: Route[] = [
-        { when: ({ variables }) => variables.usersRole === "same", delay: 10, respond: () => ({ data: cached }) },
+        {
+          when: ({ variables }) => {
+            return variables.usersRole === "same";
+          },
+          delay: 10,
+          respond: () => {
+            return { data: cached };
+          }
+        },
       ];
 
       const Cmp = createConnectionComponent(operations.USERS_QUERY, {
@@ -237,7 +251,15 @@ describe("Cache Policies Behavior", () => {
       await delay(5);
 
       const routes: Route[] = [
-        { when: ({ variables }) => variables.usersRole === "diff", delay: 10, respond: () => fixtures.users.query(["updated.user@example.com"]) },
+        {
+          when: ({ variables }) => {
+            return variables.usersRole === "diff";
+          },
+          delay: 10,
+          respond: () => {
+            return fixtures.users.query(["updated.user@example.com"]);
+          }
+        },
       ];
 
       const renders: string[][] = [];
@@ -278,7 +300,15 @@ describe("Cache Policies Behavior", () => {
 
     it("miss → one render on network response (root users)", async () => {
       const routes = [
-        { when: ({ variables }) => variables.usersRole === "miss", delay: 5, respond: () => fixtures.users.query(["new.user@example.com"]) },
+        {
+          when: ({ variables }) => {
+            return variables.usersRole === "miss";
+          },
+          delay: 5,
+          respond: () => {
+            return fixtures.users.query(["new.user@example.com"]);
+          }
+        },
       ];
 
       const { client, fx } = createTestClient({ routes });
@@ -342,35 +372,38 @@ describe("Cache Policies Behavior", () => {
 
       const routes: Route[] = [
         {
-          when: ({ variables }) =>
-            variables.id === "u1" &&
-            variables.postsCategory === "tech" &&
-            variables.commentsFirst === 2 &&
-            variables.commentsAfter == null,
+          when: ({ variables }) => {
+            return variables.id === "u1" &&
+              variables.postsCategory === "tech" &&
+              variables.commentsFirst === 2 &&
+              variables.commentsAfter == null;
+          },
           delay: 12,
-          respond: () => ({
-            data: {
-              __typename: "Query",
-              user: {
-                __typename: "User",
-                id: "u1",
-                posts: fixtures.posts.connection(
-                  [
-                    {
-                      title: "P1",
-                      extras: {
-                        comments: fixtures.comments.connection(["Comment 1", "Comment 2", "Comment 3"], {
-                          postId: "p1",
-                          fromId: 1,
-                        }),
+          respond: () => {
+            return {
+              data: {
+                __typename: "Query",
+                user: {
+                  __typename: "User",
+                  id: "u1",
+                  posts: fixtures.posts.connection(
+                    [
+                      {
+                        title: "P1",
+                        extras: {
+                          comments: fixtures.comments.connection(["Comment 1", "Comment 2", "Comment 3"], {
+                            postId: "p1",
+                            fromId: 1,
+                          }),
+                        },
                       },
-                    },
-                  ],
-                  { fromId: 1 }
-                ),
+                    ],
+                    { fromId: 1 }
+                  ),
+                },
               },
-            },
-          }),
+            };
+          },
         },
       ];
 
@@ -419,7 +452,15 @@ describe("Cache Policies Behavior", () => {
   describe("network-only policy", () => {
     it("no cache, renders only on network (users)", async () => {
       const routes = [
-        { when: ({ variables }) => variables.usersRole === "network", delay: 20, respond: () => fixtures.users.query(["network.user@example.com"]) },
+        {
+          when: ({ variables }) => {
+            return variables.usersRole === "network";
+          },
+          delay: 20,
+          respond: () => {
+            return fixtures.users.query(["network.user@example.com"]);
+          }
+        },
       ];
 
       const { client, fx } = createTestClient({ routes });
@@ -446,7 +487,15 @@ describe("Cache Policies Behavior", () => {
 
     it("single object • no cache, renders on network (User)", async () => {
       const routes = [
-        { when: ({ variables }) => variables.id === "501", delay: 15, respond: () => fixtures.singleUser.query("501", "net@example.com") },
+        {
+          when: ({ variables }) => {
+            return variables.id === "501";
+          },
+          delay: 15,
+          respond: () => {
+            return fixtures.singleUser.query("501", "net@example.com");
+          }
+        },
       ];
 
       const { client, fx } = createTestClient({ routes });
@@ -556,32 +605,35 @@ describe("Cache Policies Behavior", () => {
     it("publishes terminally — simple smoke via network-only", async () => {
       const routes: Route[] = [
         {
-          when: ({ variables }) =>
-            variables.id === "u1" &&
-            variables.postsCategory === "tech" &&
-            variables.commentsFirst === 2 &&
-            variables.commentsAfter === "c2",
+          when: ({ variables }) => {
+            return variables.id === "u1" &&
+              variables.postsCategory === "tech" &&
+              variables.commentsFirst === 2 &&
+              variables.commentsAfter === "c2";
+          },
           delay: 10,
-          respond: () => ({
-            data: {
-              __typename: "Query",
-              user: {
-                __typename: "User",
-                id: "u1",
-                posts: fixtures.posts.connection(
-                  [
-                    {
-                      title: "P1",
-                      extras: {
-                        comments: fixtures.comments.connection(["Comment 3", "Comment 4"], { postId: "p1", fromId: 3 }),
+          respond: () => {
+            return {
+              data: {
+                __typename: "Query",
+                user: {
+                  __typename: "User",
+                  id: "u1",
+                  posts: fixtures.posts.connection(
+                    [
+                      {
+                        title: "P1",
+                        extras: {
+                          comments: fixtures.comments.connection(["Comment 3", "Comment 4"], { postId: "p1", fromId: 3 }),
+                        },
                       },
-                    },
-                  ],
-                  { fromId: 1 }
-                ),
+                    ],
+                    { fromId: 1 }
+                  ),
+                },
               },
-            },
-          }),
+            };
+          },
         },
       ];
 
@@ -631,10 +683,13 @@ describe("Cache Policies Behavior", () => {
 
     const routes: Route[] = [
       {
-        when: ({ variables }) =>
-          variables.usersRole === "revisit" && variables.usersAfter == null,
+        when: ({ variables }) => {
+          return variables.usersRole === "revisit" && variables.usersAfter == null;
+        },
         delay: 15,
-        respond: () => fixtures.users.query(["a1@example.com", "a2@example.com"]),
+        respond: () => {
+          return fixtures.users.query(["a1@example.com", "a2@example.com"]);
+        },
       },
     ];
 
@@ -679,10 +734,13 @@ describe("Cache Policies Behavior", () => {
 
     const routes: Route[] = [
       {
-        when: ({ variables }) =>
-          variables.usersRole === "again" && variables.usersAfter === "l2",
+        when: ({ variables }) => {
+          return variables.usersRole === "again" && variables.usersAfter === "l2";
+        },
         delay: 12,
-        respond: () => fixtures.users.query(["n1@example.com"]),
+        respond: () => {
+          return fixtures.users.query(["n1@example.com"]);
+        },
       },
     ];
 
