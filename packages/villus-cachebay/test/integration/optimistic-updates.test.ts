@@ -1,6 +1,4 @@
-import { describe, it, expect } from "vitest";
 import { defineComponent, h, computed } from "vue";
-import gql from "graphql-tag";
 import { useQuery } from "villus";
 import {
   mountWithClient,

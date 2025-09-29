@@ -1,4 +1,3 @@
-import { describe, it, expect } from "vitest";
 import { defineComponent, h } from "vue";
 import { mount } from "@vue/test-utils";
 import { createTestClient, operations, tick, fixtures, getEdges } from "@/test/helpers";
