@@ -121,7 +121,7 @@ describe("Fragments lifecycle", () => {
     expect(snapshot).toEqual({
       typename: "PostConnection",
       titles: ["Hello", "World"],
-      pageInfo: { __typename: "PageInfo", endCursor: "c2", hasNextPage: true },
+      pageInfo: { __typename: "PageInfo", hasNextPage: true, endCursor: "c2" },
     });
 
     expect(isReactive(result.posts)).toBe(true);
@@ -133,33 +133,31 @@ describe("Fragments lifecycle", () => {
     cache.writeFragment({
       id: "User:10",
       fragment: operations.USER_FRAGMENT,
-      fragmentName: "UserFields",
-      data: { __typename: "User", id: "10", name: "Initial Name" },
+      data: { __typename: "User", id: "10", email: "initial@example.com" },
     });
 
     const Comp = defineComponent({
       setup() {
         const id = ref("User:10");
-        const live = useFragment({ id, fragment: operations.USER_FRAGMENT, fragmentName: "UserFields" });
+        const live = useFragment({ id, fragment: operations.USER_FRAGMENT });
         return { live };
       },
       render() {
-        return h("div", {}, this.live?.name || "");
+        return h("div", {}, this.live?.email || "");
       },
     });
 
     const wrapper = mount(Comp, { global: { plugins: [provide(cache)] } });
     await tick();
-    expect(wrapper.text()).toBe("Initial Name");
+    expect(wrapper.text()).toBe("initial@example.com");
 
     cache.writeFragment({
       id: "User:10",
       fragment: operations.USER_FRAGMENT,
-      fragmentName: "UserFields",
-      data: { name: "Updated Name" },
+      data: { email: "updated@example.com" },
     });
     await tick();
-    expect(wrapper.text()).toBe("Updated Name");
+    expect(wrapper.text()).toBe("updated@example.com");
   });
 
   it("multiple fragments manually • read multiple via repeated readFragment calls", async () => {
@@ -168,27 +166,24 @@ describe("Fragments lifecycle", () => {
     cache.writeFragment({
       id: "User:1",
       fragment: operations.USER_FRAGMENT,
-      fragmentName: "UserFields",
-      data: { __typename: "User", id: "1", name: "Alice" },
+      data: { __typename: "User", id: "1", email: "alice@example.com" },
     });
     cache.writeFragment({
       id: "User:2",
       fragment: operations.USER_FRAGMENT,
-      fragmentName: "UserFields",
-      data: { __typename: "User", id: "2", name: "Bob" },
+      data: { __typename: "User", id: "2", email: "bob@example.com" },
     });
     cache.writeFragment({
       id: "User:3",
       fragment: operations.USER_FRAGMENT,
-      fragmentName: "UserFields",
-      data: { __typename: "User", id: "3", name: "Charlie" },
+      data: { __typename: "User", id: "3", email: "charlie@example.com" },
     });
 
     const items = ["User:1", "User:2", "User:3"]
-      .map((k) => cache.readFragment({ id: k, fragment: operations.USER_FRAGMENT, fragmentName: "UserFields" }))
+      .map((k) => cache.readFragment({ id: k, fragment: operations.USER_FRAGMENT }))
       .filter(Boolean);
 
-    expect(items.map((u: any) => u?.name)).toEqual(["Alice", "Bob", "Charlie"]);
+    expect(items.map((u: any) => u?.email)).toEqual(["alice@example.com", "bob@example.com", "charlie@example.com"]);
     items.forEach((u: any) => {
       if (u) expect(isReactive(u)).toBe(true);
     });
@@ -200,17 +195,16 @@ describe("Fragments lifecycle", () => {
     cache.writeFragment({
       id: "User:1",
       fragment: operations.USER_FRAGMENT,
-      fragmentName: "UserFields",
-      data: { __typename: "User", id: "1", name: "Alice" },
+      data: { __typename: "User", id: "1", email: "alice@example.com" },
     });
 
     const raws = ["User:1", "User:999", "User:2"].map((k) =>
-      cache.readFragment({ id: k, fragment: operations.USER_FRAGMENT, fragmentName: "UserFields" }),
+      cache.readFragment({ id: k, fragment: operations.USER_FRAGMENT }),
     );
 
     const present = raws.filter((u: any) => u && u.id);
     expect(present.length).toBe(1);
-    expect(present[0]?.name).toBe("Alice");
+    expect(present[0]?.email).toBe("alice@example.com");
   });
 
   it("custom key: Comment uses uuid identity (write/read/reactive)", async () => {
