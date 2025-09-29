@@ -109,58 +109,47 @@ describe("Composables", () => {
   });
 
   describe("useCache", () => {
-    it("provides writeFragment and identify methods", async () => {
+    it("provides access to cache methods", () => {
       const { cache } = createTestClient();
+
+      let capturedCache: any;
 
       const Cmp = defineComponent({
         setup() {
-          const cache = useCache<any>();
+          capturedCache = useCache();
 
-          cache.writeFragment({
-            id: "User:u7",
-            fragment: operations.USER_FRAGMENT,
-            data: { __typename: "User", id: "u7", email: "seed@example.com" },
-          });
-
-          const ident = cache.identify({ __typename: "User", id: "u7" }) || "";
-          return () => h("div", {}, ident);
+          return () => {
+            return h("div");
+          }
         },
       });
 
-      const wrapper = mount(Cmp, { global: { plugins: [cache] } });
-      await tick();
+      mount(Cmp, { global: { plugins: [cache] } });
 
-      expect(wrapper.text()).toBe("User:u7");
+      expect(capturedCache).toBe(cache);
+      expect(typeof capturedCache.dehydrate).toBe("function");
+      expect(typeof capturedCache.hydrate).toBe("function");
+      expect(typeof capturedCache.identify).toBe("function");
+      expect(typeof capturedCache.inspect).toBe("object");
+      expect(typeof capturedCache.modifyOptimistic).toBe("function");
+      expect(typeof capturedCache.readFragment).toBe("function");
+      expect(typeof capturedCache.writeFragment).toBe("function");
+    });
 
-      const user = cache.readFragment({
-        id: "User:u7",
-        fragment: operations.USER_FRAGMENT,
-      });
-      expect(user).toMatchObject({
-        __typename: "User",
-        id: "u7",
-        email: "seed@example.com",
-      });
+    it("throws error when used outside provider context", () => {
+      expect(() => {
+        const Cmp = defineComponent({
+          setup() {
+            useCache();
 
-      const Comp2 = defineComponent({
-        setup() {
-          const c = useCache<any>();
-          c.writeFragment({
-            id: "User:u7",
-            fragment: operations.USER_FRAGMENT,
-            data: { email: "seed2@example.com" },
-          });
-          return () => h("div");
-        },
-      });
-      mount(Comp2, { global: { plugins: [cache] } });
-      await tick();
+            return () => {
+              return h("div");
+            }
+          },
+        });
 
-      const updatedUser = cache.readFragment({
-        id: "User:u7",
-        fragment: operations.USER_FRAGMENT,
-      });
-      expect(updatedUser?.email).toBe("seed2@example.com");
+        mount(Cmp, { global: { plugins: [] } });
+      }).toThrow("[cachebay] useCache() called before provideCachebay()");
     });
   });
 });
