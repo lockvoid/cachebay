@@ -253,10 +253,12 @@ identify({ __typename: 'Post', id: 42 }) // → "Post:42"
 const post = readFragment({
   id: 'Post:42',
 
-  fragment: `fragment PostFields on Post {
-    id
-    name
-  }`,
+  fragment: `
+    fragment PostFields on Post {
+      id
+      name
+    }
+  `,
 })
 
 writeFragment({

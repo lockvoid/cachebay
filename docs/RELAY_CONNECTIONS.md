@@ -1,4 +1,3 @@
-
 # Relay Connections — How to use them
 
 Cachebay provides first-class support for Relay-style, cursor-based pagination—making it straightforward to request, cache, and navigate paginated data using standardized connection patterns.
@@ -7,8 +6,14 @@ Cachebay provides first-class support for Relay-style, cursor-based pagination�
 
 ## The `@connection` directive
 
-Annotate list fields you want treated as Relay connections.
+**API Description:** A GraphQL directive that configures how connection fields are cached and merged. Enables declarative pagination handling with automatic edge deduplication, cursor management, and page merging strategies.
 
+**Options:**
+- `mode` - Merge strategy: `"infinite"` (append/prepend) or `"page"` (replace window)
+- `filters` - Array of non-cursor arguments that define connection identity
+- `key` - Optional stable identifier for isolating multiple views of the same field
+
+**Basic Usage**
 ```graphql
 query Posts($category: String, $first: Int, $after: String) {
   posts(category: $category, first: $first, after: $after) @connection(mode: "infinite", filters: ["category"]) {
@@ -31,17 +36,9 @@ query Posts($category: String, $first: Int, $after: String) {
 }
 ```
 
-- **`mode`**
-  - `"infinite"` (default): merge pages into a growing union (append / prepend).
-  - `"page"`: the last fetched page **replaces** the visible window.
-- **`filters`** — list the **non-cursor** args that define identity (here: `category`).
-
-### Isolating multiple views of the same field
-
-Give the connection a stable directive **key**. Each key produces an independent canonical list.
-
+**Isolating Multiple Views**
 ```graphql
-# Feed results  (kept separate from search)
+# Feed results (kept separate from search)
 posts(category: $category, first: $first, after: $after)
   @connection(key: "feed", mode: "infinite", filters: ["category"]) {
   pageInfo { endCursor hasNextPage }
@@ -76,10 +73,13 @@ posts(category: $category, first: $first, after: $after)
 
 ## Cache policies
 
-- **cache-first** — if cached, render cached and stop; else wait for network.
-- **cache-and-network** — if cached, render cached immediately **and** revalidate via network; if not cached, fetch then render.
-- **network-only** — always request from network.
-- **cache-only** — render cached or raise `CacheOnlyMiss` (no network).
+**API Description:** Cache policies determine when and how connection data is fetched and rendered. Can be applied globally during cache creation or overridden per-query to control network behavior and user experience.
+
+**Options:**
+- `cache-first` - Render cached data if available, skip network request
+- `cache-and-network` - Render cached data immediately, then revalidate with network
+- `network-only` - Always fetch from network, ignore cache
+- `cache-only` - Only use cached data, throw `CacheOnlyMiss` if not available
 
 Use any policy with either `mode`.
 
@@ -90,7 +90,7 @@ Use any policy with either `mode`.
 Connections are designed to be **idempotent**:
 
 - **Out-of-order pages** (e.g., page 2 before page 1) merge safely. The canonical list is ordered by the leader slice (no-cursor request) plus `before`/`after` hints.
-- **Retriggered pages** (replays, retries) simply refresh edge meta/cursors **in place** and won’t duplicate nodes.
+- **Retriggered pages** (replays, retries) simply refresh edge meta/cursors **in place** and won't duplicate nodes.
 - **Transient failures** can be retried without special handling; merges remain deterministic and de-duplicated.
 
 ---
@@ -99,6 +99,14 @@ Connections are designed to be **idempotent**:
 
 ### Infinite feed (append)
 
+**API Description:** Implements infinite scrolling by appending new pages to existing results. Uses reactive variables to track pagination state and automatically merges new edges while preserving scroll position and user context.
+
+**Options:**
+- Uses `mode: "infinite"` for appending behavior
+- `cache-and-network` policy for immediate rendering with background updates
+- Reactive variables for cursor-based pagination state
+
+**Implementation**
 ```ts
 import { useQuery } from 'villus'
 
@@ -145,6 +153,14 @@ function loadMore() {
 
 ### Strict paging (replace)
 
+**API Description:** Implements traditional pagination where each page replaces the previous view. Suitable for data tables, search results, or scenarios where users navigate between discrete page views rather than accumulating results.
+
+**Options:**
+- Uses `mode: "page"` for replacement behavior
+- `cache-first` policy for fast navigation between previously visited pages
+- Page-based navigation with discrete windows
+
+**Implementation**
 ```ts
 import { useQuery } from 'villus'
 

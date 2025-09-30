@@ -6,16 +6,17 @@
 
 ## Core Rules (non-negotiable)
 1. **Performance first.** Avoid unnecessary work, allocations, and dependencies.
-2. **Human-friendly code.** Use clear, descriptive names (no cryptic or shorthand vars). Add logical blank lines between steps.
-3. **No hacks.** Code must be straightforward and understandable; prefer simple, explicit solutions.
-4. **Minimal deps.** Prefer stdlib. If adding a library, justify in one sentence (why it’s needed vs cost).
-5. **Full, runnable outputs.** Provide complete, compiling examples (not fragments) unless I explicitly request a snippet.
-6. **No premature abstractions.** Avoid over-engineering (hooks/services/providers) until there’s repeated need. Start simple.
-7. **Braces & newlines (K&R across languages).** Always wrap control structures (`if/else`, `for`, `while`, `try/catch`, etc.) with `{}` and use **K&R braces**: opening brace on the **same line**; `else`/`catch` on the same line as the closing brace.
-8. DON'T keep backward compatibility unless I ask for it.
-9. Keep types declarations concise and readable at the top of each file.
-10. Use jsdoc comments for all public functions and classes.
-11. You are writing code for modern environments, ensuring compatibility with the latest standards and best practices.
+2. **Human-friendly code.** Use clear, descriptive names (no cryptic or shorthand vars, but not very long).
+3. **Logical code** Add logical blank lines between steps.
+4. **No hacks.** Code must be straightforward and understandable; prefer simple, explicit solutions.
+5. **Minimal deps.** Prefer stdlib. If adding a library, justify in one sentence (why it’s needed vs cost).
+6. **Full, runnable outputs.** Provide complete, compiling examples (not fragments) unless I explicitly request a snippet.
+7. **No premature abstractions.** Avoid over-engineering (hooks/services/providers) until there’s repeated need. Start simple.
+8. **Braces & newlines (K&R across languages).** Always wrap control structures (`if/else`, `for`, `while`, `try/catch`, etc.) with `{}` and use **K&R braces**: opening brace on the **same line**; `else`/`catch` on the same line as the closing brace.
+9. DON'T keep backward compatibility unless I ask for it.
+10. Keep types declarations concise and readable at the top of each file.
+11. Use jsdoc comments for all public functions and classes.
+12. You are writing code for modern environments, ensuring compatibility with the latest standards and best practices.
 
 ---
 

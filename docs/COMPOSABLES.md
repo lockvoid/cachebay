@@ -53,7 +53,7 @@ import { useCache } from 'villus-cachebay'
 
 const { readFragment } = useCache()
 
-const post = readFragment('Post:42') // Vue proxy that stays in sync
+const post = readFragment({ id: 'Post:42', fragment: PostFragment }) // Vue proxy that stays in sync
 ```
 
 ### Write
@@ -63,7 +63,7 @@ import { useCache } from 'villus-cachebay'
 
 const { writeFragment } = useCache()
 
-writeFragment({ __typename: 'User', id: 'u1', name: 'Updated' })
+writeFragment({ id: 'Post:42', fragment: PostFragment, data: { title: 'Updated' } })
 ```
 
 ### Optimistic
@@ -80,10 +80,7 @@ const tx = modifyOptimistic((o) => {
   // Connection edits
   const c = o.connection({ parent: 'Query', key: 'posts' })
 
-  c.addNode(
-    { __typename: 'Post', id: 'tmp:1', title: 'Creating…' },
-    { position: 'start' },
-  )
+  c.addNode( { __typename: 'Post', id: 'tmp:1', title: 'Creating…' }, { position: 'start' })
 
   c.patch(prev => ({ pageInfo: { ...prev.pageInfo, hasNextPage: false } }))
 })
@@ -108,7 +105,7 @@ Read a single entity by key (string or reactive key). Returns the **entity proxy
 ```ts
 import { useFragment } from 'villus-cachebay'
 
-const post = useFragment('Post:42') // proxy; post.title stays in sync
+const post = useFragment({ id: 'Post:42', fragment: PostFragment }) // proxy; post.title stays in sync
 ```
 
 **Dynamic key (ref/computed)**
@@ -116,9 +113,9 @@ const post = useFragment('Post:42') // proxy; post.title stays in sync
 ```ts
 import { useFragment } from 'villus-cachebay'
 
-const keyRef = ref<string | null>('Post:42')
+const options = ref<string | null>({ id: 'Post:42', fragment: PostFragment })
 
-const currentKey = useFragment(keyRef) // swaps automatically when key changes
+const post = useFragment(options) // swaps automatically when options change
 ```
 
 Use `writeFragment` to update fields rather than mutating proxies directly.
@@ -133,12 +130,12 @@ With the plugin pattern from your Nuxt setup (installing Cachebay and Villus in 
 <script setup lang="ts">
 import { useFragment, useCache } from 'villus-cachebay'
 
-const post = useFragment('Post:42')
+const post = useFragment({ id: 'Post:42', fragment: PostFragment })
 
 const { writeFragment } = useCache()
 
 const handleRename = () => {
-  writeFragment({ __typename:'Post', id:'42', title:'New title' })
+  writeFragment({ id:'Post42', fragment: PostFragment, data: { title:'New title' } })
 }
 </script>
 
