@@ -5,8 +5,8 @@
 A tiny (20KB gzip), instance-scoped cache layer for **Villus** that gives you:
 
 - **Small & focused APIs.** Fragments, optimistic edits, and Relay connections — without ceremony.
-- **Fast rendering.** Microtask-batched updates; stable Relay views that don’t churn arrays and minimize re-renders.
-- **Relay-style connections** — append/prepend/replace, edge de-duplication by node key, reactive `pageInfo`/meta, and **no array churn**.
+- **Fast rendering.** Microtask-batched updates; stable Relay views that don't churn arrays and minimize re-renders.
+- **Relay-style connections** — append/prepend/replace, edge de-duplication by node key, reactive, and **no array churn**.
 - **Optimistic updates that stack** — layered commits/reverts for entities *and* connections (add/remove/update pageInfo) with clean rollback.
 - **SSR that just works** — dehydrate/hydrate; first client mount renders from cache without a duplicate request; clean Suspense behavior.
 - **Fragments API** — `identify`, `readFragment`, `writeFragment` (interfaces supported), plus reactive materialized proxies.
@@ -44,6 +44,8 @@ A quick architectural overview of how Cachebay works — see **[Keynotes](./docs
 
 ## Install
 
+Package installation using npm or pnpm to add Villus and Cachebay dependencies to your project.
+
 ```bash
 npm i villus villus-cachebay
 # or
@@ -53,6 +55,8 @@ pnpm add villus villus-cachebay
 ---
 
 ## Quick start
+
+Basic setup for creating a Cachebay-enabled Villus client with normalized caching and network transport configuration.
 
 ```ts
 // client.ts
@@ -78,6 +82,8 @@ export const client = createClient({
 
 ### Cachebay Options
 
+Configuration options for customizing Cachebay behavior including entity identification, interface mapping, and SSR/Suspense timeouts.
+
 ```ts
 import { createCachebay } from 'villus-cachebay'
 
@@ -102,7 +108,9 @@ const cache = createCachebay({
 
 ---
 
-Query with Relay connection:
+**Basic Query with Relay Connection**
+
+Example of using the `@connection` directive for cursor-based pagination with automatic edge management and page merging.
 
 ```ts
 // in a component
@@ -135,6 +143,8 @@ const { data } = useQuery({
 
 ### SSR
 
+Server-side rendering support through cache snapshots that enable seamless hydration and prevent duplicate requests on first client mount.
+
 ```ts
 // Server:
 const snapshot = cache.dehydrate()
@@ -148,6 +158,8 @@ cache.hydrate(snapshot)
 ---
 
 ## Usage with Nuxt 4
+
+Integration pattern for Nuxt 4 using plugins to manage cache lifecycle, state synchronization between server and client, and proper hydration handling.
 
 > Minimal pattern: one cache instance per SSR request, dehydrate to a Nuxt state, hydrate on the client, and expose Villus + Cachebay via plugins.
 
@@ -242,6 +254,8 @@ const { data } = await useQuery({
 
 ## Fragments
 
+Reactive fragment system for reading and writing normalized entities. Returns Vue proxies that automatically update when underlying data changes, enabling granular cache management and optimistic updates.
+
 Reactive proxies are returned by reads; writes update normalized state immediately.
 
 ```
@@ -283,6 +297,8 @@ See **[Cache fragments](./docs/CACHE_FRAGMENTS.md)** for a concise API (`identif
 
 ## Optimistic updates (entities & connections)
 
+Layered optimistic update system that allows stacking multiple transactions with clean rollback capabilities. Supports both entity modifications and connection operations for comprehensive cache manipulation during pending network requests.
+
 ```ts
 const tx = cache.modifyOptimistic((tx) => {
   // Entity edits
@@ -320,6 +336,8 @@ See **[Optimistic updates](./docs/OPTIMISTIC_UPDATES.md)** for more details and 
 ---
 
 ## Cache policies (at a glance)
+
+Cache policies control when and how data is fetched from the network versus served from cache, enabling different user experience patterns from instant rendering to always-fresh data.
 
 - **cache-only**: if cached → render cached; else error `CacheOnlyMiss`. No network.
 - **cache-first**: if cached → render cached; else wait for network. No revalidate.
