@@ -74,8 +74,8 @@ export const client = createClient({
   cachePolicy: 'cache-and-network',
 
   use: [
-    cache,        // Cachebay plugin goes first
-    fetchPlugin() // Then network transport
+    cache,
+    fetchPlugin(),
   ],
 })
 ```
@@ -88,12 +88,10 @@ Configuration options for customizing Cachebay behavior including entity identif
 import { createCachebay } from 'villus-cachebay'
 
 const cache = createCachebay({
-  // Keys per concrete type: return a stable id or null to skip
   keys: {
     // e.g. AudioPost: (post) => post?.id ?? null
   },
 
-  // Parent → concrete implementors for address-by-interface
   interfaces: {
     // e.g. Post: ['AudioPost','VideoPost']
   },
@@ -113,7 +111,6 @@ const cache = createCachebay({
 Example of using the `@connection` directive for cursor-based pagination with automatic edge management and page merging.
 
 ```ts
-// in a component
 import { useQuery } from 'villus'
 
 const { data } = useQuery({
@@ -258,7 +255,7 @@ Reactive fragment system for reading and writing normalized entities. Returns Vu
 
 Reactive proxies are returned by reads; writes update normalized state immediately.
 
-```
+```js
 import { useCache } from 'villus-cachebay'
 const { identify, readFragment, writeFragment } = useCache()
 
@@ -332,17 +329,6 @@ tx.commit?.()
 - `position`: `"start" | "end" | "before" | "after"`, with optional `anchor` for relative insert.
 
 See **[Optimistic updates](./docs/OPTIMISTIC_UPDATES.md)** for more details and examples.
-
----
-
-## Cache policies (at a glance)
-
-Cache policies control when and how data is fetched from the network versus served from cache, enabling different user experience patterns from instant rendering to always-fresh data.
-
-- **cache-only**: if cached → render cached; else error `CacheOnlyMiss`. No network.
-- **cache-first**: if cached → render cached; else wait for network. No revalidate.
-- **cache-and-network**: if cached → render cached immediately; also revalidate (except on the **first client mount after SSR**, where we render cached without the duplicate).
-- **network-only**: always go to network.
 
 ---
 
