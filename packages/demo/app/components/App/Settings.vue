@@ -50,10 +50,6 @@ onUnmounted(() => {
             <option value="cache-and-network">
               Cache and Network
             </option>
-
-            <option value="cache-only">
-              Cache only
-            </option>
           </select>
         </label>
 
