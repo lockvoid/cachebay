@@ -349,7 +349,6 @@ describe('Relay connections', () => {
       },
     });
 
-
     const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
       cachePolicy: "cache-and-network",
 
