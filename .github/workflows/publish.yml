@@ -1,0 +1,64 @@
+name: Publish
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: "Bump version"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/villus-cachebay
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org/"
+          cache: "pnpm"
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: .
+
+      - name: Run Linting
+        run: pnpm lint
+
+      - name: Build Package
+        run: pnpm build
+
+      - name: Run Tests
+        run: pnpm test
+
+      - name: Bump Version
+        run: pnpm version ${{ github.event.inputs.version_type }} --no-git-tag-version
+
+      - name: Commit Version Bump
+        run: |
+          git config --global user.name "LockVoid /dev/null"
+          git config --global user.email "dev@lockvoid.com"
+          git add package.json
+          git commit -m "Bump version to $(node -p "require('./package.json').version")"
+          git push
+        working-directory: .
+
+      - name: Publish to npm
+        run: pnpm publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

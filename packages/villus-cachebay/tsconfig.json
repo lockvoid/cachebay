@@ -1,13 +1,23 @@
 {
   "compilerOptions": {
     "baseUrl": ".",
-
+    "declaration": true,
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "outDir": "./dist",
+    "strict": true,
+    "target": "ES2022",
     "paths": {
       "@/*": ["*"]
-    },
-
-    "types": [
-      "vitest/globals"
-    ]
-  }
+    }
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "test"
+  ]
 }

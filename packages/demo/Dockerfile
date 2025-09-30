@@ -35,9 +35,12 @@ WORKDIR /app
 # Copy built application
 COPY --from=builder /workspace/packages/demo/.output ./.output
 
-# Copy vendor database files and make them writable
-COPY --from=builder /workspace/packages/demo/vendor ./vendor
-RUN chmod 666 ./vendor/harrypotter.db
+# Copy vendor database files as read-only templates
+COPY --from=builder /workspace/packages/demo/vendor ./vendor-template
+
+# Copy database management script
+COPY --from=builder /workspace/packages/demo/bin/reset-db.sh /app/reset-db.sh
+RUN chmod +x /app/reset-db.sh
 
 # Expose the port
 EXPOSE 3000
@@ -47,5 +50,5 @@ ENV NODE_ENV=production
 ENV NITRO_HOST=0.0.0.0
 ENV NITRO_PORT=3000
 
-# Start the application
-CMD ["node", ".output/server/index.mjs"]
+# Start the application with database setup
+CMD ["/bin/sh", "-c", "/app/reset-db.sh && node .output/server/index.mjs"]

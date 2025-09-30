@@ -20,7 +20,7 @@ const randomDelay = () => {
   return delay(Math.random() * 5000);
 };
 
-const db = new DatabaseSync(fileURLToPath(new URL("../../vendor/harrypotter.db", import.meta.url)));
+const db = new DatabaseSync(process.env.NODE_ENV === 'production' ? '/app/data/harrypotter.db' ? './vendor/harrypotter.db');
 
 const builder = new SchemaBuilder({
   plugins: [

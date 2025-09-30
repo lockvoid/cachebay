@@ -31,7 +31,7 @@ env:
   PORT: "3000"
 
 volumes:
-  - "/home/deploy/live/dist:/usr/share/nginx/html:ro"
+  - "/home/deploy/live/data:/app/data:rw"
 
 ssh:
   keys: [ ".ssh/id.pem" ]
@@ -74,24 +74,10 @@ ssh:
 
 # Use accessory services (secrets come from .kamal/secrets).
 #
-# accessories:
-#   db:
-#     image: mysql:8.0
-#     host: 192.168.0.2
-#     port: 3306
-#     env:
-#       clear:
-#         MYSQL_ROOT_HOST: '%'
-#       secret:
-#         - MYSQL_ROOT_PASSWORD
-#     files:
-#       - config/mysql/production.cnf:/etc/mysql/my.cnf
-#       - db/production.sql:/docker-entrypoint-initdb.d/setup.sql
-#     directories:
-#       - data:/var/lib/mysql
-#   redis:
-#     image: valkey/valkey:8
-#     host: 192.168.0.2
-#     port: 6379
-#     directories:
-#       - data:/data
+accessories:
+  cron:
+    image: alpine:latest
+    host: 64.23.128.16
+    cmd: sh -c "echo '0 2 * * * docker exec $$(docker ps -q --filter label=service=live) /app/reset-db.sh' | crontab - && crond -f -l 2"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
