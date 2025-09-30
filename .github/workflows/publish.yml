@@ -53,8 +53,8 @@ jobs:
         run: |
           git config --global user.name "LockVoid /dev/null"
           git config --global user.email "dev@lockvoid.com"
-          git add package.json
-          git commit -m "Bump version to $(node -p "require('./package.json').version")"
+          git add packages/villus-cachebay/package.json
+          git commit -m "Bump version to $(node -p "require('./packages/villus-cachebay/package.json').version")"
           git push
         working-directory: .
 
