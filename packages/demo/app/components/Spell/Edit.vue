@@ -62,7 +62,7 @@
 </script>
 
 <template>
-  <div class="mx-auto flex max-w-3xl flex-col">
+  <div class="mx-auto flex max-w-3xl flex-col space-y-6">
     <NuxtLink :to="`/spells/${spell.id}`" class="a text-sm">
       ← Back to spell
     </NuxtLink>

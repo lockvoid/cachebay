@@ -1,8 +1,8 @@
-import { DatabaseSync } from "node:sqlite";
 import SchemaBuilder from "@pothos/core";
 import RelayPlugin from "@pothos/plugin-relay";
 import { resolveCursorConnection } from "@pothos/plugin-relay";
 import { createYoga } from "graphql-yoga";
+import { DatabaseSync } from "node:sqlite";
 import type { ResolveCursorConnectionArgs } from "@pothos/plugin-relay";
 
 const delay = (ms = 1000) => {
@@ -201,7 +201,7 @@ builder.mutationType({
 
         const sql = `UPDATE spells SET ${updates.map(key => `${key} = ?`).join(", ")} WHERE id = ?`;
 
-        const result = db.prepare(sql).run(...updates.map(key => fields[key]), id);
+        db.prepare(sql).run(...updates.map(key => fields[key]), id);
 
         return {
           spell: db.prepare("SELECT * FROM spells WHERE id = ?").get(id),

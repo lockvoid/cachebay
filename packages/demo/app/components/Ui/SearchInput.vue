@@ -1,9 +1,12 @@
-<script setup>
+<script setup lang="ts">
   defineOptions({
     inheritAttrs: false,
   });
 
-  const model = defineModel();
+  const model = defineModel({
+    type: String,
+    default: "",
+  });
 </script>
 
 <template>

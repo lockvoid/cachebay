@@ -10,8 +10,10 @@ WORKDIR /workspace
 # Copy workspace configuration (build from workspace root)
 COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* ./
 
-# Copy packages (node_modules excluded by .dockerignore)
+# Copy villus-cachebay package
 COPY packages/villus-cachebay ./packages/villus-cachebay/
+
+# Copy demo package
 COPY packages/demo ./packages/demo/
 
 # Install dependencies
@@ -36,7 +38,7 @@ COPY --from=builder /workspace/packages/demo/.output ./.output
 # Expose the port
 EXPOSE 3000
 
-# Set environment variables
+# Set environment variables 
 ENV NODE_ENV=production
 ENV NITRO_HOST=0.0.0.0
 ENV NITRO_PORT=3000

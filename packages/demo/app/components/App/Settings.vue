@@ -1,39 +1,39 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+  import { onMounted, onUnmounted, ref } from "vue";
 
-const settings = useSettings();
-const showSettings = ref(false);
-const settingsRef = ref<HTMLElement | null>(null);
+  const settings = useSettings();
+  const showSettings = ref(false);
+  const settingsRef = ref<HTMLElement | null>(null);
 
-const handleClick = () => {
-  showSettings.value = !showSettings.value;
-};
+  const handleClick = () => {
+    showSettings.value = !showSettings.value;
+  };
 
-const handleClickOutside = (event: MouseEvent) => {
-  if (settingsRef.value && !settingsRef.value.contains(event.target as Node)) {
-    showSettings.value = false;
-  }
-};
+  const handleClickOutside = (event) => {
+    if (settingsRef.value && !settingsRef.value.contains(event.target)) {
+      showSettings.value = false;
+    }
+  };
 
-onMounted(() => {
-  document.addEventListener('click', handleClickOutside);
-});
+  onMounted(() => {
+    document.addEventListener("click", handleClickOutside);
+  });
 
-onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside);
-});
+  onUnmounted(() => {
+    document.removeEventListener("click", handleClickOutside);
+  });
 </script>
 
 <template>
-  <div class="relative" ref="settingsRef">
-    <button class="p-2 text-sm hover:text-blue-500 hover:cursor-pointer"@click="handleClick">
+  <div ref="settingsRef" class="relative">
+    <button class="p-2 text-sm hover:cursor-pointer hover:text-blue-500" @click="handleClick">
       Settings
     </button>
 
-    <div v-show="showSettings" class="absolute right-0 top-full mt-2 w-80 bg-white border border-gray-200 rounded-lg p-4 z-50 shadow-lg">
+    <div v-show="showSettings" class="absolute top-full right-0 z-50 mt-2 w-80 rounded-lg border border-gray-200 bg-white p-4 shadow-lg">
       <div class="flex flex-col space-y-4">
-        <label class="flex flex-col gap-1.5 cursor-pointer group">
-          <span class="text-gray-700 text-sm group-hover:text-gray-800 transition-colors">
+        <label class="group flex cursor-pointer flex-col gap-1.5">
+          <span class="text-sm text-gray-700 transition-colors group-hover:text-gray-800">
             Cache Policy:
           </span>
 
@@ -52,8 +52,8 @@ onUnmounted(() => {
           </select>
         </label>
 
-        <label class="flex flex-col gap-1.5 cursor-pointer group">
-          <span class="text-gray-700 text-sm group-hover:text-gray-800 transition-colors">
+        <label class="group flex cursor-pointer flex-col gap-1.5">
+          <span class="text-sm text-gray-700 transition-colors group-hover:text-gray-800">
             Relay Mode:
           </span>
 
@@ -69,18 +69,18 @@ onUnmounted(() => {
         </label>
 
         <div class="flex items-center gap-3 text-xs">
-          <label class="flex items-center gap-1.5 cursor-pointer group">
-            <input v-model="settings.ssr" type="checkbox" />
+          <label class="group flex cursor-pointer items-center gap-1.5">
+            <input v-model="settings.ssr" type="checkbox">
 
-            <span class="text-gray-700 group-hover:text-gray-800 transition-colors">
+            <span class="text-gray-700 transition-colors group-hover:text-gray-800">
               SSR
             </span>
           </label>
 
-          <label class="flex items-center gap-1.5 cursor-pointer group">
-            <input v-model="settings.optimistic" type="checkbox" class="w-3 h-3 text-gray-600 bg-white border-gray-300 rounded focus:ring-gray-500 focus:ring-1" />
+          <label class="group flex cursor-pointer items-center gap-1.5">
+            <input v-model="settings.optimistic" type="checkbox" class="h-3 w-3 rounded border-gray-300 bg-white text-gray-600 focus:ring-1 focus:ring-gray-500">
 
-            <span class="text-gray-700 group-hover:text-gray-800 transition-colors">
+            <span class="text-gray-700 transition-colors group-hover:text-gray-800">
               Optimistic
             </span>
           </label>
