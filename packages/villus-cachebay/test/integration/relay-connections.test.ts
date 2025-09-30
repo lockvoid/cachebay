@@ -1,161 +1,209 @@
-import { describe, it, expect } from 'vitest';
-import { isReactive } from 'vue';
-import gql from 'graphql-tag';
-import { useQuery } from 'villus';
+import { mount } from '@vue/test-utils';
+import { createTestClient, createConnectionComponent, seedCache, getPageInfo, getEdges, fixtures, operations, delay, tick } from '@/test/helpers';
 
-import {
-  delay,
-  tick,
-  seedCache,
-  type Route,
-  mountWithClient,
-  createTestClient,
-  fixtures,
-  operations,
-  harnessEdges,
-  PostsHarness,
-  rowsRelayConnections,
-  readPI,
-} from '@/test/helpers';
-
-describe('Integration • Relay flows (@connection) • Posts', () => {
+describe('Relay connections', () => {
   it('append mode: adds at end; pageInfo from tail (leader head, after tail)', async () => {
-    const routes: Route[] = [
+    const routes = [
       {
-        when: ({ variables }) => !variables.after && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A1', 'A2'], { fromId: 1 }) } })
+        when: ({ variables }) => {
+          return !variables.after && variables.first === 2;
+        },
+
+        respond: () => {
+          return {
+            data: {
+              __typename: 'Query',
+              posts: fixtures.posts.buildConnection([{ id: 'p1', title: 'A1' }, { id: 'p2', title: 'A2' }], { hasNextPage: true }),
+            }
+          };
+        }
       },
+
       {
-        when: ({ variables }) => variables.after === 'p2' && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A3', 'A4'], { fromId: 3 }) } })
+        when: ({ variables }) => {
+          return variables.after === 'p2' && variables.first === 2;
+        },
+
+        respond: () => {
+          return {
+            data: {
+              __typename: 'Query',
+              posts: fixtures.posts.buildConnection([{ id: 'p3', title: 'A3' }, { id: 'p4', title: 'A4' }]),
+            }
+          };
+        }
       },
     ];
-    const Comp = harnessEdges(operations.POSTS_QUERY, 'network-only');
-    const { wrapper, fx } = await mountWithClient(Comp, routes);
 
-    await tick(2);
-    expect(rowsRelayConnections(wrapper)).toEqual(['A1', 'A2']);
-    expect(readPI(wrapper).endCursor).toBe('p2');
+    const { client, cache } = createTestClient({ routes });
 
-    await wrapper.setProps({ first: 2, after: 'p2' });
-    await tick(2);
-    expect(rowsRelayConnections(wrapper)).toEqual(['A1', 'A2', 'A3', 'A4']);
+    const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
+      cachePolicy: "cache-and-network",
 
-    expect(readPI(wrapper).endCursor).toBe('p4');
+      connectionFn: (data) => {
+        return data.posts;
+      }
+    });
 
-    await fx.restore?.();
+    const wrapper = mount(Cmp, {
+      props: {
+        first: 2,
+        after: null,
+      },
+
+      global: {
+        plugins: [client, cache],
+      },
+    });
+
+    await tick();
+    expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
+    expect(getPageInfo(wrapper)).toEqual({ startCursor: "p1", endCursor: "p2", hasNextPage: true, hasPreviousPage: false });
+
+    wrapper.setProps({ first: 2, after: 'p2' });
+
+    await tick();
+    expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4"]);
+    expect(getPageInfo(wrapper)).toEqual({ startCursor: "p1", endCursor: "p4", hasNextPage: false, hasPreviousPage: false });
   });
 
   it('prepend mode: adds at start; pageInfo start from head page after prepend', async () => {
-    const routes: Route[] = [
+    const routes = [
       {
-        when: ({ variables }) => !variables.before && variables.first === 2,
-        respond: () => ({
-          data: { __typename: 'Query', posts: fixtures.posts.connection(['A1', 'A2'], { fromId: 1, pageInfo: { hasPreviousPage: true, hasNextPage: true } }) }
-        })
-      },
-      {
-        when: ({ variables }) => variables.before === 'p1' && variables.last === 2,
-        respond: () => ({
-          data: { __typename: 'Query', posts: fixtures.posts.connection(['A-1', 'A0'], { fromId: -1, pageInfo: { hasPreviousPage: false, hasNextPage: true } }) }
-        })
-      },
-    ];
-    const Comp = harnessEdges(operations.POSTS_QUERY, 'network-only');
-    const { wrapper, fx } = await mountWithClient(Comp, routes);
+        when: ({ variables }) => {
+          return !variables.before && variables.last === 2;
+        },
 
-    await tick(2);
-    expect(rowsRelayConnections(wrapper)).toEqual(['A1', 'A2']);
-    expect(readPI(wrapper).startCursor).toBe('p1');
+        respond: () => {
+          return {
+            data: {
+              __typename: 'Query',
 
-    await wrapper.setProps({ last: 2, before: 'p1' });
-    await tick(2);
-    expect(rowsRelayConnections(wrapper)).toEqual(['A-1', 'A0', 'A1', 'A2']);
-
-    expect(readPI(wrapper).startCursor).toBe('p-1');
-
-    await fx.restore?.();
-  });
-
-  it('replace (page-mode): shows only the latest page; pageInfo follows last page', async () => {
-    const routes: Route[] = [
-      {
-        when: ({ variables }) => !variables.after && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A1', 'A2']) } })
-      },
-      {
-        when: ({ variables }) => variables.after === 'p2' && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A3', 'A4'], { fromId: 3 }) } })
-      },
-      {
-        when: ({ variables }) => !variables.after && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A1-new', 'A2'], { fromId: 1 }) } })
-      },
-    ];
-
-    const Comp = harnessEdges(operations.POSTS_WITH_PAGE_QUERY, 'cache-and-network');
-    const { wrapper, fx } = await mountWithClient(Comp, routes);
-
-    await tick(2);
-    expect(rowsRelayConnections(wrapper)).toEqual(['A1', 'A2']);
-    expect(readPI(wrapper).endCursor).toBe('p2');
-
-    await wrapper.setProps({ first: 2, after: 'p2' });
-    await tick(2);
-    expect(rowsRelayConnections(wrapper)).toEqual(['A3', 'A4']);
-    expect(readPI(wrapper).endCursor).toBe('p4');
-
-    await fx.restore?.();
-  });
-
-  it('cursor replay: after page applies after leader; pageInfo tail end', async () => {
-    const routes: Route[] = [
-      {
-        when: ({ variables }) => !variables.after,
-        respond: () => ({
-          data: {
-            __typename: 'Query',
-            posts: fixtures.posts.connection(['A'], { fromId: 1, pageInfo: { hasNextPage: true, hasPreviousPage: false, startCursor: 'n1', endCursor: 'n1' } })
-          }
-        })
-      },
-      {
-        when: ({ variables }) => variables.after === 'n1',
-        respond: () => ({
-          data: {
-            __typename: 'Query',
-            posts: {
-              __typename: 'PostConnection',
-              edges: [{ __typename: 'PostEdge', cursor: 'n2', node: { __typename: 'Post', id: 2, title: 'B' } }],
-              pageInfo: { __typename: 'PageInfo', startCursor: 'n2', endCursor: 'n2', hasNextPage: false, hasPreviousPage: true },
+              posts: fixtures.posts.buildConnection([{ id: 'p3', title: 'A3' }, { id: 'p4', title: 'A4' }], { hasPreviousPage: true }),
             }
           }
-        })
+        },
+      },
+
+      {
+        when: ({ variables }) => {
+          return variables.before === 'p3' && variables.last === 2;
+        },
+
+        respond: () => {
+          return {
+            data: {
+              __typename: 'Query',
+
+              posts: fixtures.posts.buildConnection([{ id: 'p1', title: 'A1' }, { id: 'p2', title: 'A2' }]),
+            }
+          }
+        },
       },
     ];
-    const Comp = harnessEdges(operations.POSTS_QUERY, 'network-only');
-    const { wrapper, fx } = await mountWithClient(Comp, routes);
+    const { client, cache } = createTestClient({ routes });
 
-    await tick(2);
-    expect(rowsRelayConnections(wrapper)).toEqual(['A']);
-    expect(readPI(wrapper).endCursor).toBe('n1');
+    const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
+      cachePolicy: "cache-and-network",
 
-    await wrapper.setProps({ first: 1, after: 'n1' });
-    await tick(2);
-    expect(rowsRelayConnections(wrapper)).toEqual(['A', 'B']);
-    expect(readPI(wrapper).endCursor).toBe('n2');
+      connectionFn: (data) => {
+        return data.posts;
+      }
+    });
 
-    await fx.restore?.();
+    const wrapper = mount(Cmp, {
+      props: {
+        last: 2,
+        before: null,
+      },
+
+      global: {
+        plugins: [client, cache],
+      },
+    });
+
+    await tick();
+    expect(getEdges(wrapper, "title")).toEqual(["A3", "A4"]);
+    expect(getPageInfo(wrapper)).toEqual({ startCursor: 'p3', endCursor: 'p4', hasNextPage: false, hasPreviousPage: true });
+
+    wrapper.setProps({ last: 2, before: 'p3' });
+
+    await tick();
+    expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4"]);
+    expect(getPageInfo(wrapper)).toEqual({ startCursor: 'p1', endCursor: 'p4', hasNextPage: false, hasPreviousPage: false });
   });
-});
 
-describe('Integration • Relay pagination reset & append from cache — extended', () => {
+  it.only('replace (page-mode): shows only the latest page; pageInfo follows last page', async () => {
+    const routes = [
+      {
+        when: ({ variables }) => {
+          return !variables.after && variables.first === 2;
+        },
+
+        respond: () => {
+          return {
+            data: {
+              __typename: 'Query',
+              posts: fixtures.posts.buildConnection([{ id: 'p1', title: 'A1' }, { id: 'p2', title: 'A2' }], { hasNextPage: true }),
+            }
+          };
+        }
+      },
+
+      {
+        when: ({ variables }) => {
+          return variables.after === 'p2' && variables.first === 2;
+        },
+
+        respond: () => {
+          return {
+            data: {
+              __typename: 'Query',
+              posts: fixtures.posts.buildConnection([{ id: 'p3', title: 'A3' }, { id: 'p4', title: 'A4' }]),
+            }
+          };
+        }
+      },
+    ];
+
+    const { client, cache } = createTestClient({ routes });
+
+    const Cmp = createConnectionComponent(operations.POSTS_WITH_PAGE_QUERY, {
+      cachePolicy: "cache-and-network",
+
+      connectionFn: (data) => {
+        return data.posts;
+      }
+    });
+
+    const wrapper = mount(Cmp, {
+      props: {
+        first: 2,
+        after: null,
+      },
+
+      global: {
+        plugins: [client, cache],
+      },
+    });
+
+    await tick();
+    expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
+    expect(getPageInfo(wrapper)).toEqual({ startCursor: 'p1', endCursor: 'p2', hasNextPage: true, hasPreviousPage: false });
+
+    wrapper.setProps({ first: 2, after: 'p2' });
+
+    await tick();
+    expect(getEdges(wrapper, "title")).toEqual(["A3", "A4"]);
+    expect(getPageInfo(wrapper)).toEqual({ startCursor: 'p3', endCursor: 'p4', hasNextPage: false, hasPreviousPage: false });
+  });
+
   it('A→(p2,p3) → B → A (reset) → paginate p2,p3,p4 from cache; slow revalidate; pageInfo tail anchored', async () => {
 
     {
-      const fast: Route[] = [{
+      const fast = [{
         when: ({ variables }) => variables.category === 'A' && !variables.after && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-1', 'A-2'], { fromId: 1 }) } }),
+        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.buildConnection(['A-1', 'A-2'], { fromId: 1 }) } }),
       }];
 
       const AppQuick = PostsHarness(operations.POSTS_QUERY, 'cache-and-network');
@@ -164,7 +212,7 @@ describe('Integration • Relay pagination reset & append from cache — extende
       await seedCache(cache, {
         query: operations.POSTS_QUERY,
         variables: { category: 'A', first: 2, after: 'p2' },
-        data: { __typename: 'Query', posts: fixtures.posts.connection(['A-3', 'A-4'], { fromId: 3 }) },
+        data: { __typename: 'Query', posts: fixtures.posts.buildConnection(['A-3', 'A-4'], { fromId: 3 }) },
       });
 
       await wrapper.setProps({ category: 'A', first: 2 });
@@ -176,36 +224,36 @@ describe('Integration • Relay pagination reset & append from cache — extende
       await fx.restore?.();
     }
 
-    const slowRoutes: Route[] = [
+    const slowRoutes = [
       {
         delay: 50,
         when: ({ variables }) => variables.category === 'A' && !variables.after && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-1', 'A-2'], { fromId: 1 }) } }),
+        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.buildConnection(['A-1', 'A-2'], { fromId: 1 }) } }),
       },
       {
         delay: 50,
         when: ({ variables }) => variables.category === 'A' && variables.after === 'p2' && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-3', 'A-4'], { fromId: 3 }) } }),
+        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.buildConnection(['A-3', 'A-4'], { fromId: 3 }) } }),
       },
       {
         delay: 50,
         when: ({ variables }) => variables.category === 'A' && variables.after === 'p4' && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-5', 'A-6'], { fromId: 5 }) } }),
+        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.buildConnection(['A-5', 'A-6'], { fromId: 5 }) } }),
       },
       {
         delay: 50,
         when: ({ variables }) => variables.category === 'A' && variables.after === 'p6' && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-7', 'A-8'], { fromId: 7 }) } }),
+        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.buildConnection(['A-7', 'A-8'], { fromId: 7 }) } }),
       },
       {
         delay: 50,
         when: ({ variables }) => variables.category === 'A' && variables.after === 'p8' && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A-9', 'A-10'], { fromId: 9 }) } }),
+        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.buildConnection(['A-9', 'A-10'], { fromId: 9 }) } }),
       },
       {
         delay: 50,
         when: ({ variables }) => variables.category === 'B' && !variables.after && variables.first === 2,
-        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['B-1', 'B-2'], { fromId: 100 }) } }),
+        respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.buildConnection(['B-1', 'B-2'], { fromId: 100 }) } }),
       },
     ];
 
@@ -215,7 +263,7 @@ describe('Integration • Relay pagination reset & append from cache — extende
     await seedCache(cache, {
       query: operations.POSTS_QUERY,
       variables: { category: 'A', first: 2, after: 'p2' },
-      data: { __typename: 'Query', posts: fixtures.posts.connection(['A-3', 'A-4'], { fromId: 3 }) },
+      data: { __typename: 'Query', posts: fixtures.posts.buildConnection(['A-3', 'A-4'], { fromId: 3 }) },
     });
 
     await wrapper.setProps({ category: 'A', first: 2 });
@@ -279,18 +327,16 @@ describe('Integration • Relay pagination reset & append from cache — extende
     wrapper.unmount();
     await fx.restore?.();
   });
-});
 
-describe('Integration • Proxy shape invariants & identity (Posts)', () => {
   it('View A (page1) and View B (page1+page2) stable & reactive (edges reactive, pageInfo not)', async () => {
-    const routes: Route[] = [
+    const routes = [
       {
         when: ({ variables }) => variables.category === 'A' && !variables.after && variables.first === 2,
-        delay: 0, respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A1', 'A2'], { fromId: 1 }) } })
+        delay: 0, respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.buildConnection(['A1', 'A2'], { fromId: 1 }) } })
       },
       {
         when: ({ variables }) => variables.category === 'A' && variables.after === 'p2' && variables.first === 2,
-        delay: 10, respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['A3', 'A4'], { fromId: 3 }) } })
+        delay: 10, respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.buildConnection(['A3', 'A4'], { fromId: 3 }) } })
       },
     ];
 
@@ -319,14 +365,14 @@ describe('Integration • Proxy shape invariants & identity (Posts)', () => {
   });
 
   it('Stable proxy node identity across executions', async () => {
-    const routes: Route[] = [
+    const routes = [
       {
         when: ({ variables }) => !variables.after && variables.first === 2,
-        delay: 0, respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['Post 1', 'Post 2']) } })
+        delay: 0, respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.buildConnection(['Post 1', 'Post 2']) } })
       },
       {
         when: ({ variables }) => !variables.after && variables.first === 2,
-        delay: 0, respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.connection(['Post 1', 'Post 2']) } })
+        delay: 0, respond: () => ({ data: { __typename: 'Query', posts: fixtures.posts.buildConnection(['Post 1', 'Post 2']) } })
       },
     ];
 

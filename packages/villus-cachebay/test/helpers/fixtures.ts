@@ -51,7 +51,7 @@ export const users = {
     return user({ id, email, typename, ...extras });
   },
 
-  buildConnection(items: Array<Partial<UserNode>>) {
+  buildConnection(items: Array<Partial<UserNode>>, customPageInfo = {}) {
     const edges = items.map((itemData, i) => {
       const node = users.buildNode(itemData, i);
 
@@ -68,6 +68,8 @@ export const users = {
       endCursor: edges.length ? edges[edges.length - 1].cursor : null,
       hasNextPage: false,
       hasPreviousPage: false,
+
+      ...customPageInfo,
     };
 
     return {
@@ -85,7 +87,7 @@ export const posts = {
     return post({ id, title, typename, ...extras });
   },
 
-  buildConnection(items: Array<Partial<PostNode>>) {
+  buildConnection(items: Array<Partial<PostNode>>, customPageInfo = {}) {
     const edges = items.map((itemData, i) => {
       const node = posts.buildNode(itemData, i);
 
@@ -102,6 +104,8 @@ export const posts = {
       endCursor: edges.length ? edges[edges.length - 1].cursor : null,
       hasNextPage: false,
       hasPreviousPage: false,
+
+      ...customPageInfo,
     };
 
     return {
@@ -119,7 +123,7 @@ export const comments = {
     return comment({ uuid, text, ...extras });
   },
 
-  buildConnection(items: Array<Partial<CommentNode>>) {
+  buildConnection(items: Array<Partial<CommentNode>>, customPageInfo = {}) {
     const edges = items.map((itemData, i) => {
       const node = comments.buildNode(itemData, i);
 
@@ -136,6 +140,8 @@ export const comments = {
       endCursor: edges.length ? edges[edges.length - 1].cursor : null,
       hasNextPage: false,
       hasPreviousPage: false,
+
+      ...customPageInfo,
     };
 
     return {
