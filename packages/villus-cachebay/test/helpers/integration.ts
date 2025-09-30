@@ -182,7 +182,6 @@ export const createConnectionComponent = (
         if (!data.value) {
           return null;
         }
-        console.log('ddxdddddd', connectionFn(data.value))
 
         return connectionFn(data.value);
       });
