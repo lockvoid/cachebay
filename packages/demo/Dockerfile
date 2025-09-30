@@ -35,6 +35,10 @@ WORKDIR /app
 # Copy built application
 COPY --from=builder /workspace/packages/demo/.output ./.output
 
+# Copy vendor database files and make them writable
+COPY --from=builder /workspace/packages/demo/vendor ./vendor
+RUN chmod 666 ./vendor/harrypotter.db
+
 # Expose the port
 EXPOSE 3000
 
