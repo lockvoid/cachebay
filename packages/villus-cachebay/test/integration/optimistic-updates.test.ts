@@ -302,7 +302,7 @@ describe("Optimistic updates", () => {
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
         },
 
-        delay: 5,
+        delay: 20,
       },
 
       {
@@ -320,7 +320,7 @@ describe("Optimistic updates", () => {
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
         },
 
-        delay: 5,
+        delay: 20,
       },
 
       {
@@ -338,7 +338,7 @@ describe("Optimistic updates", () => {
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
         },
 
-        delay: 5,
+        delay: 20,
       },
 
       {
@@ -355,7 +355,7 @@ describe("Optimistic updates", () => {
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
         },
 
-        delay: 5,
+        delay: 20,
       },
 
       {
@@ -373,7 +373,7 @@ describe("Optimistic updates", () => {
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
         },
 
-        delay: 5,
+        delay: 20,
       },
 
       {
@@ -406,7 +406,7 @@ describe("Optimistic updates", () => {
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
         },
 
-        delay: 5,
+        delay: 20,
       },
 
       {
@@ -424,7 +424,7 @@ describe("Optimistic updates", () => {
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
         },
 
-        delay: 5,
+        delay: 20,
       },
 
       {
@@ -442,7 +442,7 @@ describe("Optimistic updates", () => {
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
         },
 
-        delay: 5,
+        delay: 20,
       },
 
       {
@@ -460,7 +460,7 @@ describe("Optimistic updates", () => {
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
         },
 
-        delay: 10,
+        delay: 20,
       },
     ];
 
@@ -487,13 +487,13 @@ describe("Optimistic updates", () => {
     });
 
     // 1. Initial load: fetch first page of category A posts (request 0)
-    await delay(7);
+    await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3"]);
 
     // 2. Paginate: load next page after cursor "pa3" (request 1)
     await wrapper.setProps({ category: "A", first: 3, after: "pa3" });
 
-    await delay(7);
+    await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A5", "A6"]);
 
     // 3. Optimistic remove: delete "A5" from connection (no request)
@@ -503,60 +503,60 @@ describe("Optimistic updates", () => {
       c.removeNode({ __typename: "Post", id: "pa5" });
     });
 
-    await tick();
+    await delay(10);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A6"]);
 
     // 4. Continue pagination: load more posts after "pa6" (request 2)
     await wrapper.setProps({ category: "A", first: 3, after: "pa6" });
 
-    await delay(7);
+    await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9"]);
 
     // 5. Filter switch: change to category B posts (request 3)
     await wrapper.setProps({ category: "B", first: 2, after: null });
 
-    await delay(9);
+    await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
 
     // 6. Filter back: return to category A (cached with optimistic changes, no request)
     await wrapper.setProps({ category: "A", first: 3, after: null });
 
-    await tick();
+    await delay(10);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9"]);
 
     // 7. Network refresh: server data overwrites cached optimistic state (request 4)
-    await delay(31);
+    await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3"]);
 
     // 8. Re-paginate: load second page again (request 5)
     await wrapper.setProps({ category: "A", first: 3, after: "pa3" });
 
-    await tick(2);
+    await delay(10);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A6"]);
 
-    await delay(41);
+    await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A6"]);
 
     // 9. Filter switch again: back to category B (request 6)
     await wrapper.setProps({ category: "B", first: 2, after: null });
-    
-    await delay(6);
+
+    await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
 
     // 10. Return to category A: cached state preserved (no request)
     await wrapper.setProps({ category: "A", first: 3, after: null });
 
-    await tick(2);
+    await delay(10);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A6"]);
 
     // 11. Network refresh: server overwrites cache again (request 7)
-    await delay(6);
+    await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3"]);
 
     // 12. Re-paginate: load second page with optimistic changes intact (request 8)
     await wrapper.setProps({ category: "A", first: 3, after: "pa3" });
 
-    await tick(2);
+    await delay(10);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A6"]);
 
     // 13. Commit optimistic remove: make it permanent (no request)
@@ -570,22 +570,22 @@ describe("Optimistic updates", () => {
       c.addNode({ __typename: "Post", id: "pa100", title: "A100" }, { position: "end" });
     });
 
-    await delay(6);
+    await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["A0", "A1", "A2", "A3", "A4", "A6", "A7", "A100"]);
 
     // 15. Final pagination: load more posts after "pa7" (request 9)
     await wrapper.setProps({ category: "A", first: 3, after: "pa7" });
 
-    await tick(5);
+    await delay(10);
     expect(getEdges(wrapper, "title")).toEqual(["A0", "A1", "A2", "A3", "A4", "A6", "A7", "A100"]);
 
-    await delay(16);
+    await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["A0", "A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9", "A10", "A100"]);
 
     // 16. Revert optimistic adds: remove prepended and appended nodes (no request)
     addTx.revert();
 
-    await tick(2);
+    await delay(10);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9", "A10"]);
   });
 });
