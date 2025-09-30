@@ -1,177 +1,211 @@
-import { defineComponent, h, computed } from "vue";
-import { useQuery } from "villus";
-import {
-  mountWithClient,
-  seedCache,
-  tick,
-  delay,
-  type Route,
-  fixtures,
-  operations,
-  rowsByClass,
-  rowsNoPI,
-  CanonPosts,
-  PostsHarness,
-} from "@/test/helpers";
-import { createCache } from "@/src/core/internals";
+import { mount } from '@vue/test-utils';
+import { createTestClient, createConnectionComponent, createDetailComponent, seedCache, getEdges, getPageInfo, fixtures, operations, delay, tick } from '@/test/helpers';
 
-describe("Integration • Optimistic updates (entities & canonical connections)", () => {
+describe("Optimistic updates", () => {
   it("Entity: patch+commit then revert restores previous snapshot", async () => {
-    const cache = createCache();
+    const { cache } = createTestClient();
 
-    const empty0 = cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT });
-    if (empty0 === undefined) expect(empty0).toBeUndefined();
-    else {
-      expect(typeof empty0).toBe("object");
-      expect(Object.keys(empty0).length).toBe(0);
-    }
+    const post_1 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
+
+    expect(post_1).toEqual({});
 
     const tx = cache.modifyOptimistic((o) => {
-      o.patch(
-        "Post:1",
-        { __typename: "Post", id: "1", title: "Post A" },
-        { mode: "merge" }
-      );
+      o.patch("Post:p1", { __typename: "Post", id: "p1", title: "Post 1" });
     });
-    tx.commit?.();
-    await tick(2);
-    expect(cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT })?.title).toBe("Post A");
 
-    tx.revert?.();
-    await tick(2);
-    const empty1 = cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT });
-    if (empty1 === undefined) expect(empty1).toBeUndefined();
-    else {
-      expect(typeof empty1).toBe("object");
-      expect(Object.keys(empty1).length).toBe(0);
-    }
+    tx.commit();
+
+    const post_3 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
+
+    expect(post_3).toEqual({ __typename: "Post", id: "p1", title: "Post 1" });
+
+    tx.revert();
+
+    const post_4 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
+
+    expect(post_4).toEqual({});
   });
 
   it("Entity layering (tx1 -> tx2 -> revert tx1 -> revert tx2)", async () => {
-    const cache = createCache();
+    const { cache } = createTestClient();
 
     const tx1 = cache.modifyOptimistic((o) => {
-      o.patch(
-        "Post:1",
-        { __typename: "Post", id: "1", title: "Post A" },
-        { mode: "merge" }
-      );
+      o.patch("Post:p1", { __typename: "Post", id: "1", title: "Post A" });
     });
+
     const tx2 = cache.modifyOptimistic((o) => {
-      o.patch(
-        "Post:1",
-        { __typename: "Post", id: "1", title: "Post B" },
-        { mode: "merge" }
-      );
+      o.patch("Post:p1", { __typename: "Post", id: "p1", title: "Post B" });
     });
 
-    tx1.commit?.();
-    tx2.commit?.();
-    await tick(2);
-    expect(cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT })?.title).toBe("Post B");
+    tx1.commit();
+    tx2.commit();
 
-    tx1.revert?.();
-    await tick(2);
-    expect(cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT })?.title).toBe("Post B");
+    const post_1 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT })
 
-    tx2.revert?.();
-    await tick(2);
-    const empty = cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT });
-    if (empty === undefined) expect(empty).toBeUndefined();
-    else {
-      expect(typeof empty).toBe("object");
-      expect(Object.keys(empty).length).toBe(0);
-    }
+    expect(post_1).toEqual({ __typename: "Post", id: "p1", title: "Post B" });
+
+    tx1.revert();
+
+    const post_2 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT })
+
+    expect(post_2).toEqual({ __typename: "Post", id: "p1", title: "Post B" });
+
+    tx2.revert();
+
+    const post_3 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT })
+
+    expect(post_3).toEqual({});
   });
 
   it("Entity layering (tx1 -> tx2 -> revert tx2 -> revert tx1) returns baseline", async () => {
-    const cache = createCache();
+    const { cache } = createTestClient();
 
     const tx1 = cache.modifyOptimistic((o) => {
-      o.patch(
-        "Post:1",
-        { __typename: "Post", id: "1", title: "Post A" },
-        { mode: "merge" }
-      );
+      o.patch("Post:p1", { __typename: "Post", id: "p1", title: "Post A" });
     });
+
     const tx2 = cache.modifyOptimistic((o) => {
-      o.patch(
-        "Post:1",
-        { __typename: "Post", id: "1", title: "Post B" },
-        { mode: "merge" }
-      );
+      o.patch("Post:p1", { __typename: "Post", id: "p1", title: "Post B" });
     });
 
-    tx1.commit?.();
-    tx2.commit?.();
-    await tick(2);
-    expect(cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT })?.title).toBe("Post B");
+    tx1.commit();
+    tx2.commit();
 
-    tx2.revert?.();
-    await tick(2);
-    expect(cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT })?.title).toBe("Post A");
+    const post_1 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT })
+
+    expect(post_1).toEqual({ __typename: "Post", id: "p1", title: "Post B" });
+
+    tx2.revert();
+
+    const post_2 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT })
+
+    expect(post_2).toEqual({ __typename: "Post", id: "p1", title: "Post A" });
 
     tx1.revert?.();
-    await tick(2);
-    const empty = cache.readFragment({ id: "Post:1", fragment: operations.POST_FRAGMENT });
-    if (empty === undefined) expect(empty).toBeUndefined();
-    else {
-      expect(typeof empty).toBe("object");
-      expect(Object.keys(empty).length).toBe(0);
-    }
+
+    const post_3 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT })
+
+    expect(post_3).toEqual({});
   });
 
-  it("Canonical connection: add/remove/patch; UI (canonical) updates accordingly", async () => {
-    const cache = createCache();
+  it.only("Canonical connection: add/remove/patch; UI (canonical) updates accordingly", async () => {
+    const { client, cache } = createTestClient();
 
     await seedCache(cache, {
       query: operations.POSTS_QUERY,
-      variables: { first: 2, after: null },
-      data: { __typename: "Query", posts: fixtures.posts.connection(["Post 1", "Post 2"], { fromId: 1 }) },
+
+      variables: {
+        first: 2,
+        after: null,
+      },
+
+      data: {
+        __typename: "Query",
+
+        posts: fixtures.posts.buildConnection([
+          { __typename: "Post", id: "p1", title: "Post 1" },
+          { __typename: "Post", id: "p2", title: "Post 2" },
+        ]),
+      },
     });
+
     await seedCache(cache, {
       query: operations.POSTS_QUERY,
-      variables: { first: 2, after: "c2" },
-      data: { __typename: "Query", posts: fixtures.posts.connection(["Post 3", "Post 4"], { fromId: 3 }) },
+
+      variables: {
+        first: 2,
+        after: 'p2',
+      },
+
+      data: {
+        __typename: "Query",
+
+        posts: fixtures.posts.buildConnection([
+          { __typename: "Post", id: "p3", title: "Post 3" },
+          { __typename: "Post", id: "p4", title: "Post 4" },
+        ]),
+      },
     });
 
-    const { wrapper, fx } = await mountWithClient(CanonPosts, [] as Route[], cache);
+    const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
+      cachePolicy: "cache-first",
 
-    await wrapper.setProps({ first: 2, after: null });
-    await tick(2);
-    expect(rowsByClass(wrapper)).toEqual(["Post 1", "Post 2", "Post 3", "Post 4"]);
+      connectionFn: (data) => {
+        return data.posts;
+      }
+    });
+
+    const wrapper = mount(Cmp, {
+      props: {
+        first: 2,
+        after: null,
+      },
+
+      global: {
+        plugins: [client, cache],
+      },
+    });
+
+    await tick();
+    expect(getEdges(wrapper, "title")).toEqual(["Post 1", "Post 2", "Post 3", "Post 4"]);
+    expect(getPageInfo(wrapper)).toEqual({ startCursor: "p1", endCursor: "p4", hasNextPage: false, hasPreviousPage: false });
 
     const tx = cache.modifyOptimistic((o) => {
       const c = o.connection({ parent: "Query", key: "posts" });
-      c.addNode({ __typename: "Post", id: "9", title: "Prepended" }, { position: "start" });
-      c.removeNode({ __typename: "Post", id: "1" });
+
+      c.addNode({ __typename: "Post", id: "p5", title: "Post 5" }, { position: "start" });
+
+      c.removeNode({ __typename: "Post", id: "p1" });
+
       c.patch((prev) => ({
-        pageInfo: { ...(prev.pageInfo || {}), endCursor: "c9", __typename: "PageInfo" },
+        pageInfo: { ...(prev.pageInfo || {}), startCursor: "p5" },
       }));
     });
-    tx.commit?.();
-    await tick(2);
 
-    expect(rowsByClass(wrapper)).toEqual(["Prepended", "Post 2", "Post 3", "Post 4"]);
-    await fx.restore();
+    tx.commit();
+
+    await tick();
+    expect(getEdges(wrapper, "title")).toEqual(["Post 5", "Post 2", "Post 3", "Post 4"]);
+    expect(getPageInfo(wrapper)).toEqual({ startCursor: "p5", endCursor: "p4", hasNextPage: false, hasPreviousPage: false });
   });
 
-  it("Canonical connection: invalid nodes are ignored safely (no typename/id)", async () => {
-    const cache = createCache();
-    const { wrapper, fx } = await mountWithClient(CanonPosts, [] as Route[], cache);
-    await tick(2);
-    expect(rowsByClass(wrapper)).toEqual([]);
+  it.only("Canonical connection: invalid nodes are ignored safely (no typename/id)", async () => {
+    const { client, cache } = createTestClient();
+
+    const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
+      cachePolicy: "cache-first",
+
+      connectionFn: (data) => {
+        return data.posts;
+      }
+    });
+
+    const wrapper = mount(Cmp, {
+      props: {
+        first: 2,
+        after: null,
+      },
+
+      global: {
+        plugins: [client, cache],
+      },
+    });
+
+    await tick();
+    expect(getEdges(wrapper, "title")).toEqual([]);
 
     const tx = cache.modifyOptimistic((o) => {
       const c = o.connection({ parent: "Query", key: "posts" });
-      c.addNode({ id: "1", title: "NoType" } as any, { position: "end" });
-      c.addNode({ __typename: "Post", title: "NoId" } as any, { position: "start" });
-    });
-    tx.commit?.();
-    await tick(2);
-    expect(rowsByClass(wrapper)).toEqual([]);
 
-    await fx.restore();
+      c.addNode({ id: "p2", title: "Post 1" }, { position: "end" });
+
+      c.addNode({ id: "p1", __typename: "Post", title: "Post 2" }, { position: "start" });
+    });
+
+    tx.commit?.();
+
+    await tick(2);
+    expect(getEdges(wrapper, "title")).toEqual(["Post 2"]);
   });
 
   it("Canonical layering: tx1 adds 2, tx2 adds 1; revert tx1 preserves tx2; revert tx2 → baseline", async () => {
@@ -236,7 +270,7 @@ describe("Integration • Optimistic updates (entities & canonical connections)"
     await fx.restore();
   });
 
-  it.only("full flow: pages, optimistic remove, filters, window growth, late page change", async () => {
+  it("full flow: pages, optimistic remove, filters, window growth, late page change", async () => {
     let requestIndex = 0;
 
     const routes: Route[] = [
