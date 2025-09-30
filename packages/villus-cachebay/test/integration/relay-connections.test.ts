@@ -369,12 +369,14 @@ describe('Relay connections', () => {
       },
     });
 
+    // 1. Initial load: empty while network request is pending
     await tick()
     expect(getEdges(wrapper, "title")).toEqual([]);
 
     await delay(51);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
 
+    // 2. Paginate: load second page after 'pa2' (cached data available immediately)
     wrapper.setProps({ category: 'A', first: 2, after: 'pa2' });
 
     await tick()
@@ -383,6 +385,7 @@ describe('Relay connections', () => {
     await delay(51);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4"]);
 
+    // 3. Continue pagination: load third page after 'pa4'
     wrapper.setProps({ category: 'A', first: 2, after: 'pa4' });
 
     await tick()
@@ -391,6 +394,7 @@ describe('Relay connections', () => {
     await delay(51)
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A5", "A6"]);
 
+    // 4. Filter switch: change to category B posts
     wrapper.setProps({ category: 'B', first: 2, after: null });
 
     await tick()
@@ -399,14 +403,17 @@ describe('Relay connections', () => {
     await delay(51)
     expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
 
+    // 5. Filter back: return to category A (cached state preserved)
     wrapper.setProps({ category: 'A', first: 2, after: null });
 
     await tick()
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A5", "A6"]);
 
+    // 6. Network revalidation: server overwrites cached state
     await delay(51)
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
 
+    // 7. Re-paginate: load second page again (cached data available)
     wrapper.setProps({ category: 'A', first: 2, after: 'pa2' });
 
     await tick()
@@ -415,6 +422,7 @@ describe('Relay connections', () => {
     await delay(51)
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4"]);
 
+    // 8. Continue pagination: load third page from cache
     wrapper.setProps({ category: 'A', first: 2, after: 'pa4' });
 
     await tick()
@@ -423,6 +431,7 @@ describe('Relay connections', () => {
     await delay(51)
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A5", "A6"]);
 
+    // 9. Final pagination: load fourth page after 'pa6'
     wrapper.setProps({ category: 'A', first: 2, after: 'pa6' });
 
     await tick()
