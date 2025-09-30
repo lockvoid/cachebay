@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils';
 import { createTestClient, createConnectionComponent, seedCache, getPageInfo, getEdges, fixtures, operations, delay, tick } from '@/test/helpers';
 
 describe('Relay connections', () => {
-  it('append mode: adds at end; pageInfo from tail (leader head, after tail)', async () => {
+  it('appends new pages at end and updates pageInfo from tail cursor', async () => {
     const routes = [
       {
         when: ({ variables }) => {
@@ -68,7 +68,7 @@ describe('Relay connections', () => {
     expect(getPageInfo(wrapper)).toEqual({ startCursor: "p1", endCursor: "p4", hasNextPage: false, hasPreviousPage: false });
   });
 
-  it('prepend mode: adds at start; pageInfo start from head page after prepend', async () => {
+  it('prepends new pages at start and updates pageInfo from head cursor', async () => {
     const routes = [
       {
         when: ({ variables }) => {
@@ -134,7 +134,7 @@ describe('Relay connections', () => {
     expect(getPageInfo(wrapper)).toEqual({ startCursor: 'p1', endCursor: 'p4', hasNextPage: false, hasPreviousPage: false });
   });
 
-  it('replace (page-mode): shows only the latest page; pageInfo follows last page', async () => {
+  it('replaces connection with latest page and updates pageInfo accordingly', async () => {
     const routes = [
       {
         when: ({ variables }) => {
@@ -199,7 +199,7 @@ describe('Relay connections', () => {
     expect(getPageInfo(wrapper)).toEqual({ startCursor: 'p3', endCursor: 'p4', hasNextPage: false, hasPreviousPage: false });
   });
 
-  it('View A (page1) and View B (page1+page2) stable & reactive (edges reactive, pageInfo not)', async () => {
+  it('maintains stable reactive edges while keeping pageInfo non-reactive across views', async () => {
     const routes = [
       {
         when: ({ variables }) => {
@@ -256,7 +256,7 @@ describe('Relay connections', () => {
     expect(postFragment1).toEqual(post1);
   });
 
-  it('A→(p2,p3) → B → A (reset) → paginate p2,p3,p4 from cache; slow revalidate; pageInfo tail anchored', async () => {
+  it('handles complex pagination flow with caching, filtering, and network revalidation', async () => {
     const routes = [
       {
         when: ({ variables }) => {
