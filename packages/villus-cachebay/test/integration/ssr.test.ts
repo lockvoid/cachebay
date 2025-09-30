@@ -53,7 +53,7 @@ const routes = [
 describe("SSR", () => {
   describe("Suspense", () => {
     describe("cache-and-network", () => {
-      it("hydrates from cache; 0 requests during hydration", async () => {
+      it("renders cached data immediately after hydration without network requests", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponentSuspense(operations.POSTS_QUERY, {
@@ -88,7 +88,7 @@ describe("SSR", () => {
     });
 
     describe("cache-first", () => {
-      it("hydrates from cache; 0 requests", async () => {
+      it("displays cached data without making network requests", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponentSuspense(operations.POSTS_QUERY, {
@@ -123,7 +123,7 @@ describe("SSR", () => {
     });
 
     describe("network-only", () => {
-      it("1 request after hydrate; final is network", async () => {
+      it("makes network request after hydration and displays updated data", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponentSuspense(operations.POSTS_QUERY, {
@@ -158,7 +158,7 @@ describe("SSR", () => {
     });
 
     describe("cache-only", () => {
-      it("hydrates from cache; 0 requests", async () => {
+      it("displays cached data without making network requests", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponentSuspense(operations.POSTS_QUERY, {
@@ -195,7 +195,7 @@ describe("SSR", () => {
 
   describe("Non-suspense", () => {
     describe("cache-and-network", () => {
-      it("hydrates from cache; 0 requests", async () => {
+      it("renders cached data immediately without network requests", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
@@ -230,7 +230,7 @@ describe("SSR", () => {
     });
 
     describe("cache-first", () => {
-      it("hydrates from cache; 0 requests", async () => {
+      it("displays cached data without making network requests", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
@@ -265,7 +265,7 @@ describe("SSR", () => {
     });
 
     describe("network-only", () => {
-      it("1 request after hydrate; final is network", async () => {
+      it("makes network request after hydration and displays updated data", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
@@ -300,7 +300,7 @@ describe("SSR", () => {
     });
 
     describe("cache-only", () => {
-      it("hydrates from cache; 0 requests", async () => {
+      it("displays cached data without making network requests", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
