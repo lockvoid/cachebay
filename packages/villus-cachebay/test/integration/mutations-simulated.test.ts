@@ -1,8 +1,7 @@
 
 import { defineComponent, h } from "vue";
 import { mount } from "@vue/test-utils";
-import { createTestClient, seedCache, tick, fixtures } from "@/test/helpers";
-import { operations } from "@/test/helpers";
+import { createTestClient, seedCache, tick, fixtures, operations } from "@/test/helpers";
 
 describe("Mutations", () => {
   it("updates entity through normalization and returns mutation data", async () => {

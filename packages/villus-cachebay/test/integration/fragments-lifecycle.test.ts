@@ -1,8 +1,7 @@
-import { describe, it, expect } from "vitest";
 import { defineComponent, ref, isReactive, h } from "vue";
 import { mount } from "@vue/test-utils";
 import { createTestClient, operations, tick } from "@/test/helpers";
-import { useFragment } from "@/src/composables/useFragment";
+import { useFragment } from "@/src";
 
 describe("Fragments lifecycle", () => {
   describe("identify", () => {

@@ -1,7 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { defineComponent, h } from "vue";
 import { mount } from '@vue/test-utils';
-import { createTestClient, createConnectionComponent, createDetailComponent, seedCache, fixtures, operations, delay, tick, getEdges } from '@/test/helpers';
+import { createTestClient, createConnectionComponent, createDetailComponent, seedCache, getEdges, fixtures, operations, delay, tick } from '@/test/helpers';
 
 describe("Cache Policies Behavior", () => {
   describe("cache-first policy", () => {

@@ -30,7 +30,7 @@ export function createTestClient({ routes = [], cache }: { routes?: Route[], cac
       Post: ['AudioPost', 'VideoPost']
     },
 
-    suspensionTimeout: 0,
+    suspensionTimeout: 1000,
   });
 
   const fx = createFetchMock(routes);
@@ -308,13 +308,15 @@ export const createConnectionComponentSuspense = (
   const component = defineComponent({
     name: "SuspenseWrapper",
 
+    inheritAttrs: false,
+
     props: {
       // Accept any props that will be passed to the inner component
     },
 
-    setup(props) {
+    setup(props, { attrs }) {
       return () => h(Suspense, {}, {
-        default: () => h(ConnectionComponent, props),
+        default: () => h(ConnectionComponent, attrs),
         fallback: () => h("div", { class: "loading" }, "Loading...")
       });
     }
