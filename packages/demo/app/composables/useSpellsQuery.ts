@@ -29,7 +29,7 @@ export const SPELLS_QUERY_INFINITE_MODE = `
       }
     }
   }
-`
+`;
 
 export const SPELLS_QUERY_PAGE_MODE = `
   ${PAGE_INFO_FIELDS}
@@ -50,7 +50,7 @@ export const SPELLS_QUERY_PAGE_MODE = `
       }
     }
   }
-`
+`;
 
 export const useSpellsQuery = async () => {
   const settings = useSettings();
@@ -61,7 +61,7 @@ export const useSpellsQuery = async () => {
 
   const variables = useSpellsQueryVariables();
 
-  const query = await useQuery({ query: settings.relayMode === 'infinite' ? SPELLS_QUERY_INFINITE_MODE : SPELLS_QUERY_PAGE_MODE, variables });
+  const query = await useQuery({ query: settings.relayMode === "infinite" ? SPELLS_QUERY_INFINITE_MODE : SPELLS_QUERY_PAGE_MODE, variables });
 
   watch(pagination.filter, () => {
     activity.isFetching = true;

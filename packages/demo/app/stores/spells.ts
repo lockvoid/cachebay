@@ -1,45 +1,45 @@
-import { defineStore } from 'pinia';
+import { defineStore } from "pinia";
 
-export const useSpellsPagination = defineStore('spellsPagination', () => {
+export const useSpellsPagination = defineStore("spellsPagination", () => {
   const after = ref<string | null>(null);
   const before = ref<string | null>(null);
   const limit = ref(10);
 
   const filter = reactive({
-    query: '' as string,
+    query: "" as string,
   });
 
   const setQuery = (value: string) => {
-    filter.query = value ?? '';
-  }
+    filter.query = value ?? "";
+  };
 
   const setAfter = (value: string | null) => {
     after.value = value ?? null;
     before.value = null;
-  }
+  };
 
   const setBefore = (value: string | null) => {
     before.value = value ?? null;
     after.value = null;
-  }
+  };
 
   const setLimit = (value: number) => {
     limit.value = value;
-  }
+  };
 
   const resetPagination = () => {
     after.value = null;
     before.value = null;
-  }
+  };
 
   const resetFilter = () => {
-    filter.query = '';
-  }
+    filter.query = "";
+  };
 
   const reset = () => {
     resetPagination();
     resetFilter();
-  }
+  };
 
   watch(filter, () => {
     resetPagination();
@@ -60,8 +60,8 @@ export const useSpellsPagination = defineStore('spellsPagination', () => {
   };
 });
 
-export const useSpellsActivity = defineStore('spellsActivity', () => {
-  const state = reactive({ isFetching: false })
+export const useSpellsActivity = defineStore("spellsActivity", () => {
+  const state = reactive({ isFetching: false });
 
   return state;
 });

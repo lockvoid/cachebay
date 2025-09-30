@@ -11,7 +11,7 @@
     "coverage": "vitest --run --coverage"
   },
   "devDependencies": {
-    "@lockvoid/eslint-config": "^0.5.9",
+    "@lockvoid/eslint-config": "^0.6.0",
     "@nuxt/test-utils": "^3.19.2",
     "@playwright/test": "^1.55.0",
     "@vitest/coverage-v8": "3.2.4",

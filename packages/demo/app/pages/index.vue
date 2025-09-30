@@ -14,13 +14,13 @@
       </Suspense>
 
       <ClientOnly v-else>
-         <Suspense>
-           <SpellsList />
+        <Suspense>
+          <SpellsList />
 
-           <template #fallback>
-             <SpellsSkeleton />
-           </template>
-         </Suspense>
+          <template #fallback>
+            <SpellsSkeleton />
+          </template>
+        </Suspense>
       </ClientOnly>
     </ErrorBoundary>
   </div>

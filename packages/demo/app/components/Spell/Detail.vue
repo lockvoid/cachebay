@@ -10,10 +10,10 @@
 <template>
   <div class="p-6">
     <div v-if="spell.imageUrl" class="mb-6">
-      <img :src="spell.imageUrl" :alt="spell.name" class="w-full h-64 object-cover rounded-lg" />
+      <img :src="spell.imageUrl" :alt="spell.name" class="h-64 w-full rounded-lg object-cover">
     </div>
 
-    <div class="flex justify-between items-start">
+    <div class="flex items-start justify-between">
       <div>
         <h2 class="text-2xl font-bold text-gray-900">
           {{ spell.name }}
@@ -51,7 +51,7 @@
           </dd>
         </div>
 
-        <div v-if="spell.light" class="text-sm gap-1">
+        <div v-if="spell.light" class="gap-1 text-sm">
           <dt class="text-sm font-medium text-gray-500">
             Light
           </dt>
@@ -61,7 +61,7 @@
           </dd>
         </div>
 
-        <div v-if="spell.wiki" class="text-sm gap-1">
+        <div v-if="spell.wiki" class="gap-1 text-sm">
           <dt class="text-sm font-medium text-gray-500">
             Wiki Reference
           </dt>

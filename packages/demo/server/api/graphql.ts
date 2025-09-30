@@ -1,52 +1,52 @@
-import { DatabaseSync } from 'node:sqlite'
-import { createYoga } from 'graphql-yoga'
-import SchemaBuilder from '@pothos/core'
-import RelayPlugin from '@pothos/plugin-relay'
-import { resolveCursorConnection } from '@pothos/plugin-relay'
-import type { ResolveCursorConnectionArgs } from '@pothos/plugin-relay';
+import { DatabaseSync } from "node:sqlite";
+import SchemaBuilder from "@pothos/core";
+import RelayPlugin from "@pothos/plugin-relay";
+import { resolveCursorConnection } from "@pothos/plugin-relay";
+import { createYoga } from "graphql-yoga";
+import type { ResolveCursorConnectionArgs } from "@pothos/plugin-relay";
 
 const delay = (ms = 1000) => {
-  if (process.env.NODE_ENV !== 'development') {
+  if (process.env.NODE_ENV !== "development") {
     return Promise.resolve();
   }
 
   return new Promise((resolve) => {
-    setTimeout(() => { resolve(null) }, ms);
+    setTimeout(() => { resolve(null); }, ms);
   });
-}
+};
 
 const randomDelay = () => {
   return delay(Math.random() * 5000);
-}
+};
 
-const db = new DatabaseSync('./vendor/harrypotter.db');
+const db = new DatabaseSync("./vendor/harrypotter.db");
 
 const builder = new SchemaBuilder({
   plugins: [
     RelayPlugin,
   ],
-})
+});
 
-builder.objectType('Spell', {
+builder.objectType("Spell", {
   fields: (t) => ({
-    id: t.exposeID('id'),
-    name: t.exposeString('name'),
-    category: t.exposeString('category'),
-    creator: t.exposeString('creator', { nullable: true }),
-    effect: t.exposeString('effect'),
-    light: t.exposeString('light', { nullable: true }),
-    imageUrl: t.exposeString('imageUrl', { nullable: true }),
-    wikiUrl: t.exposeString('wikiUrl', { nullable: true }),
+    id: t.exposeID("id"),
+    name: t.exposeString("name"),
+    category: t.exposeString("category"),
+    creator: t.exposeString("creator", { nullable: true }),
+    effect: t.exposeString("effect"),
+    light: t.exposeString("light", { nullable: true }),
+    imageUrl: t.exposeString("imageUrl", { nullable: true }),
+    wikiUrl: t.exposeString("wikiUrl", { nullable: true }),
   }),
-})
+});
 
-builder.inputType('SpellFilter', {
+builder.inputType("SpellFilter", {
   fields: (t) => ({
     query: t.string(),
   }),
-})
+});
 
-builder.inputType('CreateSpellInput', {
+builder.inputType("CreateSpellInput", {
   fields: (t) => ({
     name: t.string({ required: true }),
     category: t.string({ required: true }),
@@ -56,9 +56,9 @@ builder.inputType('CreateSpellInput', {
     imageUrl: t.string(),
     wikiUrl: t.string(),
   }),
-})
+});
 
-builder.inputType('UpdateSpellInput', {
+builder.inputType("UpdateSpellInput", {
   fields: (t) => ({
     id: t.id({ required: true }),
     name: t.string(),
@@ -69,49 +69,49 @@ builder.inputType('UpdateSpellInput', {
     imageUrl: t.string(),
     wikiUrl: t.string(),
   }),
-})
+});
 
-builder.inputType('DeleteSpellInput', {
+builder.inputType("DeleteSpellInput", {
   fields: (t) => ({
     id: t.id({ required: true }),
   }),
-})
-
-builder.objectType('CreateSpellPayload', {
-  fields: (t) => ({
-    spell: t.expose('spell', { type: 'Spell', nullable: true }),
-  })
 });
 
-builder.objectType('UpdateSpellPayload', {
+builder.objectType("CreateSpellPayload", {
   fields: (t) => ({
-    spell: t.expose('spell', { type: 'Spell', nullable: true }),
-  })
+    spell: t.expose("spell", { type: "Spell", nullable: true }),
+  }),
+});
+
+builder.objectType("UpdateSpellPayload", {
+  fields: (t) => ({
+    spell: t.expose("spell", { type: "Spell", nullable: true }),
+  }),
 });
 
 builder.queryType({
   fields: (t) => ({
     spell: t.field({
-      type: 'Spell',
+      type: "Spell",
 
       nullable: true,
 
       args: {
-        id: t.arg.id({ required: true })
+        id: t.arg.id({ required: true }),
       },
 
       resolve: async (_, { id }) => {
         await randomDelay();
 
-        return db.prepare('SELECT * FROM spells WHERE id = ?').get(id)
+        return db.prepare("SELECT * FROM spells WHERE id = ?").get(id);
       },
     }),
 
     spells: t.connection({
-      type: 'Spell',
+      type: "Spell",
 
       args: {
-        filter: t.arg({ type: 'SpellFilter' }),
+        filter: t.arg({ type: "SpellFilter" }),
       },
 
       resolve: async (_, args) => {
@@ -137,112 +137,112 @@ builder.queryType({
             const params = [];
 
             if (filter?.query) {
-              where.push('(name LIKE ? OR effect LIKE ? OR category LIKE ?)');
+              where.push("(name LIKE ? OR effect LIKE ? OR category LIKE ?)");
               params.push(`%${filter.query}%`, `%${filter.query}%`, `%${filter.query}%`);
             }
 
             if (after != null) {
-              where.push('id > ?');
+              where.push("id > ?");
               params.push(after);
             }
 
             if (before != null) {
-              where.push('id < ?');
+              where.push("id < ?");
               params.push(before);
             }
 
-            const querySql = `SELECT * FROM spells ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY id ${inverted ? 'DESC' : 'ASC'} LIMIT ?`;
+            const querySql = `SELECT * FROM spells ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY id ${inverted ? "DESC" : "ASC"} LIMIT ?`;
 
             params.push(limit);
 
             return db.prepare(querySql).all(...params);
           },
         );
-      }
+      },
     }),
-  })
+  }),
 });
 
 builder.mutationType({
   fields: (t) => ({
     createSpell: t.field({
-      type: 'CreateSpellPayload',
+      type: "CreateSpellPayload",
 
       args: {
-        input: t.arg({ type: 'CreateSpellInput', required: true })
+        input: t.arg({ type: "CreateSpellInput", required: true }),
       },
 
       resolve: async (_, { input }) => {
-        const { name = '', effect = '', category = '', creator = '', light = '', imageUrl = '', wikiUrl = '' } = input;
+        const { name = "", effect = "", category = "", creator = "", light = "", imageUrl = "", wikiUrl = "" } = input;
 
-        const sql = 'INSERT INTO spells (name, category, creator, effect, light, imageUrl, wikiUrl) VALUES (?, ?, ?, ?, ?, ?, ?)';
+        const sql = "INSERT INTO spells (name, category, creator, effect, light, imageUrl, wikiUrl) VALUES (?, ?, ?, ?, ?, ?, ?)";
 
         const result = db.prepare(sql).run(name, category, creator, effect, light, imageUrl, wikiUrl);
 
         return {
-          spell: db.prepare('SELECT * FROM spells WHERE id = ?').get(result.lastInsertRowid)
+          spell: db.prepare("SELECT * FROM spells WHERE id = ?").get(result.lastInsertRowid),
         };
       },
     }),
 
     updateSpell: t.field({
-      type: 'UpdateSpellPayload',
+      type: "UpdateSpellPayload",
 
       args: {
-        input: t.arg({ type: 'UpdateSpellInput', required: true })
+        input: t.arg({ type: "UpdateSpellInput", required: true }),
       },
 
       resolve: async (_, { input }: { input: any }) => {
         await delay(3000);
 
-        const { id, ...fields } = input
+        const { id, ...fields } = input;
 
-        const updates = Object.keys(fields).filter(key => fields[key] !== undefined)
+        const updates = Object.keys(fields).filter(key => fields[key] !== undefined);
 
-        const sql = `UPDATE spells SET ${updates.map(key => `${key} = ?`).join(', ')} WHERE id = ?`
+        const sql = `UPDATE spells SET ${updates.map(key => `${key} = ?`).join(", ")} WHERE id = ?`;
 
-        const result = db.prepare(sql).run(...updates.map(key => fields[key]), id)
+        const result = db.prepare(sql).run(...updates.map(key => fields[key]), id);
 
         return {
-          spell: db.prepare('SELECT * FROM spells WHERE id = ?').get(id)
+          spell: db.prepare("SELECT * FROM spells WHERE id = ?").get(id),
         };
       },
     }),
 
     deleteSpell: t.field({
-      type: 'Boolean',
+      type: "Boolean",
 
       args: {
-        input: t.arg({ type: 'DeleteSpellInput', required: true })
+        input: t.arg({ type: "DeleteSpellInput", required: true }),
       },
 
       resolve: async (_, { input }: { input: any }) => {
         const { id } = input;
 
-        const result = db.prepare('DELETE FROM spells WHERE id = ?').run(id)
+        const result = db.prepare("DELETE FROM spells WHERE id = ?").run(id);
 
         return result.changes > 0;
       },
     }),
   }),
-})
+});
 
-const schema = builder.toSchema()
+const schema = builder.toSchema();
 
 const yoga = createYoga({
   schema,
 
   graphiql: {
-    title: 'Harry Potter'
+    title: "Harry Potter",
   },
 
   cors: {
-    origin: '*',
+    origin: "*",
   },
 });
 
 export default defineEventHandler((event) => {
   const { req, res } = event.node;
 
-  return yoga(req, res)
-})
+  return yoga(req, res);
+});

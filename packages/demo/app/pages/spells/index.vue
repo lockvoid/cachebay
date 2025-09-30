@@ -1,3 +1,3 @@
 <script setup>
-  await navigateTo('/')
+  await navigateTo("/");
 </script>

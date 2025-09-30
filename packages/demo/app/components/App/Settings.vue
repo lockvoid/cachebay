@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import IconsPotion from '~/components/Icons/Potion.vue';
 import { onMounted, onUnmounted, ref } from 'vue';
 
 const settings = useSettings();

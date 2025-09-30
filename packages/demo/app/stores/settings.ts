@@ -1,40 +1,40 @@
-import { defineStore } from 'pinia';
+import { defineStore } from "pinia";
 
-export const useSettings = defineStore('settings', () => {
-  const ssrCookie = useCookie('settings-ssr', {
+export const useSettings = defineStore("settings", () => {
+  const ssrCookie = useCookie("settings-ssr", {
     default: () => true,
 
     serializer: {
       read: (value) => {
-        return value === 'true';
+        return value === "true";
       },
 
       write: (value) => {
         return String(value);
-      }
-    }
+      },
+    },
   });
 
-  const cachePolicyCookie = useCookie('settings-cache-policy', {
-    default: () => 'cache-first'
+  const cachePolicyCookie = useCookie("settings-cache-policy", {
+    default: () => "cache-first",
   });
 
-  const relayModeCookie = useCookie('settings-relay-mode', {
-    default: () => 'infinite'
+  const relayModeCookie = useCookie("settings-relay-mode", {
+    default: () => "infinite",
   });
 
-  const optimisticCookie = useCookie('settings-optimistic', {
+  const optimisticCookie = useCookie("settings-optimistic", {
     default: () => true,
 
     serializer: {
       read: (value) => {
-        return value === 'true';
+        return value === "true";
       },
 
       write: (value) => {
         return String(value);
-      }
-    }
+      },
+    },
   });
 
   const ssr = ref(ssrCookie.value);
@@ -70,6 +70,6 @@ export const useSettings = defineStore('settings', () => {
     ssr,
     cachePolicy,
     relayMode,
-    optimistic
+    optimistic,
   };
 });

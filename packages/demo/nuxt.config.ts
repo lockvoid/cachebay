@@ -7,7 +7,7 @@ export default defineNuxtConfig({
   compatibilityDate: "2025-07-15",
 
   devtools: {
-    enabled: false
+    enabled: false,
   },
 
   css: [
@@ -79,7 +79,6 @@ export default defineNuxtConfig({
     resolve: {
       alias: {
         "villus-cachebay": resolve("../villus-cachebay/src"),
-        "@lockvoid/vue-form": resolve("/Users/kochnev/Projects/Ferment/vue-form/src"),
       },
     },
   },

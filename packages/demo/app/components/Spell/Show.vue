@@ -2,9 +2,9 @@
   const props = defineProps({
     spellId: {
       type: String,
-      required: true
-    }
-  })
+      required: true,
+    },
+  });
 
   const spellQuery = await useSpellQuery(props.spellId);
 
@@ -14,12 +14,12 @@
 </script>
 
 <template>
-  <div class="max-w-3xl mx-auto space-y-6 flex flex-col">
+  <div class="mx-auto flex max-w-3xl flex-col space-y-6">
     <NuxtLink to="/" class="a text-sm">
       ← Back to spells
     </NuxtLink>
 
-    <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+    <div class="overflow-hidden bg-white shadow sm:rounded-lg">
       <SpellDetail :spell="spell" />
     </div>
   </div>

@@ -1,7 +1,7 @@
 <script setup>
-const route = useRoute();
+  const route = useRoute();
 
- const settings = useSettings();
+  const settings = useSettings();
 </script>
 
 <template>
@@ -16,13 +16,13 @@ const route = useRoute();
       </Suspense>
 
       <ClientOnly v-else>
-         <Suspense>
-           <SpellEdit :spell-id="route.params.id" />
+        <Suspense>
+          <SpellEdit :spell-id="route.params.id" />
 
-           <template #fallback>
-             <SpellSkeleton />
-           </template>
-         </Suspense>
+          <template #fallback>
+            <SpellSkeleton />
+          </template>
+        </Suspense>
       </ClientOnly>
     </ErrorBoundary>
   </div>

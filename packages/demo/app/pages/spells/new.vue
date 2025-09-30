@@ -14,13 +14,13 @@
       </Suspense>
 
       <ClientOnly v-else>
-         <Suspense>
-           <SpellNew />
+        <Suspense>
+          <SpellNew />
 
-           <template #fallback>
-             <SpellSkeleton />
-           </template>
-         </Suspense>
+          <template #fallback>
+            <SpellSkeleton />
+          </template>
+        </Suspense>
       </ClientOnly>
     </ErrorBoundary>
   </div>

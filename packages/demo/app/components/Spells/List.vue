@@ -20,20 +20,20 @@
 
 <template>
   <div class="flex flex-col gap-12">
-    <ul class="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-6">
+    <ul class="grid grid-cols-1 gap-6 sm:grid-cols-3 lg:grid-cols-6">
       <SpellsItem v-for="edge in spells?.edges" :key="edge.node.id" :spell="edge.node" />
     </ul>
 
-    <div v-if="settings.relayMode === 'page'" class="self-center relative flex flex-row justify-center">
+    <div v-if="settings.relayMode === 'page'" class="relative flex flex-row justify-center self-center">
       <button class="button-primary w-32" :disabled="spellsQuery.isFetching.value || !spells.pageInfo.hasPreviousPage" @click="spellsQuery.loadPreviousPage">
         ‹ Previous
       </button>
 
-      <button class="button-primary w-32 ml-4" :disabled="spellsQuery.isFetching.value || !spells.pageInfo.hasNextPage" @click="spellsQuery.loadNextPage">
+      <button class="button-primary ml-4 w-32" :disabled="spellsQuery.isFetching.value || !spells.pageInfo.hasNextPage" @click="spellsQuery.loadNextPage">
         Next ›
       </button>
 
-      <span v-if="spellsQuery.isFetching.value" class="text-sm absolute top-1/2 -right-4 transform translate-x-full -translate-y-1/2">
+      <span v-if="spellsQuery.isFetching.value" class="absolute top-1/2 -right-4 translate-x-full -translate-y-1/2 transform text-sm">
         Loading…
       </span>
     </div>

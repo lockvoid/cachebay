@@ -1,5 +1,5 @@
-import { createClient, fetch as fetchPlugin, dedup as dedupPlugin } from 'villus';
-import { createCache } from 'villus-cachebay';
+import { createClient, fetch as fetchPlugin, dedup as dedupPlugin } from "villus";
+import { createCache } from "villus-cachebay";
 
 export default defineNuxtPlugin((nuxtApp) => {
   const config = useRuntimeConfig();
@@ -25,8 +25,8 @@ export default defineNuxtPlugin((nuxtApp) => {
   nuxtApp.vueApp.use(villus);
   nuxtApp.vueApp.use(cachebay);
 
-  nuxtApp.provide('villus', villus);
-  nuxtApp.provide('cachebay', cachebay);
+  nuxtApp.provide("villus", villus);
+  nuxtApp.provide("cachebay", cachebay);
 
   if (import.meta.server) {
     nuxtApp.hook("app:rendered", () => {
@@ -35,7 +35,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   };
 
   if (import.meta.client && settings.ssr) {
-    const state = useState('cachebay').value;
+    const state = useState("cachebay").value;
 
     if (state) {
       cachebay.hydrate(state);

@@ -1,4 +1,4 @@
-import { useQuery } from 'villus';
+import { useQuery } from "villus";
 
 export const SPELL_FIELDS = `
   fragment SpellFields on Spell {

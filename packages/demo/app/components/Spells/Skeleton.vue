@@ -1,5 +1,5 @@
 <template>
-  <ul class="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-6">
+  <ul class="grid grid-cols-1 gap-6 sm:grid-cols-3 lg:grid-cols-6">
     <SpellsSkeletonItem class="flex md:flex" />
     <SpellsSkeletonItem class="hidden md:flex" />
     <SpellsSkeletonItem class="hidden md:flex" />

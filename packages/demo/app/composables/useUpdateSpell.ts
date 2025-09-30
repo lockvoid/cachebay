@@ -1,7 +1,7 @@
-import { useMutation } from 'villus';
-import { useCache } from 'villus-cachebay';
-import { SPELL_FIELDS } from './useSpellQuery';
-import { useSettings } from '../stores/settings';
+import { useMutation } from "villus";
+import { useCache } from "villus-cachebay";
+import { useSettings } from "../stores/settings";
+import { SPELL_FIELDS } from "./useSpellQuery";
 
 export const UPDATE_SPELL_MUTATION = `
   ${SPELL_FIELDS}
@@ -35,7 +35,7 @@ export const useUpdateSpell = () => {
           } else {
             tx?.commit();
           }
-        })
+        });
     } else {
       return updateSpell.execute({ input: variables.input });
     }

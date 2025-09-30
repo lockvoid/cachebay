@@ -2,9 +2,9 @@
   const props = defineProps({
     spellId: {
       type: String,
-      required: true
-    }
-  })
+      required: true,
+    },
+  });
 
   const router = useRouter();
 
@@ -32,12 +32,12 @@
     } catch (error) {
       console.error(error);
 
-      alert('An error occurred. Please try again.')
+      alert("An error occurred. Please try again.");
     }
   };
 
   const handleDelete = async () => {
-    const confirmation = confirm('Are you sure you want to delete this spell?');
+    const confirmation = confirm("Are you sure you want to delete this spell?");
 
     if (!confirmation) {
       return;
@@ -52,23 +52,23 @@
         throw result.error;
       }
 
-      await router.push('/');
+      await router.push("/");
     } catch (error) {
       console.error(error);
 
-      alert('An error occurred. Please try again.')
+      alert("An error occurred. Please try again.");
     }
   };
 </script>
 
 <template>
-  <div class="max-w-3xl mx-auto flex flex-col">
+  <div class="mx-auto flex max-w-3xl flex-col">
     <NuxtLink :to="`/spells/${spell.id}`" class="a text-sm">
       ← Back to spell
     </NuxtLink>
 
-    <div class="bg-white shadow-sm sm:rounded-lg"   >
-      <h3 class="p-6 text-lg font-semibold border-b border-gray-200">
+    <div class="bg-white shadow-sm sm:rounded-lg">
+      <h3 class="border-b border-gray-200 p-6 text-lg font-semibold">
         Edit spell
       </h3>
 

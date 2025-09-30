@@ -16,13 +16,13 @@
       </Suspense>
 
       <ClientOnly v-else>
-         <Suspense>
-           <SpellShow :spell-id="route.params.id" />
+        <Suspense>
+          <SpellShow :spell-id="route.params.id" />
 
-           <template #fallback>
-             <SpellSkeleton />
-           </template>
-         </Suspense>
+          <template #fallback>
+            <SpellSkeleton />
+          </template>
+        </Suspense>
       </ClientOnly>
     </ErrorBoundary>
   </div>

@@ -1,7 +1,7 @@
 <template>
   <AppHeader />
 
-  <div class="font-serif flex flex-col">
+  <div class="flex flex-col font-serif">
     <slot />
   </div>
 </template>

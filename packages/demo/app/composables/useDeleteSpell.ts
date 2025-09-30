@@ -1,6 +1,6 @@
 import { useMutation } from "villus";
 import { useCache } from "villus-cachebay";
-import { useSettings } from '../stores/settings';
+import { useSettings } from "../stores/settings";
 
 export const DELETE_SPELL = `
   mutation DeleteSpell($input: DeleteSpellInput!) {
@@ -34,7 +34,7 @@ export const useDeleteSpell = () => {
     } else {
       return deleteSpell.execute({ id: variables.id });
     }
-  }
+  };
 
   return { ...deleteSpell, execute };
 };

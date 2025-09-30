@@ -1,12 +1,12 @@
 <script setup>
-import IconsDeathlyHallows from '~/components/Icons/DeathlyHallows.vue';
+  import IconsDeathlyHallows from "~/components/Icons/DeathlyHallows.vue";
 </script>
 
 <template>
   <div class="flex items-center gap-3">
-    <IconsDeathlyHallows class="w-10 h-10 text-gray-800 hover:text-gray-600 transition-colors flex-shrink-0" />
+    <IconsDeathlyHallows class="h-10 w-10 flex-shrink-0 text-gray-800 transition-colors hover:text-gray-600" />
     
-    <h1 class="text-xl font-serif font-bold text-gray-800 hidden sm:block">
+    <h1 class="hidden font-serif text-xl font-bold text-gray-800 sm:block">
       Harry Potter's Spellbook
     </h1>
   </div>
