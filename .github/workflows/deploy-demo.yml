@@ -31,7 +31,7 @@ jobs:
           gem install kamal
 
       - name: Login to GHCR
-        run: echo ${{ secrets.GHCR_PAT }} | docker login ghcr.io -u lockvoid --password-stdin
+        run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u lockvoid --password-stdin
 
       - name: Build Docker Image
         run: docker build -t ghcr.io/lockvoid/live:latest .

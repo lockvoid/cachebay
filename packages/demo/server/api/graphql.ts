@@ -1,9 +1,9 @@
+import { fileURLToPath } from "node:url";
 import SchemaBuilder from "@pothos/core";
 import RelayPlugin from "@pothos/plugin-relay";
 import { resolveCursorConnection } from "@pothos/plugin-relay";
 import { createYoga } from "graphql-yoga";
 import { DatabaseSync } from "node:sqlite";
-import { fileURLToPath } from "node:url";
 import type { ResolveCursorConnectionArgs } from "@pothos/plugin-relay";
 
 const delay = (ms = 1000) => {
@@ -20,7 +20,7 @@ const randomDelay = () => {
   return delay(Math.random() * 5000);
 };
 
-const db = new DatabaseSync(process.env.NODE_ENV === 'production' ? '/app/data/harrypotter.db' ? './vendor/harrypotter.db');
+const db = new DatabaseSync(process.env.NODE_ENV === "production" ? "/app/data/harrypotter.db" : "./vendor/harrypotter.db");
 
 const builder = new SchemaBuilder({
   plugins: [
