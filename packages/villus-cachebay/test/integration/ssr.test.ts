@@ -4,7 +4,11 @@ import { createTestClient, createConnectionComponent, createConnectionComponentS
 const ssrRoundtrip = async ({ routes }) => {
   // 1
 
-  const serverClient = createTestClient();
+  const serverClient = createTestClient({
+    cacheOptions: {
+      suspensionTimeout: 100,
+    },
+  });
 
   await seedCache(serverClient.cache, {
     query: operations.POSTS_QUERY,
@@ -25,7 +29,13 @@ const ssrRoundtrip = async ({ routes }) => {
 
   // 2
 
-  const clientClient = createTestClient({ routes });
+  const clientClient = createTestClient({
+    routes,
+
+    cacheOptions: {
+      suspensionTimeout: 100,
+    },
+  });
 
   clientClient.cache.hydrate(snapshot);
 

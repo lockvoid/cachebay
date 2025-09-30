@@ -18,19 +18,25 @@ export async function seedCache(cache, { query, variables, data }) {
   await tick();
 }
 
-export function createTestClient({ routes = [], cache }: { routes?: Route[], cache?: any } = {}) {
+export function createTestClient({ routes, cache, cacheOptions }: { routes?: Route[], cache?: any, cacheOptions?: any } = {}) {
   const finalCache = cache ?? createCache({
+    suspensionTimeout: 0,
+
+    ...(cacheOptions || {}),
+
     keys: {
       Comment: (comment: any) => {
         return String(comment.uuid);
       },
+
+      ...(cacheOptions?.keys || {}),
     },
 
     interfaces: {
-      Post: ['AudioPost', 'VideoPost']
-    },
+      Post: ['AudioPost', 'VideoPost'],
 
-    suspensionTimeout: 1000,
+      ...(cacheOptions?.interfaces || {}),
+    },
   });
 
   const fx = createFetchMock(routes);
@@ -68,7 +74,7 @@ function buildResponse(obj: any) {
   } as any;
 }
 
-export function createFetchMock(routes: Route[]) {
+export function createFetchMock(routes: Route[] = []) {
   const calls: Array<RecordedCall> = [];
   const originalFetch = globalThis.fetch;
   let pending = 0;
@@ -176,6 +182,7 @@ export const createConnectionComponent = (
         if (!data.value) {
           return null;
         }
+        console.log('ddxdddddd', connectionFn(data.value))
 
         return connectionFn(data.value);
       });
@@ -194,7 +201,7 @@ export const createConnectionComponent = (
       }, { immediate: true });
 
       return () => {
-        if (isFetching.value) {
+        if (!connection.value && isFetching.value) {
           return h("div", { class: "loading" }, "Loading...");
         }
 
@@ -221,6 +228,8 @@ export const createConnectionComponent = (
               );
             })
           )
+
+
         ]);
       };
     },
@@ -378,7 +387,7 @@ export const createDetailComponent = (
       }, { immediate: true });
 
       return () => {
-        if (isFetching.value) {
+        if (!detail.value && isFetching.value) {
           return h("div", { class: "loading" }, "Loading...");
         }
 
