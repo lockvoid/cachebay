@@ -77,6 +77,13 @@ jobs:
           git push
           git push --tags
 
+      - name: Copy docs
+        working-directory: .
+        run: |
+          cp -r ./docs ./packages/villus-cachebay/docs
+          cp ./LICENSE.md ./packages/villus-cachebay/LICENSE.md
+          cp ./README.md ./packages/villus-cachebay/README.md
+
       - name: Publish to npm
         run: |
           pnpm publish --no-git-checks
