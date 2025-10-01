@@ -11,7 +11,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   });
 
   const villus = createClient({
-    url: import.meta.server ? config.public.graphqlServerEndpoint : config.public.graphqlClientEndpoint,
+    url: import.meta.server ? config.graphqlServerEndpoint : config.public.graphqlClientEndpoint,
 
     cachePolicy: settings.cachePolicy,
 
