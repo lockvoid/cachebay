@@ -8,7 +8,7 @@ import type { DocumentNode } from "graphql";
 import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
 import type { DocumentsInstance } from "./documents";
-import type { SSRInstance } from "./ssr";
+import type { SSRInstance } from "../features/ssr";
 
 import { CACHEBAY_KEY, ROOT_ID } from "./constants";
 import { buildConnectionCanonicalKey } from "./utils";
@@ -45,7 +45,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     const policy: "cache-and-network" | "cache-first" | "network-only" | "cache-only" =
       ((op as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network") as any;
 
-    const buildCachedFrame = () => {
+    const buildCachedFrame = (): OperationResult<any> | null => {
       if (!documents.hasDocument({ document, variables: vars })) return null;
 
       const rootConnections = plan.root.filter((f) => f.isConnection);
@@ -53,7 +53,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       // No root @connection → just materialize entities
       if (rootConnections.length === 0) {
         const data = documents.materializeDocument({ document, variables: vars });
-        return { data };
+        return { data, error: null };
       }
 
       // Determine cursor role
@@ -95,7 +95,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         return Array.isArray(v?.edges) && v.edges.length > 0;
       });
 
-      return hasEdges ? { data } : null;
+      return hasEdges ? { data, error: null } as OperationResult<any> : null;
     };
 
     if (plan.operation === "mutation") {
@@ -103,7 +103,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       ctx.useResult = (incoming: OperationResult, _terminal?: boolean) => {
         if (incoming?.error) return originalUseResult(incoming, true);
         documents.normalizeDocument({ document, variables: vars, data: incoming.data });
-        return originalUseResult({ data: incoming.data }, true);
+        return originalUseResult({ data: incoming.data, error: null }, true);
       };
       return;
     }
@@ -118,7 +118,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         }
 
         // Do not force terminal; let the source control it
-        return originalUseResult({ data: incoming.data }, !!terminal);
+        return originalUseResult({ data: incoming.data, error: null }, !!terminal);
       };
       return;
     }
@@ -127,7 +127,10 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     if (ssr?.isHydrating?.()) {
       if (policy !== "network-only") {
         const cached = buildCachedFrame();
-        return publish(cached ?? { data: undefined }, true);
+
+        if (cached) {
+          return publish(cached, true);
+        }
       }
     }
 
@@ -207,7 +210,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
       // Stamp completion time for the suspension window
 
-      return originalUseResult({ data }, true);
+      return originalUseResult({ data, error: null }, true);
     };
   };
 }

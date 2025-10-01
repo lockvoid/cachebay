@@ -112,7 +112,7 @@ export const compilePlan = (
   const document: DocumentNode =
     typeof documentOrStringOrPlan === "string"
       ? parse(documentOrStringOrPlan)
-      : documentOrStringOrPlan;
+      : documentOrStringOrPlan as DocumentNode;
 
   const fragmentsByName = indexFragments(document);
 

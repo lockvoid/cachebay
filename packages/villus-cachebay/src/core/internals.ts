@@ -27,7 +27,7 @@ export type CachebayInstance = ClientPlugin & {
   writeFragment: (args: { id: string; fragment: any; data: any; variables?: Record<string, any> }) => void;
 
   // Optimistic
-  modifyOptimistic: ReturnType<typeof createModifyOptimistic>;
+  modifyOptimistic: ReturnType<typeof createOptimistic>['modifyOptimistic'];
 
   // Debug
   inspect: ReturnType<typeof createInspect>;
@@ -48,12 +48,7 @@ export type CachebayInstance = ClientPlugin & {
   };
 };
 
-export type CachebayOptions = {
-  keys?: Record<string, (obj: any) => string | null>;
-  interfaces?: Record<string, string[]>;
-  hydrationTimeout?: number;
-  suspensionTimeout?: number;
-};
+import type { CachebayOptions } from '../types';
 
 export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Core

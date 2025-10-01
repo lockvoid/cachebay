@@ -1,6 +1,7 @@
 import { IDENTITY_FIELDS, CONNECTION_FIELDS, ROOT_ID } from "./constants";
 import type { EntityKey, RelayOptions } from "./types";
-import type { PlanField } from "./types";
+import type { GraphInstance } from "./graph";
+import type { PlanField } from "../compiler/types";
 
 export const TRAVERSE_SKIP = Symbol('traverse:skip');
 
@@ -58,7 +59,7 @@ export const stableStringify = (object: any): string => {
   }
 }
 
-export const traverseFast = (root: any, context: any, visit: (parentNode: any, valueNode: any, fieldKey: string | number | null, context: any) => typeof TRAVERSE_SKIP | { context: any } | void) => {
+export const traverseFast = (root: any, context: any, visit: (parentNode: any, valueNode: any, fieldKey: string | number | null, context: any) => typeof TRAVERSE_SKIP | any | void) => {
   const stack = [null, root, null, context];
 
   while (stack.length > 0) {

@@ -356,7 +356,7 @@ export const createOptimistic = ({ graph }: Deps) => {
 
     const resolveParentId = (parent: "Query" | string | { __typename?: string; id?: any }): string => {
       if (typeof parent === "string") return parent === "Query" ? ROOT_ID : parent;
-      return parent === "Query" ? ROOT_ID : (graph.identify(parent) || ROOT_ID);
+      return parent as any === "Query" ? ROOT_ID : (graph.identify(parent) || ROOT_ID);
     };
 
     const api: BuilderAPI = {

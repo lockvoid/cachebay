@@ -218,7 +218,7 @@ class IdentityManager {
 }
 
 export const createGraph = (options?: GraphOptions) => {
-  const identityManager = new IdentityManager({ keys: options?.keys, interfaces: options?.interfaces });
+  const identityManager = new IdentityManager({ keys: options?.keys || {}, interfaces: options?.interfaces || {} });
 
   const recordStore = new Map<string, Record<string, any>>();
   const recordProxyStore = new Map<string, WeakRef<any>>();

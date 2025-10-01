@@ -16,7 +16,7 @@ export const createPlanner = () => {
     opts?: GetPlanOpts
   ): CachePlanV1 => {
     // Already compiled? just return it
-    if (isCachePlanV1(docOrPlan)) return docOrPlan;
+    if (isCachePlanV1(docOrPlan)) return docOrPlan as CachePlanV1;
 
     const fragKey = opts?.fragmentName ?? "";
 

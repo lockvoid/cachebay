@@ -1,5 +1,5 @@
 // src/features/ssr.ts — SSR de/hydration for the unified graph record store
-import type { GraphInstance } from "./graph";
+import type { GraphInstance } from "../core/graph";
 
 
 type Deps = { graph: GraphInstance };

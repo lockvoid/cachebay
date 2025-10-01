@@ -1,5 +1,3 @@
-import type { WritePolicy } from "../types";
-
 export type EntityKey = string;
 
 export type ConnectionEntry = { key: EntityKey; cursor: string | null; edge?: Record<string, any> };
@@ -32,6 +30,6 @@ export type RelayOptions = {
   names: { edges: string; pageInfo: string; nodeField: string };
   cursors: { after: string; before: string; first: string; last: string };
   hasNodePath: boolean;
-  write?: WritePolicy;
+  write?: "replace" | "merge"
   mode?: "append" | "prepend" | "replace" | "auto";
 };

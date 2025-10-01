@@ -26,6 +26,7 @@ export type ReadFragmentArgs = {
 export type WriteFragmentArgs = {
   id: string;                       // canonical record id, e.g. "User:u1"
   fragment: DocumentNode | CachePlanV1;
+  fragmentName?: string;
   data: any;                        // page-shaped or entity-shaped subtree
   variables?: Record<string, any>;
 };
