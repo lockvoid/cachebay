@@ -50,6 +50,11 @@ jobs:
             ghcr.io/${{ github.repository }}/demo:latest
             ghcr.io/${{ github.repository }}/demo:${{ github.sha }}
 
+      - name: 1Deploy application with Kamal
+        run: kamal proxy reboot -c kamal.yml
+        env:
+          DOCKER_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Deploy application with Kamal
         run: kamal deploy --skip-push --version=latest -c kamal.yml
         env:
