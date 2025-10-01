@@ -18,7 +18,12 @@ jobs:
       run:
         working-directory: packages/villus-cachebay
     steps:
-      - name: Checkout Repository
+      - name: Ensure latest content
+        run: |
+          git checkout main
+          git pull origin main
+
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install pnpm
@@ -26,37 +31,43 @@ jobs:
         with:
           version: 10
 
-      - name: Setup Node.js
+      - name: Install node
         uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: "https://registry.npmjs.org/"
           cache: "pnpm"
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
         working-directory: .
 
-      - name: Run Linting
+      - name: Run linter
         run: pnpm lint
         continue-on-error: true
 
-      - name: Build Package
+      - name: Build package
         run: pnpm build
 
-      - name: Run Tests
+      - name: Run tests
         run: pnpm test
 
-      - name: Bump Version
-        run: pnpm version ${{ github.event.inputs.version_type }} --no-git-tag-version
-
-      - name: Commit Version Bump
+      - name: Bump version
         run: |
-          git config --global user.name "LockVoid /dev/null"
-          git config --global user.email "dev@lockvoid.com"
-          git add packages/villus-cachebay/package.json
-          git commit -m "Bump version to $(node -p "require('./packages/villus-cachebay/package.json').version")"
+          BUMP="${{ github.event.inputs.bump }}"
+
+          bin/bump $BUMP
+
+      - name: Create tag
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          git tag "v$VERSION"
+
+      - name: Push commit and tag
+        run: |
           git push
+          git push --tags
+
         working-directory: .
 
       - name: Publish to npm

@@ -7,9 +7,13 @@ settings:
 importers:
 
   .:
+    dependencies:
+      glob:
+        specifier: ^11.0.3
+        version: 11.0.3
     devDependencies:
       semver:
-        specifier: ^7.7.1
+        specifier: ^7.7.2
         version: 7.7.2
 
   packages/demo:
