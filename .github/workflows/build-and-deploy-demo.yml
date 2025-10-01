@@ -23,6 +23,8 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
+          # Remove any existing entry and add current host key
+          ssh-keygen -R 64.23.128.16 || true
           ssh-keyscan -H 64.23.128.16 >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
