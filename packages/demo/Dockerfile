@@ -52,8 +52,6 @@ EXPOSE 3000
 ENV NODE_ENV=production
 ENV NITRO_HOST=0.0.0.0
 ENV NITRO_PORT=3000
-ENV GRAPHQL_SERVER_ENDPOINT="https://harrypotter.exp.lockvoid.com/api/graphql"
-ENV GRAPHQL_CLIENT_ENDPOINT="https://harrypotter.exp.lockvoid.com/api/graphql"
 
 # Start the application with database setup
 CMD ["/bin/sh", "-c", "/app/reset-db && node nuxt/server/index.mjs"]
