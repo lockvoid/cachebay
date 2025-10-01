@@ -1,6 +1,6 @@
-service: live
+service: harrypotter
 
-image: ghcr.io/lockvoid/live
+image: ghcr.io/lockvoid/villus-cachebay/demo
 
 servers:
   web:
@@ -8,7 +8,7 @@ servers:
 
 proxy:
   ssl: true
-  host: harrypotterdemo.exp.lockvoid.com
+  host: harrypotter.exp.lockvoid.com
   app_port: 3000
 
 registry:
@@ -23,15 +23,7 @@ env:
   PORT: "3000"
 
 volumes:
-  - "/home/deploy/live/data:/app/data:rw"
+  - "/home/deploy/harrypotter/data:/app/data:rw"
 
 ssh:
   keys: [ ".ssh/id.pem" ]
-
-accessories:
-  cron:
-    image: alpine:latest
-    host: 64.23.128.16
-    cmd: sh -c "echo '0 2 * * * docker exec $$(docker ps -q --filter label=service=live) /app/reset-db.sh' | crontab - && crond -f -l 2"
-    volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"

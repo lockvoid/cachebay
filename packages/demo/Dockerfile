@@ -33,10 +33,10 @@ FROM node:22.13.1-alpine AS production
 WORKDIR /app
 
 # Copy built application
-COPY --from=builder /workspace/packages/demo/.output ./.output
+COPY --from=builder /workspace/packages/demo/.output ./nuxt
 
 # Copy vendor database files as read-only templates
-COPY --from=builder /workspace/packages/demo/vendor ./vendor-template
+COPY --from=builder /workspace/packages/demo/vendor ./vendor
 
 # Copy database management script
 COPY --from=builder /workspace/packages/demo/bin/reset-db.sh /app/reset-db.sh
@@ -45,10 +45,10 @@ RUN chmod +x /app/reset-db.sh
 # Expose the port
 EXPOSE 3000
 
-# Set environment variables 
+# Set environment variables
 ENV NODE_ENV=production
 ENV NITRO_HOST=0.0.0.0
 ENV NITRO_PORT=3000
 
 # Start the application with database setup
-CMD ["/bin/sh", "-c", "/app/reset-db.sh && node .output/server/index.mjs"]
+CMD ["/bin/sh", "-c", "/app/reset-db.sh && node nuxt/server/index.mjs"]
