@@ -1,5 +1,5 @@
 /* src/core/plugin.ts */
- 
+
 import { CombinedError } from "villus";
 
 import { CACHEBAY_KEY, ROOT_ID } from "./constants";
@@ -100,9 +100,14 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
     if (plan.operation === "mutation") {
       const originalUseResult = ctx.useResult;
+
       ctx.useResult = (incoming: OperationResult) => {
-        if (incoming?.error) return originalUseResult(incoming, true);
+        if (incoming?.error) {
+          return originalUseResult(incoming, true);
+        }
+
         documents.normalizeDocument({ document, variables: vars, data: incoming.data });
+
         return originalUseResult({ data: incoming.data, error: null }, true);
       };
       return;
@@ -110,16 +115,37 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
     if (plan.operation === "subscription") {
       const originalUseResult = ctx.useResult;
-      ctx.useResult = (incoming: OperationResult, terminal?: boolean) => {
-        if (incoming?.error) return originalUseResult(incoming, true);
 
-        if (incoming?.data) {
-          documents.normalizeDocument({ document, variables: vars, data: incoming.data });
+      ctx.useResult = (incoming, terminal) => {
+        if (typeof incoming?.subscribe !== 'function') {
+          return originalUseResult(incoming, terminal);
         }
 
-        // Do not force terminal; let the source control it
-        return originalUseResult({ data: incoming.data, error: null }, !!terminal);
+        const interceptor = {
+          subscribe(observer: any) {
+            return incoming.subscribe({
+              next: (frame: any) => {
+                if (frame?.data) {
+                  documents.normalizeDocument({ document, variables: vars, data: frame.data });
+                }
+
+                observer.next(frame);
+              },
+
+              error: (error: any) => {
+                observer.error?.(error);
+              },
+
+              complete: () => {
+                observer.complete?.();
+              }
+            });
+          },
+        };
+
+        return originalUseResult(interceptor as any, terminal);
       };
+
       return;
     }
 

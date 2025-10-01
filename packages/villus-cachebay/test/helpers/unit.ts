@@ -1,4 +1,4 @@
-import { visit, Kind, type DocumentNode } from "graphql";
+import { visit, Kind, type DocumentNode, type SelectionSetNode } from "graphql";
 import gql from "graphql-tag";
 import type { PlanField } from "@/src/compiler";
 import { compilePlan } from "@/src/compiler/compile";
@@ -149,19 +149,35 @@ export const collectConnectionDirectives = (doc: DocumentNode): string[] => {
   return hits;
 };
 
-export const selectionSetHasTypename = (node: any): boolean => {
-  const ss = node?.selectionSet;
-  if (!ss || !Array.isArray(ss.selections)) return false;
-  return ss.selections.some((s: any) => s.kind === Kind.FIELD && s.name?.value === "__typename");
+export const selectionSetHasTypename = (node: { selectionSet?: SelectionSetNode } | null | undefined): boolean => {
+  const selectionSet = node?.selectionSet;
+
+  if (!selectionSet || !Array.isArray(selectionSet.selections)) {
+    return false;
+  }
+
+  return selectionSet.selections.some((selection: any) => {
+    return selection.kind === Kind.FIELD && selection.name?.value === "__typename";
+  });
 };
 
 export const hasTypenames = (doc: DocumentNode): boolean => {
   let ok = true;
+
   visit(doc, {
-    SelectionSet(node) {
-      if (!selectionSetHasTypename({ selectionSet: node })) ok = false;
+    SelectionSet: {
+      enter(node, _key, parent) {
+        if (parent && parent.kind === Kind.OPERATION_DEFINITION) {
+          return;
+        }
+
+        if (!selectionSetHasTypename({ selectionSet: node })) {
+          ok = false;
+        }
+      },
     },
   });
+
   return ok;
 };
 

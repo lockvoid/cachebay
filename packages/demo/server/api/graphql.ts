@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import SchemaBuilder from "@pothos/core";
 import RelayPlugin from "@pothos/plugin-relay";
 import { resolveCursorConnection } from "@pothos/plugin-relay";
-import { createYoga } from "graphql-yoga";
+import { createPubSub, createYoga } from "graphql-yoga";
 import { DatabaseSync } from "node:sqlite";
 import type { ResolveCursorConnectionArgs } from "@pothos/plugin-relay";
 
@@ -22,6 +22,12 @@ const randomDelay = () => {
 
 const db = new DatabaseSync(process.env.NODE_ENV === "production" ? "/app/data/harrypotter.db" : "./vendor/harrypotter.db");
 
+const pubSub = createPubSub();
+
+setInterval(() => {
+  pubSub.publish("hogwartsTimeUpdated", { id: '1', time: new Date().toISOString() });
+}, 1000);
+
 const builder = new SchemaBuilder({
   plugins: [
     RelayPlugin,
@@ -38,6 +44,13 @@ builder.objectType("Spell", {
     light: t.exposeString("light", { nullable: true }),
     imageUrl: t.exposeString("imageUrl", { nullable: true }),
     wikiUrl: t.exposeString("wikiUrl", { nullable: true }),
+  }),
+});
+
+builder.objectType("HogwartsTime", {
+  fields: (t) => ({
+    id: t.exposeID("id"),
+    time: t.exposeString("time"),
   }),
 });
 
@@ -228,10 +241,28 @@ builder.mutationType({
   }),
 });
 
+builder.subscriptionType({
+  fields: (t) => ({
+    hogwartsTimeUpdated: t.field({
+      type: "HogwartsTime",
+
+      subscribe: () => {
+        return pubSub.subscribe("hogwartsTimeUpdated");
+      },
+
+      resolve: (payload) => {
+        return payload;
+      },
+    }),
+  }),
+});
+
 const schema = builder.toSchema();
 
 const yoga = createYoga({
   schema,
+
+  graphqlEndpoint: '/api/graphql',
 
   graphiql: {
     title: "Harry Potter",

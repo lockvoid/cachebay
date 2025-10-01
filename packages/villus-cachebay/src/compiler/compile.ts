@@ -1,4 +1,4 @@
- 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   Kind,
   parse,
@@ -44,7 +44,7 @@ const opRootTypename = (op: OperationDefinitionNode): string => {
 };
 
 /* ────────────────────────────────────────────────────────────────────────── */
-/* Sanitizer: add __typename, strip @connection                              */
+/* Sanitizer: add __typename (except at op root), strip @connection           */
 /* ────────────────────────────────────────────────────────────────────────── */
 
 function ensureTypename(ss: SelectionSetNode): SelectionSetNode {
@@ -56,14 +56,15 @@ function ensureTypename(ss: SelectionSetNode): SelectionSetNode {
   return { ...ss, selections: [...ss.selections, typenameField] };
 }
 
-/** Create a network-safe copy: adds __typename to all selection sets; strips @connection. */
+/** Create a network-safe copy: add __typename to nested selections; strip @connection. */
 function buildNetworkQuery(doc: DocumentNode): DocumentNode {
   return visit(doc, {
+    // IMPORTANT: do NOT add __typename at the operation ROOT.
+    // Subscriptions must select exactly one top-level field and
+    // must not include an introspection field there.
     OperationDefinition: {
       enter(node) {
-        if (node.selectionSet) {
-          return { ...node, selectionSet: ensureTypename(node.selectionSet) };
-        }
+        // Leave the root selection set as-is (no ensureTypename here).
         return node;
       },
     },
@@ -87,7 +88,7 @@ function buildNetworkQuery(doc: DocumentNode): DocumentNode {
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
-/* Public: compilePlan(document)                                            */
+/* Public: compilePlan(document)                                             */
 /* ────────────────────────────────────────────────────────────────────────── */
 
 /**
@@ -112,7 +113,7 @@ export const compilePlan = (
   const document: DocumentNode =
     typeof documentOrStringOrPlan === "string"
       ? parse(documentOrStringOrPlan)
-      : documentOrStringOrPlan as DocumentNode;
+      : (documentOrStringOrPlan as DocumentNode);
 
   const fragmentsByName = indexFragments(document);
 
@@ -128,7 +129,7 @@ export const compilePlan = (
     const root = lowerSelectionSet(operation.selectionSet, rootTypename, fragmentsByName);
     const rootSelectionMap = indexByResponseKey(root);
 
-    // Build network-safe doc (strip @connection, add __typename)
+    // Build network-safe doc (strip @connection; add __typename only in nested selections)
     const networkQuery = buildNetworkQuery(document);
 
     return {
@@ -156,7 +157,7 @@ export const compilePlan = (
         const names = fragmentDefs.map(f => f.name.value).join(", ");
         throw new Error(
           `compilePlan: document contains multiple fragments [${names}]; ` +
-          "pass { fragmentName: \"<one-of>\" }",
+          'pass { fragmentName: "<one-of>" }',
         );
       }
       frag = fragmentDefs.find(f => f.name.value === opts.fragmentName);

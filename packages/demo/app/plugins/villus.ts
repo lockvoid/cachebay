@@ -1,5 +1,39 @@
-import { createClient, fetch as fetchPlugin, dedup as dedupPlugin } from "villus";
+import { createClient, handleSubscriptions, fetch as fetchPlugin, dedup as dedupPlugin } from "villus";
 import { createCache } from "villus-cachebay";
+import * as sse from 'graphql-sse';
+
+const createSubscriptions = (url: string) => {
+  const client = sse.createClient({
+    url,
+  })
+
+  return handleSubscriptions(operation => ({
+    subscribe: (observer) => {
+      const unsubscribe = client.subscribe(
+        {
+          query: operation.query,
+          variables: operation.variables,
+        },
+
+        {
+          next: (value) => {
+            observer.next?.(value);
+          },
+
+          error: (error) => {
+            observer.error?.(error);
+          },
+
+          complete: () => {
+            observer.complete?.();
+          },
+        }
+      )
+
+      return { unsubscribe }
+    },
+  }));
+};
 
 export default defineNuxtPlugin((nuxtApp) => {
   const config = useRuntimeConfig();
@@ -7,7 +41,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   const settings = useSettings();
 
   const cachebay = createCache({
-    //
+    // keys: { ... }, etc
   });
 
   const villus = createClient({
@@ -15,8 +49,13 @@ export default defineNuxtPlugin((nuxtApp) => {
 
     cachePolicy: settings.cachePolicy,
 
-    use: [
+    use: import.meta.server ? [
       cachebay,
+      dedupPlugin(),
+      fetchPlugin(),
+    ] : [
+      cachebay,
+      createSubscriptions(config.public.graphqlClientEndpoint),
       dedupPlugin(),
       fetchPlugin(),
     ],
