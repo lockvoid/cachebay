@@ -34,8 +34,9 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: .
 
-      # - name: Run Linting
-      #   run: pnpm lint
+      - name: Run Linting
+        run: pnpm lint
+        continue-on-error: true
 
       - name: Build Package
         run: pnpm build

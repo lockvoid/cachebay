@@ -7,5 +7,5 @@ export default [
     ],
   },
 
-  ...lockvoidConfig,
+  ...lockvoidConfig({ typescript: true, vue: true, tailwindcss: true }),
 ];

@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils";
-import { createTestClient, createConnectionComponent, createDetailComponent, seedCache, getEdges, getPageInfo, fixtures, operations, delay, tick } from "@/test/helpers";
+import { createTestClient, createConnectionComponent, seedCache, getEdges, getPageInfo, fixtures, operations, delay, tick } from "@/test/helpers";
 
 describe("Optimistic updates", () => {
   it("applies entity patch, commits changes, then reverts to restore original state", async () => {

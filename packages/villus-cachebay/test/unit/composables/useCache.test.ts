@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { defineComponent, h } from "vue";
 import { useCache } from "@/src/composables/useCache";
 import { createCache } from "@/src/core/internals";

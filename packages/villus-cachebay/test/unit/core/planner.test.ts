@@ -74,12 +74,12 @@ describe("planner.getPlan (memo & routing)", () => {
       const src = "fragment X on Y { id }";
 
       const p1 = planner.getPlan(src, { fragmentName: "X" });
-      const p2 = planner.getPlan(src, { fragmentName: "X" });      
+      const p2 = planner.getPlan(src, { fragmentName: "X" });
       const p3 = planner.getPlan(src, { fragmentName: "Z" });
 
       expect(p1).toBe(p2);
       expect(p3).not.toBe(p1);
-      
+
       expect(compileSpy).toHaveBeenCalledTimes(2);
       expect(compileSpy).toHaveBeenNthCalledWith(1, src, { fragmentName: "X" });
       expect(compileSpy).toHaveBeenNthCalledWith(2, src, { fragmentName: "Z" });

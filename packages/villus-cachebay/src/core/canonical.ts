@@ -218,7 +218,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDeps) => {
       return;
     }
 
-    const { hasAfter, hasBefore, isLeader } = detectCursorRole(field, variables);
+    const { hasBefore, isLeader } = detectCursorRole(field, variables);
 
     if (isLeader) {
       // UNCONDITIONAL COLLAPSE to leader slice on network leader fetch
@@ -294,7 +294,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDeps) => {
       return;
     }
 
-    const { hasAfter, hasBefore, isLeader } = detectCursorRole(field, variables);
+    const { hasBefore, isLeader } = detectCursorRole(field, variables);
 
     const meta = writeMeta(canKey, (m) => {
       if (!m.pages.includes(pageKey)) m.pages.push(pageKey);

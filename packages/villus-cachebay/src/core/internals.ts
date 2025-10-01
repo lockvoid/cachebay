@@ -1,7 +1,3 @@
- 
-import type { App } from "vue";
-import type { ClientPlugin } from "villus";
-
 
 import { createInspect } from "../features/inspect";
 import { createSSR } from "../features/ssr";
@@ -13,6 +9,9 @@ import { createOptimistic } from "./optimistic";
 import { createPlanner } from "./planner";
 import { createPlugin, provideCachebay } from "./plugin";
 import { createViews } from "./views";
+import type { CachebayOptions } from "../types";
+import type { ClientPlugin } from "villus";
+import type { App } from "vue";
 
 export type CachebayInstance = ClientPlugin & {
   // SSR
@@ -47,8 +46,6 @@ export type CachebayInstance = ClientPlugin & {
     inspect: ReturnType<typeof createInspect>;
   };
 };
-
-import type { CachebayOptions } from "../types";
 
 export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Core
