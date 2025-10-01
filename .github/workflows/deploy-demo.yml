@@ -54,3 +54,6 @@ jobs:
         run: kamal deploy -c kamal.yml --skip-push
         env:
           DOCKER_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEMO_SERVER_IP: ${{ vars.DEMO_SERVER_IP }}
+          DEMO_GRAPHQL_SERVER_ENDPOINT: ${{ vars.GRAPHQL_SERVER_ENDPOINT }}
+          DEMO_GRAPHQL_CLIENT_ENDPOINT: ${{ vars.GRAPHQL_CLIENT_ENDPOINT }}
