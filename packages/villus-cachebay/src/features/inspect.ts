@@ -1,5 +1,8 @@
-
+import { ROOT_ID } from "../core/constants";
+import { buildConnectionCanonicalKey } from "../core/utils";
 import type { GraphInstance } from "../core/graph";
+
+export type InspectAPI = ReturnType<typeof createInspect>;
 
 type ParentSelector =
   | "@"
@@ -29,6 +32,10 @@ const PAGINATION_ARGS = new Set([
   "cursor",
 ]);
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * Small helpers (allocation-lean)
+ * -------------------------------------------------------------------------- */
+
 const isRootRecord = (id: string): boolean => {
   return id === "@";
 };
@@ -45,14 +52,13 @@ const parentId = (parent?: ParentSelector): string => {
   if (!parent || parent === "Query" || parent === "@") {
     return "";
   }
-
   if (typeof parent === "string") {
     return parent;
   }
-
   return `${parent.__typename}:${String(parent.id)}`;
 };
 
+/** Root pages: '@.<field>(...)' → last '.' before '(' is exactly index 1. */
 const isPageUnderParent = (pageKey: string, p?: ParentSelector): boolean => {
   if (!isPageRecord(pageKey)) {
     return false;
@@ -96,86 +102,29 @@ const argsOf = (pageKey: string): string => {
   return pageKey.slice(i + 1, j).trim();
 };
 
-const canonicalizeArgs = (raw: string): string => {
+/** Parse filters from raw '(...)' JSON; drop pagination args. */
+const parseFilters = (raw: string): Record<string, any> => {
   if (!raw) {
-    return "";
+    return {};
   }
 
-  const s = raw.trim();
+  try {
+    const src = JSON.parse(raw) as Record<string, any>;
+    const out: Record<string, any> = {};
 
-  if (s.startsWith("{") && s.endsWith("}")) {
-    try {
-      const src = JSON.parse(s) as Record<string, unknown>;
-
-      const keys = Object.keys(src)
-        .filter((k) => !PAGINATION_ARGS.has(k))
-        .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-
-      if (keys.length === 0) {
-        return "";
+    const keys = Object.keys(src);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      if (!PAGINATION_ARGS.has(k)) {
+        out[k] = src[k];
       }
-
-      const out: Record<string, unknown> = {};
-      for (let i = 0; i < keys.length; i++) {
-        const k = keys[i];
-        out[k] = (src as any)[k];
-      }
-
-      return JSON.stringify(out);
-    } catch {
-      // Fall through to string path.
-    }
-  }
-
-  const parts = s.split(",").map((x) => x.trim()).filter(Boolean);
-  if (parts.length === 0) {
-    return "";
-  }
-
-  const kept: string[] = [];
-
-  for (let i = 0; i < parts.length; i++) {
-    const p = parts[i].replace(/^[{]+|[}]+$/g, "");
-    const c = p.indexOf(":");
-    const key = (c === -1 ? p : p.slice(0, c)).trim();
-
-    if (PAGINATION_ARGS.has(key)) {
-      continue;
     }
 
-    kept.push(p);
+    return out;
+  } catch {
+    // Non-JSON args are ignored for inspection; return empty to be safe.
+    return {};
   }
-
-  if (kept.length === 0) {
-    return "";
-  }
-
-  kept.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  return "{" + kept.join(",") + "}";
-};
-
-const canonicalOfPageKey = (pageKey: string): string => {
-  const i = pageKey.indexOf("(");
-  if (i < 0) {
-    return pageKey;
-  }
-
-  const j = pageKey.lastIndexOf(")");
-  if (j <= i) {
-    return pageKey;
-  }
-
-  const prefix = pageKey.slice(0, i + 1);
-  const canon = canonicalizeArgs(pageKey.slice(i + 1, j));
-  return prefix + canon + ")";
-};
-
-const pageOfEdge = (edgeKey: string): string | null => {
-  const i = edgeKey.indexOf(".edges.");
-  if (i < 0) {
-    return null;
-  }
-  return edgeKey.slice(0, i);
 };
 
 const unique = <T,>(xs: T[]): T[] => {
@@ -185,17 +134,15 @@ const unique = <T,>(xs: T[]): T[] => {
   return Array.from(new Set(xs));
 };
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * Public API
+ * -------------------------------------------------------------------------- */
+
 /**
- * Create inspect helpers over the graph snapshot.
- * All functions are pure views and do not mutate the graph.
+ * Return a record snapshot by id (raw, not materialized).
+ * @param id Record id.
  */
 export const createInspect = ({ graph }: { graph: GraphInstance }) => {
-
-  /**
-   * Return a record snapshot by id.
-   * @param id Record id.
-   * @param opts.materialized When true, returns a live proxy bound to graph.
-   */
   const record = (id: string): any => {
     return graph.getRecord(id);
   };
@@ -225,12 +172,12 @@ export const createInspect = ({ graph }: { graph: GraphInstance }) => {
   };
 
   /**
-   * List connection page record ids that match the filter.
-   * If no parent is provided, matches pages under any parent (root + entities).
+   * List canonical @connection keys for pages that match the filter.
+   * Pagination args are removed; remaining args become the connection filters.
    */
-  const connectionPageKeys = (opts: ConnectionFilter = {}): string[] => {
+  const connectionKeys = (opts: ConnectionFilter = {}): string[] => {
     const all = graph.keys();
-    const out: string[] = [];
+    const results: string[] = [];
 
     const wantField = opts.key;
     const testArgs = opts.argsFn;
@@ -239,11 +186,11 @@ export const createInspect = ({ graph }: { graph: GraphInstance }) => {
     for (let i = 0; i < all.length; i++) {
       const k = all[i];
 
-      if (hasParentFilter) {
-        if (!isPageUnderParent(k, opts.parent)) {
-          continue;
-        }
-      } else if (!isPageRecord(k)) {
+      if (!isPageRecord(k)) {
+        continue;
+      }
+
+      if (hasParentFilter && !isPageUnderParent(k, opts.parent)) {
         continue;
       }
 
@@ -261,63 +208,34 @@ export const createInspect = ({ graph }: { graph: GraphInstance }) => {
         }
       }
 
-      out.push(k);
+      // Convert page key → canonical connection key using the shared builder.
+      const paren = k.indexOf("(");
+      const end = paren >= 0 ? paren : k.length;
+      const lastDot = k.lastIndexOf(".", end);
+
+      const hasParent = lastDot > 1;
+      const parentStr = hasParent ? k.slice(2, lastDot) : ROOT_ID;
+      const fieldName = k.slice(lastDot + 1, end);
+
+      const filters = parseFilters(argsOf(k));
+      const filterKeys = Object.keys(filters);
+
+      const canonical = buildConnectionCanonicalKey(
+        { fieldName, buildArgs: (v: any) => v || {}, connectionFilters: filterKeys } as any,
+        parentStr,
+        filters,
+      );
+
+      results.push(canonical);
     }
 
-    return out;
-  };
-
-  /**
-   * List canonical connection keys (pagination args removed) for pages that match the filter.
-   * Keys are deduplicated.
-   */
-  const connectionKeys = (opts: ConnectionFilter = {}): string[] => {
-    const pages = connectionPageKeys(opts);
-    if (pages.length === 0) {
-      return pages;
-    }
-
-    const canon: string[] = new Array(pages.length);
-    for (let i = 0; i < pages.length; i++) {
-      canon[i] = canonicalOfPageKey(pages[i]);
-    }
-
-    return unique(canon);
-  };
-
-  /**
-   * List edge record ids that belong to pages matching the filter.
-   */
-  const connectionEdgeKeys = (opts: ConnectionFilter = {}): string[] => {
-    const pages = connectionPageKeys(opts);
-    if (pages.length === 0) {
-      return [];
-    }
-
-    const pageSet = new Set<string>(pages);
-
-    const all = graph.keys();
-    const out: string[] = [];
-
-    for (let i = 0; i < all.length; i++) {
-      const k = all[i];
-
-      if (!isEdgeRecord(k)) {
-        continue;
-      }
-
-      const page = pageOfEdge(k);
-      if (page && pageSet.has(page)) {
-        out.push(k);
-      }
-    }
-
-    return out;
+    return unique(results);
   };
 
   /** Return the graph creation options (keys, interfaces). */
   const config = () => {
     const snap = (graph as any).inspect?.();
+
     return snap?.options ?? { keys: {}, interfaces: {} };
   };
 
@@ -325,10 +243,6 @@ export const createInspect = ({ graph }: { graph: GraphInstance }) => {
     record,
     entityKeys,
     connectionKeys,
-    connectionPageKeys,
-    connectionEdgeKeys,
     config,
   };
 };
-
-export type InspectAPI = ReturnType<typeof createInspect>;
