@@ -43,7 +43,8 @@ jobs:
       - name: Build and push container image
         uses: docker/build-push-action@v5
         with:
-          context: ./packages/demo
+          context: .
+          file: ./packages/demo/Dockerfile
           push: true
           tags: |
             ghcr.io/${{ github.repository }}/demo:latest
