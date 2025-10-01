@@ -30,7 +30,7 @@ A tiny (11KB gzip), instance-scoped cache layer for **Villus** that gives you:
 - **[Relay connections](./docs/RELAY_CONNECTIONS.md)** — `@connection` directive, append/prepend/replace, de-dup, policy matrix
 - **[Optimistic updates](./docs/OPTIMISTIC_UPDATES.md)** — layering, rollback, entity ops, connection ops (`addNode` / `removeNode` / `patch`)
 - **[Fragments](./docs/FRAGMENTS.md)** — `identify()`, `readFragment()`, `writeFragment()`
-- **[Composables](./docs/COMPOSABLES.md)** — `useCache()`, `useFragment()`, `useFragments()`
+- **[Composables](./docs/COMPOSABLES.md)** — `useCache()`, `useFragment()`
 - **[SSR](./docs/SSR.md)** — dehydrate/hydrate, one-time cache render, Suspense notes
 
 ---
