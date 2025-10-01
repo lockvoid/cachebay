@@ -8,6 +8,8 @@
 
 **Blazing-fast normalized cache x Relay-style connections for Villus.**
 
+<img width="100" height="100" alt="Cachebay" src="https://pub-464e6b9480014239a02034726cf0073c.r2.dev/cachebay.png">
+
 A tiny (20KB gzip), instance-scoped cache layer for **Villus** that gives you:
 
 - **Small & focused APIs.** Fragments, optimistic edits, and Relay connections — without ceremony.
@@ -20,8 +22,6 @@ A tiny (20KB gzip), instance-scoped cache layer for **Villus** that gives you:
 - **Subscriptions** — plain frames get normalized and stream as non-terminating updates.
 - **Suspense** — first-class support.
 - **Compiller mode (alpha)** — boost performance by pre-compiling fragments and queries.
-
-![Cachebay](https://pub-464e6b9480014239a02034726cf0073c.r2.dev/cachebay.jpg)
 
 ---
 
