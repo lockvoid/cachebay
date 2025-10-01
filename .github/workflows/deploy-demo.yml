@@ -1,4 +1,4 @@
-name: Build and Deploy Demo
+name: Deploy Demo
 
 on:
   push:
@@ -51,7 +51,7 @@ jobs:
             ghcr.io/${{ github.repository }}/demo:${{ github.sha }}
 
       - name: 1Deploy application with Kamal
-        run: kamal proxy reboot -c kamal.yml
+        run: yes | kamal proxy reboot -c kamal.yml
         env:
           DOCKER_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

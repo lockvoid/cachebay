@@ -26,5 +26,5 @@ volumes:
   - "/home/deploy/harrypotter/data:/app/data:rw"
 
 ssh:
-  user: deploy
+  user: root
   keys: [ "~/.ssh/id_rsa" ]
