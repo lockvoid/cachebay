@@ -34,7 +34,7 @@ jobs:
         run: gem install kamal
 
       - name: Authenticate with GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
