@@ -30,6 +30,9 @@ RUN pnpm build
 # Production stage
 FROM node:22.13.1-alpine AS production
 
+# Add service label for Kamal deployment
+LABEL service=harrypotter
+
 WORKDIR /app
 
 # Copy built application
