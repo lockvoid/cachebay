@@ -12,55 +12,22 @@ describe("Inspect", () => {
     inspect = createInspect({ graph });
   });
 
-  describe("keys", () => {
-    it("returns empty array for empty graph", () => {
-      expect(inspect.keys()).toEqual([]);
-    });
-
-    it("lists all record ids including root, entities, pages, and edges", () => {
-      graph.putRecord("@", { id: "@", __typename: "@", 'user({"id":"u1"})': { __ref: "User:u1" } });
-      graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
-      graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1" });
-
-      const connectionPageKey = '@.User:u1.posts({"after":null,"category":"tech","first":1})';
-
-      seedConnectionPage(
-        graph,
-        connectionPageKey,
-        [{ nodeRef: "Post:p1", cursor: "p1" }],
-        { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false },
-        { totalCount: 1 },
-        "PostEdge",
-        "PostConnection",
-      );
-
-      const graphRecordKeys = inspect.keys().sort();
-      expect(graphRecordKeys).toContain("@");
-      expect(graphRecordKeys).toContain("User:u1");
-      expect(graphRecordKeys).toContain("Post:p1");
-      expect(graphRecordKeys).toContain(connectionPageKey);
-
-      const edgeRecordKeys = graphRecordKeys.filter((key) => key.includes(".edges."));
-      expect(edgeRecordKeys.length).toBe(1);
-    });
-  });
-
   describe("entityKeys", () => {
     it("returns empty array for empty graph", () => {
       expect(inspect.entityKeys()).toEqual([]);
     });
 
-    it("filters entity records excluding root, pages, and edges", () => {
+    it("filters entity records excluding pages and edges", () => {
       graph.putRecord("@", { id: "@", __typename: "@" });
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
       graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1" });
       graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "P2" });
 
-      const connectionPageKey = '@.User:u1.posts({"first":1})';
+      const pageKey = '@.User:u1.posts({"first":1})';
 
       seedConnectionPage(
         graph,
-        connectionPageKey,
+        pageKey,
         [{ nodeRef: "Post:p1", cursor: "p1" }],
       );
 
@@ -68,8 +35,8 @@ describe("Inspect", () => {
       expect(entityRecordKeys).toContain("User:u1");
       expect(entityRecordKeys).toContain("Post:p1");
       expect(entityRecordKeys).toContain("Post:p2");
-      expect(entityRecordKeys).not.toContain("@");
-      expect(entityRecordKeys).not.toContain(connectionPageKey);
+      expect(entityRecordKeys.find((key) => key === "@")).toBeUndefined();
+      expect(entityRecordKeys.find((key) => key === pageKey)).toBeUndefined();
       expect(entityRecordKeys.find((key) => key.includes(".edges."))).toBeUndefined();
     });
 
@@ -89,9 +56,9 @@ describe("Inspect", () => {
     });
   });
 
-  describe("pageKeys", () => {
+  describe("connectionPageKeys", () => {
     it("returns empty array for empty graph", () => {
-      expect(inspect.pageKeys()).toEqual([]);
+      expect(inspect.connectionPageKeys()).toEqual([]);
     });
 
     it("filters connection page records with @. prefix", () => {
@@ -102,54 +69,57 @@ describe("Inspect", () => {
       const userPostsPageKey = '@.User:u1.posts({"first":1})';
       const techPostsPageKey = '@.posts({"category":"tech"})';
 
-      seedConnectionPage(
-        graph,
-        userPostsPageKey,
-        [{ nodeRef: "Post:p1" }],
-      );
-      seedConnectionPage(
-        graph,
-        techPostsPageKey,
-        [{ nodeRef: "Post:p1" }],
-      );
+      seedConnectionPage(graph, userPostsPageKey, [{ nodeRef: "Post:p1" }]);
+      seedConnectionPage(graph, techPostsPageKey, [{ nodeRef: "Post:p1" }]);
 
-      const connectionPageKeys = inspect.pageKeys().sort();
-      expect(connectionPageKeys).toEqual([userPostsPageKey, techPostsPageKey].sort());
-      expect(connectionPageKeys).not.toContain("@");
-      expect(connectionPageKeys).not.toContain("User:u1");
-      expect(connectionPageKeys).not.toContain("Post:p1");
+      const pageKeys = inspect.connectionPageKeys().sort();
+      expect(pageKeys).toEqual([userPostsPageKey, techPostsPageKey].sort());
+      expect(pageKeys).not.toContain("@");
+      expect(pageKeys).not.toContain("User:u1");
+      expect(pageKeys).not.toContain("Post:p1");
+    });
+
+    it("filters by parent and key", () => {
+      const u1PostsA = '@.User:u1.posts({"first":2})';
+      const u1PostsB = '@.User:u1.posts({"after":"p2","first":2})';
+      const u2Posts = '@.User:u2.posts({"first":1})';
+      const rootTech = '@.posts({"category":"tech","first":1})';
+
+      seedConnectionPage(graph, u1PostsA, [{ nodeRef: "Post:p1" }]);
+      seedConnectionPage(graph, u1PostsB, [{ nodeRef: "Post:p2" }]);
+      seedConnectionPage(graph, u2Posts, [{ nodeRef: "Post:p3" }]);
+      seedConnectionPage(graph, rootTech, [{ nodeRef: "Post:p4" }]);
+
+      const u1PostsPages = inspect.connectionPageKeys({ parent: { __typename: "User", id: "u1" }, key: "posts" }).sort();
+      expect(u1PostsPages).toEqual([u1PostsA, u1PostsB].sort());
+
+      const rootPostsPages = inspect.connectionPageKeys({ parent: "Query", key: "posts" });
+      expect(rootPostsPages).toEqual([rootTech]);
+    });
+
+    it("applies argsFn predicate when provided", () => {
+      const tech = '@.posts({"category":"tech","first":1})';
+      const life = '@.posts({"category":"lifestyle","first":1})';
+
+      seedConnectionPage(graph, tech, [{ nodeRef: "Post:t1" }]);
+      seedConnectionPage(graph, life, [{ nodeRef: "Post:l1" }]);
+
+      const onlyTech = inspect.connectionPageKeys({
+        parent: "Query",
+        key: "posts",
+        argsFn: (raw) => raw.includes('"category":"tech"'),
+      });
+
+      expect(onlyTech).toEqual([tech]);
     });
   });
 
-  describe("edgeKeys", () => {
+  describe("connectionEdgeKeys", () => {
     it("returns empty array for empty graph", () => {
-      expect(inspect.edgeKeys()).toEqual([]);
+      expect(inspect.connectionEdgeKeys()).toEqual([]);
     });
 
-    it("filters all edge records when no pageKey provided", () => {
-      const userPostsPageKey = '@.User:u1.posts({"first":1})';
-      const techPostsPageKey = '@.posts({"category":"tech"})';
-
-      seedConnectionPage(
-        graph,
-        userPostsPageKey,
-        [
-          { nodeRef: "Post:p1", cursor: "p1" },
-          { nodeRef: "Post:p2", cursor: "p2" },
-        ],
-      );
-      seedConnectionPage(
-        graph,
-        techPostsPageKey,
-        [{ nodeRef: "Post:p3", cursor: "p3" }],
-      );
-
-      const edgeKeys = inspect.edgeKeys();
-      expect(edgeKeys.length).toBe(3);
-      expect(edgeKeys.every(key => key.includes(".edges."))).toBe(true);
-    });
-
-    it("filters edge records for specific page when pageKey provided", () => {
+    it("filters all edge records when no filter provided", () => {
       const userPostsPageKey = '@.User:u1.posts({"first":2})';
       const techPostsPageKey = '@.posts({"category":"tech"})';
 
@@ -167,24 +137,91 @@ describe("Inspect", () => {
         [{ nodeRef: "Post:p3", cursor: "p3" }],
       );
 
-      const userPostsEdgeKeys = inspect.edgeKeys(userPostsPageKey);
-      expect(userPostsEdgeKeys.length).toBe(2);
-      expect(userPostsEdgeKeys.every(key => key.startsWith(`${userPostsPageKey}.edges.`))).toBe(true);
-
-      const techPostsEdgeKeys = inspect.edgeKeys(techPostsPageKey);
-      expect(techPostsEdgeKeys.length).toBe(1);
-      expect(techPostsEdgeKeys[0].startsWith(`${techPostsPageKey}.edges.`)).toBe(true);
+      const edgeKeys = inspect.connectionEdgeKeys();
+      expect(edgeKeys.length).toBe(3);
+      expect(edgeKeys.every(key => key.includes(".edges."))).toBe(true);
     });
 
-    it("returns empty array for non-existent pageKey", () => {
+    it("filters edge records for specific parent/key", () => {
+      const u1 = '@.User:u1.posts({"first":2})';
+      const u2 = '@.User:u2.posts({"first":1})';
+
+      seedConnectionPage(graph, u1, [
+        { nodeRef: "Post:p1", cursor: "p1" },
+        { nodeRef: "Post:p2", cursor: "p2" },
+      ]);
+      seedConnectionPage(graph, u2, [{ nodeRef: "Post:p3", cursor: "p3" }]);
+
+      const u1Edges = inspect.connectionEdgeKeys({ parent: { __typename: "User", id: "u1" }, key: "posts" });
+      expect(u1Edges.length).toBe(2);
+      expect(u1Edges.every(key => key.startsWith(`${u1}.edges.`))).toBe(true);
+
+      const u2Edges = inspect.connectionEdgeKeys({ parent: { __typename: "User", id: "u2" }, key: "posts" });
+      expect(u2Edges.length).toBe(1);
+      expect(u2Edges[0].startsWith(`${u2}.edges.`)).toBe(true);
+    });
+
+    it("returns empty array when there are no pages matching the filter", () => {
       seedConnectionPage(
         graph,
         '@.User:u1.posts({"first":1})',
         [{ nodeRef: "Post:p1" }],
       );
 
-      const nonExistentPageEdgeKeys = inspect.edgeKeys("@.nonexistent.posts({})");
-      expect(nonExistentPageEdgeKeys).toEqual([]);
+      const none = inspect.connectionEdgeKeys({ parent: { __typename: "User", id: "nope" }, key: "posts" });
+      expect(none).toEqual([]);
+    });
+  });
+
+  describe("connectionKeys", () => {
+    it("returns empty array for empty graph", () => {
+      expect(inspect.connectionKeys()).toEqual([]);
+    });
+
+    it("returns canonical keys for root connection ignoring pagination args", () => {
+      const pageA = '@.posts({"category":"tech","first":1})';
+      const pageB = '@.posts({"category":"tech","after":"p1","first":1})';
+      const pageC = '@.posts({"category":"lifestyle","first":1})';
+
+      seedConnectionPage(graph, pageA, [{ nodeRef: "Post:t1" }]);
+      seedConnectionPage(graph, pageB, [{ nodeRef: "Post:t2" }]);
+      seedConnectionPage(graph, pageC, [{ nodeRef: "Post:l1" }]);
+
+      const keys = inspect.connectionKeys({ parent: "Query", key: "posts" }).sort();
+
+      expect(keys).toEqual(['@.posts({"category":"lifestyle"})', '@.posts({"category":"tech"})'].sort());
+    });
+
+    it("scopes canonical keys by parent entity", () => {
+      const u1A = '@.User:u1.posts({"category":"tech","first":1})';
+      const u1B = '@.User:u1.posts({"category":"tech","after":"p2","first":1})';
+      const u2A = '@.User:u2.posts({"category":"tech","first":1})';
+
+      seedConnectionPage(graph, u1A, [{ nodeRef: "Post:u1t1" }]);
+      seedConnectionPage(graph, u1B, [{ nodeRef: "Post:u1t2" }]);
+      seedConnectionPage(graph, u2A, [{ nodeRef: "Post:u2t1" }]);
+
+      const user1_postKeys = inspect.connectionKeys({ parent: { __typename: "User", id: "u1" }, key: "posts" });
+      const user2_postKeys = inspect.connectionKeys({ parent: { __typename: "User", id: "u2" }, key: "posts" });
+
+      expect(user1_postKeys).toEqual(['@.User:u1.posts({"category":"tech"})']);
+      expect(user2_postKeys).toEqual(['@.User:u2.posts({"category":"tech"})']);
+    });
+
+    it("can be narrowed by argsFn predicate", () => {
+      const tech = '@.posts({"category":"tech","first":1})';
+      const life = '@.posts({"category":"lifestyle","first":1})';
+
+      seedConnectionPage(graph, tech, [{ nodeRef: "Post:t1" }]);
+      seedConnectionPage(graph, life, [{ nodeRef: "Post:l1" }]);
+
+      const onlyTech = inspect.connectionKeys({
+        parent: "Query",
+        key: "posts",
+        argsFn: (raw) => raw.includes('"category":"tech"'),
+      });
+
+      expect(onlyTech).toEqual(['@.posts({"category":"tech"})']);
     });
   });
 
@@ -199,16 +236,6 @@ describe("Inspect", () => {
       const rawUserRecord = inspect.record("User:u1");
       expect(rawUserRecord).toEqual({ __typename: "User", id: "u1", email: "a@example.com" });
       expect(rawUserRecord.email).toBe("a@example.com");
-    });
-
-    it("returns materialized proxy when materialized: true", () => {
-      graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
-
-      const userRecord = inspect.record("User:u1", { materialized: true });
-      expect(userRecord.email).toBe("a@example.com");
-
-      graph.putRecord("User:u1", { email: "a+1@example.com" });
-      expect(userRecord.email).toBe("a+1@example.com");
     });
 
     it("reflects current graph state", () => {
@@ -226,13 +253,13 @@ describe("Inspect", () => {
 
   describe("config", () => {
     it("exposes keys and interfaces used by the graph", () => {
-      const config = inspect.config();
+      const cfg = inspect.config();
 
-      expect(config).toBeTruthy();
-      expect(config).toHaveProperty("keys");
-      expect(config).toHaveProperty("interfaces");
-      expect(typeof config.keys).toBe("object");
-      expect(typeof config.interfaces).toBe("object");
+      expect(cfg).toBeTruthy();
+      expect(cfg).toHaveProperty("keys");
+      expect(cfg).toHaveProperty("interfaces");
+      expect(typeof cfg.keys).toBe("object");
+      expect(typeof cfg.interfaces).toBe("object");
     });
   });
 });
