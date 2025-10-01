@@ -10,10 +10,7 @@
     "target": "ES2022",
     "paths": {
       "@/*": ["*"]
-    },
-    "types": [
-      "vitest/globals"
-    ]
+    }
   },
   "include": [
     "src/**/*"
