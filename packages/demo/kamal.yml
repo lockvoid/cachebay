@@ -4,7 +4,7 @@ image: ghcr.io/lockvoid/villus-cachebay/demo
 
 servers:
   web:
-    - <%= ENV['DEMO_SERVER_IP'] %> 
+    - <%= ENV['SERVER_IP'] %> 
 
 proxy:
   ssl: true
@@ -23,8 +23,8 @@ builder:
 
 env:
   PORT: "3000"
-  GRAPHQL_SERVER_ENDPOINT: "<%= ENV['DEMO_GRAPHQL_SERVER_ENDPOINT'] %>"
-  GRAPHQL_CLIENT_ENDPOINT: "<%= ENV['DEMO_GRAPHQL_CLIENT_ENDPOINT'] %>"
+  GRAPHQL_SERVER_ENDPOINT: "<%= ENV['GRAPHQL_SERVER_ENDPOINT'] %>"
+  GRAPHQL_CLIENT_ENDPOINT: "<%= ENV['GRAPHQL_CLIENT_ENDPOINT'] %>"
 
 volumes:
   - "/home/deploy/harrypotter/data:/app/data:rw"
