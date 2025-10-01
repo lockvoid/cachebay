@@ -29,5 +29,5 @@ files.forEach(pkgPath => {
 
   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 
-  console.log(`✅ Bumped ${pkg.name}: ${prevVersion} → ${nextVersion}`);
+  console.log(`Bumped ${pkg.name}: ${prevVersion} → ${nextVersion}`);
 });

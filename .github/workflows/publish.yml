@@ -54,9 +54,7 @@ jobs:
 
       - name: Bump version
         run: |
-          BUMP="${{ github.event.inputs.bump }}"
-
-          bin/bump $BUMP
+          bin/bump ${{ github.event.inputs.bump }}
 
       - name: Create tag
         run: |

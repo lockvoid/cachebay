@@ -6,9 +6,9 @@
 [![Bundlephobia](https://img.shields.io/bundlephobia/minzip/@lockvoid/villus-cachebay)](https://bundlephobia.com/package/@lockvoid/villus-cachebay)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Blazing-fast normalized cache x Relay-style connections for Villus.**
-
 <img width="100" height="100" alt="Cachebay" src="https://pub-464e6b9480014239a02034726cf0073c.r2.dev/cachebay.png">
+
+**Blazing-fast normalized cache x Relay-style connections for Villus.**
 
 A tiny (20KB gzip), instance-scoped cache layer for **Villus** that gives you:
 
