@@ -1,5 +1,11 @@
 # Cachebay for Villus
 
+[![CI](https://github.com/lockvoid/villus-cachebay/actions/workflows/test.yml/badge.svg)](https://github.com/lockvoid/villus-cachebay/actions/workflows/test.yml)
+[![npm version](https://badge.fury.io/js/@lockvoid%2Fvillus-cachebay.svg)](https://badge.fury.io/js/@lockvoid%2Fvillus-cachebay)
+[![Coverage](https://codecov.io/gh/lockvoid/villus-cachebay/branch/main/graph/badge.svg)](https://codecov.io/gh/lockvoid/villus-cachebay)
+[![Bundlephobia](https://img.shields.io/bundlephobia/minzip/@lockvoid/villus-cachebay)](https://bundlephobia.com/package/@lockvoid/villus-cachebay)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 **Blazing-fast normalized cache x Relay-style connections for Villus.**
 
 A tiny (20KB gzip), instance-scoped cache layer for **Villus** that gives you:
