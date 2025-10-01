@@ -51,6 +51,6 @@ jobs:
             ghcr.io/${{ github.repository }}/demo:${{ github.sha }}
 
       - name: Deploy application with Kamal
-        run: kamal deploy --skip-push --config kamal.yml
+        run: kamal deploy -c kamal.yml --skip-push
         env:
           DOCKER_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
