@@ -7,7 +7,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsdown",
     "coverage": "vitest --run --coverage",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
@@ -30,6 +30,7 @@
     "graphql-tag": "^2.12.6",
     "happy-dom": "^18.0.1",
     "tailwindcss": "^4.1.13",
+    "tsdown": "^0.15.6",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.41.0",
     "villus": "^3.5.2",
@@ -38,6 +39,7 @@
     "vue-router": "^4.5.1"
   },
   "peerDependencies": {
+    "graphql": "^16.11.0",
     "villus": "^3.5.2",
     "vue": "^3.5.18"
   },

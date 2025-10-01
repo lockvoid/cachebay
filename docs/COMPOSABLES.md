@@ -4,11 +4,11 @@ Cachebay ships a small set of Vue composables that sit on top of the normalized 
 
 ```ts
 import { createApp } from 'vue'
-import { createCachebay } from 'villus-cachebay'
+import { createCache } from 'villus-cachebay'
 
 const app = createApp(App)
 
-const cachebay = createCachebay()
+const cachebay = createCache()
 
 app.use(cachebay) // <-- provides composables
 app.mount('#app')

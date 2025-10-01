@@ -1,7 +1,7 @@
 import { CACHEBAY_KEY } from "@/src/core/constants";
 import { createCache } from "@/src/core/internals";
 
-describe("createCachebay", () => {
+describe("createCache", () => {
   it("exposes public apis", () => {
     const cache = createCache();
 

@@ -29,7 +29,7 @@ identify({ __typename: 'User', id: 'alice123' }) // → "User:alice123"
 identify({ __typename: 'Comment', uuid: 'comment-xyz' }) // → "Comment:comment-xyz" (if uuid is configured as key)
 ```
 
-If you configured type keys in `createCachebay({ keys: { ... } })`, those rules are used first.
+If you configured type keys in `createCache({ keys: { ... } })`, those rules are used first.
 
 ---
 ## Read Fragment
@@ -165,9 +165,9 @@ writeFragment({
 Customize identity and enable interface-style addressing at **cache creation**:
 
 ```ts
-import { createCachebay } from 'villus-cachebay'
+import { createCache } from 'villus-cachebay'
 
-const cache = createCachebay({
+const cache = createCache({
 
   keys: {
     User: (user) => user.id ?? null,
