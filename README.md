@@ -10,7 +10,7 @@
 
 **Blazing-fast normalized cache x Relay-style connections for Villus.**
 
-A tiny (20KB gzip), instance-scoped cache layer for **Villus** that gives you:
+A tiny (10KB gzip), instance-scoped cache layer for **Villus** that gives you:
 
 - **Small & focused APIs.** Fragments, optimistic edits, and Relay connections — without ceremony.
 - **Fast rendering.** Microtask-batched updates; stable Relay views that don't churn arrays and minimize re-renders.

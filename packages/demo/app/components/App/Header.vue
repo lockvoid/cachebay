@@ -7,7 +7,7 @@
 <template>
   <div class="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white p-4">
     <NuxtLink to="/" class="z-10 flex-shrink-0">
-      <AppLogo />123
+      <AppLogo />
     </NuxtLink>
 
     <div class="absolute left-1/2 hidden w-full max-w-md -translate-x-1/2 transform md:block">
