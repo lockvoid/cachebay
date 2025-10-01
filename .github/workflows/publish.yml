@@ -54,8 +54,9 @@ jobs:
         run: pnpm test
 
       - name: Bump version
+        working-directory: .
         run: |
-          ../../bin/bump ${{ github.event.inputs.version_type }}
+          pnpm bump ${{ github.event.inputs.version_type }}
 
       - name: Create tag
         run: |

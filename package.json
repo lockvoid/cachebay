@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "license": "MIT",
   "author": "LockVoid",
+  "scripts": {
+    "bump": "./bin/bump"
+  },
   "workspaces": [
     "packages/*"
   ],
