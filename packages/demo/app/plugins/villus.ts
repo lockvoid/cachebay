@@ -13,7 +13,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   const villus = createClient({
     url: import.meta.server ? config.public.graphqlServerEndpoint : config.public.graphqlClientEndpoint,
 
-    cachePolicy: settings.cachePwolicy,
+    cachePolicy: settings.cachePolicy,
 
     use: [
       cachebay,

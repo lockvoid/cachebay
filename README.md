@@ -27,11 +27,11 @@ A tiny (20KB gzip), instance-scoped cache layer for **Villus** that gives you:
 
 ## Documentation
 
-- 👉 **[Relay connections](./docs/RELAY_CONNECTIONS.md)** — `@connection` directive, append/prepend/replace, de-dup, policy matrix
-- 👉 **[Optimistic updates](./docs/OPTIMISTIC_UPDATES.md)** — layering, rollback, entity ops, connection ops (`addNode` / `removeNode` / `patch`)
-- 👉 **[Fragments](./docs/FRAGMENTS.md)** — `identify()`, `readFragment()`, `writeFragment()`
-- 👉 **[Composables](./docs/COMPOSABLES.md)** — `useCache()`, `useFragment()`, `useFragments()`
-- 👉 **[SSR](./docs/SSR.md)** — dehydrate/hydrate, one-time cache render, Suspense notes
+- **[Relay connections](./docs/RELAY_CONNECTIONS.md)** — `@connection` directive, append/prepend/replace, de-dup, policy matrix
+- **[Optimistic updates](./docs/OPTIMISTIC_UPDATES.md)** — layering, rollback, entity ops, connection ops (`addNode` / `removeNode` / `patch`)
+- **[Fragments](./docs/FRAGMENTS.md)** — `identify()`, `readFragment()`, `writeFragment()`
+- **[Composables](./docs/COMPOSABLES.md)** — `useCache()`, `useFragment()`, `useFragments()`
+- **[SSR](./docs/SSR.md)** — dehydrate/hydrate, one-time cache render, Suspense notes
 
 ---
 
@@ -43,7 +43,9 @@ A quick architectural overview of how Cachebay works — see **[Keynotes](./docs
 
 ## Demo app
 
-👉 **[Nuxt 4 demo](./demo)**
+**[Nuxt 4 Demo App ϟ](./demo)**
+
+or try live [https://harrypotter.exp.lockvoid.com/](https://harrypotter.exp.lockvoid.com/)
 
 ---
 
