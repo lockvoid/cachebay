@@ -51,19 +51,16 @@ jobs:
       - name: Bump version
         run: |
           bin/bump ${{ github.event.inputs.version_type }}
-        working-directory: .
 
       - name: Create tag
         run: |
           VERSION=$(node -p "require('./package.json').version")
           git tag "v$VERSION"
-        working-directory: .
 
       - name: Push commit and tag
         run: |
           git push
           git push --tags
-        working-directory: .
 
       - name: Publish to npm
         run: |
