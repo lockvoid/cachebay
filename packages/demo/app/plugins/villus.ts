@@ -10,6 +10,8 @@ export default defineNuxtPlugin((nuxtApp) => {
     //
   });
 
+  console.log("Cachebay initialized", config.public);
+
   const villus = createClient({
     url: import.meta.server ? config.graphqlServerEndpoint : config.public.graphqlClientEndpoint,
 

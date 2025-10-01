@@ -58,6 +58,15 @@ jobs:
         run: |
           pnpm bump ${{ github.event.inputs.version_type }}
 
+      - name: Commit all bump changes
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+
+          git config user.name "LockVoid /dev/null"
+          git config user.email "dev@lockvoid.com"
+          git add .
+          git commit -m "$VERSION"
+
       - name: Create tag
         run: |
           VERSION=$(node -p "require('./package.json').version")
