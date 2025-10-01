@@ -46,8 +46,8 @@ jobs:
           context: ./packages/demo
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}/demo:latest
-            ${{ env.REGISTRY }}/${{ github.repository }}/demo:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/demo:latest
+            ghcr.io/${{ github.repository }}/demo:${{ github.sha }}
 
       - name: Deploy application with Kamal
         run: kamal deploy
