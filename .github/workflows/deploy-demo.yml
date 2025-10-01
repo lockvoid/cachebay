@@ -7,9 +7,11 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: packages/demo
+
     permissions:
       contents: read
       packages: write
@@ -55,5 +57,5 @@ jobs:
         env:
           DOCKER_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SERVER_IP: ${{ vars.DEMO_SERVER_IP }}
-          GRAPHQL_SERVER_ENDPOINT: ${{ vars.DEMO_GRAPHQL_SERVER_ENDPOINT }}
-          GRAPHQL_CLIENT_ENDPOINT: ${{ vars.DEMO_GRAPHQL_CLIENT_ENDPOINT }}
+          NUXT_GRAPHQL_SERVER_ENDPOINT: ${{ vars.DEMO_NUXT_GRAPHQL_SERVER_ENDPOINT }}
+          NUXT_PUBLIC_GRAPHQL_CLIENT_ENDPOINT: ${{ vars.DEMO_NUXT_PUBLIC_GRAPHQL_CLIENT_ENDPOINT }}

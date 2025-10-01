@@ -84,10 +84,10 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
-    graphqlServerEndpoint: process.env.GRAPHQL_SERVER_ENDPOINT,
+    graphqlServerEndpoint: '',
 
     public: {
-      graphqlClientEndpoint: process.env.GRAPHQL_CLIENT_ENDPOINT,
+      graphqlClientEndpoint: '',
     },
   },
 });
