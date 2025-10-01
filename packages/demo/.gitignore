@@ -1,4 +1,3 @@
-/.output
 .env.example
 
 ##
@@ -127,6 +126,7 @@ out
 
 # Nuxt.js build / generate output
 .nuxt
+.output
 
 # Gatsby files
 .cache/
