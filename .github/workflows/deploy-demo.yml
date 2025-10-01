@@ -50,6 +50,14 @@ jobs:
             ghcr.io/${{ github.repository }}/demo:latest
             ghcr.io/${{ github.repository }}/demo:${{ github.sha }}
 
+      - name: Debug environment variables
+        run: |
+          echo "GRAPHQL_SERVER_ENDPOINT: $GRAPHQL_SERVER_ENDPOINT"
+          echo "GRAPHQL_CLIENT_ENDPOINT: $GRAPHQL_CLIENT_ENDPOINT"
+        env:
+          GRAPHQL_SERVER_ENDPOINT: ${{ vars.DEMO_GRAPHQL_SERVER_ENDPOINT }}
+          GRAPHQL_CLIENT_ENDPOINT: ${{ vars.DEMO_GRAPHQL_CLIENT_ENDPOINT }}
+
       - name: Deploy application with Kamal
         run: kamal deploy -c kamal.yml --skip-push
         env:
