@@ -6,6 +6,19 @@ export default defineConfig({
     environment: 'happy-dom',
 
     globals: true,
+
+    coverage: {
+      provider: "v8",
+
+      reporter: [
+        "text",
+        "lcov",
+      ],
+
+      include: [
+        "src/**/*",
+      ],
+    },
   },
 
   resolve: {
