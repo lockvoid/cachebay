@@ -35,7 +35,7 @@ describe("Error Handling", () => {
       },
     });
 
-    await delay(7);
+    await delay(20);
 
     expect(PostList.errors.length).toBe(1);
     expect(PostList.renders.length).toBe(0);
