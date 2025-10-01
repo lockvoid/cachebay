@@ -42,8 +42,8 @@ COPY --from=builder /workspace/packages/demo/.output ./nuxt
 COPY --from=builder /workspace/packages/demo/vendor ./vendor
 
 # Copy database management script
-COPY --from=builder /workspace/packages/demo/bin/reset-db.sh /app/reset-db.sh
-RUN chmod +x /app/reset-db.sh
+COPY --from=builder /workspace/packages/demo/bin/reset-db /app/reset-db
+RUN chmod +x /app/reset-db
 
 # Expose the port
 EXPOSE 3000
@@ -54,4 +54,4 @@ ENV NITRO_HOST=0.0.0.0
 ENV NITRO_PORT=3000
 
 # Start the application with database setup
-CMD ["/bin/sh", "-c", "/app/reset-db.sh && node nuxt/server/index.mjs"]
+CMD ["/bin/sh", "-c", "/app/reset-db && node nuxt/server/index.mjs"]
