@@ -1,4 +1,4 @@
- 
+
 
 import { ROOT_ID } from "../core/constants";
 import { buildConnectionCanonicalKey } from "../core/utils";
@@ -380,33 +380,62 @@ export const createOptimistic = ({ graph }: Deps) => {
         applyEntityDelete(layer, recordId);
       },
 
-      connection({ parent, key, filters = {} }) {
-        const parentId = resolveParentId(parent);
-        const canKey = buildConnectionCanonicalKey(
-          { fieldName: key, buildArgs: (v: any) => v || {}, connectionFilters: Object.keys(filters) } as any,
-          parentId,
-          filters,
-        );
+      /**
+         * Build an optimistic connection handle.
+         * Accepts either a spec `{ parent, key, filters? }` or a precomputed canonical key `string`.
+         * When a string is provided, it is used as-is.
+         */
+      connection(input: ConnectionArgs | string) {
+        const canKey =
+          typeof input === "string"
+            ? input
+            : (() => {
+              const parentId = resolveParentId(input.parent);
+              const filters = input.filters || {};
+
+              return buildConnectionCanonicalKey(
+                {
+                  fieldName: input.key,
+                  buildArgs: (v: any) => v || {},
+                  connectionFilters: Object.keys(filters),
+                } as any,
+                parentId,
+                filters,
+              );
+            })();
 
         const ensureEntity = (node: any): string | null => {
-          const ek = graph.identify(node);
-          if (!ek) return null;
-          const patch: any = { ...node }; delete patch.__typename; delete patch.id;
-          layer.entityOps.push({ kind: "entityWrite", recordId: ek, patch, policy: "merge" });
-          applyEntityWrite(layer, ek, patch, "merge");
-          return ek;
+          const entityKey = graph.identify(node);
+          if (!entityKey) {
+            return null;
+          }
+
+          const patch: any = { ...node };
+          delete patch.__typename;
+          delete patch.id;
+
+          layer.entityOps.push({ kind: "entityWrite", recordId: entityKey, patch, policy: "merge" });
+          applyEntityWrite(layer, entityKey, patch, "merge");
+
+          return entityKey;
         };
 
         const resolveAnchorKey = (anchor?: string | { __typename: string; id: any } | null): string | null => {
-          if (!anchor) return null;
-          if (typeof anchor === "string") return anchor;
+          if (!anchor) {
+            return null;
+          }
+          if (typeof anchor === "string") {
+            return anchor;
+          }
           return graph.identify(anchor) || null;
         };
 
         return {
           addNode(node, opts = {}) {
             const entityKey = ensureEntity(node);
-            if (!entityKey) return;
+            if (!entityKey) {
+              return;
+            }
 
             const op: CanonOp = {
               kind: "canAddNode",
@@ -416,14 +445,19 @@ export const createOptimistic = ({ graph }: Deps) => {
               position: (opts.position ?? "end") as "start" | "end" | "before" | "after",
               anchor: resolveAnchorKey(opts.anchor),
             };
+
             layer.canOps.push(op);
             applyCanonOp(layer, op);
           },
 
           removeNode(ref) {
             const entityKey = typeof ref === "string" ? ref : (graph.identify(ref) || null);
-            if (!entityKey) return;
+            if (!entityKey) {
+              return;
+            }
+
             const op: CanonOp = { kind: "canRemoveNode", canKey, entityKey };
+
             layer.canOps.push(op);
             applyCanonOp(layer, op);
           },
@@ -431,8 +465,12 @@ export const createOptimistic = ({ graph }: Deps) => {
           patch(patchOrFn) {
             const prev = graph.getRecord(canKey) || {};
             const delta = typeof patchOrFn === "function" ? (patchOrFn as any)(cloneJSON(prev)) : patchOrFn;
-            if (!delta || typeof delta !== "object") return;
+            if (!delta || typeof delta !== "object") {
+              return;
+            }
+
             const op: CanonOp = { kind: "canPatch", canKey, patch: { ...delta } };
+
             layer.canOps.push(op);
             applyCanonOp(layer, op);
           },

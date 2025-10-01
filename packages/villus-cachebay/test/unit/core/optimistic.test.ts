@@ -293,7 +293,7 @@ describe("Optimistic", () => {
       const connectionBefore = graph.getRecord(key);
       optimistic.replayOptimistic({ connections: [key] });
       const connectionAfter = graph.getRecord(key);
-      
+
       expect(connectionAfter).toEqual(connectionBefore);
     });
   });
@@ -342,6 +342,110 @@ describe("Optimistic", () => {
 
       expect(readCanonicalEdges(graph, key).length).toBe(0);
       expect(graph.getRecord("Post:p1")).toBeUndefined();
+    });
+  });
+
+  describe("connection(canonicalKey: string)", () => {
+    it("accepts canonical key and shares state with spec calls", () => {
+      const canonicalKey = "@connection.posts({})";
+
+      const tx1 = optimistic.modifyOptimistic((o) => {
+        const c = o.connection(canonicalKey);
+
+        c.addNode({ __typename: "Post", id: "p1", title: "Post 1" }, { position: "end", edge: { score: 7 } });
+      });
+
+      tx1.commit();
+
+      expect(readCanonicalEdges(graph, canonicalKey).map((e) => graph.getRecord(e.nodeKey)?.id)).toEqual(["p1"]);
+
+      const tx2 = optimistic.modifyOptimistic((o) => {
+        const c = o.connection({ parent: "Query", key: "posts" });
+
+        c.addNode({ __typename: "Post", id: "p2", title: "Post 2" }, { position: "end" });
+      });
+
+      tx2.commit();
+
+      const ids = readCanonicalEdges(graph, canonicalKey).map((e) => graph.getRecord(e.nodeKey)?.id);
+      expect(ids).toEqual(["p1", "p2"]);
+    });
+
+    it("works with filters and cross-form operations", () => {
+      const canonicalKey = '@connection.posts({"category":"tech"})';
+
+      const tx1 = optimistic.modifyOptimistic((o) => {
+        const c = o.connection(canonicalKey);
+        c.addNode({ __typename: "Post", id: "t1", title: "Tech 1" }, { position: "end" });
+      });
+
+      tx1.commit();
+
+      expect(readCanonicalEdges(graph, canonicalKey).map((e) => graph.getRecord(e.nodeKey)?.id)).toEqual(["t1"]);
+
+      const tx2 = optimistic.modifyOptimistic((o) => {
+        const c = o.connection({ parent: "Query", key: "posts", filters: { category: "tech" } });
+
+        c.removeNode("Post:t1");
+      });
+
+      tx2.commit();
+
+      expect(readCanonicalEdges(graph, canonicalKey).length).toBe(0);
+    });
+
+    it("supports patch via string canonical key", () => {
+      const canonicalKey = "@connection.posts({})";
+
+      graph.putRecord(canonicalKey, {
+        __typename: "PostConnection",
+        totalCount: 1,
+        pageInfo: { __typename: "PageInfo", endCursor: "e1", hasNextPage: true },
+        edges: [],
+      });
+
+      const tx = optimistic.modifyOptimistic((o) => {
+        const c = o.connection(canonicalKey);
+
+        c.patch({ totalCount: 2, pageInfo: { startCursor: "s1", hasNextPage: false } });
+
+        c.patch((prev) => ({ totalCount: (prev.totalCount || 0) + 1 }));
+      });
+
+      tx.commit();
+
+      const snap = graph.getRecord(canonicalKey)!;
+
+      expect(snap.totalCount).toBe(3);
+      expect(snap.pageInfo).toEqual({
+        __typename: "PageInfo",
+        endCursor: "e1",
+        hasNextPage: false,
+        startCursor: "s1",
+      });
+    });
+
+    it("supports anchored inserts via string canonical key", () => {
+      const canonicalKey = "@connection.posts({})";
+
+      const tx1 = optimistic.modifyOptimistic((o) => {
+        const c = o.connection(canonicalKey);
+
+        c.addNode({ __typename: "Post", id: "p1", title: "Post 1" }, { position: "end" });
+        c.addNode({ __typename: "Post", id: "p3", title: "Post 3" }, { position: "end" });
+      });
+
+      tx1.commit();
+
+      const tx2 = optimistic.modifyOptimistic((o) => {
+        const c = o.connection(canonicalKey);
+        c.addNode({ __typename: "Post", id: "p2", title: "Post 2" }, { position: "after", anchor: "Post:p1" });
+      });
+
+      tx2.commit();
+
+      const ids = readCanonicalEdges(graph, canonicalKey).map((e) => graph.getRecord(e.nodeKey)?.id);
+      expect(ids).toEqual(["p1", "p2", "p3"]);
     });
   });
 
