@@ -10,6 +10,8 @@ proxy:
   ssl: true
   host: harrypotter.exp.lockvoid.com
   app_port: 3000
+  healthcheck:
+     path: /api/health
 
 registry:
   server: ghcr.io
