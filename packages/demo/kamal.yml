@@ -1,0 +1,34 @@
+service: harrypotter
+
+image: ghcr.io/lockvoid/villus-cachebay/demo
+
+servers:
+  web:
+    - <%= ENV['SERVER_IP'] %>
+
+proxy:
+  ssl: true
+  host: harrypotter.exp.lockvoid.com
+  app_port: 3000
+  healthcheck:
+     path: /api/health
+
+registry:
+  server: ghcr.io
+  username: lockvoid
+  password: <%= ENV["DOCKER_REGISTRY_TOKEN"] %>
+
+builder:
+  arch: amd64
+
+env:
+  PORT: "3000"
+  NUXT_GRAPHQL_SERVER_ENDPOINT: "<%= ENV['NUXT_GRAPHQL_SERVER_ENDPOINT'] %>"
+  NUXT_PUBLIC_GRAPHQL_CLIENT_ENDPOINT: "<%= ENV['NUXT_PUBLIC_GRAPHQL_CLIENT_ENDPOINT'] %>"
+
+volumes:
+  - "/home/deploy/harrypotter/data:/app/data:rw"
+
+ssh:
+  user: deploy
+  keys: [ "~/.ssh/id_rsa" ]

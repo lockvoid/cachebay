@@ -1,16 +1,18 @@
 {
   "name": "villus-cachebay-monorepo",
-  "version": "1.13.0",
+  "version": "0.1.0",
   "license": "MIT",
   "author": "LockVoid",
-  "engines": {
-    "node": "22.x",
-    "pnpm": "10.x"
+  "scripts": {
+    "bump": "./bin/bump"
   },
   "workspaces": [
     "packages/*"
   ],
   "devDependencies": {
-    "semver": "^7.7.1"
+    "semver": "^7.7.2"
+  },
+  "dependencies": {
+    "glob": "^11.0.3"
   }
 }

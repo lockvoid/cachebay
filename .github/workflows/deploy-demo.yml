@@ -1,0 +1,61 @@
+name: Deploy Demo
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: packages/demo
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Setup Ruby environment
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+
+      - name: Install Kamal deployment tool
+        run: gem install kamal
+
+      - name: Authenticate with GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push container image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./packages/demo/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/demo:latest
+            ghcr.io/${{ github.repository }}/demo:${{ github.sha }}
+
+      - name: Deploy application with Kamal
+        run: kamal deploy -c kamal.yml --skip-push
+        env:
+          DOCKER_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SERVER_IP: ${{ vars.DEMO_SERVER_IP }}
+          NUXT_GRAPHQL_SERVER_ENDPOINT: ${{ vars.DEMO_NUXT_GRAPHQL_SERVER_ENDPOINT }}
+          NUXT_PUBLIC_GRAPHQL_CLIENT_ENDPOINT: ${{ vars.DEMO_NUXT_PUBLIC_GRAPHQL_CLIENT_ENDPOINT }}

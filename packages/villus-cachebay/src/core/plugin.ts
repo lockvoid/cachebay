@@ -1,274 +1,220 @@
+/* src/core/plugin.ts */
+ 
+import { CombinedError } from "villus";
+
+import { CACHEBAY_KEY, ROOT_ID } from "./constants";
+import { buildConnectionCanonicalKey } from "./utils";
+import type { DocumentsInstance } from "./documents";
+import type { GraphInstance } from "./graph";
+import type { PlannerInstance } from "./planner";
+import type { SSRInstance } from "../features/ssr";
+
+import type { DocumentNode } from "graphql";
 import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus";
-import type { CachebayInternals } from "../core/types";
-import { ensureDocumentHasTypenameSmart } from "../core/addTypename";
-import {
-  familyKeyForOperation,
-  operationKey,
-  stableIdentityExcluding,
-  isObservableLike,
-} from "../core/utils";
+import type { App } from "vue";
 
-type BuildArgs = {
-  shouldAddTypename: boolean;
-  opCacheMax: number;
-
-  isHydrating: () => boolean;
-  hydrateOperationTicket: Set<string>;
-
-  applyResolversOnGraph: (root: any, vars: Record<string, any>, hint: { stale?: boolean }) => void;
-  registerViewsFromResult: (root: any, variables: Record<string, any>) => void;
-  collectNonRelayEntities: (root: any) => void;
+type PluginDependencies = {
+  graph: GraphInstance;
+  planner: PlannerInstance;
+  documents: DocumentsInstance;
+  ssr: SSRInstance;
 };
 
-export function buildCachebayPlugin(
-  internals: CachebayInternals,
-  args: BuildArgs,
-): ClientPlugin {
-  const {
-    shouldAddTypename,
-    opCacheMax,
-    isHydrating,
-    hydrateOperationTicket,
-    applyResolversOnGraph,
-    registerViewsFromResult,
-    collectNonRelayEntities,
-  } = args;
+export type PluginOptions = {
+  /** Time window (ms) after a successful result in which repeat Suspense re-execs are served from cache & do not refetch */
+  suspensionTimeout?: number;
+};
 
-  const inflightRequests = new Map<string, { listeners: Set<(res: { data?: any; error?: any }) => void> }>();
-  const inflightByFam = new Map<string, string>();
-  const baseByOpKey = new Map<string, string>();
-  const latestSeqByFam = new Map<string, number>();
-  const latestBaseByFam = new Map<string, string>();
-  const lastPublishedByFam = new Map<string, { data: any; variables: Record<string, any> }>();
-  const skipAfterQueryOnce = new Set<string>();
-  const reentryGuard = new Set<string>();
+export function createPlugin(options: PluginOptions, deps: PluginDependencies): ClientPlugin {
+  const { graph, documents, planner, ssr } = deps;
+  const { suspensionTimeout = 1000 } = options ?? {};
 
-  const RELAY_CURSOR_FIELDS = ["after", "before", "first", "last"] as const;
-  const baseSig = (vars?: Record<string, any> | null) =>
-    stableIdentityExcluding(vars || {}, RELAY_CURSOR_FIELDS as any);
+  // After-result window per op key
+  const lastResultAtMs = new Map<number, number>();
 
-  function setOpCache(k: string, v: { data: any; variables: Record<string, any> }) {
-    internals.operationCache.set(k, v);
-    if (internals.operationCache.size > opCacheMax) {
-      const oldest = internals.operationCache.keys().next().value as string | undefined;
-      if (oldest) internals.operationCache.delete(oldest);
-    }
-  }
+  return (ctx: ClientPluginContext) => {
+    const op = ctx.operation;
+    const vars: Record<string, any> = op.variables || {};
+    const document: DocumentNode = op.query as DocumentNode;
+    const plan = planner.getPlan(document);
 
-  const plugin: ClientPlugin = (ctx: ClientPluginContext) => {
-    const { operation, useResult, afterQuery } = ctx;
-    const originalUseResult = useResult;
+    // Always use compiled networkQuery (strips @connection, adds __typename)
+    op.query = plan.networkQuery;
 
-    // SUBSCRIPTION
-    if (operation.type === "subscription") {
-      if (shouldAddTypename && operation.query) {
-        operation.query = ensureDocumentHasTypenameSmart(operation.query as any);
+    const publish = (payload: OperationResult, terminal: boolean) => ctx.useResult(payload, terminal);
+    const policy: "cache-and-network" | "cache-first" | "network-only" | "cache-only" =
+      ((op as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network") as any;
+
+    const buildCachedFrame = (): OperationResult<any> | null => {
+      if (!documents.hasDocument({ document, variables: vars })) return null;
+
+      const rootConnections = plan.root.filter((f) => f.isConnection);
+
+      // No root @connection → just materialize entities
+      if (rootConnections.length === 0) {
+        const data = documents.materializeDocument({ document, variables: vars });
+        return { data, error: null };
       }
 
-      const passThrough = originalUseResult;
+      // Determine cursor role
+      const detectRole = (field: any) => {
+        const req = field.buildArgs ? (field.buildArgs(vars) || {}) : (vars || {});
+        const has = (k: string) =>
+          req[k] != null || Object.keys(vars || {}).some((n) => n.toLowerCase().includes(k) && vars[n] != null);
+        return { hasAfter: has("after"), hasBefore: has("before") };
+      };
 
-      ctx.useResult = (incoming: any, _terminate?: boolean) => {
-        if (isObservableLike(incoming)) return passThrough(incoming, true);
+      // Prewarm AFTER/BEFORE so the union grows immediately
+      let didPrewarm = false;
+      for (const f of rootConnections) {
+        const { hasAfter, hasBefore } = detectRole(f);
+        if (hasAfter || hasBefore) {
+          documents.prewarmDocument({ document, variables: vars });
+          didPrewarm = true;
+          break;
+        }
+      }
 
-        const r = incoming as OperationResult<any>;
-        if (!r) return;
-
-        if ((r as any).error) return passThrough({ error: (r as any).error } as any, false);
-        if (!("data" in r) || !r.data) return;
-
-        const vars = operation.variables || {};
-
-        applyResolversOnGraph((r as any).data, vars, { stale: false });
-
-        collectNonRelayEntities((r as any).data);
-        registerViewsFromResult((r as any).data, vars);
-
-        lastPublishedByFam.set(familyKeyForOperation(operation), {
-          data: (r as any).data,
-          variables: vars,
+      // Leader request: prewarm only if canonical is empty
+      if (!didPrewarm) {
+        const anyCanonicalReady = rootConnections.some((f) => {
+          const canKey = buildConnectionCanonicalKey(f, ROOT_ID, vars);
+          const can = graph.getRecord(canKey);
+          return Array.isArray(can?.edges) && can.edges.length > 0;
         });
-
-        return passThrough({ data: (r as any).data }, false);
-      };
-
-      return;
-    }
-
-    // QUERIES / MUTATIONS
-    if (shouldAddTypename && operation.query) {
-      operation.query = ensureDocumentHasTypenameSmart(operation.query as any);
-    }
-
-    const opKey = operationKey(operation);
-    const famKey = familyKeyForOperation(operation);
-    const curBase = baseSig(operation.variables);
-    const cachedForKey = internals.operationCache.get(opKey);
-
-    // Dedup 1: same opKey inflight
-    if (inflightRequests.has(opKey)) {
-      if (operation.cachePolicy !== "network-only" && cachedForKey) {
-        registerViewsFromResult(cachedForKey.data, cachedForKey.variables);
-        originalUseResult({ data: cachedForKey.data }, true);
-      } else {
-        originalUseResult({}, true);
+        if (!anyCanonicalReady) {
+          documents.prewarmDocument({ document, variables: vars });
+        }
       }
 
-      inflightRequests.get(opKey)!.listeners.add((res) => {
-        if (res && "error" in res && res.error) {
-          originalUseResult({ error: res.error as any }, false);
-          return;
-        }
-        if (res && "data" in res) {
-          registerViewsFromResult(res.data, operation.variables || {});
-          originalUseResult({ data: res.data }, false);
-        }
+      const data = documents.materializeDocument({ document, variables: vars });
+
+      // Emit only if at least one root connection has edges
+      const hasEdges = rootConnections.some((f) => {
+        const v = (data as any)?.[f.responseKey];
+        return Array.isArray(v?.edges) && v.edges.length > 0;
       });
 
-      return;
-    }
-
-    // Dedup 2: family-level, same baseSig inflight
-    const famOp = inflightByFam.get(famKey);
-    if (famOp && inflightRequests.has(famOp) && baseByOpKey.get(famOp) === curBase) {
-      if (operation.cachePolicy !== "network-only" && cachedForKey) {
-        registerViewsFromResult(cachedForKey.data, cachedForKey.variables);
-        originalUseResult({ data: cachedForKey.data }, true);
-      } else {
-        originalUseResult({}, true);
-      }
-
-      inflightRequests.get(famOp)!.listeners.add((res) => {
-        if (res && "error" in res && res.error) {
-          originalUseResult({ error: res.error as any }, false);
-          return;
-        }
-        if (res && "data" in res) {
-          registerViewsFromResult(res.data, operation.variables || {});
-          originalUseResult({ data: res.data }, false);
-        }
-      });
-
-      return;
-    }
-
-    // New inflight
-    inflightRequests.set(opKey, { listeners: new Set() });
-    inflightByFam.set(famKey, opKey);
-    baseByOpKey.set(opKey, curBase);
-
-    // Cache-first publish (if allowed)
-    if (operation.type === "query" && operation.cachePolicy !== "network-only") {
-      if (cachedForKey) {
-        const hasHydrateTicket = hydrateOperationTicket.has(opKey);
-        const isReentry = reentryGuard.has(opKey);
-
-        const shouldTerminate =
-          operation.cachePolicy === "cache-first" ||
-          operation.cachePolicy === "cache-only" ||
-          isHydrating() ||
-          hasHydrateTicket ||
-          isReentry;
-
-        if (hasHydrateTicket) reentryGuard.add(opKey);
-
-        registerViewsFromResult(cachedForKey.data, cachedForKey.variables);
-        originalUseResult({ data: cachedForKey.data }, shouldTerminate);
-
-        if (hasHydrateTicket) hydrateOperationTicket.delete(opKey);
-
-        if (shouldTerminate) {
-          const e = inflightRequests.get(opKey);
-          if (e) {
-            e.listeners.forEach((fn) => fn({ data: cachedForKey.data }));
-            inflightRequests.delete(opKey);
-          }
-          if (inflightByFam.get(famKey) === opKey) inflightByFam.delete(famKey);
-          baseByOpKey.delete(opKey);
-          return;
-        }
-      } else if (operation.cachePolicy === "cache-only") {
-        originalUseResult({}, true);
-        inflightRequests.delete(opKey);
-        if (inflightByFam.get(famKey) === opKey) inflightByFam.delete(famKey);
-        baseByOpKey.delete(opKey);
-        return;
-      }
-    }
-
-    // Concurrency tracking
-    let mySeq = 0;
-    if (operation.type === "query") {
-      const prevSeq = latestSeqByFam.get(famKey) || 0;
-      mySeq = prevSeq + 1;
-      latestSeqByFam.set(famKey, mySeq);
-      latestBaseByFam.set(famKey, curBase);
-    }
-
-    // Fulfillment flow
-    const performAfterQuery = (res: OperationResult) => {
-      reentryGuard.add(opKey);
-      setTimeout(() => { reentryGuard.delete(opKey); }, 0);
-
-      const notifyDedup = (payload: { data?: any; error?: any }) => {
-        const entry = inflightRequests.get(opKey);
-        if (entry) {
-          entry.listeners.forEach((fn) => fn(payload));
-          inflightRequests.delete(opKey);
-        }
-        if (inflightByFam.get(famKey) === opKey) inflightByFam.delete(famKey);
-        baseByOpKey.delete(opKey);
-      };
-
-      const isStale = mySeq !== (latestSeqByFam.get(famKey) || 0);
-      const vars = operation.variables || {};
-
-      if (!res || (!("data" in res) && !(res as any).error)) {
-        if (!isStale) originalUseResult({}, true);
-        notifyDedup({});
-        return;
-      }
-
-      if ((res as any)?.error) {
-        if (!isStale) originalUseResult({ error: (res as any).error }, false);
-        notifyDedup({ error: (res as any).error });
-        return;
-      }
-
-      if (isStale) {
-        const latestBase = latestBaseByFam.get(famKey) || "";
-        const sameBase = curBase === latestBase;
-        if (!sameBase) {
-          setOpCache(opKey, { data: (res as any).data, variables: vars });
-          originalUseResult({}, true);
-          notifyDedup({});
-          return;
-        }
-      }
-
-      applyResolversOnGraph((res as any).data, vars, { stale: isStale });
-
-      collectNonRelayEntities((res as any).data);
-      setOpCache(opKey, { data: (res as any).data, variables: vars });
-      lastPublishedByFam.set(famKey, { data: (res as any).data, variables: vars });
-
-      registerViewsFromResult((res as any).data, vars);
-      originalUseResult({ data: (res as any).data }, false);
-      notifyDedup({ data: (res as any).data });
+      return hasEdges ? { data, error: null } as OperationResult<any> : null;
     };
 
-    afterQuery((res) => {
-      if (skipAfterQueryOnce.has(opKey)) {
-        skipAfterQueryOnce.delete(opKey);
+    if (plan.operation === "mutation") {
+      const originalUseResult = ctx.useResult;
+      ctx.useResult = (incoming: OperationResult) => {
+        if (incoming?.error) return originalUseResult(incoming, true);
+        documents.normalizeDocument({ document, variables: vars, data: incoming.data });
+        return originalUseResult({ data: incoming.data, error: null }, true);
+      };
+      return;
+    }
+
+    if (plan.operation === "subscription") {
+      const originalUseResult = ctx.useResult;
+      ctx.useResult = (incoming: OperationResult, terminal?: boolean) => {
+        if (incoming?.error) return originalUseResult(incoming, true);
+
+        if (incoming?.data) {
+          documents.normalizeDocument({ document, variables: vars, data: incoming.data });
+        }
+
+        // Do not force terminal; let the source control it
+        return originalUseResult({ data: incoming.data, error: null }, !!terminal);
+      };
+      return;
+    }
+
+    // SSR: during hydrate, for non-network-only policies serve cached and stop; for network-only allow network
+    if (ssr?.isHydrating?.()) {
+      if (policy !== "network-only") {
+        const cached = buildCachedFrame();
+
+        if (cached) {
+          return publish(cached, true);
+        }
+      }
+    }
+
+    const key = op.key as number;
+    const last = lastResultAtMs.get(key);
+    const withinSuspension = last != null && performance.now() - last <= suspensionTimeout;
+
+    // cache-only
+    if (policy === "cache-only") {
+      const cached = buildCachedFrame();
+      if (cached) return publish(cached, true);
+
+      const err = new CombinedError({
+        networkError: Object.assign(new Error("CACHE_ONLY_MISS"), { name: "CacheOnlyMiss" }),
+        graphqlErrors: [],
+        response: undefined,
+      });
+      return publish({ error: err, data: undefined }, true);
+    }
+
+    // cache-first
+    if (policy === "cache-first") {
+      const cached = buildCachedFrame();
+
+      if (cached) {
+        publish(cached, true);
+
         return;
       }
-      performAfterQuery(res);
-    }, ctx);
 
-    ctx.useResult = (result: any) => {
-      skipAfterQueryOnce.add(opKey);
-      performAfterQuery(result);
+      lastResultAtMs.set(key, performance.now());
+    }
+
+    // cache-and-network
+    if (policy === "cache-and-network") {
+      const cached = buildCachedFrame();
+
+      if (cached) {
+        if (withinSuspension) {
+          publish(cached, true);
+
+          return;
+        }
+
+        publish(cached, false);
+
+        lastResultAtMs.set(key, performance.now());
+      }
+    }
+
+    // network-only (and the network leg of cache-and-network)
+    // If within suspension window, skip a duplicate fetch (prior result just landed)
+    if (policy === "network-only") {
+      if (withinSuspension) {
+        const cached = buildCachedFrame();
+
+        if (cached) {
+          publish(cached, true);
+
+          return;
+        }
+      }
+    }
+
+    const originalUseResult = ctx.useResult;
+
+    ctx.useResult = (incoming: OperationResult) => {
+      lastResultAtMs.set(key, performance.now());
+
+      if (incoming?.error) {
+        return originalUseResult(incoming, true);
+      }
+
+      // Normalize & materialize for queries
+      documents.normalizeDocument({ document, variables: vars, data: incoming.data });
+      const data = documents.materializeDocument({ document, variables: vars });
+
+      // Stamp completion time for the suspension window
+
+      return originalUseResult({ data, error: null }, true);
     };
   };
+}
 
-  return plugin;
+export function provideCachebay(app: App, instance: any) {
+  app.provide(CACHEBAY_KEY, instance);
 }

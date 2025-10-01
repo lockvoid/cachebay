@@ -1,62 +1,43 @@
-import {
-  inject,
-  shallowRef,
-  isRef,
-  watch,
-  computed,
-  unref,
-  type Ref,
-  type App,
-} from "vue";
-import type { CachebayInstance } from "./core/internals";
+import { unref, watchEffect, readonly, type Ref, shallowRef } from "vue";
+import { useCache } from "./useCache";
 
+export type UseFragmentOptions = {
+  id: string | Ref<string>;
+  fragment: any; // string | DocumentNode | CachePlanV1
+  fragmentName?: string;
+  variables?: Record<string, any> | Ref<Record<string, any> | undefined>;
+};
 
-/** useFragment… (unchanged) */
-type UseFragmentMode = "auto" | "static" | "dynamic";
-type UseFragmentOpts = { materialized?: boolean; mode?: UseFragmentMode; asObject?: boolean };
+/**
+ * Live, fragment-shaped data Ref (reactive view).
+ * - Uses cache.readFragment (which returns a reactive entity/selection view).
+ * - Updates when id/fragment/variables change.
+ */
+export function useFragment(options: UseFragmentOptions): Readonly<Ref<any>> {
+  const cache = useCache() as any; // must expose readFragment()
 
-function keySig(v: any): string {
-  if (!v) return "";
-  if (typeof v === "string") return v;
-  const t = v.__typename;
-  const id = v.id ?? v._id;
-  return t && id != null ? `${t}:${id}` : JSON.stringify(v);
-}
-
-export function useFragment<T = any>(
-  source:
-    | string
-    | { __typename: string; id?: any; _id?: any }
-    | Ref<string | { __typename: string; id?: any; _id?: any } | null | undefined>,
-  opts: UseFragmentOpts = {},
-): Ref<T | undefined> | T | undefined {
-  const { readFragment } = useCache();
-  const materialized = opts.materialized !== false;
-  const mode: UseFragmentMode = opts.mode ?? "auto";
-  const dynamic = mode === "dynamic" || (mode === "auto" && isRef(source));
-
-  if (!dynamic) {
-    const input = unref(source) as any;
-    const proxy = input ? (readFragment(input, materialized) as any as T) : undefined;
-    if (opts.asObject) return proxy;
-    const out = shallowRef<T | undefined>(proxy);
-    return out;
+  if (typeof cache?.readFragment !== "function") {
+    throw new Error("[useFragment] cache must expose readFragment()");
   }
 
-  const out = shallowRef<T | undefined>(undefined);
-  let last = "";
+  const data = shallowRef<any>(undefined);
 
-  watch(
-    () => unref(source) as any,
-    (val) => {
-      const sig = keySig(val);
-      if (sig !== last) {
-        last = sig;
-        out.value = val ? (readFragment(val, materialized) as any as T) : undefined;
-      }
-    },
-    { immediate: true },
-  );
+  watchEffect(() => {
+    const id = unref(options.id);
+    const vars = unref(options.variables) || {};
+    if (!id) {
+      data.value = undefined;
+      return;
+    }
+    // readFragment returns a reactive view; we keep it as-is
+    const view = cache.readFragment({
+      id,
+      fragment: options.fragment,
+      fragmentName: options.fragmentName,
+      variables: vars,
+    });
+    data.value = view;
+  });
 
-  return out;
+  return readonly(data);
 }

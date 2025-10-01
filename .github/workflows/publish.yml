@@ -1,0 +1,91 @@
+name: Publish
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: "Bump version"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: packages/villus-cachebay
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure latest content
+        run: |
+          git checkout main
+          git pull origin main
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org/"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run linter
+        run: pnpm lint
+        continue-on-error: true
+
+      - name: Build package
+        run: pnpm build
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Bump version
+        working-directory: .
+        run: |
+          pnpm bump ${{ github.event.inputs.version_type }}
+
+      - name: Commit all bump changes
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+
+          git config user.name "LockVoid /dev/null"
+          git config user.email "dev@lockvoid.com"
+          git add .
+          git commit -m "$VERSION"
+
+      - name: Create tag
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          git tag "v$VERSION"
+
+      - name: Push commit and tag
+        run: |
+          git push
+          git push --tags
+
+      - name: Copy docs
+        working-directory: .
+        run: |
+          cp -r ./docs ./packages/villus-cachebay/docs
+          cp ./LICENSE.md ./packages/villus-cachebay/LICENSE.md
+          cp ./README.md ./packages/villus-cachebay/README.md
+
+      - name: Publish to npm
+        run: |
+          pnpm publish --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

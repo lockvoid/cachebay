@@ -1,94 +1,74 @@
-import type { EntityKey, ConnectionState } from "../core/types";
+// src/features/ssr.ts — SSR de/hydration for the unified graph record store
+import type { GraphInstance } from "../core/graph";
 
-type Deps = {
-  entityStore: Map<EntityKey, any>;
-  connectionStore: Map<string, ConnectionState>;
-  operationCache: Map<string, { data: any; variables: Record<string, any> }>;
 
-  ensureConnectionState: (key: string) => ConnectionState;
-  linkEntityToConnection: (key: EntityKey, state: ConnectionState) => void;
+type Deps = { graph: GraphInstance };
 
-  shallowReactive: <T extends object>(obj: T) => T;
-
-  registerViewsFromResult: (root: any, variables: Record<string, any>) => void;
-
-  /** Clears internal runtime bookkeeping (dirty sets, entity→connection links, etc.). */
-  resetRuntime: () => void;
+type GraphSnapshot = {
+  /** Array of [recordId, snapshot] entries; JSON-safe */
+  records: Array<[string, any]>;
 };
 
-export function createSSRFeatures(deps: Deps) {
-  const {
-    entityStore,
-    connectionStore,
-    operationCache,
-    ensureConnectionState,
-    linkEntityToConnection,
-    shallowReactive,
-    registerViewsFromResult,
-    resetRuntime,
-  } = deps;
+/** JSON-only deep clone; safe for snapshots. */
+const cloneJSON = <T,>(data: T): T => JSON.parse(JSON.stringify(data));
 
-  const hydrateOperationTicket = new Set<string>();
+export type SSRInstance = ReturnType<typeof createSSR>;
+
+type SSROptions = {
+  hydrationTimeout?: number;
+};
+
+export const createSSR = (options: SSROptions = {}, { graph }: Deps) => {
   let hydrating = false;
+  const { hydrationTimeout = 100 } = options;
 
-  const dehydrate = () => ({
-    ent: Array.from(entityStore.entries()),
-    conn: Array.from(connectionStore.entries()).map(([k, st]) => [
-      k,
-      { list: st.list, pageInfo: st.pageInfo, meta: st.meta },
-    ]),
-    op: Array.from(operationCache.entries()).map(([k, v]) => [
-      k,
-      { data: v.data, variables: v.variables },
-    ]),
-  });
+  /** Serialize all graph records. */
+  const dehydrate = (): GraphSnapshot => {
+    const ids = graph.keys();
+    const out: Array<[string, any]> = new Array(ids.length);
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      const snap = graph.getRecord(id);
+      out[i] = [id, snap != null ? cloneJSON(snap) : undefined];
+    }
+    return { records: out };
+  };
 
-  const hydrate = (input: any | ((hydrate: (snapshot: any) => void) => void)) => {
-    const run = (snapshot: any) => {
-      if (!snapshot) return;
+  /**
+   * Hydrate a snapshot into the graph.
+   * - input can be a plain snapshot or a function that emits it (stream-friendly)
+   * - clears the graph first, then restores records
+   * - `isHydrating()` is true until the next microtask
+   */
+  const hydrate = (
+    input: GraphSnapshot | ((emit: (snapshot: GraphSnapshot) => void) => void),
+  ) => {
+    const run = (snapshot: GraphSnapshot) => {
+      if (!snapshot || !Array.isArray(snapshot.records)) return;
 
-      entityStore.clear();
-      connectionStore.clear();
-      operationCache.clear();
-      resetRuntime();
+      graph.clear();
 
-      if (Array.isArray(snapshot.ent)) {
-        for (const [k, v] of snapshot.ent) entityStore.set(k, v);
+      for (let i = 0; i < snapshot.records.length; i++) {
+        const entry = snapshot.records[i];
+        if (!entry) continue;
+        const [id, snap] = entry;
+        if (!id || !snap || typeof snap !== "object") continue;
+        graph.putRecord(id, snap);
       }
-
-      if (Array.isArray(snapshot.conn)) {
-        for (const [key, s] of snapshot.conn) {
-          const state = ensureConnectionState(key);
-          state.list = (s.list || []).slice();
-          state.keySet = new Set(state.list.map((e: any) => e.key));
-          for (let i = 0; i < state.list.length; i++) {
-            linkEntityToConnection(state.list[i].key, state);
-          }
-          state.pageInfo = shallowReactive({ ...(s.pageInfo || {}) });
-          state.meta = shallowReactive({ ...(s.meta || {}) });
-        }
-      }
-
-      if (Array.isArray(snapshot.op)) {
-        for (const [k, v] of snapshot.op) {
-          operationCache.set(k, { data: v.data, variables: v.variables || {} });
-          hydrateOperationTicket.add(k);
-        }
-      }
-
-      operationCache.forEach(({ data, variables }) =>
-        registerViewsFromResult(data, variables || {}),
-      );
     };
 
     hydrating = true;
+
     try {
-      if (typeof input === "function") input((s) => run(s));
-      else run(input);
+      if (typeof input === "function") {
+        input((s) => run(s));
+      } else {
+        run(input);
+      }
     } finally {
-      queueMicrotask(() => {
+      setTimeout(() => {
         hydrating = false;
-      });
+      }, hydrationTimeout);
     }
   };
 
@@ -96,6 +76,5 @@ export function createSSRFeatures(deps: Deps) {
     dehydrate,
     hydrate,
     isHydrating: () => hydrating,
-    hydrateOperationTicket,
   };
-}
+};

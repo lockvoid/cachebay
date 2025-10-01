@@ -1,0 +1,33 @@
+#!/usr/bin/env node
+
+const fs = require('fs');
+const glob = require('glob');
+const semver = require('semver');
+
+const bump = process.argv[2];
+
+if (!['patch', 'minor', 'major'].includes(bump)) {
+  console.error('Usage: bin/bump <patch|minor|major>');
+
+  process.exit(1);
+}
+
+const pkgPaths = [
+  `${__dirname}/../package.json`,
+  `${__dirname}/../packages/*/package.json`,
+];
+
+const files = pkgPaths.flatMap(pattern => glob.sync(pattern));
+
+files.forEach(pkgPath => {
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+
+  const prevVersion = pkg.version
+  const nextVersion = semver.inc(prevVersion, bump);
+
+  pkg.version = nextVersion
+
+  fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+
+  console.log(`Bumped ${pkg.name}: ${prevVersion} → ${nextVersion}`);
+});
