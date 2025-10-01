@@ -1,6 +1,6 @@
 
-import { defineComponent, h } from "vue";
 import { mount } from "@vue/test-utils";
+import { defineComponent, h } from "vue";
 import { createTestClient, seedCache, tick, fixtures, operations } from "@/test/helpers";
 
 describe("Mutations", () => {
@@ -23,7 +23,7 @@ describe("Mutations", () => {
                   user: fixtures.users.buildNode({ id: "u1", email: "u1+updated@example.com" }),
                 },
               },
-            }
+            };
           },
 
           delay: 10,
@@ -44,7 +44,7 @@ describe("Mutations", () => {
             id: "u1",
 
             input: {
-              email: "u1+updated@example.com"
+              email: "u1+updated@example.com",
             },
           });
         };
@@ -63,7 +63,7 @@ describe("Mutations", () => {
       query: operations.USER_QUERY,
 
       variables: {
-        id: "u1"
+        id: "u1",
       },
 
       data: {

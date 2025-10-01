@@ -1,6 +1,6 @@
 import { compilePlan } from "@/src/compiler";
-import { operations, collectConnectionDirectives, hasTypenames } from "@/test/helpers";
 import type { CachePlanV1, PlanField } from "@/src/compiler/types";
+import { operations, collectConnectionDirectives, hasTypenames } from "@/test/helpers";
 
 const findField = (fields: PlanField[], responseKey: string): PlanField | null => {
   for (let i = 0; i < fields.length; i++) {

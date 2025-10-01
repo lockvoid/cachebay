@@ -1,8 +1,8 @@
-import { defineComponent, h } from "vue";
 import { mount } from "@vue/test-utils";
-import { createTestClient, operations, tick, fixtures, getEdges } from "@/test/helpers";
-import { useFragment } from "@/src/composables/useFragment";
+import { defineComponent, h } from "vue";
 import { useCache } from "@/src/composables/useCache";
+import { useFragment } from "@/src/composables/useFragment";
+import { createTestClient, operations, tick, fixtures, getEdges } from "@/test/helpers";
 
 describe("Composables", () => {
   describe("useFragment", () => {
@@ -84,8 +84,8 @@ describe("Composables", () => {
 
             return h("ul", {}, edges.map((edge: any) =>
               h("li", { class: "edge" }, [
-                h("div", { class: "title" }, edge?.node?.title || "")
-              ])
+                h("div", { class: "title" }, edge?.node?.title || ""),
+              ]),
             ));
           };
         },
@@ -119,7 +119,7 @@ describe("Composables", () => {
 
           return () => {
             return h("div");
-          }
+          };
         },
       });
 
@@ -143,7 +143,7 @@ describe("Composables", () => {
 
             return () => {
               return h("div");
-            }
+            };
           },
         });
 

@@ -1,5 +1,5 @@
-import { mount } from '@vue/test-utils';
-import { createTestClient, createConnectionComponent, createConnectionComponentSuspense, seedCache, getEdges, fixtures, operations, delay, tick } from '@/test/helpers';
+import { mount } from "@vue/test-utils";
+import { createTestClient, createConnectionComponent, createConnectionComponentSuspense, seedCache, getEdges, fixtures, operations, delay, tick } from "@/test/helpers";
 
 const ssrRoundtrip = async ({ routes }) => {
   // 1
@@ -21,8 +21,8 @@ const ssrRoundtrip = async ({ routes }) => {
     data: {
       __typename: "Query",
 
-      posts: fixtures.posts.buildConnection([{ id: 'p1', title: 'A1' }, { id: 'p2', title: 'A2' }]),
-    }
+      posts: fixtures.posts.buildConnection([{ id: "p1", title: "A1" }, { id: "p2", title: "A2" }]),
+    },
   });
 
   const snapshot = serverClient.cache.dehydrate();
@@ -53,8 +53,8 @@ const routes = [
         data: {
           __typename: "Query",
 
-          posts: fixtures.posts.buildConnection([{ id: 'p1', title: 'A1 Updated' }, { id: 'p2', title: 'A2 Updated' }])
-        }
+          posts: fixtures.posts.buildConnection([{ id: "p1", title: "A1 Updated" }, { id: "p2", title: "A2 Updated" }]),
+        },
       };
     },
   },
@@ -71,7 +71,7 @@ describe("SSR", () => {
 
           connectionFn: (data) => {
             return data.posts;
-          }
+          },
         });
 
         const wrapper = mount(Cmp, {
@@ -106,7 +106,7 @@ describe("SSR", () => {
 
           connectionFn: (data) => {
             return data.posts;
-          }
+          },
         });
 
         const wrapper = mount(Cmp, {
@@ -141,7 +141,7 @@ describe("SSR", () => {
 
           connectionFn: (data) => {
             return data.posts;
-          }
+          },
         });
 
         const wrapper = mount(Cmp, {
@@ -176,7 +176,7 @@ describe("SSR", () => {
 
           connectionFn: (data) => {
             return data.posts;
-          }
+          },
         });
 
         const wrapper = mount(Cmp, {
@@ -213,7 +213,7 @@ describe("SSR", () => {
 
           connectionFn: (data) => {
             return data.posts;
-          }
+          },
         });
 
         const wrapper = mount(Cmp, {
@@ -248,7 +248,7 @@ describe("SSR", () => {
 
           connectionFn: (data) => {
             return data.posts;
-          }
+          },
         });
 
         const wrapper = mount(Cmp, {
@@ -283,7 +283,7 @@ describe("SSR", () => {
 
           connectionFn: (data) => {
             return data.posts;
-          }
+          },
         });
 
         const wrapper = mount(Cmp, {
@@ -318,7 +318,7 @@ describe("SSR", () => {
 
           connectionFn: (data) => {
             return data.posts;
-          }
+          },
         });
 
         const wrapper = mount(Cmp, {

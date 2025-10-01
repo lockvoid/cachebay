@@ -1,18 +1,18 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import type { App } from "vue";
 import type { ClientPlugin } from "villus";
 
-import { createPlugin, provideCachebay } from "./plugin";
-import { createGraph } from "./graph";
-import { createViews } from "./views";
-import { createPlanner } from "./planner";
+
+import { createInspect } from "../features/inspect";
+import { createSSR } from "../features/ssr";
 import { createCanonical } from "./canonical";
 import { createDocuments } from "./documents";
 import { createFragments } from "./fragments";
-
-import { createSSR } from "../features/ssr";
+import { createGraph } from "./graph";
 import { createOptimistic } from "./optimistic";
-import { createInspect } from "../features/inspect";
+import { createPlanner } from "./planner";
+import { createPlugin, provideCachebay } from "./plugin";
+import { createViews } from "./views";
 
 export type CachebayInstance = ClientPlugin & {
   // SSR
@@ -27,7 +27,7 @@ export type CachebayInstance = ClientPlugin & {
   writeFragment: (args: { id: string; fragment: any; data: any; variables?: Record<string, any> }) => void;
 
   // Optimistic
-  modifyOptimistic: ReturnType<typeof createOptimistic>['modifyOptimistic'];
+  modifyOptimistic: ReturnType<typeof createOptimistic>["modifyOptimistic"];
 
   // Debug
   inspect: ReturnType<typeof createInspect>;
@@ -48,7 +48,7 @@ export type CachebayInstance = ClientPlugin & {
   };
 };
 
-import type { CachebayOptions } from '../types';
+import type { CachebayOptions } from "../types";
 
 export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Core

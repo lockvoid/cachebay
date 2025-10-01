@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import type { DocumentNode } from "graphql";
 
 export type OpKind = "query" | "mutation" | "subscription" | "fragment";

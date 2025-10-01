@@ -1,14 +1,14 @@
 // src/core/fragments.ts
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import type { DocumentNode } from "graphql";
+ 
 import {
   type CachePlanV1,
   isCachePlanV1,
 } from "@/src/compiler";
+import { isObject, hasTypename, upsertEntityShallow, buildConnectionKey, buildConnectionCanonicalKey } from "./utils";
+import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
 import type { ViewsInstance } from "./views";
-import type { GraphInstance } from "./graph";
-import { isObject, hasTypename, upsertEntityShallow, buildConnectionKey, buildConnectionCanonicalKey } from "./utils";
+import type { DocumentNode } from "graphql";
 
 export type FragmentsDependencies = {
   graph: GraphInstance;
@@ -32,7 +32,7 @@ export type WriteFragmentArgs = {
 };
 
 export const createFragments = (
-  deps: FragmentsDependencies
+  deps: FragmentsDependencies,
 ) => {
   const { graph, planner, views } = deps;
 

@@ -1,9 +1,9 @@
-import { createGraph } from "@/src/core/graph";
-import { createViews } from "@/src/core/views";
-import { createPlanner } from "@/src/core/planner";
-import { createOptimistic } from "@/src/core/optimistic";
 import { createCanonical } from "@/src/core/canonical";
 import { createDocuments } from "@/src/core/documents";
+import { createGraph } from "@/src/core/graph";
+import { createOptimistic } from "@/src/core/optimistic";
+import { createPlanner } from "@/src/core/planner";
+import { createViews } from "@/src/core/views";
 import { operations } from "@/test/helpers";
 
 describe("documents.normalizeDocument", () => {
@@ -253,7 +253,7 @@ describe("documents.normalizeDocument", () => {
 
                 author: {
                   __typename: "User",
-                  id: "u1"
+                  id: "u1",
                 },
               },
             },
@@ -271,7 +271,7 @@ describe("documents.normalizeDocument", () => {
 
                 author: {
                   __typename: "User",
-                  id: "u1"
+                  id: "u1",
                 },
               },
             },
@@ -293,22 +293,22 @@ describe("documents.normalizeDocument", () => {
     });
 
     expect(graph.getRecord("User:u1")).toEqual({
-      __typename: 'User',
-      id: 'u1',
-      email: 'u1@example.com',
+      __typename: "User",
+      id: "u1",
+      email: "u1@example.com",
 
       'posts({"after":null,"category":"tech","first":2})': { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":2})' },
       'posts({"after":null,"category":"lifestyle","first":2})': { __ref: '@.User:u1.posts({"after":null,"category":"lifestyle","first":2})' },
     });
 
     expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":2})')).toEqual({
-      __typename: 'PostConnection',
+      __typename: "PostConnection",
       totalCount: 2,
 
       pageInfo: {
-        __typename: 'PageInfo',
-        startCursor: 'p1',
-        endCursor: 'p2',
+        __typename: "PageInfo",
+        startCursor: "p1",
+        endCursor: "p2",
         hasNextPage: true,
         hasPreviousPage: false,
       },
@@ -320,13 +320,13 @@ describe("documents.normalizeDocument", () => {
     });
 
     expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"lifestyle","first":2})')).toEqual({
-      __typename: 'PostConnection',
+      __typename: "PostConnection",
       totalCount: 1,
 
       pageInfo: {
-        __typename: 'PageInfo',
-        startCursor: 'p3',
-        endCursor: 'p4',
+        __typename: "PageInfo",
+        startCursor: "p3",
+        endCursor: "p4",
         hasNextPage: false,
         hasPreviousPage: false,
       },
@@ -409,7 +409,7 @@ describe("documents.normalizeDocument", () => {
                       __typename: "Post",
                       id: "p1",
                       title: "Post 1",
-                      tags: []
+                      tags: [],
                     },
                   },
                 ],
@@ -977,11 +977,11 @@ describe("documents.normalizeDocument", () => {
                   id: "p1",
                   title: "Post 1",
                   tags: [],
-                }
-              }
-            ]
-          }
-        }
+                },
+              },
+            ],
+          },
+        },
       },
     };
 
@@ -992,7 +992,7 @@ describe("documents.normalizeDocument", () => {
         input: {
           id: "u1",
           email: "u1_updated@example.com",
-        }
+        },
       },
 
       data: updateUserData,
@@ -1019,7 +1019,7 @@ describe("documents.normalizeDocument", () => {
           __typename: "User",
           id: "u1",
           email: "u1_subscribed@example.com",
-        }
+        },
       },
     };
 
@@ -1256,7 +1256,7 @@ describe("documents.normalizeDocument", () => {
           pageInfo: {
             __typename: "PageInfo",
             startCursor: "p1",
-            endCursor: "p1"
+            endCursor: "p1",
           },
 
           edges: [
@@ -1333,7 +1333,7 @@ describe("documents.normalizeDocument", () => {
                     startCursor: "c3",
                     endCursor: "c3",
                     hasNextPage: true,
-                    hasPreviousPage: false
+                    hasPreviousPage: false,
                   },
 
                   edges: [
@@ -1362,7 +1362,7 @@ describe("documents.normalizeDocument", () => {
       data: user1PostsCommentsAfterData,
     });
 
-    const post1CommentsConnection = graph.getRecord('@connection.Post:p1.comments({})')!;
+    const post1CommentsConnection = graph.getRecord("@connection.Post:p1.comments({})")!;
 
     expect(post1CommentsConnection.totalCount).toBe(2);
     expect(post1CommentsConnection.edges.length).toBe(3);
@@ -1407,7 +1407,7 @@ describe("documents.normalizeDocument", () => {
       data: post9CommentsLeaderData,
     });
 
-    const post9CommentsConnection = graph.getRecord('@connection.Post:p9.comments({})')!;
+    const post9CommentsConnection = graph.getRecord("@connection.Post:p9.comments({})")!;
 
     expect(post9CommentsConnection.totalCount).toBe(10);
     expect(post9CommentsConnection.edges.length).toBe(2);
@@ -1448,13 +1448,13 @@ describe("documents.normalizeDocument", () => {
       variables: {
         postId: "p9",
         first: 2,
-        after: "x2"
+        after: "x2",
       },
 
       data: post9CommentsAfterData,
     });
 
-    const post9CommentsAfterPage = graph.getRecord('@connection.Post:p9.comments({})')!;
+    const post9CommentsAfterPage = graph.getRecord("@connection.Post:p9.comments({})")!;
 
     expect(post9CommentsAfterPage.totalCount).toBe(12);
     expect(post9CommentsAfterPage.edges.length).toBe(2);
@@ -1491,7 +1491,7 @@ describe("documents.normalizeDocument", () => {
       data: post9CommentsBeforeData,
     });
 
-    const post9CommentsBeforePage = graph.getRecord('@connection.Post:p9.comments({})')!;
+    const post9CommentsBeforePage = graph.getRecord("@connection.Post:p9.comments({})")!;
 
     expect(post9CommentsBeforePage.totalCount).toBe(1);
     expect(post9CommentsBeforePage.edges.length).toBe(1);
@@ -1643,8 +1643,8 @@ describe("documents.normalizeDocument", () => {
                     { __typename: "CommentEdge", cursor: "c1", node: { __typename: "Comment", id: "c1" } },
                     { __typename: "CommentEdge", cursor: "c2", node: { __typename: "Comment", id: "c2" } },
                   ],
-                }
-              }
+                },
+              },
             }],
         },
       },
@@ -1679,8 +1679,8 @@ describe("documents.normalizeDocument", () => {
                   __typename: "CommentConnection",
                   pageInfo: { __typename: "PageInfo", startCursor: "c9", endCursor: "c9", hasNextPage: false, hasPreviousPage: false },
                   edges: [{ __typename: "CommentEdge", cursor: "c9", node: { __typename: "Comment", id: "c9" } }],
-                }
-              }
+                },
+              },
             }],
         },
       },
@@ -1724,17 +1724,17 @@ describe("documents.normalizeDocument", () => {
                     startCursor: "c3",
                     endCursor: "c3",
                     hasNextPage: false,
-                    hasPreviousPage: false
+                    hasPreviousPage: false,
                   },
 
                   edges: [
                     { __typename: "CommentEdge", cursor: "c3", node: { __typename: "Comment", id: "c3" } },
                   ],
-                }
-              }
-            }]
-        }
-      }
+                },
+              },
+            }],
+        },
+      },
     };
 
     documents.normalizeDocument({
@@ -1746,7 +1746,7 @@ describe("documents.normalizeDocument", () => {
         postsFirst: 2,
         postsAfter: null,
         commentsFirst: 1,
-        commentsAfter: "c2"
+        commentsAfter: "c2",
       },
 
       data: user1PostsComments_page3,
@@ -1767,11 +1767,11 @@ describe("documents.normalizeDocument", () => {
                 __typename: "CommentConnection",
                 pageInfo: { __typename: "PageInfo", startCursor: "c10", endCursor: "c10", hasNextPage: false, hasPreviousPage: false },
                 edges: [{ __typename: "CommentEdge", cursor: "c10", node: { __typename: "Comment", id: "c10" } }],
-              }
-            }
-          }]
-        }
-      }
+              },
+            },
+          }],
+        },
+      },
     };
 
     documents.normalizeDocument({
@@ -1780,8 +1780,8 @@ describe("documents.normalizeDocument", () => {
       data: user1PostsComments_page4,
     });
 
-    const post1CommentsConnection = graph.getRecord('@connection.Post:p1.comments({})');
-    const post2CommentsConnection = graph.getRecord('@connection.Post:p2.comments({})');
+    const post1CommentsConnection = graph.getRecord("@connection.Post:p1.comments({})");
+    const post2CommentsConnection = graph.getRecord("@connection.Post:p2.comments({})");
 
     const post1CommentIds = (post1CommentsConnection.edges || []).map((r: any) => graph.getRecord(graph.getRecord(r.__ref).node.__ref).id);
     const post2CommentIds = (post2CommentsConnection.edges || []).map((r: any) => graph.getRecord(graph.getRecord(r.__ref).node.__ref).id);
@@ -1795,8 +1795,8 @@ describe("documents.normalizeDocument", () => {
     expect(post2CommentsConnection.pageInfo.endCursor).toBe("c10");
   });
 
-  it('stores and links entities by custom key (slug) when id is absent', () => {
-    graph.putRecord('@', { id: '@', __typename: '@' })
+  it("stores and links entities by custom key (slug) when id is absent", () => {
+    graph.putRecord("@", { id: "@", __typename: "@" });
 
     const PROFILE_QUERY = `
       query Profile($slug: String!) {
@@ -1805,28 +1805,28 @@ describe("documents.normalizeDocument", () => {
           name
         }
       }
-    `
+    `;
     documents.normalizeDocument({
       document: PROFILE_QUERY,
 
       variables: {
-        slug: 'dimitri',
+        slug: "dimitri",
       },
 
       data: {
-        __typename: 'Query',
+        __typename: "Query",
 
         profile: {
-          __typename: 'Profile',
-          slug: 'dimitri',
-          name: 'Dimitri',
+          __typename: "Profile",
+          slug: "dimitri",
+          name: "Dimitri",
         },
       },
-    })
+    });
 
-    const profile = graph.getRecord('Profile:dimitri')
+    const profile = graph.getRecord("Profile:dimitri");
 
-    expect(profile).toBeTruthy()
-    expect(profile.name).toBe('Dimitri')
-  })
+    expect(profile).toBeTruthy();
+    expect(profile.name).toBe("Dimitri");
+  });
 });

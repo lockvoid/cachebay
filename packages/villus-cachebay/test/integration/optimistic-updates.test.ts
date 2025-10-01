@@ -1,5 +1,5 @@
-import { mount } from '@vue/test-utils';
-import { createTestClient, createConnectionComponent, createDetailComponent, seedCache, getEdges, getPageInfo, fixtures, operations, delay, tick } from '@/test/helpers';
+import { mount } from "@vue/test-utils";
+import { createTestClient, createConnectionComponent, createDetailComponent, seedCache, getEdges, getPageInfo, fixtures, operations, delay, tick } from "@/test/helpers";
 
 describe("Optimistic updates", () => {
   it("applies entity patch, commits changes, then reverts to restore original state", async () => {
@@ -40,19 +40,19 @@ describe("Optimistic updates", () => {
     tx1.commit();
     tx2.commit();
 
-    const post_1 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT })
+    const post_1 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
 
     expect(post_1).toEqual({ __typename: "Post", id: "p1", title: "Post B" });
 
     tx1.revert();
 
-    const post_2 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT })
+    const post_2 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
 
     expect(post_2).toEqual({ __typename: "Post", id: "p1", title: "Post B" });
 
     tx2.revert();
 
-    const post_3 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT })
+    const post_3 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
 
     expect(post_3).toEqual({});
   });
@@ -71,19 +71,19 @@ describe("Optimistic updates", () => {
     tx1.commit();
     tx2.commit();
 
-    const post_1 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT })
+    const post_1 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
 
     expect(post_1).toEqual({ __typename: "Post", id: "p1", title: "Post B" });
 
     tx2.revert();
 
-    const post_2 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT })
+    const post_2 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
 
     expect(post_2).toEqual({ __typename: "Post", id: "p1", title: "Post A" });
 
     tx1.revert();
 
-    const post_3 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT })
+    const post_3 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
 
     expect(post_3).toEqual({});
   });
@@ -114,7 +114,7 @@ describe("Optimistic updates", () => {
 
       variables: {
         first: 2,
-        after: 'p2',
+        after: "p2",
       },
 
       data: {
@@ -132,7 +132,7 @@ describe("Optimistic updates", () => {
 
       connectionFn: (data) => {
         return data.posts;
-      }
+      },
     });
 
     const wrapper = mount(Cmp, {
@@ -177,7 +177,7 @@ describe("Optimistic updates", () => {
 
       connectionFn: (data) => {
         return data.posts;
-      }
+      },
     });
 
     const wrapper = mount(Cmp, {
@@ -219,7 +219,7 @@ describe("Optimistic updates", () => {
       data: {
         __typename: "Query",
 
-        posts: fixtures.posts.buildConnection([])
+        posts: fixtures.posts.buildConnection([]),
       },
     });
 
@@ -228,7 +228,7 @@ describe("Optimistic updates", () => {
 
       connectionFn: (data) => {
         return data.posts;
-      }
+      },
     });
 
     const wrapper = mount(Cmp, {
@@ -294,9 +294,9 @@ describe("Optimistic updates", () => {
 
         respond: () => {
           const posts = [
-            { id: 'pa1', title: 'A1' },
-            { id: 'pa2', title: 'A2' },
-            { id: 'pa3', title: 'A3' }
+            { id: "pa1", title: "A1" },
+            { id: "pa2", title: "A2" },
+            { id: "pa3", title: "A3" },
           ];
 
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
@@ -312,9 +312,9 @@ describe("Optimistic updates", () => {
 
         respond: () => {
           const posts = [
-            { id: 'pa4', title: 'A4' },
-            { id: 'pa5', title: 'A5' },
-            { id: 'pa6', title: 'A6' }
+            { id: "pa4", title: "A4" },
+            { id: "pa5", title: "A5" },
+            { id: "pa6", title: "A6" },
           ];
 
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
@@ -330,9 +330,9 @@ describe("Optimistic updates", () => {
 
         respond: () => {
           const posts = [
-            { id: 'pa7', title: 'A7' },
-            { id: 'pa8', title: 'A8' },
-            { id: 'pa9', title: 'A9' }
+            { id: "pa7", title: "A7" },
+            { id: "pa8", title: "A8" },
+            { id: "pa9", title: "A9" },
           ];
 
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
@@ -348,8 +348,8 @@ describe("Optimistic updates", () => {
 
         respond: () => {
           const posts = [
-            { id: 'pb1', title: 'B1' },
-            { id: 'pb2', title: 'B2' },
+            { id: "pb1", title: "B1" },
+            { id: "pb2", title: "B2" },
           ];
 
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
@@ -365,9 +365,9 @@ describe("Optimistic updates", () => {
 
         respond: () => {
           const posts = [
-            { id: 'pa1', title: 'A1' },
-            { id: 'pa2', title: 'A2' },
-            { id: 'pa3', title: 'A3' }
+            { id: "pa1", title: "A1" },
+            { id: "pa2", title: "A2" },
+            { id: "pa3", title: "A3" },
           ];
 
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
@@ -383,9 +383,9 @@ describe("Optimistic updates", () => {
 
         respond: () => {
           const posts = [
-            { id: 'pa4', title: 'A4' },
-            { id: 'pa5', title: 'A5' },
-            { id: 'pa6', title: 'A6' }
+            { id: "pa4", title: "A4" },
+            { id: "pa5", title: "A5" },
+            { id: "pa6", title: "A6" },
           ];
 
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
@@ -399,8 +399,8 @@ describe("Optimistic updates", () => {
 
         respond: () => {
           const posts = [
-            { id: 'pb1', title: 'B1' },
-            { id: 'pb2', title: 'B2' },
+            { id: "pb1", title: "B1" },
+            { id: "pb2", title: "B2" },
           ];
 
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
@@ -416,9 +416,9 @@ describe("Optimistic updates", () => {
 
         respond: () => {
           const posts = [
-            { id: 'pa1', title: 'A1' },
-            { id: 'pa2', title: 'A2' },
-            { id: 'pa3', title: 'A3' }
+            { id: "pa1", title: "A1" },
+            { id: "pa2", title: "A2" },
+            { id: "pa3", title: "A3" },
           ];
 
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
@@ -434,9 +434,9 @@ describe("Optimistic updates", () => {
 
         respond: () => {
           const posts = [
-            { id: 'pa4', title: 'A4' },
-            { id: 'pa6', title: 'A6' },
-            { id: 'pa7', title: 'A7' }
+            { id: "pa4", title: "A4" },
+            { id: "pa6", title: "A6" },
+            { id: "pa7", title: "A7" },
           ];
 
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
@@ -452,9 +452,9 @@ describe("Optimistic updates", () => {
 
         respond: () => {
           const posts = [
-            { id: 'pa8', title: 'A8' },
-            { id: 'pa9', title: 'A9' },
-            { id: 'pa10', title: 'A10' }
+            { id: "pa8", title: "A8" },
+            { id: "pa9", title: "A9" },
+            { id: "pa10", title: "A10" },
           ];
 
           return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
@@ -471,7 +471,7 @@ describe("Optimistic updates", () => {
 
       connectionFn: (data) => {
         return data.posts;
-      }
+      },
     });
 
     const wrapper = mount(Cmp, {
@@ -498,7 +498,7 @@ describe("Optimistic updates", () => {
 
     // 3. Optimistic remove: delete "A5" from connection (no request)
     const removeTx = cache.modifyOptimistic((o) => {
-      const c = o.connection({ parent: "Query", key: "posts", filters: { category: "A" } })
+      const c = o.connection({ parent: "Query", key: "posts", filters: { category: "A" } });
 
       c.removeNode({ __typename: "Post", id: "pa5" });
     });

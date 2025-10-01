@@ -1,5 +1,5 @@
-import { createCache } from "@/src/core/internals";
 import { CACHEBAY_KEY } from "@/src/core/constants";
+import { createCache } from "@/src/core/internals";
 
 describe("createCachebay", () => {
   it("exposes public apis", () => {

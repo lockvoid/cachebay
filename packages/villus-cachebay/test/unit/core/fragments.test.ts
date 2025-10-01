@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { isReactive } from "vue";
+import { createFragments } from "@/src/core/fragments";
 import { createGraph } from "@/src/core/graph";
 import { createPlanner } from "@/src/core/planner";
 import { createViews } from "@/src/core/views";
-import { createFragments } from "@/src/core/fragments";
 import { operations, seedConnectionPage } from "@/test/helpers";
 
-describe('Fragments', () => {
+describe("Fragments", () => {
   let graph: ReturnType<typeof createGraph>;
   let planner: ReturnType<typeof createPlanner>;
   let views: ReturnType<typeof createViews>;
@@ -34,7 +34,7 @@ describe('Fragments', () => {
       expect(userFragment).toEqual({
         __typename: "User",
         id: "u1",
-        email: "u1@example.com"
+        email: "u1@example.com",
       });
 
       graph.putRecord("User:u1", { email: "u1+updated@example.com" });
@@ -42,7 +42,7 @@ describe('Fragments', () => {
       expect(userFragment).toEqual({
         __typename: "User",
         id: "u1",
-        email: "u1+updated@example.com"
+        email: "u1+updated@example.com",
       });
     });
 
@@ -67,7 +67,7 @@ describe('Fragments', () => {
         },
         { totalCount: 2 },
         "PostEdge",
-        "PostConnection"
+        "PostConnection",
       );
 
       const postsFragment = fragments.readFragment({
@@ -78,7 +78,7 @@ describe('Fragments', () => {
         variables: {
           postsCategory: "tech",
           postsFirst: 2,
-          postsAfter: null
+          postsAfter: null,
         },
       });
 
@@ -106,8 +106,8 @@ describe('Fragments', () => {
           __typename: "Post",
           id: "p1",
           title: "P1",
-          tags: []
-        }
+          tags: [],
+        },
       });
 
       expect(postsFragment.posts.edges[1]).toEqual({
@@ -119,22 +119,22 @@ describe('Fragments', () => {
           __typename: "Post",
           id: "p2",
           title: "P2",
-          tags: []
-        }
+          tags: [],
+        },
       });
 
       expect(postsFragment.posts.edges[0].node).toEqual({
         __typename: "Post",
         id: "p1",
         title: "P1",
-        tags: []
+        tags: [],
       });
 
       expect(postsFragment.posts.edges[1].node).toEqual({
         __typename: "Post",
         id: "p2",
         title: "P2",
-        tags: []
+        tags: [],
       });
 
       graph.putRecord("Post:p1", { title: "P1 (Updated)" });
@@ -143,14 +143,14 @@ describe('Fragments', () => {
         __typename: "Post",
         id: "p1",
         title: "P1 (Updated)",
-        tags: []
+        tags: [],
       });
 
       expect(postsFragment.posts.edges[1].node).toEqual({
         __typename: "Post",
         id: "p2",
         title: "P2",
-        tags: []
+        tags: [],
       });
     });
 
@@ -177,7 +177,7 @@ describe('Fragments', () => {
         },
         undefined,
         "CommentEdge",
-        "CommentConnection"
+        "CommentConnection",
       );
 
       const commentsFragment = fragments.readFragment({
@@ -187,7 +187,7 @@ describe('Fragments', () => {
 
         variables: {
           commentsFirst: 2,
-          commentsAfter: null
+          commentsAfter: null,
         },
       });
 
@@ -215,9 +215,9 @@ describe('Fragments', () => {
           text: "Comment 1",
           author: {
             __typename: "User",
-            id: "u2"
-          }
-        }
+            id: "u2",
+          },
+        },
       });
 
       expect(commentsFragment.comments.edges[1]).toEqual({
@@ -230,9 +230,9 @@ describe('Fragments', () => {
           text: "Comment 2",
           author: {
             __typename: "User",
-            id: "u3"
-          }
-        }
+            id: "u3",
+          },
+        },
       });
 
       expect(commentsFragment.comments.edges[0].node).toEqual({
@@ -242,8 +242,8 @@ describe('Fragments', () => {
 
         author: {
           __typename: "User",
-          id: "u2"
-        }
+          id: "u2",
+        },
       });
 
       expect(commentsFragment.comments.edges[1].node).toEqual({
@@ -253,8 +253,8 @@ describe('Fragments', () => {
 
         author: {
           __typename: "User",
-          id: "u3"
-        }
+          id: "u3",
+        },
       });
 
       graph.putRecord("Comment:c1", { text: "Comment 1 (Updated)" });
@@ -266,8 +266,8 @@ describe('Fragments', () => {
 
         author: {
           __typename: "User",
-          id: "u2"
-        }
+          id: "u2",
+        },
       });
 
       expect(commentsFragment.comments.edges[1].node).toEqual({
@@ -277,8 +277,8 @@ describe('Fragments', () => {
 
         author: {
           __typename: "User",
-          id: "u3"
-        }
+          id: "u3",
+        },
       });
     });
 
@@ -323,7 +323,7 @@ describe('Fragments', () => {
       expect(userFragment).toEqual({
         __typename: "User",
         id: "u1",
-        email: "seed@example.com"
+        email: "seed@example.com",
       });
 
       fragments.writeFragment({
@@ -336,13 +336,13 @@ describe('Fragments', () => {
       expect(graph.getRecord("User:u1")).toEqual({
         __typename: "User",
         id: "u1",
-        email: "seed2@example.com"
+        email: "seed2@example.com",
       });
 
       expect(userFragment).toEqual({
         __typename: "User",
         id: "u1",
-        email: "seed2@example.com"
+        email: "seed2@example.com",
       });
     });
 
@@ -402,7 +402,7 @@ describe('Fragments', () => {
         variables: {
           postsCategory: "tech",
           postsFirst: 2,
-          postsAfter: null
+          postsAfter: null,
         },
       });
 
@@ -433,8 +433,8 @@ describe('Fragments', () => {
           __typename: "Post",
           id: "p1",
           title: "P1",
-          tags: []
-        }
+          tags: [],
+        },
       });
 
       expect(postsFragment.posts.edges[1]).toEqual({
@@ -446,8 +446,8 @@ describe('Fragments', () => {
           __typename: "Post",
           id: "p2",
           title: "P2",
-          tags: []
-        }
+          tags: [],
+        },
       });
 
       graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0', { score: 0.9 });
@@ -461,8 +461,8 @@ describe('Fragments', () => {
           __typename: "Post",
           id: "p1",
           title: "P1",
-          tags: []
-        }
+          tags: [],
+        },
       });
 
       expect(postsFragment.posts.edges[1]).toEqual({
@@ -474,8 +474,8 @@ describe('Fragments', () => {
           __typename: "Post",
           id: "p2",
           title: "P2",
-          tags: []
-        }
+          tags: [],
+        },
       });
     });
   });

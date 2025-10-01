@@ -10,10 +10,10 @@ export type CachebayOptions = {
 };
 
 export type UseFragmentOptions = {
-  id: string | import('vue').Ref<string>;
+  id: string | import("vue").Ref<string>;
   fragment: any; // string | DocumentNode | CachePlanV1
   fragmentName?: string;
-  variables?: Record<string, any> | import('vue').Ref<Record<string, any> | undefined>;
+  variables?: Record<string, any> | import("vue").Ref<Record<string, any> | undefined>;
 };
 
 export type ReadFragmentArgs = {

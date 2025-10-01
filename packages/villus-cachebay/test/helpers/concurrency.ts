@@ -12,4 +12,4 @@ export const raf = () => {
   return new Promise((resolve) =>
     (globalThis as any).requestAnimationFrame ? requestAnimationFrame(() => resolve()) : setTimeout(() => resolve(), 16),
   );
-}
+};

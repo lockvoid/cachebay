@@ -31,7 +31,7 @@ describe("Inspect", () => {
         { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false },
         { totalCount: 1 },
         "PostEdge",
-        "PostConnection"
+        "PostConnection",
       );
 
       const graphRecordKeys = inspect.keys().sort();
@@ -61,7 +61,7 @@ describe("Inspect", () => {
       seedConnectionPage(
         graph,
         connectionPageKey,
-        [{ nodeRef: "Post:p1", cursor: "p1" }]
+        [{ nodeRef: "Post:p1", cursor: "p1" }],
       );
 
       const entityRecordKeys = inspect.entityKeys().sort();
@@ -105,12 +105,12 @@ describe("Inspect", () => {
       seedConnectionPage(
         graph,
         userPostsPageKey,
-        [{ nodeRef: "Post:p1" }]
+        [{ nodeRef: "Post:p1" }],
       );
       seedConnectionPage(
         graph,
         techPostsPageKey,
-        [{ nodeRef: "Post:p1" }]
+        [{ nodeRef: "Post:p1" }],
       );
 
       const connectionPageKeys = inspect.pageKeys().sort();
@@ -135,13 +135,13 @@ describe("Inspect", () => {
         userPostsPageKey,
         [
           { nodeRef: "Post:p1", cursor: "p1" },
-          { nodeRef: "Post:p2", cursor: "p2" }
-        ]
+          { nodeRef: "Post:p2", cursor: "p2" },
+        ],
       );
       seedConnectionPage(
         graph,
         techPostsPageKey,
-        [{ nodeRef: "Post:p3", cursor: "p3" }]
+        [{ nodeRef: "Post:p3", cursor: "p3" }],
       );
 
       const edgeKeys = inspect.edgeKeys();
@@ -158,13 +158,13 @@ describe("Inspect", () => {
         userPostsPageKey,
         [
           { nodeRef: "Post:p1", cursor: "p1" },
-          { nodeRef: "Post:p2", cursor: "p2" }
-        ]
+          { nodeRef: "Post:p2", cursor: "p2" },
+        ],
       );
       seedConnectionPage(
         graph,
         techPostsPageKey,
-        [{ nodeRef: "Post:p3", cursor: "p3" }]
+        [{ nodeRef: "Post:p3", cursor: "p3" }],
       );
 
       const userPostsEdgeKeys = inspect.edgeKeys(userPostsPageKey);
@@ -180,10 +180,10 @@ describe("Inspect", () => {
       seedConnectionPage(
         graph,
         '@.User:u1.posts({"first":1})',
-        [{ nodeRef: "Post:p1" }]
+        [{ nodeRef: "Post:p1" }],
       );
 
-      const nonExistentPageEdgeKeys = inspect.edgeKeys('@.nonexistent.posts({})');
+      const nonExistentPageEdgeKeys = inspect.edgeKeys("@.nonexistent.posts({})");
       expect(nonExistentPageEdgeKeys).toEqual([]);
     });
   });

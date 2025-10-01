@@ -1,7 +1,7 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
+import { buildConnectionCanonicalKey } from "./utils";
 import type { GraphInstance } from "./graph";
 import type { PlanField } from "../compiler";
-import { buildConnectionCanonicalKey } from "./utils";
 
 type OptimisticHook = {
   replayOptimistic: (hint?: { connections?: string[]; entities?: string[] }) => {

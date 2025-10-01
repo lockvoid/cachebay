@@ -1,5 +1,5 @@
 import { compilePlan } from "@/src/compiler";
-import { collectConnectionDirectives, hasTypenames, operations } from '@/test/helpers';
+import { collectConnectionDirectives, hasTypenames, operations } from "@/test/helpers";
 
 describe("Compiler x Connections", () => {
   it("marks connection only when @connection is present; attaches mode and args", () => {

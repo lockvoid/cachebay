@@ -27,7 +27,7 @@ describe("SSR", () => {
       });
 
       expect(ssr.isHydrating()).toBe(true);
-      await delay(0)
+      await delay(0);
       expect(ssr.isHydrating()).toBe(false);
 
       const rootRecord = graph.getRecord("@");
@@ -40,7 +40,7 @@ describe("SSR", () => {
         // Invalid snapshot...
       } as any);
 
-      await delay(0)
+      await delay(0);
 
       expect(graph.keys().length).toBe(0);
 
@@ -48,7 +48,7 @@ describe("SSR", () => {
         records: [null as any, ["User:x", null], ["User:y", 123], ["User:z", { __typename: "User", id: "z" }]],
       });
 
-      await delay(0)
+      await delay(0);
 
       expect(graph.getRecord("User:z")?.id).toBe("z");
     });
@@ -65,7 +65,7 @@ describe("SSR", () => {
 
       ssr.hydrate(snapshot);
 
-      await delay(0)
+      await delay(0);
 
       graph.putRecord("User:u1", { email: "u1+updated@example.com" });
 
@@ -88,7 +88,7 @@ describe("SSR", () => {
         { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false },
         { totalCount: 1 },
         "PostEdge",
-        "PostConnection"
+        "PostConnection",
       );
 
       // 1) Dehydrate

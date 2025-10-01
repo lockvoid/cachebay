@@ -1,15 +1,15 @@
 // TODO: Needs refactoring.
 
-import { createGraph } from "@/src/core/graph";
-import { createPlanner } from "@/src/core/planner";
 import { createCanonical } from "@/src/core/canonical";
-import { createOptimistic } from "@/src/core/optimistic";
-import { createViews } from "@/src/core/views";
-import { createDocuments } from "@/src/core/documents";
-import { createPlugin } from "@/src/core/plugin";
-import { createSSR } from "@/src/features/ssr";
 import { ROOT_ID } from "@/src/core/constants";
+import { createDocuments } from "@/src/core/documents";
+import { createGraph } from "@/src/core/graph";
+import { createOptimistic } from "@/src/core/optimistic";
+import { createPlanner } from "@/src/core/planner";
+import { createPlugin } from "@/src/core/plugin";
 import { buildConnectionKey } from "@/src/core/utils";
+import { createViews } from "@/src/core/views";
+import { createSSR } from "@/src/features/ssr";
 import { operations, seedConnectionPage } from "@/test/helpers";
 import type { OperationResult } from "villus";
 
@@ -127,7 +127,7 @@ describe("Plugin", () => {
         "UserConnection",
       );
 
-      const canonicalUsersKey = `@connection.users({"role":"dj"})`;
+      const canonicalUsersKey = "@connection.users({\"role\":\"dj\"})";
 
       graph.putRecord(canonicalUsersKey, {
         __typename: "UserConnection",
@@ -149,7 +149,7 @@ describe("Plugin", () => {
         "PostConnection",
       );
 
-      const canonicalPostsKey = `@connection.User:u1.posts({"category":"tech"})`;
+      const canonicalPostsKey = "@connection.User:u1.posts({\"category\":\"tech\"})";
 
       graph.putRecord(canonicalPostsKey, {
         __typename: "PostConnection",
@@ -229,7 +229,7 @@ describe("Plugin", () => {
         "UserConnection",
       );
 
-      const canonicalUsersKey = `@connection.users({"role":"dj"})`;
+      const canonicalUsersKey = "@connection.users({\"role\":\"dj\"})";
       graph.putRecord(canonicalUsersKey, {
         __typename: "UserConnection",
 
@@ -238,7 +238,7 @@ describe("Plugin", () => {
           startCursor: "u1",
           endCursor: "u2",
           hasNextPage: false,
-          hasPreviousPage: false
+          hasPreviousPage: false,
         },
 
         edges: [
@@ -326,7 +326,7 @@ describe("Plugin", () => {
               startCursor: "u3",
               endCursor: "u3",
               hasNextPage: true,
-              hasPreviousPage: true
+              hasPreviousPage: true,
             },
 
             edges: [{
@@ -336,8 +336,8 @@ describe("Plugin", () => {
               node: {
                 __typename: "User",
                 id: "u3",
-                email: "c@example.com"
-              }
+                email: "c@example.com",
+              },
             }],
           },
         },
@@ -376,7 +376,7 @@ describe("Plugin", () => {
         },
       }, true);
 
-      const canonicalKey = `@connection.users({"role":"dj"})`;
+      const canonicalKey = "@connection.users({\"role\":\"dj\"})";
       const canonicalRecord = graph.getRecord(canonicalKey);
       const userIds = (canonicalRecord?.edges ?? [])
         .map((edgeRef: any) => graph.getRecord(edgeRef.__ref)?.node?.__ref)
@@ -403,7 +403,7 @@ describe("Plugin", () => {
       seedConnectionPage(graph, afterPageKey, [{ nodeRef: "User:u3", cursor: "u3" }],
         { __typename: "PageInfo", startCursor: "u3", endCursor: "u3", hasNextPage: false }, {}, "UserEdge", "UserConnection");
 
-      const canonicalKey = `@connection.users({"role":"dj"})`;
+      const canonicalKey = "@connection.users({\"role\":\"dj\"})";
       graph.putRecord(canonicalKey, {
         __typename: "UserConnection",
         pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u3", hasNextPage: false, hasPreviousPage: false },
@@ -464,7 +464,7 @@ describe("Plugin", () => {
         },
       }, true);
 
-      const canonicalKey = `@connection.users({"role":"moderator"})`;
+      const canonicalKey = "@connection.users({\"role\":\"moderator\"})";
       expect(graph.getRecord(canonicalKey)?.edges.length).toBe(2);
 
       const leaderContext: any = {
@@ -546,7 +546,7 @@ describe("Plugin", () => {
           "UserConnection",
         );
 
-        const canonicalKey = `@connection.users({"role":"dj"})`;
+        const canonicalKey = "@connection.users({\"role\":\"dj\"})";
         graph.putRecord(canonicalKey, {
           __typename: "UserConnection",
           pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: true, hasPreviousPage: false },
@@ -616,7 +616,7 @@ describe("Plugin", () => {
           "UserConnection",
         );
 
-        const canonicalKey = `@connection.users({"role":"ops"})`;
+        const canonicalKey = "@connection.users({\"role\":\"ops\"})";
         graph.putRecord(canonicalKey, {
           __typename: "UserConnection",
           pageInfo: { __typename: "PageInfo", startCursor: "x1", endCursor: "x2", hasNextPage: true, hasPreviousPage: false },

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import {
   Kind,
   parse,
@@ -10,8 +10,8 @@ import {
   type FieldNode,
 } from "graphql";
 import { lowerSelectionSet } from "./lowering/flatten";
-import type { CachePlanV1, PlanField } from "./types";
 import { isCachePlanV1 } from "./utils";
+import type { CachePlanV1, PlanField } from "./types";
 
 /** Build a Map of fragment name -> fragment definition for lowering. */
 const indexFragments = (doc: DocumentNode): Map<string, FragmentDefinitionNode> => {
@@ -26,7 +26,7 @@ const indexFragments = (doc: DocumentNode): Map<string, FragmentDefinitionNode> 
 };
 
 const indexByResponseKey = (
-  fields: PlanField[] | null | undefined
+  fields: PlanField[] | null | undefined,
 ): Map<string, PlanField> | undefined => {
   if (!fields || fields.length === 0) return undefined;
   const m = new Map<string, PlanField>();
@@ -49,7 +49,7 @@ const opRootTypename = (op: OperationDefinitionNode): string => {
 
 function ensureTypename(ss: SelectionSetNode): SelectionSetNode {
   const has = ss.selections.some(
-    s => s.kind === Kind.FIELD && s.name.value === "__typename"
+    s => s.kind === Kind.FIELD && s.name.value === "__typename",
   );
   if (has) return ss;
   const typenameField: FieldNode = { kind: Kind.FIELD, name: { kind: Kind.NAME, value: "__typename" } };
@@ -101,7 +101,7 @@ function buildNetworkQuery(doc: DocumentNode): DocumentNode {
  */
 export const compilePlan = (
   documentOrStringOrPlan: string | DocumentNode | CachePlanV1,
-  opts?: { fragmentName?: string }
+  opts?: { fragmentName?: string },
 ): CachePlanV1 => {
   // Precompiled plan? done.
   if (isCachePlanV1(documentOrStringOrPlan)) {
@@ -118,7 +118,7 @@ export const compilePlan = (
 
   // Operation path
   const operation = document.definitions.find(
-    (d): d is OperationDefinitionNode => d.kind === Kind.OPERATION_DEFINITION
+    (d): d is OperationDefinitionNode => d.kind === Kind.OPERATION_DEFINITION,
   );
 
   if (operation) {
@@ -143,7 +143,7 @@ export const compilePlan = (
 
   // Fragment path (single or multiple)
   const fragmentDefs = document.definitions.filter(
-    (d): d is FragmentDefinitionNode => d.kind === Kind.FRAGMENT_DEFINITION
+    (d): d is FragmentDefinitionNode => d.kind === Kind.FRAGMENT_DEFINITION,
   );
 
   if (fragmentDefs.length >= 1) {
@@ -156,7 +156,7 @@ export const compilePlan = (
         const names = fragmentDefs.map(f => f.name.value).join(", ");
         throw new Error(
           `compilePlan: document contains multiple fragments [${names}]; ` +
-          `pass { fragmentName: "<one-of>" }`
+          "pass { fragmentName: \"<one-of>\" }",
         );
       }
       frag = fragmentDefs.find(f => f.name.value === opts.fragmentName);
@@ -164,7 +164,7 @@ export const compilePlan = (
         const names = fragmentDefs.map(f => f.name.value).join(", ");
         throw new Error(
           `compilePlan: fragment "${opts.fragmentName}" not found. ` +
-          `Available: [${names}]`
+          `Available: [${names}]`,
         );
       }
     }

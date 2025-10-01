@@ -1,5 +1,5 @@
-import type { DocumentNode } from "graphql";
 import { compilePlan, isCachePlanV1, type CachePlanV1 } from "../compiler";
+import type { DocumentNode } from "graphql";
 
 export type PlannerInstance = ReturnType<typeof createPlanner>;
 
@@ -13,7 +13,7 @@ export const createPlanner = () => {
 
   const getPlan = (
     docOrPlan: DocumentNode | CachePlanV1 | string,
-    opts?: GetPlanOpts
+    opts?: GetPlanOpts,
   ): CachePlanV1 => {
     // Already compiled? just return it
     if (isCachePlanV1(docOrPlan)) return docOrPlan as CachePlanV1;

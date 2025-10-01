@@ -1,5 +1,5 @@
-import { mount } from '@vue/test-utils';
-import { createTestClient, createConnectionComponent, createDetailComponent, seedCache, getEdges, fixtures, operations, delay, tick } from '@/test/helpers';
+import { mount } from "@vue/test-utils";
+import { createTestClient, createConnectionComponent, createDetailComponent, seedCache, getEdges, fixtures, operations, delay, tick } from "@/test/helpers";
 
 describe("Cache Policies Behavior", () => {
   describe("cache-first policy", () => {
@@ -23,7 +23,7 @@ describe("Cache Policies Behavior", () => {
 
         connectionFn: (data) => {
           return data.users;
-        }
+        },
       });
 
       const wrapper = mount(Cmp, {
@@ -110,7 +110,7 @@ describe("Cache Policies Behavior", () => {
               },
             };
           },
-          delay: 15
+          delay: 15,
         },
       ];
 
@@ -121,7 +121,7 @@ describe("Cache Policies Behavior", () => {
 
         detailFn: (data) => {
           return data.user;
-        }
+        },
       });
 
       const wrapper = mount(Cmp, {
@@ -150,7 +150,7 @@ describe("Cache Policies Behavior", () => {
         query: operations.USER_QUERY,
 
         variables: {
-          id: "u1"
+          id: "u1",
         },
 
         data: {
@@ -166,12 +166,12 @@ describe("Cache Policies Behavior", () => {
 
         detailFn: (data) => {
           return data.user;
-        }
+        },
       });
 
       const wrapper = mount(Cmp, {
         props: {
-          id: "u1"
+          id: "u1",
         },
         global: {
           plugins: [client],
@@ -224,7 +224,7 @@ describe("Cache Policies Behavior", () => {
 
         connectionFn: (data) => {
           return data.users;
-        }
+        },
       });
 
       const wrapper = mount(Cmp, {
@@ -257,12 +257,12 @@ describe("Cache Policies Behavior", () => {
         variables: {
           usersRole: "admin",
           usersFirst: 2,
-          usersAfter: null
+          usersAfter: null,
         },
         data: {
           __typename: "Query",
           users: fixtures.users.buildConnection([{ email: "u1@example.com" }]),
-        }
+        },
       });
 
       const routes = [
@@ -273,7 +273,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: { data: { __typename: "Query", users: fixtures.users.buildConnection([{ email: "u1@example.com" }]) } } };
           },
-          delay: 10
+          delay: 10,
         },
       ];
 
@@ -282,7 +282,7 @@ describe("Cache Policies Behavior", () => {
 
         connectionFn: (data) => {
           return data.users;
-        }
+        },
       });
 
       const { client, fx } = createTestClient({ routes, cache });
@@ -322,7 +322,7 @@ describe("Cache Policies Behavior", () => {
 
         data: {
           __typename: "Query",
-          users: fixtures.users.buildConnection([{ email: "u1@example.com" }])
+          users: fixtures.users.buildConnection([{ email: "u1@example.com" }]),
         },
       });
 
@@ -334,7 +334,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ email: "u1+updated@example.com" }]) } };
           },
-          delay: 10
+          delay: 10,
         },
       ];
 
@@ -379,7 +379,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ email: "u1@example.com" }]) } };
           },
-          delay: 5
+          delay: 5,
         },
       ];
 
@@ -390,7 +390,7 @@ describe("Cache Policies Behavior", () => {
 
         connectionFn: (data) => {
           return data.users;
-        }
+        },
       });
 
       const wrapper = mount(Cmp, {
@@ -430,12 +430,12 @@ describe("Cache Policies Behavior", () => {
               comments: fixtures.comments.buildConnection([
                 {
                   uuid: "c1",
-                  text: "Comment 1"
+                  text: "Comment 1",
                 },
                 {
                   uuid: "c2",
-                  text: "Comment 2"
-                }
+                  text: "Comment 2",
+                },
               ]),
             },
           ]),
@@ -454,16 +454,16 @@ describe("Cache Policies Behavior", () => {
               comments: fixtures.comments.buildConnection([
                 {
                   uuid: "c1",
-                  text: "Comment 1"
+                  text: "Comment 1",
                 },
                 {
                   uuid: "c2",
-                  text: "Comment 2"
+                  text: "Comment 2",
                 },
                 {
                   uuid: "c3",
-                  text: "Comment 3"
-                }
+                  text: "Comment 3",
+                },
               ]),
             },
           ]),
@@ -503,7 +503,7 @@ describe("Cache Policies Behavior", () => {
 
         connectionFn: (data) => {
           return data.user?.posts?.edges?.[0]?.node?.comments;
-        }
+        },
       });
 
       const { client, fx } = createTestClient({ routes, cache });
@@ -546,8 +546,8 @@ describe("Cache Policies Behavior", () => {
 
         data: {
           __typename: "Query",
-          users: fixtures.users.buildConnection([{ email: "u1@example.com" }, { email: "u2@example.com" }])
-        }
+          users: fixtures.users.buildConnection([{ email: "u1@example.com" }, { email: "u2@example.com" }]),
+        },
       });
 
       await seedCache(cache, {
@@ -555,12 +555,12 @@ describe("Cache Policies Behavior", () => {
         variables: {
           usersRole: "admin",
           usersFirst: 2,
-          usersAfter: "u2"
+          usersAfter: "u2",
         },
 
         data: {
           __typename: "Query",
-          users: fixtures.users.buildConnection([{ email: "u3@example.com" }])
+          users: fixtures.users.buildConnection([{ email: "u3@example.com" }]),
         },
       });
 
@@ -581,7 +581,7 @@ describe("Cache Policies Behavior", () => {
 
         connectionFn: (data) => {
           return data.users;
-        }
+        },
       });
 
       const { client, fx } = createTestClient({ routes, cache });
@@ -619,7 +619,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ email: "u1@example.com" }]) } };
           },
-          delay: 20
+          delay: 20,
         },
       ];
 
@@ -630,14 +630,14 @@ describe("Cache Policies Behavior", () => {
 
         connectionFn: (data) => {
           return data.users;
-        }
+        },
       });
 
       const wrapper = mount(Cmp, {
         props: {
           usersRole: "admin",
           usersFirst: 2,
-          usersAfter: null
+          usersAfter: null,
         },
         global: {
           plugins: [client],
@@ -663,7 +663,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: { __typename: "Query", user: fixtures.user({ id: "u1", email: "u1@example.com" }) } };
           },
-          delay: 15
+          delay: 15,
         },
       ];
 
@@ -674,7 +674,7 @@ describe("Cache Policies Behavior", () => {
 
         detailFn: (data) => {
           return data.user;
-        }
+        },
       });
 
       const wrapper = mount(Cmp, {
@@ -716,7 +716,7 @@ describe("Cache Policies Behavior", () => {
                 {
                   uuid: "c4",
                   text: "Comment 4",
-                }
+                },
               ]),
             },
           ]),
@@ -740,7 +740,7 @@ describe("Cache Policies Behavior", () => {
 
         connectionFn: (data) => {
           return data.user?.posts?.edges?.[0]?.node?.comments;
-        }
+        },
       });
 
       const { client, cache, fx } = createTestClient({ routes });
@@ -783,8 +783,8 @@ describe("Cache Policies Behavior", () => {
 
         data: {
           __typename: "Query",
-          users: fixtures.users.buildConnection([{ email: "u1@example.com" }])
-        }
+          users: fixtures.users.buildConnection([{ email: "u1@example.com" }]),
+        },
       });
 
       const Cmp = createConnectionComponent(operations.USERS_QUERY, {
@@ -792,7 +792,7 @@ describe("Cache Policies Behavior", () => {
 
         connectionFn: (data) => {
           return data.users;
-        }
+        },
       });
 
       const { client, fx } = createTestClient({ cache });
@@ -824,7 +824,7 @@ describe("Cache Policies Behavior", () => {
 
         connectionFn: (data) => {
           return data.users;
-        }
+        },
       });
 
       const wrapper = mount(Cmp, {
@@ -854,7 +854,7 @@ describe("Cache Policies Behavior", () => {
 
         connectionFn: (data) => {
           return data.users;
-        }
+        },
       });
 
       const wrapper = mount(Cmp, {

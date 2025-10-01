@@ -1,7 +1,7 @@
-import { defineComponent, ref, isReactive, h } from "vue";
 import { mount } from "@vue/test-utils";
-import { createTestClient, operations, tick } from "@/test/helpers";
+import { defineComponent, ref, isReactive, h } from "vue";
 import { useFragment } from "@/src";
+import { createTestClient, operations, tick } from "@/test/helpers";
 
 describe("Fragments lifecycle", () => {
   describe("identify", () => {

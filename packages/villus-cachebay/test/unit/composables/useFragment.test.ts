@@ -1,9 +1,9 @@
+import { mount } from "@vue/test-utils";
 import { describe, it, expect, vi } from "vitest";
 import { defineComponent, h, ref, nextTick } from "vue";
-import { mount } from "@vue/test-utils";
-import { provideCachebay } from "@/src/core/plugin";
-import { createCache } from "@/src/core/internals";
 import { useFragment } from "@/src/composables/useFragment";
+import { createCache } from "@/src/core/internals";
+import { provideCachebay } from "@/src/core/plugin";
 import { USER_FIELDS_FRAGMENT_COMPILER } from "@/test/helpers";
 
 describe("useFragment", () => {
@@ -194,7 +194,7 @@ describe("useFragment", () => {
 
       install: (app: any) => {
         provideCachebay(app, { identify: vi.fn(), writeFragment: vi.fn() });
-      }
+      },
     };
 
     const App = defineComponent({
@@ -212,7 +212,7 @@ describe("useFragment", () => {
         global: {
           plugins: [invalidCache],
         },
-      })
+      }),
     ).toThrowError("[useFragment] cache must expose readFragment()");
   });
 });

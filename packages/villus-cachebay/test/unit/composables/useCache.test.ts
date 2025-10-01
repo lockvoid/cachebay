@@ -1,9 +1,9 @@
+import { mount } from "@vue/test-utils";
 import { describe, it, expect, vi } from "vitest";
 import { defineComponent, h } from "vue";
-import { mount } from "@vue/test-utils";
-import { provideCachebay } from "@/src/core/plugin";
-import { createCache } from "@/src/core/internals";
 import { useCache } from "@/src/composables/useCache";
+import { createCache } from "@/src/core/internals";
+import { provideCachebay } from "@/src/core/plugin";
 
 describe("useCache", () => {
   it("throws if used without provider", () => {
@@ -16,7 +16,7 @@ describe("useCache", () => {
     });
 
     expect(() => mount(App)).toThrowError(
-      "[cachebay] useCache() called before provideCachebay()"
+      "[cachebay] useCache() called before provideCachebay()",
     );
   });
 

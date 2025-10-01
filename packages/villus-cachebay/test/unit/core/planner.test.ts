@@ -1,108 +1,108 @@
-import type { DocumentNode } from 'graphql'
+import type { DocumentNode } from "graphql";
 
-vi.mock('@/src/compiler', () => {
+vi.mock("@/src/compiler", () => {
   const compilePlan = vi.fn(() => Object.freeze({
-    kind: 'CachePlanV1' as const,
-    operation: 'query' as const,
-    rootTypename: 'Query',
+    kind: "CachePlanV1" as const,
+    operation: "query" as const,
+    rootTypename: "Query",
     root: [],
     rootSelectionMap: undefined,
     networkQuery: {},
-  }))
+  }));
 
-  const isCachePlanV1 = (x: any) => !!x && x.kind === 'CachePlanV1'
+  const isCachePlanV1 = (x: any) => !!x && x.kind === "CachePlanV1";
 
-  return { compilePlan, isCachePlanV1 }
-})
+  return { compilePlan, isCachePlanV1 };
+});
 
-import { createPlanner } from '@/src/core/planner'
-import { compilePlan } from '@/src/compiler'
+import { createPlanner } from "@/src/core/planner";
+import { compilePlan } from "@/src/compiler";
 
-const compileSpy = vi.mocked(compilePlan)
+const compileSpy = vi.mocked(compilePlan);
 
-describe('planner.getPlan (memo & routing)', () => {
+describe("planner.getPlan (memo & routing)", () => {
   beforeEach(() => {
-    compileSpy.mockClear()
-  })
+    compileSpy.mockClear();
+  });
 
-  it('returns a precompiled plan as-is (no compile call)', () => {
-    const planner = createPlanner()
+  it("returns a precompiled plan as-is (no compile call)", () => {
+    const planner = createPlanner();
 
     const plan = Object.freeze({
-      kind: 'CachePlanV1' as const,
-      operation: 'query' as const,
-      rootTypename: 'Query',
+      kind: "CachePlanV1" as const,
+      operation: "query" as const,
+      rootTypename: "Query",
       root: [],
       rootSelectionMap: undefined,
       networkQuery: {},
-    })
+    });
 
-    const result = planner.getPlan(plan)
+    const result = planner.getPlan(plan);
 
-    expect(result).toBe(plan)
-    expect(compileSpy).not.toHaveBeenCalled()
-  })
+    expect(result).toBe(plan);
+    expect(compileSpy).not.toHaveBeenCalled();
+  });
 
-  describe('DocumentNode memoization', () => {
-    it('memoizes by DocumentNode identity + fragmentName', () => {
-      const planner = createPlanner()
+  describe("DocumentNode memoization", () => {
+    it("memoizes by DocumentNode identity + fragmentName", () => {
+      const planner = createPlanner();
 
-      const docA = { kind: 'Document', __name: 'A', __id: 1 } as any as DocumentNode
-      const docB = { kind: 'Document', __name: 'B', __id: 2 } as any as DocumentNode
+      const docA = { kind: "Document", __name: "A", __id: 1 } as any as DocumentNode;
+      const docB = { kind: "Document", __name: "B", __id: 2 } as any as DocumentNode;
 
-      const p1 = planner.getPlan(docA, { fragmentName: 'Frag' })
-      const p2 = planner.getPlan(docA, { fragmentName: 'Frag' })
-      expect(p1).toBe(p2)
+      const p1 = planner.getPlan(docA, { fragmentName: "Frag" });
+      const p2 = planner.getPlan(docA, { fragmentName: "Frag" });
+      expect(p1).toBe(p2);
 
-      const p3 = planner.getPlan(docA, { fragmentName: 'Other' })
-      expect(p3).not.toBe(p1)
+      const p3 = planner.getPlan(docA, { fragmentName: "Other" });
+      expect(p3).not.toBe(p1);
 
-      const p4 = planner.getPlan(docB, { fragmentName: 'Frag' })
-      expect(p4).not.toBe(p1)
+      const p4 = planner.getPlan(docB, { fragmentName: "Frag" });
+      expect(p4).not.toBe(p1);
 
-      expect(compileSpy).toHaveBeenCalledTimes(3)
-      expect(compileSpy).toHaveBeenNthCalledWith(1, docA, { fragmentName: 'Frag' })
-      expect(compileSpy).toHaveBeenNthCalledWith(2, docA, { fragmentName: 'Other' })
-      expect(compileSpy).toHaveBeenNthCalledWith(3, docB, { fragmentName: 'Frag' })
-    })
-  })
+      expect(compileSpy).toHaveBeenCalledTimes(3);
+      expect(compileSpy).toHaveBeenNthCalledWith(1, docA, { fragmentName: "Frag" });
+      expect(compileSpy).toHaveBeenNthCalledWith(2, docA, { fragmentName: "Other" });
+      expect(compileSpy).toHaveBeenNthCalledWith(3, docB, { fragmentName: "Frag" });
+    });
+  });
 
-  describe('string memoization', () => {
-    it('memoizes by source string + fragmentName', () => {
-      const planner = createPlanner()
+  describe("string memoization", () => {
+    it("memoizes by source string + fragmentName", () => {
+      const planner = createPlanner();
 
-      const src = 'fragment X on Y { id }'
+      const src = "fragment X on Y { id }";
 
-      const p1 = planner.getPlan(src, { fragmentName: 'X' })
-      const p2 = planner.getPlan(src, { fragmentName: 'X' })      
-      const p3 = planner.getPlan(src, { fragmentName: 'Z' })
+      const p1 = planner.getPlan(src, { fragmentName: "X" });
+      const p2 = planner.getPlan(src, { fragmentName: "X" });      
+      const p3 = planner.getPlan(src, { fragmentName: "Z" });
 
-      expect(p1).toBe(p2)
-      expect(p3).not.toBe(p1)
+      expect(p1).toBe(p2);
+      expect(p3).not.toBe(p1);
       
-      expect(compileSpy).toHaveBeenCalledTimes(2)
-      expect(compileSpy).toHaveBeenNthCalledWith(1, src, { fragmentName: 'X' })
-      expect(compileSpy).toHaveBeenNthCalledWith(2, src, { fragmentName: 'Z' })
-    })
-  })
+      expect(compileSpy).toHaveBeenCalledTimes(2);
+      expect(compileSpy).toHaveBeenNthCalledWith(1, src, { fragmentName: "X" });
+      expect(compileSpy).toHaveBeenNthCalledWith(2, src, { fragmentName: "Z" });
+    });
+  });
 
-  it('handles mixed inputs consistently (doc vs string)', () => {
-    const planner = createPlanner()
+  it("handles mixed inputs consistently (doc vs string)", () => {
+    const planner = createPlanner();
 
-    const src = 'query Q { me { id } }'
-    const doc = { kind: 'Document', __name: 'Q', __id: 99 } as any as DocumentNode
+    const src = "query Q { me { id } }";
+    const doc = { kind: "Document", __name: "Q", __id: 99 } as any as DocumentNode;
 
-    const a = planner.getPlan(src)
-    const b = planner.getPlan(src)
-    const c = planner.getPlan(doc)
-    const d = planner.getPlan(doc)
+    const a = planner.getPlan(src);
+    const b = planner.getPlan(src);
+    const c = planner.getPlan(doc);
+    const d = planner.getPlan(doc);
 
-    expect(a).toBe(b)
-    expect(c).toBe(d)
-    expect(a).not.toBe(c)
+    expect(a).toBe(b);
+    expect(c).toBe(d);
+    expect(a).not.toBe(c);
 
-    expect(compileSpy).toHaveBeenCalledTimes(2)
-    expect(compileSpy).toHaveBeenNthCalledWith(1, src, { fragmentName: undefined })
-    expect(compileSpy).toHaveBeenNthCalledWith(2, doc, { fragmentName: undefined })
-  })
-})
+    expect(compileSpy).toHaveBeenCalledTimes(2);
+    expect(compileSpy).toHaveBeenNthCalledWith(1, src, { fragmentName: undefined });
+    expect(compileSpy).toHaveBeenNthCalledWith(2, doc, { fragmentName: undefined });
+  });
+});

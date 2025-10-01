@@ -1,4 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
+import { ROOT_ID } from "./constants";
 import {
   isObject,
   hasTypename,
@@ -9,13 +10,12 @@ import {
   upsertEntityShallow,
   TRAVERSE_SKIP,
 } from "./utils";
-import { ROOT_ID } from "./constants";
 import type { CachePlanV1, PlanField } from "../compiler";
-import type { DocumentNode } from "graphql";
-import type { GraphInstance } from "./graph";
-import type { ViewsInstance } from "./views";
-import type { PlannerInstance } from "./planner";
 import type { CanonicalInstance } from "./canonical";
+import type { GraphInstance } from "./graph";
+import type { PlannerInstance } from "./planner";
+import type { ViewsInstance } from "./views";
+import type { DocumentNode } from "graphql";
 
 export type DocumentsDependencies = {
   graph: GraphInstance;
@@ -222,7 +222,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           canKey,
           field,
           variables,
-          /* canonical */ true
+          /* canonical */ true,
         );
         continue;
       }
@@ -249,7 +249,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           null,
           undefined,
           variables,
-          true
+          true,
         );
         continue;
       }
@@ -260,7 +260,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         field.selectionSet,
         field.selectionMap,
         variables,
-        true
+        true,
       );
     }
 

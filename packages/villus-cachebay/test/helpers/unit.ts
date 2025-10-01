@@ -19,7 +19,7 @@ export function readCanonicalEdges(graph: ReturnType<typeof createGraph>, canoni
       meta: Object.fromEntries(
         Object.keys(e || {})
           .filter((k) => k !== "cursor" && k !== "node" && k !== "__typename")
-          .map((k) => [k, e[k]])
+          .map((k) => [k, e[k]]),
       ),
     });
   }
@@ -36,7 +36,7 @@ const stableStringify = (obj: any) => {
 export const createPlanField = (
   name: string,
   isConnection = false,
-  children: PlanField[] | null = null
+  children: PlanField[] | null = null,
 ): PlanField => {
   const map = new Map<string, PlanField>();
   if (children) {
@@ -70,7 +70,7 @@ export const seedConnectionPage = (
   pageInfo?: Record<string, any>,
   extra?: Record<string, any>,
   edgeTypename = "Edge",
-  connectionTypename = "Connection"
+  connectionTypename = "Connection",
 ) => {
   const edgeRefs: Array<{ __ref: string }> = [];
   for (let i = 0; i < edges.length; i++) {
@@ -96,7 +96,7 @@ export const writePageSnapshot = (
   graph: ReturnType<typeof createGraph>,
   pageKey: string,
   nodeIds: number[],
-  pageInfo?: { start?: string; end?: string; hasNext?: boolean; hasPrev?: boolean }
+  pageInfo?: { start?: string; end?: string; hasNext?: boolean; hasPrev?: boolean },
 ) => {
   const edgeRefs: Array<{ __ref: string }> = [];
 
@@ -144,7 +144,7 @@ export const collectConnectionDirectives = (doc: DocumentNode): string[] => {
     Field(node) {
       const hasConn = (node.directives || []).some(d => d.name.value === "connection");
       if (hasConn) hits.push(node.name.value);
-    }
+    },
   });
   return hits;
 };
@@ -160,7 +160,7 @@ export const hasTypenames = (doc: DocumentNode): boolean => {
   visit(doc, {
     SelectionSet(node) {
       if (!selectionSetHasTypename({ selectionSet: node })) ok = false;
-    }
+    },
   });
   return ok;
 };
@@ -178,14 +178,14 @@ export const createSelection = (config: Record<string, any>): { fields: PlanFiel
     if (spec === true || spec === null || spec === undefined) {
       // Simple field
       return createPlanField(name);
-    } else if (spec === 'connection') {
+    } else if (spec === "connection") {
       // Connection field
       return createConnectionPlanField(name);
     } else if (Array.isArray(spec)) {
       // Field with children (array of field names)
       const children = spec.map(childName => createPlanField(childName));
       return createPlanField(name, false, children);
-    } else if (typeof spec === 'object') {
+    } else if (typeof spec === "object") {
       // Nested object - recursively process
       const childSelection = createSelection(spec);
       return createPlanField(name, false, childSelection.fields);

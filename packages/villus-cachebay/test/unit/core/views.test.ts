@@ -27,9 +27,9 @@ describe("Views", () => {
       const { fields: userFields, map: fieldMap } = createSelection({
         __typename: true,
         id: true,
-        bestFriend: ['email'],
-        friends: ['email'],
-        posts: 'connection'
+        bestFriend: ["email"],
+        friends: ["email"],
+        posts: "connection",
       });
 
       const u1Proxy = graph.materializeRecord("User:u1")!;
@@ -42,12 +42,12 @@ describe("Views", () => {
       graph.putRecord("Post:1", { __typename: "Post", id: "1", title: "First Post" });
       seedConnectionPage(
         graph,
-        '@.User:u1.posts({})',
+        "@.User:u1.posts({})",
         [{ nodeRef: "Post:1", cursor: "p1" }],
         { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false },
         {},
         "PostEdge",
-        "PostConnection"
+        "PostConnection",
       );
 
       const postsView = userView.posts;
@@ -86,25 +86,25 @@ describe("Views", () => {
       graph.putRecord("Post:1", { __typename: "Post", id: "1", title: "First Post" });
       seedConnectionPage(
         graph,
-        '@.User:u4.posts({})',
+        "@.User:u4.posts({})",
         [{ nodeRef: "Post:1", cursor: "p1" }],
         { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false },
         {},
         "PostEdge",
-        "PostConnection"
+        "PostConnection",
       );
 
-      const connectionView = views.getConnectionView('@.User:u4.posts({})', postsConnectionField, {}, false);
+      const connectionView = views.getConnectionView("@.User:u4.posts({})", postsConnectionField, {}, false);
       const firstEdgesArray = connectionView.edges;
       const secondEdgesArray = connectionView.edges;
       expect(firstEdgesArray).toBe(secondEdgesArray);
 
       graph.putRecord("Post:2", { __typename: "Post", id: "2", title: "Second Post" });
-      const secondEdgeKey = '@.User:u4.posts({}).edges.1';
+      const secondEdgeKey = "@.User:u4.posts({}).edges.1";
       graph.putRecord(secondEdgeKey, { __typename: "PostEdge", cursor: "p2", node: { __ref: "Post:2" } });
 
-      const existingEdges = (graph.getRecord('@.User:u4.posts({})')?.edges ?? []).slice();
-      graph.putRecord('@.User:u4.posts({})', { edges: [...existingEdges, { __ref: secondEdgeKey }] });
+      const existingEdges = (graph.getRecord("@.User:u4.posts({})")?.edges ?? []).slice();
+      graph.putRecord("@.User:u4.posts({})", { edges: [...existingEdges, { __ref: secondEdgeKey }] });
 
       const thirdEdgesArray = connectionView.edges;
       expect(thirdEdgesArray).not.toBe(firstEdgesArray);

@@ -1,17 +1,17 @@
-import { traverseFast } from '@/src/core/utils';
-import { bench } from 'vitest';
+import { bench } from "vitest";
+import { traverseFast } from "@/src/core/utils";
 
 const tree = {
-  id: 'root',
+  id: "root",
 
   children: [
-    { id: 'child1', children: [] },
-    { id: 'child2', children: [] },
+    { id: "child1", children: [] },
+    { id: "child2", children: [] },
   ],
 };
 
-describe('Utils', () => {
-  bench('traverseFast', () => {
+describe("Utils", () => {
+  bench("traverseFast", () => {
     traverseFast(tree, () => { });
   }, { warmupTime: 200, warmupIterations: 1_000_000 });
 });

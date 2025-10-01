@@ -1,5 +1,5 @@
 /* src/features/inspect.ts */
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import type { GraphInstance } from "../core/graph";
 
 /**

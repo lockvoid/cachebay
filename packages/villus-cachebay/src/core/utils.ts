@@ -1,17 +1,17 @@
 import { IDENTITY_FIELDS, CONNECTION_FIELDS, ROOT_ID } from "./constants";
-import type { EntityKey, RelayOptions } from "./types";
 import type { GraphInstance } from "./graph";
+import type { EntityKey, RelayOptions } from "./types";
 import type { PlanField } from "../compiler/types";
 
-export const TRAVERSE_SKIP = Symbol('traverse:skip');
+export const TRAVERSE_SKIP = Symbol("traverse:skip");
 
 export const isObject = (value: any): value is Record<string, any> => {
   return value !== null && typeof value === "object";
-}
+};
 
 export const hasTypename = (value: any): boolean => {
   return !!(value && typeof value === "object" && typeof value.__typename === "string");
-}
+};
 
 export const isPureIdentity = (value: any): boolean => {
   if (!isObject(value)) {
@@ -55,9 +55,9 @@ export const stableStringify = (object: any): string => {
   try {
     return JSON.stringify(walk(object));
   } catch {
-    return '';
+    return "";
   }
-}
+};
 
 export const traverseFast = (root: any, context: any, visit: (parentNode: any, valueNode: any, fieldKey: string | number | null, context: any) => typeof TRAVERSE_SKIP | any | void) => {
   const stack = [null, root, null, context];
@@ -124,7 +124,7 @@ export const buildFieldKey = (field: PlanField, variables: Record<string, any>):
 export const buildConnectionKey = (
   field: PlanField,
   parentId: string,
-  variables: Record<string, any>
+  variables: Record<string, any>,
 ): string => {
   const prefix = parentId === ROOT_ID ? "@." : `@.${parentId}.`;
   return `${prefix}${field.fieldName}(${field.stringifyArgs(variables)})`;
@@ -142,7 +142,7 @@ export const buildConnectionKey = (
 export const buildConnectionCanonicalKey = (
   field: PlanField,
   parentId: string,
-  variables: Record<string, any>
+  variables: Record<string, any>,
 ): string => {
   const allArgs = field.buildArgs(variables) || {};
 

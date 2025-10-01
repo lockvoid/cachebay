@@ -1,4 +1,4 @@
-import { gql } from 'graphql-tag';
+import { gql } from "graphql-tag";
 
 export const PAGE_INFO_FRAGMENT = `
   fragment PageInfoFields on PageInfo {
@@ -7,7 +7,7 @@ export const PAGE_INFO_FRAGMENT = `
     hasNextPage
     hasPreviousPage
   }
-`
+`;
 
 export const USER_FRAGMENT = `
   fragment UserFields on User {

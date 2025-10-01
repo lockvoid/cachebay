@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 
 import { ROOT_ID } from "../core/constants";
 import { buildConnectionCanonicalKey } from "../core/utils";
@@ -93,7 +93,7 @@ const upsertCanonicalEdgeAnchored = (
   entityKey: string,
   edgeMeta: any,
   position: "start" | "end" | "before" | "after",
-  anchorKey?: string | null
+  anchorKey?: string | null,
 ) => {
   const edges = Array.isArray(canSnap.edges) ? canSnap.edges : (canSnap.edges = []);
 
@@ -385,7 +385,7 @@ export const createOptimistic = ({ graph }: Deps) => {
         const canKey = buildConnectionCanonicalKey(
           { fieldName: key, buildArgs: (v: any) => v || {}, connectionFilters: Object.keys(filters) } as any,
           parentId,
-          filters
+          filters,
         );
 
         const ensureEntity = (node: any): string | null => {

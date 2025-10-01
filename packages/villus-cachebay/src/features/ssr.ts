@@ -41,7 +41,7 @@ export const createSSR = (options: SSROptions = {}, { graph }: Deps) => {
    * - `isHydrating()` is true until the next microtask
    */
   const hydrate = (
-    input: GraphSnapshot | ((emit: (snapshot: GraphSnapshot) => void) => void)
+    input: GraphSnapshot | ((emit: (snapshot: GraphSnapshot) => void) => void),
   ) => {
     const run = (snapshot: GraphSnapshot) => {
       if (!snapshot || !Array.isArray(snapshot.records)) return;

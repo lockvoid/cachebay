@@ -24,7 +24,7 @@ const indexByResponseKey = (fields: PlanField[] | null | undefined): Map<string,
 const inferChildParentTypename = (
   selectionSet: SelectionSetNode,
   defaultParent: string,
-  fragmentsByName: Map<string, FragmentDefinitionNode>
+  fragmentsByName: Map<string, FragmentDefinitionNode>,
 ): string => {
   const typeNames = new Set<string>();
   for (const sel of selectionSet.selections) {
@@ -128,7 +128,7 @@ const parseConnectionDirective = (field: FieldNode): {
 export const lowerSelectionSet = (
   selectionSet: SelectionSetNode | null | undefined,
   parentTypename: string,
-  fragmentsByName: Map<string, FragmentDefinitionNode>
+  fragmentsByName: Map<string, FragmentDefinitionNode>,
 ): PlanField[] => {
   if (!selectionSet) return [];
 

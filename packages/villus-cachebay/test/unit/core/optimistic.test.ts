@@ -47,7 +47,7 @@ describe("Optimistic", () => {
 
   describe("connection.addNode()", () => {
     it("deduplicates by node key and updates edge meta in place", () => {
-      const key = '@connection.posts({})';
+      const key = "@connection.posts({})";
 
       const tx = optimistic.modifyOptimistic((o) => {
         const c = o.connection({ parent: "Query", key: "posts" });
@@ -65,7 +65,7 @@ describe("Optimistic", () => {
     });
 
     it("respects start and end positions", () => {
-      const key = '@connection.posts({})';
+      const key = "@connection.posts({})";
 
       const tx = optimistic.modifyOptimistic((o) => {
         const c = o.connection({ parent: "Query", key: "posts" });
@@ -83,7 +83,7 @@ describe("Optimistic", () => {
 
     describe("anchored inserts (before/after)", () => {
       it("maintains order when inserting after and before specific anchors", () => {
-        const key = '@connection.posts({})';
+        const key = "@connection.posts({})";
 
         // 1. Seed Post 1, Post 2
         const tx1 = optimistic.modifyOptimistic((o) => {
@@ -114,7 +114,7 @@ describe("Optimistic", () => {
       });
 
       it("handles boundary anchors and missing anchor fallbacks", () => {
-        const key = '@connection.posts({})';
+        const key = "@connection.posts({})";
 
         // 1. Seed Post 1, Post 2
         const tx1 = optimistic.modifyOptimistic((o) => {
@@ -163,7 +163,7 @@ describe("Optimistic", () => {
       });
       tx.commit();
 
-      const edges = readCanonicalEdges(graph, '@connection.posts({})');
+      const edges = readCanonicalEdges(graph, "@connection.posts({})");
       expect(edges.length).toBe(1);
       expect(graph.getRecord(edges[0].nodeKey)?.title).toBe("Post 1");
     });
@@ -171,7 +171,7 @@ describe("Optimistic", () => {
 
   describe("connection.removeNode()", () => {
     it("removes by node reference and treats missing nodes as no-op", () => {
-      const key = '@connection.posts({})';
+      const key = "@connection.posts({})";
 
       const tx = optimistic.modifyOptimistic((o) => {
         const c = o.connection({ parent: "Query", key: "posts" });
@@ -190,7 +190,7 @@ describe("Optimistic", () => {
 
   describe("connection.patch()", () => {
     it("merges pageInfo and extras with function support", async () => {
-      const key = '@connection.posts({})';
+      const key = "@connection.posts({})";
 
       graph.putRecord(key, {
         __typename: "PostConnection",
@@ -273,7 +273,7 @@ describe("Optimistic", () => {
     });
 
     it("remains idempotent for the same connection scope", () => {
-      const key = '@connection.posts({})';
+      const key = "@connection.posts({})";
 
       const tx = optimistic.modifyOptimistic((o) => {
         const c = o.connection({ parent: "Query", key: "posts" });
@@ -300,7 +300,7 @@ describe("Optimistic", () => {
 
   describe("layering", () => {
     it("preserves later commits when reverting and returns to baseline when all reverted", async () => {
-      const key = '@connection.posts({})';
+      const key = "@connection.posts({})";
 
       const tx1 = optimistic.modifyOptimistic((o) => {
         const c = o.connection({ parent: "Query", key: "posts" });
@@ -330,7 +330,7 @@ describe("Optimistic", () => {
     });
 
     it("treats revert before commit as no-op", async () => {
-      const key = '@connection.posts({})';
+      const key = "@connection.posts({})";
 
       const tx = optimistic.modifyOptimistic((o) => {
         const c = o.connection({ parent: "Query", key: "posts" });
@@ -379,8 +379,8 @@ describe("Optimistic", () => {
 
       tx.commit();
 
-      const rootIds = readCanonicalEdges(graph, '@connection.posts({})').map((e) => graph.getRecord(e.nodeKey)?.id);
-      const userIds = readCanonicalEdges(graph, '@connection.User:42.posts({})').map((e) => graph.getRecord(e.nodeKey)?.id);
+      const rootIds = readCanonicalEdges(graph, "@connection.posts({})").map((e) => graph.getRecord(e.nodeKey)?.id);
+      const userIds = readCanonicalEdges(graph, "@connection.User:42.posts({})").map((e) => graph.getRecord(e.nodeKey)?.id);
 
       expect(rootIds).toEqual(["p10"]);
       expect(userIds).toEqual(["p11"]);

@@ -1,14 +1,14 @@
-import { defineComponent, h, computed, watch, Suspense } from 'vue';
-import { createClient } from 'villus';
-import { createCache } from '@/src/core/internals';
-import { tick, delay } from './concurrency';
-import { fetch as villusFetch } from 'villus';
+import { createClient } from "villus";
+import { fetch as villusFetch } from "villus";
+import { defineComponent, h, computed, watch, Suspense } from "vue";
+import { createCache } from "@/src/core/internals";
+import { tick, delay } from "./concurrency";
 
 export async function seedCache(cache, { query, variables, data }) {
   const internals = cache.__internals;
 
   if (!internals) {
-    throw new Error('[seedCache] cache.__internals is missing');
+    throw new Error("[seedCache] cache.__internals is missing");
   }
 
   const { documents } = internals;
@@ -33,7 +33,7 @@ export function createTestClient({ routes, cache, cacheOptions }: { routes?: Rou
     },
 
     interfaces: {
-      Post: ['AudioPost', 'VideoPost'],
+      Post: ["AudioPost", "VideoPost"],
 
       ...(cacheOptions?.interfaces || {}),
     },
@@ -42,7 +42,7 @@ export function createTestClient({ routes, cache, cacheOptions }: { routes?: Rou
   const fx = createFetchMock(routes);
 
   const client = createClient({
-    url: '/test',
+    url: "/test",
 
     use: [finalCache, fx.plugin],
   });
@@ -60,10 +60,10 @@ type RecordedCall = { body: string; variables: any; context: any };
 
 /** Build a Response compatible object (works in happy-dom too) */
 function buildResponse(obj: any) {
-  if (typeof Response !== 'undefined') {
+  if (typeof Response !== "undefined") {
     return new Response(JSON.stringify(obj), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { "Content-Type": "application/json" },
     });
   }
   return {
@@ -82,10 +82,10 @@ export function createFetchMock(routes: Route[] = []) {
   globalThis.fetch = async (_input: any, init?: any) => {
     try {
       const bodyObj =
-        init && typeof (init as any).body === 'string'
+        init && typeof (init as any).body === "string"
           ? JSON.parse((init as any).body as string)
           : {};
-      const body = bodyObj.query || '';
+      const body = bodyObj.query || "";
       const variables = bodyObj.variables || {};
       const context = {};
       const op = { body, variables, context };
@@ -104,9 +104,9 @@ export function createFetchMock(routes: Route[] = []) {
 
       const payload = route.respond(op);
       const resp =
-        payload && typeof payload === 'object' && 'error' in payload && (payload as any).error
-          ? { errors: [{ message: (payload as any).error?.message || 'Mock error' }] }
-          : (payload && typeof payload === 'object' && 'data' in payload
+        payload && typeof payload === "object" && "error" in payload && (payload as any).error
+          ? { errors: [{ message: (payload as any).error?.message || "Mock error" }] }
+          : (payload && typeof payload === "object" && "data" in payload
             ? payload
             : { data: payload });
 
@@ -134,7 +134,7 @@ export function createFetchMock(routes: Route[] = []) {
 
 export const getEdges = (wrapper: any, fieldName: string) => {
   return wrapper.findAll(`li.edge div.${fieldName}`).map((field: any) => field.text());
-}
+};
 
 export const getPageInfo = (wrapper: any) => {
   const pageInfoDiv = wrapper.find("div.pageInfo");
@@ -147,7 +147,7 @@ export const getPageInfo = (wrapper: any) => {
     startCursor: pageInfoDiv.find("div.startCursor").text() || null,
     endCursor: pageInfoDiv.find("div.endCursor").text() || null,
     hasNextPage: pageInfoDiv.find("div.hasNextPage").text() === "true",
-    hasPreviousPage: pageInfoDiv.find("div.hasPreviousPage").text() === "true"
+    hasPreviousPage: pageInfoDiv.find("div.hasPreviousPage").text() === "true",
   };
 };
 
@@ -157,7 +157,7 @@ export const createConnectionComponent = (
   options: {
     cachePolicy: "cache-first" | "cache-and-network" | "network-only" | "cache-only";
     connectionFn: (data: any) => any;
-  }
+  },
 ) => {
   const { cachePolicy, connectionFn } = options;
 
@@ -213,7 +213,7 @@ export const createConnectionComponent = (
             h("div", { class: "startCursor" }, String(connection.value?.pageInfo?.startCursor ?? "")),
             h("div", { class: "endCursor" }, String(connection.value?.pageInfo?.endCursor ?? "")),
             h("div", { class: "hasNextPage" }, String(connection.value?.pageInfo?.hasNextPage ?? false)),
-            h("div", { class: "hasPreviousPage" }, String(connection.value?.pageInfo?.hasPreviousPage ?? false))
+            h("div", { class: "hasPreviousPage" }, String(connection.value?.pageInfo?.hasPreviousPage ?? false)),
           ]),
 
           h("ul", { class: "edges" },
@@ -222,11 +222,11 @@ export const createConnectionComponent = (
 
               return h("li", { class: "edge", key: node.id || index },
                 Object.keys(node).map(field =>
-                  h("div", { class: field }, String(node[field]))
-                )
+                  h("div", { class: field }, String(node[field])),
+                ),
               );
-            })
-          )
+            }),
+          ),
 
 
         ]);
@@ -246,7 +246,7 @@ export const createConnectionComponentSuspense = (
   options: {
     cachePolicy: "cache-first" | "cache-and-network" | "network-only" | "cache-only";
     connectionFn: (data: any) => any;
-  }
+  },
 ) => {
   const { cachePolicy, connectionFn } = options;
 
@@ -294,7 +294,7 @@ export const createConnectionComponentSuspense = (
             h("div", { class: "startCursor" }, String(connection.value?.pageInfo?.startCursor ?? "")),
             h("div", { class: "endCursor" }, String(connection.value?.pageInfo?.endCursor ?? "")),
             h("div", { class: "hasNextPage" }, String(connection.value?.pageInfo?.hasNextPage ?? false)),
-            h("div", { class: "hasPreviousPage" }, String(connection.value?.pageInfo?.hasPreviousPage ?? false))
+            h("div", { class: "hasPreviousPage" }, String(connection.value?.pageInfo?.hasPreviousPage ?? false)),
           ]),
 
           h("ul", { class: "edges" },
@@ -303,11 +303,11 @@ export const createConnectionComponentSuspense = (
 
               return h("li", { class: "edge", key: node.id || index },
                 Object.keys(node).map(field =>
-                  h("div", { class: field }, String(node[field]))
-                )
+                  h("div", { class: field }, String(node[field])),
+                ),
               );
-            })
-          )
+            }),
+          ),
         ]);
       };
     },
@@ -325,9 +325,9 @@ export const createConnectionComponentSuspense = (
     setup(props, { attrs }) {
       return () => h(Suspense, {}, {
         default: () => h(ConnectionComponent, attrs),
-        fallback: () => h("div", { class: "loading" }, "Loading...")
+        fallback: () => h("div", { class: "loading" }, "Loading..."),
       });
-    }
+    },
   });
 
   (component as any).renders = renders;
@@ -342,7 +342,7 @@ export const createDetailComponent = (
   options: {
     cachePolicy: "cache-first" | "cache-and-network" | "network-only" | "cache-only";
     detailFn: (data: any) => any;
-  }
+  },
 ) => {
   const { cachePolicy, detailFn } = options;
 
@@ -397,9 +397,9 @@ export const createDetailComponent = (
         return h("ul", { class: "edges" }, [
           h("li", { class: "edge" },
             Object.keys(detail.value ?? {}).map(fieldName =>
-              h("div", { class: fieldName }, String(detail.value[fieldName]))
-            )
-          )
+              h("div", { class: fieldName }, String(detail.value[fieldName])),
+            ),
+          ),
         ]);
       };
     },
@@ -417,7 +417,7 @@ export const createDetailComponentSuspense = (
   options: {
     cachePolicy: "cache-first" | "cache-and-network" | "network-only" | "cache-only";
     detailFn: (data: any) => any;
-  }
+  },
 ) => {
   const { cachePolicy, detailFn } = options;
 
@@ -466,9 +466,9 @@ export const createDetailComponentSuspense = (
         return h("ul", { class: "edges" }, [
           h("li", { class: "edge" },
             Object.keys(detail.value ?? {}).map(fieldName =>
-              h("div", { class: fieldName }, String(detail.value[fieldName]))
-            )
-          )
+              h("div", { class: fieldName }, String(detail.value[fieldName])),
+            ),
+          ),
         ]);
       };
     },
@@ -484,9 +484,9 @@ export const createDetailComponentSuspense = (
     setup(props) {
       return () => h(Suspense, {}, {
         default: () => h(DetailComponent, props),
-        fallback: () => h("div", { class: "loading" }, "Loading...")
+        fallback: () => h("div", { class: "loading" }, "Loading..."),
       });
-    }
+    },
   });
 
   (component as any).renders = renders;

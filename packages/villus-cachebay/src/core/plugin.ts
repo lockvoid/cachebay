@@ -1,17 +1,17 @@
 /* src/core/plugin.ts */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import type { App } from "vue";
-import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus";
+ 
 import { CombinedError } from "villus";
-import type { DocumentNode } from "graphql";
-
-import type { GraphInstance } from "./graph";
-import type { PlannerInstance } from "./planner";
-import type { DocumentsInstance } from "./documents";
-import type { SSRInstance } from "../features/ssr";
 
 import { CACHEBAY_KEY, ROOT_ID } from "./constants";
 import { buildConnectionCanonicalKey } from "./utils";
+import type { DocumentsInstance } from "./documents";
+import type { GraphInstance } from "./graph";
+import type { PlannerInstance } from "./planner";
+import type { SSRInstance } from "../features/ssr";
+
+import type { DocumentNode } from "graphql";
+import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus";
+import type { App } from "vue";
 
 type PluginDependencies = {
   graph: GraphInstance;

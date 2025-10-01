@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { isReactive } from "vue";
-import { createGraph } from "@/src/core/graph";
-import { createPlanner } from "@/src/core/planner";
 import { createCanonical } from "@/src/core/canonical";
-import { createViews } from "@/src/core/views";
 import { createDocuments } from "@/src/core/documents";
+import { createGraph } from "@/src/core/graph";
 import { createOptimistic } from "@/src/core/optimistic";
+import { createPlanner } from "@/src/core/planner";
+import { createViews } from "@/src/core/views";
 import { operations, writePageSnapshot } from "@/test/helpers";
 
-describe('documents.materializeDocument', () => {
+describe("documents.materializeDocument", () => {
   let graph: ReturnType<typeof createGraph>;
   let optimistic: ReturnType<typeof createOptimistic>;
   let planner: ReturnType<typeof createPlanner>;
@@ -17,7 +17,7 @@ describe('documents.materializeDocument', () => {
   let documents: ReturnType<typeof createDocuments>;
 
   beforeEach(() => {
-    graph = createGraph({ interfaces: { Post: ["AudioPost", "VideoPost"] }, });
+    graph = createGraph({ interfaces: { Post: ["AudioPost", "VideoPost"] } });
     optimistic = createOptimistic({ graph });
     planner = createPlanner();
     canonical = createCanonical({ graph, optimistic });
@@ -25,7 +25,7 @@ describe('documents.materializeDocument', () => {
     documents = createDocuments({ graph, planner, canonical, views });
   });
 
-  it('materializes user node reactively with correct shape', () => {
+  it("materializes user node reactively with correct shape", () => {
     graph.putRecord("@", { id: "@", __typename: "@", 'user({"id":"u1"})': { __ref: "User:u1" } });
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
 
@@ -39,7 +39,7 @@ describe('documents.materializeDocument', () => {
     expect(userRecord.email).toBe("u1+updated@example.com");
   });
 
-  it('materializes users connection with reactive edges and nodes', () => {
+  it("materializes users connection with reactive edges and nodes", () => {
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
 
     graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "u2@example.com" });
@@ -56,12 +56,12 @@ describe('documents.materializeDocument', () => {
         startCursor: "u1",
         endCursor: "u2",
         hasNextPage: true,
-        hasPreviousPage: false
+        hasPreviousPage: false,
       },
 
       edges: [
         { __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.0' },
-        { __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.1' }
+        { __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.1' },
       ],
     });
 
@@ -71,7 +71,7 @@ describe('documents.materializeDocument', () => {
       variables: {
         role: "admin",
         first: 2,
-        after: null
+        after: null,
       },
     });
 
@@ -89,7 +89,7 @@ describe('documents.materializeDocument', () => {
     expect(firstUser.email).toBe("u1+updated@example.com");
   });
 
-  it('materializes nested posts connection with reactive totals, scores, nodes and authors', () => {
+  it("materializes nested posts connection with reactive totals, scores, nodes and authors", () => {
     graph.putRecord("@", { id: "@", __typename: "@", 'user({"id":"u1"})': { __ref: "User:u1" } });
 
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
@@ -111,12 +111,12 @@ describe('documents.materializeDocument', () => {
         startCursor: "p1",
         endCursor: "p2",
         hasNextPage: true,
-        hasPreviousPage: false
+        hasPreviousPage: false,
       },
 
       edges: [
         { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0' },
-        { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.1' }
+        { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.1' },
       ],
     });
 
@@ -127,7 +127,7 @@ describe('documents.materializeDocument', () => {
         id: "u1",
         postsCategory: "tech",
         postsFirst: 2,
-        postsAfter: null
+        postsAfter: null,
       },
     });
 
@@ -160,7 +160,7 @@ describe('documents.materializeDocument', () => {
     expect(postAuthor.email).toBe("u1+updated@example.com");
   });
 
-  it('materializes root users and nested posts with reactive canonical connections', () => {
+  it("materializes root users and nested posts with reactive canonical connections", () => {
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
 
     graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "u2@example.com" });
@@ -177,12 +177,12 @@ describe('documents.materializeDocument', () => {
         startCursor: "u1",
         endCursor: "u2",
         hasNextPage: true,
-        hasPreviousPage: false
+        hasPreviousPage: false,
       },
 
       edges: [
         { __ref: '@.users({"after":null,"first":2,"role":"dj"}).edges.0' },
-        { __ref: '@.users({"after":null,"first":2,"role":"dj"}).edges.1' }
+        { __ref: '@.users({"after":null,"first":2,"role":"dj"}).edges.1' },
       ],
     });
 
@@ -198,11 +198,11 @@ describe('documents.materializeDocument', () => {
         startCursor: "p1",
         endCursor: "p1",
         hasNextPage: false,
-        hasPreviousPage: false
+        hasPreviousPage: false,
       },
 
       edges: [
-        { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0' }
+        { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0' },
       ],
     });
 
@@ -239,7 +239,7 @@ describe('documents.materializeDocument', () => {
     expect(post0.title).toBe("Post 1 (Updated)");
   });
 
-  it('materializes nested posts and comments with canonical connections at every level', () => {
+  it("materializes nested posts and comments with canonical connections at every level", () => {
     graph.putRecord("@", { id: "@", __typename: "@", 'user({"id":"u1"})': { __ref: "User:u1" } });
 
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
@@ -264,11 +264,11 @@ describe('documents.materializeDocument', () => {
         startCursor: "p1",
         endCursor: "p1",
         hasNextPage: false,
-        hasPreviousPage: false
+        hasPreviousPage: false,
       },
 
       edges: [
-        { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0' }
+        { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0' },
       ],
     });
 
@@ -276,7 +276,7 @@ describe('documents.materializeDocument', () => {
 
     graph.putRecord('@.Post:p1.comments({"after":null,"first":2}).edges.1', { __typename: "CommentEdge", cursor: "c2", node: { __ref: "Comment:c2" } });
 
-    graph.putRecord('@connection.Post:p1.comments({})', {
+    graph.putRecord("@connection.Post:p1.comments({})", {
       __typename: "CommentConnection",
 
       pageInfo: {
@@ -284,12 +284,12 @@ describe('documents.materializeDocument', () => {
         startCursor: "c1",
         endCursor: "c2",
         hasNextPage: true,
-        hasPreviousPage: false
+        hasPreviousPage: false,
       },
 
       edges: [
         { __ref: '@.Post:p1.comments({"after":null,"first":2}).edges.0' },
-        { __ref: '@.Post:p1.comments({"after":null,"first":2}).edges.1' }
+        { __ref: '@.Post:p1.comments({"after":null,"first":2}).edges.1' },
       ],
     });
 
@@ -326,7 +326,7 @@ describe('documents.materializeDocument', () => {
     expect(firstComment.text).toBe("Comment 1 (Updated)");
   });
 
-  it('materializes users, posts and comments with reactive canonical connections', () => {
+  it("materializes users, posts and comments with reactive canonical connections", () => {
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
 
     graph.putRecord('@.users({"after":null,"first":2,"role":"admin"}).edges.0', { __typename: "UserEdge", cursor: "u1", node: { __ref: "User:u1" } });
@@ -339,11 +339,11 @@ describe('documents.materializeDocument', () => {
         startCursor: "u1",
         endCursor: "u1",
         hasNextPage: true,
-        hasPreviousPage: false
+        hasPreviousPage: false,
       },
 
       edges: [
-        { __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.0' }
+        { __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.0' },
       ],
     });
 
@@ -359,11 +359,11 @@ describe('documents.materializeDocument', () => {
         startCursor: "p1",
         endCursor: "p1",
         hasNextPage: false,
-        hasPreviousPage: false
+        hasPreviousPage: false,
       },
 
       edges: [
-        { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0' }
+        { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0' },
       ],
     });
 
@@ -371,7 +371,7 @@ describe('documents.materializeDocument', () => {
 
     graph.putRecord('@.Post:p1.comments({"after":null,"first":1}).edges.0', { __typename: "CommentEdge", cursor: "c1", node: { __ref: "Comment:c1" } });
 
-    graph.putRecord('@connection.Post:p1.comments({})', {
+    graph.putRecord("@connection.Post:p1.comments({})", {
       __typename: "CommentConnection",
 
       pageInfo: {
@@ -379,11 +379,11 @@ describe('documents.materializeDocument', () => {
         startCursor: "c1",
         endCursor: "c1",
         hasNextPage: false,
-        hasPreviousPage: false
+        hasPreviousPage: false,
       },
 
       edges: [
-        { __ref: '@.Post:p1.comments({"after":null,"first":1}).edges.0' }
+        { __ref: '@.Post:p1.comments({"after":null,"first":1}).edges.0' },
       ],
     });
 
@@ -427,7 +427,7 @@ describe('documents.materializeDocument', () => {
     expect(firstComment.text).toBe("Comment 1 (Updated)");
   });
 
-  it('maintains identity stability for edges and node proxies', () => {
+  it("maintains identity stability for edges and node proxies", () => {
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@x" });
 
     graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "b@x" });
@@ -443,12 +443,12 @@ describe('documents.materializeDocument', () => {
         startCursor: "u1",
         endCursor: "u2",
         hasNextPage: false,
-        hasPreviousPage: false
+        hasPreviousPage: false,
       },
 
       edges: [
         { __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.0' },
-        { __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.1' }
+        { __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.1' },
       ],
     });
 
@@ -458,8 +458,8 @@ describe('documents.materializeDocument', () => {
       variables: {
         role: "admin",
         first: 2,
-        after: null
-      }
+        after: null,
+      },
     });
 
     const edgesRef1 = firstUsersView.users.edges;
@@ -474,8 +474,8 @@ describe('documents.materializeDocument', () => {
       variables: {
         role: "admin",
         first: 2,
-        after: null
-      }
+        after: null,
+      },
     });
 
     expect(secondUsersView.users.edges).toBe(edgesRef1);     // edges array identity stable
@@ -494,15 +494,15 @@ describe('documents.materializeDocument', () => {
       variables: {
         role: "admin",
         first: 2,
-        after: null
-      }
+        after: null,
+      },
     });
 
     expect(thirdUsersView.users.edges).not.toBe(edgesRef1);
     expect(thirdUsersView.users.edges.length).toBe(3);
   });
 
-  it('prewarns pages and normalizes network data correctly', () => {
+  it("prewarns pages and normalizes network data correctly", () => {
     writePageSnapshot(graph, '@.posts({"after":null,"first":3})', [1, 2, 3], { start: "p1", end: "p3", hasNext: true });
     writePageSnapshot(graph, '@.posts({"after":"p3","first":3})', [4, 5, 6], { start: "p4", end: "p6", hasNext: false, hasPrev: true });
 
@@ -518,7 +518,7 @@ describe('documents.materializeDocument', () => {
           startCursor: "p1",
           endCursor: "p6",
           hasNextPage: false,
-          hasPreviousPage: false
+          hasPreviousPage: false,
         },
         edges: [
           { __typename: "PostEdge", cursor: "p1", node: { __typename: "Post", id: "1", title: "Post 1", tags: [] } },
@@ -526,9 +526,9 @@ describe('documents.materializeDocument', () => {
           { __typename: "PostEdge", cursor: "p3", node: { __typename: "Post", id: "3", title: "Post 3", tags: [] } },
           { __typename: "PostEdge", cursor: "p4", node: { __typename: "Post", id: "4", title: "Post 4", tags: [] } },
           { __typename: "PostEdge", cursor: "p5", node: { __typename: "Post", id: "5", title: "Post 5", tags: [] } },
-          { __typename: "PostEdge", cursor: "p6", node: { __typename: "Post", id: "6", title: "Post 6", tags: [] } }
-        ]
-      }
+          { __typename: "PostEdge", cursor: "p6", node: { __typename: "Post", id: "6", title: "Post 6", tags: [] } },
+        ],
+      },
     });
 
     const networkPage2Data = {
@@ -540,7 +540,7 @@ describe('documents.materializeDocument', () => {
           startCursor: "p4",
           endCursor: "p6",
           hasNextPage: false,
-          hasPreviousPage: true
+          hasPreviousPage: true,
         },
         edges: [
           { __typename: "PostEdge", cursor: "p4", node: { __typename: "Post", id: "4", title: "Post 4" } },
@@ -563,7 +563,7 @@ describe('documents.materializeDocument', () => {
           startCursor: "p1",
           endCursor: "p6",
           hasNextPage: false,
-          hasPreviousPage: false
+          hasPreviousPage: false,
         },
 
         edges: [
@@ -572,9 +572,9 @@ describe('documents.materializeDocument', () => {
           { __typename: "PostEdge", cursor: "p3", node: { __typename: "Post", id: "3", title: "Post 3", tags: [] } },
           { __typename: "PostEdge", cursor: "p4", node: { __typename: "Post", id: "4", title: "Post 4", tags: [] } },
           { __typename: "PostEdge", cursor: "p5", node: { __typename: "Post", id: "5", title: "Post 5", tags: [] } },
-          { __typename: "PostEdge", cursor: "p6", node: { __typename: "Post", id: "6", title: "Post 6", tags: [] } }
-        ]
-      }
+          { __typename: "PostEdge", cursor: "p6", node: { __typename: "Post", id: "6", title: "Post 6", tags: [] } },
+        ],
+      },
     });
   });
 });
