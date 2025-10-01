@@ -1,6 +1,6 @@
 service: harrypotter
 
-image: ghcr.io/lockvoid/villus-cachebay/demo:latest
+image: ghcr.io/lockvoid/villus-cachebay/demo
 
 servers:
   web:
