@@ -12,7 +12,7 @@ describe("Optimistic", () => {
   });
 
   describe("patch()", () => {
-    it("merges via object and function, replaces, then reverts chain", async () => {
+    it("merges via object and function, replaces", async () => {
       graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1" });
 
       const tx = optimistic.modifyOptimistic((o) => {
@@ -23,9 +23,6 @@ describe("Optimistic", () => {
 
       tx.commit();
       expect(graph.getRecord("Post:p1")).toEqual({ __typename: "Post", id: "p1", title: "REPLACED", tags: [] });
-
-      tx.revert();
-      expect(graph.getRecord("Post:p1")).toEqual({ __typename: "Post", id: "p1", title: "Post 1" });
     });
   });
 
@@ -39,9 +36,6 @@ describe("Optimistic", () => {
 
       tx.commit();
       expect(graph.getRecord("User:9")).toBeUndefined();
-
-      tx.revert();
-      expect(graph.getRecord("User:9")).toEqual({ __typename: "User", id: "9", email: "x@x.com" });
     });
   });
 
@@ -227,6 +221,9 @@ describe("Optimistic", () => {
       graph.putRecord(keyA, { __typename: "PostConnection", edges: [], pageInfo: {} });
       graph.putRecord(keyB, { __typename: "PostConnection", edges: [], pageInfo: {} });
 
+      expect(readCanonicalEdges(graph, keyA).map((e) => e.nodeKey)).toEqual([]);
+      expect(readCanonicalEdges(graph, keyB).map((e) => e.nodeKey)).toEqual([]);
+
       const tx = optimistic.modifyOptimistic((o) => {
         const categoryA = o.connection({ parent: "Query", key: "posts", filters: { category: "A" } });
         categoryA.addNode({ __typename: "Post", id: "p1", title: "Post 1" }, { position: "end", edge: { tag: "x" } });
@@ -235,20 +232,25 @@ describe("Optimistic", () => {
         categoryB.removeNode({ __typename: "Post", id: "p99" });
       });
 
-      tx.commit();
+      const resultA1 = optimistic.replayOptimistic({ connections: [keyA] });
+      expect(resultA1.added).toContain("Post:p1");
+      expect(resultA1.removed).toHaveLength(0);
 
-      const resultA = optimistic.replayOptimistic({ connections: [keyA] });
-      expect(resultA.added).toContain("Post:p1");
-      expect(resultA.removed).toHaveLength(0);
-
-      const categoryAEdges = readCanonicalEdges(graph, keyA);
-      const categoryBEdges = readCanonicalEdges(graph, keyB);
-      expect(categoryAEdges.map((e) => e.nodeKey)).toEqual(["Post:p1"]);
-      expect(categoryBEdges).toHaveLength(0);
+      expect(readCanonicalEdges(graph, keyA).map((e) => e.nodeKey)).toEqual(["Post:p1"]);
+      expect(readCanonicalEdges(graph, keyB).map((e) => e.nodeKey)).toEqual([]);
 
       const bothResults = optimistic.replayOptimistic({ connections: [keyA, keyB] });
+
+      expect(readCanonicalEdges(graph, keyA).map((e) => e.nodeKey)).toEqual(["Post:p1"]);
+      expect(readCanonicalEdges(graph, keyB).map((e) => e.nodeKey)).toEqual([]);
+
       expect(bothResults.added).toContain("Post:p1");
       expect(bothResults.removed).toContain("Post:p99");
+
+      tx.commit();
+
+      expect(readCanonicalEdges(graph, keyA).map((e) => e.nodeKey)).toEqual(["Post:p1"]);
+      expect(readCanonicalEdges(graph, keyB).map((e) => e.nodeKey)).toEqual([]);
     });
 
     it("applies writes and deletes only to specified entity records", () => {
@@ -260,7 +262,8 @@ describe("Optimistic", () => {
         o.delete("User:2");
       });
 
-      tx.commit();
+      expect(graph.getRecord("User:1")?.name).toBe("U1x");
+      expect(graph.getRecord("User:2")).toBeUndefined();
 
       graph.putRecord("User:2", { __typename: "User", id: "2", name: "U2" });
 
@@ -270,6 +273,8 @@ describe("Optimistic", () => {
 
       optimistic.replayOptimistic({ entities: ["User:1", "User:2"] });
       expect(graph.getRecord("User:2")).toBeUndefined();
+
+      tx.commit();
     });
 
     it("remains idempotent for the same connection scope", () => {
@@ -282,8 +287,6 @@ describe("Optimistic", () => {
         c.addNode({ __typename: "Post", id: "p2", title: "Post 2" }, { position: "end" });
       });
 
-      tx.commit();
-
       // Verify replay returns expected changes
       const replayResult = optimistic.replayOptimistic({ connections: [key] });
       expect(replayResult.added).toEqual(["Post:p1", "Post:p2"]);
@@ -295,28 +298,29 @@ describe("Optimistic", () => {
       const connectionAfter = graph.getRecord(key);
 
       expect(connectionAfter).toEqual(connectionBefore);
+
+      tx.commit();
     });
   });
 
   describe("layering", () => {
-    it("preserves later commits when reverting and returns to baseline when all reverted", async () => {
+    it("preserves later optimistic layers when reverting, then returns to baseline after all reverted", () => {
       const key = "@connection.posts({})";
 
+      // Layer 1: add p1, p2
       const tx1 = optimistic.modifyOptimistic((o) => {
         const c = o.connection({ parent: "Query", key: "posts" });
-
         c.addNode({ __typename: "Post", id: "p1", title: "Post 1" }, { position: "end" });
         c.addNode({ __typename: "Post", id: "p2", title: "Post 2" }, { position: "end" });
       });
 
+      // Layer 2: add p3
       const tx2 = optimistic.modifyOptimistic((o) => {
         const c = o.connection({ parent: "Query", key: "posts" });
-
         c.addNode({ __typename: "Post", id: "p3", title: "Post 3" }, { position: "end" });
       });
 
-      tx1.commit();
-      tx2.commit();
+      // Revert the first layer → keep the later one
       tx1.revert();
 
       const remainingIds = readCanonicalEdges(graph, key)
@@ -324,6 +328,7 @@ describe("Optimistic", () => {
         .filter(Boolean);
       expect(remainingIds).toEqual(["p3"]);
 
+      // Revert the second layer → back to baseline
       tx2.revert();
 
       expect(readCanonicalEdges(graph, key).length).toBe(0);
@@ -488,6 +493,185 @@ describe("Optimistic", () => {
 
       expect(rootIds).toEqual(["p10"]);
       expect(userIds).toEqual(["p11"]);
+    });
+  });
+
+  describe("commit semantics", () => {
+    it("revert after commit is a no-op (connection)", () => {
+      const key = "@connection.posts({})";
+
+      const tx = optimistic.modifyOptimistic((o) => {
+        const c = o.connection({ parent: "Query", key: "posts" });
+        c.addNode({ __typename: "Post", id: "p1", title: "P1" }, { position: "end" });
+      });
+
+      // After commit the layer is dropped; revert must not change the graph.
+      tx.commit();
+      tx.revert();
+
+      const ids = readCanonicalEdges(graph, key).map((e) => graph.getRecord(e.nodeKey)?.id);
+      expect(ids).toEqual(["p1"]);
+    });
+
+    it("revert after commit is a no-op (entity)", () => {
+      graph.putRecord("User:7", { __typename: "User", id: "7", name: "Old" });
+
+      const tx = optimistic.modifyOptimistic((o) => {
+        o.patch("User:7", { name: "New" }, { mode: "merge" });
+      });
+
+      tx.commit();
+      tx.revert();
+
+      expect(graph.getRecord("User:7")).toEqual({ __typename: "User", id: "7", name: "New" });
+    });
+  });
+
+  describe("safety: invalid inputs", () => {
+    it("ignores invalid nodes in addNode/removeNode/patch (no typename/id) gracefully", () => {
+      const key = "@connection.posts({})";
+
+      const tx = optimistic.modifyOptimistic((o) => {
+        const c = o.connection({ parent: "Query", key: "posts" });
+
+        // All three should be safe no-ops
+        c.addNode({ id: "x1", title: "No typename" } as any, { position: "end" });
+        c.addNode({ __typename: "Post", title: "No id" } as any, { position: "end" });
+        c.removeNode({ __typename: "Post" } as any);
+      });
+
+      tx.commit();
+
+      // Nothing was written
+      expect(readCanonicalEdges(graph, key).length).toBe(0);
+    });
+  });
+
+  describe("commit vs live layering", () => {
+    it("live layer can be reverted; once committed the same revert does nothing", () => {
+      const key = "@connection.posts({})";
+
+      // Live optimistic layer → can revert back to baseline
+      const t1 = optimistic.modifyOptimistic((o) => {
+        o.connection({ parent: "Query", key: "posts" })
+          .addNode({ __typename: "Post", id: "p1", title: "P1" }, { position: "end" });
+      });
+      expect(readCanonicalEdges(graph, key).length).toBe(1);
+      t1.revert();
+      expect(readCanonicalEdges(graph, key).length).toBe(0);
+
+      // New layer committed → now revert is a no-op
+      const t2 = optimistic.modifyOptimistic((o) => {
+        o.connection({ parent: "Query", key: "posts" })
+          .addNode({ __typename: "Post", id: "p2", title: "P2" }, { position: "end" });
+      });
+      t2.commit();
+      t2.revert();
+
+      const ids = readCanonicalEdges(graph, key).map((e) => graph.getRecord(e.nodeKey)?.id);
+      expect(ids).toEqual(["p2"]);
+    });
+  });
+
+  describe("commit(data)", () => {
+    it("replays builder with data to replace a temp id with a server id (no dupes, temp removed)", () => {
+      const key = "@connection.posts({})";
+
+      const tx = optimistic.modifyOptimistic((o, ctx?: { phase?: "optimistic" | "commit"; data?: any }) => {
+        const c = o.connection({ parent: "Query", key: "posts" });
+
+        const id = ctx?.data?.id ?? "tmp-1";
+        const title = ctx?.data?.title ?? "Temp Post";
+        c.addNode({ __typename: "Post", id, title }, { position: "start" });
+      });
+
+      // First pass: temp node present
+      expect(readCanonicalEdges(graph, key).map(e => graph.getRecord(e.nodeKey)?.id)).toEqual(["tmp-1"]);
+
+      // Second pass: commit with real id → layer is rebuilt and applied directly
+      tx.commit({ id: "p9", title: "From Server" });
+
+      // Canonical has only the real node
+      const ids = readCanonicalEdges(graph, key).map((e) => graph.getRecord(e.nodeKey)?.id);
+      expect(ids).toEqual(["p9"]);
+
+      // Temp entity should not linger (baseline restore + rebuilt write)
+      expect(graph.getRecord("Post:tmp-1")).toBeUndefined();
+      expect(graph.getRecord("Post:p9")?.title).toBe("From Server");
+    });
+
+    it("can alter edge meta across rounds (pending -> settled)", () => {
+      const key = "@connection.posts({})";
+
+      const tx = optimistic.modifyOptimistic((o, ctx?: { phase?: "optimistic" | "commit"; data?: any }) => {
+        const c = o.connection({ parent: "Query", key: "posts" });
+        const id = ctx?.data?.id ?? "tmp-2";
+        const edgeMeta = ctx?.phase === "commit" ? { pending: false, settled: true } : { pending: true };
+        c.addNode({ __typename: "Post", id, title: "Edge Meta" }, { position: "end", edge: edgeMeta });
+      });
+
+      // Round 1: pending=true
+      let meta = readCanonicalEdges(graph, key)[0]?.meta || {};
+      expect(meta.pending).toBe(true);
+      expect(meta.settled).toBeUndefined();
+
+      // Round 2: commit → pending=false, settled=true
+      tx.commit({ id: "p10" });
+
+      meta = readCanonicalEdges(graph, key)[0]?.meta || {};
+      expect(meta.pending).toBe(false);
+      expect(meta.settled).toBe(true);
+
+      // And id is the real one (no temp)
+      const ids = readCanonicalEdges(graph, key).map((e) => graph.getRecord(e.nodeKey)?.id);
+      expect(ids).toEqual(["p10"]);
+    });
+
+    it("patch round can use data to finalize an entity snapshot", () => {
+      graph.putRecord("User:me", { __typename: "User", id: "me", name: "Draft" });
+
+      const tx = optimistic.modifyOptimistic((o, ctx?: { data?: any }) => {
+        const name = ctx?.data?.name ?? "Draft";
+        o.patch("User:me", { name }, { mode: "merge" });
+      });
+
+      // optimistic
+      expect(graph.getRecord("User:me")?.name).toBe("Draft");
+
+      // commit with final name
+      tx.commit({ name: "Real Name" });
+      expect(graph.getRecord("User:me")?.name).toBe("Real Name");
+    });
+
+    it("preserves ordering with multiple layers when the first is committed with real data", () => {
+      const key = "@connection.posts({})";
+
+      // L1: optimistic (start) temp post
+      const t1 = optimistic.modifyOptimistic((o, ctx?: { data?: any }) => {
+        const c = o.connection({ parent: "Query", key: "posts" });
+        const id = ctx?.data?.id ?? "tmp-3";
+        c.addNode({ __typename: "Post", id, title: "T1" }, { position: "start" });
+      });
+
+      // L2: another optimistic layer appending a stable node
+      const t2 = optimistic.modifyOptimistic((o) => {
+        const c = o.connection({ parent: "Query", key: "posts" });
+        c.addNode({ __typename: "Post", id: "p2", title: "Stable" }, { position: "end" });
+      });
+
+      // Before commit(data): order = [tmp-3, p2]
+      expect(readCanonicalEdges(graph, key).map(e => graph.getRecord(e.nodeKey)?.id)).toEqual(["tmp-3", "p2"]);
+
+      // Commit first layer with server id → should become [p1, p2]
+      t1.commit({ id: "p1" });
+
+      const ids = readCanonicalEdges(graph, key).map(e => graph.getRecord(e.nodeKey)?.id);
+      expect(ids).toEqual(["p1", "p2"]);
+
+      // Committing t2 (no-op semantics in your current API) should not change resulting order
+      t2.commit();
+      const ids2 = readCanonicalEdges(graph, key).map(e => graph.getRecord(e.nodeKey)?.id);
+      expect(ids2).toEqual(["p1", "p2"]);
     });
   });
 });

@@ -5,32 +5,29 @@
 
   const router = useRouter();
 
+  const settings = useSettings();
+
   const createSpell = useCreateSpell();
 
   const handleCreate = async (input) => {
-    try {
-      const result = await createSpell.execute({
+    if (settings.optimistic) {
+      createSpell.execute({
         input,
       });
 
-      if (result.error) {
-        throw result.error;
+      await router.push("/");
+    } else {
+      try {
+        const result = await createSpell.execute({
+          input,
+        });
+
+        await router.push("/");
+      } catch (error) {
+        console.error(error);
+
+        alert("An error occurred. Please try again.");
       }
-
-      // NOTE: Comment it out to show Suspense fallback right after the redirect.
-      await $villus.executeQuery({
-        query: SPELL_QUERY,
-
-        variables: {
-          id: result.data.createSpell.spell.id,
-        },
-      });
-
-      await router.push(`/spells/${result.data.createSpell.spell.id}`);
-    } catch (error) {
-      console.error(error);
-
-      alert("An error occurred. Please try again.");
     }
   };
 </script>

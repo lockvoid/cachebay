@@ -11,22 +11,22 @@ Works for **entities** and **Relay connections** — no array churn; updates are
 
 ```ts
 // Start a layer
-const tx = cache.modifyOptimistic((o) => {
+const tx = cache.modifyOptimistic((o, { data }) => {
   // 1) Entity: patch fields (normalized by __typename:id)
-  o.patch('Post:999', { title: 'Draft' }, { mode: 'merge' })
+  o.patch('Post:1', { title: 'Draft' }, { mode: 'merge' })
 
   // 2) Get the canonical connection
   const c = o.connection({ parent: 'Query', key: 'posts' })
 
   // 3) Prepend an optimistic node
-  c.addNode({ __typename: 'Post', id: '999', title: 'Draft' }, { position: 'start' })
+  c.addNode({ __typename: 'Post', id: data.id ? data.id : 'temp:123456', title: 'Draft' }, { position: 'start' })
 
   // 4) Patch connection pageInfo/extras (shallow-merge)
   c.patch((prev) => ({ pageInfo: { ...prev.pageInfo, hasNextPage: false } }))
 })
 
 // Success:
-tx.commit?.() // layer applied & remembered
+tx.commit({ id: '123' }) // layer applied with server data & remembered
 
 // Error:
 tx.revert?.() // remove only this layer; remaining layers are replayed
@@ -37,33 +37,44 @@ tx.revert?.() // remove only this layer; remaining layers are replayed
 ## API surface
 
 ```ts
-const tx = cache.modifyOptimistic((o) => {
-  // Entities
-  o.patch(target, partialOrUpdater, { mode?: 'merge' | 'replace' })
-  o.delete(target)
+const tx = cache.modifyOptimistic(
+  (o, ctx: { phase: 'optimistic' | 'commit'; data?: any }) => {
+    // Entities
+    o.patch(target, partialOrUpdater, { mode?: 'merge' | 'replace' })
+    o.delete(target)
 
-  // Connections
-  const c = o.connection({
-    parent: 'Query' | 'Type:id' | { __typename, id },
-    key: string,
-    filters?: Record<string, any>,
-  })
+    // Connections
+    const c = o.connection({
+      parent: 'Query' | 'Type:id' | { __typename, id },
+      key: string,
+      filters?: Record<string, any>,
+    })
 
-  c.addNode(node, {
-    position?: 'start' | 'end' | 'before' | 'after',
-    anchor?: 'Type:id' | { __typename, id },
-    edge?: Record<string, any>,
-  })
+    c.addNode(node, {
+      position?: 'start' | 'end' | 'before' | 'after',
+      anchor?: 'Type:id' | { __typename, id },
+      edge?: Record<string, any>,
+    })
 
-  c.removeNode('Type:id' | { __typename, id })
+    c.removeNode('Type:id' | { __typename, id })
 
-  c.patch(partialOrUpdater) /
-})
+    c.patch(partialOrUpdater)  // shallow-merge into connection; pageInfo merged field-by-field
+  }
+)
 
-// later...
-tx.commit?.()
-tx.revert?.()
+// Finalize this layer
+tx.commit(data?)
+
+// Undo this layer only
+tx.revert()
 ```
+
+### Builder context
+
+- During the optimistic pass, your builder runs with `{ phase: 'optimistic' }`.
+- On `commit(data?)`, the same builder runs **once** with `{ phase: 'commit', data }`, writes directly to the cache (no layer recorded), and the layer is then **dropped**.
+
+>**Note:** `commit(data?)` **always** drops the layer. If you need the overlay to remain, don’t call `commit()`.
 
 ---
 
@@ -123,8 +134,8 @@ c.addNode(node, {
 })
 ```
 
-- Re-adding the same **node**  refreshes edge meta/cursor in place while preserving the order.
-- If **anchor** isn’t found: `before` → **start**, `after` → **end**.
+- De-dups by **entity key**; re-adding refreshes edge meta in place without reordering.
+- Missing `anchor` falls back to **start** for `before` and **end** for `after`.
 
 #### `c.removeNode(ref)`
 ```ts
@@ -150,19 +161,31 @@ c.patch({ pageInfo: { hasNextPage: false }, totalCount: 10 })
 
 **Examples**
 
+**Temp → server ID (connection)**
+
 ```ts
-cache.modifyOptimistic((o) => {
+const tx = cache.modifyOptimistic((o, ctx) => {
   const c = o.connection({ parent: 'Query', key: 'posts' })
+  const id    = ctx.data?.id    ?? 'tmp:1'
+  const title = ctx.data?.title ?? 'Creating…'
 
-  // add at start
-  c.addNode({ __typename: 'Post', id: '999', title: 'New (optimistic)' }, { position: 'start' })
+  c.addNode({ __typename: 'Post', id, title }, { position: 'start' })
+})
 
-  // patch pageInfo
-  c.patch({ pageInfo: { hasNextPage: false } })
+// later, when the server returns the real id:
+tx.commit({ id: '123', title: 'Created' })
+```
 
-  // patch extras with an updater
-  c.patch((prev) => ({ totalCount: (typeof prev.totalCount === 'number' ? prev.totalCount : 0) + 1 }))
-}).commit?.()
+**Finalize an entity snapshot**
+
+```ts
+  const tx = cache.modifyOptimistic((o, ctx) => {
+    const id = ctx.data?.id ?? 'draft:42'
+
+    o.patch({ __typename: 'Post', id }, { title: ctx.data?.title ?? 'Draft' })
+  })
+
+  tx.commit({ id: '42', title: 'Ready' })
 ```
 
 ---
@@ -175,7 +198,7 @@ Layers apply **in insertion order** and can be reverted individually:
 - Revert **L1** → rendered = `base + L2 + …`
 - Revert **L2** → rendered = `base + L1 + …`
 
-After a revert, Cachebay restores the base and **replays remaining layers**, keeping the UI consistent and deterministic.
+After a revert, Cachebay restores just the affected records and **replays** other layers, keeping the UI consistent.
 
 **Timeline**
 
@@ -188,60 +211,6 @@ revert(L2)            → [A]
 ```
 
 `*` = optimistic.
-
----
-
-## Patterns
-
-**Create (optimistic) → server success**
-
-```ts
-const tx = cache.modifyOptimistic((o) => {
-  o.patch('Post:tmp:1', { title: 'Creating…' }, { mode: 'merge' })
-
-  const c = o.connection({ parent: 'Query', key: 'posts' })
-  c.addNode({ __typename: 'Post', id: 'tmp:1', title: 'Creating…' }, { position: 'start' })
-})
-
-// Success:
-tx.commit?.()
-
-// When the server responds with the real ID:
-cache.modifyOptimistic((o) => {
-  o.patch('Post:1', { title: 'Created' }, { mode: 'merge' })
-}).commit?.()
-```
-
-**Update (optimistic) → server failure**
-
-```ts
-const tx = cache.modifyOptimistic((o) => {
-  o.patch('Post:123', { title: 'New title (optimistic)' }, { mode: 'merge' })
-})
-
-// Success:
-tx.commit?.()
-
-// Error:
-tx.revert?.()
-```
-
-**Delete (optimistic) → server failure**
-
-```ts
-const tx = cache.modifyOptimistic((o) => {
-  o.delete('Post:123')
-
-  const c = o.connection({ parent: 'Query', key: 'posts' })
-  c.removeNode('Post:123')
-})
-
-// Success:
-tx.commit?.()
-
-// Error:
-tx.revert?.()
-```
 
 ---
 

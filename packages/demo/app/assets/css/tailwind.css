@@ -24,13 +24,22 @@
   @apply button text-white bg-red-600 hover:bg-red-700 focus:ring-red-500;
 }
 
-.select {
+@utility select {
   @apply h-10 text-sm bg-gray-200 rounded px-3 py-1 pr-8 focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none;
 
   background-image: url("data:image/svg+xml;base64,PHN2ZyB3aWR0aD0nMjAnIGhlaWdodD0nMjAnIHZpZXdCb3g9JzAgMCAyMCAyMCcgZmlsbD0nbm9uZScgeG1sbnM9J2h0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnJz48cGF0aCBkPSdNNSA3LjVMMTAgMTIuNUwxNSA3LjUnIHN0cm9rZT0nIzM3NDE1MScgc3Ryb2tlLXdpZHRoPScxLjUnIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCcvPjwvc3ZnPg==");
   background-position: right 0.5rem center;
   background-repeat: no-repeat;
   background-size: 1rem;
+}
+
+@utility select-inline {
+  @apply text-xs bg-gray-100 rounded-full px-2 py-1 pr-4 focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none;
+
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB3aWR0aD0nMjAnIGhlaWdodD0nMjAnIHZpZXdCb3g9JzAgMCAyMCAyMCcgZmlsbD0nbm9uZScgeG1sbnM9J2h0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnJz48cGF0aCBkPSdNNSA3LjVMMTAgMTIuNUwxNSA3LjUnIHN0cm9rZT0nIzM3NDE1MScgc3Ryb2tlLXdpZHRoPScxLjUnIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcgc3Ryb2tlLWxpbmVqb2luPSdyb3VuZCcvPjwvc3ZnPg==");
+  background-position: right 0.25rem center;
+  background-repeat: no-repeat;
+  background-size: 0.75rem;
 }
 
 @utility text-input {
@@ -45,4 +54,12 @@ html {
   @apply font-serif  bg-gray-100;
 
   font-size: 18px;
+}
+
+#nprogress {
+  pointer-events: none;
+}
+
+#nprogress > .bar {
+  @apply bg-purple-500 fixed top-0 left-0 h-0.5 w-full z-50;
 }

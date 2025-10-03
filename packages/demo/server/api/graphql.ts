@@ -57,6 +57,7 @@ builder.objectType("HogwartsTime", {
 builder.inputType("SpellFilter", {
   fields: (t) => ({
     query: t.string(),
+    sort: t.string(),
   }),
 });
 
@@ -145,7 +146,7 @@ builder.queryType({
           },
 
           ({ before, after, limit, inverted }: ResolveCursorConnectionArgs) => {
-            const { filter } = args as { filter?: { query?: string } };
+            const { filter } = args as { filter?: { query?: string; sort?: string } };
 
             const where = [];
             const params = [];
@@ -165,7 +166,28 @@ builder.queryType({
               params.push(before);
             }
 
-            const querySql = `SELECT * FROM spells ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY id ${inverted ? "DESC" : "ASC"} LIMIT ?`;
+            let orderBy = "id";
+            let orderDirection = inverted ? "DESC" : "ASC";
+
+            if (filter?.sort) {
+              switch (filter.sort) {
+                case "NAME_ASC":
+                  orderBy = "name";
+                  orderDirection = "ASC";
+                  break;
+
+                case "CREATE_DATE_DESC":
+                  orderBy = "id";
+                  orderDirection = "DESC";
+                  break;
+
+                default:
+                  orderBy = "id";
+                  orderDirection = inverted ? "DESC" : "ASC";
+              }
+            }
+
+            const querySql = `SELECT * FROM spells ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY ${orderBy} ${orderDirection} LIMIT ?`;
 
             params.push(limit);
 

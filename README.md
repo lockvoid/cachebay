@@ -301,42 +301,43 @@ See **[Cache fragments](./docs/CACHE_FRAGMENTS.md)** for a concise API (`identif
 
 ## Optimistic updates (entities & connections)
 
-Layered optimistic update system that allows stacking multiple transactions with clean rollback capabilities. Supports both entity modifications and connection operations for comprehensive cache manipulation during pending network requests.
+Layered optimistic updates let you stage cache changes immediately while a request is in flight. You can patch/delete **entities** and edit **connections** (add/remove/patch) with zero array churn—then **finalize** with `commit(data?)` or **undo** with `revert()`.
 
 ```ts
-const tx = cache.modifyOptimistic((tx) => {
-  // Entity edits
-  tx.patch('Post:999', { title:'New optimistic title' }, { mode:'merge' })
+const tx = cache.modifyOptimistic((o, ctx) => {
+  // Entities
+  o.patch('Post:999', { title: 'New (optimistic)' })
+  o.delete('Post:999')
 
-  tx.delete('Post:999')
+  // Connections
+  const c = o.connection({ parent: 'Query', key: 'posts' })
 
-  // Connection edits
-  const connection = tx.connection({ parent:'Query', key:'posts' })
+  // Add (dedup by node key)
+  c.addNode({ __typename: 'Post', id: '999', title: 'New' }, { position: 'start' })
+  c.addNode({ __typename: 'Post', id: '100', title: 'Before 123' }, { position: 'before', anchor: 'Post:123' })
+  c.addNode({ __typename: 'Post', id: '101', title: 'After 123'  }, { position: 'after',  anchor: { __typename: 'Post', id: '123' } })
 
-  // Add a node
-  connection.addNode({ __typename:'Asset', id:'999', name:'New (optimistic)' }, { position:'start' })
+  // Remove
+  c.removeNode('Post:999')
 
-  // Insert a node
-  connection.addNode({ __typename:'Asset', id:'100', name:'Inserted Before' }, { position:'before', anchor:'Asset:123' })
-  connection.addNode({ __typename:'Asset', id:'101', name:'Inserted After'  }, { position:'after',  anchor:{ __typename:'Asset', id:'123' } })
-
-  // Remove a nide
-  connection.removeNode('Asset:999')
-
-  // Patch pageInfo, etc...
-  connection.patch(prev => ({ pageInfo: { ...prev.pageInfo, hasNextPage:false } }))
+  // Patch connection meta / pageInfo (shallow)
+  c.patch(prev => ({ pageInfo: { ...prev.pageInfo, hasNextPage: false } }))
 })
 
-tx.commit?.()
-// tx.revert?.() // rolls back this layer and replays later ones
+// Finalize this layer (optionally using server data, e.g. replace a temp id)
+tx.commit({ id: '123' })
+
+// Or undo this layer only:
+tx.revert()
 ```
 
-- Layers stack in insertion order; `revert()` restores the earliest baseline, **reconstructs** canonicals, then replays remaining layers.
-- `addNode` de-dups by node key and updates edge meta in place.
-- `position`: `"start" | "end" | "before" | "after"`, with optional `anchor` for relative insert.
+- `commit(data?)` **finalizes** the layer: your builder runs once in write-through mode with `{ phase: 'commit', data }`, and the layer is **dropped** (nothing left to replay).
+- `revert()` undoes **only** that layer; other layers remain and continue to apply in order.
+- Layers stack in insertion order.
+- `addNode` de-dups by entity key and refreshes edge meta in place.
+- `position`: `"start" | "end" | "before" | "after"` (for the latter two, provide an `anchor`).
 
-See **[Optimistic updates](./docs/OPTIMISTIC_UPDATES.md)** for more details and examples.
-
+See **[Optimistic updates](./docs/OPTIMISTIC_UPDATES.md)** for more details and patterns.
 ---
 
 MIT © LockVoid Labs ~●~

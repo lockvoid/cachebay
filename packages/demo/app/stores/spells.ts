@@ -7,10 +7,15 @@ export const useSpellsPagination = defineStore("spellsPagination", () => {
 
   const filter = reactive({
     query: "" as string,
+    sort: "CREATE_DATE_DESC" as string,
   });
 
   const setQuery = (value: string) => {
     filter.query = value ?? "";
+  };
+
+  const setSort = (value: string) => {
+    filter.sort = value ?? "CREATE_DATE_DESC";
   };
 
   const setAfter = (value: string | null) => {
@@ -34,6 +39,7 @@ export const useSpellsPagination = defineStore("spellsPagination", () => {
 
   const resetFilter = () => {
     filter.query = "";
+    filter.sort = "CREATE_DATE_DESC";
   };
 
   const reset = () => {
@@ -54,6 +60,7 @@ export const useSpellsPagination = defineStore("spellsPagination", () => {
     setBefore,
     setLimit,
     setQuery,
+    setSort,
     resetPagination,
     resetFilter,
     reset,

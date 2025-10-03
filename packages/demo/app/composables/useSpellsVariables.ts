@@ -11,9 +11,19 @@ export const useSpellsQueryVariables = () => {
     }
 
     if (pagination.filter.query) {
-      results.filter = {
-        query: pagination.filter.query,
-      };
+      if (!results.filter) {
+        results.filter = {};
+      }
+
+      results.filter.query = pagination.filter.query;
+    }
+
+    if (pagination.filter.sort) {
+      if (!results.filter) {
+        results.filter = {};
+      }
+
+      results.filter.sort = pagination.filter.sort;
     }
 
     return results;

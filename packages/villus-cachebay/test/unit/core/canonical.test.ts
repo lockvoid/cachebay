@@ -591,9 +591,9 @@ describe("Canonical", () => {
         pageEdgeRefs: page0EdgeRefs,
       });
 
-      // 4. Verify optimistic overlay is re-applied (9 at start, 2 removed)
+      // 4. Verify optimistic overlay is not re-applied
       const nodeIds = getNodeIds("@connection.posts({})");
-      expect(nodeIds).toEqual(["9", "1", "3", "4", "5", "6"]);
+      expect(nodeIds).toEqual(["1", "2", "3", "4", "5", "6"]);
     });
 
     it("maintains union 1..6 when network P2 arrives after prewarming P1,P2 from cache", () => {

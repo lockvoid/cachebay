@@ -1,7 +1,17 @@
 <script setup lang="ts">
+  import nprogress from "nprogress";
+
   const spellsPagination = useSpellsPagination();
 
   const spellsActivity = useSpellsActivity();
+
+  watch(spellsActivity, () => {
+    if (spellsActivity.isFetching) {
+      nprogress.start();
+    } else {
+      nprogress.done();
+    }
+  });
 </script>
 
 <template>
@@ -11,15 +21,37 @@
     </NuxtLink>
 
     <div class="absolute left-1/2 hidden w-full max-w-md -translate-x-1/2 transform md:block">
-      <UiSearchInput v-model="spellsPagination.filter.query" placeholder="Search spells..." />
+      <div class="relative flex gap-2">
+        <UiSearchInput v-model="spellsPagination.filter.query" placeholder="Search spells..." />
 
-      <span v-if="spellsActivity.isFetching" class="absolute top-1/2 right-2 -translate-y-1/2 transform text-xs text-gray-500">
-        Loading…
-      </span>
+        <select v-model="spellsPagination.filter.sort" class="select-inline absolute top-1/2 right-2 -translate-y-1/2">
+          <option value="CREATE_DATE_DESC">
+            Create Date
+          </option>
+
+          <option value="NAME_ASC">
+            Name
+          </option>
+        </select>
+      </div>
     </div>
 
     <div class="relative flex-1 md:hidden">
-      <UiSearchInput v-model="spellsPagination.filter.query" placeholder="Search..." />
+      <div class="flex gap-2">
+        <UiSearchInput v-model="spellsPagination.filter.query" placeholder="Search..." class="flex-1" />
+
+        <select v-model="spellsPagination.filter.sort" class="select flex-shrink-0 text-xs">
+          <option value="CREATE_DATE_DESC">
+            Date
+          </option>
+          <option value="NAME_ASC">
+            A-Z
+          </option>
+          <option value="NAME_DESC">
+            Z-A
+          </option>
+        </select>
+      </div>
 
       <span v-if="spellsActivity.isFetching" class="absolute top-1/2 right-0 -translate-y-1/2 transform text-xs text-gray-500">
         Loading…
