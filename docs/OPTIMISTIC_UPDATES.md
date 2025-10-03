@@ -166,7 +166,7 @@ c.patch({ pageInfo: { hasNextPage: false }, totalCount: 10 })
 ```ts
 const tx = cache.modifyOptimistic((o, ctx) => {
   const c = o.connection({ parent: 'Query', key: 'posts' })
-  const id    = ctx.data?.id    ?? 'tmp:1'
+  const id = ctx.data?.id ?? 'tmp:1'
   const title = ctx.data?.title ?? 'Creating…'
 
   c.addNode({ __typename: 'Post', id, title }, { position: 'start' })
@@ -179,13 +179,13 @@ tx.commit({ id: '123', title: 'Created' })
 **Finalize an entity snapshot**
 
 ```ts
-  const tx = cache.modifyOptimistic((o, ctx) => {
-    const id = ctx.data?.id ?? 'draft:42'
+const tx = cache.modifyOptimistic((o, ctx) => {
+  const id = ctx.data?.id ?? 'draft:42'
 
-    o.patch({ __typename: 'Post', id }, { title: ctx.data?.title ?? 'Draft' })
-  })
+  o.patch({ __typename: 'Post', id }, { title: ctx.data?.title ?? 'Draft' })
+})
 
-  tx.commit({ id: '42', title: 'Ready' })
+tx.commit({ id: '42', title: 'Ready' })
 ```
 
 ---
@@ -217,5 +217,5 @@ revert(L2)            → [A]
 ## See also
 
 - **Relay connections** — modes, de-dup, policy matrix: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)
-- **Fragments** — `identify` / `readFragment` / `writeFragment`: [CACHE_FRAGMENTS.md](./CACHE_FRAGMENTS.md)
+- **Fragments** — `identify` / `readFragment` / `writeFragment`: [FRAGMENTS.md](./FRAGMENTS.md)
 - **SSR** — hydrate/dehydrate, first-mount CN behavior: [SSR.md](./SSR.md)

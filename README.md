@@ -294,7 +294,7 @@ writeFragment({
 })
 ```
 
-See **[Cache fragments](./docs/CACHE_FRAGMENTS.md)** for a concise API (`identify`, `readFragment`, `writeFragment`) and simple examples.
+See **[Cache fragments](./docs/FRAGMENTS.md)** for a concise API (`identify`, `readFragment`, `writeFragment`) and simple examples.
 
 ---
 

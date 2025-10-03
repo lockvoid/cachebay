@@ -176,5 +176,5 @@ const cache = createCache({
 
 - **Relay connections** — directive, merge modes, policy matrix: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)
 - **Optimistic updates** — layering, entity ops, `addNode` / `removeNode` / `patch`: [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)
-- **Fragments** — identify / read / write: [CACHE_FRAGMENTS.md](./CACHE_FRAGMENTS.md)
+- **Fragments** — identify / read / write: [FRAGMENTS.md](./FRAGMENTS.md)
 - **Composables** — `useCache()`, `useFragment()`: [COMPOSABLES.md](./COMPOSABLES.md)

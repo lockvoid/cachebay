@@ -201,4 +201,4 @@ const { data } = useQuery({
 
 - **Optimistic updates** — layering, `patch` / `delete`, connection helpers: [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)
 - **SSR** — hydrate/dehydrate, first-mount requests behavior: [SSR.md](./SSR.md)
-- **Fragments** — identify/read/write & interface keys: [FRAGMENTS.md](./CACHE_FRAGMENTS.md)
+- **Fragments** — identify/read/write & interface keys: [FRAGMENTS.md](./FRAGMENTS.md)
