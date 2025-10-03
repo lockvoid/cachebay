@@ -208,8 +208,43 @@ describe("Utils", () => {
       const plan = createTestPlan(operations.POSTS_QUERY);
       const posts = plan.rootSelectionMap!.get("posts")!;
 
-      const postsKey = buildFieldKey(posts, { category: "tech", first: 2, after: null });
-      expect(postsKey).toBe("posts({\"after\":null,\"category\":\"tech\",\"first\":2})");
+      const key = buildFieldKey(posts, { category: "tech", first: 2, after: null });
+      expect(key).toBe("posts({\"after\":null,\"category\":\"tech\",\"first\":2})");
+    });
+
+    it("returns bare field name when the field has no args (e.g., author)", () => {
+      const plan = createTestPlan(operations.USER_POSTS_COMMENTS_QUERY);
+
+      const user = plan.rootSelectionMap!.get("user")!;
+      const posts = user.selectionMap!.get("posts")!;
+      const postEdges = posts.selectionMap!.get("edges")!;
+      const pNode = postEdges.selectionMap!.get("node")!;
+      const comments = pNode.selectionMap!.get("comments")!;
+      const commentEdges = comments.selectionMap!.get("edges")!;
+      const commentNode = commentEdges.selectionMap!.get("node")!;
+      const author = commentNode.selectionMap!.get("author")!;
+
+      const key = buildFieldKey(author, {});
+      expect(key).toBe("author");
+    });
+
+    it("returns bare field name when all args are missing/undefined (stringifyArgs → '{}')", () => {
+      const plan  = createTestPlan(operations.POSTS_QUERY);
+      const posts = plan.rootSelectionMap!.get("posts")!;
+
+      const key1 = buildFieldKey(posts, {});
+      expect(key1).toBe("posts");
+
+      const key2 = buildFieldKey(posts, { category: undefined, sort: undefined, first: undefined, after: undefined, last: undefined, before: undefined });
+      expect(key2).toBe("posts");
+    });
+
+    it("ignores unrelated variables and only serializes declared args", () => {
+      const plan = createTestPlan(operations.POSTS_QUERY);
+      const posts = plan.rootSelectionMap!.get("posts")!;
+
+      const key = buildFieldKey(posts, { category: "tech", unrelated: "ignored" } as any);
+      expect(key).toBe('posts({"category":"tech"})');
     });
   });
 

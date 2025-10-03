@@ -23,14 +23,12 @@ describe("documents.hasDocument", () => {
   });
 
   it("returns true when a root entity link exists", () => {
-    graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID, 'user({"id":"u1"})': { __ref: "User:u1" } });
+    graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID, ['user({"id":"u1"})']: { __ref: "User:u1" }  });
+    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
 
     const userDoc = documents.hasDocument({
       document: operations.USER_QUERY,
-
-      variables: {
-        id: "u1",
-      },
+      variables: { id: "u1" },
     });
 
     expect(userDoc).toBe(true);
@@ -39,10 +37,7 @@ describe("documents.hasDocument", () => {
   it("returns false when a root entity link is missing", () => {
     const userDoc = documents.hasDocument({
       document: operations.USER_QUERY,
-
-      variables: {
-        id: "u1",
-      },
+      variables: { id: "u1" },
     });
 
     expect(userDoc).toBe(false);
@@ -51,7 +46,6 @@ describe("documents.hasDocument", () => {
   it("returns true when the root connection page exists", () => {
     graph.putRecord('@.users({"after":null,"first":2,"role":"admin"})', {
       __typename: "UserConnection",
-
       pageInfo: {
         __typename: "PageInfo",
         startCursor: "u1",
@@ -59,18 +53,12 @@ describe("documents.hasDocument", () => {
         hasNextPage: true,
         hasPreviousPage: false,
       },
-
       edges: [],
     });
 
     const result = documents.hasDocument({
       document: operations.USERS_QUERY,
-
-      variables: {
-        role: "admin",
-        first: 2,
-        after: null,
-      },
+      variables: { role: "admin", first: 2, after: null },
     });
 
     expect(result).toBe(true);
@@ -79,36 +67,31 @@ describe("documents.hasDocument", () => {
   it("returns false when the root connection page is missing", () => {
     const usersDoc = documents.hasDocument({
       document: operations.USERS_QUERY,
-
-      variables: {
-        usersRole: "admin",
-        usersFirst: 2,
-        usersAfter: null,
-      },
+      variables: { usersRole: "admin", usersFirst: 2, usersAfter: null },
     });
 
     expect(usersDoc).toBe(false);
   });
 
   it("returns false when multiple root types have missing parts and true when both present", () => {
-    graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID, 'user({"id":"u1"})': { __ref: "User:u1" } });
+    // root link present, but users page missing → false
+    graph.putRecord(ROOT_ID, {
+      id: ROOT_ID,
+      __typename: ROOT_ID,
+      ['user({"id":"u1"})']: { __ref: "User:u1" },
+    });
+    // also seed user snapshot for strict leaf check on the user branch
+    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
 
     const result1 = documents.hasDocument({
       document: operations.MULTIPLE_USERS_QUERY,
-
-      variables: {
-        userId: "u1",
-        usersRole: "admin",
-        usersFirst: 2,
-        usersAfter: null,
-      },
+      variables: { userId: "u1", usersRole: "admin", usersFirst: 2, usersAfter: null },
     });
-
     expect(result1).toBe(false);
 
+    // now add the users page → both present → true
     graph.putRecord('@.users({"after":null,"first":2,"role":"admin"})', {
       __typename: "UserConnection",
-
       pageInfo: {
         __typename: "PageInfo",
         startCursor: "u1",
@@ -116,19 +99,12 @@ describe("documents.hasDocument", () => {
         hasNextPage: true,
         hasPreviousPage: false,
       },
-
       edges: [],
     });
 
     const result2 = documents.hasDocument({
       document: operations.MULTIPLE_USERS_QUERY,
-
-      variables: {
-        userId: "u1",
-        usersRole: "admin",
-        usersFirst: 2,
-        usersAfter: null,
-      },
+      variables: { userId: "u1", usersRole: "admin", usersFirst: 2, usersAfter: null },
     });
 
     expect(result2).toBe(true);
@@ -137,7 +113,6 @@ describe("documents.hasDocument", () => {
   it("accepts precompiled plan", () => {
     graph.putRecord('@.users({"after":null,"first":2,"role":"admin"})', {
       __typename: "UserConnection",
-
       pageInfo: {
         __typename: "PageInfo",
         startCursor: "u1",
@@ -145,18 +120,12 @@ describe("documents.hasDocument", () => {
         hasNextPage: true,
         hasPreviousPage: false,
       },
-
       edges: [],
     });
 
     const result = documents.hasDocument({
       document: compilePlan(operations.USERS_QUERY),
-
-      variables: {
-        role: "admin",
-        first: 2,
-        after: null,
-      },
+      variables: { role: "admin", first: 2, after: null },
     });
 
     expect(result).toBe(true);
@@ -165,7 +134,6 @@ describe("documents.hasDocument", () => {
   it("returns different results when variables change the page key", () => {
     graph.putRecord('@.users({"after":null,"first":2,"role":"admin"})', {
       __typename: "UserConnection",
-
       pageInfo: {
         __typename: "PageInfo",
         startCursor: "u1",
@@ -173,25 +141,17 @@ describe("documents.hasDocument", () => {
         hasNextPage: true,
         hasPreviousPage: false,
       },
-
       edges: [],
     });
 
     const result1 = documents.hasDocument({
       document: operations.USERS_QUERY,
-
-      variables: {
-        role: "mod",
-        first: 2,
-        after: null,
-      },
+      variables: { role: "mod", first: 2, after: null },
     });
-
     expect(result1).toBe(false);
 
     graph.putRecord('@.users({"after":null,"first":2,"role":"moderator"})', {
       __typename: "UserConnection",
-
       pageInfo: {
         __typename: "PageInfo",
         startCursor: "u3",
@@ -199,34 +159,113 @@ describe("documents.hasDocument", () => {
         hasNextPage: false,
         hasPreviousPage: false,
       },
-
       edges: [],
     });
 
     const result2 = documents.hasDocument({
       document: operations.USERS_QUERY,
-
-      variables: {
-        role: "moderator",
-        first: 2,
-        after: null,
-      },
+      variables: { role: "moderator", first: 2, after: null },
     });
-
     expect(result2).toBe(true);
   });
 
-  it("returns true when link present but entity snapshot missing (by design)", () => {
-    graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID, 'user({"id":"u1"})': { __ref: "User:u1" } });
+  it("returns false when link present but entity snapshot missing (strict leaf check)", () => {
+    // link without the actual snapshot → false now (strict mode)
+    graph.putRecord(ROOT_ID, {
+      id: ROOT_ID,
+      __typename: ROOT_ID,
+      ['user({"id":"u1"})']: { __ref: "User:u1" },
+    });
 
     const userDoc = documents.hasDocument({
       document: operations.USER_QUERY,
-
-      variables: {
-        id: "u1",
-      },
+      variables: { id: "u1" },
     });
 
-    expect(userDoc).toBe(true);
+    expect(userDoc).toBe(false);
+  });
+
+  const USER_WITH_POSTS_QUERY = `
+    query UserWithPosts(
+      $id: ID!,
+      $postsCategory: String,
+      $postsFirst: Int,
+      $postsAfter: String
+    ) {
+      user(id: $id) {
+        __typename
+        id
+        posts(category: $postsCategory, first: $postsFirst, after: $postsAfter)
+          @connection(filters: ["category"]) {
+          __typename
+          pageInfo {
+            __typename
+            startCursor
+            endCursor
+            hasNextPage
+            hasPreviousPage
+          }
+          edges {
+            __typename
+            cursor
+            node { __typename id title }
+          }
+        }
+      }
+    }
+  `;
+
+  it("returns false when a nested connection page is missing under a present root link", () => {
+    graph.putRecord(ROOT_ID, {
+      id: ROOT_ID,
+      __typename: ROOT_ID,
+      ['user({"id":"u1"})']: { __ref: "User:u1" },
+    });
+    // user has id/email in our main user query, but this query only needs id
+    graph.putRecord("User:u1", { __typename: "User", id: "u1" });
+
+    const vars = { id: "u1", postsCategory: "tech", postsFirst: 2, postsAfter: null };
+    const pageKey = '@.User:u1.posts({"after":null,"category":"tech","first":2})';
+
+    expect(graph.getRecord(pageKey)).toBeUndefined();
+
+    const result = documents.hasDocument({
+      document: USER_WITH_POSTS_QUERY,
+      variables: vars,
+    });
+
+    expect(result).toBe(false);
+  });
+
+  it("returns true when the nested connection page exists under the root link", () => {
+    graph.putRecord(ROOT_ID, {
+      id: ROOT_ID,
+      __typename: ROOT_ID,
+      ['user({"id":"u1"})']: { __ref: "User:u1" },
+    });
+    // minimal snapshot for leaf 'id' on the user branch
+    graph.putRecord("User:u1", { __typename: "User", id: "u1" });
+
+    const vars = { id: "u1", postsCategory: "tech", postsFirst: 2, postsAfter: null };
+    const pageKey = '@.User:u1.posts({"after":null,"category":"tech","first":2})';
+
+    graph.putRecord(pageKey, {
+      __typename: "PostConnection",
+      pageInfo: {
+        __typename: "PageInfo",
+        startCursor: "p1",
+        endCursor: "p2",
+        hasNextPage: true,
+        hasPreviousPage: false,
+      },
+      edges: [],
+    });
+
+    const result = documents.hasDocument({
+      document: USER_WITH_POSTS_QUERY,
+      variables: vars,
+    });
+
+    expect(result).toBe(true);
   });
 });

@@ -43,7 +43,6 @@ describe("Plugin", () => {
 
       const context1: any = {
         operation: { key: 1, query: operations.USER_QUERY, variables: { id: "u1" }, cachePolicy: "cache-only" },
-
         useResult: (payload: OperationResult, terminal?: boolean) => {
           emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
         },
@@ -57,7 +56,6 @@ describe("Plugin", () => {
 
       const context2: any = {
         operation: { key: 2, query: operations.USER_QUERY, variables: { id: "u2" }, cachePolicy: "cache-only" },
-
         useResult: (payload: OperationResult, terminal?: boolean) => {
           emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
         },
@@ -78,7 +76,6 @@ describe("Plugin", () => {
 
       const context: any = {
         operation: { key: 3, query: operations.USER_QUERY, variables: { id: "u9" }, cachePolicy: "cache-first" },
-
         useResult: (payload: OperationResult, terminal?: boolean) => {
           emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
         },
@@ -94,7 +91,7 @@ describe("Plugin", () => {
       const userView = documents.materializeDocument({ document: operations.USER_QUERY, variables: { id: "u9" } });
       expect(userView.user.email).toBe("u9@example.com");
     });
-    //Ref
+
     it("returns nested connection edges from seeded cache data", () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
       graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "b@example.com" });
@@ -116,45 +113,63 @@ describe("Plugin", () => {
       };
 
       const usersPageKey = buildConnectionKey(users, ROOT_ID, variables);
-
       seedConnectionPage(
         graph,
         usersPageKey,
         [{ nodeRef: "User:u1", cursor: "u1" }, { nodeRef: "User:u2", cursor: "u2" }],
-        { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false },
+        { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false, hasPreviousPage: false },
         {},
         "UserEdge",
         "UserConnection",
       );
 
       const canonicalUsersKey = "@connection.users({\"role\":\"dj\"})";
-
       graph.putRecord(canonicalUsersKey, {
         __typename: "UserConnection",
         pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false, hasPreviousPage: false },
         edges: [{ __ref: `${usersPageKey}.edges.0` }, { __ref: `${usersPageKey}.edges.1` }],
       });
 
-      graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1" });
+      // Seed nested posts for BOTH users (deep hasDocument requires the concrete page)
+      graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1", tags: [] });
 
-      const userPostsPageKey = buildConnectionKey(posts, "User:u1", variables);
-
+      const u1PostsPageKey = buildConnectionKey(posts, "User:u1", variables);
       seedConnectionPage(
         graph,
-        userPostsPageKey,
+        u1PostsPageKey,
         [{ nodeRef: "Post:p1", cursor: "p1" }],
-        { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false },
-        {},
+        { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false },
+        { totalCount: 1 },
         "PostEdge",
         "PostConnection",
       );
 
-      const canonicalPostsKey = "@connection.User:u1.posts({\"category\":\"tech\"})";
+      const u2PostsPageKey = buildConnectionKey(posts, "User:u2", variables);
+      seedConnectionPage(
+        graph,
+        u2PostsPageKey,
+        [],
+        { __typename: "PageInfo", startCursor: null, endCursor: null, hasNextPage: false, hasPreviousPage: false },
+        { totalCount: 0 },
+        "PostEdge",
+        "PostConnection",
+      );
 
-      graph.putRecord(canonicalPostsKey, {
+
+      // Nested posts canonical (User:u1)
+      const canPostsU1 = '@connection.User:u1.posts({"category":"tech"})';
+      graph.putRecord(canPostsU1, {
         __typename: "PostConnection",
         pageInfo: { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false },
-        edges: [{ __ref: `${userPostsPageKey}.edges.0` }],
+        edges: [{ __ref: `${u1PostsPageKey}.edges.0` }],
+      });
+
+      // Nested posts canonical (User:u2) — empty
+      const canPostsU2 = '@connection.User:u2.posts({"category":"tech"})';
+      graph.putRecord(canPostsU2, {
+        __typename: "PostConnection",
+        pageInfo: { __typename: "PageInfo", startCursor: null, endCursor: null, hasNextPage: false, hasPreviousPage: false },
+        edges: [],
       });
 
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
@@ -182,7 +197,6 @@ describe("Plugin", () => {
 
       const context: any = {
         operation: { key: 401, query: operations.USER_QUERY, variables: { id: "oops" }, cachePolicy: "cache-first" },
-
         useResult: (payload: OperationResult, terminal?: boolean) => {
           emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
         },
@@ -206,8 +220,11 @@ describe("Plugin", () => {
       graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "b@example.com" });
 
       const plan = planner.getPlan(operations.USERS_POSTS_QUERY);
-
       const users = plan.rootSelectionMap!.get("users")!;
+      const posts = users
+        .selectionMap!.get("edges")!
+        .selectionMap!.get("node")!
+        .selectionMap!.get("posts")!;
 
       const variables = {
         usersRole: "dj",
@@ -223,7 +240,7 @@ describe("Plugin", () => {
         graph,
         usersPageKey,
         [{ nodeRef: "User:u1", cursor: "u1" }, { nodeRef: "User:u2", cursor: "u2" }],
-        { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false },
+        { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false, hasPreviousPage: false },
         {},
         "UserEdge",
         "UserConnection",
@@ -232,26 +249,36 @@ describe("Plugin", () => {
       const canonicalUsersKey = "@connection.users({\"role\":\"dj\"})";
       graph.putRecord(canonicalUsersKey, {
         __typename: "UserConnection",
-
-        pageInfo: {
-          __typename: "PageInfo",
-          startCursor: "u1",
-          endCursor: "u2",
-          hasNextPage: false,
-          hasPreviousPage: false,
-        },
-
-        edges: [
-          { __ref: `${usersPageKey}.edges.0` },
-          { __ref: `${usersPageKey}.edges.1` },
-        ],
+        pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false, hasPreviousPage: false },
+        edges: [{ __ref: `${usersPageKey}.edges.0` }, { __ref: `${usersPageKey}.edges.1` }],
       });
 
-      const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
+      // Seed nested posts pages (empty is fine) with totalCount for deep check
+      const u1PostsPageKey = buildConnectionKey(posts, "User:u1", variables);
+      seedConnectionPage(
+        graph,
+        u1PostsPageKey,
+        [],
+        { __typename: "PageInfo", startCursor: null, endCursor: null, hasNextPage: false, hasPreviousPage: false },
+        { totalCount: 0 },
+        "PostEdge",
+        "PostConnection",
+      );
 
+      const u2PostsPageKey = buildConnectionKey(posts, "User:u2", variables);
+      seedConnectionPage(
+        graph,
+        u2PostsPageKey,
+        [],
+        { __typename: "PageInfo", startCursor: null, endCursor: null, hasNextPage: false, hasPreviousPage: false },
+        { totalCount: 0 },
+        "PostEdge",
+        "PostConnection",
+      );
+
+      const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
       const context: any = {
         operation: { key: 10, query: operations.USERS_POSTS_QUERY, variables, cachePolicy: "cache-and-network" },
-
         useResult: (payload: OperationResult, terminal?: boolean) => {
           emissions.push({ data: payload.data, error: payload.error, terminal: !!terminal });
         },
@@ -267,14 +294,7 @@ describe("Plugin", () => {
         data: {
           users: {
             __typename: "UserConnection",
-
-            pageInfo: {
-              __typename: "PageInfo",
-              startCursor: "u1",
-              endCursor: "u2",
-              hasNextPage: false,
-            },
-
+            pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false },
             edges: [
               { __typename: "UserEdge", cursor: "u1", node: { __typename: "User", id: "u1", email: "a@example.com" } },
               { __typename: "UserEdge", cursor: "u2", node: { __typename: "User", id: "u2", email: "b@example.com" } },
@@ -304,14 +324,8 @@ describe("Plugin", () => {
           key: 101,
           query: operations.USERS_POSTS_QUERY,
           cachePolicy: "cache-and-network",
-
-          variables: {
-            usersRole: "dj",
-            usersFirst: 2,
-            usersAfter: "u2",
-          },
+          variables: { usersRole: "dj", usersFirst: 2, usersAfter: "u2" },
         },
-
         useResult: createResultHandler("after1"),
       };
 
@@ -321,23 +335,11 @@ describe("Plugin", () => {
         data: {
           users: {
             __typename: "UserConnection",
-            pageInfo: {
-              __typename: "PageInfo",
-              startCursor: "u3",
-              endCursor: "u3",
-              hasNextPage: true,
-              hasPreviousPage: true,
-            },
-
+            pageInfo: { __typename: "PageInfo", startCursor: "u3", endCursor: "u3", hasNextPage: true, hasPreviousPage: true },
             edges: [{
               __typename: "UserEdge",
               cursor: "u3",
-
-              node: {
-                __typename: "User",
-                id: "u3",
-                email: "c@example.com",
-              },
+              node: { __typename: "User", id: "u3", email: "c@example.com" },
             }],
           },
         },
@@ -385,23 +387,41 @@ describe("Plugin", () => {
     });
 
     it("serves cached union first then resets to leader slice on network response", () => {
-
-      graph.putRecord("User:u1", { __typename: "User", id: "u1" });
-      graph.putRecord("User:u2", { __typename: "User", id: "u2" });
-      graph.putRecord("User:u3", { __typename: "User", id: "u3" });
+      graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
+      graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "u2@example.com" });
+      graph.putRecord("User:u3", { __typename: "User", id: "u3", email: "u3@example.com" });
 
       const plan = planner.getPlan(operations.USERS_POSTS_QUERY);
       const users = plan.rootSelectionMap!.get("users")!;
+      const posts = users
+        .selectionMap!.get("edges")!
+        .selectionMap!.get("node")!
+        .selectionMap!.get("posts")!;
+
       const leaderVariables = { usersRole: "dj", usersFirst: 2, usersAfter: null };
       const afterVariables = { usersRole: "dj", usersFirst: 1, usersAfter: "u2" };
 
       const leaderPageKey = buildConnectionKey(users, ROOT_ID, leaderVariables);
-      seedConnectionPage(graph, leaderPageKey, [{ nodeRef: "User:u1", cursor: "u1" }, { nodeRef: "User:u2", cursor: "u2" }],
-        { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: true }, {}, "UserEdge", "UserConnection");
+      seedConnectionPage(
+        graph,
+        leaderPageKey,
+        [{ nodeRef: "User:u1", cursor: "u1" }, { nodeRef: "User:u2", cursor: "u2" }],
+        { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: true, hasPreviousPage: false },
+        {},
+        "UserEdge",
+        "UserConnection",
+      );
 
       const afterPageKey = buildConnectionKey(users, ROOT_ID, afterVariables);
-      seedConnectionPage(graph, afterPageKey, [{ nodeRef: "User:u3", cursor: "u3" }],
-        { __typename: "PageInfo", startCursor: "u3", endCursor: "u3", hasNextPage: false }, {}, "UserEdge", "UserConnection");
+      seedConnectionPage(
+        graph,
+        afterPageKey,
+        [{ nodeRef: "User:u3", cursor: "u3" }],
+        { __typename: "PageInfo", startCursor: "u3", endCursor: "u3", hasNextPage: false, hasPreviousPage: false },
+        {},
+        "UserEdge",
+        "UserConnection",
+      );
 
       const canonicalKey = "@connection.users({\"role\":\"dj\"})";
       graph.putRecord(canonicalKey, {
@@ -409,6 +429,28 @@ describe("Plugin", () => {
         pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u3", hasNextPage: false, hasPreviousPage: false },
         edges: [{ __ref: `${leaderPageKey}.edges.0` }, { __ref: `${leaderPageKey}.edges.1` }, { __ref: `${afterPageKey}.edges.0` }],
       });
+
+      // Seed nested posts pages with default args {} for both users in leader slice
+      const u1PostsEmptyKey = buildConnectionKey(posts, "User:u1", { postsCategory: undefined, postsFirst: undefined, postsAfter: undefined });
+      seedConnectionPage(
+        graph,
+        u1PostsEmptyKey,
+        [],
+        { __typename: "PageInfo", startCursor: null, endCursor: null, hasNextPage: false, hasPreviousPage: false },
+        { totalCount: 0 },
+        "PostEdge",
+        "PostConnection",
+      );
+      const u2PostsEmptyKey = buildConnectionKey(posts, "User:u2", { postsCategory: undefined, postsFirst: undefined, postsAfter: undefined });
+      seedConnectionPage(
+        graph,
+        u2PostsEmptyKey,
+        [],
+        { __typename: "PageInfo", startCursor: null, endCursor: null, hasNextPage: false, hasPreviousPage: false },
+        { totalCount: 0 },
+        "PostEdge",
+        "PostConnection",
+      );
 
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
       const context: any = {
@@ -492,12 +534,16 @@ describe("Plugin", () => {
     });
 
     it("emits cached data immediately when page exists but canonical is missing", () => {
-
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "x@a" });
       graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "y@b" });
 
       const plan = planner.getPlan(operations.USERS_POSTS_QUERY);
       const users = plan.rootSelectionMap!.get("users")!;
+      const posts = users
+        .selectionMap!.get("edges")!
+        .selectionMap!.get("node")!
+        .selectionMap!.get("posts")!;
+
       const variables = { usersRole: "sales", usersFirst: 2, usersAfter: null, postsCategory: "tech", postsFirst: 1, postsAfter: null };
       const pageKey = buildConnectionKey(users, "@", variables);
 
@@ -505,10 +551,33 @@ describe("Plugin", () => {
         graph,
         pageKey,
         [{ nodeRef: "User:u1", cursor: "u1" }, { nodeRef: "User:u2", cursor: "u2" }],
-        { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: true },
+        { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: true, hasPreviousPage: false },
         {},
         "UserEdge",
         "UserConnection",
+      );
+
+      // Seed nested posts pages so deep hasDocument passes
+      const u1PostsPageKey = buildConnectionKey(posts, "User:u1", variables);
+      seedConnectionPage(
+        graph,
+        u1PostsPageKey,
+        [],
+        { __typename: "PageInfo", startCursor: null, endCursor: null, hasNextPage: true, hasPreviousPage: false },
+        { totalCount: 0 },
+        "PostEdge",
+        "PostConnection",
+      );
+
+      const u2PostsPageKey = buildConnectionKey(posts, "User:u2", variables);
+      seedConnectionPage(
+        graph,
+        u2PostsPageKey,
+        [],
+        { __typename: "PageInfo", startCursor: null, endCursor: null, hasNextPage: true, hasPreviousPage: false },
+        { totalCount: 0 },
+        "PostEdge",
+        "PostConnection",
       );
 
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
@@ -533,6 +602,10 @@ describe("Plugin", () => {
 
         const plan = planner.getPlan(operations.USERS_POSTS_QUERY);
         const users = plan.rootSelectionMap!.get("users")!;
+        const posts = users
+          .selectionMap!.get("edges")!
+          .selectionMap!.get("node")!
+          .selectionMap!.get("posts")!;
         const variables = { usersRole: "dj", usersFirst: 2, usersAfter: null, postsCategory: "tech", postsFirst: 1, postsAfter: null };
 
         const pageKey = buildConnectionKey(users, ROOT_ID, variables);
@@ -540,7 +613,7 @@ describe("Plugin", () => {
           graph,
           pageKey,
           [{ nodeRef: "User:u1", cursor: "u1" }, { nodeRef: "User:u2", cursor: "u2" }],
-          { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: true },
+          { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: true, hasPreviousPage: false },
           {},
           "UserEdge",
           "UserConnection",
@@ -552,6 +625,28 @@ describe("Plugin", () => {
           pageInfo: { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: true, hasPreviousPage: false },
           edges: [{ __ref: `${pageKey}.edges.0` }, { __ref: `${pageKey}.edges.1` }],
         });
+
+        // Seed nested posts pages (empty + totalCount) for deep check
+        const u1PostsPageKey = buildConnectionKey(posts, "User:u1", variables);
+        seedConnectionPage(
+          graph,
+          u1PostsPageKey,
+          [],
+          { __typename: "PageInfo", startCursor: null, endCursor: null, hasNextPage: false, hasPreviousPage: false },
+          { totalCount: 0 },
+          "PostEdge",
+          "PostConnection",
+        );
+        const u2PostsPageKey = buildConnectionKey(posts, "User:u2", variables);
+        seedConnectionPage(
+          graph,
+          u2PostsPageKey,
+          [],
+          { __typename: "PageInfo", startCursor: null, endCursor: null, hasNextPage: false, hasPreviousPage: false },
+          { totalCount: 0 },
+          "PostEdge",
+          "PostConnection",
+        );
 
         plugin = createPlugin({ suspensionTimeout: 1000 }, { graph, planner, documents, ssr });
         const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
@@ -603,6 +698,10 @@ describe("Plugin", () => {
 
         const plan = planner.getPlan(operations.USERS_POSTS_QUERY);
         const users = plan.rootSelectionMap!.get("users")!;
+        const posts = users
+          .selectionMap!.get("edges")!
+          .selectionMap!.get("node")!
+          .selectionMap!.get("posts")!;
         const variables = { usersRole: "ops", usersFirst: 2, usersAfter: null, postsCategory: "tech", postsFirst: 1, postsAfter: null };
         const pageKey = buildConnectionKey(users, ROOT_ID, variables);
 
@@ -610,7 +709,7 @@ describe("Plugin", () => {
           graph,
           pageKey,
           [{ nodeRef: "User:x1", cursor: "x1" }, { nodeRef: "User:x2", cursor: "x2" }],
-          { __typename: "PageInfo", startCursor: "x1", endCursor: "x2", hasNextPage: true },
+          { __typename: "PageInfo", startCursor: "x1", endCursor: "x2", hasNextPage: true, hasPreviousPage: false },
           {},
           "UserEdge",
           "UserConnection",
@@ -622,6 +721,28 @@ describe("Plugin", () => {
           pageInfo: { __typename: "PageInfo", startCursor: "x1", endCursor: "x2", hasNextPage: true, hasPreviousPage: false },
           edges: [{ __ref: `${pageKey}.edges.0` }, { __ref: `${pageKey}.edges.1` }],
         });
+
+        // Seed nested posts pages for deep check
+        const u1PostsPageKey = buildConnectionKey(posts, "User:x1", variables);
+        seedConnectionPage(
+          graph,
+          u1PostsPageKey,
+          [],
+          { __typename: "PageInfo", startCursor: null, endCursor: null, hasNextPage: false, hasPreviousPage: false },
+          { totalCount: 0 },
+          "PostEdge",
+          "PostConnection",
+        );
+        const u2PostsPageKey = buildConnectionKey(posts, "User:x2", variables);
+        seedConnectionPage(
+          graph,
+          u2PostsPageKey,
+          [],
+          { __typename: "PageInfo", startCursor: null, endCursor: null, hasNextPage: false, hasPreviousPage: false },
+          { totalCount: 0 },
+          "PostEdge",
+          "PostConnection",
+        );
 
         plugin = createPlugin({ suspensionTimeout: 5 }, { graph, planner, documents, ssr });
         const emissions: Array<{ data?: any; error?: any; terminal: boolean; tag?: string }> = [];

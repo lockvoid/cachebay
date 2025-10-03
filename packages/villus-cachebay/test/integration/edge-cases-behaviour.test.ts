@@ -1,5 +1,6 @@
 import { mount } from "@vue/test-utils";
-import { createTestClient, createConnectionComponent, getEdges, fixtures, operations, delay } from "@/test/helpers";
+import { defineComponent, h, computed, watch, Suspense } from "vue";
+import { createTestClient, createConnectionComponent, getEdges, fixtures, operations, delay, tick } from "@/test/helpers";
 
 describe("Edge cases", () => {
   it("maintains entity identity across paginated updates and in-place modifications", async () => {
@@ -164,5 +165,86 @@ describe("Edge cases", () => {
 
     expect(post1.title).toBeUndefined();
     expect(post2.title).toBe("Post 2");
+  });
+
+
+  it("sends two requests even if the root the same", async () => {
+    const routes = [
+      {
+        when: ({ variables }) => {
+          return variables.userId === "1" && variables.postsCategory === "A" && !variables.postsAfter && variables.postsFirst === 2;
+        },
+
+        respond: () => {
+          return {
+            data: {
+              __typename: "Query",
+
+              user: fixtures.users.buildNode({
+                id: "1",
+                email: "u1@example.com",
+                posts: fixtures.posts.buildConnection([{ id: "pa1", title: "A1" }, { id: "pa2", title: "A2" }]),
+              }),
+            },
+          };
+        },
+      },
+
+      {
+        when: ({ variables }) => {
+          return variables.id === "1";
+        },
+
+        respond: () => {
+          return {
+            data: {
+              __typename: "Query",
+
+              user: fixtures.users.buildNode({
+                id: "1",
+                email: "u1@example.com",
+              }),
+            },
+          };
+        },
+      },
+    ];
+
+    const { client, cache, fx } = createTestClient({
+      routes,
+
+      cacheOptions: {
+        suspensionTimeout: 1000,
+        hydrationTimeout: 1000,
+      },
+    });
+
+    const Cmp = defineComponent({
+      name: "Cmp",
+
+      inheritAttrs: false,
+
+      setup() {
+        const { useQuery } = require("villus");
+
+        const userQuery = useQuery({ query: operations.USER_QUERY, variables: { id: "1" }, cachePolicy: "cache-and-network" });
+
+        const userPostsQuery = useQuery({ query: operations.USER_POSTS_QUERY, variables: { userId: "1", postsCategory: "A", postsFirst: 2, postsAfter: null }, cachePolicy: "cache-and-network" });
+
+        return () => {
+          return h("div", {});
+        };
+      },
+    });
+
+    const wrapper = mount(Cmp, {
+      global: {
+        plugins: [client],
+      },
+    });
+
+    await delay(10);
+
+    expect(fx.calls.length).toBe(2);
   });
 });

@@ -1,7 +1,7 @@
 # Cachebay for Villus
 
 [![CI](https://github.com/lockvoid/villus-cachebay/actions/workflows/test.yml/badge.svg)](https://github.com/lockvoid/villus-cachebay/actions/workflows/test.yml)
-[![npm version](https://badge.fury.io/js/villus-cachebay.svg)](https://badge.fury.io/js/villus-cachebay)
+[![npm](https://img.shields.io/npm/v/villus-cachebay.svg)](https://www.npmjs.com/package/villus-cachebay)
 [![Coverage](https://codecov.io/gh/lockvoid/villus-cachebay/branch/main/graph/badge.svg)](https://codecov.io/gh/lockvoid/villus-cachebay)
 [![Bundlephobia](https://img.shields.io/bundlephobia/minzip/villus-cachebay)](https://bundlephobia.com/package/villus-cachebay)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

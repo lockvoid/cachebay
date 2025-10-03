@@ -431,10 +431,12 @@ describe("Cache Policies Behavior", () => {
                 {
                   uuid: "c1",
                   text: "Comment 1",
+                  author: { __typename: "User", id: "u1" },
                 },
                 {
                   uuid: "c2",
                   text: "Comment 2",
+                  author: { __typename: "User", id: "u1" },
                 },
               ]),
             },
@@ -455,14 +457,17 @@ describe("Cache Policies Behavior", () => {
                 {
                   uuid: "c1",
                   text: "Comment 1",
+                  author: { __typename: "User", id: "u1" },
                 },
                 {
                   uuid: "c2",
                   text: "Comment 2",
+                  author: { __typename: "User", id: "u1" },
                 },
                 {
                   uuid: "c3",
                   text: "Comment 3",
+                  author: { __typename: "User", id: "u1" },
                 },
               ]),
             },

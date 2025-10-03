@@ -112,7 +112,9 @@ export const traverseFast = (root: any, context: any, visit: (parentNode: any, v
  * `buildArgs` to map variable names → field-arg names and drops undefined.
  */
 export const buildFieldKey = (field: PlanField, variables: Record<string, any>): string => {
-  return `${field.fieldName}(${field.stringifyArgs(variables)})`;
+  const args = field.stringifyArgs(variables);
+
+  return args === '{}' ? field.fieldName : `${field.fieldName}(${args})`;
 };
 
 /**
