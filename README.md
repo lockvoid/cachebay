@@ -8,9 +8,9 @@
 
 <img width="100" height="100" alt="Cachebay" src="https://pub-464e6b9480014239a02034726cf0073c.r2.dev/cachebay.png">
 
-**Blazing-fast normalized cache x Relay-style connections for [Villus](https://villus.dev/).**
+**Pragmatic normalized cache x Relay-style connections for [Villus](https://villus.dev/).**
 
-A tiny (11KB gzip), instance-scoped cache layer for **Villus** that gives you:
+A tiny (11 kB gzipped) cache layer for **Villus**:
 
 - **Small & focused APIs.** Fragments, optimistic edits, and Relay connections — without ceremony.
 - **Fast rendering.** Microtask-batched updates; stable Relay views that don't churn arrays and minimize re-renders.
@@ -19,7 +19,6 @@ A tiny (11KB gzip), instance-scoped cache layer for **Villus** that gives you:
 - **SSR that just works** — dehydrate/hydrate; first client mount renders from cache without a duplicate request; clean Suspense behavior.
 - **Fragments API** — `identify`, `readFragment`, `writeFragment` (interfaces supported), plus reactive materialized proxies.
 - **Tiny composables** — `useFragment`, `useFragments`, `useCache`
-- **Subscriptions** — plain frames get normalized and stream as non-terminating updates.
 - **Suspense** — first-class support.
 - **Compiller mode (alpha)** — boost performance by pre-compiling fragments and queries.
 
