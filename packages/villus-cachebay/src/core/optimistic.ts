@@ -739,7 +739,30 @@ export const createOptimistic = ({ graph }: Deps) => {
     return { added, removed };
   }
 
-  return { modifyOptimistic, replayOptimistic };
+  function inspect() {
+    const layers = Array.from(pending)
+      .sort((a, b) => a.id - b.id)
+      .map((L) => {
+        const out: any = {
+          id: L.id,
+          entityOps: L.entityOps.map((op) => ({ ...op })),
+          canOps: L.canOps.map((op) => ({ ...op })),
+          touched: Array.from(L.touched),
+          localBaseKeys: Array.from(L.localBase.keys()),
+        };
+
+        const base: Record<string, any> = {};
+        for (const [k, v] of L.localBase) base[k] = cloneJSON(v);
+        out.localBase = base;
+
+        return out;
+      });
+
+    return { total: layers.length, layers };
+  }
+
+
+  return { modifyOptimistic, replayOptimistic, inspect };
 };
 
 export type OptimisticInstance = ReturnType<typeof createOptimistic>;

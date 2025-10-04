@@ -1,6 +1,7 @@
 import { ROOT_ID } from "../core/constants";
 import { buildConnectionCanonicalKey } from "../core/utils";
 import type { GraphInstance } from "../core/graph";
+import type { OptimisticInstance } from "../core/optimistic";
 
 export type InspectAPI = ReturnType<typeof createInspect>;
 
@@ -142,7 +143,7 @@ const unique = <T,>(xs: T[]): T[] => {
  * Return a record snapshot by id (raw, not materialized).
  * @param id Record id.
  */
-export const createInspect = ({ graph }: { graph: GraphInstance }) => {
+export const createInspect = ({ graph, optimistic }: { graph: GraphInstance, optimistic: OptimisticInstance }) => {
   const record = (id: string): any => {
     return graph.getRecord(id);
   };
@@ -244,5 +245,6 @@ export const createInspect = ({ graph }: { graph: GraphInstance }) => {
     entityKeys,
     connectionKeys,
     config,
+    optimistic: () => optimistic.inspect(),
   };
 };

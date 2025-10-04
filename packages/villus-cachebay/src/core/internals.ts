@@ -59,7 +59,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   const fragments = createFragments({ graph, views, planner });
 
   // Features
-  const inspect = createInspect({ graph });
+  const inspect = createInspect({ graph, optimistic });
 
   // Villus plugin (ClientPlugin)
   const plugin = createPlugin({ suspensionTimeout: options.suspensionTimeout }, { graph, planner, documents, ssr });
