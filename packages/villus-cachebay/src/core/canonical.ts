@@ -1,4 +1,3 @@
- 
 import { buildConnectionCanonicalKey } from "./utils";
 import type { GraphInstance } from "./graph";
 import type { PlanField } from "../compiler";
@@ -110,7 +109,13 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDeps) => {
     if (leader) {
       const beforeClean = before.filter((p) => p !== leader);
       const afterClean = after.filter((p) => p !== leader);
-      return [...beforeClean, leader, ...afterClean];
+
+      // IMPORTANT: for prepend (last+before) we want *older* pages to appear
+      // before *newer* ones. Since "before" pages usually arrive newest→older,
+      // we reverse that bucket when a leader is known.
+      const orderedBefore = beforeClean.slice().reverse();
+
+      return [...orderedBefore, leader, ...afterClean];
     }
 
     // no leader → stable arrival order

@@ -13,7 +13,7 @@
 A tiny (11 kB gzipped) cache layer for **Villus**:
 
 - **Small & focused APIs.** Fragments, optimistic edits, and Relay connections — without ceremony.
-- **Fast rendering.** Microtask-batched updates; stable Relay views that don't churn arrays and minimize re-renders.
+- **Fast rendering and excellent performance.** Microtask-batched updates; stable Relay views that don't churn arrays and minimize re-renders.
 - **Relay-style connections** — append/prepend/replace, edge de-duplication by node key, reactive, and **no array churn**.
 - **Optimistic updates that stack** — layered commits/reverts for entities *and* connections (add/remove/update pageInfo) with clean rollback.
 - **SSR that just works** — dehydrate/hydrate; first client mount renders from cache without a duplicate request; clean Suspense behavior.
