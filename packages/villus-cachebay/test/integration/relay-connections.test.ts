@@ -239,7 +239,7 @@ describe("Relay connections", () => {
     const edgesRef1 = connection1.edges;
 
     expect(isReactive(connection1.pageInfo)).toBe(false);
-    expect(isReactive(connection1.edges)).toBe(false);
+    expect(isReactive(connection1.edges)).toBe(true);
     expect(isReactive(connection1.edges[0])).toBe(true);
     expect(isReactive(connection1.edges[1])).toBe(true);
 
@@ -247,7 +247,7 @@ describe("Relay connections", () => {
     const connection2 = response2.data.posts;
     const edgesRef2 = connection2.edges;
 
-    expect(edgesRef2).not.toBe(edgesRef1);
+    expect(edgesRef2).toBe(edgesRef1);
 
     const post1 = connection2.edges[0].node;
     const postFragment1 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });

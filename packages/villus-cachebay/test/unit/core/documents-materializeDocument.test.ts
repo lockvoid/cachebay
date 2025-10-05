@@ -478,8 +478,8 @@ describe("documents.materializeDocument", () => {
       },
     });
 
-    expect(secondUsersView.users.edges).toBe(edgesRef1);     // edges array identity stable
-    expect(secondUsersView.users.pageInfo).not.toBe(pageInfoRef1); // pageInfo replaced
+    expect(secondUsersView.users.edges).toBe(edgesRef1);
+    expect(secondUsersView.users.pageInfo).not.toBe(pageInfoRef1);
     expect(secondUsersView.users.pageInfo.endCursor).toBe("u3");
 
     graph.putRecord("User:u1", { email: "a+1@x" });
@@ -498,8 +498,9 @@ describe("documents.materializeDocument", () => {
       },
     });
 
-    expect(thirdUsersView.users.edges).not.toBe(edgesRef1);
-    expect(thirdUsersView.users.edges.length).toBe(3);
+    expect(thirdUsersView.users.edges).toBe(edgesRef1);
+    expect(edgesRef1.length).toBe(3);
+    expect(edgesRef1[2].cursor).toBe("u3");
   });
 
   it("prewarns pages and normalizes network data correctly", () => {

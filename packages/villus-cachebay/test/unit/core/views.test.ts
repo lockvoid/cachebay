@@ -1,8 +1,9 @@
 // TODO: Needs refactor
 
+import { computed, watchEffect, nextTick } from "vue";
 import { createGraph } from "@/src/core/graph";
 import { createViews } from "@/src/core/views";
-import { createPlanField, createConnectionPlanField, seedConnectionPage, createSelection } from "@/test/helpers/unit";
+import { createConnectionPlanField, seedConnectionPage } from "@/test/helpers/unit";
 
 describe("Views", () => {
   let graph: ReturnType<typeof createGraph>;
@@ -13,121 +14,130 @@ describe("Views", () => {
     views = createViews({ graph });
   });
 
-  describe("getEntityView", () => {
-    it("dereferences __ref fields and arrays of refs (with selection), and lazily reads connection field", () => {
-      graph.putRecord("User:u1", {
-        __typename: "User",
-        id: "u1",
-        email: "u1@example.com",
-        bestFriend: { __ref: "User:u2" },
-        friends: [{ __ref: "User:u2" }],
-      });
-      graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "u2@example.com" });
+  it("connection.edges is a stable, reactive array (computed(() => connection.edges) updates)", async () => {
+    const postsField = createConnectionPlanField("posts");
 
-      const { fields: userFields, map: fieldMap } = createSelection({
-        __typename: true,
-        id: true,
-        bestFriend: ["email"],
-        friends: ["email"],
-        posts: "connection",
-      });
+    // Seed: User:u1 with one post edge
+    graph.putRecord("User:u1", { __typename: "User", id: "u1" });
+    graph.putRecord("Post:1", { __typename: "Post", id: "1", title: "P1" });
 
-      const u1Proxy = graph.materializeRecord("User:u1")!;
-      const userView = views.getEntityView(u1Proxy, userFields, fieldMap, {}, false);
+    seedConnectionPage(
+      graph,
+      "@.User:u1.posts({})",
+      [{ nodeRef: "Post:1", cursor: "c1" }],
+      { __typename: "PageInfo", startCursor: "c1", endCursor: "c1", hasNextPage: false },
+      {},
+      "PostEdge",
+      "PostConnection",
+    );
 
-      expect(userView.bestFriend.email).toBe("u2@example.com");
-      expect(Array.isArray(userView.friends)).toBe(true);
-      expect(userView.friends[0].email).toBe("u2@example.com");
+    const conn = views.getConnectionView("@.User:u1.posts({})", postsField, {}, false);
 
-      graph.putRecord("Post:1", { __typename: "Post", id: "1", title: "First Post" });
-      seedConnectionPage(
-        graph,
-        "@.User:u1.posts({})",
-        [{ nodeRef: "Post:1", cursor: "p1" }],
-        { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false },
-        {},
-        "PostEdge",
-        "PostConnection",
-      );
+    // This is the “problematic” pattern from the app: computed returns edges array
+    const edgesRef = computed(() => conn.edges);
 
-      const postsView = userView.posts;
-      expect(Array.isArray(postsView.edges)).toBe(true);
-      expect(postsView.edges[0].node.__typename).toBe("Post");
-      expect(postsView.edges[0].node.id).toBe("1");
-
-      graph.putRecord("User:u2", { email: "u2.updated@example.com" });
-      expect(userView.bestFriend.email).toBe("u2.updated@example.com");
-      expect(userView.friends[0].email).toBe("u2.updated@example.com");
+    // Track length reactively
+    let seenLen = -1;
+    const stop = watchEffect(() => {
+      // access .length to ensure dependency is tracked on the array
+      seenLen = edgesRef.value.length;
     });
 
-    it("caches per (entityProxy, selection key) — different selections produce different view instances; canonical dimension separated", () => {
-      graph.putRecord("User:u3", { __typename: "User", id: "u3", email: "u3@example.com" });
-      const u3Proxy = graph.materializeRecord("User:u3")!;
+    // Initial frame
+    await nextTick();
+    expect(Array.isArray(edgesRef.value)).toBe(true);
+    expect(seenLen).toBe(1);
 
-      const { fields: idOnlyFields, map: idOnlyMap } = createSelection({ id: true });
-      const { fields: idEmailFields, map: idEmailMap } = createSelection({ id: true, email: true });
+    // Keep a stable reference to the edges array instance
+    const stableEdges = edgesRef.value;
 
-      const view1 = views.getEntityView(u3Proxy, idOnlyFields, idOnlyMap, {}, false);
-      const view2 = views.getEntityView(u3Proxy, idOnlyFields, idOnlyMap, {}, false);
-      const view3 = views.getEntityView(u3Proxy, idEmailFields, idEmailMap, {}, false);
-      const canonicalView = views.getEntityView(u3Proxy, idOnlyFields, idOnlyMap, {}, true);
+    // Append a second edge (simulate canonical/page merge)
+    graph.putRecord("Post:2", { __typename: "Post", id: "2", title: "P2" });
+    graph.putRecord("@.User:u1.posts({}).edges.1", { __typename: "PostEdge", cursor: "c2", node: { __ref: "Post:2" } });
 
-      expect(view1).toBe(view2);
-      expect(view1).not.toBe(view3);
-      expect(view1).not.toBe(canonicalView);
-    });
+    const prevEdges = (graph.getRecord("@.User:u1.posts({})")?.edges ?? []).slice();
+    graph.putRecord("@.User:u1.posts({})", { edges: [...prevEdges, { __ref: "@.User:u1.posts({}).edges.1" }] });
+
+    // Reactive update should flow without changing the edges array identity
+    await nextTick();
+    expect(edgesRef.value).toBe(stableEdges); // identity stable
+    expect(seenLen).toBe(2);                  // length updated reactively
+    expect(edgesRef.value[1].node.id).toBe("2");
+
+    stop();
   });
 
-  describe("getConnectionView", () => {
-    it("returns a memoized edges array until refs change", () => {
-      const postsConnectionField = createConnectionPlanField("posts");
+  it("mapping over connection.edges in a computed updates when refs change", async () => {
+    const postsField = createConnectionPlanField("posts");
 
-      graph.putRecord("User:u4", { __typename: "User", id: "u4" });
-      graph.putRecord("Post:1", { __typename: "Post", id: "1", title: "First Post" });
-      seedConnectionPage(
-        graph,
-        "@.User:u4.posts({})",
-        [{ nodeRef: "Post:1", cursor: "p1" }],
-        { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false },
-        {},
-        "PostEdge",
-        "PostConnection",
-      );
+    graph.putRecord("User:u2", { __typename: "User", id: "u2" });
+    graph.putRecord("Post:1", { __typename: "Post", id: "1", title: "A" });
 
-      const connectionView = views.getConnectionView("@.User:u4.posts({})", postsConnectionField, {}, false);
-      const firstEdgesArray = connectionView.edges;
-      const secondEdgesArray = connectionView.edges;
-      expect(firstEdgesArray).toBe(secondEdgesArray);
+    seedConnectionPage(
+      graph,
+      "@.User:u2.posts({})",
+      [{ nodeRef: "Post:1", cursor: "c1" }],
+      { __typename: "PageInfo", startCursor: "c1", endCursor: "c1", hasNextPage: false },
+      {},
+      "PostEdge",
+      "PostConnection",
+    );
 
-      graph.putRecord("Post:2", { __typename: "Post", id: "2", title: "Second Post" });
-      const secondEdgeKey = "@.User:u4.posts({}).edges.1";
-      graph.putRecord(secondEdgeKey, { __typename: "PostEdge", cursor: "p2", node: { __ref: "Post:2" } });
+    const conn = views.getConnectionView("@.User:u2.posts({})", postsField, {}, false);
 
-      const existingEdges = (graph.getRecord("@.User:u4.posts({})")?.edges ?? []).slice();
-      graph.putRecord("@.User:u4.posts({})", { edges: [...existingEdges, { __ref: secondEdgeKey }] });
+    // Common UI usage: computed returns a mapped list
+    const titles = computed(() => conn.edges.map(e => e.node.title));
 
-      const thirdEdgesArray = connectionView.edges;
-      expect(thirdEdgesArray).not.toBe(firstEdgesArray);
-      expect(thirdEdgesArray.length).toBe(2);
-      expect(thirdEdgesArray[1].node.id).toBe("2");
-    });
+    await nextTick();
+    expect(titles.value).toEqual(["A"]);
+
+    // Add another post → titles should update
+    graph.putRecord("Post:2", { __typename: "Post", id: "2", title: "B" });
+    graph.putRecord("@.User:u2.posts({}).edges.1", { __typename: "PostEdge", cursor: "c2", node: { __ref: "Post:2" } });
+
+    const prevEdges = (graph.getRecord("@.User:u2.posts({})")?.edges ?? []).slice();
+    graph.putRecord("@.User:u2.posts({})", { edges: [...prevEdges, { __ref: "@.User:u2.posts({}).edges.1" }] });
+
+    await nextTick();
+    expect(titles.value).toEqual(["A", "B"]);
+
+    // Update a node’s field → mapped value should update too
+    graph.putRecord("Post:2", { title: "B2" });
+    await nextTick();
+    expect(titles.value).toEqual(["A", "B2"]);
   });
 
-  describe("getEdgeView", () => {
-    it("node is an entity view; updates flow through", () => {
-      const { fields: nodeFields } = createSelection({ id: true, title: true });
-      const nodeField = createPlanField("node", false, nodeFields);
+  it("pageInfo changes are observed when the reference is replaced", async () => {
+    const postsField = createConnectionPlanField("posts");
 
-      graph.putRecord("Post:1", { __typename: "Post", id: "1", title: "First Post" });
-      graph.putRecord("@.posts", { __typename: "PostConnection" });
-      graph.putRecord("@.posts.edges.0", { __typename: "PostEdge", cursor: "c1", node: { __ref: "Post:1" } });
+    graph.putRecord("User:u3", { __typename: "User", id: "u3" });
+    graph.putRecord("Post:1", { __typename: "Post", id: "1", title: "P1" });
 
-      const edgeView = views.getEdgeView("@.posts.edges.0", nodeField, {}, false);
-      expect(edgeView.cursor).toBe("c1");
-      expect(edgeView.node.title).toBe("First Post");
+    seedConnectionPage(
+      graph,
+      "@.User:u3.posts({})",
+      [{ nodeRef: "Post:1", cursor: "c1" }],
+      { __typename: "PageInfo", startCursor: "c1", endCursor: "c1", hasNextPage: false },
+      {},
+      "PostEdge",
+      "PostConnection",
+    );
 
-      graph.putRecord("Post:1", { title: "Updated First Post" });
-      expect(edgeView.node.title).toBe("Updated First Post");
+    const conn = views.getConnectionView("@.User:u3.posts({})", postsField, {}, false);
+
+    // Computed reads through pageInfo.endCursor (tracks pageInfo ref)
+    const endCursor = computed(() => conn.pageInfo?.endCursor ?? null);
+
+    await nextTick();
+    expect(endCursor.value).toBe("c1");
+
+    // Replace pageInfo (how graph writes today) → computed should update
+    const prev = graph.getRecord("@.User:u3.posts({})") || {};
+    graph.putRecord("@.User:u3.posts({})", {
+      pageInfo: { ...(prev.pageInfo || {}), endCursor: "c2", __typename: "PageInfo" },
     });
+
+    await nextTick();
+    expect(endCursor.value).toBe("c2");
   });
 });

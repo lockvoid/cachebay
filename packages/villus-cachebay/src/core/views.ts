@@ -1,3 +1,4 @@
+import { shallowReactive } from "vue";
 import { buildConnectionKey, buildConnectionCanonicalKey } from "./utils";
 import type { GraphInstance } from "./graph";
 import type { PlanField } from "../compiler";
@@ -193,7 +194,6 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     canonical: boolean,
   ): any => {
     const pageProxy = graph.materializeRecord(pageKey);
-
     if (!pageProxy) return undefined;
 
     let bucket = viewCache.get(pageProxy);
@@ -209,20 +209,14 @@ export const createViews = ({ graph }: ViewsDependencies) => {
           if (!Array.isArray(list)) return list;
 
           const refs = list.map((r: any) => (r && r.__ref) || "");
-          const cached = bucket?.edgesCache;
+          let cached = bucket?.edgesCache;
 
-          // Invalidate if the source edges array identity changed, or the ref list changed
-          const identityChanged = !cached || cached.sourceArray !== list;
-          const refsChanged =
-            !cached ||
-            cached.refs.length !== refs.length ||
-            !cached.refs.every((v: string, i: number) => v === refs[i]);
-
-          if (identityChanged || refsChanged) {
-            const arr = new Array(refs.length);
+          // First time: create a shallowReactive array we will keep forever
+          if (!cached) {
+            const arr: any[] = shallowReactive([]);
             for (let i = 0; i < refs.length; i++) {
               const ek = refs[i];
-              arr[i] = ek ? getEdgeView(ek, nodeField, variables, canonical) : undefined;
+              arr.push(ek ? getEdgeView(ek, nodeField, variables, canonical) : undefined);
             }
 
             if (!bucket || bucket.kind !== "page") {
@@ -234,6 +228,30 @@ export const createViews = ({ graph }: ViewsDependencies) => {
             }
 
             return arr;
+          }
+
+          // Subsequent reads: mutate the same array in place if refs changed
+          const identityChanged = cached.sourceArray !== list;
+          const refsChanged =
+            cached.refs.length !== refs.length ||
+            !cached.refs.every((v: string, i: number) => v === refs[i]);
+
+          if (identityChanged || refsChanged) {
+            const arr = cached.array as any[];
+
+            // shrink
+            if (arr.length > refs.length) arr.splice(refs.length);
+            // grow
+            for (let i = arr.length; i < refs.length; i++) arr.splice(i, 0, undefined);
+
+            // refresh items
+            for (let i = 0; i < refs.length; i++) {
+              const ek = refs[i];
+              arr[i] = ek ? getEdgeView(ek, nodeField, variables, canonical) : undefined;
+            }
+
+            cached.refs = refs;
+            cached.sourceArray = list;
           }
 
           return cached.array;
@@ -269,7 +287,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     });
 
     if (!bucket || bucket.kind !== "page") {
-      bucket = { kind: "page", view, edgesCache: { refs: [], array: [], sourceArray: null as any } };
+      bucket = { kind: "page", view, edgesCache: undefined };
       viewCache.set(pageProxy, bucket);
     } else {
       bucket.view = view;
