@@ -1,4 +1,3 @@
-
 export interface UserNode {
   id: string;
   email: string;
@@ -9,7 +8,7 @@ export interface UserNode {
 export interface PostNode {
   id: string;
   title: string;
-  tags?: string[];
+  flags?: string[];
   typename?: "Post" | "AudioPost" | "VideoPost";
   [key: string]: any;
 }
@@ -21,6 +20,20 @@ export interface CommentNode {
   [key: string]: any;
 }
 
+export interface TagNode {
+  id: string;
+  name: string;
+  typename?: "Tag";
+  [key: string]: any;
+}
+
+export interface MediaNode {
+  key: string;
+  mediaUrl: string;
+  typename?: "Media";
+  [key: string]: any;
+}
+
 export const user = ({ id, email, typename = "User", ...extras }: UserNode) => ({
   __typename: typename,
   id,
@@ -28,19 +41,32 @@ export const user = ({ id, email, typename = "User", ...extras }: UserNode) => (
   ...extras,
 });
 
-export const post = ({ id, title, tags = [], typename = "Post", ...extras }: PostNode) => ({
+export const post = ({ id, title, flags = [], typename = "Post", ...extras }: PostNode) => ({
   __typename: typename,
   id,
   title,
-  tags,
+  flags,
   ...extras,
 });
 
 export const comment = ({ uuid, text, typename = "Comment", ...extras }: CommentNode) => ({
   __typename: typename,
-  // id: uuid,
   uuid,
   text,
+  ...extras,
+});
+
+export const tag = ({ id, name, typename = "Tag", ...extras }: TagNode) => ({
+  __typename: typename,
+  id,
+  name,
+  ...extras,
+});
+
+export const media = ({ key, mediaUrl, typename = "Media", ...extras }: MediaNode) => ({
+  __typename: typename,
+  key,
+  mediaUrl,
   ...extras,
 });
 
@@ -146,6 +172,42 @@ export const comments = {
 
     return {
       __typename: "CommentConnection",
+      edges,
+      pageInfo,
+    };
+  },
+};
+
+export const tags = {
+  buildNode(tagData: Partial<TagNode>, index = 0) {
+    const { name, id = `t${index + 1}`, typename, ...extras } = tagData;
+
+    return tag({ id, name: name ?? `Tag ${index + 1}`, typename, ...extras });
+  },
+
+  buildConnection(items: Array<Partial<TagNode>>, customPageInfo = {}) {
+    const edges = items.map((itemData, i) => {
+      const node = tags.buildNode(itemData, i);
+
+      return {
+        __typename: "TagEdge",
+        cursor: node.id,
+        node,
+      };
+    });
+
+    const pageInfo = {
+      __typename: "PageInfo",
+      startCursor: edges.length ? edges[0].cursor : null,
+      endCursor: edges.length ? edges[edges.length - 1].cursor : null,
+      hasNextPage: false,
+      hasPreviousPage: false,
+
+      ...customPageInfo,
+    };
+
+    return {
+      __typename: "TagConnection",
       edges,
       pageInfo,
     };

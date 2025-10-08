@@ -18,11 +18,11 @@ describe("Optimistic", () => {
       const tx = optimistic.modifyOptimistic((o) => {
         o.patch("Post:p1", { title: "Post 1 Updated" }, { mode: "merge" });
         o.patch({ __typename: "Post", id: "p1" }, (prev) => ({ title: (prev.title || "") + "!" }), { mode: "merge" });
-        o.patch("Post:p1", { title: "REPLACED", tags: [] }, { mode: "replace" });
+        o.patch("Post:p1", { title: "REPLACED", flags: [] }, { mode: "replace" });
       });
 
       tx.commit();
-      expect(graph.getRecord("Post:p1")).toEqual({ __typename: "Post", id: "p1", title: "REPLACED", tags: [] });
+      expect(graph.getRecord("Post:p1")).toEqual({ __typename: "Post", id: "p1", title: "REPLACED", flags: [] });
     });
   });
 

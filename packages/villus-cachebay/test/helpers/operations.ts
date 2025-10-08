@@ -20,7 +20,7 @@ export const POST_FRAGMENT = `
   fragment PostFields on Post {
     id
     title
-    tags
+    flags
   }
 `;
 
@@ -28,7 +28,7 @@ export const AUDIO_POST_FRAGMENT = `
   fragment AudioPostFields on AudioPost {
     id
     title
-    tags
+    flags
   }
 `;
 
@@ -36,7 +36,7 @@ export const VIDEO_POST_FRAGMENT = `
   fragment VideoPostFields on VideoPost {
     id
     title
-    tags
+    flags
   }
 `;
 
@@ -44,6 +44,28 @@ export const COMMENT_FRAGMENT = `
   fragment CommentFields on Comment {
     uuid
     text
+  }
+`;
+
+export const TAG_FRAGMENT = `
+  fragment TagFields on Tag {
+    id
+    name
+  }
+`;
+
+export const MEDIA_FRAGMENT = `
+  fragment MediaFields on Media {
+    key
+    mediaUrl
+  }
+`;
+
+
+export const STAT_FRAGMENT = `
+  fragment StatFields on Stat {
+    key
+    views
   }
 `;
 
@@ -265,6 +287,94 @@ export const POSTS_WITH_DEFAULTS_QUERY = `
   }
 `;
 
+export const POSTS_WITH_AGGREGATIONS_QUERY = `
+  ${PAGE_INFO_FRAGMENT}
+  ${POST_FRAGMENT}
+  ${TAG_FRAGMENT}
+  ${MEDIA_FRAGMENT}
+  ${STAT_FRAGMENT}
+
+  query Posts($category: String, $sort: String, $first: Int, $after: String, $last: Int, $before: String) {
+    posts(category: $category, sort: $sort, first: $first, after: $after, last: $last, before: $before) @connection {
+      totalCount
+
+      pageInfo {
+        ...PageInfoFields
+      }
+
+      edges {
+        cursor
+
+        node {
+          ...PostFields
+
+          aggregations {
+            moderationTags: tags(first: 25, category: "moderation") @connection(key: "ModerationTags") {
+              pageInfo {
+                ...PageInfoFields
+              }
+
+              edges {
+                node {
+                  ...TagFields
+                }
+              }
+            }
+
+            userTags: tags(first: 25, category: "user") @connection(key: "UserTags") {
+              pageInfo {
+                ...PageInfoFields
+              }
+
+              edges {
+                node {
+                  ...TagFields
+                }
+              }
+            }
+          }
+
+          ... on VideoPost {
+            video {
+              ...MediaFields
+            }
+          }
+
+          ... on AudioPost {
+            audio {
+              ...MediaFields
+            }
+          }
+        }
+      }
+
+      aggregations {
+        scoring
+
+        todayStat: stat(key: "today") {
+          ...StatFields
+        }
+
+        yesterdayStat: stat(key: "yesterday") {
+          ...StatFields
+        }
+
+        tags(first: 50) @connection(key: "BaseTags") {
+          pageInfo {
+            ...PageInfoFields
+          }
+
+          edges {
+            node {
+              ...TagFields
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 export const POSTS_WITH_KEY_QUERY = `
   ${PAGE_INFO_FRAGMENT}
   ${POST_FRAGMENT}
@@ -395,6 +505,58 @@ export const USER_POSTS_COMMENTS_QUERY = `
             ...PostFields
 
             comments(first: $commentsFirst, after: $commentsAfter) @connection(filters: []) {
+              pageInfo {
+                ...PageInfoFields
+              }
+
+              edges {
+                cursor
+
+                node {
+                  ...CommentFields
+
+                  author {
+                    id
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const USER_POSTS_COMMENTS_WITH_KEY_QUERY = `
+  ${PAGE_INFO_FRAGMENT}
+  ${USER_FRAGMENT}
+  ${POST_FRAGMENT}
+  ${COMMENT_FRAGMENT}
+
+  query UserPostsCommentsQuery(
+    $id: ID!
+    $postsCategory: String
+    $postsFirst: Int
+    $postsAfter: String
+    $commentsFirst: Int
+    $commentsAfter: String
+  ) {
+    user(id: $id) {
+      ...UserFields
+
+      posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(filters: ["category"]) {
+        pageInfo {
+          ...PageInfoFields
+        }
+
+        edges {
+          cursor
+
+          node {
+            ...PostFields
+
+            comments(first: $commentsFirst, after: $commentsAfter) @connection(filters: [], key: "CustomComments") {
               pageInfo {
                 ...PageInfoFields
               }
@@ -552,13 +714,17 @@ export const POST_COMMENTS_QUERY = gql`
   query PostCommentsQuery($postId: ID!, $first: Int, $after: String, $last: Int, $before: String) {
     post(id: $postId) {
       id
+
       comments(first: $first, after: $after, last: $last, before: $before) @connection(filters: [], mode: "page") {
         totalCount
+
         pageInfo {
           ...PageInfoFields
         }
+
         edges {
           cursor
+
           node {
             ...CommentFields
           }

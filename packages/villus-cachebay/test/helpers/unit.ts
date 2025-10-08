@@ -109,7 +109,7 @@ export const writePageSnapshot = (
       __typename: "Post",
       id: String(nodeId),
       title: `Post ${nodeId}`,
-      tags: [],
+      flags: [],
     });
 
     graph.putRecord(edgeKey, {

@@ -131,7 +131,7 @@ describe("Plugin", () => {
       });
 
       // Seed nested posts for BOTH users (deep hasDocument requires the concrete page)
-      graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1", tags: [] });
+      graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1", flags: [] });
 
       const u1PostsPageKey = buildConnectionKey(posts, "User:u1", variables);
       seedConnectionPage(

@@ -75,11 +75,11 @@ describe("Compiler x Operations", () => {
     const node = findField(edges.selectionSet!, "node")!;
     const id = findField(node.selectionSet!, "id");
     const title = findField(node.selectionSet!, "title");
-    const tags = findField(node.selectionSet!, "tags");
+    const flags = findField(node.selectionSet!, "flags");
     const author = findField(node.selectionSet!, "author");
     expect(id).toBeTruthy();
     expect(title).toBeTruthy();
-    expect(tags).toBeTruthy();
+    expect(flags).toBeTruthy();
     expect(author).toBeTruthy();
 
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);

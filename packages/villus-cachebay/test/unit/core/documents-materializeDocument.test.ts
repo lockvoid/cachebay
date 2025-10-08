@@ -94,9 +94,9 @@ describe("documents.materializeDocument", () => {
 
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
 
-    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", tags: [], author: { __ref: "User:u1" } });
+    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", flags: [], author: { __ref: "User:u1" } });
 
-    graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "Post 2", tags: [], author: { __ref: "User:u1" } });
+    graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "Post 2", flags: [], author: { __ref: "User:u1" } });
 
     graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0', { __typename: "PostEdge", cursor: "p1", score: 0.5, node: { __ref: "Post:p1" } });
 
@@ -186,7 +186,7 @@ describe("documents.materializeDocument", () => {
       ],
     });
 
-    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", tags: [] });
+    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", flags: [] });
 
     graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0', { __typename: "PostEdge", cursor: "p1", node: { __ref: "Post:p1" } });
 
@@ -244,7 +244,7 @@ describe("documents.materializeDocument", () => {
 
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
 
-    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", tags: [] });
+    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", flags: [] });
 
     graph.putRecord("Comment:c1", { __typename: "Comment", id: "c1", text: "Comment 1", author: { __ref: "User:u2" } });
 
@@ -347,7 +347,7 @@ describe("documents.materializeDocument", () => {
       ],
     });
 
-    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", tags: [] });
+    graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", flags: [] });
 
     graph.putRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0', { __typename: "PostEdge", cursor: "p1", node: { __ref: "Post:p1" } });
 
@@ -522,12 +522,12 @@ describe("documents.materializeDocument", () => {
           hasPreviousPage: false,
         },
         edges: [
-          { __typename: "PostEdge", cursor: "p1", node: { __typename: "Post", id: "1", title: "Post 1", tags: [] } },
-          { __typename: "PostEdge", cursor: "p2", node: { __typename: "Post", id: "2", title: "Post 2", tags: [] } },
-          { __typename: "PostEdge", cursor: "p3", node: { __typename: "Post", id: "3", title: "Post 3", tags: [] } },
-          { __typename: "PostEdge", cursor: "p4", node: { __typename: "Post", id: "4", title: "Post 4", tags: [] } },
-          { __typename: "PostEdge", cursor: "p5", node: { __typename: "Post", id: "5", title: "Post 5", tags: [] } },
-          { __typename: "PostEdge", cursor: "p6", node: { __typename: "Post", id: "6", title: "Post 6", tags: [] } },
+          { __typename: "PostEdge", cursor: "p1", node: { __typename: "Post", id: "1", title: "Post 1", flags: [] } },
+          { __typename: "PostEdge", cursor: "p2", node: { __typename: "Post", id: "2", title: "Post 2", flags: [] } },
+          { __typename: "PostEdge", cursor: "p3", node: { __typename: "Post", id: "3", title: "Post 3", flags: [] } },
+          { __typename: "PostEdge", cursor: "p4", node: { __typename: "Post", id: "4", title: "Post 4", flags: [] } },
+          { __typename: "PostEdge", cursor: "p5", node: { __typename: "Post", id: "5", title: "Post 5", flags: [] } },
+          { __typename: "PostEdge", cursor: "p6", node: { __typename: "Post", id: "6", title: "Post 6", flags: [] } },
         ],
       },
     });
@@ -568,12 +568,12 @@ describe("documents.materializeDocument", () => {
         },
 
         edges: [
-          { __typename: "PostEdge", cursor: "p1", node: { __typename: "Post", id: "1", title: "Post 1", tags: [] } },
-          { __typename: "PostEdge", cursor: "p2", node: { __typename: "Post", id: "2", title: "Post 2", tags: [] } },
-          { __typename: "PostEdge", cursor: "p3", node: { __typename: "Post", id: "3", title: "Post 3", tags: [] } },
-          { __typename: "PostEdge", cursor: "p4", node: { __typename: "Post", id: "4", title: "Post 4", tags: [] } },
-          { __typename: "PostEdge", cursor: "p5", node: { __typename: "Post", id: "5", title: "Post 5", tags: [] } },
-          { __typename: "PostEdge", cursor: "p6", node: { __typename: "Post", id: "6", title: "Post 6", tags: [] } },
+          { __typename: "PostEdge", cursor: "p1", node: { __typename: "Post", id: "1", title: "Post 1", flags: [] } },
+          { __typename: "PostEdge", cursor: "p2", node: { __typename: "Post", id: "2", title: "Post 2", flags: [] } },
+          { __typename: "PostEdge", cursor: "p3", node: { __typename: "Post", id: "3", title: "Post 3", flags: [] } },
+          { __typename: "PostEdge", cursor: "p4", node: { __typename: "Post", id: "4", title: "Post 4", flags: [] } },
+          { __typename: "PostEdge", cursor: "p5", node: { __typename: "Post", id: "5", title: "Post 5", flags: [] } },
+          { __typename: "PostEdge", cursor: "p6", node: { __typename: "Post", id: "6", title: "Post 6", flags: [] } },
         ],
       },
     });

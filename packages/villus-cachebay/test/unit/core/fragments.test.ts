@@ -48,8 +48,8 @@ describe("Fragments", () => {
 
     it("returns reactive posts connection with extras", () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
-      graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1", tags: [] });
-      graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "P2", tags: [] });
+      graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1", flags: [] });
+      graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "P2", flags: [] });
 
       seedConnectionPage(
         graph,
@@ -106,7 +106,7 @@ describe("Fragments", () => {
           __typename: "Post",
           id: "p1",
           title: "P1",
-          tags: [],
+          flags: [],
         },
       });
 
@@ -119,7 +119,7 @@ describe("Fragments", () => {
           __typename: "Post",
           id: "p2",
           title: "P2",
-          tags: [],
+          flags: [],
         },
       });
 
@@ -127,14 +127,14 @@ describe("Fragments", () => {
         __typename: "Post",
         id: "p1",
         title: "P1",
-        tags: [],
+        flags: [],
       });
 
       expect(postsFragment.posts.edges[1].node).toEqual({
         __typename: "Post",
         id: "p2",
         title: "P2",
-        tags: [],
+        flags: [],
       });
 
       graph.putRecord("Post:p1", { title: "P1 (Updated)" });
@@ -143,19 +143,19 @@ describe("Fragments", () => {
         __typename: "Post",
         id: "p1",
         title: "P1 (Updated)",
-        tags: [],
+        flags: [],
       });
 
       expect(postsFragment.posts.edges[1].node).toEqual({
         __typename: "Post",
         id: "p2",
         title: "P2",
-        tags: [],
+        flags: [],
       });
     });
 
     it("returns reactive nested comments connection", () => {
-      graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1", tags: [] });
+      graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1", flags: [] });
       graph.putRecord("Comment:c1", { __typename: "Comment", id: "c1", text: "Comment 1", author: { __ref: "User:u2" } });
       graph.putRecord("Comment:c2", { __typename: "Comment", id: "c2", text: "Comment 2", author: { __ref: "User:u3" } });
       graph.putRecord("User:u2", { __typename: "User", id: "u2" });
@@ -380,14 +380,14 @@ describe("Fragments", () => {
                 __typename: "PostEdge",
                 cursor: "p1",
                 score: 0.5,
-                node: { __typename: "Post", id: "p1", title: "P1", tags: [] },
+                node: { __typename: "Post", id: "p1", title: "P1", flags: [] },
               },
 
               {
                 __typename: "PostEdge",
                 cursor: "p2",
                 score: 0.7,
-                node: { __typename: "Post", id: "p2", title: "P2", tags: [] },
+                node: { __typename: "Post", id: "p2", title: "P2", flags: [] },
               },
             ],
           },
@@ -433,7 +433,7 @@ describe("Fragments", () => {
           __typename: "Post",
           id: "p1",
           title: "P1",
-          tags: [],
+          flags: [],
         },
       });
 
@@ -446,7 +446,7 @@ describe("Fragments", () => {
           __typename: "Post",
           id: "p2",
           title: "P2",
-          tags: [],
+          flags: [],
         },
       });
 
@@ -461,7 +461,7 @@ describe("Fragments", () => {
           __typename: "Post",
           id: "p1",
           title: "P1",
-          tags: [],
+          flags: [],
         },
       });
 
@@ -474,7 +474,7 @@ describe("Fragments", () => {
           __typename: "Post",
           id: "p2",
           title: "P2",
-          tags: [],
+          flags: [],
         },
       });
     });

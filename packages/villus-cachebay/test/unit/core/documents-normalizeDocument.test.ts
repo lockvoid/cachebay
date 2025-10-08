@@ -15,7 +15,26 @@ describe("documents.normalizeDocument", () => {
   let documents: ReturnType<typeof createDocuments>;
 
   beforeEach(() => {
-    graph = createGraph({ keys: { Profile: (profile) => profile.slug }, interfaces: { Post: ["AudioPost", "VideoPost"] } });
+    graph = createGraph({
+      keys: {
+        Profile: (profile) => {
+          return profile.slug;
+        },
+
+        Media: (media) => {
+          return media.key;
+        },
+
+        Stat: (stat) => {
+          return stat.key;
+        },
+      },
+
+      interfaces: {
+        Post: ["AudioPost", "VideoPost"],
+      },
+    });
+
     optimistic = createOptimistic({ graph });
     views = createViews({ graph });
     planner = createPlanner();
@@ -249,7 +268,7 @@ describe("documents.normalizeDocument", () => {
                 __typename: "Post",
                 id: "p3",
                 title: "Post 3",
-                tags: [],
+                flags: [],
 
                 author: {
                   __typename: "User",
@@ -267,7 +286,7 @@ describe("documents.normalizeDocument", () => {
                 __typename: "Post",
                 id: "p4",
                 title: "Post 4",
-                tags: [],
+                flags: [],
 
                 author: {
                   __typename: "User",
@@ -409,7 +428,7 @@ describe("documents.normalizeDocument", () => {
                       __typename: "Post",
                       id: "p1",
                       title: "Post 1",
-                      tags: [],
+                      flags: [],
                     },
                   },
                 ],
@@ -552,7 +571,7 @@ describe("documents.normalizeDocument", () => {
                 __typename: "Post",
                 id: "p1",
                 title: "Post 1",
-                tags: [],
+                flags: [],
 
                 comments: {
                   __typename: "CommentConnection",
@@ -630,7 +649,7 @@ describe("documents.normalizeDocument", () => {
                 __typename: "Post",
                 id: "p1",
                 title: "Post 1",
-                tags: [],
+                flags: [],
 
                 comments: {
                   __typename: "CommentConnection",
@@ -832,7 +851,7 @@ describe("documents.normalizeDocument", () => {
                       __typename: "Post",
                       id: "p1",
                       title: "Post 1",
-                      tags: [],
+                      flags: [],
 
                       comments: {
                         __typename: "CommentConnection",
@@ -976,7 +995,7 @@ describe("documents.normalizeDocument", () => {
                   __typename: "Post",
                   id: "p1",
                   title: "Post 1",
-                  tags: [],
+                  flags: [],
                 },
               },
             ],
@@ -1570,6 +1589,7 @@ describe("documents.normalizeDocument", () => {
         id: "u1",
         posts: {
           __typename: "PostConnection",
+
           edges: [
             {
               __typename: "PostEdge",
@@ -1592,6 +1612,7 @@ describe("documents.normalizeDocument", () => {
 
     documents.normalizeDocument({
       document: operations.USER_POSTS_COMMENTS_QUERY,
+
       variables: {
         id: "u1",
         postsCategory: "tech",
@@ -1600,11 +1621,13 @@ describe("documents.normalizeDocument", () => {
         commentsFirst: 1,
         commentsAfter: "c2",
       },
+
       data: user1PostsCommentsAfterData,
     });
 
     const updatedView = documents.materializeDocument({
       document: operations.USER_POSTS_COMMENTS_QUERY,
+
       variables: {
         id: "u1",
         postsCategory: "tech",
@@ -1616,6 +1639,7 @@ describe("documents.normalizeDocument", () => {
     });
 
     const updatedCommentTexts = (updatedView.user.posts.edges[0].node.comments.edges || []).map((e: any) => e?.node?.text);
+
     expect(updatedCommentTexts).toEqual(["Comment 1", "Comment 2", "Comment 3"]);
   });
 
@@ -1638,20 +1662,29 @@ describe("documents.normalizeDocument", () => {
 
                 comments: {
                   __typename: "CommentConnection",
-                  pageInfo: { __typename: "PageInfo", startCursor: "c1", endCursor: "c2", hasNextPage: true, hasPreviousPage: false },
+
+                  pageInfo: {
+                    __typename: "PageInfo",
+                    startCursor: "c1",
+                    endCursor: "c2",
+                    hasNextPage: true,
+                    hasPreviousPage: false,
+                  },
+
                   edges: [
                     { __typename: "CommentEdge", cursor: "c1", node: { __typename: "Comment", id: "c1" } },
                     { __typename: "CommentEdge", cursor: "c2", node: { __typename: "Comment", id: "c2" } },
                   ],
                 },
               },
-            }],
+            },
+          ],
         },
       },
     };
 
     documents.normalizeDocument({
-      document: operations.USER_POSTS_COMMENTS_QUERY,
+      document: operations.USER_POSTS_COMMENTS_WITH_KEY_QUERY,
 
       variables: {
         id: "u1",
@@ -1669,25 +1702,41 @@ describe("documents.normalizeDocument", () => {
       user: {
         __typename: "User",
         id: "u1",
+
         posts: {
           __typename: "PostConnection",
+
           edges: [
             {
-              __typename: "PostEdge", cursor: "p2", node: {
+              __typename: "PostEdge", cursor: "p2",
+
+              node: {
                 __typename: "Post", id: "p2",
                 comments: {
                   __typename: "CommentConnection",
-                  pageInfo: { __typename: "PageInfo", startCursor: "c9", endCursor: "c9", hasNextPage: false, hasPreviousPage: false },
-                  edges: [{ __typename: "CommentEdge", cursor: "c9", node: { __typename: "Comment", id: "c9" } }],
+
+                  pageInfo: {
+                    __typename: "PageInfo",
+                    startCursor: "c9",
+                    endCursor: "c9",
+                    hasNextPage: false,
+                    hasPreviousPage: false,
+                  },
+
+                  edges: [
+                    { __typename: "CommentEdge", cursor: "c9", node: { __typename: "Comment", id: "c9" } },
+                  ],
                 },
               },
-            }],
+            },
+          ],
         },
       },
     };
 
     documents.normalizeDocument({
-      document: operations.USER_POSTS_COMMENTS_QUERY,
+      document: operations.USER_POSTS_COMMENTS_WITH_KEY_QUERY,
+
       variables: {
         id: "u1",
         postsCategory: "tech",
@@ -1738,7 +1787,7 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: operations.USER_POSTS_COMMENTS_QUERY,
+      document: operations.USER_POSTS_COMMENTS_WITH_KEY_QUERY,
 
       variables: {
         id: "u1",
@@ -1757,6 +1806,7 @@ describe("documents.normalizeDocument", () => {
         __typename: "User", id: "u1",
         posts: {
           __typename: "PostConnection",
+
           edges: [{
             __typename: "PostEdge",
             cursor: "p2",
@@ -1765,8 +1815,18 @@ describe("documents.normalizeDocument", () => {
 
               comments: {
                 __typename: "CommentConnection",
-                pageInfo: { __typename: "PageInfo", startCursor: "c10", endCursor: "c10", hasNextPage: false, hasPreviousPage: false },
-                edges: [{ __typename: "CommentEdge", cursor: "c10", node: { __typename: "Comment", id: "c10" } }],
+
+                pageInfo: {
+                  __typename: "PageInfo",
+                  startCursor: "c10",
+                  endCursor: "c10",
+                  hasNextPage: false,
+                  hasPreviousPage: false,
+                },
+
+                edges: [
+                  { __typename: "CommentEdge", cursor: "c10", node: { __typename: "Comment", id: "c10" } },
+                ],
               },
             },
           }],
@@ -1775,13 +1835,35 @@ describe("documents.normalizeDocument", () => {
     };
 
     documents.normalizeDocument({
-      document: operations.USER_POSTS_COMMENTS_QUERY,
+      document: operations.USER_POSTS_COMMENTS_WITH_KEY_QUERY,
       variables: { id: "u1", postsCategory: "tech", postsFirst: 2, postsAfter: null, commentsFirst: 1, commentsAfter: "c9" },
       data: user1PostsComments_page4,
     });
 
-    const post1CommentsConnection = graph.getRecord("@connection.Post:p1.comments({})");
-    const post2CommentsConnection = graph.getRecord("@connection.Post:p2.comments({})");
+    expect(graph.getRecord("Post:p1")).toEqual({
+      __typename: "Post",
+      id: "p1",
+      'comments({"after":"c2","first":1})': {
+        "__ref": '@.Post:p1.comments({"after":"c2","first":1})',
+      },
+      'comments({"after":null,"first":2})': {
+        "__ref": '@.Post:p1.comments({"after":null,"first":2})',
+      },
+    });
+
+    expect(graph.getRecord("Post:p2")).toEqual({
+      __typename: "Post",
+      id: "p2",
+      'comments({"after":"c9","first":1})': {
+        "__ref": '@.Post:p2.comments({"after":"c9","first":1})',
+      },
+      'comments({"after":null,"first":1})': {
+        "__ref": '@.Post:p2.comments({"after":null,"first":1})',
+      },
+    });
+
+    const post1CommentsConnection = graph.getRecord("@connection.Post:p1.CustomComments({})");
+    const post2CommentsConnection = graph.getRecord("@connection.Post:p2.CustomComments({})");
 
     const post1CommentIds = (post1CommentsConnection.edges || []).map((r: any) => graph.getRecord(graph.getRecord(r.__ref).node.__ref).id);
     const post2CommentIds = (post2CommentsConnection.edges || []).map((r: any) => graph.getRecord(graph.getRecord(r.__ref).node.__ref).id);
@@ -1829,4 +1911,432 @@ describe("documents.normalizeDocument", () => {
     expect(profile).toBeTruthy();
     expect(profile.name).toBe("Dimitri");
   });
+
+  it.only(
+    "normalizes posts page + root aggregations.BaseTags @connection (with scoring + today/yesterday stat by custom key), per-node aggregations.{ModerationTags,UserTags} @connection (aliased, with category arg), and inline media fragments + writes canonical connections",
+    () => {
+      // ------- Network payload (exactly what the server returns) -------
+      const data = {
+        __typename: "Query",
+        posts: {
+          __typename: "PostConnection",
+          totalCount: 2,
+          pageInfo: {
+            __typename: "PageInfo",
+            startCursor: "p1",
+            endCursor: "p2",
+            hasNextPage: false,
+            hasPreviousPage: false,
+          },
+          edges: [
+            {
+              __typename: "PostEdge",
+              cursor: "p1",
+              node: {
+                __typename: "VideoPost",
+                id: "p1",
+                title: "Video 1",
+                flags: [],
+                aggregations: {
+                  __typename: "Aggregations",
+                  moderationTags: {
+                    __typename: "TagConnection",
+                    pageInfo: {
+                      __typename: "PageInfo",
+                      startCursor: "t1",
+                      endCursor: "t1",
+                      hasNextPage: false,
+                      hasPreviousPage: false,
+                    },
+                    edges: [
+                      { __typename: "TagEdge", node: { __typename: "Tag", id: "t1", name: "mod-1" } },
+                    ],
+                  },
+                  userTags: {
+                    __typename: "TagConnection",
+                    pageInfo: {
+                      __typename: "PageInfo",
+                      startCursor: "tu1",
+                      endCursor: "tu1",
+                      hasNextPage: false,
+                      hasPreviousPage: false,
+                    },
+                    edges: [
+                      { __typename: "TagEdge", node: { __typename: "Tag", id: "tu1", name: "user-1" } },
+                    ],
+                  },
+                },
+                video: { __typename: "Media", key: "m1", mediaUrl: "https://m/1" },
+              },
+            },
+            {
+              __typename: "PostEdge",
+              cursor: "p2",
+              node: {
+                __typename: "AudioPost",
+                id: "p2",
+                title: "Audio 2",
+                flags: [],
+                aggregations: {
+                  __typename: "Aggregations",
+                  moderationTags: {
+                    __typename: "TagConnection",
+                    pageInfo: {
+                      __typename: "PageInfo",
+                      startCursor: "t2",
+                      endCursor: "t2",
+                      hasNextPage: false,
+                      hasPreviousPage: false,
+                    },
+                    edges: [
+                      { __typename: "TagEdge", node: { __typename: "Tag", id: "t2", name: "mod-2" } },
+                    ],
+                  },
+                  userTags: {
+                    __typename: "TagConnection",
+                    pageInfo: {
+                      __typename: "PageInfo",
+                      startCursor: "tu2",
+                      endCursor: "tu2",
+                      hasNextPage: false,
+                      hasPreviousPage: false,
+                    },
+                    edges: [
+                      { __typename: "TagEdge", node: { __typename: "Tag", id: "tu2", name: "user-2" } },
+                    ],
+                  },
+                },
+                audio: { __typename: "Media", key: "m2", mediaUrl: "https://m/2" },
+              },
+            },
+          ],
+          aggregations: {
+            __typename: "Aggregations",
+            scoring: 88,
+            todayStat: { __typename: "Stat", key: "today", views: 123 },
+            yesterdayStat: { __typename: "Stat", key: "yesterday", views: 95 },
+            tags: {
+              __typename: "TagConnection",
+              pageInfo: {
+                __typename: "PageInfo",
+                startCursor: "t1",
+                endCursor: "t2",
+                hasNextPage: false,
+                hasPreviousPage: false,
+              },
+              edges: [
+                { __typename: "TagEdge", node: { __typename: "Tag", id: "t1", name: "mod-1" } },
+                { __typename: "TagEdge", node: { __typename: "Tag", id: "t2", name: "mod-2" } },
+              ],
+            },
+          },
+        },
+      };
+
+      // ------- Normalize -------
+      documents.normalizeDocument({
+        document: operations.POSTS_WITH_AGGREGATIONS_QUERY,
+        variables: { first: 2, after: null },
+        data,
+      });
+
+      // ------- Concrete ROOT posts page -------
+      const rootPageKey = '@.posts({"after":null,"first":2})';
+      const rootAggsTagsPageKey = '@.posts({"after":null,"first":2}).aggregations.tags({"first":50})';
+
+      expect(graph.getRecord(rootPageKey)).toEqual({
+        __typename: "PostConnection",
+        totalCount: 2,
+        pageInfo: {
+          __typename: "PageInfo",
+          startCursor: "p1",
+          endCursor: "p2",
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+        edges: [
+          { __ref: `${rootPageKey}.edges.0` },
+          { __ref: `${rootPageKey}.edges.1` },
+        ],
+        aggregations: {
+          __typename: "Aggregations",
+          scoring: 88,
+          todayStat: { __ref: "Stat:today" },
+          yesterdayStat: { __ref: "Stat:yesterday" },
+          'tags({"first":50})': { __ref: rootAggsTagsPageKey },
+        },
+      });
+
+      // Concrete edges
+      expect(graph.getRecord(`${rootPageKey}.edges.0`)).toEqual({
+        __typename: "PostEdge",
+        cursor: "p1",
+        node: { __ref: "Post:p1" },
+      });
+      expect(graph.getRecord(`${rootPageKey}.edges.1`)).toEqual({
+        __typename: "PostEdge",
+        cursor: "p2",
+        node: { __ref: "Post:p2" },
+      });
+
+      // Concrete ROOT aggregations.tags page
+      expect(graph.getRecord(rootAggsTagsPageKey)).toEqual({
+        __typename: "TagConnection",
+        pageInfo: {
+          __typename: "PageInfo",
+          startCursor: "t1",
+          endCursor: "t2",
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+        edges: [
+          { __ref: `${rootAggsTagsPageKey}.edges.0` },
+          { __ref: `${rootAggsTagsPageKey}.edges.1` },
+        ],
+      });
+      expect(graph.getRecord(`${rootAggsTagsPageKey}.edges.0`)).toEqual({
+        __typename: "TagEdge",
+        node: { __ref: "Tag:t1" },
+      });
+      expect(graph.getRecord(`${rootAggsTagsPageKey}.edges.1`)).toEqual({
+        __typename: "TagEdge",
+        node: { __ref: "Tag:t2" },
+      });
+
+      // ------- Entities created for Stats (custom key) -------
+      expect(graph.getRecord("Stat:today")).toEqual({
+        __typename: "Stat",
+        key: "today",
+        views: 123,
+      });
+      expect(graph.getRecord("Stat:yesterday")).toEqual({
+        __typename: "Stat",
+        key: "yesterday",
+        views: 95,
+      });
+
+      // ------- Post p1 concrete record + per-node inline aggregations refs -------
+      expect(graph.getRecord("Post:p1")).toEqual({
+        __typename: "VideoPost",
+        id: "p1",
+        title: "Video 1",
+        flags: [],
+        video: { __ref: "Media:m1" },
+        aggregations: {
+          __typename: "Aggregations",
+          'tags({"category":"moderation","first":25})': {
+            __ref: '@.Post:p1.aggregations.tags({"category":"moderation","first":25})',
+          },
+          'tags({"category":"user","first":25})': {
+            __ref: '@.Post:p1.aggregations.tags({"category":"user","first":25})',
+          },
+        },
+      });
+
+      // p1 moderation concrete page
+      const p1ModPage = '@.Post:p1.aggregations.tags({"category":"moderation","first":25})';
+      expect(graph.getRecord(p1ModPage)).toEqual({
+        __typename: "TagConnection",
+        pageInfo: {
+          __typename: "PageInfo",
+          startCursor: "t1",
+          endCursor: "t1",
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+        edges: [{ __ref: `${p1ModPage}.edges.0` }],
+      });
+      expect(graph.getRecord(`${p1ModPage}.edges.0`)).toEqual({
+        __typename: "TagEdge",
+        node: { __ref: "Tag:t1" },
+      });
+
+      // p1 user concrete page
+      const p1UserPage = '@.Post:p1.aggregations.tags({"category":"user","first":25})';
+      expect(graph.getRecord(p1UserPage)).toEqual({
+        __typename: "TagConnection",
+        pageInfo: {
+          __typename: "PageInfo",
+          startCursor: "tu1",
+          endCursor: "tu1",
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+        edges: [{ __ref: `${p1UserPage}.edges.0` }],
+      });
+      expect(graph.getRecord(`${p1UserPage}.edges.0`)).toEqual({
+        __typename: "TagEdge",
+        node: { __ref: "Tag:tu1" },
+      });
+
+      // p1 media
+      expect(graph.getRecord("Media:m1")).toEqual({
+        __typename: "Media",
+        key: "m1",
+        mediaUrl: "https://m/1",
+      });
+
+      // ------- Post p2 concrete record + per-node inline aggregations refs -------
+      expect(graph.getRecord("Post:p2")).toEqual({
+        __typename: "AudioPost",
+        id: "p2",
+        title: "Audio 2",
+        flags: [],
+        audio: { __ref: "Media:m2" },
+        aggregations: {
+          __typename: "Aggregations",
+          'tags({"category":"moderation","first":25})': {
+            __ref: '@.Post:p2.aggregations.tags({"category":"moderation","first":25})',
+          },
+          'tags({"category":"user","first":25})': {
+            __ref: '@.Post:p2.aggregations.tags({"category":"user","first":25})',
+          },
+        },
+      });
+
+      const p2ModPage = '@.Post:p2.aggregations.tags({"category":"moderation","first":25})';
+      expect(graph.getRecord(p2ModPage)).toEqual({
+        __typename: "TagConnection",
+        pageInfo: {
+          __typename: "PageInfo",
+          startCursor: "t2",
+          endCursor: "t2",
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+        edges: [{ __ref: `${p2ModPage}.edges.0` }],
+      });
+      expect(graph.getRecord(`${p2ModPage}.edges.0`)).toEqual({
+        __typename: "TagEdge",
+        node: { __ref: "Tag:t2" },
+      });
+
+      const p2UserPage = '@.Post:p2.aggregations.tags({"category":"user","first":25})';
+      expect(graph.getRecord(p2UserPage)).toEqual({
+        __typename: "TagConnection",
+        pageInfo: {
+          __typename: "PageInfo",
+          startCursor: "tu2",
+          endCursor: "tu2",
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+        edges: [{ __ref: `${p2UserPage}.edges.0` }],
+      });
+      expect(graph.getRecord(`${p2UserPage}.edges.0`)).toEqual({
+        __typename: "TagEdge",
+        node: { __ref: "Tag:tu2" },
+      });
+
+      expect(graph.getRecord("Media:m2")).toEqual({
+        __typename: "Media",
+        key: "m2",
+        mediaUrl: "https://m/2",
+      });
+
+      // ------- Canonicals (root posts + root aggregations canonical + per-node alias canonicals) -------
+      // Root posts canonical (no filters for root posts @connection)
+      const postsCan = graph.getRecord("@connection.posts({})");
+      expect(postsCan).toMatchObject({
+        __typename: "PostConnection",
+        totalCount: 2,
+        pageInfo: {
+          startCursor: "p1",
+          endCursor: "p2",
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+        edges: [
+          { __ref: `${rootPageKey}.edges.0` },
+          { __ref: `${rootPageKey}.edges.1` },
+        ],
+        aggregations: {
+          __typename: "Aggregations",
+          scoring: 88,
+          todayStat: { __ref: "Stat:today" },
+          yesterdayStat: { __ref: "Stat:yesterday" },
+          "BaseTags({})": { __ref: "@connection.posts.aggregations.BaseTags({})" },
+        },
+      });
+      expect(postsCan).toBeDefined();
+
+      // Root aggregations BaseTags canonical (from @connection(key:"BaseTags") on the root aggregations)
+      const baseTagsCanKey = "@connection.posts.aggregations.BaseTags({})";
+      const baseTagsCan = graph.getRecord(baseTagsCanKey);
+      expect(baseTagsCan).toEqual({
+        __typename: "TagConnection",
+        pageInfo: {
+          __typename: "PageInfo",
+          startCursor: "t1",
+          endCursor: "t2",
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+        edges: [
+          { __ref: `${rootAggsTagsPageKey}.edges.0` },
+          { __ref: `${rootAggsTagsPageKey}.edges.1` },
+        ],
+      });
+      // meta (shape depends on impl; ensure it exists)
+      expect(graph.getRecord(`${baseTagsCanKey}::meta`)).toBeDefined();
+
+      // Per-node alias-keyed canonicals (default include provided non-pagination args)
+      const p1ModCanKey = '@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"})';
+      const p1UserCanKey = '@connection.Post:p1.aggregations.UserTags({"category":"user"})';
+      const p2ModCanKey = '@connection.Post:p2.aggregations.ModerationTags({"category":"moderation"})';
+      const p2UserCanKey = '@connection.Post:p2.aggregations.UserTags({"category":"user"})';
+
+      expect(graph.getRecord(p1ModCanKey)).toEqual({
+        __typename: "TagConnection",
+        pageInfo: {
+          __typename: "PageInfo",
+          startCursor: "t1",
+          endCursor: "t1",
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+        edges: [{ __ref: `${p1ModPage}.edges.0` }],
+      });
+      expect(graph.getRecord(`${p1ModCanKey}::meta`)).toBeDefined();
+
+      expect(graph.getRecord(p1UserCanKey)).toEqual({
+        __typename: "TagConnection",
+        pageInfo: {
+          __typename: "PageInfo",
+          startCursor: "tu1",
+          endCursor: "tu1",
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+        edges: [{ __ref: `${p1UserPage}.edges.0` }],
+      });
+      expect(graph.getRecord(`${p1UserCanKey}::meta`)).toBeDefined();
+
+      expect(graph.getRecord(p2ModCanKey)).toEqual({
+        __typename: "TagConnection",
+        pageInfo: {
+          __typename: "PageInfo",
+          startCursor: "t2",
+          endCursor: "t2",
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+        edges: [{ __ref: `${p2ModPage}.edges.0` }],
+      });
+      expect(graph.getRecord(`${p2ModCanKey}::meta`)).toBeDefined();
+
+      expect(graph.getRecord(p2UserCanKey)).toEqual({
+        __typename: "TagConnection",
+        pageInfo: {
+          __typename: "PageInfo",
+          startCursor: "tu2",
+          endCursor: "tu2",
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+        edges: [{ __ref: `${p2UserPage}.edges.0` }],
+      });
+      expect(graph.getRecord(`${p2UserCanKey}::meta`)).toBeDefined();
+    },
+  );
 });
