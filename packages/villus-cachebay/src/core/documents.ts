@@ -68,9 +68,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       const planField =
         typeof responseKey === "string" ? frame.fieldsMap.get(responseKey) : undefined;
 
-      // ─────────────────────────────────────────────────────────────────────────
-      // 1) Connection page — write concrete page + edges; then update canonical
-      // ─────────────────────────────────────────────────────────────────────────
       if (planField && planField.isConnection && isObject(valueNode)) {
         const pageKey = buildConnectionKey(planField, parentId, variables);
         const fieldKey = buildFieldKey(planField, variables);
@@ -78,54 +75,90 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const edgesIn: any[] = Array.isArray((valueNode as any).edges)
           ? (valueNode as any).edges
           : [];
-        const edgeRefs = new Array(edgesIn.length);
+
+        const edgeRefsForPage: Array<{ __ref: string }> = [];
+        const edgeRefsForList: string[] = [];
 
         for (let i = 0; i < edgesIn.length; i++) {
           const edge = edgesIn[i] || {};
           const nodeObj = edge.node;
 
-          // Identify via graph.identify (custom keys supported); store node shallowly
           if (isObject(nodeObj) && hasTypename(nodeObj)) {
             const nodeKey = upsertEntityShallow(graph, nodeObj);
             if (nodeKey) {
-              const edgeKey = `${pageKey}.edges.${i}`;
+              const edgeKey = `${pageKey}.edges:${i}`;
               const { node, ...edgeRest } = edge as any;
-              const edgeSnap: Record<string, any> = edgeRest;
-              edgeSnap.node = { __ref: nodeKey };
+              const edgeSnap: Record<string, any> = {
+                ...edgeRest,
+                node: {
+                  __ref: nodeKey,
+                },
+              };
 
               graph.putRecord(edgeKey, edgeSnap);
-              edgeRefs[i] = { __ref: edgeKey };
+              edgeRefsForPage.push({
+                __ref: edgeKey,
+              });
+              edgeRefsForList.push(edgeKey);
             }
           }
         }
 
+        const edgesListKey = `${pageKey}.edges`;
+        graph.putRecord(edgesListKey, {
+          __refs: edgeRefsForList,
+        });
+
         const { edges, pageInfo, ...connRest } = valueNode as any;
+
+        const pageInfoKey = `${pageKey}.pageInfo`;
+        if (pageInfo) {
+          graph.putRecord(pageInfoKey, {
+            ...(pageInfo as any),
+          });
+        }
+
         const pageSnapshot: Record<string, any> = {
           __typename: (valueNode as any).__typename,
           ...connRest,
+          pageInfo: pageInfo
+            ? {
+              __ref: pageInfoKey,
+            }
+            : undefined,
+          edges: {
+            __ref: edgesListKey,
+          },
         };
-        if (pageInfo) pageSnapshot.pageInfo = { ...(pageInfo as any) };
-        pageSnapshot.edges = edgeRefs;
 
-        // write the concrete page record
-        graph.putRecord(pageKey, pageSnapshot);
-
-        // link only on queries (field link from parent to this concrete page)
-        if (isQuery) {
-          graph.putRecord(parentId, { [fieldKey]: { __ref: pageKey } });
+        if (!pageInfo) {
+          delete pageSnapshot.pageInfo;
         }
 
-        // update canonical connection (@connection)
+        graph.putRecord(pageKey, pageSnapshot);
+
+        if (isQuery) {
+          graph.putRecord(parentId, {
+            [fieldKey]: {
+              __ref: pageKey,
+            },
+          });
+        }
+
+        const metaKey = `${pageKey}::meta`;
+        graph.putRecord(metaKey, {
+          mode: planField.connectionMode || "infinite",
+        });
+
         canonical.updateConnection({
           field: planField,
           parentId,
           variables,
           pageKey,
           pageSnapshot,
-          pageEdgeRefs: edgeRefs,
+          pageEdgeRefs: edgeRefsForPage,
         });
 
-        // Descend into the connection's selection (pageInfo/extras/edges.node)
         const nextFields = planField.selectionSet || [];
         const nextMap = planField.selectionMap || frame.fieldsMap;
         return {
@@ -136,9 +169,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         } as Frame;
       }
 
-      // ─────────────────────────────────────────────────────────────────────────
-      // 2) Arrays — switch scope to item selection (keep parent the same)
-      // ─────────────────────────────────────────────────────────────────────────
       if (Array.isArray(valueNode) && typeof responseKey === "string") {
         const pf = frame.fieldsMap.get(responseKey);
         const nextFields = pf?.selectionSet || frame.fields;
@@ -151,11 +181,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         } as Frame;
       }
 
-      // ─────────────────────────────────────────────────────────────────────────
-      // 3) Identifiable entity — upsert; optionally link (only on queries)
-      //    NEW RULE: link any object field (no args requirement),
-      //    except the synthetic `edges.node` hop inside a connection.
-      // ─────────────────────────────────────────────────────────────────────────
       if (isObject(valueNode) && hasTypename(valueNode)) {
         const entityKey = upsertEntityShallow(graph, valueNode);
 
@@ -167,7 +192,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
           if (shouldLink) {
             const parentFieldKey = buildFieldKey(planField!, variables);
-            graph.putRecord(parentId, { [parentFieldKey]: { __ref: entityKey } });
+            graph.putRecord(parentId, {
+              [parentFieldKey]: {
+                __ref: entityKey,
+              },
+            });
           }
 
           const nextFields = planField?.selectionSet || [];
@@ -180,7 +209,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           } as Frame;
         }
 
-        // Not identifiable (e.g., edge-only objects) — treat as plain object and keep walking
         const nextFields = planField?.selectionSet || frame.fields;
         const nextMap = planField?.selectionMap || frame.fieldsMap;
         return {
@@ -191,9 +219,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         } as Frame;
       }
 
-      // ─────────────────────────────────────────────────────────────────────────
-      // 4) Plain object — propagate scope
-      // ─────────────────────────────────────────────────────────────────────────
       if (isObject(valueNode)) {
         const nextFields = planField?.selectionSet || frame.fields;
         const nextMap = planField?.selectionMap || frame.fieldsMap;
@@ -205,7 +230,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         } as Frame;
       }
 
-      // primitives: nothing to do
       return;
     });
   };

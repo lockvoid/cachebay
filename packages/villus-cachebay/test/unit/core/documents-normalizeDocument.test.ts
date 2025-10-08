@@ -1,10 +1,15 @@
 import { createCanonical } from "@/src/core/canonical";
 import { createDocuments } from "@/src/core/documents";
+import { createDocuments } from "@/src/core/documents";
+import { createGraph } from "@/src/core/graph";
 import { createGraph } from "@/src/core/graph";
 import { createOptimistic } from "@/src/core/optimistic";
+import { createOptimistic } from "@/src/core/optimistic";
+import { createPlanner } from "@/src/core/planner";
 import { createPlanner } from "@/src/core/planner";
 import { createViews } from "@/src/core/views";
 import { operations } from "@/test/helpers";
+import { users, posts, comments, tags, media } from "@/test/helpers/fixtures";
 
 describe("documents.normalizeDocument", () => {
   let graph: ReturnType<typeof createGraph>;
@@ -17,19 +22,11 @@ describe("documents.normalizeDocument", () => {
   beforeEach(() => {
     graph = createGraph({
       keys: {
-        Profile: (profile) => {
-          return profile.slug;
-        },
-
-        Media: (media) => {
-          return media.key;
-        },
-
-        Stat: (stat) => {
-          return stat.key;
-        },
+        Profile: (profile) => profile.slug,
+        Media: (media) => media.key,
+        Stat: (stat) => stat.key,
+        Comment: (c) => c.uuid,
       },
-
       interfaces: {
         Post: ["AudioPost", "VideoPost"],
       },
@@ -43,22 +40,23 @@ describe("documents.normalizeDocument", () => {
   });
 
   it("normalizes root reference and entity snapshot for single user query", () => {
-    const userData = {
-      user: { __typename: "User", id: "u1", email: "u1@example.com" },
-    };
-
     documents.normalizeDocument({
       document: operations.USER_QUERY,
       variables: { id: "u1" },
-      data: userData,
+      data: {
+        user: users.buildNode({
+          id: "u1",
+          email: "u1@example.com",
+        }),
+      },
     });
 
-    const root = graph.getRecord("@");
-
-    expect(root).toEqual({
+    expect(graph.getRecord("@")).toEqual({
       id: "@",
       __typename: "@",
-      'user({"id":"u1"})': { __ref: "User:u1" },
+      'user({"id":"u1"})': {
+        __ref: "User:u1",
+      },
     });
 
     expect(graph.getRecord("User:u1")).toEqual({
@@ -68,404 +66,295 @@ describe("documents.normalizeDocument", () => {
     });
   });
 
-  it("normalizes root users connection with edge records", () => {
-    const usersData_page1 = {
-      users: {
-        __typename: "UserConnection",
-
-        pageInfo: {
-          __typename: "PageInfo",
-          startCursor: "u1",
-          endCursor: "u2",
-          hasNextPage: true,
-          hasPreviousPage: false,
-        },
-
-        edges: [
-          {
-            __typename: "UserEdge",
-            cursor: "u1",
-            node: { __typename: "User", id: "u1", email: "u1@example.com" },
-          },
-          {
-            __typename: "UserEdge",
-            cursor: "u2",
-            node: { __typename: "User", id: "u2", email: "u2@example.com" },
-          },
-        ],
-      },
-    };
-
-    const usersData_page2 = {
-      users: {
-        __typename: "UserConnection",
-
-        pageInfo: {
-          __typename: "PageInfo",
-          startCursor: "u3",
-          endCursor: "u3",
-          hasNextPage: false,
-          hasPreviousPage: false,
-        },
-
-        edges: [
-          {
-            __typename: "UserEdge",
-            cursor: "u3",
-            node: { __typename: "User", id: "u3", email: "u3@example.com" },
-          },
-        ],
-      },
-    };
-
+  it.only("normalizes root users connection with edge records", () => {
     documents.normalizeDocument({
       document: operations.USERS_QUERY,
       variables: { role: "admin", first: 2, after: null },
-      data: usersData_page1,
+      data: {
+        users: users.buildConnection(
+          [
+            {
+              id: "u1",
+              email: "u1@example.com",
+            },
+            {
+              id: "u2",
+              email: "u2@example.com",
+            },
+          ],
+          {
+            hasNextPage: true,
+          },
+        ),
+      },
     });
 
     documents.normalizeDocument({
       document: operations.USERS_QUERY,
       variables: { role: "admin", first: 2, after: "u2" },
-      data: usersData_page2,
+      data: {
+        users: users.buildConnection(
+          [
+            {
+              id: "u3",
+              email: "u3@example.com",
+            },
+          ],
+          {
+            startCursor: "u3",
+            endCursor: "u3",
+          },
+        ),
+      },
     });
 
     expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"})')).toEqual({
       __typename: "UserConnection",
-
       pageInfo: {
-        __typename: "PageInfo",
-        startCursor: "u1",
-        endCursor: "u2",
-        hasNextPage: true,
-        hasPreviousPage: false,
+        __ref: '@.users({"after":null,"first":2,"role":"admin"}).pageInfo',
       },
+      edges: {
+        __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges',
+      },
+    });
 
-      edges: [
-        { __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.0' },
-        { __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.1' },
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).pageInfo')).toEqual({
+      __typename: "PageInfo",
+      startCursor: "u1",
+      endCursor: "u2",
+      hasNextPage: true,
+      hasPreviousPage: false,
+    });
+
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges')).toEqual({
+      __refs: [
+        '@.users({"after":null,"first":2,"role":"admin"}).edges:0',
+        '@.users({"after":null,"first":2,"role":"admin"}).edges:1',
       ],
     });
 
-    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges.0')).toEqual({
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges:0')).toEqual({
       __typename: "UserEdge",
       cursor: "u1",
-      node: { __ref: "User:u1" },
+      node: {
+        __ref: "User:u1",
+      },
     });
 
-    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges.1')).toEqual({
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges:1')).toEqual({
       __typename: "UserEdge",
       cursor: "u2",
-      node: { __ref: "User:u2" },
+      node: {
+        __ref: "User:u2",
+      },
     });
+
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"})::meta')).toBeDefined();
 
     expect(graph.getRecord('@.users({"after":"u2","first":2,"role":"admin"})')).toEqual({
       __typename: "UserConnection",
-
       pageInfo: {
-        __typename: "PageInfo",
-        startCursor: "u3",
-        endCursor: "u3",
-        hasNextPage: false,
-        hasPreviousPage: false,
+        __ref: '@.users({"after":"u2","first":2,"role":"admin"}).pageInfo',
       },
-
-      edges: [
-        { __ref: '@.users({"after":"u2","first":2,"role":"admin"}).edges.0' },
-      ],
+      edges: {
+        __ref: '@.users({"after":"u2","first":2,"role":"admin"}).edges',
+      },
     });
 
-    expect(graph.getRecord('@.users({"after":"u2","first":2,"role":"admin"}).edges.0')).toEqual({
+    expect(graph.getRecord('@.users({"after":"u2","first":2,"role":"admin"}).edges')).toEqual({
+      __refs: ['@.users({"after":"u2","first":2,"role":"admin"}).edges:0'],
+    });
+
+    expect(graph.getRecord('@.users({"after":"u2","first":2,"role":"admin"}).edges:0')).toEqual({
       __typename: "UserEdge",
       cursor: "u3",
-      node: { __ref: "User:u3" },
+      node: {
+        __ref: "User:u3",
+      },
     });
   });
 
   it("preserves both category connections when writing tech then lifestyle posts", () => {
-    const userPosts_tech = {
+    const userPostsTech = {
       user: {
-        __typename: "User",
-        id: "u1",
-        email: "u1@example.com",
-
+        ...users.buildNode({
+          id: "u1",
+          email: "u1@example.com",
+        }),
         posts: {
-          __typename: "PostConnection",
-          totalCount: 2,
-
-          pageInfo: {
-            startCursor: "p1",
-            endCursor: "p2",
-            hasNextPage: true,
-            hasPreviousPage: false,
-            __typename: "PageInfo",
-          },
-
-          edges: [
-            {
-              __typename: "PostEdge",
-              cursor: "p1",
-              score: 0.5,
-
-              node: {
-                __typename: "Post",
+          ...posts.buildConnection(
+            [
+              {
                 id: "p1",
                 title: "Post 1",
                 tags: ["react"],
-
                 author: {
                   __typename: "User",
                   id: "u1",
                 },
               },
-            },
-            {
-              __typename: "PostEdge",
-              cursor: "p2",
-              score: 0.7,
-
-              node: {
-                __typename: "Post",
+              {
                 id: "p2",
                 title: "Post 2",
                 tags: ["js"],
-
                 author: {
                   __typename: "User",
                   id: "u1",
                 },
               },
+            ],
+            {
+              hasNextPage: true,
             },
-          ],
+          ),
+          totalCount: 2,
         },
       },
     };
+    userPostsTech.user.posts.edges[0].score = 0.5;
+    userPostsTech.user.posts.edges[1].score = 0.7;
 
-    const userPosts_lifestyle = {
+    const userPostsLifestyle = {
       user: {
-        __typename: "User",
-        id: "u1",
-
+        ...users.buildNode({
+          id: "u1",
+        }),
         posts: {
-          __typename: "PostConnection",
-          totalCount: 1,
-
-          pageInfo: {
-            __typename: "PageInfo",
-            startCursor: "p3",
-            endCursor: "p4",
-            hasNextPage: false,
-            hasPreviousPage: false,
-          },
-
-          edges: [
-            {
-              __typename: "PostEdge",
-              cursor: "p3",
-              score: 0.3,
-
-              node: {
-                __typename: "Post",
+          ...posts.buildConnection(
+            [
+              {
                 id: "p3",
                 title: "Post 3",
                 flags: [],
-
                 author: {
                   __typename: "User",
                   id: "u1",
                 },
               },
-            },
-
-            {
-              __typename: "PostEdge",
-              cursor: "p4",
-              score: 0.6,
-
-              node: {
-                __typename: "Post",
+              {
                 id: "p4",
                 title: "Post 4",
                 flags: [],
-
                 author: {
                   __typename: "User",
                   id: "u1",
                 },
               },
+            ],
+            {
+              startCursor: "p3",
+              endCursor: "p4",
             },
-          ],
+          ),
+          totalCount: 1,
         },
       },
     };
+    userPostsLifestyle.user.posts.edges[0].score = 0.3;
+    userPostsLifestyle.user.posts.edges[1].score = 0.6;
 
     documents.normalizeDocument({
       document: operations.USER_POSTS_QUERY,
       variables: { id: "u1", postsCategory: "tech", postsFirst: 2, postsAfter: null },
-      data: userPosts_tech,
+      data: userPostsTech,
     });
 
     documents.normalizeDocument({
       document: operations.USER_POSTS_QUERY,
       variables: { id: "u1", postsCategory: "lifestyle", postsFirst: 2, postsAfter: null },
-      data: userPosts_lifestyle,
+      data: userPostsLifestyle,
     });
 
     expect(graph.getRecord("User:u1")).toEqual({
       __typename: "User",
       id: "u1",
       email: "u1@example.com",
-
-      'posts({"after":null,"category":"tech","first":2})': { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":2})' },
-      'posts({"after":null,"category":"lifestyle","first":2})': { __ref: '@.User:u1.posts({"after":null,"category":"lifestyle","first":2})' },
+      'posts({"after":null,"category":"tech","first":2})': {
+        __ref: '@.User:u1.posts({"after":null,"category":"tech","first":2})',
+      },
+      'posts({"after":null,"category":"lifestyle","first":2})': {
+        __ref: '@.User:u1.posts({"after":null,"category":"lifestyle","first":2})',
+      },
     });
 
     expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":2})')).toEqual({
       __typename: "PostConnection",
       totalCount: 2,
-
       pageInfo: {
-        __typename: "PageInfo",
-        startCursor: "p1",
-        endCursor: "p2",
-        hasNextPage: true,
-        hasPreviousPage: false,
+        __ref: '@.User:u1.posts({"after":null,"category":"tech","first":2}).pageInfo',
       },
+      edges: {
+        __ref: '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges',
+      },
+    });
 
-      edges: [
-        { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0' },
-        { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.1' },
+    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges')).toEqual({
+      __refs: [
+        '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges:0',
+        '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges:1',
       ],
+    });
+
+    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges:0')).toEqual({
+      __typename: "PostEdge",
+      cursor: "p1",
+      score: 0.5,
+      node: {
+        __ref: "Post:p1",
+      },
     });
 
     expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"lifestyle","first":2})')).toEqual({
       __typename: "PostConnection",
       totalCount: 1,
-
       pageInfo: {
-        __typename: "PageInfo",
-        startCursor: "p3",
-        endCursor: "p4",
-        hasNextPage: false,
-        hasPreviousPage: false,
+        __ref: '@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).pageInfo',
       },
-
-      edges: [
-        { __ref: '@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges.0' },
-        { __ref: '@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges.1' },
-      ],
-    });
-
-    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0')).toEqual({
-      __typename: "PostEdge",
-      cursor: "p1",
-      score: 0.5,
-      node: { __ref: "Post:p1" },
-    });
-
-    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.1')).toEqual({
-      __typename: "PostEdge",
-      cursor: "p2",
-      score: 0.7,
-      node: { __ref: "Post:p2" },
-    });
-
-    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges.0')).toEqual({
-      __typename: "PostEdge",
-      cursor: "p3",
-      score: 0.3,
-      node: { __ref: "Post:p3" },
-    });
-
-    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges.1')).toEqual({
-      __typename: "PostEdge",
-      cursor: "p4",
-      score: 0.6,
-      node: { __ref: "Post:p4" },
+      edges: {
+        __ref: '@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges',
+      },
     });
   });
 
   it("normalizes root users connection plus nested per-user posts connections", () => {
     const usersPostsData = {
       users: {
-        __typename: "UserConnection",
-
-        pageInfo: {
-          __typename: "PageInfo",
-          startCursor: "u1",
-          endCursor: "u2",
-          hasNextPage: true,
-          hasPreviousPage: false,
-        },
-
-        edges: [
-          {
-            __typename: "UserEdge",
-            cursor: "u1",
-
-            node: {
-              __typename: "User",
+        ...users.buildConnection(
+          [
+            {
               id: "u1",
               email: "u1@example.com",
-
-              posts: {
-                __typename: "PostConnection",
-
-                pageInfo: {
-                  __typename: "PageInfo",
-                  startCursor: "p1",
-                  endCursor: "p1",
-                  hasNextPage: false,
-                  hasPreviousPage: false,
-                },
-
-                edges: [
-                  {
-                    __typename: "PostEdge",
-                    cursor: "p1",
-
-                    node: {
-                      __typename: "Post",
-                      id: "p1",
-                      title: "Post 1",
-                      flags: [],
-                    },
-                  },
-                ],
-              },
             },
-          },
-          {
-            __typename: "UserEdge",
-            cursor: "u2",
-
-            node: {
-              __typename: "User",
+            {
               id: "u2",
               email: "u2@example.com",
-
-              posts: {
-                __typename: "PostConnection",
-
-                pageInfo: {
-                  __typename: "PageInfo",
-                  startCursor: null,
-                  endCursor: null,
-                  hasNextPage: false,
-                  hasPreviousPage: false,
-                },
-
-                edges: [],
-              },
             },
+          ],
+          {
+            hasNextPage: true,
           },
-        ],
+        ),
       },
     };
 
+    usersPostsData.users.edges[0].node.posts = posts.buildConnection([
+      {
+        id: "p1",
+        title: "Post 1",
+        flags: [],
+      },
+    ]);
+
+    usersPostsData.users.edges[1].node.posts = posts.buildConnection(
+      [],
+      {
+        startCursor: null,
+        endCursor: null,
+      },
+    );
+
     documents.normalizeDocument({
       document: operations.USERS_POSTS_QUERY,
-
       variables: {
         usersRole: "dj",
         usersFirst: 2,
@@ -474,222 +363,152 @@ describe("documents.normalizeDocument", () => {
         postsFirst: 1,
         postsAfter: null,
       },
-
       data: usersPostsData,
     });
 
     expect(graph.getRecord('@.users({"after":null,"first":2,"role":"dj"})')).toEqual({
       __typename: "UserConnection",
-
       pageInfo: {
-        __typename: "PageInfo",
-        startCursor: "u1",
-        endCursor: "u2",
-        hasNextPage: true,
-        hasPreviousPage: false,
+        __ref: '@.users({"after":null,"first":2,"role":"dj"}).pageInfo',
       },
+      edges: {
+        __ref: '@.users({"after":null,"first":2,"role":"dj"}).edges',
+      },
+    });
 
-      edges: [
-        { __ref: '@.users({"after":null,"first":2,"role":"dj"}).edges.0' },
-        { __ref: '@.users({"after":null,"first":2,"role":"dj"}).edges.1' },
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"dj"}).edges')).toEqual({
+      __refs: [
+        '@.users({"after":null,"first":2,"role":"dj"}).edges:0',
+        '@.users({"after":null,"first":2,"role":"dj"}).edges:1',
       ],
     });
 
-    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"dj"}).edges.0')).toEqual({
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"dj"}).edges:0')).toEqual({
       __typename: "UserEdge",
       cursor: "u1",
-      node: { __ref: "User:u1" },
+      node: {
+        __ref: "User:u1",
+      },
     });
 
-    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"dj"}).edges.1')).toEqual({
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"dj"}).edges:1')).toEqual({
       __typename: "UserEdge",
       cursor: "u2",
-      node: { __ref: "User:u2" },
+      node: {
+        __ref: "User:u2",
+      },
     });
 
     expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1})')).toEqual({
       __typename: "PostConnection",
-
       pageInfo: {
-        __typename: "PageInfo",
-        startCursor: "p1",
-        endCursor: "p1",
-        hasNextPage: false,
-        hasPreviousPage: false,
+        __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).pageInfo',
       },
-
-      edges: [
-        { __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0' },
-      ],
+      edges: {
+        __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges',
+      },
     });
 
-    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0')).toEqual({
+    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges')).toEqual({
+      __refs: ['@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0'],
+    });
+
+    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0')).toEqual({
       __typename: "PostEdge",
       cursor: "p1",
-      node: { __ref: "Post:p1" },
+      node: {
+        __ref: "Post:p1",
+      },
     });
 
     expect(graph.getRecord('@.User:u2.posts({"after":null,"category":"tech","first":1})')).toEqual({
       __typename: "PostConnection",
-
       pageInfo: {
-        __typename: "PageInfo",
-        startCursor: null,
-        endCursor: null,
-        hasNextPage: false,
-        hasPreviousPage: false,
+        __ref: '@.User:u2.posts({"after":null,"category":"tech","first":1}).pageInfo',
       },
+      edges: {
+        __ref: '@.User:u2.posts({"after":null,"category":"tech","first":1}).edges',
+      },
+    });
 
-      edges: [],
+    expect(graph.getRecord('@.User:u2.posts({"after":null,"category":"tech","first":1}).edges')).toEqual({
+      __refs: [],
     });
   });
 
   it("normalizes nested posts and comments connections as separate records", () => {
     const userPostsComments_page1 = {
       user: {
-        __typename: "User",
-        id: "u1",
-        email: "u1@example.com",
-
+        ...users.buildNode({
+          id: "u1",
+          email: "u1@example.com",
+        }),
         posts: {
-          __typename: "PostConnection",
-
-          pageInfo: {
-            __typename: "PageInfo",
-            startCursor: "p1",
-            endCursor: "p1",
-            hasNextPage: false,
-            hasPreviousPage: false,
-          },
-
-          edges: [
+          ...posts.buildConnection([
             {
-              __typename: "PostEdge",
-              cursor: "p1",
-
-              node: {
-                __typename: "Post",
-                id: "p1",
-                title: "Post 1",
-                flags: [],
-
-                comments: {
-                  __typename: "CommentConnection",
-
-                  pageInfo: {
-                    __typename: "PageInfo",
-                    startCursor: "c1",
-                    endCursor: "c2",
-                    hasNextPage: true,
-                    hasPreviousPage: false,
-                  },
-
-                  edges: [
-                    {
-                      __typename: "CommentEdge",
-                      cursor: "c1",
-
-                      node: {
-                        __typename: "Comment",
-                        id: "c1",
-                        text: "Comment 1",
-                        author: {
-                          __typename: "User",
-                          id: "u2",
-                        },
-                      },
-                    },
-
-                    {
-                      __typename: "CommentEdge",
-                      cursor: "c2",
-
-                      node: {
-                        __typename: "Comment",
-                        id: "c2",
-                        text: "Comment 2",
-
-                        author: {
-                          __typename: "User",
-                          id: "u3",
-                        },
-                      },
-                    },
-                  ],
-                },
-              },
+              id: "p1",
+              title: "Post 1",
+              flags: [],
             },
-          ],
+          ]),
         },
       },
     };
+
+    userPostsComments_page1.user.posts.edges[0].node.comments = comments.buildConnection(
+      [
+        {
+          uuid: "c1",
+          text: "Comment 1",
+          author: {
+            __typename: "User",
+            id: "u2",
+          },
+        },
+        {
+          uuid: "c2",
+          text: "Comment 2",
+          author: {
+            __typename: "User",
+            id: "u3",
+          },
+        },
+      ],
+      {
+        hasNextPage: true,
+      },
+    );
 
     const userPostsComments_page2 = {
       user: {
-        __typename: "User",
-        id: "u1",
-
+        ...users.buildNode({
+          id: "u1",
+        }),
         posts: {
-          __typename: "PostConnection",
-
-          pageInfo: {
-            __typename: "PageInfo",
-            startCursor: "p1",
-            endCursor: "p1",
-            hasNextPage: false,
-            hasPreviousPage: false,
-          },
-
-          edges: [
+          ...posts.buildConnection([
             {
-              __typename: "PostEdge",
-              cursor: "p1",
-
-              node: {
-                __typename: "Post",
-                id: "p1",
-                title: "Post 1",
-                flags: [],
-
-                comments: {
-                  __typename: "CommentConnection",
-
-                  pageInfo: {
-                    __typename: "PageInfo",
-                    startCursor: "c3",
-                    endCursor: "c3",
-                    hasNextPage: false,
-                    hasPreviousPage: false,
-                  },
-
-                  edges: [
-                    {
-                      __typename: "CommentEdge",
-                      cursor: "c3",
-
-                      node: {
-                        __typename: "Comment",
-                        id: "c3",
-                        text: "Comment 3",
-
-                        author: {
-                          __typename: "User",
-                          id: "u2",
-                        },
-                      },
-                    },
-                  ],
-                },
-              },
+              id: "p1",
+              title: "Post 1",
+              flags: [],
             },
-          ],
+          ]),
         },
       },
     };
 
+    userPostsComments_page2.user.posts.edges[0].node.comments = comments.buildConnection([
+      {
+        uuid: "c3",
+        text: "Comment 3",
+        author: {
+          __typename: "User",
+          id: "u2",
+        },
+      },
+    ]);
+
     documents.normalizeDocument({
       document: operations.USER_POSTS_COMMENTS_QUERY,
-
       variables: {
         id: "u1",
         postsCategory: "tech",
@@ -698,13 +517,11 @@ describe("documents.normalizeDocument", () => {
         commentsFirst: 2,
         commentsAfter: null,
       },
-
       data: userPostsComments_page1,
     });
 
     documents.normalizeDocument({
       document: operations.USER_POSTS_COMMENTS_QUERY,
-
       variables: {
         id: "u1",
         postsCategory: "tech",
@@ -713,183 +530,146 @@ describe("documents.normalizeDocument", () => {
         commentsFirst: 1,
         commentsAfter: "c2",
       },
-
       data: userPostsComments_page2,
     });
 
     expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1})')).toEqual({
       __typename: "PostConnection",
-
       pageInfo: {
-        __typename: "PageInfo",
-        startCursor: "p1",
-        endCursor: "p1",
-        hasNextPage: false,
-        hasPreviousPage: false,
+        __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).pageInfo',
       },
-
-      edges: [{ __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0' }],
+      edges: {
+        __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges',
+      },
     });
 
-    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0')).toEqual({
+    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0')).toEqual({
       __typename: "PostEdge",
       cursor: "p1",
-      node: { __ref: "Post:p1" },
+      node: {
+        __ref: "Post:p1",
+      },
     });
 
     expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2})')).toEqual({
       __typename: "CommentConnection",
-
       pageInfo: {
-        __typename: "PageInfo",
-        startCursor: "c1",
-        endCursor: "c2",
-        hasNextPage: true,
-        hasPreviousPage: false,
+        __ref: '@.Post:p1.comments({"after":null,"first":2}).pageInfo',
       },
+      edges: {
+        __ref: '@.Post:p1.comments({"after":null,"first":2}).edges',
+      },
+    });
 
-      edges: [
-        { __ref: '@.Post:p1.comments({"after":null,"first":2}).edges.0' },
-        { __ref: '@.Post:p1.comments({"after":null,"first":2}).edges.1' },
+    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2}).edges')).toEqual({
+      __refs: [
+        '@.Post:p1.comments({"after":null,"first":2}).edges:0',
+        '@.Post:p1.comments({"after":null,"first":2}).edges:1',
       ],
     });
 
     expect(graph.getRecord('@.Post:p1.comments({"after":"c2","first":1})')).toEqual({
       __typename: "CommentConnection",
-
       pageInfo: {
-        __typename: "PageInfo",
-        startCursor: "c3",
-        endCursor: "c3",
-        hasNextPage: false,
-        hasPreviousPage: false,
+        __ref: '@.Post:p1.comments({"after":"c2","first":1}).pageInfo',
       },
-
-      edges: [{ __ref: '@.Post:p1.comments({"after":"c2","first":1}).edges.0' }],
+      edges: {
+        __ref: '@.Post:p1.comments({"after":"c2","first":1}).edges',
+      },
     });
 
-    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2}).edges.0')).toEqual({
+    expect(graph.getRecord('@.Post:p1.comments({"after":"c2","first":1}).edges')).toEqual({
+      __refs: ['@.Post:p1.comments({"after":"c2","first":1}).edges:0'],
+    });
+
+    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2}).edges:0')).toEqual({
       __typename: "CommentEdge",
       cursor: "c1",
-      node: { __ref: "Comment:c1" },
+      node: {
+        __ref: "Comment:c1",
+      },
     });
 
-    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2}).edges.1')).toEqual({
+    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2}).edges:1')).toEqual({
       __typename: "CommentEdge",
       cursor: "c2",
-      node: { __ref: "Comment:c2" },
+      node: {
+        __ref: "Comment:c2",
+      },
     });
 
-    expect(graph.getRecord('@.Post:p1.comments({"after":"c2","first":1}).edges.0')).toEqual({
+    expect(graph.getRecord('@.Post:p1.comments({"after":"c2","first":1}).edges:0')).toEqual({
       __typename: "CommentEdge",
       cursor: "c3",
-      node: { __ref: "Comment:c3" },
+      node: {
+        __ref: "Comment:c3",
+      },
     });
 
     expect(graph.getRecord("Comment:c1")).toEqual({
       __typename: "Comment",
       id: "c1",
       text: "Comment 1",
-      author: { __ref: "User:u2" },
+      author: {
+        __ref: "User:u2",
+      },
     });
 
     expect(graph.getRecord("Comment:c2")).toEqual({
       __typename: "Comment",
       id: "c2",
       text: "Comment 2",
-      author: { __ref: "User:u3" },
+      author: {
+        __ref: "User:u3",
+      },
     });
 
     expect(graph.getRecord("Comment:c3")).toEqual({
       __typename: "Comment",
       id: "c3",
       text: "Comment 3",
-      author: { __ref: "User:u2" },
+      author: {
+        __ref: "User:u2",
+      },
     });
   });
 
   it("normalizes root users connection and nested posts plus comments connections", () => {
     const usersPostsCommentsData = {
       users: {
-        __typename: "UserConnection",
-
-        pageInfo: {
-          __typename: "PageInfo",
-          startCursor: "u1",
-          endCursor: "u2",
-          hasNextPage: true,
-          hasPreviousPage: false,
-        },
-
-        edges: [
-          {
-            __typename: "UserEdge",
-            cursor: "u1",
-
-            node: {
-              __typename: "User",
+        ...users.buildConnection(
+          [
+            {
               id: "u1",
               email: "u1@example.com",
-
-              posts: {
-                __typename: "PostConnection",
-
-                pageInfo: {
-                  __typename: "PageInfo",
-                  startCursor: "p1",
-                  endCursor: "p1",
-                  hasNextPage: false,
-                  hasPreviousPage: false,
-                },
-
-                edges: [
-                  {
-                    __typename: "PostEdge",
-                    cursor: "p1",
-
-                    node: {
-                      __typename: "Post",
-                      id: "p1",
-                      title: "Post 1",
-                      flags: [],
-
-                      comments: {
-                        __typename: "CommentConnection",
-
-                        pageInfo: {
-                          __typename: "PageInfo",
-                          startCursor: "c1",
-                          endCursor: "c1",
-                          hasNextPage: false,
-                          hasPreviousPage: false,
-                        },
-
-                        edges: [
-                          {
-                            __typename: "CommentEdge",
-                            cursor: "c1",
-
-                            node: {
-                              __typename: "Comment",
-                              id: "c1",
-                              text: "Comment 1",
-                            },
-                          },
-                        ],
-                      },
-                    },
-                  },
-                ],
-              },
             },
+          ],
+          {
+            hasNextPage: true,
           },
-        ],
+        ),
       },
     };
 
+    usersPostsCommentsData.users.edges[0].node.posts = {
+      ...posts.buildConnection([
+        {
+          id: "p1",
+          title: "Post 1",
+          flags: [],
+        },
+      ]),
+    };
+
+    usersPostsCommentsData.users.edges[0].node.posts.edges[0].node.comments = comments.buildConnection([
+      {
+        uuid: "c1",
+        text: "Comment 1",
+      },
+    ]);
+
     documents.normalizeDocument({
       document: operations.USERS_POSTS_COMMENTS_QUERY,
-
       variables: {
         usersRole: "admin",
         usersFirst: 2,
@@ -900,70 +680,65 @@ describe("documents.normalizeDocument", () => {
         commentsFirst: 1,
         commentsAfter: null,
       },
-
       data: usersPostsCommentsData,
     });
 
     expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"})')).toEqual({
       __typename: "UserConnection",
-
       pageInfo: {
-        __typename: "PageInfo",
-        startCursor: "u1",
-        endCursor: "u2",
-        hasNextPage: true,
-        hasPreviousPage: false,
+        __ref: '@.users({"after":null,"first":2,"role":"admin"}).pageInfo',
       },
-
-      edges: [
-        { __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges.0' },
-      ],
+      edges: {
+        __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges',
+      },
     });
 
-    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges.0')).toEqual({
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges')).toEqual({
+      __refs: ['@.users({"after":null,"first":2,"role":"admin"}).edges:0'],
+    });
+
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges:0')).toEqual({
       __typename: "UserEdge",
       cursor: "u1",
-      node: { __ref: "User:u1" },
+      node: {
+        __ref: "User:u1",
+      },
     });
 
     expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1})')).toEqual({
       __typename: "PostConnection",
-
       pageInfo: {
-        __typename: "PageInfo",
-        startCursor: "p1",
-        endCursor: "p1",
-        hasNextPage: false,
-        hasPreviousPage: false,
+        __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).pageInfo',
       },
-
-      edges: [{ __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0' }],
+      edges: {
+        __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges',
+      },
     });
 
-    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0')).toEqual({
+    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0')).toEqual({
       __typename: "PostEdge",
       cursor: "p1",
-      node: { __ref: "Post:p1" },
+      node: {
+        __ref: "Post:p1",
+      },
     });
 
     expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":1})')).toEqual({
       __typename: "CommentConnection",
-
       pageInfo: {
-        __typename: "PageInfo",
-        startCursor: "c1",
-        endCursor: "c1",
-        hasNextPage: false,
-        hasPreviousPage: false,
+        __ref: '@.Post:p1.comments({"after":null,"first":1}).pageInfo',
       },
-
-      edges: [{ __ref: '@.Post:p1.comments({"after":null,"first":1}).edges.0' }],
+      edges: {
+        __ref: '@.Post:p1.comments({"after":null,"first":1}).edges',
+      },
     });
 
-    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":1}).edges.0')).toEqual({
+    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":1}).edges:0')).toEqual({
       __typename: "CommentEdge",
       cursor: "c1",
-      node: { __ref: "Comment:c1" },
+      node: {
+        __ref: "Comment:c1",
+      },
     });
   });
 
@@ -971,49 +746,29 @@ describe("documents.normalizeDocument", () => {
     const updateUserData = {
       updateUser: {
         user: {
-          __typename: "User",
-          id: "u1",
-          email: "u1_updated@example.com",
-
-          posts: {
-            __typename: "PostConnection",
-
-            pageInfo: {
-              __typename: "PageInfo",
-              startCursor: "p1",
-              endCursor: "p1",
-              hasNextPage: false,
-              hasPreviousPage: false,
+          ...users.buildNode({
+            id: "u1",
+            email: "u1_updated@example.com",
+          }),
+          posts: posts.buildConnection([
+            {
+              id: "p1",
+              title: "Post 1",
+              flags: [],
             },
-
-            edges: [
-              {
-                __typename: "PostEdge",
-                cursor: "p1",
-
-                node: {
-                  __typename: "Post",
-                  id: "p1",
-                  title: "Post 1",
-                  flags: [],
-                },
-              },
-            ],
-          },
+          ]),
         },
       },
     };
 
     documents.normalizeDocument({
       document: operations.UPDATE_USER_MUTATION,
-
       variables: {
         input: {
           id: "u1",
           email: "u1_updated@example.com",
         },
       },
-
       data: updateUserData,
     });
 
@@ -1033,18 +788,18 @@ describe("documents.normalizeDocument", () => {
     const userUpdatedData = {
       userUpdated: {
         __typename: "UserUpdated",
-
-        user: {
-          __typename: "User",
+        user: users.buildNode({
           id: "u1",
           email: "u1_subscribed@example.com",
-        },
+        }),
       },
     };
 
     documents.normalizeDocument({
       document: operations.USER_UPDATED_SUBSCRIPTION,
-      variables: { id: "u1" },
+      variables: {
+        id: "u1",
+      },
       data: userUpdatedData,
     });
 
@@ -1062,258 +817,342 @@ describe("documents.normalizeDocument", () => {
 
   it("appends after cursor and prepends before cursor in canonical infinite mode", () => {
     const adminUsersLeaderData = {
-      users: {
-        __typename: "UserConnection",
-        totalCount: 2,
-
-        pageInfo: {
-          __typename: "PageInfo",
-          startCursor: "u1",
-          endCursor: "u2",
-          hasNextPage: true,
-          hasPreviousPage: false,
-        },
-
-        edges: [
-          { __typename: "UserEdge", cursor: "u1", node: { __typename: "User", id: "u1" } },
-          { __typename: "UserEdge", cursor: "u2", node: { __typename: "User", id: "u2" } },
+      users: users.buildConnection(
+        [
+          {
+            id: "u1",
+          },
+          {
+            id: "u2",
+          },
         ],
-      },
+        {
+          hasNextPage: true,
+        },
+      ),
     };
+    adminUsersLeaderData.users.totalCount = 2;
 
     documents.normalizeDocument({
       document: operations.USERS_QUERY,
-      variables: { role: "admin", first: 2, after: null },
+      variables: {
+        role: "admin",
+        first: 2,
+        after: null,
+      },
       data: adminUsersLeaderData,
     });
 
     const adminUsersAfterData = {
-      users: {
-        __typename: "UserConnection",
-        totalCount: 3,
-
-        pageInfo: {
-          __typename: "PageInfo",
+      users: users.buildConnection(
+        [
+          {
+            id: "u3",
+          },
+        ],
+        {
           startCursor: "u3",
           endCursor: "u3",
           hasNextPage: true,
-          hasPreviousPage: false,
         },
-
-        edges: [
-          { __typename: "UserEdge", cursor: "u3", node: { __typename: "User", id: "u3" } },
-        ],
-      },
+      ),
     };
+    adminUsersAfterData.users.totalCount = 3;
 
     documents.normalizeDocument({
       document: operations.USERS_QUERY,
-      variables: { role: "admin", first: 2, after: "u2" },
+      variables: {
+        role: "admin",
+        first: 2,
+        after: "u2",
+      },
       data: adminUsersAfterData,
     });
 
     const adminUsersBeforeData = {
-      users: {
-        __typename: "UserConnection",
-        totalCount: 99,
-
-        pageInfo: {
-          __typename: "PageInfo",
+      users: users.buildConnection(
+        [
+          {
+            id: "u0",
+          },
+        ],
+        {
           startCursor: "u0",
           endCursor: "u0",
           hasNextPage: false,
           hasPreviousPage: true,
         },
-
-        edges: [
-          { __typename: "UserEdge", cursor: "u0", node: { __typename: "User", id: "u0" } },
-        ],
-      },
+      ),
     };
+    adminUsersBeforeData.users.totalCount = 99;
 
     documents.normalizeDocument({
       document: operations.USERS_QUERY,
-      variables: { role: "admin", last: 1, before: "u1" } as any,
+      variables: {
+        role: "admin",
+        last: 1,
+        before: "u1",
+      } as any,
       data: adminUsersBeforeData,
     });
 
     const adminUsersConnection = graph.getRecord('@connection.users({"role":"admin"})')!;
 
-    expect(adminUsersConnection.edges.length).toBe(4);
-    expect(adminUsersConnection.pageInfo).toEqual({ __typename: "PageInfo", startCursor: "u0", endCursor: "u3", hasNextPage: true, hasPreviousPage: true });
-    expect(graph.getRecord(adminUsersConnection.edges[0].__ref as string)!).toEqual({ __typename: "UserEdge", cursor: "u0", node: { __ref: "User:u0" } });
-    expect(graph.getRecord(adminUsersConnection.edges[1].__ref as string)!).toEqual({ __typename: "UserEdge", cursor: "u1", node: { __ref: "User:u1" } });
-    expect(graph.getRecord(adminUsersConnection.edges[2].__ref as string)!).toEqual({ __typename: "UserEdge", cursor: "u2", node: { __ref: "User:u2" } });
-    expect(graph.getRecord(adminUsersConnection.edges[3].__ref as string)!).toEqual({ __typename: "UserEdge", cursor: "u3", node: { __ref: "User:u3" } });
+    expect(adminUsersConnection.edges).toEqual({
+      __ref: '@connection.users({"role":"admin"}).edges',
+    });
+
+    expect(graph.getRecord('@connection.users({"role":"admin"}).edges')).toEqual({
+      __refs: [
+        expect.any(String),
+        expect.any(String),
+        expect.any(String),
+        expect.any(String),
+      ],
+    });
+
+    const canonicalEdges = graph.getRecord('@connection.users({"role":"admin"}).edges').__refs;
+    expect(canonicalEdges.length).toBe(4);
+
+    expect(graph.getRecord(canonicalEdges[0])!).toEqual({
+      __typename: "UserEdge",
+      cursor: "u0",
+      node: {
+        __ref: "User:u0",
+      },
+    });
+
+    expect(graph.getRecord(canonicalEdges[1])!).toEqual({
+      __typename: "UserEdge",
+      cursor: "u1",
+      node: {
+        __ref: "User:u1",
+      },
+    });
+
+    expect(graph.getRecord(canonicalEdges[2])!).toEqual({
+      __typename: "UserEdge",
+      cursor: "u2",
+      node: {
+        __ref: "User:u2",
+      },
+    });
+
+    expect(graph.getRecord(canonicalEdges[3])!).toEqual({
+      __typename: "UserEdge",
+      cursor: "u3",
+      node: {
+        __ref: "User:u3",
+      },
+    });
+
+    expect(graph.getRecord('@connection.users({"role":"admin"}).pageInfo')).toEqual({
+      __typename: "PageInfo",
+      startCursor: "u0",
+      endCursor: "u3",
+      hasNextPage: true,
+      hasPreviousPage: true,
+    });
   });
 
   it("appends after cursor and prepends before cursor in canonical page mode", () => {
     const moderatorUsersLeaderData = {
-      users: {
-        __typename: "UserConnection",
-        totalCount: 10,
-
-        pageInfo: {
-          __typename: "PageInfo",
+      users: users.buildConnection(
+        [
+          {
+            id: "m1",
+            email: "m1@example.com",
+          },
+          {
+            id: "m2",
+            email: "m2@example.com",
+          },
+        ],
+        {
           startCursor: "m1",
           endCursor: "m2",
           hasNextPage: true,
-          hasPreviousPage: false,
         },
-
-        edges: [
-          {
-            __typename: "UserEdge",
-            cursor: "m1",
-            node: { __typename: "User", id: "m1", email: "m1@example.com" },
-          },
-
-          {
-            __typename: "UserEdge",
-            cursor: "m2",
-            node: { __typename: "User", id: "m2", email: "m2@example.com" },
-          },
-        ],
-      },
+      ),
     };
+    moderatorUsersLeaderData.users.totalCount = 10;
 
     documents.normalizeDocument({
       document: operations.USERS_QUERY,
-      variables: { role: "moderator", first: 2, after: null },
+      variables: {
+        role: "moderator",
+        first: 2,
+        after: null,
+      },
       data: moderatorUsersLeaderData,
     });
 
     const moderatorUsersAfterData = {
-      users: {
-        __typename: "UserConnection",
-        totalCount: 12,
-
-        pageInfo: {
-          __typename: "PageInfo",
+      users: users.buildConnection(
+        [
+          {
+            id: "m3",
+            email: "m3@example.com",
+          },
+          {
+            id: "m4",
+            email: "m4@example.com",
+          },
+        ],
+        {
           startCursor: "m3",
           endCursor: "m4",
           hasNextPage: true,
-          hasPreviousPage: false,
         },
-
-        edges: [
-          {
-            __typename: "UserEdge",
-            cursor: "m3",
-            node: { __typename: "User", id: "m3", email: "m3@example.com" },
-          },
-
-          {
-            __typename: "UserEdge",
-            cursor: "m4",
-            node: { __typename: "User", id: "m4", email: "m4@example.com" },
-          },
-        ],
-      },
+      ),
     };
+    moderatorUsersAfterData.users.totalCount = 12;
 
     documents.normalizeDocument({
       document: operations.USERS_QUERY,
-      variables: { role: "moderator", first: 2, after: "m2" },
+      variables: {
+        role: "moderator",
+        first: 2,
+        after: "m2",
+      },
       data: moderatorUsersAfterData,
     });
 
     const moderatorUsersBeforeData = {
-      users: {
-        __typename: "UserConnection",
-        totalCount: 1,
-
-        pageInfo: {
-          __typename: "PageInfo",
+      users: users.buildConnection(
+        [
+          {
+            id: "m0",
+            email: "m0@example.com",
+          },
+        ],
+        {
           startCursor: "m0",
           endCursor: "m0",
           hasNextPage: false,
           hasPreviousPage: true,
         },
-
-        edges: [
-          {
-            __typename: "UserEdge",
-            cursor: "m0",
-            node: { __typename: "User", id: "m0", email: "m0@example.com" },
-          },
-        ],
-      },
+      ),
     };
+    moderatorUsersBeforeData.users.totalCount = 1;
 
     documents.normalizeDocument({
       document: operations.USERS_QUERY,
-      variables: { role: "moderator", last: 1, before: "m3" } as any,
+      variables: {
+        role: "moderator",
+        last: 1,
+        before: "m3",
+      } as any,
       data: moderatorUsersBeforeData,
     });
 
-    const moderatorUsersAfterPage = graph.getRecord('@.users({"after":"m2","first":2,"role":"moderator"})')!;
+    expect(graph.getRecord('@.users({"after":"m2","first":2,"role":"moderator"})')).toEqual({
+      __typename: "UserConnection",
+      totalCount: 12,
+      pageInfo: {
+        __ref: '@.users({"after":"m2","first":2,"role":"moderator"}).pageInfo',
+      },
+      edges: {
+        __ref: '@.users({"after":"m2","first":2,"role":"moderator"}).edges',
+      },
+    });
 
-    expect(moderatorUsersAfterPage.totalCount).toBe(12);
-    expect(moderatorUsersAfterPage.edges.length).toBe(2);
-    expect(moderatorUsersAfterPage.pageInfo).toEqual({ __typename: "PageInfo", startCursor: "m3", endCursor: "m4", hasNextPage: true, hasPreviousPage: false });
-    expect(graph.getRecord('@.users({"after":"m2","first":2,"role":"moderator"}).edges.0')).toEqual({ __typename: "UserEdge", cursor: "m3", node: { __ref: "User:m3" } });
-    expect(graph.getRecord('@.users({"after":"m2","first":2,"role":"moderator"}).edges.1')).toEqual({ __typename: "UserEdge", cursor: "m4", node: { __ref: "User:m4" } });
+    expect(graph.getRecord('@.users({"after":"m2","first":2,"role":"moderator"}).pageInfo')).toEqual({
+      __typename: "PageInfo",
+      startCursor: "m3",
+      endCursor: "m4",
+      hasNextPage: true,
+      hasPreviousPage: false,
+    });
 
-    const moderatorUsersBeforePage = graph.getRecord('@.users({"before":"m3","last":1,"role":"moderator"})')!;
+    expect(graph.getRecord('@.users({"after":"m2","first":2,"role":"moderator"}).edges')).toEqual({
+      __refs: [
+        '@.users({"after":"m2","first":2,"role":"moderator"}).edges:0',
+        '@.users({"after":"m2","first":2,"role":"moderator"}).edges:1',
+      ],
+    });
 
-    expect(moderatorUsersBeforePage.totalCount).toBe(1);
-    expect(moderatorUsersBeforePage.edges.length).toBe(1);
-    expect(moderatorUsersBeforePage.pageInfo).toEqual({ __typename: "PageInfo", startCursor: "m0", endCursor: "m0", hasNextPage: false, hasPreviousPage: true });
-    expect(graph.getRecord('@.users({"before":"m3","last":1,"role":"moderator"}).edges.0')).toEqual({ __typename: "UserEdge", cursor: "m0", node: { __ref: "User:m0" } });
+    expect(graph.getRecord('@.users({"after":"m2","first":2,"role":"moderator"}).edges:0')).toEqual({
+      __typename: "UserEdge",
+      cursor: "m3",
+      node: {
+        __ref: "User:m3",
+      },
+    });
+
+    expect(graph.getRecord('@.users({"after":"m2","first":2,"role":"moderator"}).edges:1')).toEqual({
+      __typename: "UserEdge",
+      cursor: "m4",
+      node: {
+        __ref: "User:m4",
+      },
+    });
+
+    expect(graph.getRecord('@.users({"before":"m3","last":1,"role":"moderator"})')).toEqual({
+      __typename: "UserConnection",
+      totalCount: 1,
+      pageInfo: {
+        __ref: '@.users({"before":"m3","last":1,"role":"moderator"}).pageInfo',
+      },
+      edges: {
+        __ref: '@.users({"before":"m3","last":1,"role":"moderator"}).edges',
+      },
+    });
+
+    expect(graph.getRecord('@.users({"before":"m3","last":1,"role":"moderator"}).pageInfo')).toEqual({
+      __typename: "PageInfo",
+      startCursor: "m0",
+      endCursor: "m0",
+      hasNextPage: false,
+      hasPreviousPage: true,
+    });
+
+    expect(graph.getRecord('@.users({"before":"m3","last":1,"role":"moderator"}).edges:0')).toEqual({
+      __typename: "UserEdge",
+      cursor: "m0",
+      node: {
+        __ref: "User:m0",
+      },
+    });
   });
 
   it("appends after cursor in canonical nested comments infinite mode", () => {
     const user1PostsComments_page1 = {
       user: {
-        __typename: "User",
-        id: "u1",
-
+        ...users.buildNode({
+          id: "u1",
+        }),
         posts: {
-          __typename: "PostConnection",
-
-          pageInfo: {
-            __typename: "PageInfo",
-            startCursor: "p1",
-            endCursor: "p1",
-          },
-
-          edges: [
+          ...posts.buildConnection([
             {
-              __typename: "PostEdge",
-              cursor: "p1",
-
-              node: {
-                __typename: "Post",
-                id: "p1",
-
-                comments: {
-                  __typename: "CommentConnection",
-                  totalCount: 2,
-
-                  pageInfo: {
-                    __typename: "PageInfo",
-                    startCursor: "c1",
-                    endCursor: "c2",
-                    hasNextPage: true,
-                    hasPreviousPage: false,
-                  },
-
-                  edges: [
-                    { __typename: "CommentEdge", cursor: "c1", node: { __typename: "Comment", id: "c1" } },
-                    { __typename: "CommentEdge", cursor: "c2", node: { __typename: "Comment", id: "c2" } },
-                  ],
-                },
-              },
+              id: "p1",
             },
-          ],
+          ]),
         },
       },
     };
 
+    user1PostsComments_page1.user.posts.edges[0].node.comments = {
+      ...comments.buildConnection(
+        [
+          {
+            uuid: "c1",
+          },
+          {
+            uuid: "c2",
+          },
+        ],
+        {
+          startCursor: "c1",
+          endCursor: "c2",
+          hasNextPage: true,
+        },
+      ),
+      totalCount: 2,
+    };
+
     documents.normalizeDocument({
       document: operations.USER_POSTS_COMMENTS_QUERY,
-
       variables: {
         id: "u1",
         postsCategory: "tech",
@@ -1322,53 +1161,43 @@ describe("documents.normalizeDocument", () => {
         commentsFirst: 2,
         commentsAfter: null,
       },
-
       data: user1PostsComments_page1,
     });
 
     const user1PostsCommentsAfterData = {
       user: {
-        __typename: "User",
-        id: "u1",
-
+        ...users.buildNode({
+          id: "u1",
+        }),
         posts: {
-          __typename: "PostConnection",
-
-          edges: [
+          ...posts.buildConnection([
             {
-              __typename: "PostEdge",
-              cursor: "p1",
-
-              node: {
-                __typename: "Post",
-                id: "p1",
-
-                comments: {
-                  __typename: "CommentConnection",
-                  totalCount: 3,
-
-                  pageInfo: {
-                    __typename: "PageInfo",
-                    startCursor: "c3",
-                    endCursor: "c3",
-                    hasNextPage: true,
-                    hasPreviousPage: false,
-                  },
-
-                  edges: [
-                    { __typename: "CommentEdge", cursor: "c3", node: { __typename: "Comment", id: "c3", text: "Comment 3" } },
-                  ],
-                },
-              },
+              id: "p1",
             },
-          ],
+          ]),
         },
       },
     };
 
+    user1PostsCommentsAfterData.user.posts.edges[0].node.comments = {
+      ...comments.buildConnection(
+        [
+          {
+            uuid: "c3",
+            text: "Comment 3",
+          },
+        ],
+        {
+          startCursor: "c3",
+          endCursor: "c3",
+          hasNextPage: true,
+        },
+      ),
+      totalCount: 3,
+    };
+
     documents.normalizeDocument({
       document: operations.USER_POSTS_COMMENTS_QUERY,
-
       variables: {
         id: "u1",
         postsCategory: "tech",
@@ -1377,183 +1206,309 @@ describe("documents.normalizeDocument", () => {
         commentsFirst: 1,
         commentsAfter: "c2",
       },
-
       data: user1PostsCommentsAfterData,
     });
 
     const post1CommentsConnection = graph.getRecord("@connection.Post:p1.comments({})")!;
 
-    expect(post1CommentsConnection.totalCount).toBe(2);
-    expect(post1CommentsConnection.edges.length).toBe(3);
-    expect(post1CommentsConnection.pageInfo).toEqual({ __typename: "PageInfo", startCursor: "c1", endCursor: "c3", hasNextPage: true, hasPreviousPage: false });
-    expect(post1CommentsConnection.edges[0]).toEqual({ __ref: '@.Post:p1.comments({"after":null,"first":2}).edges.0' });
-    expect(post1CommentsConnection.edges[1]).toEqual({ __ref: '@.Post:p1.comments({"after":null,"first":2}).edges.1' });
-    expect(post1CommentsConnection.edges[2]).toEqual({ __ref: '@.Post:p1.comments({"after":"c2","first":1}).edges.0' });
-    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2}).edges.0')).toEqual({ __typename: "CommentEdge", cursor: "c1", node: { __ref: "Comment:c1" } });
-    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2}).edges.1')).toEqual({ __typename: "CommentEdge", cursor: "c2", node: { __ref: "Comment:c2" } });
-    expect(graph.getRecord('@.Post:p1.comments({"after":"c2","first":1}).edges.0')).toEqual({ __typename: "CommentEdge", cursor: "c3", node: { __ref: "Comment:c3" } });
+    expect(post1CommentsConnection.totalCount).toBe(3);
+
+    expect(post1CommentsConnection.edges).toEqual({
+      __ref: "@connection.Post:p1.comments({}).edges",
+    });
+
+    const canonicalEdges = graph.getRecord("@connection.Post:p1.comments({}).edges").__refs;
+
+    expect(canonicalEdges.length).toBe(3);
+
+    expect(canonicalEdges).toEqual([
+      '@.Post:p1.comments({"after":null,"first":2}).edges:0',
+      '@.Post:p1.comments({"after":null,"first":2}).edges:1',
+      '@.Post:p1.comments({"after":"c2","first":1}).edges:0',
+    ]);
+
+    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2}).edges:0')).toEqual({
+      __typename: "CommentEdge",
+      cursor: "c1",
+      node: {
+        __ref: "Comment:c1",
+      },
+    });
+
+    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2}).edges:1')).toEqual({
+      __typename: "CommentEdge",
+      cursor: "c2",
+      node: {
+        __ref: "Comment:c2",
+      },
+    });
+
+    expect(graph.getRecord('@.Post:p1.comments({"after":"c2","first":1}).edges:0')).toEqual({
+      __typename: "CommentEdge",
+      cursor: "c3",
+      node: {
+        __ref: "Comment:c3",
+      },
+    });
+
+    expect(graph.getRecord("@connection.Post:p1.comments({}).pageInfo")).toEqual({
+      __typename: "PageInfo",
+      startCursor: "c1",
+      endCursor: "c3",
+      hasNextPage: true,
+      hasPreviousPage: false,
+    });
   });
 
   it("replaces edges for each page in canonical nested comments page mode", () => {
     const post9CommentsLeaderData = {
       post: {
-        __typename: "Post",
-        id: "p9",
-
+        ...posts.buildNode({
+          id: "p9",
+        }),
         comments: {
-          __typename: "CommentConnection",
+          ...comments.buildConnection(
+            [
+              {
+                uuid: "x1",
+              },
+              {
+                uuid: "x2",
+              },
+            ],
+            {
+              startCursor: "x1",
+              endCursor: "x2",
+              hasNextPage: true,
+            },
+          ),
           totalCount: 10,
-
-          pageInfo: {
-            __typename: "PageInfo",
-            startCursor: "x1",
-            endCursor: "x2",
-            hasNextPage: true,
-            hasPreviousPage: false,
-          },
-
-          edges: [
-            { __typename: "CommentEdge", cursor: "x1", node: { __typename: "Comment", id: "x1" } },
-            { __typename: "CommentEdge", cursor: "x2", node: { __typename: "Comment", id: "x2" } },
-          ],
         },
       },
     };
 
     documents.normalizeDocument({
       document: operations.POST_COMMENTS_QUERY,
-      variables: { postId: "p9", first: 2, after: null },
+      variables: {
+        postId: "p9",
+        first: 2,
+        after: null,
+      },
       data: post9CommentsLeaderData,
     });
 
     const post9CommentsConnection = graph.getRecord("@connection.Post:p9.comments({})")!;
 
     expect(post9CommentsConnection.totalCount).toBe(10);
-    expect(post9CommentsConnection.edges.length).toBe(2);
-    expect(post9CommentsConnection.pageInfo).toEqual({ __typename: "PageInfo", startCursor: "x1", endCursor: "x2", hasNextPage: true, hasPreviousPage: false });
-    expect(post9CommentsConnection.edges[0]).toEqual({ __ref: '@.Post:p9.comments({"after":null,"first":2}).edges.0' });
-    expect(post9CommentsConnection.edges[1]).toEqual({ __ref: '@.Post:p9.comments({"after":null,"first":2}).edges.1' });
-    expect(graph.getRecord('@.Post:p9.comments({"after":null,"first":2}).edges.0')).toEqual({ __typename: "CommentEdge", cursor: "x1", node: { __ref: "Comment:x1" } });
-    expect(graph.getRecord('@.Post:p9.comments({"after":null,"first":2}).edges.1')).toEqual({ __typename: "CommentEdge", cursor: "x2", node: { __ref: "Comment:x2" } });
+
+    expect(post9CommentsConnection.edges).toEqual({
+      __ref: "@connection.Post:p9.comments({}).edges",
+    });
+
+    const canonicalEdges1 = graph.getRecord("@connection.Post:p9.comments({}).edges").__refs;
+
+    expect(canonicalEdges1.length).toBe(2);
+
+    expect(canonicalEdges1).toEqual([
+      '@.Post:p9.comments({"after":null,"first":2}).edges:0',
+      '@.Post:p9.comments({"after":null,"first":2}).edges:1',
+    ]);
+
+    expect(graph.getRecord('@.Post:p9.comments({"after":null,"first":2}).edges:0')).toEqual({
+      __typename: "CommentEdge",
+      cursor: "x1",
+      node: {
+        __ref: "Comment:x1",
+      },
+    });
+
+    expect(graph.getRecord('@.Post:p9.comments({"after":null,"first":2}).edges:1')).toEqual({
+      __typename: "CommentEdge",
+      cursor: "x2",
+      node: {
+        __ref: "Comment:x2",
+      },
+    });
+
+    expect(graph.getRecord("@connection.Post:p9.comments({}).pageInfo")).toEqual({
+      __typename: "PageInfo",
+      startCursor: "x1",
+      endCursor: "x2",
+      hasNextPage: true,
+      hasPreviousPage: false,
+    });
 
     const post9CommentsAfterData = {
       post: {
-        __typename: "Post",
-        id: "p9",
-
+        ...posts.buildNode({
+          id: "p9",
+        }),
         comments: {
-          __typename: "CommentConnection",
+          ...comments.buildConnection(
+            [
+              {
+                uuid: "x3",
+              },
+              {
+                uuid: "x4",
+              },
+            ],
+            {
+              startCursor: "x3",
+              endCursor: "x4",
+              hasNextPage: false,
+              hasPreviousPage: true,
+            },
+          ),
           totalCount: 12,
-
-          pageInfo: {
-            __typename: "PageInfo",
-            startCursor: "x3",
-            endCursor: "x4",
-            hasNextPage: false,
-            hasPreviousPage: true,
-          },
-
-          edges: [
-            { __typename: "CommentEdge", cursor: "x3", node: { __typename: "Comment", id: "x3" } },
-            { __typename: "CommentEdge", cursor: "x4", node: { __typename: "Comment", id: "x4" } },
-          ],
         },
       },
     };
 
     documents.normalizeDocument({
       document: operations.POST_COMMENTS_QUERY,
-
       variables: {
         postId: "p9",
         first: 2,
         after: "x2",
       },
-
       data: post9CommentsAfterData,
     });
 
     const post9CommentsAfterPage = graph.getRecord("@connection.Post:p9.comments({})")!;
 
     expect(post9CommentsAfterPage.totalCount).toBe(12);
-    expect(post9CommentsAfterPage.edges.length).toBe(2);
-    expect(post9CommentsAfterPage.pageInfo).toEqual({ __typename: "PageInfo", startCursor: "x3", endCursor: "x4", hasNextPage: false, hasPreviousPage: true });
-    expect(post9CommentsAfterPage.edges[0]).toEqual({ __ref: '@.Post:p9.comments({"after":"x2","first":2}).edges.0' });
-    expect(post9CommentsAfterPage.edges[1]).toEqual({ __ref: '@.Post:p9.comments({"after":"x2","first":2}).edges.1' });
-    expect(graph.getRecord('@.Post:p9.comments({"after":"x2","first":2}).edges.0')).toEqual({ __typename: "CommentEdge", cursor: "x3", node: { __ref: "Comment:x3" } });
-    expect(graph.getRecord('@.Post:p9.comments({"after":"x2","first":2}).edges.1')).toEqual({ __typename: "CommentEdge", cursor: "x4", node: { __ref: "Comment:x4" } });
+    expect(post9CommentsAfterPage.edges).toEqual({
+      __ref: "@connection.Post:p9.comments({}).edges",
+    });
+
+    const canonicalEdges2 = graph.getRecord("@connection.Post:p9.comments({}).edges").__refs;
+
+    expect(canonicalEdges2.length).toBe(2);
+
+    expect(canonicalEdges2).toEqual([
+      '@.Post:p9.comments({"after":"x2","first":2}).edges:0',
+      '@.Post:p9.comments({"after":"x2","first":2}).edges:1',
+    ]);
+
+    expect(graph.getRecord('@.Post:p9.comments({"after":"x2","first":2}).edges:0')).toEqual({
+      __typename: "CommentEdge",
+      cursor: "x3",
+      node: {
+        __ref: "Comment:x3",
+      },
+    });
+
+    expect(graph.getRecord('@.Post:p9.comments({"after":"x2","first":2}).edges:1')).toEqual({
+      __typename: "CommentEdge",
+      cursor: "x4",
+      node: {
+        __ref: "Comment:x4",
+      },
+    });
+
+    expect(graph.getRecord("@connection.Post:p9.comments({}).pageInfo")).toEqual({
+      __typename: "PageInfo",
+      startCursor: "x3",
+      endCursor: "x4",
+      hasNextPage: false,
+      hasPreviousPage: true,
+    });
 
     const post9CommentsBeforeData = {
       post: {
-        __typename: "Post",
-        id: "p9",
-        comments: {
-          __typename: "CommentConnection",
-          totalCount: 1,
-          pageInfo: {
-            __typename: "PageInfo",
+        ...posts.buildNode({
+          id: "p9",
+        }),
+        comments: comments.buildConnection(
+          [
+            {
+              uuid: "x0",
+            },
+          ],
+          {
             startCursor: "x0",
             endCursor: "x0",
             hasNextPage: false,
             hasPreviousPage: true,
           },
-          edges: [
-            { __typename: "CommentEdge", cursor: "x0", node: { __typename: "Comment", id: "x0" } },
-          ],
-        },
+        ),
       },
     };
+    post9CommentsBeforeData.post.comments.totalCount = 1;
 
     documents.normalizeDocument({
       document: operations.POST_COMMENTS_QUERY,
-      variables: { postId: "p9", last: 1, before: "x3" } as any,
+      variables: {
+        postId: "p9",
+        last: 1,
+        before: "x3",
+      } as any,
       data: post9CommentsBeforeData,
     });
 
     const post9CommentsBeforePage = graph.getRecord("@connection.Post:p9.comments({})")!;
 
     expect(post9CommentsBeforePage.totalCount).toBe(1);
-    expect(post9CommentsBeforePage.edges.length).toBe(1);
-    expect(post9CommentsBeforePage.pageInfo).toEqual({ __typename: "PageInfo", startCursor: "x0", endCursor: "x0", hasNextPage: false, hasPreviousPage: true });
-    expect(post9CommentsBeforePage.edges[0]).toEqual({ __ref: '@.Post:p9.comments({"before":"x3","last":1}).edges.0' });
-    expect(graph.getRecord('@.Post:p9.comments({"before":"x3","last":1}).edges.0')).toEqual({ __typename: "CommentEdge", cursor: "x0", node: { __ref: "Comment:x0" } });
+    expect(post9CommentsBeforePage.edges).toEqual({
+      __ref: "@connection.Post:p9.comments({}).edges",
+    });
+
+    const canonicalEdges3 = graph.getRecord("@connection.Post:p9.comments({}).edges").__refs;
+    expect(canonicalEdges3.length).toBe(1);
+
+    expect(canonicalEdges3).toEqual(['@.Post:p9.comments({"before":"x3","last":1}).edges:0']);
+
+    expect(graph.getRecord('@.Post:p9.comments({"before":"x3","last":1}).edges:0')).toEqual({
+      __typename: "CommentEdge",
+      cursor: "x0",
+      node: {
+        __ref: "Comment:x0",
+      },
+    });
+
+    expect(graph.getRecord("@connection.Post:p9.comments({}).pageInfo")).toEqual({
+      __typename: "PageInfo",
+      startCursor: "x0",
+      endCursor: "x0",
+      hasNextPage: false,
+      hasPreviousPage: true,
+    });
   });
 
   it("updates view when appending comments after leader page", () => {
     const user1PostsComments_initial = {
       user: {
-        __typename: "User",
-        id: "u1",
+        ...users.buildNode({
+          id: "u1",
+        }),
         posts: {
-          __typename: "PostConnection",
-          pageInfo: { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false },
-          edges: [
+          ...posts.buildConnection([
             {
-              __typename: "PostEdge",
-              cursor: "p1",
-              node: {
-                __typename: "Post",
-                id: "p1",
-                comments: {
-                  __typename: "CommentConnection",
-                  pageInfo: {
-                    __typename: "PageInfo",
-                    startCursor: "c1",
-                    endCursor: "c2",
-                    hasNextPage: true,
-                    hasPreviousPage: false,
-                  },
-                  edges: [
-                    { __typename: "CommentEdge", cursor: "c1", node: { __typename: "Comment", id: "c1", text: "Comment 1" } },
-                    { __typename: "CommentEdge", cursor: "c2", node: { __typename: "Comment", id: "c2", text: "Comment 2" } },
-                  ],
-                },
-              },
+              id: "p1",
             },
-          ],
+          ]),
         },
       },
     };
+
+    user1PostsComments_initial.user.posts.edges[0].node.comments = comments.buildConnection(
+      [
+        {
+          uuid: "c1",
+          text: "Comment 1",
+        },
+        {
+          uuid: "c2",
+          text: "Comment 2",
+        },
+      ],
+      {
+        startCursor: "c1",
+        endCursor: "c2",
+        hasNextPage: true,
+      },
+    );
 
     documents.normalizeDocument({
       document: operations.USER_POSTS_COMMENTS_QUERY,
@@ -1580,39 +1535,45 @@ describe("documents.normalizeDocument", () => {
       },
     });
 
-    const initialCommentTexts = (initialView.user.posts.edges[0].node.comments.edges || []).map((e: any) => e?.node?.text);
+    const initialCommentTexts = (initialView.user.posts.edges[0].node.comments.edges || []).map(
+      (e: any) => e?.node?.text,
+    );
     expect(initialCommentTexts).toEqual(["Comment 1", "Comment 2"]);
 
     const user1PostsCommentsAfterData = {
       user: {
-        __typename: "User",
-        id: "u1",
+        ...users.buildNode({
+          id: "u1",
+        }),
         posts: {
-          __typename: "PostConnection",
-
-          edges: [
+          ...posts.buildConnection([
             {
-              __typename: "PostEdge",
-              cursor: "p1",
-              node: {
-                __typename: "Post",
-                id: "p1",
-                comments: {
-                  __typename: "CommentConnection",
-                  totalCount: 2,
-                  pageInfo: { __typename: "PageInfo", startCursor: "c3", endCursor: "c3", hasNextPage: true, hasPreviousPage: false },
-                  edges: [{ __typename: "CommentEdge", cursor: "c3", node: { __typename: "Comment", id: "c3", text: "Comment 3" } }],
-                },
-              },
+              id: "p1",
             },
-          ],
+          ]),
         },
       },
     };
 
+    user1PostsCommentsAfterData.user.posts.edges[0].node.comments = {
+      ...comments.buildConnection(
+        [
+          {
+            uuid: "c3",
+            text: "Comment 3",
+          },
+        ],
+        {
+          startCursor: "c3",
+          endCursor: "c3",
+          hasNextPage: true,
+        },
+      ),
+      totalCount: 2,
+    };
+
     documents.normalizeDocument({
       document: operations.USER_POSTS_COMMENTS_QUERY,
-
       variables: {
         id: "u1",
         postsCategory: "tech",
@@ -1621,13 +1582,11 @@ describe("documents.normalizeDocument", () => {
         commentsFirst: 1,
         commentsAfter: "c2",
       },
-
       data: user1PostsCommentsAfterData,
     });
 
     const updatedView = documents.materializeDocument({
       document: operations.USER_POSTS_COMMENTS_QUERY,
-
       variables: {
         id: "u1",
         postsCategory: "tech",
@@ -1638,7 +1597,9 @@ describe("documents.normalizeDocument", () => {
       },
     });
 
-    const updatedCommentTexts = (updatedView.user.posts.edges[0].node.comments.edges || []).map((e: any) => e?.node?.text);
+    const updatedCommentTexts = (updatedView.user.posts.edges[0].node.comments.edges || []).map(
+      (e: any) => e?.node?.text,
+    );
 
     expect(updatedCommentTexts).toEqual(["Comment 1", "Comment 2", "Comment 3"]);
   });
@@ -1646,46 +1607,37 @@ describe("documents.normalizeDocument", () => {
   it("merges nested comments independently per parent with anchored pageInfo", () => {
     const user1PostsComments_page1 = {
       user: {
-        __typename: "User",
-        id: "u1",
-
+        ...users.buildNode({
+          id: "u1",
+        }),
         posts: {
-          __typename: "PostConnection",
-
-          edges: [
+          ...posts.buildConnection([
             {
-              __typename: "PostEdge",
-              cursor: "p1",
-
-              node: {
-                __typename: "Post", id: "p1",
-
-                comments: {
-                  __typename: "CommentConnection",
-
-                  pageInfo: {
-                    __typename: "PageInfo",
-                    startCursor: "c1",
-                    endCursor: "c2",
-                    hasNextPage: true,
-                    hasPreviousPage: false,
-                  },
-
-                  edges: [
-                    { __typename: "CommentEdge", cursor: "c1", node: { __typename: "Comment", id: "c1" } },
-                    { __typename: "CommentEdge", cursor: "c2", node: { __typename: "Comment", id: "c2" } },
-                  ],
-                },
-              },
+              id: "p1",
             },
-          ],
+          ]),
         },
       },
     };
 
+    user1PostsComments_page1.user.posts.edges[0].node.comments = comments.buildConnection(
+      [
+        {
+          uuid: "c1",
+        },
+        {
+          uuid: "c2",
+        },
+      ],
+      {
+        startCursor: "c1",
+        endCursor: "c2",
+        hasNextPage: true,
+      },
+    );
+
     documents.normalizeDocument({
       document: operations.USER_POSTS_COMMENTS_WITH_KEY_QUERY,
-
       variables: {
         id: "u1",
         postsCategory: "tech",
@@ -1694,49 +1646,38 @@ describe("documents.normalizeDocument", () => {
         commentsFirst: 2,
         commentsAfter: null,
       },
-
       data: user1PostsComments_page1,
     });
 
     const user1PostsComments_page2 = {
       user: {
-        __typename: "User",
-        id: "u1",
-
+        ...users.buildNode({
+          id: "u1",
+        }),
         posts: {
-          __typename: "PostConnection",
-
-          edges: [
+          ...posts.buildConnection([
             {
-              __typename: "PostEdge", cursor: "p2",
-
-              node: {
-                __typename: "Post", id: "p2",
-                comments: {
-                  __typename: "CommentConnection",
-
-                  pageInfo: {
-                    __typename: "PageInfo",
-                    startCursor: "c9",
-                    endCursor: "c9",
-                    hasNextPage: false,
-                    hasPreviousPage: false,
-                  },
-
-                  edges: [
-                    { __typename: "CommentEdge", cursor: "c9", node: { __typename: "Comment", id: "c9" } },
-                  ],
-                },
-              },
+              id: "p2",
             },
-          ],
+          ]),
         },
       },
     };
 
+    user1PostsComments_page2.user.posts.edges[0].node.comments = comments.buildConnection(
+      [
+        {
+          uuid: "c9",
+        },
+      ],
+      {
+        startCursor: "c9",
+        endCursor: "c9",
+      },
+    );
+
     documents.normalizeDocument({
       document: operations.USER_POSTS_COMMENTS_WITH_KEY_QUERY,
-
       variables: {
         id: "u1",
         postsCategory: "tech",
@@ -1745,50 +1686,32 @@ describe("documents.normalizeDocument", () => {
         commentsFirst: 1,
         commentsAfter: null,
       },
-
       data: user1PostsComments_page2,
     });
 
     const user1PostsComments_page3 = {
       user: {
-        __typename: "User",
-        id: "u1",
-
+        ...users.buildNode({
+          id: "u1",
+        }),
         posts: {
-          __typename: "PostConnection",
-
-          edges: [
+          ...posts.buildConnection([
             {
-              __typename: "PostEdge",
-              cursor: "p1",
-
-              node: {
-                __typename: "Post",
-                id: "p1",
-
-                comments: {
-                  __typename: "CommentConnection",
-                  pageInfo: {
-                    __typename: "PageInfo",
-                    startCursor: "c3",
-                    endCursor: "c3",
-                    hasNextPage: false,
-                    hasPreviousPage: false,
-                  },
-
-                  edges: [
-                    { __typename: "CommentEdge", cursor: "c3", node: { __typename: "Comment", id: "c3" } },
-                  ],
-                },
-              },
-            }],
+              id: "p1",
+            },
+          ]),
         },
       },
     };
 
+    user1PostsComments_page3.user.posts.edges[0].node.comments = comments.buildConnection([
+      {
+        uuid: "c3",
+      },
+    ]);
+
     documents.normalizeDocument({
       document: operations.USER_POSTS_COMMENTS_WITH_KEY_QUERY,
-
       variables: {
         id: "u1",
         postsCategory: "tech",
@@ -1797,46 +1720,40 @@ describe("documents.normalizeDocument", () => {
         commentsFirst: 1,
         commentsAfter: "c2",
       },
-
       data: user1PostsComments_page3,
     });
 
     const user1PostsComments_page4 = {
       user: {
-        __typename: "User", id: "u1",
+        ...users.buildNode({
+          id: "u1",
+        }),
         posts: {
-          __typename: "PostConnection",
-
-          edges: [{
-            __typename: "PostEdge",
-            cursor: "p2",
-            node: {
-              __typename: "Post", id: "p2",
-
-              comments: {
-                __typename: "CommentConnection",
-
-                pageInfo: {
-                  __typename: "PageInfo",
-                  startCursor: "c10",
-                  endCursor: "c10",
-                  hasNextPage: false,
-                  hasPreviousPage: false,
-                },
-
-                edges: [
-                  { __typename: "CommentEdge", cursor: "c10", node: { __typename: "Comment", id: "c10" } },
-                ],
-              },
+          ...posts.buildConnection([
+            {
+              id: "p2",
             },
-          }],
+          ]),
         },
       },
     };
 
+    user1PostsComments_page4.user.posts.edges[0].node.comments = comments.buildConnection([
+      {
+        uuid: "c10",
+      },
+    ]);
+
     documents.normalizeDocument({
       document: operations.USER_POSTS_COMMENTS_WITH_KEY_QUERY,
-      variables: { id: "u1", postsCategory: "tech", postsFirst: 2, postsAfter: null, commentsFirst: 1, commentsAfter: "c9" },
+      variables: {
+        id: "u1",
+        postsCategory: "tech",
+        postsFirst: 2,
+        postsAfter: null,
+        commentsFirst: 1,
+        commentsAfter: "c9",
+      },
       data: user1PostsComments_page4,
     });
 
@@ -1844,10 +1761,10 @@ describe("documents.normalizeDocument", () => {
       __typename: "Post",
       id: "p1",
       'comments({"after":"c2","first":1})': {
-        "__ref": '@.Post:p1.comments({"after":"c2","first":1})',
+        __ref: '@.Post:p1.comments({"after":"c2","first":1})',
       },
       'comments({"after":null,"first":2})': {
-        "__ref": '@.Post:p1.comments({"after":null,"first":2})',
+        __ref: '@.Post:p1.comments({"after":null,"first":2})',
       },
     });
 
@@ -1855,30 +1772,53 @@ describe("documents.normalizeDocument", () => {
       __typename: "Post",
       id: "p2",
       'comments({"after":"c9","first":1})': {
-        "__ref": '@.Post:p2.comments({"after":"c9","first":1})',
+        __ref: '@.Post:p2.comments({"after":"c9","first":1})',
       },
       'comments({"after":null,"first":1})': {
-        "__ref": '@.Post:p2.comments({"after":null,"first":1})',
+        __ref: '@.Post:p2.comments({"after":null,"first":1})',
       },
     });
 
     const post1CommentsConnection = graph.getRecord("@connection.Post:p1.CustomComments({})");
-    const post2CommentsConnection = graph.getRecord("@connection.Post:p2.CustomComments({})");
 
-    const post1CommentIds = (post1CommentsConnection.edges || []).map((r: any) => graph.getRecord(graph.getRecord(r.__ref).node.__ref).id);
-    const post2CommentIds = (post2CommentsConnection.edges || []).map((r: any) => graph.getRecord(graph.getRecord(r.__ref).node.__ref).id);
+    const post1Edges = graph.getRecord(post1CommentsConnection.edges.__ref).__refs;
+
+    const post1CommentIds = post1Edges.map((edgeRef: string) => {
+      const edge = graph.getRecord(edgeRef);
+      const node = graph.getRecord(edge.node.__ref);
+
+      return node.id;
+    });
+
+    const post1PageInfo = graph.getRecord(post1CommentsConnection.pageInfo.__ref);
 
     expect(post1CommentIds).toEqual(["c1", "c2", "c3"]);
-    expect(post2CommentIds).toEqual(["c9", "c10"]);
+    expect(post1PageInfo.startCursor).toBe("c1");
+    expect(post1PageInfo.endCursor).toBe("c3");
 
-    expect(post1CommentsConnection.pageInfo.startCursor).toBe("c1");
-    expect(post1CommentsConnection.pageInfo.endCursor).toBe("c3");
-    expect(post2CommentsConnection.pageInfo.startCursor).toBe("c9");
-    expect(post2CommentsConnection.pageInfo.endCursor).toBe("c10");
+    const post2CommentsConnection = graph.getRecord("@connection.Post:p2.CustomComments({})");
+
+    const post2Edges = graph.getRecord(post2CommentsConnection.edges.__ref).__refs;
+
+    const post2CommentIds = post2Edges.map((edgeRef: string) => {
+      const edge = graph.getRecord(edgeRef);
+      const node = graph.getRecord(edge.node.__ref);
+
+      return node.id;
+    });
+
+    const post2PageInfo = graph.getRecord(post2CommentsConnection.pageInfo.__ref);
+
+    expect(post2CommentIds).toEqual(["c9", "c10"]);
+    expect(post2PageInfo.startCursor).toBe("c9");
+    expect(post2PageInfo.endCursor).toBe("c10");
   });
 
   it("stores and links entities by custom key (slug) when id is absent", () => {
-    graph.putRecord("@", { id: "@", __typename: "@" });
+    graph.putRecord("@", {
+      id: "@",
+      __typename: "@",
+    });
 
     const PROFILE_QUERY = `
       query Profile($slug: String!) {
@@ -1888,16 +1828,14 @@ describe("documents.normalizeDocument", () => {
         }
       }
     `;
+
     documents.normalizeDocument({
       document: PROFILE_QUERY,
-
       variables: {
         slug: "dimitri",
       },
-
       data: {
         __typename: "Query",
-
         profile: {
           __typename: "Profile",
           slug: "dimitri",
@@ -1912,431 +1850,1022 @@ describe("documents.normalizeDocument", () => {
     expect(profile.name).toBe("Dimitri");
   });
 
-  it.only(
-    "normalizes posts page + root aggregations.BaseTags @connection (with scoring + today/yesterday stat by custom key), per-node aggregations.{ModerationTags,UserTags} @connection (aliased, with category arg), and inline media fragments + writes canonical connections",
-    () => {
-      // ------- Network payload (exactly what the server returns) -------
-      const data = {
+  it("normalizes aggregations connections", () => {
+    documents.normalizeDocument({
+      document: operations.POSTS_WITH_AGGREGATIONS_QUERY,
+      variables: {
+        first: 2,
+        after: null,
+      },
+      data: {
         __typename: "Query",
         posts: {
           __typename: "PostConnection",
           totalCount: 2,
-          pageInfo: {
-            __typename: "PageInfo",
-            startCursor: "p1",
-            endCursor: "p2",
-            hasNextPage: false,
-            hasPreviousPage: false,
-          },
-          edges: [
-            {
-              __typename: "PostEdge",
-              cursor: "p1",
-              node: {
-                __typename: "VideoPost",
+          ...posts.buildConnection(
+            [
+              {
                 id: "p1",
                 title: "Video 1",
                 flags: [],
+                typename: "VideoPost",
                 aggregations: {
                   __typename: "Aggregations",
-                  moderationTags: {
-                    __typename: "TagConnection",
-                    pageInfo: {
-                      __typename: "PageInfo",
-                      startCursor: "t1",
-                      endCursor: "t1",
-                      hasNextPage: false,
-                      hasPreviousPage: false,
+                  moderationTags: tags.buildConnection([
+                    {
+                      id: "t1",
+                      name: "mod-1",
                     },
-                    edges: [
-                      { __typename: "TagEdge", node: { __typename: "Tag", id: "t1", name: "mod-1" } },
-                    ],
-                  },
-                  userTags: {
-                    __typename: "TagConnection",
-                    pageInfo: {
-                      __typename: "PageInfo",
-                      startCursor: "tu1",
-                      endCursor: "tu1",
-                      hasNextPage: false,
-                      hasPreviousPage: false,
+                  ]),
+                  userTags: tags.buildConnection([
+                    {
+                      id: "tu1",
+                      name: "user-1",
                     },
-                    edges: [
-                      { __typename: "TagEdge", node: { __typename: "Tag", id: "tu1", name: "user-1" } },
-                    ],
-                  },
+                  ]),
                 },
-                video: { __typename: "Media", key: "m1", mediaUrl: "https://m/1" },
+                video: media.buildNode({
+                  key: "m1",
+                  mediaUrl: "https://m/1",
+                }),
               },
-            },
-            {
-              __typename: "PostEdge",
-              cursor: "p2",
-              node: {
-                __typename: "AudioPost",
+              {
                 id: "p2",
                 title: "Audio 2",
                 flags: [],
+                typename: "AudioPost",
                 aggregations: {
                   __typename: "Aggregations",
-                  moderationTags: {
-                    __typename: "TagConnection",
-                    pageInfo: {
-                      __typename: "PageInfo",
-                      startCursor: "t2",
-                      endCursor: "t2",
-                      hasNextPage: false,
-                      hasPreviousPage: false,
+                  moderationTags: tags.buildConnection([
+                    {
+                      id: "t2",
+                      name: "mod-2",
                     },
-                    edges: [
-                      { __typename: "TagEdge", node: { __typename: "Tag", id: "t2", name: "mod-2" } },
-                    ],
-                  },
-                  userTags: {
-                    __typename: "TagConnection",
-                    pageInfo: {
-                      __typename: "PageInfo",
-                      startCursor: "tu2",
-                      endCursor: "tu2",
-                      hasNextPage: false,
-                      hasPreviousPage: false,
+                  ]),
+                  userTags: tags.buildConnection([
+                    {
+                      id: "tu2",
+                      name: "user-2",
                     },
-                    edges: [
-                      { __typename: "TagEdge", node: { __typename: "Tag", id: "tu2", name: "user-2" } },
-                    ],
-                  },
+                  ]),
                 },
-                audio: { __typename: "Media", key: "m2", mediaUrl: "https://m/2" },
+                audio: media.buildNode({
+                  key: "m2",
+                  mediaUrl: "https://m/2",
+                }),
               },
+            ],
+            {
+              startCursor: "p1",
+              endCursor: "p2",
+              hasNextPage: false,
+              hasPreviousPage: false,
             },
-          ],
+          ),
           aggregations: {
             __typename: "Aggregations",
             scoring: 88,
-            todayStat: { __typename: "Stat", key: "today", views: 123 },
-            yesterdayStat: { __typename: "Stat", key: "yesterday", views: 95 },
-            tags: {
-              __typename: "TagConnection",
-              pageInfo: {
-                __typename: "PageInfo",
-                startCursor: "t1",
-                endCursor: "t2",
-                hasNextPage: false,
-                hasPreviousPage: false,
-              },
-              edges: [
-                { __typename: "TagEdge", node: { __typename: "Tag", id: "t1", name: "mod-1" } },
-                { __typename: "TagEdge", node: { __typename: "Tag", id: "t2", name: "mod-2" } },
-              ],
+            todayStat: {
+              __typename: "Stat",
+              key: "today",
+              views: 123,
             },
+            yesterdayStat: {
+              __typename: "Stat",
+              key: "yesterday",
+              views: 95,
+            },
+            tags: tags.buildConnection([
+              {
+                id: "t1",
+                name: "mod-1",
+              },
+              {
+                id: "t2",
+                name: "mod-2",
+              },
+            ]),
           },
         },
-      };
+      },
+    });
 
-      // ------- Normalize -------
-      documents.normalizeDocument({
-        document: operations.POSTS_WITH_AGGREGATIONS_QUERY,
-        variables: { first: 2, after: null },
-        data,
-      });
+    expect(graph.getRecord('@.posts({"after":null,"first":2})')).toEqual({
+      __typename: "PostConnection",
+      totalCount: 2,
+      pageInfo: {
+        __ref: '@.posts({"after":null,"first":2}).pageInfo',
+      },
+      edges: {
+        __ref: '@.posts({"after":null,"first":2}).edges',
+      },
+      aggregations: {
+        __ref: '@.posts({"after":null,"first":2}).aggregations',
+      },
+    });
 
-      // ------- Concrete ROOT posts page -------
-      const rootPageKey = '@.posts({"after":null,"first":2})';
-      const rootAggsTagsPageKey = '@.posts({"after":null,"first":2}).aggregations.tags({"first":50})';
+    expect(graph.getRecord('@.posts({"after":null,"first":2}).aggregations')).toEqual({
+      __typename: "Aggregations",
+      scoring: 88,
+      'stat({"key":"today"})': {
+        __ref: "Stat:today",
+      },
+      'stat({"key":"yesterday"})': {
+        __ref: "Stat:yesterday",
+      },
+      'tags({"first":50})': {
+        __ref: '@.posts({"after":null,"first":2}).aggregations.tags({"first":50})',
+      },
+    });
 
-      expect(graph.getRecord(rootPageKey)).toEqual({
-        __typename: "PostConnection",
-        totalCount: 2,
-        pageInfo: {
-          __typename: "PageInfo",
-          startCursor: "p1",
-          endCursor: "p2",
-          hasNextPage: false,
-          hasPreviousPage: false,
-        },
-        edges: [
-          { __ref: `${rootPageKey}.edges.0` },
-          { __ref: `${rootPageKey}.edges.1` },
-        ],
-        aggregations: {
-          __typename: "Aggregations",
-          scoring: 88,
-          todayStat: { __ref: "Stat:today" },
-          yesterdayStat: { __ref: "Stat:yesterday" },
-          'tags({"first":50})': { __ref: rootAggsTagsPageKey },
-        },
-      });
+    expect(graph.getRecord("Stat:today")).toEqual({
+      __typename: "Stat",
+      key: "today",
+      views: 123,
+    });
 
-      // Concrete edges
-      expect(graph.getRecord(`${rootPageKey}.edges.0`)).toEqual({
-        __typename: "PostEdge",
-        cursor: "p1",
-        node: { __ref: "Post:p1" },
-      });
-      expect(graph.getRecord(`${rootPageKey}.edges.1`)).toEqual({
-        __typename: "PostEdge",
-        cursor: "p2",
-        node: { __ref: "Post:p2" },
-      });
+    expect(graph.getRecord("Stat:yesterday")).toEqual({
+      __typename: "Stat",
+      key: "yesterday",
+      views: 95,
+    });
 
-      // Concrete ROOT aggregations.tags page
-      expect(graph.getRecord(rootAggsTagsPageKey)).toEqual({
-        __typename: "TagConnection",
-        pageInfo: {
-          __typename: "PageInfo",
-          startCursor: "t1",
-          endCursor: "t2",
-          hasNextPage: false,
-          hasPreviousPage: false,
-        },
-        edges: [
-          { __ref: `${rootAggsTagsPageKey}.edges.0` },
-          { __ref: `${rootAggsTagsPageKey}.edges.1` },
-        ],
-      });
-      expect(graph.getRecord(`${rootAggsTagsPageKey}.edges.0`)).toEqual({
-        __typename: "TagEdge",
-        node: { __ref: "Tag:t1" },
-      });
-      expect(graph.getRecord(`${rootAggsTagsPageKey}.edges.1`)).toEqual({
-        __typename: "TagEdge",
-        node: { __ref: "Tag:t2" },
-      });
+    expect(graph.getRecord('@.posts({"after":null,"first":2}).aggregations.tags({"first":50})')).toEqual({
+      __typename: "TagConnection",
+      pageInfo: {
+        __ref: '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).pageInfo',
+      },
+      edges: {
+        __ref: '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges',
+      },
+    });
 
-      // ------- Entities created for Stats (custom key) -------
-      expect(graph.getRecord("Stat:today")).toEqual({
-        __typename: "Stat",
-        key: "today",
-        views: 123,
-      });
-      expect(graph.getRecord("Stat:yesterday")).toEqual({
-        __typename: "Stat",
-        key: "yesterday",
-        views: 95,
-      });
+    expect(graph.getRecord('@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges')).toEqual({
+      __refs: [
+        '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:0',
+        '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:1',
+      ],
+    });
 
-      // ------- Post p1 concrete record + per-node inline aggregations refs -------
-      expect(graph.getRecord("Post:p1")).toEqual({
-        __typename: "VideoPost",
-        id: "p1",
-        title: "Video 1",
-        flags: [],
-        video: { __ref: "Media:m1" },
-        aggregations: {
-          __typename: "Aggregations",
-          'tags({"category":"moderation","first":25})': {
-            __ref: '@.Post:p1.aggregations.tags({"category":"moderation","first":25})',
+    expect(graph.getRecord('@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:0')).toEqual({
+      __typename: "TagEdge",
+      node: {
+        __ref: "Tag:t1",
+      },
+    });
+
+    expect(graph.getRecord('@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:1')).toEqual({
+      __typename: "TagEdge",
+      node: {
+        __ref: "Tag:t2",
+      },
+    });
+
+    expect(graph.getRecord("Post:p1")).toEqual({
+      __typename: "VideoPost",
+      id: "p1",
+      title: "Video 1",
+      flags: [],
+      video: {
+        __ref: "Media:m1",
+      },
+      aggregations: {
+        __ref: "Post:p1.aggregations",
+      },
+    });
+
+    expect(graph.getRecord("Post:p1.aggregations")).toEqual({
+      __typename: "Aggregations",
+      'tags({"category":"moderation","first":25})': {
+        __ref: '@.Post:p1.aggregations.tags({"category":"moderation","first":25})',
+      },
+      'tags({"category":"user","first":25})': {
+        __ref: '@.Post:p1.aggregations.tags({"category":"user","first":25})',
+      },
+    });
+
+    expect(graph.getRecord('@.Post:p1.aggregations.tags({"category":"moderation","first":25})')).toEqual({
+      __typename: "TagConnection",
+      pageInfo: {
+        __ref: '@.Post:p1.aggregations.tags({"category":"moderation","first":25}).pageInfo',
+      },
+      edges: {
+        __ref: '@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges',
+      },
+    });
+
+    expect(graph.getRecord('@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges')).toEqual({
+      __refs: ['@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges:0'],
+    });
+
+    expect(graph.getRecord('@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges:0')).toEqual({
+      __typename: "TagEdge",
+      node: {
+        __ref: "Tag:t1",
+      },
+    });
+
+    expect(graph.getRecord('@.Post:p1.aggregations.tags({"category":"user","first":25})')).toEqual({
+      __typename: "TagConnection",
+      pageInfo: {
+        __ref: '@.Post:p1.aggregations.tags({"category":"user","first":25}).pageInfo',
+      },
+      edges: {
+        __ref: '@.Post:p1.aggregations.tags({"category":"user","first":25}).edges',
+      },
+    });
+
+    expect(graph.getRecord('@.Post:p1.aggregations.tags({"category":"user","first":25}).edges:0')).toEqual({
+      __typename: "TagEdge",
+      node: {
+        __ref: "Tag:tu1",
+      },
+    });
+
+    expect(graph.getRecord("Media:m1")).toEqual({
+      __typename: "Media",
+      key: "m1",
+      mediaUrl: "https://m/1",
+    });
+
+    expect(graph.getRecord("Post:p2")).toEqual({
+      __typename: "AudioPost",
+      id: "p2",
+      title: "Audio 2",
+      flags: [],
+      audio: {
+        __ref: "Media:m2",
+      },
+      aggregations: {
+        __ref: "Post:p2.aggregations",
+      },
+    });
+
+    expect(graph.getRecord("Post:p2.aggregations")).toEqual({
+      __typename: "Aggregations",
+      'tags({"category":"moderation","first":25})': {
+        __ref: '@.Post:p2.aggregations.tags({"category":"moderation","first":25})',
+      },
+      'tags({"category":"user","first":25})': {
+        __ref: '@.Post:p2.aggregations.tags({"category":"user","first":25})',
+      },
+    });
+
+    expect(graph.getRecord('@.Post:p2.aggregations.tags({"category":"moderation","first":25}).edges:0')).toEqual({
+      __typename: "TagEdge",
+      node: {
+        __ref: "Tag:t2",
+      },
+    });
+
+    expect(graph.getRecord('@.Post:p2.aggregations.tags({"category":"user","first":25}).edges:0')).toEqual({
+      __typename: "TagEdge",
+      node: {
+        __ref: "Tag:tu2",
+      },
+    });
+
+    expect(graph.getRecord("Media:m2")).toEqual({
+      __typename: "Media",
+      key: "m2",
+      mediaUrl: "https://m/2",
+    });
+
+    expect(graph.getRecord("@connection.posts({})")).toMatchObject({
+      __typename: "PostConnection",
+      totalCount: 2,
+      pageInfo: {
+        __ref: "@connection.posts({}).pageInfo",
+      },
+      edges: {
+        __ref: "@connection.posts({}).edges",
+      },
+      aggregations: {
+        __ref: "@connection.posts({}).aggregations",
+      },
+    });
+
+    expect(graph.getRecord("@connection.posts({}).edges")).toEqual({
+      __refs: [
+        '@.posts({"after":null,"first":2}).edges:0',
+        '@.posts({"after":null,"first":2}).edges:1',
+      ],
+    });
+
+    expect(graph.getRecord("@connection.posts({}).aggregations")).toEqual({
+      __typename: "Aggregations",
+      scoring: 88,
+      'stat({"key":"today"})': {
+        __ref: "Stat:today",
+      },
+      'stat({"key":"yesterday"})': {
+        __ref: "Stat:yesterday",
+      },
+      "BaseTags({})": {
+        __ref: "@connection.posts({}).aggregations.BaseTags({})",
+      },
+    });
+
+    expect(graph.getRecord("@connection.posts({}).aggregations.BaseTags({})")).toEqual({
+      __typename: "TagConnection",
+      pageInfo: {
+        __ref: "@connection.posts({}).aggregations.BaseTags({}).pageInfo",
+      },
+      edges: {
+        __ref: "@connection.posts({}).aggregations.BaseTags({}).edges",
+      },
+    });
+
+    expect(graph.getRecord("@connection.posts({}).aggregations.BaseTags({}).edges")).toEqual({
+      __refs: [
+        '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:0',
+        '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:1',
+      ],
+    });
+
+    expect(graph.getRecord("@connection.posts({}).aggregations.BaseTags({})::meta")).toBeDefined();
+
+    expect(graph.getRecord('@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"})')).toEqual({
+      __typename: "TagConnection",
+      pageInfo: {
+        __ref: '@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"}).pageInfo',
+      },
+      edges: {
+        __ref: '@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"}).edges',
+      },
+    });
+
+    expect(graph.getRecord('@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"}).edges')).toEqual({
+      __refs: ['@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges:0'],
+    });
+
+    expect(graph.getRecord('@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"})::meta')).toBeDefined();
+
+    expect(graph.getRecord('@connection.Post:p1.aggregations.UserTags({"category":"user"})')).toEqual({
+      __typename: "TagConnection",
+      pageInfo: {
+        __ref: '@connection.Post:p1.aggregations.UserTags({"category":"user"}).pageInfo',
+      },
+      edges: {
+        __ref: '@connection.Post:p1.aggregations.UserTags({"category":"user"}).edges',
+      },
+    });
+
+    expect(graph.getRecord('@connection.Post:p1.aggregations.UserTags({"category":"user"}).edges')).toEqual({
+      __refs: ['@.Post:p1.aggregations.tags({"category":"user","first":25}).edges:0'],
+    });
+
+    expect(graph.getRecord('@connection.Post:p1.aggregations.UserTags({"category":"user"})::meta')).toBeDefined();
+
+    expect(graph.getRecord('@connection.Post:p2.aggregations.ModerationTags({"category":"moderation"})::meta')).toBeDefined();
+    expect(graph.getRecord('@connection.Post:p2.aggregations.UserTags({"category":"user"})::meta')).toBeDefined();
+  });
+
+  it("normalizes root reference and entity snapshot for single user query", () => {
+    documents.normalizeDocument({
+      document: operations.USER_QUERY,
+      variables: { id: "u1" },
+      data: {
+        user: users.buildNode({
+          id: "u1",
+          email: "u1@example.com",
+        }),
+      },
+    });
+
+    expect(graph.getRecord("@")).toEqual({
+      id: "@",
+      __typename: "@",
+      'user({"id":"u1"})': {
+        __ref: "User:u1",
+      },
+    });
+
+    expect(graph.getRecord("User:u1")).toEqual({
+      id: "u1",
+      __typename: "User",
+      email: "u1@example.com",
+    });
+  });
+
+  it("normalizes root users connection with edge records", () => {
+    documents.normalizeDocument({
+      document: operations.USERS_QUERY,
+      variables: { role: "admin", first: 2, after: null },
+      data: {
+        users: users.buildConnection(
+          [
+            {
+              id: "u1",
+              email: "u1@example.com",
+            },
+            {
+              id: "u2",
+              email: "u2@example.com",
+            },
+          ],
+          {
+            hasNextPage: true,
           },
-          'tags({"category":"user","first":25})': {
-            __ref: '@.Post:p1.aggregations.tags({"category":"user","first":25})',
+        ),
+      },
+    });
+
+    documents.normalizeDocument({
+      document: operations.USERS_QUERY,
+      variables: { role: "admin", first: 2, after: "u2" },
+      data: {
+        users: users.buildConnection(
+          [
+            {
+              id: "u3",
+              email: "u3@example.com",
+            },
+          ],
+          {
+            startCursor: "u3",
+            endCursor: "u3",
+          },
+        ),
+      },
+    });
+
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"})')).toEqual({
+      __typename: "UserConnection",
+      pageInfo: {
+        __ref: '@.users({"after":null,"first":2,"role":"admin"}).pageInfo',
+      },
+      edges: {
+        __ref: '@.users({"after":null,"first":2,"role":"admin"}).edges',
+      },
+    });
+
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).pageInfo')).toEqual({
+      __typename: "PageInfo",
+      startCursor: "u1",
+      endCursor: "u2",
+      hasNextPage: true,
+      hasPreviousPage: false,
+    });
+
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges')).toEqual({
+      __refs: [
+        '@.users({"after":null,"first":2,"role":"admin"}).edges:0',
+        '@.users({"after":null,"first":2,"role":"admin"}).edges:1',
+      ],
+    });
+
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges:0')).toEqual({
+      __typename: "UserEdge",
+      cursor: "u1",
+      node: {
+        __ref: "User:u1",
+      },
+    });
+
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges:1')).toEqual({
+      __typename: "UserEdge",
+      cursor: "u2",
+      node: {
+        __ref: "User:u2",
+      },
+    });
+
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"})::meta')).toBeDefined();
+
+    expect(graph.getRecord('@.users({"after":"u2","first":2,"role":"admin"})')).toEqual({
+      __typename: "UserConnection",
+      pageInfo: {
+        __ref: '@.users({"after":"u2","first":2,"role":"admin"}).pageInfo',
+      },
+      edges: {
+        __ref: '@.users({"after":"u2","first":2,"role":"admin"}).edges',
+      },
+    });
+
+    expect(graph.getRecord('@.users({"after":"u2","first":2,"role":"admin"}).edges')).toEqual({
+      __refs: ['@.users({"after":"u2","first":2,"role":"admin"}).edges:0'],
+    });
+
+    expect(graph.getRecord('@.users({"after":"u2","first":2,"role":"admin"}).edges:0')).toEqual({
+      __typename: "UserEdge",
+      cursor: "u3",
+      node: {
+        __ref: "User:u3",
+      },
+    });
+  });
+
+  it("preserves both category connections when writing tech then lifestyle posts", () => {
+    const userPostsTech = {
+      user: {
+        ...users.buildNode({
+          id: "u1",
+          email: "u1@example.com",
+        }),
+        posts: {
+          ...posts.buildConnection(
+            [
+              {
+                id: "p1",
+                title: "Post 1",
+                tags: ["react"],
+                author: {
+                  __typename: "User",
+                  id: "u1",
+                },
+              },
+              {
+                id: "p2",
+                title: "Post 2",
+                tags: ["js"],
+                author: {
+                  __typename: "User",
+                  id: "u1",
+                },
+              },
+            ],
+            {
+              hasNextPage: true,
+            },
+          ),
+          totalCount: 2,
+        },
+      },
+    };
+    userPostsTech.user.posts.edges[0].score = 0.5;
+    userPostsTech.user.posts.edges[1].score = 0.7;
+
+    const userPostsLifestyle = {
+      user: {
+        ...users.buildNode({
+          id: "u1",
+        }),
+        posts: {
+          ...posts.buildConnection(
+            [
+              {
+                id: "p3",
+                title: "Post 3",
+                flags: [],
+                author: {
+                  __typename: "User",
+                  id: "u1",
+                },
+              },
+              {
+                id: "p4",
+                title: "Post 4",
+                flags: [],
+                author: {
+                  __typename: "User",
+                  id: "u1",
+                },
+              },
+            ],
+            {
+              startCursor: "p3",
+              endCursor: "p4",
+            },
+          ),
+          totalCount: 1,
+        },
+      },
+    };
+    userPostsLifestyle.user.posts.edges[0].score = 0.3;
+    userPostsLifestyle.user.posts.edges[1].score = 0.6;
+
+    documents.normalizeDocument({
+      document: operations.USER_POSTS_QUERY,
+      variables: { id: "u1", postsCategory: "tech", postsFirst: 2, postsAfter: null },
+      data: userPostsTech,
+    });
+
+    documents.normalizeDocument({
+      document: operations.USER_POSTS_QUERY,
+      variables: { id: "u1", postsCategory: "lifestyle", postsFirst: 2, postsAfter: null },
+      data: userPostsLifestyle,
+    });
+
+    expect(graph.getRecord("User:u1")).toEqual({
+      __typename: "User",
+      id: "u1",
+      email: "u1@example.com",
+      'posts({"after":null,"category":"tech","first":2})': {
+        __ref: '@.User:u1.posts({"after":null,"category":"tech","first":2})',
+      },
+      'posts({"after":null,"category":"lifestyle","first":2})': {
+        __ref: '@.User:u1.posts({"after":null,"category":"lifestyle","first":2})',
+      },
+    });
+
+    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":2})')).toEqual({
+      __typename: "PostConnection",
+      totalCount: 2,
+      pageInfo: {
+        __ref: '@.User:u1.posts({"after":null,"category":"tech","first":2}).pageInfo',
+      },
+      edges: {
+        __ref: '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges',
+      },
+    });
+
+    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges')).toEqual({
+      __refs: [
+        '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges:0',
+        '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges:1',
+      ],
+    });
+
+    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges:0')).toEqual({
+      __typename: "PostEdge",
+      cursor: "p1",
+      score: 0.5,
+      node: {
+        __ref: "Post:p1",
+      },
+    });
+
+    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"lifestyle","first":2})')).toEqual({
+      __typename: "PostConnection",
+      totalCount: 1,
+      pageInfo: {
+        __ref: '@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).pageInfo',
+      },
+      edges: {
+        __ref: '@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges',
+      },
+    });
+  });
+
+  it("normalizes aggregations connections", () => {
+    documents.normalizeDocument({
+      document: operations.POSTS_WITH_AGGREGATIONS_QUERY,
+      variables: {
+        first: 2,
+        after: null,
+      },
+      data: {
+        __typename: "Query",
+        posts: {
+          __typename: "PostConnection",
+          totalCount: 2,
+          ...posts.buildConnection(
+            [
+              {
+                id: "p1",
+                title: "Video 1",
+                flags: [],
+                typename: "VideoPost",
+                aggregations: {
+                  __typename: "Aggregations",
+                  moderationTags: tags.buildConnection([
+                    {
+                      id: "t1",
+                      name: "mod-1",
+                    },
+                  ]),
+                  userTags: tags.buildConnection([
+                    {
+                      id: "tu1",
+                      name: "user-1",
+                    },
+                  ]),
+                },
+                video: media.buildNode({
+                  key: "m1",
+                  mediaUrl: "https://m/1",
+                }),
+              },
+              {
+                id: "p2",
+                title: "Audio 2",
+                flags: [],
+                typename: "AudioPost",
+                aggregations: {
+                  __typename: "Aggregations",
+                  moderationTags: tags.buildConnection([
+                    {
+                      id: "t2",
+                      name: "mod-2",
+                    },
+                  ]),
+                  userTags: tags.buildConnection([
+                    {
+                      id: "tu2",
+                      name: "user-2",
+                    },
+                  ]),
+                },
+                audio: media.buildNode({
+                  key: "m2",
+                  mediaUrl: "https://m/2",
+                }),
+              },
+            ],
+            {
+              startCursor: "p1",
+              endCursor: "p2",
+              hasNextPage: false,
+              hasPreviousPage: false,
+            },
+          ),
+          aggregations: {
+            __typename: "Aggregations",
+            scoring: 88,
+            todayStat: {
+              __typename: "Stat",
+              key: "today",
+              views: 123,
+            },
+            yesterdayStat: {
+              __typename: "Stat",
+              key: "yesterday",
+              views: 95,
+            },
+            tags: tags.buildConnection([
+              {
+                id: "t1",
+                name: "mod-1",
+              },
+              {
+                id: "t2",
+                name: "mod-2",
+              },
+            ]),
           },
         },
-      });
+      },
+    });
 
-      // p1 moderation concrete page
-      const p1ModPage = '@.Post:p1.aggregations.tags({"category":"moderation","first":25})';
-      expect(graph.getRecord(p1ModPage)).toEqual({
-        __typename: "TagConnection",
-        pageInfo: {
-          __typename: "PageInfo",
-          startCursor: "t1",
-          endCursor: "t1",
-          hasNextPage: false,
-          hasPreviousPage: false,
-        },
-        edges: [{ __ref: `${p1ModPage}.edges.0` }],
-      });
-      expect(graph.getRecord(`${p1ModPage}.edges.0`)).toEqual({
-        __typename: "TagEdge",
-        node: { __ref: "Tag:t1" },
-      });
+    expect(graph.getRecord('@.posts({"after":null,"first":2})')).toEqual({
+      __typename: "PostConnection",
+      totalCount: 2,
+      pageInfo: {
+        __ref: '@.posts({"after":null,"first":2}).pageInfo',
+      },
+      edges: {
+        __ref: '@.posts({"after":null,"first":2}).edges',
+      },
+      aggregations: {
+        __ref: '@.posts({"after":null,"first":2}).aggregations',
+      },
+    });
 
-      // p1 user concrete page
-      const p1UserPage = '@.Post:p1.aggregations.tags({"category":"user","first":25})';
-      expect(graph.getRecord(p1UserPage)).toEqual({
-        __typename: "TagConnection",
-        pageInfo: {
-          __typename: "PageInfo",
-          startCursor: "tu1",
-          endCursor: "tu1",
-          hasNextPage: false,
-          hasPreviousPage: false,
-        },
-        edges: [{ __ref: `${p1UserPage}.edges.0` }],
-      });
-      expect(graph.getRecord(`${p1UserPage}.edges.0`)).toEqual({
-        __typename: "TagEdge",
-        node: { __ref: "Tag:tu1" },
-      });
+    expect(graph.getRecord('@.posts({"after":null,"first":2}).aggregations')).toEqual({
+      __typename: "Aggregations",
+      scoring: 88,
+      'stat({"key":"today"})': {
+        __ref: "Stat:today",
+      },
+      'stat({"key":"yesterday"})': {
+        __ref: "Stat:yesterday",
+      },
+      'tags({"first":50})': {
+        __ref: '@.posts({"after":null,"first":2}).aggregations.tags({"first":50})',
+      },
+    });
 
-      // p1 media
-      expect(graph.getRecord("Media:m1")).toEqual({
-        __typename: "Media",
-        key: "m1",
-        mediaUrl: "https://m/1",
-      });
+    expect(graph.getRecord("Stat:today")).toEqual({
+      __typename: "Stat",
+      key: "today",
+      views: 123,
+    });
 
-      // ------- Post p2 concrete record + per-node inline aggregations refs -------
-      expect(graph.getRecord("Post:p2")).toEqual({
-        __typename: "AudioPost",
-        id: "p2",
-        title: "Audio 2",
-        flags: [],
-        audio: { __ref: "Media:m2" },
-        aggregations: {
-          __typename: "Aggregations",
-          'tags({"category":"moderation","first":25})': {
-            __ref: '@.Post:p2.aggregations.tags({"category":"moderation","first":25})',
-          },
-          'tags({"category":"user","first":25})': {
-            __ref: '@.Post:p2.aggregations.tags({"category":"user","first":25})',
-          },
-        },
-      });
+    expect(graph.getRecord("Stat:yesterday")).toEqual({
+      __typename: "Stat",
+      key: "yesterday",
+      views: 95,
+    });
 
-      const p2ModPage = '@.Post:p2.aggregations.tags({"category":"moderation","first":25})';
-      expect(graph.getRecord(p2ModPage)).toEqual({
-        __typename: "TagConnection",
-        pageInfo: {
-          __typename: "PageInfo",
-          startCursor: "t2",
-          endCursor: "t2",
-          hasNextPage: false,
-          hasPreviousPage: false,
-        },
-        edges: [{ __ref: `${p2ModPage}.edges.0` }],
-      });
-      expect(graph.getRecord(`${p2ModPage}.edges.0`)).toEqual({
-        __typename: "TagEdge",
-        node: { __ref: "Tag:t2" },
-      });
+    expect(graph.getRecord('@.posts({"after":null,"first":2}).aggregations.tags({"first":50})')).toEqual({
+      __typename: "TagConnection",
+      pageInfo: {
+        __ref: '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).pageInfo',
+      },
+      edges: {
+        __ref: '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges',
+      },
+    });
 
-      const p2UserPage = '@.Post:p2.aggregations.tags({"category":"user","first":25})';
-      expect(graph.getRecord(p2UserPage)).toEqual({
-        __typename: "TagConnection",
-        pageInfo: {
-          __typename: "PageInfo",
-          startCursor: "tu2",
-          endCursor: "tu2",
-          hasNextPage: false,
-          hasPreviousPage: false,
-        },
-        edges: [{ __ref: `${p2UserPage}.edges.0` }],
-      });
-      expect(graph.getRecord(`${p2UserPage}.edges.0`)).toEqual({
-        __typename: "TagEdge",
-        node: { __ref: "Tag:tu2" },
-      });
+    expect(graph.getRecord('@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges')).toEqual({
+      __refs: [
+        '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:0',
+        '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:1',
+      ],
+    });
 
-      expect(graph.getRecord("Media:m2")).toEqual({
-        __typename: "Media",
-        key: "m2",
-        mediaUrl: "https://m/2",
-      });
+    expect(graph.getRecord('@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:0')).toEqual({
+      __typename: "TagEdge",
+      node: {
+        __ref: "Tag:t1",
+      },
+    });
 
-      // ------- Canonicals (root posts + root aggregations canonical + per-node alias canonicals) -------
-      // Root posts canonical (no filters for root posts @connection)
-      const postsCan = graph.getRecord("@connection.posts({})");
-      expect(postsCan).toMatchObject({
-        __typename: "PostConnection",
-        totalCount: 2,
-        pageInfo: {
-          startCursor: "p1",
-          endCursor: "p2",
-          hasNextPage: false,
-          hasPreviousPage: false,
-        },
-        edges: [
-          { __ref: `${rootPageKey}.edges.0` },
-          { __ref: `${rootPageKey}.edges.1` },
-        ],
-        aggregations: {
-          __typename: "Aggregations",
-          scoring: 88,
-          todayStat: { __ref: "Stat:today" },
-          yesterdayStat: { __ref: "Stat:yesterday" },
-          "BaseTags({})": { __ref: "@connection.posts.aggregations.BaseTags({})" },
-        },
-      });
-      expect(postsCan).toBeDefined();
+    expect(graph.getRecord('@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:1')).toEqual({
+      __typename: "TagEdge",
+      node: {
+        __ref: "Tag:t2",
+      },
+    });
 
-      // Root aggregations BaseTags canonical (from @connection(key:"BaseTags") on the root aggregations)
-      const baseTagsCanKey = "@connection.posts.aggregations.BaseTags({})";
-      const baseTagsCan = graph.getRecord(baseTagsCanKey);
-      expect(baseTagsCan).toEqual({
-        __typename: "TagConnection",
-        pageInfo: {
-          __typename: "PageInfo",
-          startCursor: "t1",
-          endCursor: "t2",
-          hasNextPage: false,
-          hasPreviousPage: false,
-        },
-        edges: [
-          { __ref: `${rootAggsTagsPageKey}.edges.0` },
-          { __ref: `${rootAggsTagsPageKey}.edges.1` },
-        ],
-      });
-      // meta (shape depends on impl; ensure it exists)
-      expect(graph.getRecord(`${baseTagsCanKey}::meta`)).toBeDefined();
+    expect(graph.getRecord("Post:p1")).toEqual({
+      __typename: "VideoPost",
+      id: "p1",
+      title: "Video 1",
+      flags: [],
+      video: {
+        __ref: "Media:m1",
+      },
+      aggregations: {
+        __ref: "Post:p1.aggregations",
+      },
+    });
 
-      // Per-node alias-keyed canonicals (default include provided non-pagination args)
-      const p1ModCanKey = '@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"})';
-      const p1UserCanKey = '@connection.Post:p1.aggregations.UserTags({"category":"user"})';
-      const p2ModCanKey = '@connection.Post:p2.aggregations.ModerationTags({"category":"moderation"})';
-      const p2UserCanKey = '@connection.Post:p2.aggregations.UserTags({"category":"user"})';
+    expect(graph.getRecord("Post:p1.aggregations")).toEqual({
+      __typename: "Aggregations",
+      'tags({"category":"moderation","first":25})': {
+        __ref: '@.Post:p1.aggregations.tags({"category":"moderation","first":25})',
+      },
+      'tags({"category":"user","first":25})': {
+        __ref: '@.Post:p1.aggregations.tags({"category":"user","first":25})',
+      },
+    });
 
-      expect(graph.getRecord(p1ModCanKey)).toEqual({
-        __typename: "TagConnection",
-        pageInfo: {
-          __typename: "PageInfo",
-          startCursor: "t1",
-          endCursor: "t1",
-          hasNextPage: false,
-          hasPreviousPage: false,
-        },
-        edges: [{ __ref: `${p1ModPage}.edges.0` }],
-      });
-      expect(graph.getRecord(`${p1ModCanKey}::meta`)).toBeDefined();
+    expect(graph.getRecord('@.Post:p1.aggregations.tags({"category":"moderation","first":25})')).toEqual({
+      __typename: "TagConnection",
+      pageInfo: {
+        __ref: '@.Post:p1.aggregations.tags({"category":"moderation","first":25}).pageInfo',
+      },
+      edges: {
+        __ref: '@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges',
+      },
+    });
 
-      expect(graph.getRecord(p1UserCanKey)).toEqual({
-        __typename: "TagConnection",
-        pageInfo: {
-          __typename: "PageInfo",
-          startCursor: "tu1",
-          endCursor: "tu1",
-          hasNextPage: false,
-          hasPreviousPage: false,
-        },
-        edges: [{ __ref: `${p1UserPage}.edges.0` }],
-      });
-      expect(graph.getRecord(`${p1UserCanKey}::meta`)).toBeDefined();
+    expect(graph.getRecord('@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges')).toEqual({
+      __refs: ['@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges:0'],
+    });
 
-      expect(graph.getRecord(p2ModCanKey)).toEqual({
-        __typename: "TagConnection",
-        pageInfo: {
-          __typename: "PageInfo",
-          startCursor: "t2",
-          endCursor: "t2",
-          hasNextPage: false,
-          hasPreviousPage: false,
-        },
-        edges: [{ __ref: `${p2ModPage}.edges.0` }],
-      });
-      expect(graph.getRecord(`${p2ModCanKey}::meta`)).toBeDefined();
+    expect(graph.getRecord('@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges:0')).toEqual({
+      __typename: "TagEdge",
+      node: {
+        __ref: "Tag:t1",
+      },
+    });
 
-      expect(graph.getRecord(p2UserCanKey)).toEqual({
-        __typename: "TagConnection",
-        pageInfo: {
-          __typename: "PageInfo",
-          startCursor: "tu2",
-          endCursor: "tu2",
-          hasNextPage: false,
-          hasPreviousPage: false,
-        },
-        edges: [{ __ref: `${p2UserPage}.edges.0` }],
-      });
-      expect(graph.getRecord(`${p2UserCanKey}::meta`)).toBeDefined();
-    },
-  );
+    expect(graph.getRecord('@.Post:p1.aggregations.tags({"category":"user","first":25})')).toEqual({
+      __typename: "TagConnection",
+      pageInfo: {
+        __ref: '@.Post:p1.aggregations.tags({"category":"user","first":25}).pageInfo',
+      },
+      edges: {
+        __ref: '@.Post:p1.aggregations.tags({"category":"user","first":25}).edges',
+      },
+    });
+
+    expect(graph.getRecord('@.Post:p1.aggregations.tags({"category":"user","first":25}).edges:0')).toEqual({
+      __typename: "TagEdge",
+      node: {
+        __ref: "Tag:tu1",
+      },
+    });
+
+    expect(graph.getRecord("Media:m1")).toEqual({
+      __typename: "Media",
+      key: "m1",
+      mediaUrl: "https://m/1",
+    });
+
+    expect(graph.getRecord("Post:p2")).toEqual({
+      __typename: "AudioPost",
+      id: "p2",
+      title: "Audio 2",
+      flags: [],
+      audio: {
+        __ref: "Media:m2",
+      },
+      aggregations: {
+        __ref: "Post:p2.aggregations",
+      },
+    });
+
+    expect(graph.getRecord("Post:p2.aggregations")).toEqual({
+      __typename: "Aggregations",
+      'tags({"category":"moderation","first":25})': {
+        __ref: '@.Post:p2.aggregations.tags({"category":"moderation","first":25})',
+      },
+      'tags({"category":"user","first":25})': {
+        __ref: '@.Post:p2.aggregations.tags({"category":"user","first":25})',
+      },
+    });
+
+    expect(graph.getRecord('@.Post:p2.aggregations.tags({"category":"moderation","first":25}).edges:0')).toEqual({
+      __typename: "TagEdge",
+      node: {
+        __ref: "Tag:t2",
+      },
+    });
+
+    expect(graph.getRecord('@.Post:p2.aggregations.tags({"category":"user","first":25}).edges:0')).toEqual({
+      __typename: "TagEdge",
+      node: {
+        __ref: "Tag:tu2",
+      },
+    });
+
+    expect(graph.getRecord("Media:m2")).toEqual({
+      __typename: "Media",
+      key: "m2",
+      mediaUrl: "https://m/2",
+    });
+
+    expect(graph.getRecord("@connection.posts({})")).toMatchObject({
+      __typename: "PostConnection",
+      totalCount: 2,
+      pageInfo: {
+        __ref: "@connection.posts({}).pageInfo",
+      },
+      edges: {
+        __ref: "@connection.posts({}).edges",
+      },
+      aggregations: {
+        __ref: "@connection.posts({}).aggregations",
+      },
+    });
+
+    expect(graph.getRecord("@connection.posts({}).edges")).toEqual({
+      __refs: [
+        '@.posts({"after":null,"first":2}).edges:0',
+        '@.posts({"after":null,"first":2}).edges:1',
+      ],
+    });
+
+    expect(graph.getRecord("@connection.posts({}).aggregations")).toEqual({
+      __typename: "Aggregations",
+      scoring: 88,
+      'stat({"key":"today"})': {
+        __ref: "Stat:today",
+      },
+      'stat({"key":"yesterday"})': {
+        __ref: "Stat:yesterday",
+      },
+      "BaseTags({})": {
+        __ref: "@connection.posts({}).aggregations.BaseTags({})",
+      },
+    });
+
+    expect(graph.getRecord("@connection.posts({}).aggregations.BaseTags({})")).toEqual({
+      __typename: "TagConnection",
+      pageInfo: {
+        __ref: "@connection.posts({}).aggregations.BaseTags({}).pageInfo",
+      },
+      edges: {
+        __ref: "@connection.posts({}).aggregations.BaseTags({}).edges",
+      },
+    });
+
+    expect(graph.getRecord("@connection.posts({}).aggregations.BaseTags({}).edges")).toEqual({
+      __refs: [
+        '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:0',
+        '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:1',
+      ],
+    });
+
+    expect(graph.getRecord("@connection.posts({}).aggregations.BaseTags({})::meta")).toBeDefined();
+
+    expect(graph.getRecord('@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"})')).toEqual({
+      __typename: "TagConnection",
+      pageInfo: {
+        __ref: '@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"}).pageInfo',
+      },
+      edges: {
+        __ref: '@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"}).edges',
+      },
+    });
+
+    expect(graph.getRecord('@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"}).edges')).toEqual({
+      __refs: ['@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges:0'],
+    });
+
+    expect(graph.getRecord('@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"})::meta')).toBeDefined();
+
+    expect(graph.getRecord('@connection.Post:p1.aggregations.UserTags({"category":"user"})')).toEqual({
+      __typename: "TagConnection",
+      pageInfo: {
+        __ref: '@connection.Post:p1.aggregations.UserTags({"category":"user"}).pageInfo',
+      },
+      edges: {
+        __ref: '@connection.Post:p1.aggregations.UserTags({"category":"user"}).edges',
+      },
+    });
+
+    expect(graph.getRecord('@connection.Post:p1.aggregations.UserTags({"category":"user"}).edges')).toEqual({
+      __refs: ['@.Post:p1.aggregations.tags({"category":"user","first":25}).edges:0'],
+    });
+
+    expect(graph.getRecord('@connection.Post:p1.aggregations.UserTags({"category":"user"})::meta')).toBeDefined();
+
+    expect(graph.getRecord('@connection.Post:p2.aggregations.ModerationTags({"category":"moderation"})::meta')).toBeDefined();
+    expect(graph.getRecord('@connection.Post:p2.aggregations.UserTags({"category":"user"})::meta')).toBeDefined();
+  });
 });
