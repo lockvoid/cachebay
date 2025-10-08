@@ -1,5 +1,5 @@
-import type { CachePlanV1 } from "./types";
+import type { CachePlan } from "./types";
 
-export const isCachePlanV1 = (v: any): v is CachePlanV1 => {
-  return v && typeof v === "object" && v.kind === "CachePlanV1";
+export const isCachePlan = (v: any): v is CachePlan => {
+  return v && typeof v === "object" && v.kind === "CachePlan";
 };

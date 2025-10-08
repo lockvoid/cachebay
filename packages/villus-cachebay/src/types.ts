@@ -11,21 +11,21 @@ export type CachebayOptions = {
 
 export type UseFragmentOptions = {
   id: string | import("vue").Ref<string>;
-  fragment: any; // string | DocumentNode | CachePlanV1
+  fragment: any; // string | DocumentNode | CachePlan
   fragmentName?: string;
   variables?: Record<string, any> | import("vue").Ref<Record<string, any> | undefined>;
 };
 
 export type ReadFragmentArgs = {
   id: string;
-  fragment: any; // DocumentNode | CachePlanV1
+  fragment: any; // DocumentNode | CachePlan
   fragmentName?: string;
   variables?: Record<string, any>;
 };
 
 export type WriteFragmentArgs = {
   id: string;
-  fragment: any; // DocumentNode | CachePlanV1
+  fragment: any; // DocumentNode | CachePlan
   fragmentName?: string;
   data: any;
   variables?: Record<string, any>;

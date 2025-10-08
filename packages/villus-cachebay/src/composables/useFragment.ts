@@ -3,7 +3,7 @@ import { useCache } from "./useCache";
 
 export type UseFragmentOptions = {
   id: string | Ref<string>;
-  fragment: any; // string | DocumentNode | CachePlanV1
+  fragment: any; // string | DocumentNode | CachePlan
   fragmentName?: string;
   variables?: Record<string, any> | Ref<Record<string, any> | undefined>;
 };

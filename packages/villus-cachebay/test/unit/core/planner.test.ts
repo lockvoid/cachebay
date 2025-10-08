@@ -2,7 +2,7 @@ import type { DocumentNode } from "graphql";
 
 vi.mock("@/src/compiler", () => {
   const compilePlan = vi.fn(() => Object.freeze({
-    kind: "CachePlanV1" as const,
+    kind: "CachePlan" as const,
     operation: "query" as const,
     rootTypename: "Query",
     root: [],
@@ -10,9 +10,9 @@ vi.mock("@/src/compiler", () => {
     networkQuery: {},
   }));
 
-  const isCachePlanV1 = (x: any) => !!x && x.kind === "CachePlanV1";
+  const isCachePlan = (x: any) => !!x && x.kind === "CachePlan";
 
-  return { compilePlan, isCachePlanV1 };
+  return { compilePlan, isCachePlan };
 });
 
 import { createPlanner } from "@/src/core/planner";
@@ -29,7 +29,7 @@ describe("planner.getPlan (memo & routing)", () => {
     const planner = createPlanner();
 
     const plan = Object.freeze({
-      kind: "CachePlanV1" as const,
+      kind: "CachePlan" as const,
       operation: "query" as const,
       rootTypename: "Query",
       root: [],

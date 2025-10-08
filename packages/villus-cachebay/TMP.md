@@ -17,26 +17,23 @@
   "Stat:yesterday": { __typename: "Stat", key: "yesterday", views: 95 },
 
   // ———————————————————————————————————————————————————————————————
-  // CONCRETE ROOT POSTS PAGE (exact server page)
+  // CONCRETE ROOT POSTS PAGE (exact server page)  ← no ::meta on concrete
   // ———————————————————————————————————————————————————————————————
   '@.posts({"after":null,"first":2})': {
     __typename: "PostConnection",
     totalCount: 2,
-    edges:     { __ref: '@.posts({"after":null,"first":2}).edges' },
-    pageInfo:  { __ref: '@.posts({"after":null,"first":2}).pageInfo' },
+    edges: {
+      // inline list of edge-record refs (no list wrapper record)
+      __refs: [
+        '@.posts({"after":null,"first":2}).edges:0',
+        '@.posts({"after":null,"first":2}).edges:1'
+      ]
+    },
+    pageInfo: { __ref: '@.posts({"after":null,"first":2}).pageInfo' },
     aggregations: { __ref: '@.posts({"after":null,"first":2}).aggregations' }
   },
-  '@.posts({"after":null,"first":2})::meta': {
-    mode: "page", anchor: "after" // example meta; shape is up to you
-  },
 
-  // Concrete edges list (pure refs)
-  '@.posts({"after":null,"first":2}).edges': {
-    __refs: [
-      '@.posts({"after":null,"first":2}).edges:0',
-      '@.posts({"after":null,"first":2}).edges:1'
-    ]
-  },
+  // Concrete edge records
   '@.posts({"after":null,"first":2}).edges:0': {
     __typename: "PostEdge", cursor: "p1", node: { __ref: "Post:p1" }
   },
@@ -53,10 +50,10 @@
     hasPreviousPage: false
   },
 
-  // Concrete ROOT aggregations container
+  // Concrete ROOT aggregations container (concrete scalars live here)
   '@.posts({"after":null,"first":2}).aggregations': {
     __typename: "Aggregations",
-    scoring: 88, // scalars live here (concrete), not in canonical
+    scoring: 88,
     'stat({"key":"today"})':     { __ref: "Stat:today" },
     'stat({"key":"yesterday"})': { __ref: "Stat:yesterday" },
     'tags({"first":50})': {
@@ -64,20 +61,16 @@
     }
   },
 
-  // Concrete ROOT aggregations.tags page
+  // Concrete ROOT aggregations.tags page  ← no ::meta on concrete
   '@.posts({"after":null,"first":2}).aggregations.tags({"first":50})': {
     __typename: "TagConnection",
-    edges:    { __ref: '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges' },
+    edges: {
+      __refs: [
+        '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:0',
+        '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:1'
+      ]
+    },
     pageInfo: { __ref: '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).pageInfo' }
-  },
-  '@.posts({"after":null,"first":2}).aggregations.tags({"first":50})::meta': {
-    mode: "page"
-  },
-  '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges': {
-    __refs: [
-      '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:0',
-      '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:1'
-    ]
   },
   '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:0': {
     __typename: "TagEdge", node: { __ref: "Tag:t1" }
@@ -108,11 +101,8 @@
 
   '@.Post:p1.aggregations.tags({"category":"moderation","first":25})': {
     __typename: "TagConnection",
-    edges:    { __ref: '@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges' },
+    edges: { __refs: ['@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges:0'] },
     pageInfo: { __ref: '@.Post:p1.aggregations.tags({"category":"moderation","first":25}).pageInfo' }
-  },
-  '@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges': {
-    __refs: ['@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges:0']
   },
   '@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges:0': {
     __typename: "TagEdge", node: { __ref: "Tag:t1" }
@@ -127,11 +117,8 @@
 
   '@.Post:p1.aggregations.tags({"category":"user","first":25})': {
     __typename: "TagConnection",
-    edges:    { __ref: '@.Post:p1.aggregations.tags({"category":"user","first":25}).edges' },
+    edges: { __refs: ['@.Post:p1.aggregations.tags({"category":"user","first":25}).edges:0'] },
     pageInfo: { __ref: '@.Post:p1.aggregations.tags({"category":"user","first":25}).pageInfo' }
-  },
-  '@.Post:p1.aggregations.tags({"category":"user","first":25}).edges': {
-    __refs: ['@.Post:p1.aggregations.tags({"category":"user","first":25}).edges:0']
   },
   '@.Post:p1.aggregations.tags({"category":"user","first":25}).edges:0': {
     __typename: "TagEdge", node: { __ref: "Tag:tu1" }
@@ -159,11 +146,8 @@
 
   '@.Post:p2.aggregations.tags({"category":"moderation","first":25})': {
     __typename: "TagConnection",
-    edges:    { __ref: '@.Post:p2.aggregations.tags({"category":"moderation","first":25}).edges' },
+    edges: { __refs: ['@.Post:p2.aggregations.tags({"category":"moderation","first":25}).edges:0'] },
     pageInfo: { __ref: '@.Post:p2.aggregations.tags({"category":"moderation","first":25}).pageInfo' }
-  },
-  '@.Post:p2.aggregations.tags({"category":"moderation","first":25}).edges': {
-    __refs: ['@.Post:p2.aggregations.tags({"category":"moderation","first":25}).edges:0']
   },
   '@.Post:p2.aggregations.tags({"category":"moderation","first":25}).edges:0': {
     __typename: "TagEdge", node: { __ref: "Tag:t2" }
@@ -178,11 +162,8 @@
 
   '@.Post:p2.aggregations.tags({"category":"user","first":25})': {
     __typename: "TagConnection",
-    edges:    { __ref: '@.Post:p2.aggregations.tags({"category":"user","first":25}).edges' },
+    edges: { __refs: ['@.Post:p2.aggregations.tags({"category":"user","first":25}).edges:0'] },
     pageInfo: { __ref: '@.Post:p2.aggregations.tags({"category":"user","first":25}).pageInfo' }
-  },
-  '@.Post:p2.aggregations.tags({"category":"user","first":25}).edges': {
-    __refs: ['@.Post:p2.aggregations.tags({"category":"user","first":25}).edges:0']
   },
   '@.Post:p2.aggregations.tags({"category":"user","first":25}).edges:0': {
     __typename: "TagEdge", node: { __ref: "Tag:tu2" }
@@ -196,24 +177,25 @@
   },
 
   // ———————————————————————————————————————————————————————————————
-  // CANONICAL PARENT CONNECTION (filters-only identity)
+  // CANONICAL PARENT CONNECTION (filters-only identity)  ← ::meta lives here
   // ———————————————————————————————————————————————————————————————
   '@connection.posts({})': {
     __typename: "PostConnection",
+    // mirror canonical-level scalars you want anchored:
     totalCount: 2,
-    edges:     { __ref: '@connection.posts({}).edges' },
-    pageInfo:  { __ref: '@connection.posts({}).pageInfo' },
+    edges: {
+      __refs: [
+        // canonical view points at concrete edge records
+        '@.posts({"after":null,"first":2}).edges:0',
+        '@.posts({"after":null,"first":2}).edges:1'
+      ]
+    },
+    pageInfo: { __ref: '@connection.posts({}).pageInfo' },
     aggregations: { __ref: '@connection.posts({}).aggregations' }
   },
   '@connection.posts({})::meta': {
-    policy: "page", filters: {}
-  },
-  '@connection.posts({}).edges': {
-    __refs: [
-      // canonical view points at concrete edge records
-      '@.posts({"after":null,"first":2}).edges:0',
-      '@.posts({"after":null,"first":2}).edges:1'
-    ]
+    mode: "page",
+    filters: {}
   },
   '@connection.posts({}).pageInfo': {
     __typename: "PageInfo",
@@ -223,27 +205,28 @@
     hasPreviousPage: false
   },
 
-  // Canonical aggregations VIEW for the parent canonical
+  // Canonical aggregations VIEW (mirror chosen scalars here too)
   '@connection.posts({}).aggregations': {
     __typename: "Aggregations",
-    totalCount: 2,
+    scoring: 88, // mirrored from concrete
     'stat({"key":"today"})':     { __ref: 'Stat:today' },
     'stat({"key":"yesterday"})': { __ref: 'Stat:yesterday' },
-    // nested canonical connection
-    'BaseTags({})': { __ref: '@connection.posts({}).aggregations.BaseTags({})' }
+    'BaseTags({})':              { __ref: '@connection.posts({}).aggregations.BaseTags({})' }
   },
 
-  // Canonical nested connection (root aggregations.BaseTags)
+  // Canonical nested connection (root aggregations.BaseTags)  ← own ::meta
   '@connection.posts({}).aggregations.BaseTags({})': {
     __typename: "TagConnection",
-    edges:    { __ref: '@connection.posts({}).aggregations.BaseTags({}).edges' },
+    edges: {
+      __refs: [
+        '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:0',
+        '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:1'
+      ]
+    },
     pageInfo: { __ref: '@connection.posts({}).aggregations.BaseTags({}).pageInfo' }
   },
-  '@connection.posts({}).aggregations.BaseTags({}).edges': {
-    __refs: [
-      '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:0',
-      '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:1'
-    ]
+  '@connection.posts({}).aggregations.BaseTags({})::meta': {
+    mode: "page"
   },
   '@connection.posts({}).aggregations.BaseTags({}).pageInfo': {
     __typename: "PageInfo",
@@ -258,11 +241,11 @@
   // ———————————————————————————————————————————————————————————————
   '@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"})': {
     __typename: "TagConnection",
-    edges:    { __ref: '@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"}).edges' },
+    edges: { __refs: ['@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges:0'] },
     pageInfo: { __ref: '@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"}).pageInfo' }
   },
-  '@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"}).edges': {
-    __refs: ['@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges:0']
+  '@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"})::meta': {
+    mode: "page"
   },
   '@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"}).pageInfo': {
     __typename: "PageInfo",
@@ -274,11 +257,11 @@
 
   '@connection.Post:p1.aggregations.UserTags({"category":"user"})': {
     __typename: "TagConnection",
-    edges:    { __ref: '@connection.Post:p1.aggregations.UserTags({"category":"user"}).edges' },
+    edges: { __refs: ['@.Post:p1.aggregations.tags({"category":"user","first":25}).edges:0'] },
     pageInfo: { __ref: '@connection.Post:p1.aggregations.UserTags({"category":"user"}).pageInfo' }
   },
-  '@connection.Post:p1.aggregations.UserTags({"category":"user"}).edges': {
-    __refs: ['@.Post:p1.aggregations.tags({"category":"user","first":25}).edges:0']
+  '@connection.Post:p1.aggregations.UserTags({"category":"user"})::meta': {
+    mode: "page"
   },
   '@connection.Post:p1.aggregations.UserTags({"category":"user"}).pageInfo': {
     __typename: "PageInfo",

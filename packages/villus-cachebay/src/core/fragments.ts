@@ -1,8 +1,8 @@
 // src/core/fragments.ts
- 
+
 import {
-  type CachePlanV1,
-  isCachePlanV1,
+  type CachePlan,
+  isCachePlan,
 } from "@/src/compiler";
 import { isObject, hasTypename, upsertEntityShallow, buildConnectionKey, buildConnectionCanonicalKey } from "./utils";
 import type { GraphInstance } from "./graph";
@@ -18,14 +18,14 @@ export type FragmentsDependencies = {
 
 export type ReadFragmentArgs = {
   id: string;                       // canonical record id, e.g. "User:u1"
-  fragment: DocumentNode | CachePlanV1;
+  fragment: DocumentNode | CachePlan;
   fragmentName?: string;
   variables?: Record<string, any>;
 };
 
 export type WriteFragmentArgs = {
   id: string;                       // canonical record id, e.g. "User:u1"
-  fragment: DocumentNode | CachePlanV1;
+  fragment: DocumentNode | CachePlan;
   fragmentName?: string;
   data: any;                        // page-shaped or entity-shaped subtree
   variables?: Record<string, any>;

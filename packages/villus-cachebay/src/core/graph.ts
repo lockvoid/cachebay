@@ -96,6 +96,7 @@ const overlayRecordFull = (recordProxy: any, currentSnapshot: Record<string, any
 const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot: Record<string, any>): [string[], string[], boolean, boolean, boolean] => {
   let idChanged = false;
   let typenameChanged = false;
+
   const changedFields: string[] = [];
   const removedFields: string[] = [];
 

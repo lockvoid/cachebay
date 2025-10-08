@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import {
   Kind,
   parse,
@@ -10,8 +10,8 @@ import {
   type FieldNode,
 } from "graphql";
 import { lowerSelectionSet } from "./lowering/flatten";
-import { isCachePlanV1 } from "./utils";
-import type { CachePlanV1, PlanField } from "./types";
+import { isCachePlan } from "./utils";
+import type { CachePlan, PlanField } from "./types";
 
 /** Build a Map of fragment name -> fragment definition for lowering. */
 const indexFragments = (doc: DocumentNode): Map<string, FragmentDefinitionNode> => {
@@ -101,11 +101,11 @@ function buildNetworkQuery(doc: DocumentNode): DocumentNode {
  *    - with multiple fragments → requires opts.fragmentName to select
  */
 export const compilePlan = (
-  documentOrStringOrPlan: string | DocumentNode | CachePlanV1,
+  documentOrStringOrPlan: string | DocumentNode | CachePlan,
   opts?: { fragmentName?: string },
-): CachePlanV1 => {
+): CachePlan => {
   // Precompiled plan? done.
-  if (isCachePlanV1(documentOrStringOrPlan)) {
+  if (isCachePlan(documentOrStringOrPlan)) {
     return documentOrStringOrPlan;
   }
 
@@ -133,7 +133,7 @@ export const compilePlan = (
     const networkQuery = buildNetworkQuery(document);
 
     return {
-      kind: "CachePlanV1",
+      kind: "CachePlan",
       operation: operation.operation,   // "query" | "mutation" | "subscription"
       rootTypename,
       root,
@@ -178,7 +178,7 @@ export const compilePlan = (
     const networkQuery = buildNetworkQuery(document);
 
     return {
-      kind: "CachePlanV1",
+      kind: "CachePlan",
       operation: "fragment",
       rootTypename: parentTypename,
       root,
