@@ -1,14 +1,9 @@
-/* src/core/plugin.ts */
-
 import { CombinedError } from "villus";
-
-import { CACHEBAY_KEY, ROOT_ID } from "./constants";
-import { buildConnectionCanonicalKey } from "./utils";
+import { CACHEBAY_KEY } from "./constants";
 import type { DocumentsInstance } from "./documents";
 import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
 import type { SSRInstance } from "../features/ssr";
-
 import type { DocumentNode } from "graphql";
 import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus";
 import type { App } from "vue";
@@ -20,13 +15,23 @@ type PluginDependencies = {
   ssr: SSRInstance;
 };
 
+/**
+ * Configuration options for Cachebay plugin
+ */
 export type PluginOptions = {
-  /** Time window (ms) after a successful result in which repeat Suspense re-execs are served from cache & do not refetch */
+  /** Time window (ms) after a successful result in which repeat Suspense re-execs are served from cache & do not refetch (default: 1000) */
   suspensionTimeout?: number;
 };
 
+/**
+ * Create Villus client plugin for Cachebay
+ * Handles query caching, normalization, and cache policies
+ * @param options - Plugin configuration
+ * @param deps - Required dependencies (graph, planner, documents, ssr)
+ * @returns Villus ClientPlugin instance
+ */
 export function createPlugin(options: PluginOptions, deps: PluginDependencies): ClientPlugin {
-  const { graph, documents, planner, ssr } = deps;
+  const { planner, documents, ssr } = deps;
   const { suspensionTimeout = 1000 } = options ?? {};
 
   // After-result window per op key
@@ -41,63 +46,23 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     // Always use compiled networkQuery (strips @connection, adds __typename)
     op.query = plan.networkQuery;
 
-    const publish = (payload: OperationResult, terminal: boolean) => ctx.useResult(payload, terminal);
+    const publish = (payload: OperationResult, terminal: boolean) =>
+      ctx.useResult(payload, terminal);
+
     const policy: "cache-and-network" | "cache-first" | "network-only" | "cache-only" =
       ((op as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network") as any;
 
     const buildCachedFrame = (): OperationResult<any> | null => {
-      if (!documents.hasDocument({ document, variables: vars })) return null;
-
-      const rootConnections = plan.root.filter((f) => f.isConnection);
-
-      // No root @connection → just materialize entities
-      if (rootConnections.length === 0) {
-        const data = documents.materializeDocument({ document, variables: vars });
-        return { data, error: null };
-      }
-
-      // Determine cursor role
-      const detectRole = (field: any) => {
-        const req = field.buildArgs ? (field.buildArgs(vars) || {}) : (vars || {});
-        const has = (k: string) =>
-          req[k] != null || Object.keys(vars || {}).some((n) => n.toLowerCase().includes(k) && vars[n] != null);
-        return { hasAfter: has("after"), hasBefore: has("before") };
-      };
-
-      // Prewarm AFTER/BEFORE so the union grows immediately
-      let didPrewarm = false;
-      for (const f of rootConnections) {
-        const { hasAfter, hasBefore } = detectRole(f);
-        if (hasAfter || hasBefore) {
-          documents.prewarmDocument({ document, variables: vars });
-          didPrewarm = true;
-          break;
-        }
-      }
-
-      // Leader request: prewarm only if canonical is empty
-      if (!didPrewarm) {
-        const anyCanonicalReady = rootConnections.some((f) => {
-          const canKey = buildConnectionCanonicalKey(f, ROOT_ID, vars);
-          const can = graph.getRecord(canKey);
-          return Array.isArray(can?.edges) && can.edges.length > 0;
-        });
-        if (!anyCanonicalReady) {
-          documents.prewarmDocument({ document, variables: vars });
-        }
+      if (!documents.hasDocument({ document, variables: vars })) {
+        return null;
       }
 
       const data = documents.materializeDocument({ document, variables: vars });
 
-      // Emit only if at least one root connection has edges
-      const hasEdges = rootConnections.some((f) => {
-        const v = (data as any)?.[f.responseKey];
-        return Array.isArray(v?.edges) && v.edges.length > 0;
-      });
-
-      return hasEdges ? { data, error: null } as OperationResult<any> : null;
+      return { data, error: null };
     };
 
+    // Mutations: normalize into cache, return server payload (unchanged shape)
     if (plan.operation === "mutation") {
       const originalUseResult = ctx.useResult;
 
@@ -107,17 +72,18 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         }
 
         documents.normalizeDocument({ document, variables: vars, data: incoming.data });
-
         return originalUseResult({ data: incoming.data, error: null }, true);
       };
+
       return;
     }
 
+    // Subscriptions: normalize each frame, pass-through frames
     if (plan.operation === "subscription") {
       const originalUseResult = ctx.useResult;
 
       ctx.useResult = (incoming, terminal) => {
-        if (typeof incoming?.subscribe !== 'function') {
+        if (typeof incoming?.subscribe !== "function") {
           return originalUseResult(incoming, terminal);
         }
 
@@ -128,17 +94,10 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
                 if (frame?.data) {
                   documents.normalizeDocument({ document, variables: vars, data: frame.data });
                 }
-
                 observer.next(frame);
               },
-
-              error: (error: any) => {
-                observer.error?.(error);
-              },
-
-              complete: () => {
-                observer.complete?.();
-              }
+              error: (error: any) => observer.error?.(error),
+              complete: () => observer.complete?.(),
             });
           },
         };
@@ -149,11 +108,14 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       return;
     }
 
-    // SSR: during hydrate, for non-network-only policies serve cached and stop; for network-only allow network
+    // ─────────────────────────────────────────────────────────────────────────
+    // Queries
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // SSR: during hydrate, for non-network-only policies serve cached and stop.
     if (ssr?.isHydrating?.()) {
       if (policy !== "network-only") {
         const cached = buildCachedFrame();
-
         if (cached) {
           return publish(cached, true);
         }
@@ -180,13 +142,11 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     // cache-first
     if (policy === "cache-first") {
       const cached = buildCachedFrame();
-
       if (cached) {
         publish(cached, true);
-
         return;
       }
-
+      // fall through to network
       lastResultAtMs.set(key, performance.now());
     }
 
@@ -196,31 +156,31 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
       if (cached) {
         if (withinSuspension) {
+          // If we just finished a network result, treat this as terminal to avoid refetch loops
           publish(cached, true);
-
           return;
         }
 
+        // Emit cached now (non-terminal), then proceed to network
         publish(cached, false);
-
         lastResultAtMs.set(key, performance.now());
       }
+      // else: no cache, proceed to network
     }
 
     // network-only (and the network leg of cache-and-network)
-    // If within suspension window, skip a duplicate fetch (prior result just landed)
+    // If within suspension window, skip a duplicate fetch by serving cache if present
     if (policy === "network-only") {
       if (withinSuspension) {
         const cached = buildCachedFrame();
-
         if (cached) {
           publish(cached, true);
-
           return;
         }
       }
     }
 
+    // Intercept network response to normalize then materialize (canonical-first model)
     const originalUseResult = ctx.useResult;
 
     ctx.useResult = (incoming: OperationResult) => {
@@ -230,17 +190,21 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         return originalUseResult(incoming, true);
       }
 
-      // Normalize & materialize for queries
       documents.normalizeDocument({ document, variables: vars, data: incoming.data });
-      const data = documents.materializeDocument({ document, variables: vars });
 
-      // Stamp completion time for the suspension window
+      const data = documents.materializeDocument({ document, variables: vars });
 
       return originalUseResult({ data, error: null }, true);
     };
   };
 }
 
-export function provideCachebay(app: App, instance: any) {
+/**
+ * Provide Cachebay instance to Vue app
+ * Makes cache available via useCache() composable
+ * @param app - Vue application instance
+ * @param instance - Cachebay cache instance
+ */
+export function provideCachebay(app: App, instance: unknown): void {
   app.provide(CACHEBAY_KEY, instance);
 }

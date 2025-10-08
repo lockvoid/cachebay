@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createGraph } from "@/src/core/graph";
 import { createInspect } from "@/src/features/inspect";
-import { seedConnectionPage } from "@/test/helpers/unit";
+import { writeConnectionPage } from "@/test/helpers/unit";
 
 describe("Inspect", () => {
   let graph: ReturnType<typeof createGraph>;
@@ -24,7 +24,17 @@ describe("Inspect", () => {
       graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "P2" });
 
       const pageKey = '@.User:u1.posts({"first":1})';
-      seedConnectionPage(graph, pageKey, [{ nodeRef: "Post:p1", cursor: "p1" }]);
+      writeConnectionPage(graph, pageKey, {
+        __typename: "PostConnection",
+        pageInfo: { startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false },
+        edges: [
+          {
+            __typename: "PostEdge",
+            cursor: "p1",
+            node: { __typename: "Post", id: "p1" },
+          },
+        ],
+      });
 
       const entityRecordKeys = inspect.entityKeys().sort();
       expect(entityRecordKeys).toContain("User:u1");
@@ -56,9 +66,21 @@ describe("Inspect", () => {
       const pageB = '@.posts({"category":"tech","after":"p1","first":1})';
       const pageC = '@.posts({"category":"lifestyle","first":1})';
 
-      seedConnectionPage(graph, pageA, [{ nodeRef: "Post:t1" }]);
-      seedConnectionPage(graph, pageB, [{ nodeRef: "Post:t2" }]);
-      seedConnectionPage(graph, pageC, [{ nodeRef: "Post:l1" }]);
+      writeConnectionPage(graph, pageA, {
+        __typename: "PostConnection",
+        pageInfo: { startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false },
+        edges: [{ __typename: "PostEdge", node: { __typename: "Post", id: "Post:t1" } }],
+      });
+      writeConnectionPage(graph, pageB, {
+        __typename: "PostConnection",
+        pageInfo: { startCursor: "p2", endCursor: "p2", hasNextPage: false, hasPreviousPage: false },
+        edges: [{ __typename: "PostEdge", node: { __typename: "Post", id: "Post:t2" } }],
+      });
+      writeConnectionPage(graph, pageC, {
+        __typename: "PostConnection",
+        pageInfo: { startCursor: "p3", endCursor: "p3", hasNextPage: false, hasPreviousPage: false },
+        edges: [{ __typename: "PostEdge", node: { __typename: "Post", id: "Post:l1" } }],
+      });
 
       const keys = inspect.connectionKeys({ parent: "Query", key: "posts" }).sort();
 
@@ -75,9 +97,21 @@ describe("Inspect", () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1" });
       graph.putRecord("User:u2", { __typename: "User", id: "u2" });
 
-      seedConnectionPage(graph, u1A, [{ nodeRef: "Post:u1t1" }]);
-      seedConnectionPage(graph, u1B, [{ nodeRef: "Post:u1t2" }]);
-      seedConnectionPage(graph, u2A, [{ nodeRef: "Post:u2t1" }]);
+      writeConnectionPage(graph, u1A, {
+        __typename: "PostConnection",
+        pageInfo: { startCursor: "u1p1", endCursor: "u1p1", hasNextPage: false, hasPreviousPage: false },
+        edges: [{ __typename: "PostEdge", node: { __typename: "Post", id: "Post:u1t1" } }],
+      });
+      writeConnectionPage(graph, u1B, {
+        __typename: "PostConnection",
+        pageInfo: { startCursor: "u1p2", endCursor: "u1p2", hasNextPage: false, hasPreviousPage: false },
+        edges: [{ __typename: "PostEdge", node: { __typename: "Post", id: "Post:u1t2" } }],
+      });
+      writeConnectionPage(graph, u2A, {
+        __typename: "PostConnection",
+        pageInfo: { startCursor: "u2p1", endCursor: "u2p1", hasNextPage: false, hasPreviousPage: false },
+        edges: [{ __typename: "PostEdge", node: { __typename: "Post", id: "Post:u2t1" } }],
+      });
 
       const user1 = inspect.connectionKeys({ parent: { __typename: "User", id: "u1" }, key: "posts" });
       const user2 = inspect.connectionKeys({ parent: { __typename: "User", id: "u2" }, key: "posts" });
@@ -88,7 +122,11 @@ describe("Inspect", () => {
 
     it("emits {} when only pagination args exist", () => {
       const onlyPaging = '@.posts({"first":10,"after":"c1"})';
-      seedConnectionPage(graph, onlyPaging, []);
+      writeConnectionPage(graph, onlyPaging, {
+        __typename: "PostConnection",
+        pageInfo: { startCursor: "c1", endCursor: "c1", hasNextPage: false, hasPreviousPage: false },
+        edges: [],
+      });
 
       expect(inspect.connectionKeys({ parent: "Query", key: "posts" })).toEqual(["@connection.posts({})"]);
     });
@@ -97,8 +135,16 @@ describe("Inspect", () => {
       const tech = '@.posts({"category":"tech","first":1})';
       const life = '@.posts({"category":"lifestyle","first":1})';
 
-      seedConnectionPage(graph, tech, [{ nodeRef: "Post:t1" }]);
-      seedConnectionPage(graph, life, [{ nodeRef: "Post:l1" }]);
+      writeConnectionPage(graph, tech, {
+        __typename: "PostConnection",
+        pageInfo: { startCursor: "t1", endCursor: "t1", hasNextPage: false, hasPreviousPage: false },
+        edges: [{ __typename: "PostEdge", node: { __typename: "Post", id: "Post:t1" } }],
+      });
+      writeConnectionPage(graph, life, {
+        __typename: "PostConnection",
+        pageInfo: { startCursor: "l1", endCursor: "l1", hasNextPage: false, hasPreviousPage: false },
+        edges: [{ __typename: "PostEdge", node: { __typename: "Post", id: "Post:l1" } }],
+      });
 
       const onlyTech = inspect.connectionKeys({
         parent: "Query",

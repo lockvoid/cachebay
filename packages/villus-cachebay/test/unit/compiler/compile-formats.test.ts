@@ -15,7 +15,7 @@ describe("Compiler x Formats", () => {
 
     const plan = compilePlan(QUERY_STR);
 
-    expect(plan.kind).toBe("CachePlanV1");
+    expect(plan.kind).toBe("CachePlan");
     expect(plan.operation).toBe("query");
     expect(plan.rootTypename).toBe("Query");
 
@@ -38,7 +38,7 @@ describe("Compiler x Formats", () => {
 
     const plan = compilePlan(QUERY_GQL);
 
-    expect(plan.kind).toBe("CachePlanV1");
+    expect(plan.kind).toBe("CachePlan");
     expect(plan.operation).toBe("query");
     expect(plan.rootTypename).toBe("Query");
 

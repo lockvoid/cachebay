@@ -1,23 +1,40 @@
-// src/features/ssr.ts — SSR de/hydration for the unified graph record store
 import type { GraphInstance } from "../core/graph";
-
 
 type Deps = { graph: GraphInstance };
 
+/**
+ * Serializable snapshot of graph state for SSR
+ */
 type GraphSnapshot = {
   /** Array of [recordId, snapshot] entries; JSON-safe */
-  records: Array<[string, any]>;
+  records: Array<[string, Record<string, unknown>]>;
 };
 
-/** JSON-only deep clone; safe for snapshots. */
+/**
+ * JSON-only deep clone for snapshots
+ * @private
+ */
 const cloneJSON = <T,>(data: T): T => JSON.parse(JSON.stringify(data));
 
+/**
+ * SSR instance type
+ */
 export type SSRInstance = ReturnType<typeof createSSR>;
 
+/**
+ * Configuration options for SSR
+ */
 type SSROptions = {
+  /** Timeout in ms for hydration window (default: 100) */
   hydrationTimeout?: number;
 };
 
+/**
+ * Create SSR de/hydration layer for graph store
+ * @param options - SSR configuration
+ * @param deps - Required dependencies (graph)
+ * @returns SSR instance with dehydrate, hydrate, and isHydrating methods
+ */
 export const createSSR = (options: SSROptions = {}, { graph }: Deps) => {
   let hydrating = false;
   const { hydrationTimeout = 100 } = options;

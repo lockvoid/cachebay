@@ -3,62 +3,53 @@ import { defineComponent, h, computed, watch, Suspense } from "vue";
 import { createTestClient, createConnectionComponent, getEdges, fixtures, operations, delay, tick } from "@/test/helpers";
 
 describe("Edge cases", () => {
-  it("maintains entity identity across paginated updates and in-place modifications", async () => {
+  it("reflects in-place entity updates across all edges (no union dedup)", async () => {
     const PostList = createConnectionComponent(operations.POSTS_QUERY, {
       cachePolicy: "cache-and-network",
-      connectionFn: (data) => data.posts,
+      connectionFn: (data: any) => data.posts,
     });
 
     const routes = [
+      // First page (leader)
       {
-        when: ({ variables }) => {
-          return variables.first === 2 && !variables.after;
-        },
-        respond: () => {
-          return {
-            data: {
-              __typename: "Query",
-
-              posts: fixtures.posts.buildConnection([
-                { title: "Post 1", id: "1" },
-                { title: "Post 2", id: "2" },
-              ]),
-            },
-          };
-        },
+        when: ({ variables }: any) => variables.first === 2 && !variables.after,
+        respond: () => ({
+          data: {
+            __typename: "Query",
+            posts: fixtures.posts.buildConnection([
+              { title: "Post 1", id: "1" },
+              { title: "Post 2", id: "2" },
+            ]),
+          },
+        }),
         delay: 5,
       },
+      // Second page (append)
       {
-        when: ({ variables }) => {
-          return variables.first === 2 && variables.after === "c2";
-        },
-        respond: () => {
-          return {
-            data: {
-              __typename: "Query",
-              posts: fixtures.posts.buildConnection([
-                { title: "Post 3", id: "3" },
-                { title: "Post 4", id: "4" },
-              ]),
-            },
-          };
-        },
+        when: ({ variables }: any) => variables.first === 2 && variables.after === "c2",
+        respond: () => ({
+          data: {
+            __typename: "Query",
+            posts: fixtures.posts.buildConnection([
+              { title: "Post 3", id: "3" },
+              { title: "Post 4", id: "4" },
+            ]),
+          },
+        }),
         delay: 10,
       },
+      // Third page after c4, returns an UPDATED version of the same entity id: "1"
+      // (This intentionally creates a duplicate edge pointing to the same node.)
       {
-        when: ({ variables }) => {
-          return variables.after === "c4" && variables.first === 1;
-        },
-        respond: () => {
-          return {
-            data: {
-              __typename: "Query",
-              posts: fixtures.posts.buildConnection([
-                { title: "Post 1 Updated", id: "1", content: "Updated content", authorId: "1" },
-              ]),
-            },
-          };
-        },
+        when: ({ variables }: any) => variables.after === "c4" && variables.first === 1,
+        respond: () => ({
+          data: {
+            __typename: "Query",
+            posts: fixtures.posts.buildConnection([
+              { title: "Post 1 Updated", id: "1", content: "Updated content", authorId: "1" },
+            ]),
+          },
+        }),
         delay: 10,
       },
     ];
@@ -66,26 +57,27 @@ describe("Edge cases", () => {
     const { client, fx } = createTestClient({ routes });
 
     const wrapper = mount(PostList, {
-      props: {
-        first: 2,
-      },
-
-      global: {
-        plugins: [client],
-      },
+      props: { first: 2 },
+      global: { plugins: [client] },
     });
 
-    await wrapper.setProps({ first: 2 });
+    // Leader lands
     await delay(8);
     expect(getEdges(wrapper, "title")).toEqual(["Post 1", "Post 2"]);
 
+    // Append lands
     await wrapper.setProps({ first: 2, after: "c2" });
     await delay(12);
     expect(getEdges(wrapper, "title")).toEqual(["Post 1", "Post 2", "Post 3", "Post 4"]);
 
+    // After c4, server sends another edge pointing to the SAME node (id "1") with updated fields
     await wrapper.setProps({ first: 1, after: "c4" });
     await delay(12);
-    expect(getEdges(wrapper, "title")).toEqual(["Post 1 Updated", "Post 2", "Post 3", "Post 4"]);
+
+    const titles = getEdges(wrapper, "title");
+    // No dedup: both edges that reference Post:1 show the updated title
+    expect(titles).toEqual(["Post 1 Updated", "Post 2", "Post 3", "Post 4", "Post 1 Updated"]);
+    expect(titles.filter((t) => t === "Post 1 Updated").length).toBe(2);
 
     await fx.restore();
   });

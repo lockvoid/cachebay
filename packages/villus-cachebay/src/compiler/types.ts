@@ -1,4 +1,4 @@
- 
+
 import type { DocumentNode } from "graphql";
 
 export type OpKind = "query" | "mutation" | "subscription" | "fragment";
@@ -28,8 +28,8 @@ export type PlanField = {
   connectionMode?: "infinite" | "page";         // default "infinite"
 };
 
-export type CachePlanV1 = {
-  kind: "CachePlanV1";
+export type CachePlan = {
+  kind: "CachePlan";
   operation: OpKind;                            // "query" | "mutation" | "subscription" | "fragment"
   rootTypename: string;
   root: PlanField[];

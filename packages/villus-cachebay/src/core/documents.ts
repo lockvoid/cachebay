@@ -1,4 +1,3 @@
-
 import { ROOT_ID } from "./constants";
 import {
   isObject,
@@ -7,10 +6,12 @@ import {
   buildFieldKey,
   buildConnectionKey,
   buildConnectionCanonicalKey,
-  upsertEntityShallow,
   TRAVERSE_SKIP,
+  TRAVERSE_OBJECT,
+  TRAVERSE_ARRAY,
+  TRAVERSE_SCALAR,
 } from "./utils";
-import type { CachePlanV1, PlanField } from "../compiler";
+import type { CachePlan, PlanField } from "../compiler";
 import type { CanonicalInstance } from "./canonical";
 import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
@@ -29,29 +30,39 @@ export type DocumentsInstance = ReturnType<typeof createDocuments>;
 export const createDocuments = (deps: DocumentsDependencies) => {
   const { graph, views, planner, canonical } = deps;
 
-  const ensureRoot = () => {
-    graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
-  };
-
+  /**
+   * Normalize a GraphQL response (document + variables + data) into the graph store,
+   * and update canonical connection pages for queries.
+   */
   const normalizeDocument = ({
     document,
     variables = {},
     data,
   }: {
-    document: DocumentNode | CachePlanV1;
+    document: DocumentNode | CachePlan;
     variables?: Record<string, any>;
     data: any;
-  }) => {
-    ensureRoot();
-
+  }): void => {
     const plan = planner.getPlan(document);
     const isQuery = plan.operation === "query";
 
+    // Seed root record
+    graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
+
+    // Collect connection pages for a post-pass canonical update
+    const connectionPages: Array<{
+      field: PlanField;
+      parentId: string;
+      pageKey: string;
+    }> = [];
+
     type Frame = {
       parentId: string;
-      fields: PlanField[];
-      fieldsMap: Map<string, PlanField>;
+      fields: PlanField[] | undefined | null;
+      fieldsMap: Map<string, PlanField> | undefined | null;
       insideConnection: boolean;
+      pageKey: string | null;
+      inEdges: boolean;
     };
 
     const initialFrame: Frame = {
@@ -59,164 +70,270 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       fields: plan.root,
       fieldsMap: plan.rootSelectionMap ?? new Map<string, PlanField>(),
       insideConnection: false,
+      pageKey: null,
+      inEdges: false,
     };
 
-    traverseFast(data, initialFrame, (_parentNode, valueNode, responseKey, frame) => {
+    const visit = (
+      _parentNode: any,
+      valueNode: any,
+      responseKey: string | number | null,
+      kind: symbol,
+      frame?: Frame,
+    ) => {
       if (!frame) return;
 
+      // root tick
+      if (responseKey == null) {
+        return frame;
+      }
+
       const parentId = frame.parentId;
+      const fieldsMap = frame.fieldsMap as Map<string, PlanField> | undefined;
       const planField =
-        typeof responseKey === "string" ? frame.fieldsMap.get(responseKey) : undefined;
+        typeof responseKey === "string" && fieldsMap ? fieldsMap.get(responseKey) : undefined;
 
-      // ─────────────────────────────────────────────────────────────────────────
-      // 1) Connection page — write concrete page + edges; then update canonical
-      // ─────────────────────────────────────────────────────────────────────────
-      if (planField && planField.isConnection && isObject(valueNode)) {
-        const pageKey = buildConnectionKey(planField, parentId, variables);
-        const fieldKey = buildFieldKey(planField, variables);
+      // ────────────────────────────────────────────────────────────────────────
+      // ARRAYS
+      // ────────────────────────────────────────────────────────────────────────
+      if (kind === TRAVERSE_ARRAY) {
+        // Connection.edges → set edge refs on the page and dive into edge objects
+        if (frame.insideConnection && responseKey === "edges") {
+          const pageKey = frame.pageKey as string;
+          const rawEdges: any[] = Array.isArray(valueNode) ? valueNode : [];
+          const edgeRefs: string[] = new Array(rawEdges.length);
+          for (let i = 0; i < rawEdges.length; i++) edgeRefs[i] = `${pageKey}.edges:${i}`;
 
-        const edgesIn: any[] = Array.isArray((valueNode as any).edges)
-          ? (valueNode as any).edges
-          : [];
-        const edgeRefs = new Array(edgesIn.length);
+          graph.putRecord(pageKey, { edges: { __refs: edgeRefs } });
 
-        for (let i = 0; i < edgesIn.length; i++) {
-          const edge = edgesIn[i] || {};
-          const nodeObj = edge.node;
-
-          // Identify via graph.identify (custom keys supported); store node shallowly
-          if (isObject(nodeObj) && hasTypename(nodeObj)) {
-            const nodeKey = upsertEntityShallow(graph, nodeObj);
-            if (nodeKey) {
-              const edgeKey = `${pageKey}.edges.${i}`;
-              const { node, ...edgeRest } = edge as any;
-              const edgeSnap: Record<string, any> = edgeRest;
-              edgeSnap.node = { __ref: nodeKey };
-
-              graph.putRecord(edgeKey, edgeSnap);
-              edgeRefs[i] = { __ref: edgeKey };
-            }
-          }
-        }
-
-        const { edges, pageInfo, ...connRest } = valueNode as any;
-        const pageSnapshot: Record<string, any> = {
-          __typename: (valueNode as any).__typename,
-          ...connRest,
-        };
-        if (pageInfo) pageSnapshot.pageInfo = { ...(pageInfo as any) };
-        pageSnapshot.edges = edgeRefs;
-
-        // write the concrete page record
-        graph.putRecord(pageKey, pageSnapshot);
-
-        // link only on queries (field link from parent to this concrete page)
-        if (isQuery) {
-          graph.putRecord(parentId, { [fieldKey]: { __ref: pageKey } });
-        }
-
-        // update canonical connection (@connection)
-        canonical.updateConnection({
-          field: planField,
-          parentId,
-          variables,
-          pageKey,
-          pageSnapshot,
-          pageEdgeRefs: edgeRefs,
-        });
-
-        // Descend into the connection's selection (pageInfo/extras/edges.node)
-        const nextFields = planField.selectionSet || [];
-        const nextMap = planField.selectionMap || frame.fieldsMap;
-        return {
-          parentId,
-          fields: nextFields,
-          fieldsMap: nextMap,
-          insideConnection: true,
-        } as Frame;
-      }
-
-      // ─────────────────────────────────────────────────────────────────────────
-      // 2) Arrays — switch scope to item selection (keep parent the same)
-      // ─────────────────────────────────────────────────────────────────────────
-      if (Array.isArray(valueNode) && typeof responseKey === "string") {
-        const pf = frame.fieldsMap.get(responseKey);
-        const nextFields = pf?.selectionSet || frame.fields;
-        const nextMap = pf?.selectionMap || frame.fieldsMap;
-        return {
-          parentId,
-          fields: nextFields,
-          fieldsMap: nextMap,
-          insideConnection: frame.insideConnection,
-        } as Frame;
-      }
-
-      // ─────────────────────────────────────────────────────────────────────────
-      // 3) Identifiable entity — upsert; optionally link (only on queries)
-      //    NEW RULE: link any object field (no args requirement),
-      //    except the synthetic `edges.node` hop inside a connection.
-      // ─────────────────────────────────────────────────────────────────────────
-      if (isObject(valueNode) && hasTypename(valueNode)) {
-        const entityKey = upsertEntityShallow(graph, valueNode);
-
-        if (entityKey) {
-          const shouldLink =
-            isQuery &&
-            !!planField &&
-            !(frame.insideConnection && planField.responseKey === "node");
-
-          if (shouldLink) {
-            const parentFieldKey = buildFieldKey(planField!, variables);
-            graph.putRecord(parentId, { [parentFieldKey]: { __ref: entityKey } });
-          }
-
-          const nextFields = planField?.selectionSet || [];
-          const nextMap = planField?.selectionMap || frame.fieldsMap;
+          const edgesField = fieldsMap?.get("edges");
           return {
-            parentId: entityKey,
-            fields: nextFields,
-            fieldsMap: nextMap,
-            insideConnection: false,
+            parentId: frame.parentId,
+            fields: edgesField?.selectionSet,
+            fieldsMap: edgesField?.selectionMap,
+            insideConnection: true,
+            pageKey,
+            inEdges: true,
           } as Frame;
         }
 
-        // Not identifiable (e.g., edge-only objects) — treat as plain object and keep walking
-        const nextFields = planField?.selectionSet || frame.fields;
-        const nextMap = planField?.selectionMap || frame.fieldsMap;
-        return {
-          parentId,
-          fields: nextFields,
-          fieldsMap: nextMap,
-          insideConnection: frame.insideConnection,
-        } as Frame;
+        // Scalar arrays (e.g., Post.flags) → write inline on current record
+        if (planField && !planField.selectionSet) {
+          const fieldKey = buildFieldKey(planField, variables);
+          const arr = valueNode as any[];
+          const out = new Array(arr.length);
+          for (let i = 0; i < arr.length; i++) out[i] = arr[i];
+          graph.putRecord(parentId, { [fieldKey]: out });
+          return TRAVERSE_SKIP;
+        }
+
+        return frame;
       }
 
-      // ─────────────────────────────────────────────────────────────────────────
-      // 4) Plain object — propagate scope
-      // ─────────────────────────────────────────────────────────────────────────
-      if (isObject(valueNode)) {
-        const nextFields = planField?.selectionSet || frame.fields;
-        const nextMap = planField?.selectionMap || frame.fieldsMap;
-        return {
-          parentId,
-          fields: nextFields,
-          fieldsMap: nextMap,
-          insideConnection: frame.insideConnection,
-        } as Frame;
+      // ────────────────────────────────────────────────────────────────────────
+      // OBJECTS
+      // ────────────────────────────────────────────────────────────────────────
+      if (kind === TRAVERSE_OBJECT) {
+        // Edge object inside edges[]
+        if (frame.insideConnection && frame.inEdges && typeof responseKey === "number") {
+          const edgeKey = `${frame.pageKey}.edges:${responseKey}`;
+          if (valueNode && valueNode.__typename) {
+            graph.putRecord(edgeKey, { __typename: valueNode.__typename });
+          } else {
+            graph.putRecord(edgeKey, {});
+          }
+
+          // Link node ref early if identifiable
+          const nodeObj = (valueNode as any).node;
+          if (nodeObj) {
+            const nodeKey = graph.identify(nodeObj);
+            if (nodeKey) {
+              graph.putRecord(edgeKey, { node: { __ref: nodeKey } });
+            }
+          }
+
+          return {
+            parentId: edgeKey,
+            fields: fieldsMap,
+            fieldsMap: fieldsMap,
+            insideConnection: true,
+            pageKey: frame.pageKey,
+            inEdges: true,
+          } as Frame;
+        }
+
+        // Connection page object
+        if (planField && planField.isConnection) {
+          const pageKey = buildConnectionKey(planField, parentId, variables);
+          const parentFieldKey = buildFieldKey(planField, variables);
+
+          // Initialize page record with __typename and scalar fields
+          const pageRecord: Record<string, any> = {};
+          if (valueNode && valueNode.__typename) {
+            pageRecord.__typename = valueNode.__typename;
+          }
+
+          // Copy scalar fields immediately (e.g., totalCount)
+          if (valueNode) {
+            const keys = Object.keys(valueNode);
+            for (let i = 0; i < keys.length; i++) {
+              const k = keys[i];
+              if (k === "__typename" || k === "edges" || k === "pageInfo") continue;
+              const v = (valueNode as any)[k];
+
+              if (v !== undefined && v !== null && typeof v !== "object") {
+                pageRecord[k] = v;
+              } else if (
+                Array.isArray(v) ||
+                (v !== null && typeof v === "object" && !(v && (v as any).__typename))
+              ) {
+                pageRecord[k] = v;
+              }
+            }
+          }
+
+          graph.putRecord(pageKey, pageRecord);
+
+          // If pageInfo child exists, link page → pageInfo
+          if ((valueNode as any)?.pageInfo) {
+            const pageInfoKey = `${pageKey}.pageInfo`;
+            graph.putRecord(pageKey, { pageInfo: { __ref: pageInfoKey } });
+            const piTypename = (valueNode as any)?.pageInfo?.__typename;
+            graph.putRecord(pageInfoKey, piTypename ? { __typename: piTypename } : {});
+          }
+
+          // Link page under parent (queries only)
+          if (isQuery) {
+            graph.putRecord(parentId, { [parentFieldKey]: { __ref: pageKey } });
+          }
+
+          // Collect for canonical update
+          if (isQuery) {
+            connectionPages.push({ field: planField, parentId, pageKey });
+          }
+
+          // Descend into the page (its selection set)
+          return {
+            parentId: pageKey,
+            fields: planField.selectionSet,
+            fieldsMap: planField.selectionMap,
+            insideConnection: true,
+            pageKey,
+            inEdges: false,
+          } as Frame;
+        }
+
+        // Entity (identifiable)
+        {
+          const entityKey = graph.identify(valueNode);
+          if (entityKey) {
+            if (valueNode && valueNode.__typename) {
+              graph.putRecord(entityKey, { __typename: valueNode.__typename });
+            } else {
+              graph.putRecord(entityKey, {});
+            }
+
+            // Link from parent (queries only), except edges.node
+            if (isQuery && planField && !(frame.insideConnection && planField.responseKey === "node")) {
+              const parentFieldKey = buildFieldKey(planField, variables);
+              graph.putRecord(parentId, { [parentFieldKey]: { __ref: entityKey } });
+            }
+
+            const fromNode = !!planField && planField.responseKey === "node";
+
+            return {
+              parentId: entityKey,
+              fields: planField?.selectionSet,
+              fieldsMap: planField?.selectionMap,
+              insideConnection: fromNode ? false : frame.insideConnection,
+              pageKey: fromNode ? null : frame.pageKey,
+              inEdges: fromNode ? false : frame.inEdges,
+            } as Frame;
+          }
+        }
+
+        // Generic container – non-identifiable object
+        if (planField) {
+          const containerFieldKey = buildFieldKey(planField, variables);
+          const containerKey = `${parentId}.${containerFieldKey}`;
+
+          if (valueNode && valueNode.__typename) {
+            graph.putRecord(containerKey, { __typename: valueNode.__typename });
+          } else {
+            graph.putRecord(containerKey, {});
+          }
+
+          if (isQuery) {
+            graph.putRecord(parentId, { [containerFieldKey]: { __ref: containerKey } });
+          }
+
+          if (frame.insideConnection && containerFieldKey === "pageInfo" && frame.pageKey) {
+            graph.putRecord(frame.pageKey, { pageInfo: { __ref: containerKey } });
+          }
+
+          return {
+            parentId: containerKey,
+            fields: planField.selectionSet,
+            fieldsMap: planField.selectionMap,
+            insideConnection: frame.insideConnection,
+            pageKey: frame.pageKey,
+            inEdges: false,
+          } as Frame;
+        }
+
+        return frame;
       }
 
-      // primitives: nothing to do
-      return;
-    });
+      // ────────────────────────────────────────────────────────────────────────
+      // SCALARS
+      // ────────────────────────────────────────────────────────────────────────
+      if (kind === TRAVERSE_SCALAR) {
+        if (typeof responseKey === "string" && fieldsMap) {
+          const f = fieldsMap.get(responseKey);
+          if (f && !f.selectionSet) {
+            const fieldKey = buildFieldKey(f, variables);
+            graph.putRecord(frame.parentId, { [fieldKey]: valueNode });
+          }
+        }
+        return frame;
+      }
+
+      return frame;
+    };
+
+    // Main traversal - normalize all data
+    traverseFast(data, initialFrame, visit);
+
+    // Post-pass → update canonical pages for queries
+    if (isQuery && connectionPages.length > 0) {
+      for (let i = 0; i < connectionPages.length; i++) {
+        const { field, parentId, pageKey } = connectionPages[i];
+        const pageRecord = graph.getRecord(pageKey);
+        if (!pageRecord) continue;
+
+        canonical.updateConnection({
+          field,
+          parentId,
+          variables,
+          pageKey,
+          normalizedPage: pageRecord,
+        });
+      }
+    }
   };
 
-  const materializeDocument = ({
-    document,
-    variables = {},
-  }: {
-    document: DocumentNode | CachePlanV1;
+  type MaterializeArgs = {
+    document: DocumentNode | CachePlan;
     variables?: Record<string, any>;
-  }) => {
+  };
+
+  /**
+   * Read a materialized JS object for a document from the current graph.
+   * - Root @connection fields read via canonical keys.
+   * - Root object fields deref via stored links { __ref }.
+   * - Preserves `null` vs `undefined` for missing links.
+   */
+  const materializeDocument = ({ document, variables = {} }: MaterializeArgs) => {
     const plan = planner.getPlan(document);
     const rootSnap = graph.getRecord(ROOT_ID) || {};
     const result: Record<string, any> = {};
@@ -224,193 +341,131 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     for (let i = 0; i < plan.root.length; i++) {
       const field = plan.root[i];
 
-      // Root-level @connection → always read the CANONICAL connection
       if (field.isConnection) {
         const canKey = buildConnectionCanonicalKey(field, ROOT_ID, variables);
-        result[field.responseKey] = views.getConnectionView(
-          canKey,
+        result[field.responseKey] = views.getView({
+          source: canKey,
           field,
           variables,
-          /* canonical */ true,
-        );
+          canonical: true,
+        });
         continue;
       }
 
-      // Plain field linked off the root record
       const linkKey = buildFieldKey(field, variables);
       const link = (rootSnap as any)[linkKey];
 
-      if (!link?.__ref) {
-        result[field.responseKey] = undefined;
+      if (!link || !link.__ref) {
+        result[field.responseKey] = link === null ? null : undefined;
         continue;
       }
 
-      const entityProxy = graph.materializeRecord(link.__ref);
-      if (!entityProxy) {
-        result[field.responseKey] = undefined;
-        continue;
-      }
-
-      // If no sub-selection, return a live entity view (reactive proxy)
-      if (!field.selectionSet || field.selectionSet.length === 0) {
-        result[field.responseKey] = views.getEntityView(
-          entityProxy,
-          null,
-          undefined,
-          variables,
-          true,
-        );
-        continue;
-      }
-
-      // With a sub-selection, selection-aware live entity view
-      result[field.responseKey] = views.getEntityView(
-        entityProxy,
-        field.selectionSet,
-        field.selectionMap,
+      result[field.responseKey] = views.getView({
+        source: link.__ref,
+        field,
         variables,
-        true,
-      );
+        canonical: true,
+      });
     }
 
     return result;
   };
 
-  // documents.ts (add alongside your existing hasDocument)
+  /**
+   * Return true if all required data for a document is present in the graph
+   * (including canonical connection pages, pageInfo, connection-level scalars, and
+   * deep node selections via edges).
+   */
   const hasDocument = ({
     document,
     variables = {},
   }: {
-    document: DocumentNode | CachePlanV1;
+    document: DocumentNode | CachePlan;
     variables?: Record<string, any>;
   }): boolean => {
     const plan = planner.getPlan(document);
     if (plan.operation === "fragment") return false;
 
-    // ---------- Phase 1: shallow preflight (fast negatives) ----------
-    const rootSnap = graph.getRecord(ROOT_ID) || {};
-
-    for (let i = 0; i < plan.root.length; i++) {
-      const field = plan.root[i];
-
-      if (field.isConnection) {
-        const pageKey = buildConnectionKey(field, ROOT_ID, variables);
-        if (!graph.getRecord(pageKey)) {
-          return false;
-        }
-        continue;
-      }
-
-      // Object field (has sub-selection): must have a link at the root
-      if (field.selectionSet && field.selectionSet.length > 0) {
-        const linkKey = buildFieldKey(field, variables);
-        const link = (rootSnap as any)[linkKey];
-        if (!link?.__ref) {
-          return false;
-        }
-        continue;
-      }
-
-      // Scalar leaf at root
-      const propName =
-        (field.responseKey && field.responseKey !== field.fieldName
-          ? field.responseKey
-          : field.fieldName) || field.responseKey;
-      if (!(propName in rootSnap)) {
-        return false;
-      }
-    }
-
-    // ---------- Phase 2: deep verification (exact) ----------
-    const visited = new Set<string>();
-
     const keyOf = (f: PlanField) =>
       (f.responseKey && f.responseKey !== f.fieldName ? f.responseKey : f.fieldName) || f.responseKey;
 
-    const checkInlineScalars = (obj: any, selSet: PlanField[] | null | undefined, ctx: any): boolean => {
-      if (!selSet || selSet.length === 0) return true;
-      for (let i = 0; i < selSet.length; i++) {
-        const f = selSet[i];
+    const deref = (v: any) =>
+      v && typeof v === "object" && "__ref" in v ? graph.getRecord((v as any).__ref) : v;
+
+    const ensureScalars = (obj: any, sel: PlanField[] | undefined | null): boolean => {
+      const rec = deref(obj);
+      if (!sel || sel.length === 0) return true;
+      if (!rec || typeof rec !== "object") return false;
+
+      for (let i = 0; i < sel.length; i++) {
+        const f = sel[i];
         const k = keyOf(f);
 
-        if (f.selectionSet && f.selectionSet.length > 0) {
-          // nested inline object
-          const childObj = obj ? (obj as any)[k] : undefined;
-          if (!childObj || typeof childObj !== "object") {
-            return false;
-          }
-          if (!checkInlineScalars(childObj, f.selectionSet, ctx)) return false;
+        if (f.selectionSet && f.selectionSet.length) {
+          const child = (rec as any)[k];
+          if (!ensureScalars(child, f.selectionSet)) return false;
         } else {
-          // leaf scalar
-          if (!(k in (obj || {}))) {
-            return false;
-          }
+          if (!(k in (rec as any))) return false;
         }
       }
       return true;
     };
 
+    const visited = new Set<string>();
+
     const checkSelection = (parentId: string, field: PlanField): boolean => {
-      // 1) @connection
+      // @connection → verify canonical page
       if (field.isConnection) {
-        const pageKey = buildConnectionKey(field, parentId, variables);
-        const page = graph.getRecord(pageKey);
-        if (!page) {
-          return false;
-        }
+        const canKey = buildConnectionCanonicalKey(field, parentId, variables);
+        const page = graph.getRecord(canKey);
+        if (!page) return false;
 
         const selMap = field.selectionMap;
         if (selMap && selMap.size) {
           // pageInfo
           const piField = selMap.get("pageInfo");
           if (piField) {
-            const pageInfo = (page as any).pageInfo;
-            if (!pageInfo || typeof pageInfo !== "object") {
-              return false;
-            }
-            if (!checkInlineScalars(pageInfo, piField.selectionSet, { pageKey, branch: "pageInfo" })) return false;
+            const piContainer = (page as any).pageInfo;
+            if (!piContainer) return false;
+            if (!ensureScalars(piContainer, piField.selectionSet)) return false;
           }
 
-          // extras on the connection (e.g., totalCount)
+          // other connection-level fields (e.g., totalCount)
           for (const [rk, f] of selMap) {
             if (rk === "edges" || rk === "pageInfo") continue;
-            const k = keyOf(f);
-            if (f.selectionSet && f.selectionSet.length > 0) {
-              const child = (page as any)[k];
-              if (!child || typeof child !== "object") {
-                return false;
-              }
-              if (!checkInlineScalars(child, f.selectionSet, { pageKey, branch: k })) return false;
+
+            if (f.selectionSet && f.selectionSet.length) {
+              const child = (page as any)[keyOf(f)];
+              if (!ensureScalars(child, f.selectionSet)) return false;
             } else {
-              if (!(k in (page as any))) {
-                return false;
-              }
+              const rec = deref(page);
+              if (!(keyOf(f) in (rec || {}))) return false;
             }
           }
 
-          // edges → node recursion (only if node has its own selection)
+          // edges → node selection (only if edges exist and node has selection)
           const edgesField = selMap.get("edges");
           const nodeField = edgesField?.selectionMap?.get("node");
-          if (nodeField?.selectionSet?.length && Array.isArray((page as any).edges)) {
-            const childMap = nodeField.selectionMap!;
-            const edgesArr = (page as any).edges as Array<{ __ref?: string }>;
+          if (edgesField && nodeField?.selectionSet?.length) {
+            const edges = (page as any).edges;
+            const refs: string[] =
+              edges && edges.__refs
+                ? edges.__refs
+                : Array.isArray(edges)
+                  ? edges.map((_: any, i: number) => `${canKey}.edges:${i}`)
+                  : [];
 
-            for (let i = 0; i < edgesArr.length; i++) {
-              const edgeRef = edgesArr[i]?.__ref;
-              if (!edgeRef) continue;
-              const edgeRec = graph.getRecord(edgeRef);
-              const nodeRef: string | undefined = edgeRec?.node?.__ref;
-              if (!nodeRef) {
-                // edge without node — acceptable for empty slots
-                continue;
-              }
+            for (let i = 0; i < refs.length; i++) {
+              const edgeRec = graph.getRecord(refs[i]);
+              const nodeRef = edgeRec?.node?.__ref;
+              if (!nodeRef) continue;
 
-              const guardKey = `${field.responseKey}:${nodeRef}`;
-              if (visited.has(guardKey)) continue;
-              visited.add(guardKey);
+              const guard = `${canKey}:node:${nodeRef}`;
+              if (visited.has(guard)) continue;
+              visited.add(guard);
 
-              for (const [, child] of childMap) {
-                if (!checkSelection(nodeRef, child)) return false;
+              for (const [, childSel] of nodeField.selectionMap!) {
+                if (!checkSelection(nodeRef, childSel)) return false;
               }
             }
           }
@@ -419,21 +474,18 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         return true;
       }
 
-      // 2) Non-connection field
+      // Non-connection field
       const parentSnap = graph.getRecord(parentId) || {};
 
-      // Object child → must be linked via field key
-      if (field.selectionSet && field.selectionSet.length > 0) {
+      if (field.selectionSet && field.selectionSet.length) {
         const linkKey = buildFieldKey(field, variables);
         const link = (parentSnap as any)[linkKey];
-        if (!link?.__ref) {
-          return false;
-        }
+        if (!link?.__ref) return false;
 
         const childId = link.__ref as string;
-        const guardKey = `${field.responseKey}:${childId}`;
-        if (visited.has(guardKey)) return true;
-        visited.add(guardKey);
+        const guard = `${parentId}:${keyOf(field)}:${childId}`;
+        if (visited.has(guard)) return true;
+        visited.add(guard);
 
         const childMap = field.selectionMap!;
         for (const [, child] of childMap) {
@@ -442,105 +494,43 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         return true;
       }
 
-      // Scalar leaf on this parent entity
-      const propName = keyOf(field);
-      if (!(propName in (parentSnap as any))) {
-        return false;
-      }
-
-      return true;
+      // scalar leaf on this parent entity
+      const prop = keyOf(field);
+      return prop in (parentSnap as any);
     };
 
     // Deep walk from root
-    for (let i = 0; i < plan.root.length; i++) {
-      if (!checkSelection(ROOT_ID, plan.root[i])) return false;
-    }
-    return true;
-  };
-
-  const prewarmDocument = ({
-    document,
-    variables = {},
-  }: {
-    document: DocumentNode | CachePlanV1;
-    variables?: Record<string, any>;
-  }) => {
-    const plan = planner.getPlan(document);
-
-    // Helper: if the concrete page exists, forward it to canonical WITHOUT leader reset.
-    const tryForwardConcretePage = (field: PlanField, parentId: string) => {
-      const pageKey = buildConnectionKey(field, parentId, variables);
-      const page = graph.getRecord(pageKey);
-      if (!page || !Array.isArray(page.edges)) return;
-
-      // Rebuild edge refs as { __ref } list
-      const pageEdgeRefs = page.edges
-        .map((e: any) => (e && e.__ref ? { __ref: e.__ref } : null))
-        .filter(Boolean) as Array<{ __ref: string }>;
-
-      // Shallow snapshot without edges (includes __typename, pageInfo, extras)
-      const { edges, ...rest } = page;
-      const pageSnapshot: Record<string, any> = { ...rest };
-
-      canonical.mergeFromCache({
-        field,
-        parentId,
-        variables: variables,
-        pageKey,
-        pageSnapshot,
-        pageEdgeRefs,
-      });
-
-      // Nested child connections under node
-      const edgesField = field.selectionMap?.get("edges");
-      const nodeField = edgesField?.selectionMap?.get("node");
-      if (nodeField?.selectionMap) {
-        for (let i = 0; i < page.edges.length; i++) {
-          const edgeRef = page.edges[i]?.__ref;
-          if (!edgeRef) continue;
-          const edgeRec = graph.getRecord(edgeRef);
-          const childParentRef: string | undefined = edgeRec?.node?.__ref;
-          if (!childParentRef) continue;
-
-          for (const [, childField] of nodeField.selectionMap) {
-            if (!childField.isConnection) continue;
-            tryForwardConcretePage(childField, childParentRef);
-          }
-        }
-      }
-    };
-
-    // 1) Root connections
-    for (let i = 0; i < plan.root.length; i++) {
-      const field = plan.root[i];
-      if (!field.isConnection) continue;
-      tryForwardConcretePage(field, ROOT_ID);
-    }
-
-    // 2) Nested connections
     const rootSnap = graph.getRecord(ROOT_ID) || {};
     for (let i = 0; i < plan.root.length; i++) {
-      const parentField = plan.root[i];
-      if (parentField.isConnection) continue;
+      const f = plan.root[i];
 
-      const childMap = parentField.selectionMap;
-      if (!childMap) continue;
-
-      const linkKey = buildFieldKey(parentField, variables);
-      const parentRef: string | undefined = (rootSnap as any)[linkKey]?.__ref;
-      if (!parentRef) continue;
-
-      for (const [, childField] of childMap) {
-        if (!childField.isConnection) continue;
-        tryForwardConcretePage(childField, parentRef);
+      if (f.isConnection) {
+        if (!checkSelection(ROOT_ID, f)) return false;
+        continue;
       }
+
+      if (f.selectionSet && f.selectionSet.length) {
+        const linkKey = buildFieldKey(f, variables);
+        const link = (rootSnap as any)[linkKey];
+        if (!link?.__ref) return false;
+
+        const childId = link.__ref as string;
+        for (const [, child] of f.selectionMap!) {
+          if (!checkSelection(childId, child)) return false;
+        }
+        continue;
+      }
+
+      const prop = keyOf(f);
+      if (!(prop in (rootSnap as any))) return false;
     }
+
+    return true;
   };
 
   return {
     normalizeDocument,
     materializeDocument,
-    prewarmDocument,
     hasDocument,
   };
 };

@@ -3,14 +3,23 @@ import { buildConnectionCanonicalKey } from "../core/utils";
 import type { GraphInstance } from "../core/graph";
 import type { OptimisticInstance } from "../core/optimistic";
 
+/**
+ * Inspect API instance type
+ */
 export type InspectAPI = ReturnType<typeof createInspect>;
 
+/**
+ * Parent selector for connection filtering
+ */
 type ParentSelector =
   | "@"
   | "Query"
   | string
   | { __typename: string; id: string | number };
 
+/**
+ * Filter criteria for connection inspection
+ */
 type ConnectionFilter = {
   /** Match only pages under this parent. Omit to match any parent. */
   parent?: ParentSelector;
@@ -140,8 +149,10 @@ const unique = <T,>(xs: T[]): T[] => {
  * -------------------------------------------------------------------------- */
 
 /**
- * Return a record snapshot by id (raw, not materialized).
- * @param id Record id.
+ * Create debug inspection API for cache internals
+ * Provides methods to inspect entities, connections, and optimistic state
+ * @param deps - Required dependencies (graph, optimistic)
+ * @returns Inspect API with record, entityKeys, connectionKeys, config, and optimistic methods
  */
 export const createInspect = ({ graph, optimistic }: { graph: GraphInstance, optimistic: OptimisticInstance }) => {
   const record = (id: string): any => {

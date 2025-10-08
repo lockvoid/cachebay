@@ -2,7 +2,6 @@ import { IDENTITY_FIELDS, CONNECTION_FIELDS, ROOT_ID } from "./constants";
 import type { GraphInstance } from "./graph";
 import type { PlanField } from "../compiler/types";
 
-export const TRAVERSE_SKIP = Symbol("traverse:skip");
 
 export const isObject = (value: any): value is Record<string, any> => {
   return value !== null && typeof value === "object";
@@ -10,24 +9,6 @@ export const isObject = (value: any): value is Record<string, any> => {
 
 export const hasTypename = (value: any): boolean => {
   return !!(value && typeof value === "object" && typeof value.__typename === "string");
-};
-
-export const isPureIdentity = (value: any): boolean => {
-  if (!isObject(value)) {
-    return false;
-  }
-
-  const keys = Object.keys(value);
-
-  for (let i = 0; i < keys.length; i++) {
-    const key = keys[i];
-
-    if (!IDENTITY_FIELDS.has(key) && value[key] !== undefined) {
-      return true;
-    }
-  }
-
-  return false;
 };
 
 export const stableStringify = (object: any): string => {
@@ -58,7 +39,22 @@ export const stableStringify = (object: any): string => {
   }
 };
 
-export const traverseFast = (root: any, context: any, visit: (parentNode: any, valueNode: any, fieldKey: string | number | null, context: any) => typeof TRAVERSE_SKIP | any | void) => {
+export const TRAVERSE_SKIP = Symbol("traverse:skip");
+export const TRAVERSE_OBJECT = Symbol("traverse:object");
+export const TRAVERSE_ARRAY = Symbol("traverse:array");
+export const TRAVERSE_SCALAR = Symbol("traverse:scalar");
+
+export const traverseFast = (
+  root: any,
+  context: any,
+  visit: (
+    parentNode: any,
+    valueNode: any,
+    fieldKey: string | number | null,
+    kind: typeof TRAVERSE_OBJECT | typeof TRAVERSE_ARRAY | typeof TRAVERSE_SCALAR,
+    context: any
+  ) => typeof TRAVERSE_SKIP | any | void,
+) => {
   const stack = [null, root, null, context];
 
   while (stack.length > 0) {
@@ -68,41 +64,38 @@ export const traverseFast = (root: any, context: any, visit: (parentNode: any, v
     const parentNode = stack.pop();
 
     if (Array.isArray(valueNode)) {
-      const nextContext = visit(parentNode, valueNode, fieldKey, currentContext);
-
-      if (nextContext === TRAVERSE_SKIP) {
-        continue;
-      }
+      const nextContext = visit(parentNode, valueNode, fieldKey, TRAVERSE_ARRAY, currentContext);
+      if (nextContext === TRAVERSE_SKIP) continue;
+      const ctx = nextContext ?? currentContext;
 
       for (let i = valueNode.length - 1; i >= 0; i--) {
         const childValue = valueNode[i];
-
-        if (!isObject(childValue)) {
-          continue;
+        if (isObject(childValue)) {
+          stack.push(valueNode, childValue, i, ctx);
+        } else {
+          visit(valueNode, childValue, i, TRAVERSE_SCALAR, ctx);
         }
-
-        stack.push(valueNode, childValue, i, nextContext ?? currentContext);
       }
     } else if (isObject(valueNode)) {
-      const nextContext = visit(parentNode, valueNode, fieldKey, currentContext);
-
-      if (nextContext === TRAVERSE_SKIP) {
-        continue;
-      }
+      const nextContext = visit(parentNode, valueNode, fieldKey, TRAVERSE_OBJECT, currentContext);
+      if (nextContext === TRAVERSE_SKIP) continue;
+      const ctx = nextContext ?? currentContext;
 
       for (let i = 0, fieldKeys = Object.keys(valueNode); i < fieldKeys.length; i++) {
-        const childValue = valueNode[fieldKeys[i]];
+        const key = fieldKeys[i];
+        const childValue = valueNode[key];
 
-        if (!isObject(childValue)) {
-          continue;
+        if (isObject(childValue)) {
+          stack.push(valueNode, childValue, key, ctx);
+        } else {
+          visit(valueNode, childValue, key, TRAVERSE_SCALAR, ctx);
         }
-
-        stack.push(valueNode, childValue, fieldKeys[i], nextContext ?? currentContext);
       }
+    } else {
+      visit(parentNode, valueNode, fieldKey, TRAVERSE_SCALAR, currentContext);
     }
   }
 };
-
 
 /**
  * Build a field link key used on a record snapshot, e.g.:
@@ -114,21 +107,17 @@ export const traverseFast = (root: any, context: any, visit: (parentNode: any, v
 export const buildFieldKey = (field: PlanField, variables: Record<string, any>): string => {
   const args = field.stringifyArgs(variables);
 
-  return args === '{}' ? field.fieldName : `${field.fieldName}(${args})`;
+  return args === "{}" ? field.fieldName : `${field.fieldName}(${args})`;
 };
 
-/**
- * Build a concrete page record key for a connection field, e.g.:
- *   @.posts({"after":null,"first":2})
- *   @.User:u1.posts({"after":"p2","first":1})
- */
 export const buildConnectionKey = (
   field: PlanField,
   parentId: string,
   variables: Record<string, any>,
 ): string => {
-  const prefix = parentId === ROOT_ID ? "@." : `@.${parentId}.`;
-  return `${prefix}${field.fieldName}(${field.stringifyArgs(variables)})`;
+  // parentId can be "@", "Type:id", "Type:id.container", or already absolute like "@.X.Y"
+  const base = parentId[0] === ROOT_ID ? parentId : `@.${parentId}`;
+  return `${base}.${field.fieldName}(${field.stringifyArgs(variables)})`;
 };
 
 /**
