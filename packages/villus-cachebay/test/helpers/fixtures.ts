@@ -213,3 +213,39 @@ export const tags = {
     };
   },
 };
+
+export const medias = {
+  buildNode(mediaData: Partial<MediaNode>, index = 0) {
+    const { name, id = `m${index + 1}`, typename, ...extras } = mediaData;
+
+    return media({ id, name: name ?? `Media ${index + 1}`, typename, ...extras });
+  },
+
+  buildConnection(items: Array<Partial<MediaNode>>, customPageInfo = {}) {
+    const edges = items.map((itemData, i) => {
+      const node = medias.buildNode(itemData, i);
+
+      return {
+        __typename: "MediaEdge",
+        cursor: node.id,
+        node,
+      };
+    });
+
+    const pageInfo = {
+      __typename: "PageInfo",
+      startCursor: edges.length ? edges[0].cursor : null,
+      endCursor: edges.length ? edges[edges.length - 1].cursor : null,
+      hasNextPage: false,
+      hasPreviousPage: false,
+
+      ...customPageInfo,
+    };
+
+    return {
+      __typename: "MediaConnection",
+      edges,
+      pageInfo,
+    };
+  },
+};

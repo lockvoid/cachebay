@@ -1,5 +1,5 @@
 import { ROOT_ID } from "./constants";
-import { isObject, hasTypename, traverseFast, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, upsertEntityShallow, TRAVERSE_SKIP } from "./utils";
+import { isObject, hasTypename, traverseFast, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, upsertEntityShallow, TRAVERSE_SKIP, TRAVERSE_OBJECT, TRAVERSE_ARRAY, TRAVERSE_SCALAR } from "./utils";
 import type { CachePlan, PlanField } from "../compiler";
 import type { CanonicalInstance } from "./canonical";
 import type { GraphInstance } from "./graph";
@@ -32,348 +32,274 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     variables?: Record<string, any>;
     data: any;
   }) => {
-    const DEBUG = true;
+    const DEBUG = true;              // keep while refactoring
+    const ENABLE_CANONICAL = false;  // off for now
 
     const plan = planner.getPlan(document);
     const isQuery = plan.operation === "query";
 
-    // Root is required by spec/tests.
+    // Seed root record required by tests/spec.
     graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
 
     if (DEBUG) {
       console.log("[norm] op=%s vars=%s", plan.operation, JSON.stringify(variables));
-      console.log("usersPostsData %s", JSON.stringify(data, null, 2));
+      console.log("[norm] data %s", JSON.stringify(data, null, 2));
     }
 
-    // ———————————————————————————————————————————————————————————————
-    // helpers (tight + allocation-aware)
-    // ———————————————————————————————————————————————————————————————
-    const isObj = (v: any): v is Record<string, any> => v != null && typeof v === "object" && !Array.isArray(v);
-
-    const isScalarArray = (arr: any[]) => {
-      for (let i = 0; i < arr.length; i++) {
-        if (isObj(arr[i])) {
-          return false;
-        }
-      }
-      return true;
-    };
-
-    // Shallow scalar snapshot; skips nested objects and arrays-of-objects.
-    const pickScalars = (src: Record<string, any>) => {
-      const out: Record<string, any> = {};
-      const ks = Object.keys(src);
-
-      for (let i = 0; i < ks.length; i++) {
-        const k = ks[i];
-
-        // Connection internals handled explicitly.
-        if (k === "edges" || k === "pageInfo") {
-          continue;
-        }
-
-        const v = src[k];
-        if (v == null) {
-          out[k] = v;
-          continue;
-        }
-
-        if (Array.isArray(v)) {
-          if (isScalarArray(v)) {
-            const arr = new Array(v.length);
-            for (let j = 0; j < v.length; j++) {
-              arr[j] = v[j];
-            }
-            out[k] = arr;
-          }
-          continue;
-        }
-
-        if (!isObj(v)) {
-          out[k] = v;
-        }
-      }
-
-      return out;
-    };
-
     type Frame = {
-      parentId: string;
-      fields: PlanField[] | undefined | null;
+      parentId: string;                                // record we’re currently writing into
+      fields: PlanField[] | undefined | null;          // selection set on this level
       fieldsMap: Map<string, PlanField> | undefined | null;
-      insideConnection: boolean;
+      insideConnection: boolean;                       // true while traversing a connection page or its edges
+      pageKey: string | null;                          // current connection page key (if insideConnection)
+      inEdges: boolean;                                // true while iterating edges[]
     };
-
-    // Worklist of node subtrees to normalize (avoids descending edges[]).
-    const deferredNodes: Array<{ value: any; frame: Frame }> = [];
 
     const initialFrame: Frame = {
       parentId: ROOT_ID,
       fields: plan.root,
       fieldsMap: plan.rootSelectionMap ?? new Map<string, PlanField>(),
       insideConnection: false,
+      pageKey: null,
+      inEdges: false,
     };
 
-    const visit = (parentNode: any, valueNode: any, responseKey: string | number | symbol, frame?: Frame) => {
-      if (!frame) {
-        return;
-      }
+    const visit = (
+      parentNode: any,
+      valueNode: any,
+      responseKey: string | number | null,
+      kind: symbol,
+      frame?: Frame,
+    ) => {
+      if (!frame) return;
 
-      // Arrays: skip traversing connection edges[], otherwise keep walking.
-      if (Array.isArray(valueNode)) {
-        if (frame.insideConnection && responseKey === "edges") {
-          if (DEBUG) {
-            console.log("[norm] skip traversal of edges[] for parent=%s", frame.parentId);
-          }
-          return TRAVERSE_SKIP;
-        }
+      // Root tick
+      if (responseKey == null) {
+        if (DEBUG) console.log("[norm] >>> traverse start");
         return frame;
-      }
-
-      // Scalars: nothing to do.
-      if (!isObj(valueNode)) {
-        return;
       }
 
       const parentId = frame.parentId;
       const fieldsMap = frame.fieldsMap as Map<string, PlanField> | undefined;
-      const hasResponseKey = typeof responseKey === "string";
-      const rk = hasResponseKey ? (responseKey as string) : null;
-      const planField = hasResponseKey && fieldsMap ? fieldsMap.get(rk as string) : undefined;
+      const planField =
+        typeof responseKey === "string" && fieldsMap ? fieldsMap.get(responseKey) : undefined;
 
-      // IMPORTANT: when we start a deferred node subtree, traverseFast calls us once
-      // with responseKey == null and valueNode == the node object.
-      // We MUST NOT upsert & drop selection here; just keep walking with the same frame.
-      if (!hasResponseKey && fieldsMap) {
-        if (DEBUG) {
-          console.log("[norm] top-of-subtree tick (no field) parent=%s — keep frame & continue", parentId);
+      // ─────────────────────────────────────────────────────────────────────────
+      // ARRAYS
+      // ─────────────────────────────────────────────────────────────────────────
+      if (kind === TRAVERSE_ARRAY) {
+        // Connection.edges → set edge refs on the page and dive into edge objects
+        if (frame.insideConnection && responseKey === "edges") {
+          const pageKey = frame.pageKey as string;
+          const rawEdges: any[] = Array.isArray(valueNode) ? valueNode : [];
+          const edgeRefs: string[] = new Array(rawEdges.length);
+          for (let i = 0; i < rawEdges.length; i++) edgeRefs[i] = `${pageKey}.edges:${i}`;
+
+          graph.putRecord(pageKey, { edges: { __refs: edgeRefs } });
+          if (DEBUG) console.log("[norm]   set page edges[%d] on %s", rawEdges.length, pageKey);
+
+          const edgesField = fieldsMap?.get("edges");
+          return {
+            parentId: frame.parentId,
+            fields: edgesField?.selectionSet,
+            fieldsMap: edgesField?.selectionMap,
+            insideConnection: true,
+            pageKey,
+            inEdges: true,
+          } as Frame;
         }
+
+        // Scalar arrays (e.g., Post.flags) → write inline on current record
+        if (planField && !planField.selectionSet) {
+          const fieldKey = buildFieldKey(planField, variables);
+          const arr = valueNode as any[];
+          const out = new Array(arr.length);
+          for (let i = 0; i < arr.length; i++) out[i] = arr[i];
+          graph.putRecord(parentId, { [fieldKey]: out });
+          if (DEBUG) console.log("[norm] array inline %s (parent=%s)", fieldKey, parentId);
+          return TRAVERSE_SKIP;
+        }
+
+        // Other arrays-of-objects (rare outside edges) → just continue
         return frame;
       }
 
       // ─────────────────────────────────────────────────────────────────────────
-      // 1) Connection page (concrete server page under "@.")
+      // OBJECTS
       // ─────────────────────────────────────────────────────────────────────────
-      if (planField && planField.isConnection) {
-        const pageKey = buildConnectionKey(planField, parentId, variables);
-        const parentFieldKey = buildFieldKey(planField, variables);
+      if (kind === TRAVERSE_OBJECT) {
+        // Edge object inside edges[]
+        if (frame.insideConnection && frame.inEdges && typeof responseKey === "number") {
+          const edgeKey = `${frame.pageKey}.edges:${responseKey}`;
+          // create/ensure edge record exists; scalars (cursor, score, etc.) will fill via SCALAR visits
+          if (valueNode && valueNode.__typename) {
+            graph.putRecord(edgeKey, { __typename: valueNode.__typename });
+          } else {
+            graph.putRecord(edgeKey, {}); // safe upsert
+          }
+          if (DEBUG) console.log("[norm]   put edge %s", edgeKey);
 
-        if (DEBUG) {
-          console.log(
-            "[norm] CONNECTION field=%s parent=%s pageKey=%s",
-            planField.responseKey,
-            parentId,
-            pageKey,
-          );
-        }
-
-        // Edge records
-        const inEdges: any[] = Array.isArray((valueNode as any).edges) ? (valueNode as any).edges : [];
-        const edgeKeys: string[] = new Array(inEdges.length);
-
-        // Pre-read node selection (if any) to queue node subtrees later.
-        const edgesSel = planField.selectionMap?.get("edges");
-        const nodeSel = edgesSel?.selectionMap?.get("node");
-        const nodeSelectionSet = nodeSel?.selectionSet || null;
-        const nodeSelectionMap = nodeSel?.selectionMap || null;
-
-        if (DEBUG) {
-          console.log(
-            "[norm]   edges=%d nodeSel?=%s",
-            inEdges.length,
-            nodeSelectionMap ? "yes" : "no",
-          );
-        }
-
-        for (let i = 0; i < inEdges.length; i++) {
-          const edgeIn = inEdges[i] || {};
-          const nodeObj = edgeIn.node;
-
-          // Upsert node entity (shallow scalars) if identifiable.
-          if (isObj(nodeObj)) {
+          // Link node ref early if identifiable (entity itself will be handled when we visit its object)
+          const nodeObj = (valueNode as any).node;
+          if (nodeObj) {
             const nodeKey = graph.identify(nodeObj);
             if (nodeKey) {
-              const nodePatch = pickScalars(nodeObj);
-              graph.putRecord(nodeKey, nodePatch);
-              if (DEBUG) {
-                console.log("[norm]   entity upsert %s (from edge[%d])", nodeKey, i);
-              }
-
-              // Queue node subtree to normalize nested selections (e.g., node.posts).
-              if (nodeSelectionSet && nodeSelectionMap) {
-                deferredNodes.push({
-                  value: nodeObj,
-                  frame: {
-                    parentId: nodeKey,
-                    fields: nodeSelectionSet,
-                    fieldsMap: nodeSelectionMap,
-                    insideConnection: false, // reset: we’re normalizing an entity subtree now
-                  },
-                });
-                if (DEBUG) {
-                  const keys = Array.from(nodeSelectionMap.keys());
-                  console.log("[norm]   queue node subtree %s with fields=%s", nodeKey, JSON.stringify(keys));
-                }
-              } else if (DEBUG) {
-                console.log("[norm]   node subtree NOT queued (no nodeSelectionMap)");
-              }
-            } else if (DEBUG) {
-              console.log("[norm]   WARN: node not identifiable at edge[%d] under page=%s", i, pageKey);
-            }
-          }
-
-          // Edge record (concrete)
-          const edgeKey = `${pageKey}.edges:${i}`;
-          const edgePatch = pickScalars(edgeIn);
-
-          if (isObj(edgeIn.node)) {
-            const nodeKey = graph.identify(edgeIn.node);
-            if (nodeKey) {
-              edgePatch.node = { __ref: nodeKey };
-            }
-          }
-
-          graph.putRecord(edgeKey, edgePatch);
-          edgeKeys[i] = edgeKey;
-          if (DEBUG) {
-            console.log("[norm]   put edge %s", edgeKey);
-          }
-        }
-
-        // PageInfo record
-        let pageInfoKey: string | null = null;
-        const pi = (valueNode as any).pageInfo;
-        if (isObj(pi)) {
-          pageInfoKey = `${pageKey}.pageInfo`;
-          const pageInfoPatch = pickScalars(pi);
-          graph.putRecord(pageInfoKey, pageInfoPatch);
-          if (DEBUG) {
-            console.log("[norm]   put pageInfo %s", pageInfoKey);
-          }
-        }
-
-        // Page snapshot (scalars only) + refs to edges/pageInfo
-        const pagePatch = pickScalars(valueNode);
-        pagePatch.edges = { __refs: edgeKeys };
-        if (pageInfoKey) {
-          pagePatch.pageInfo = { __ref: pageInfoKey };
-        }
-
-        graph.putRecord(pageKey, pagePatch);
-        if (DEBUG) {
-          console.log("[norm]   put page %s", pageKey);
-        }
-
-        // Link page under parent (for queries).
-        if (isQuery) {
-          graph.putRecord(parentId, { [parentFieldKey]: { __ref: pageKey } });
-          if (DEBUG) {
-            console.log("[norm]   link %s.%s -> %s", parentId, parentFieldKey, pageKey);
-          }
-        }
-
-        // Descend into the page for nested containers (e.g., aggregations).
-        return {
-          parentId: pageKey,
-          fields: planField.selectionSet,
-          fieldsMap: planField.selectionMap,
-          insideConnection: true,
-        } as Frame;
-      }
-
-      // Skip pageInfo object materialized above.
-      if (frame.insideConnection && rk === "pageInfo") {
-        if (DEBUG) {
-          console.log("[norm] skip pageInfo traversal parent=%s", parentId);
-        }
-        return TRAVERSE_SKIP;
-      }
-
-      // ─────────────────────────────────────────────────────────────────────────
-      // 2) Entity (identifiable via graph.identify)
-      // ─────────────────────────────────────────────────────────────────────────
-      {
-        const entityKey = graph.identify(valueNode);
-        if (entityKey) {
-          const entityPatch = pickScalars(valueNode);
-          graph.putRecord(entityKey, entityPatch);
-          if (DEBUG) {
-            console.log("[norm] entity upsert %s (field=%s, parent=%s)", entityKey, rk, parentId);
-          }
-
-          // Link from parent (queries only), except edges.node (linked on edge).
-          if (isQuery && planField && !(frame.insideConnection && planField.responseKey === "node")) {
-            const parentFieldKey = buildFieldKey(planField, variables);
-            graph.putRecord(parentId, { [parentFieldKey]: { __ref: entityKey } });
-            if (DEBUG) {
-              console.log("[norm] link %s.%s -> %s", parentId, parentFieldKey, entityKey);
+              graph.putRecord(edgeKey, { node: { __ref: nodeKey } });
+              if (DEBUG) console.log("[norm]   link edge.node -> %s", nodeKey);
             }
           }
 
           return {
-            parentId: entityKey,
-            fields: planField?.selectionSet,
-            fieldsMap: planField?.selectionMap,
-            insideConnection: frame.insideConnection,
+            parentId: edgeKey,
+            fields: fieldsMap, // current level is Edge selection map already
+            fieldsMap: fieldsMap,
+            insideConnection: true,
+            pageKey: frame.pageKey,
+            inEdges: true,
           } as Frame;
         }
-      }
 
-      // ─────────────────────────────────────────────────────────────────────────
-      // 3) Generic container (non-identifiable object)
-      // ─────────────────────────────────────────────────────────────────────────
-      if (planField) {
-        const containerFieldKey = buildFieldKey(planField, variables);
-        const containerKey = `${parentId}.${containerFieldKey}`;
-        const containerPatch = pickScalars(valueNode);
+        // Connection page object
+        if (planField && planField.isConnection) {
+          const pageKey = buildConnectionKey(planField, parentId, variables);
+          const parentFieldKey = buildFieldKey(planField, variables);
 
-        graph.putRecord(containerKey, containerPatch);
-        if (DEBUG) {
-          console.log("[norm] container put %s (field=%s parent=%s)", containerKey, planField.responseKey, parentId);
+          if (DEBUG) {
+            console.log("[norm] CONNECTION field=%s parent=%s pageKey=%s", planField.responseKey, parentId, pageKey);
+          }
+
+          // ensure page record exists (scalars will fill via SCALAR)
+          if (valueNode && valueNode.__typename) {
+            graph.putRecord(pageKey, { __typename: valueNode.__typename });
+          } else {
+            graph.putRecord(pageKey, {});
+          }
+
+          // If pageInfo child exists, link page → pageInfo (the pageInfo object itself will fill its scalars later)
+          if ((valueNode as any)?.pageInfo) {
+            const pageInfoKey = `${pageKey}.pageInfo`;
+            graph.putRecord(pageKey, { pageInfo: { __ref: pageInfoKey } });
+            // also ensure pageInfo record exists so scalar visits have a target
+            const piTypename = (valueNode as any)?.pageInfo?.__typename;
+            graph.putRecord(pageInfoKey, piTypename ? { __typename: piTypename } : {});
+            if (DEBUG) console.log("[norm]   link %s.pageInfo -> %s", pageKey, pageInfoKey);
+          }
+
+          // Link page under parent (queries only)
+          if (isQuery) {
+            graph.putRecord(parentId, { [parentFieldKey]: { __ref: pageKey } });
+            if (DEBUG) console.log("[norm]   link %s.%s -> %s", parentId, parentFieldKey, pageKey);
+          }
+
+          if (ENABLE_CANONICAL) {
+            // canonical.updateConnection(...)
+          }
+
+          // descend into the page (its selection set)
+          return {
+            parentId: pageKey,
+            fields: planField.selectionSet,
+            fieldsMap: planField.selectionMap,
+            insideConnection: true,
+            pageKey,
+            inEdges: false,
+          } as Frame;
         }
 
-        if (isQuery) {
-          graph.putRecord(parentId, { [containerFieldKey]: { __ref: containerKey } });
-          if (DEBUG) {
-            console.log("[norm] link %s.%s -> %s", parentId, containerFieldKey, containerKey);
+        // Entity (identifiable)
+        {
+          const entityKey = graph.identify(valueNode);
+          if (entityKey) {
+            // ensure entity record exists; scalars will fill via SCALAR visits
+            if (valueNode && valueNode.__typename) {
+              graph.putRecord(entityKey, { __typename: valueNode.__typename });
+            } else {
+              graph.putRecord(entityKey, {});
+            }
+            if (DEBUG) console.log("[norm] entity upsert %s (field=%s, parent=%s)", entityKey, String(responseKey), parentId);
+
+            // Link from parent (queries only), except edges.node (edge already links to node)
+            if (isQuery && planField && !(frame.insideConnection && planField.responseKey === "node")) {
+              const parentFieldKey = buildFieldKey(planField, variables);
+              graph.putRecord(parentId, { [parentFieldKey]: { __ref: entityKey } });
+              if (DEBUG) console.log("[norm] link %s.%s -> %s", parentId, parentFieldKey, entityKey);
+            }
+
+            // If this is edge.node, reset connection flags for nested connections
+            const fromNode = !!planField && planField.responseKey === "node";
+
+            return {
+              parentId: entityKey,
+              fields: planField?.selectionSet,
+              fieldsMap: planField?.selectionMap,
+              insideConnection: fromNode ? false : frame.insideConnection,
+              pageKey: fromNode ? null : frame.pageKey,
+              inEdges: fromNode ? false : frame.inEdges,
+            } as Frame;
           }
         }
 
-        return {
-          parentId: containerKey,
-          fields: planField.selectionSet,
-          fieldsMap: planField.selectionMap,
-          insideConnection: frame.insideConnection,
-        } as Frame;
+        // Generic container — non-identifiable object (e.g., pageInfo or any inline object field)
+        if (planField) {
+          const containerFieldKey = buildFieldKey(planField, variables);
+          const containerKey = `${parentId}.${containerFieldKey}`;
+
+          // ensure container record exists; scalars will fill via SCALAR visits
+          if (valueNode && valueNode.__typename) {
+            graph.putRecord(containerKey, { __typename: valueNode.__typename });
+          } else {
+            graph.putRecord(containerKey, {});
+          }
+          if (DEBUG) console.log("[norm] container put %s (field=%s parent=%s)", containerKey, planField.responseKey, parentId);
+
+          // Link from parent (queries only)
+          if (isQuery) {
+            graph.putRecord(parentId, { [containerFieldKey]: { __ref: containerKey } });
+            if (DEBUG) console.log("[norm] link %s.%s -> %s", parentId, containerFieldKey, containerKey);
+          }
+
+          // If this is the pageInfo under a page, make sure parent page has the link (already done above, but safe)
+          if (frame.insideConnection && containerFieldKey === "pageInfo" && frame.pageKey) {
+            graph.putRecord(frame.pageKey, { pageInfo: { __ref: containerKey } });
+          }
+
+          return {
+            parentId: containerKey,
+            fields: planField.selectionSet,
+            fieldsMap: planField.selectionMap,
+            insideConnection: frame.insideConnection,
+            pageKey: frame.pageKey,
+            inEdges: false,
+          } as Frame;
+        }
+
+        // Default: keep walking with same frame
+        return frame;
       }
 
-      // Default: keep walking with the current frame.
+      // ─────────────────────────────────────────────────────────────────────────
+      // SCALARS
+      // ─────────────────────────────────────────────────────────────────────────
+      if (kind === TRAVERSE_SCALAR) {
+        // Only act when we can resolve a field from the plan at this level
+        if (typeof responseKey === "string" && fieldsMap) {
+          const f = fieldsMap.get(responseKey);
+          if (f && !f.selectionSet) {
+            const fieldKey = buildFieldKey(f, variables);
+            graph.putRecord(frame.parentId, { [fieldKey]: valueNode });
+            if (DEBUG) console.log("[norm] scalar %s=%s (parent=%s)", fieldKey, JSON.stringify(valueNode), frame.parentId);
+          }
+        }
+        return frame;
+      }
+
       return frame;
     };
 
-    // Primary pass.
-    if (DEBUG) {
-      console.log("[norm] >>> primary traverse start");
-    }
     traverseFast(data, initialFrame, visit);
-    if (DEBUG) {
-      console.log("[norm] <<< primary traverse done; deferred=%d", deferredNodes.length);
-    }
-
-    // Drain deferred node subtrees (covers nested per-node connections of any depth).
-    while (deferredNodes.length > 0) {
-      const { value, frame } = deferredNodes.pop()!;
-      if (DEBUG) {
-        console.log("[norm] >>> drain node subtree parent=%s", frame.parentId);
-      }
-      traverseFast(value, frame, visit);
-      if (DEBUG) {
-        console.log("[norm] <<< drain done parent=%s", frame.parentId);
-      }
-    }
 
     if (DEBUG) {
-      console.log("[norm] complete");
+      console.log("[norm] <<< traverse done");
     }
   };
 
