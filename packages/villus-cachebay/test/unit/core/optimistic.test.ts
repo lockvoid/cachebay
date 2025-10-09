@@ -18,11 +18,12 @@ describe("Optimistic", () => {
       const tx = optimistic.modifyOptimistic((o) => {
         o.patch("Post:p1", { title: "Post 1 Updated" }, { mode: "merge" });
         o.patch({ __typename: "Post", id: "p1" }, (prev) => ({ title: (prev.title || "") + "!" }), { mode: "merge" });
-        o.patch("Post:p1", { title: "REPLACED", flags: [] }, { mode: "replace" });
+        o.patch("Post:p1", { title: "Post 1 Replaced", flags: [] }, { mode: "replace" });
       });
 
       tx.commit();
-      expect(graph.getRecord("Post:p1")).toEqual({ __typename: "Post", id: "p1", title: "REPLACED", flags: [] });
+
+      expect(graph.getRecord("Post:p1")).toEqual({ __typename: "Post", id: "p1", title: "Post 1 Replaced", flags: [] });
     });
   });
 
@@ -35,6 +36,7 @@ describe("Optimistic", () => {
       });
 
       tx.commit();
+
       expect(graph.getRecord("User:9")).toBeUndefined();
     });
   });
@@ -82,17 +84,20 @@ describe("Optimistic", () => {
         // 1. Seed Post 1, Post 2
         const tx1 = optimistic.modifyOptimistic((o) => {
           const c = o.connection({ parent: "Query", key: "posts" });
+
           c.addNode({ __typename: "Post", id: "p1", title: "Post 1" }, { position: "end" });
           c.addNode({ __typename: "Post", id: "p2", title: "Post 2" }, { position: "end" });
         });
+
         tx1.commit();
 
-        // 2. Insert Post 1.5 after Post:p1
+        // 2. Insert Post 3 after Post 1
         const tx2 = optimistic.modifyOptimistic((o) => {
           const c = o.connection({ parent: "Query", key: "posts" });
 
-          c.addNode({ __typename: "Post", id: "p1.5", title: "Post 1.5" }, { position: "after", anchor: "Post:p1" });
+          c.addNode({ __typename: "Post", id: "p3", title: "Post 3" }, { position: "after", anchor: "Post:p1" });
         });
+
         tx2.commit();
 
         // 3. Insert Post 0 before Post:p1
@@ -101,10 +106,11 @@ describe("Optimistic", () => {
 
           c.addNode({ __typename: "Post", id: "p0", title: "Post 0" }, { position: "before", anchor: { __typename: "Post", id: "p1" } });
         });
+
         tx3.commit();
 
         const ids = readCanonicalEdges(graph, key).map((e) => graph.getRecord(e.nodeKey)?.id);
-        expect(ids).toEqual(["p0", "p1", "p1.5", "p2"]);
+        expect(ids).toEqual(["p0", "p1", "p3", "p2"]);
       });
 
       it("handles boundary anchors and missing anchor fallbacks", () => {
@@ -116,14 +122,16 @@ describe("Optimistic", () => {
           c.addNode({ __typename: "Post", id: "p1", title: "Post 1" }, { position: "end" });
           c.addNode({ __typename: "Post", id: "p2", title: "Post 2" }, { position: "end" });
         });
+
         tx1.commit();
 
-        // 2. Before first anchor -> start
+        // 2. Add before first anchor -> start
         const tx2 = optimistic.modifyOptimistic((o) => {
           const c = o.connection({ parent: "Query", key: "posts" });
 
           c.addNode({ __typename: "Post", id: "p0", title: "Post 0" }, { position: "before", anchor: "Post:p1" });
         });
+
         tx2.commit();
 
         // 3. After last anchor -> end
@@ -132,6 +140,7 @@ describe("Optimistic", () => {
 
           c.addNode({ __typename: "Post", id: "p3", title: "Post 3" }, { position: "after", anchor: "Post:p2" });
         });
+
         tx3.commit();
 
         // 4. Missing anchors
@@ -141,6 +150,7 @@ describe("Optimistic", () => {
           c.addNode({ __typename: "Post", id: "px", title: "Post X" }, { position: "before", anchor: "Post:p404" });
           c.addNode({ __typename: "Post", id: "py", title: "Post Y" }, { position: "after", anchor: { __typename: "Post", id: "p404" } });
         });
+
         tx4.commit();
 
         const ids = readCanonicalEdges(graph, key).map((e) => graph.getRecord(e.nodeKey)?.id);
@@ -155,6 +165,7 @@ describe("Optimistic", () => {
         c.removeNode({ __typename: "Post", id: "p1" }); // no-op
         c.addNode({ __typename: "Post", id: "p1", title: "Post 1" }, { position: "end" });
       });
+
       tx.commit();
 
       const edges = readCanonicalEdges(graph, "@connection.posts({})");
@@ -170,7 +181,7 @@ describe("Optimistic", () => {
       const tx = optimistic.modifyOptimistic((o) => {
         const c = o.connection({ parent: "Query", key: "posts" });
 
-        c.removeNode({ __typename: "Post", id: "p999" }); // no-op
+        c.removeNode({ __typename: "Post", id: "p999" });
         c.addNode({ __typename: "Post", id: "p1", title: "Post 1" }, { position: "end" });
         c.removeNode("Post:p1");
       });
@@ -178,7 +189,7 @@ describe("Optimistic", () => {
       tx.commit();
 
       expect(readCanonicalEdges(graph, key).length).toBe(0);
-      expect(graph.getRecord("Post:p1")).toBeTruthy(); // entity remains
+      expect(graph.getRecord("Post:p1")).toBeTruthy();
     });
   });
 
@@ -323,9 +334,7 @@ describe("Optimistic", () => {
       // Revert the first layer → keep the later one
       tx1.revert();
 
-      const remainingIds = readCanonicalEdges(graph, key)
-        .map((e) => graph.getRecord(e.nodeKey)?.id)
-        .filter(Boolean);
+      const remainingIds = readCanonicalEdges(graph, key).map((e) => graph.getRecord(e.nodeKey)?.id).filter(Boolean);
       expect(remainingIds).toEqual(["p3"]);
 
       // Revert the second layer → back to baseline
@@ -466,10 +475,8 @@ describe("Optimistic", () => {
 
       tx.commit();
 
-      const techIds = readCanonicalEdges(graph, '@connection.posts({"category":"tech"})')
-        .map((e) => graph.getRecord(e.nodeKey)?.id);
-      const lifeIds = readCanonicalEdges(graph, '@connection.posts({"category":"life"})')
-        .map((e) => graph.getRecord(e.nodeKey)?.id);
+      const techIds = readCanonicalEdges(graph, '@connection.posts({"category":"tech"})').map((edge) => graph.getRecord(edge.nodeKey)?.id);
+      const lifeIds = readCanonicalEdges(graph, '@connection.posts({"category":"life"})').map((edge) => graph.getRecord(edge.nodeKey)?.id);
 
       expect(techIds).toEqual(["p1"]);
       expect(lifeIds).toEqual(["p2"]);
@@ -527,7 +534,7 @@ describe("Optimistic", () => {
     });
   });
 
-  describe("safety: invalid inputs", () => {
+  describe("Safety", () => {
     it("ignores invalid nodes in addNode/removeNode/patch (no typename/id) gracefully", () => {
       const key = "@connection.posts({})";
 
@@ -547,24 +554,28 @@ describe("Optimistic", () => {
     });
   });
 
-  describe("commit vs live layering", () => {
-    it("live layer can be reverted; once committed the same revert does nothing", () => {
+  describe("Layering", () => {
+    it("reverts optimistic layer; once committed the same revert does nothing", () => {
       const key = "@connection.posts({})";
 
-      // Live optimistic layer → can revert back to baseline
+      // Revert not committed optimistic layer
       const t1 = optimistic.modifyOptimistic((o) => {
-        o.connection({ parent: "Query", key: "posts" })
-          .addNode({ __typename: "Post", id: "p1", title: "P1" }, { position: "end" });
+        const c = o.connection({ parent: "Query", key: "posts" });
+
+        c.addNode({ __typename: "Post", id: "p1", title: "P1" }, { position: "end" });
       });
+
       expect(readCanonicalEdges(graph, key).length).toBe(1);
       t1.revert();
       expect(readCanonicalEdges(graph, key).length).toBe(0);
 
-      // New layer committed → now revert is a no-op
+      // Revert committed optimistic layer
       const t2 = optimistic.modifyOptimistic((o) => {
-        o.connection({ parent: "Query", key: "posts" })
-          .addNode({ __typename: "Post", id: "p2", title: "P2" }, { position: "end" });
+        const c = o.connection({ parent: "Query", key: "posts" });
+
+        c.addNode({ __typename: "Post", id: "p2", title: "P2" }, { position: "end" });
       });
+
       t2.commit();
       t2.revert();
 
@@ -573,16 +584,14 @@ describe("Optimistic", () => {
     });
   });
 
-  describe("commit(data)", () => {
+  describe("Commit phase", () => {
     it("replays builder with data to replace a temp id with a server id (no dupes, temp removed)", () => {
       const key = "@connection.posts({})";
 
       const tx = optimistic.modifyOptimistic((o, ctx?: { phase?: "optimistic" | "commit"; data?: any }) => {
         const c = o.connection({ parent: "Query", key: "posts" });
 
-        const id = ctx?.data?.id ?? "tmp-1";
-        const title = ctx?.data?.title ?? "Temp Post";
-        c.addNode({ __typename: "Post", id, title }, { position: "start" });
+        c.addNode({ __typename: "Post", id: ctx?.data?.id ?? "tmp-1", title: ctx?.data?.title ?? "Temp Post" }, { position: "start" });
       });
 
       // First pass: temp node present
@@ -595,7 +604,7 @@ describe("Optimistic", () => {
       const ids = readCanonicalEdges(graph, key).map((e) => graph.getRecord(e.nodeKey)?.id);
       expect(ids).toEqual(["p9"]);
 
-      // Temp entity should not linger (baseline restore + rebuilt write)
+      // Temp entity should not linger
       expect(graph.getRecord("Post:tmp-1")).toBeUndefined();
       expect(graph.getRecord("Post:p9")?.title).toBe("From Server");
     });
@@ -605,9 +614,8 @@ describe("Optimistic", () => {
 
       const tx = optimistic.modifyOptimistic((o, ctx?: { phase?: "optimistic" | "commit"; data?: any }) => {
         const c = o.connection({ parent: "Query", key: "posts" });
-        const id = ctx?.data?.id ?? "tmp-2";
-        const edgeMeta = ctx?.phase === "commit" ? { pending: false, settled: true } : { pending: true };
-        c.addNode({ __typename: "Post", id, title: "Edge Meta" }, { position: "end", edge: edgeMeta });
+
+        c.addNode({ __typename: "Post", id: ctx?.data?.id ?? "tmp-2", title: "Edge Meta" }, { position: "end", edge: ctx?.phase === "commit" ? { pending: false, settled: true } : { pending: true } });
       });
 
       // Round 1: pending=true
@@ -635,10 +643,7 @@ describe("Optimistic", () => {
         o.patch("User:me", { name }, { mode: "merge" });
       });
 
-      // optimistic
       expect(graph.getRecord("User:me")?.name).toBe("Draft");
-
-      // commit with final name
       tx.commit({ name: "Real Name" });
       expect(graph.getRecord("User:me")?.name).toBe("Real Name");
     });

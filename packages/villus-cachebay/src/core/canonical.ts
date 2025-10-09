@@ -15,7 +15,6 @@ export type CanonicalInstance = ReturnType<typeof createCanonical>;
 const metaKeyOf = (canKey: string) => `${canKey}::meta`;
 
 type ConnMeta = {
-  __typename: "__ConnMeta";
   pages: string[]; // observed pages (arrival order)
   leader?: string; // leader pageKey (no-cursor)
   hints?: Record<string, "before" | "after" | "leader">; // per-page role

@@ -62,6 +62,11 @@ describe("documents.normalizeDocument", () => {
       __typename: "User",
       email: "u1@example.com",
     });
+
+    // No canonical connection for single entity queries
+    const keys = graph.keys();
+    const canonicalKeys = keys.filter((k) => k.startsWith("@connection"));
+    expect(canonicalKeys.length).toBe(0);
   });
 
   it("normalizes root users connection with edge records", () => {
@@ -168,6 +173,29 @@ describe("documents.normalizeDocument", () => {
         __ref: "User:u3",
       },
     });
+
+    // Check canonical connection
+    const canonicalUsers = graph.getRecord('@connection.users({"role":"admin"})');
+    expect(canonicalUsers).toEqual({
+      __typename: "UserConnection",
+      pageInfo: {
+        __ref: '@connection.users({"role":"admin"}).pageInfo',
+      },
+      edges: {
+        __refs: [
+          '@.users({"after":null,"first":2,"role":"admin"}).edges:0',
+          '@.users({"after":null,"first":2,"role":"admin"}).edges:1',
+          '@.users({"after":"u2","first":2,"role":"admin"}).edges:0',
+        ],
+      },
+    });
+
+    const canonicalUsersMeta = graph.getRecord('@connection.users({"role":"admin"})::meta');
+    expect(canonicalUsersMeta).toBeDefined();
+    expect(canonicalUsersMeta.pages).toEqual([
+      '@.users({"after":null,"first":2,"role":"admin"})',
+      '@.users({"after":"u2","first":2,"role":"admin"})',
+    ]);
   });
 
   it("preserves both category connections when writing tech then lifestyle posts", () => {
@@ -309,6 +337,45 @@ describe("documents.normalizeDocument", () => {
         ],
       },
     });
+
+    // Check canonical connections for both categories
+    const canonicalTech = graph.getRecord('@connection.User:u1.posts({"category":"tech"})');
+    expect(canonicalTech).toEqual({
+      __typename: "PostConnection",
+      totalCount: 2,
+      pageInfo: {
+        __ref: '@connection.User:u1.posts({"category":"tech"}).pageInfo',
+      },
+      edges: {
+        __refs: [
+          '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges:0',
+          '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges:1',
+        ],
+      },
+    });
+
+    const canonicalTechMeta = graph.getRecord('@connection.User:u1.posts({"category":"tech"})::meta');
+    expect(canonicalTechMeta).toBeDefined();
+    expect(canonicalTechMeta.pages).toEqual(['@.User:u1.posts({"after":null,"category":"tech","first":2})']);
+
+    const canonicalLifestyle = graph.getRecord('@connection.User:u1.posts({"category":"lifestyle"})');
+    expect(canonicalLifestyle).toEqual({
+      __typename: "PostConnection",
+      totalCount: 1,
+      pageInfo: {
+        __ref: '@connection.User:u1.posts({"category":"lifestyle"}).pageInfo',
+      },
+      edges: {
+        __refs: [
+          '@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges:0',
+          '@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges:1',
+        ],
+      },
+    });
+
+    const canonicalLifestyleMeta = graph.getRecord('@connection.User:u1.posts({"category":"lifestyle"})::meta');
+    expect(canonicalLifestyleMeta).toBeDefined();
+    expect(canonicalLifestyleMeta.pages).toEqual(['@.User:u1.posts({"after":null,"category":"lifestyle","first":2})']);
   });
 
   it("normalizes root users connection plus nested per-user posts connections", () => {
@@ -419,6 +486,55 @@ describe("documents.normalizeDocument", () => {
         __refs: [],
       },
     });
+
+    // Check canonical connections
+    const canonicalDjUsers = graph.getRecord('@connection.users({"role":"dj"})');
+    expect(canonicalDjUsers).toEqual({
+      __typename: "UserConnection",
+      pageInfo: {
+        __ref: '@connection.users({"role":"dj"}).pageInfo',
+      },
+      edges: {
+        __refs: [
+          '@.users({"after":null,"first":2,"role":"dj"}).edges:0',
+          '@.users({"after":null,"first":2,"role":"dj"}).edges:1',
+        ],
+      },
+    });
+
+    const canonicalDjUsersMeta = graph.getRecord('@connection.users({"role":"dj"})::meta');
+    expect(canonicalDjUsersMeta).toBeDefined();
+    expect(canonicalDjUsersMeta.pages).toEqual(['@.users({"after":null,"first":2,"role":"dj"})']);
+
+    const canonicalU1Posts = graph.getRecord('@connection.User:u1.posts({"category":"tech"})');
+    expect(canonicalU1Posts).toEqual({
+      __typename: "PostConnection",
+      pageInfo: {
+        __ref: '@connection.User:u1.posts({"category":"tech"}).pageInfo',
+      },
+      edges: {
+        __refs: ['@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0'],
+      },
+    });
+
+    const canonicalU1PostsMeta = graph.getRecord('@connection.User:u1.posts({"category":"tech"})::meta');
+    expect(canonicalU1PostsMeta).toBeDefined();
+    expect(canonicalU1PostsMeta.pages).toEqual(['@.User:u1.posts({"after":null,"category":"tech","first":1})']);
+
+    const canonicalU2Posts = graph.getRecord('@connection.User:u2.posts({"category":"tech"})');
+    expect(canonicalU2Posts).toEqual({
+      __typename: "PostConnection",
+      pageInfo: {
+        __ref: '@connection.User:u2.posts({"category":"tech"}).pageInfo',
+      },
+      edges: {
+        __refs: [],
+      },
+    });
+
+    const canonicalU2PostsMeta = graph.getRecord('@connection.User:u2.posts({"category":"tech"})::meta');
+    expect(canonicalU2PostsMeta).toBeDefined();
+    expect(canonicalU2PostsMeta.pages).toEqual(['@.User:u2.posts({"after":null,"category":"tech","first":1})']);
   });
 
   it("normalizes nested posts and comments connections as separate records", () => {
@@ -609,6 +725,44 @@ describe("documents.normalizeDocument", () => {
         __ref: "User:u2",
       },
     });
+
+    // Check canonical connections
+    const canonicalU1TechPosts = graph.getRecord('@connection.User:u1.posts({"category":"tech"})');
+    expect(canonicalU1TechPosts).toEqual({
+      __typename: "PostConnection",
+      pageInfo: {
+        __ref: '@connection.User:u1.posts({"category":"tech"}).pageInfo',
+      },
+      edges: {
+        __refs: ['@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0'],
+      },
+    });
+
+    const canonicalU1TechPostsMeta = graph.getRecord('@connection.User:u1.posts({"category":"tech"})::meta');
+    expect(canonicalU1TechPostsMeta).toBeDefined();
+    expect(canonicalU1TechPostsMeta.pages).toEqual(['@.User:u1.posts({"after":null,"category":"tech","first":1})']);
+
+    const canonicalP1Comments = graph.getRecord("@connection.Post:p1.comments({})");
+    expect(canonicalP1Comments).toEqual({
+      __typename: "CommentConnection",
+      pageInfo: {
+        __ref: "@connection.Post:p1.comments({}).pageInfo",
+      },
+      edges: {
+        __refs: [
+          '@.Post:p1.comments({"after":null,"first":2}).edges:0',
+          '@.Post:p1.comments({"after":null,"first":2}).edges:1',
+          '@.Post:p1.comments({"after":"c2","first":1}).edges:0',
+        ],
+      },
+    });
+
+    const canonicalP1CommentsMeta = graph.getRecord("@connection.Post:p1.comments({})::meta");
+    expect(canonicalP1CommentsMeta).toBeDefined();
+    expect(canonicalP1CommentsMeta.pages).toEqual([
+      '@.Post:p1.comments({"after":null,"first":2})',
+      '@.Post:p1.comments({"after":"c2","first":1})',
+    ]);
   });
 
   it("normalizes root users connection and nested posts plus comments connections", () => {
@@ -713,6 +867,52 @@ describe("documents.normalizeDocument", () => {
         __ref: "Comment:c1",
       },
     });
+
+    // Check canonical connections for all three levels
+    const canonicalAdminUsers = graph.getRecord('@connection.users({"role":"admin"})');
+    expect(canonicalAdminUsers).toEqual({
+      __typename: "UserConnection",
+      pageInfo: {
+        __ref: '@connection.users({"role":"admin"}).pageInfo',
+      },
+      edges: {
+        __refs: ['@.users({"after":null,"first":2,"role":"admin"}).edges:0'],
+      },
+    });
+
+    const canonicalAdminUsersMeta = graph.getRecord('@connection.users({"role":"admin"})::meta');
+    expect(canonicalAdminUsersMeta).toBeDefined();
+    expect(canonicalAdminUsersMeta.pages).toEqual(['@.users({"after":null,"first":2,"role":"admin"})']);
+
+    const canonicalUserPosts = graph.getRecord('@connection.User:u1.posts({"category":"tech"})');
+    expect(canonicalUserPosts).toEqual({
+      __typename: "PostConnection",
+      pageInfo: {
+        __ref: '@connection.User:u1.posts({"category":"tech"}).pageInfo',
+      },
+      edges: {
+        __refs: ['@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0'],
+      },
+    });
+
+    const canonicalUserPostsMeta = graph.getRecord('@connection.User:u1.posts({"category":"tech"})::meta');
+    expect(canonicalUserPostsMeta).toBeDefined();
+    expect(canonicalUserPostsMeta.pages).toEqual(['@.User:u1.posts({"after":null,"category":"tech","first":1})']);
+
+    const canonicalPostComments = graph.getRecord("@connection.Post:p1.comments({})");
+    expect(canonicalPostComments).toEqual({
+      __typename: "CommentConnection",
+      pageInfo: {
+        __ref: "@connection.Post:p1.comments({}).pageInfo",
+      },
+      edges: {
+        __refs: ['@.Post:p1.comments({"after":null,"first":1}).edges:0'],
+      },
+    });
+
+    const canonicalPostCommentsMeta = graph.getRecord("@connection.Post:p1.comments({})::meta");
+    expect(canonicalPostCommentsMeta).toBeDefined();
+    expect(canonicalPostCommentsMeta.pages).toEqual(['@.Post:p1.comments({"after":null,"first":1})']);
   });
 
   it("normalizes mutation operations correctly", () => {
@@ -755,6 +955,11 @@ describe("documents.normalizeDocument", () => {
       __typename: "User",
       email: "u1_updated@example.com",
     });
+
+    // Mutations don't create canonical connections at root level
+    const keys = graph.keys();
+    const canonicalKeys = keys.filter((k) => k.startsWith("@connection"));
+    expect(canonicalKeys.length).toBe(0);
   });
 
   it("normalizes subscription operations correctly", () => {
@@ -786,6 +991,11 @@ describe("documents.normalizeDocument", () => {
       __typename: "User",
       email: "u1_subscribed@example.com",
     });
+
+    // Subscriptions don't create canonical connections
+    const keys = graph.keys();
+    const canonicalKeys = keys.filter((k) => k.startsWith("@connection"));
+    expect(canonicalKeys.length).toBe(0);
   });
 
   it("appends after cursor and prepends before cursor in canonical infinite mode", () => {
@@ -917,6 +1127,17 @@ describe("documents.normalizeDocument", () => {
       hasNextPage: true,
       hasPreviousPage: true,
     });
+
+    expect(graph.getRecord('@connection.users({"role":"admin"})::meta')).toBeDefined();
+
+    const adminMeta = graph.getRecord('@connection.users({"role":"admin"})::meta');
+    expect(adminMeta.pages).toEqual([
+      '@.users({"after":null,"first":2,"role":"admin"})',
+      '@.users({"after":"u2","first":2,"role":"admin"})',
+      '@.users({"before":"u1","last":1,"role":"admin"})',
+    ]);
+    expect(adminMeta.leader).toBeDefined();
+    expect(adminMeta.hints).toBeDefined();
   });
 
   it("appends after cursor and prepends before cursor in canonical page mode", () => {
@@ -1074,6 +1295,36 @@ describe("documents.normalizeDocument", () => {
         __ref: "User:m0",
       },
     });
+
+    // Check canonical connection in page mode
+    const canonicalModerators = graph.getRecord('@connection.users({"role":"moderator"})');
+    expect(canonicalModerators).toBeDefined();
+    expect(canonicalModerators).toEqual({
+      __typename: "UserConnection",
+      totalCount: 1,
+      pageInfo: {
+        __ref: '@connection.users({"role":"moderator"}).pageInfo',
+      },
+      edges: {
+        __refs: ['@.users({"before":"m3","last":1,"role":"moderator"}).edges:0'],
+      },
+    });
+
+    const canonicalModeratorsMeta = graph.getRecord('@connection.users({"role":"moderator"})::meta');
+    expect(canonicalModeratorsMeta).toBeDefined();
+    expect(canonicalModeratorsMeta.pages).toEqual([
+      '@.users({"after":null,"first":2,"role":"moderator"})',
+      '@.users({"after":"m2","first":2,"role":"moderator"})',
+      '@.users({"before":"m3","last":1,"role":"moderator"})',
+    ]);
+    expect(canonicalModeratorsMeta.leader).toBeDefined();
+    expect(canonicalModeratorsMeta.hints).toBeDefined();
+
+    // In page mode, canonical should point to the most recent page
+    const canonicalConnection = graph.getRecord('@connection.users({"role":"moderator"})');
+    expect(canonicalConnection.edges.__refs).toEqual([
+      '@.users({"before":"m3","last":1,"role":"moderator"}).edges:0',
+    ]);
   });
 
   it("appends after cursor in canonical nested comments infinite mode", () => {
@@ -1216,6 +1467,16 @@ describe("documents.normalizeDocument", () => {
       hasNextPage: true,
       hasPreviousPage: false,
     });
+
+    expect(graph.getRecord("@connection.Post:p1.comments({})::meta")).toBeDefined();
+
+    const p1CommentsMeta = graph.getRecord("@connection.Post:p1.comments({})::meta");
+    expect(p1CommentsMeta.pages).toEqual([
+      '@.Post:p1.comments({"after":null,"first":2})',
+      '@.Post:p1.comments({"after":"c2","first":1})',
+    ]);
+    expect(p1CommentsMeta.leader).toBeDefined();
+    expect(p1CommentsMeta.hints).toBeDefined();
   });
 
   it("replaces edges for each page in canonical nested comments page mode", () => {
@@ -1415,6 +1676,17 @@ describe("documents.normalizeDocument", () => {
       hasNextPage: false,
       hasPreviousPage: true,
     });
+
+    expect(graph.getRecord("@connection.Post:p9.comments({})::meta")).toBeDefined();
+
+    const p9CommentsMeta = graph.getRecord("@connection.Post:p9.comments({})::meta");
+    expect(p9CommentsMeta.pages).toEqual([
+      '@.Post:p9.comments({"after":null,"first":2})',
+      '@.Post:p9.comments({"after":"x2","first":2})',
+      '@.Post:p9.comments({"before":"x3","last":1})',
+    ]);
+    expect(p9CommentsMeta.leader).toBeDefined();
+    expect(p9CommentsMeta.hints).toBeDefined();
   });
 
   it("merges nested comments independently per parent with anchored pageInfo", () => {
@@ -1625,6 +1897,23 @@ describe("documents.normalizeDocument", () => {
     expect(post2CommentIds).toEqual(["c9", "c10"]);
     expect(post2PageInfo.startCursor).toBe("c9");
     expect(post2PageInfo.endCursor).toBe("c10");
+
+    // Check canonical metadata
+    const p1CustomCommentsMeta = graph.getRecord("@connection.Post:p1.CustomComments({})::meta");
+    expect(p1CustomCommentsMeta).toBeDefined();
+    expect(p1CustomCommentsMeta.pages).toEqual([
+      '@.Post:p1.comments({"after":null,"first":2})',
+      '@.Post:p1.comments({"after":"c2","first":1})',
+    ]);
+    expect(p1CustomCommentsMeta.leader).toBeDefined();
+
+    const p2CustomCommentsMeta = graph.getRecord("@connection.Post:p2.CustomComments({})::meta");
+    expect(p2CustomCommentsMeta).toBeDefined();
+    expect(p2CustomCommentsMeta.pages).toEqual([
+      '@.Post:p2.comments({"after":null,"first":1})',
+      '@.Post:p2.comments({"after":"c9","first":1})',
+    ]);
+    expect(p2CustomCommentsMeta.leader).toBeDefined();
   });
 
   it("stores and links entities by custom key (slug) when id is absent", () => {
@@ -1661,6 +1950,11 @@ describe("documents.normalizeDocument", () => {
 
     expect(profile).toBeTruthy();
     expect(profile.name).toBe("Dimitri");
+
+    // No canonical connection for single entity queries
+    const keys = graph.keys();
+    const canonicalKeys = keys.filter((k) => k.startsWith("@connection"));
+    expect(canonicalKeys.length).toBe(0);
   });
 
   it("normalizes aggregations connections", () => {
@@ -1983,9 +2277,18 @@ describe("documents.normalizeDocument", () => {
       },
     });
 
-    expect(graph.getRecord("@connection.posts({}).aggregations.BaseTags({})::meta")).toBeDefined();
+    expect(graph.getRecord("@connection.posts({})::meta")).toBeDefined();
 
-    expect(graph.getRecord('@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"})')).toEqual({
+    const postsMeta = graph.getRecord("@connection.posts({})::meta");
+    expect(postsMeta.pages).toEqual(['@.posts({"after":null,"first":2})']);
+    expect(postsMeta.leader).toBeDefined();
+
+    const baseTagsMeta = graph.getRecord("@connection.posts({}).aggregations.BaseTags({})::meta");
+    expect(baseTagsMeta).toBeDefined();
+    expect(baseTagsMeta.pages).toEqual(['@.posts({"after":null,"first":2}).aggregations.tags({"first":50})']);
+
+    const p1ModerationTagsCanonical = graph.getRecord('@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"})');
+    expect(p1ModerationTagsCanonical).toEqual({
       __typename: "TagConnection",
       pageInfo: {
         __ref: '@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"}).pageInfo',
@@ -1995,9 +2298,13 @@ describe("documents.normalizeDocument", () => {
       },
     });
 
-    expect(graph.getRecord('@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"})::meta')).toBeDefined();
+    const p1ModerationTagsMeta = graph.getRecord('@connection.Post:p1.aggregations.ModerationTags({"category":"moderation"})::meta');
+    expect(p1ModerationTagsMeta).toBeDefined();
+    expect(p1ModerationTagsMeta.pages).toEqual(['@.Post:p1.aggregations.tags({"category":"moderation","first":25})']);
+    expect(p1ModerationTagsMeta.leader).toBeDefined();
 
-    expect(graph.getRecord('@connection.Post:p1.aggregations.UserTags({"category":"user"})')).toEqual({
+    const p1UserTagsCanonical = graph.getRecord('@connection.Post:p1.aggregations.UserTags({"category":"user"})');
+    expect(p1UserTagsCanonical).toEqual({
       __typename: "TagConnection",
       pageInfo: {
         __ref: '@connection.Post:p1.aggregations.UserTags({"category":"user"}).pageInfo',
@@ -2007,9 +2314,19 @@ describe("documents.normalizeDocument", () => {
       },
     });
 
-    expect(graph.getRecord('@connection.Post:p1.aggregations.UserTags({"category":"user"})::meta')).toBeDefined();
+    const p1UserTagsMeta = graph.getRecord('@connection.Post:p1.aggregations.UserTags({"category":"user"})::meta');
+    expect(p1UserTagsMeta).toBeDefined();
+    expect(p1UserTagsMeta.pages).toEqual(['@.Post:p1.aggregations.tags({"category":"user","first":25})']);
+    expect(p1UserTagsMeta.leader).toBeDefined();
 
-    expect(graph.getRecord('@connection.Post:p2.aggregations.ModerationTags({"category":"moderation"})::meta')).toBeDefined();
-    expect(graph.getRecord('@connection.Post:p2.aggregations.UserTags({"category":"user"})::meta')).toBeDefined();
+    const p2ModerationTagsMeta = graph.getRecord('@connection.Post:p2.aggregations.ModerationTags({"category":"moderation"})::meta');
+    expect(p2ModerationTagsMeta).toBeDefined();
+    expect(p2ModerationTagsMeta.pages).toEqual(['@.Post:p2.aggregations.tags({"category":"moderation","first":25})']);
+    expect(p2ModerationTagsMeta.leader).toBeDefined();
+
+    const p2UserTagsMeta = graph.getRecord('@connection.Post:p2.aggregations.UserTags({"category":"user"})::meta');
+    expect(p2UserTagsMeta).toBeDefined();
+    expect(p2UserTagsMeta.pages).toEqual(['@.Post:p2.aggregations.tags({"category":"user","first":25})']);
+    expect(p2UserTagsMeta.leader).toBeDefined();
   });
 });
