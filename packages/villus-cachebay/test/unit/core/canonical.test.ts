@@ -125,7 +125,6 @@ describe("Canonical", () => {
           variables: { first: 3, after: null },
           pageKey: '@.posts({"after":null,"first":3})',
           pageSnapshot: page,
-          pageEdges: edges,
         });
 
         const canKey = "@connection.posts({})";
@@ -254,7 +253,6 @@ describe("Canonical", () => {
           variables: { first: 3, after: null },
           pageKey,
           pageSnapshot: page,
-          pageEdges: edges,
         });
 
         const canKey = "@connection.posts({})";
@@ -763,7 +761,6 @@ describe("Canonical", () => {
           variables: { first: 3, after: null },
           pageKey: '@.posts({"after":null,"first":3})',
           pageSnapshot: page,
-          pageEdges: edges,
         });
 
         expect(replaySpy).toHaveBeenCalledWith({
@@ -870,7 +867,6 @@ describe("Canonical", () => {
           variables: { first: 3, after: null },
           pageKey,
           pageSnapshot: page,
-          pageEdges: edges,
         });
 
         expect(getNodeIds(canKey)).toEqual(["1", "2", "3"]);
@@ -1114,7 +1110,6 @@ describe("Canonical", () => {
           variables: { first: 3, after: null },
           pageKey: '@.posts({"after":null,"first":3})',
           pageSnapshot: page,
-          pageEdges: edges,
         });
 
         expect(replaySpy).toHaveBeenCalledWith({
@@ -1136,7 +1131,6 @@ describe("Canonical", () => {
           variables: { first: 10, after: null },
           pageKey,
           pageSnapshot: page,
-          pageEdges: edges,
         });
 
         expect(getNodeIds(canKey)).toEqual(["t1", "t2"]);
