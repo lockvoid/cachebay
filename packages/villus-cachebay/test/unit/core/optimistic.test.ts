@@ -200,8 +200,14 @@ describe("Optimistic", () => {
       graph.putRecord(key, {
         __typename: "PostConnection",
         totalCount: 2,
-        pageInfo: { __typename: "PageInfo", endCursor: "c2", hasNextPage: true },
-        edges: [],
+        pageInfo: { __ref: `${key}.pageInfo` },
+        edges: { __refs: [] },
+      });
+
+      graph.putRecord(`${key}.pageInfo`, {
+        __typename: "PageInfo",
+        endCursor: "c2",
+        hasNextPage: true,
       });
 
       const tx = optimistic.modifyOptimistic((o) => {
@@ -215,7 +221,9 @@ describe("Optimistic", () => {
 
       const connection = graph.getRecord(key)!;
       expect(connection.totalCount).toBe(4);
-      expect(connection.pageInfo).toEqual({
+
+      const pageInfo = graph.getRecord(`${key}.pageInfo`)!;
+      expect(pageInfo).toEqual({
         __typename: "PageInfo",
         endCursor: "c2",
         hasNextPage: false,
@@ -229,8 +237,10 @@ describe("Optimistic", () => {
       const keyA = '@connection.posts({"category":"A"})';
       const keyB = '@connection.posts({"category":"B"})';
 
-      graph.putRecord(keyA, { __typename: "PostConnection", edges: [], pageInfo: {} });
-      graph.putRecord(keyB, { __typename: "PostConnection", edges: [], pageInfo: {} });
+      graph.putRecord(keyA, { __typename: "PostConnection", edges: { __refs: [] }, pageInfo: { __ref: `${keyA}.pageInfo` } });
+      graph.putRecord(`${keyA}.pageInfo`, { __typename: "PageInfo" });
+      graph.putRecord(keyB, { __typename: "PostConnection", edges: { __refs: [] }, pageInfo: { __ref: `${keyB}.pageInfo` } });
+      graph.putRecord(`${keyB}.pageInfo`, { __typename: "PageInfo" });
 
       expect(readCanonicalEdges(graph, keyA).map((e) => e.nodeKey)).toEqual([]);
       expect(readCanonicalEdges(graph, keyB).map((e) => e.nodeKey)).toEqual([]);
@@ -321,6 +331,7 @@ describe("Optimistic", () => {
       // Layer 1: add p1, p2
       const tx1 = optimistic.modifyOptimistic((o) => {
         const c = o.connection({ parent: "Query", key: "posts" });
+
         c.addNode({ __typename: "Post", id: "p1", title: "Post 1" }, { position: "end" });
         c.addNode({ __typename: "Post", id: "p2", title: "Post 2" }, { position: "end" });
       });
@@ -328,6 +339,7 @@ describe("Optimistic", () => {
       // Layer 2: add p3
       const tx2 = optimistic.modifyOptimistic((o) => {
         const c = o.connection({ parent: "Query", key: "posts" });
+
         c.addNode({ __typename: "Post", id: "p3", title: "Post 3" }, { position: "end" });
       });
 
@@ -390,6 +402,7 @@ describe("Optimistic", () => {
 
       const tx1 = optimistic.modifyOptimistic((o) => {
         const c = o.connection(canonicalKey);
+
         c.addNode({ __typename: "Post", id: "t1", title: "Tech 1" }, { position: "end" });
       });
 
@@ -414,24 +427,30 @@ describe("Optimistic", () => {
       graph.putRecord(canonicalKey, {
         __typename: "PostConnection",
         totalCount: 1,
-        pageInfo: { __typename: "PageInfo", endCursor: "e1", hasNextPage: true },
-        edges: [],
+        pageInfo: { __ref: `${canonicalKey}.pageInfo` },
+        edges: { __refs: [] },
+      });
+
+      graph.putRecord(`${canonicalKey}.pageInfo`, {
+        __typename: "PageInfo",
+        endCursor: "e1",
+        hasNextPage: true,
       });
 
       const tx = optimistic.modifyOptimistic((o) => {
         const c = o.connection(canonicalKey);
 
         c.patch({ totalCount: 2, pageInfo: { startCursor: "s1", hasNextPage: false } });
-
         c.patch((prev) => ({ totalCount: (prev.totalCount || 0) + 1 }));
       });
 
       tx.commit();
 
       const snap = graph.getRecord(canonicalKey)!;
-
       expect(snap.totalCount).toBe(3);
-      expect(snap.pageInfo).toEqual({
+
+      const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`)!;
+      expect(pageInfo).toEqual({
         __typename: "PageInfo",
         endCursor: "e1",
         hasNextPage: false,
@@ -453,6 +472,7 @@ describe("Optimistic", () => {
 
       const tx2 = optimistic.modifyOptimistic((o) => {
         const c = o.connection(canonicalKey);
+
         c.addNode({ __typename: "Post", id: "p2", title: "Post 2" }, { position: "after", anchor: "Post:p1" });
       });
 
@@ -467,9 +487,11 @@ describe("Optimistic", () => {
     it("isolates canonicals with different filters", () => {
       const tx = optimistic.modifyOptimistic((o) => {
         const tech = o.connection({ parent: "Query", key: "posts", filters: { category: "tech" } });
+
         tech.addNode({ __typename: "Post", id: "p1", title: "Post 1" }, { position: "end" });
 
         const life = o.connection({ parent: "Query", key: "posts", filters: { category: "life" } });
+
         life.addNode({ __typename: "Post", id: "p2", title: "Post 2" }, { position: "end" });
       });
 
@@ -487,9 +509,11 @@ describe("Optimistic", () => {
 
       const tx = optimistic.modifyOptimistic((o) => {
         const root = o.connection({ parent: "Query", key: "posts" });
+
         root.addNode({ __typename: "Post", id: "p10", title: "Post 10" }, { position: "end" });
 
         const user = o.connection({ parent: { __typename: "User", id: 42 }, key: "posts" });
+
         user.addNode({ __typename: "Post", id: "p11", title: "Post 11" }, { position: "end" });
       });
 
@@ -509,6 +533,7 @@ describe("Optimistic", () => {
 
       const tx = optimistic.modifyOptimistic((o) => {
         const c = o.connection({ parent: "Query", key: "posts" });
+
         c.addNode({ __typename: "Post", id: "p1", title: "P1" }, { position: "end" });
       });
 
@@ -639,8 +664,7 @@ describe("Optimistic", () => {
       graph.putRecord("User:me", { __typename: "User", id: "me", name: "Draft" });
 
       const tx = optimistic.modifyOptimistic((o, ctx?: { data?: any }) => {
-        const name = ctx?.data?.name ?? "Draft";
-        o.patch("User:me", { name }, { mode: "merge" });
+        o.patch("User:me", { name: ctx?.data?.name ?? "Draft" }, { mode: "merge" });
       });
 
       expect(graph.getRecord("User:me")?.name).toBe("Draft");
@@ -654,13 +678,14 @@ describe("Optimistic", () => {
       // L1: optimistic (start) temp post
       const t1 = optimistic.modifyOptimistic((o, ctx?: { data?: any }) => {
         const c = o.connection({ parent: "Query", key: "posts" });
-        const id = ctx?.data?.id ?? "tmp-3";
-        c.addNode({ __typename: "Post", id, title: "T1" }, { position: "start" });
+
+        c.addNode({ __typename: "Post", id: ctx?.data?.id ?? "tmp-3", title: "T1" }, { position: "start" });
       });
 
       // L2: another optimistic layer appending a stable node
       const t2 = optimistic.modifyOptimistic((o) => {
         const c = o.connection({ parent: "Query", key: "posts" });
+
         c.addNode({ __typename: "Post", id: "p2", title: "Stable" }, { position: "end" });
       });
 

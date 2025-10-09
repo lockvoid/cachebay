@@ -6,23 +6,39 @@ import { ROOT_ID } from "@/src/core/constants";
 import { createGraph } from "@/src/core/graph";
 
 export function readCanonicalEdges(graph: ReturnType<typeof createGraph>, canonicalKey: string) {
-  const page = graph.getRecord(canonicalKey) || {};
-  const refs = Array.isArray(page.edges) ? page.edges : [];
+  const page = graph.getRecord(canonicalKey);
+  if (!page) return [];
+
+  const edgesField = page.edges;
+  if (!edgesField || typeof edgesField !== "object") return [];
+
+  const refs = Array.isArray(edgesField.__refs) ? edgesField.__refs : [];
+
   const out: Array<{ edgeRef: string; nodeKey: string; meta: Record<string, any> }> = [];
+
   for (let i = 0; i < refs.length; i++) {
-    const edgeRef = refs[i]?.__ref;
-    if (!edgeRef) continue;
-    const e = graph.getRecord(edgeRef) || {};
-    out.push({
-      edgeRef,
-      nodeKey: e?.node?.__ref,
-      meta: Object.fromEntries(
-        Object.keys(e || {})
-          .filter((k) => k !== "cursor" && k !== "node" && k !== "__typename")
-          .map((k) => [k, e[k]]),
-      ),
-    });
+    const edgeRef = refs[i];
+    if (typeof edgeRef !== "string") continue;
+
+    const edge = graph.getRecord(edgeRef);
+    if (!edge) continue;
+
+    const nodeRef = edge.node;
+    if (!nodeRef || typeof nodeRef !== "object") continue;
+
+    const nodeKey = nodeRef.__ref;
+    if (typeof nodeKey !== "string") continue;
+
+    const meta: Record<string, any> = {};
+    for (const key in edge) {
+      if (key !== "cursor" && key !== "node" && key !== "__typename") {
+        meta[key] = edge[key];
+      }
+    }
+
+    out.push({ edgeRef, nodeKey, meta });
   }
+
   return out;
 }
 

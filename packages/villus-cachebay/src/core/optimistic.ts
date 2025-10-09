@@ -1,184 +1,32 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+import { ROOT_ID } from "./constants";
+import { buildConnectionCanonicalKey } from "./utils";
+import type { GraphInstance } from "./graph";
 
-import { ROOT_ID } from "../core/constants";
-import { buildConnectionCanonicalKey } from "../core/utils";
+type OptimisticDependencies = { graph: GraphInstance };
 
-/* ────────────────────────────────────────────────────────────────────────────
- * Graph deps
- * -------------------------------------------------------------------------- */
-type GraphDeps = {
-  identify: (obj: any) => string | null;
-  getRecord: (recordId: string) => any | undefined;
-  putRecord: (recordId: string, partialSnapshot: Record<string, any>) => void;
-  removeRecord: (recordId: string) => void;
-};
+const ENTITY_WRITE = Symbol("EntityWrite");
+const ENTITY_DELETE = Symbol("EntityDelete");
+const CONNECTION_ADD_NODE = Symbol("ConnectionAddNode");
+const CONNECTION_REMOVE_NODE = Symbol("ConnectionRemoveNode");
+const CONNECTION_PATCH = Symbol("ConnectionPatch");
+const EDGE_INDEX_REGEX = /\.edges:(\d+)$/;
 
-type Deps = { graph: GraphDeps };
-
-/* ────────────────────────────────────────────────────────────────────────────
- * Utils
- * -------------------------------------------------------------------------- */
-const cloneJSON = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
-
-const parseRecordId = (rid: string): { typename?: string; id?: string } => {
-  const i = rid.indexOf(":");
-  if (i < 0) return {};
-  return { typename: rid.slice(0, i) || undefined, id: rid.slice(i + 1) || undefined };
-};
-
-const isCanonicalKey = (id: string) => id.startsWith("@connection.");
-
-const shallowEdgeMeta = (meta: any): any => {
-  if (!meta || typeof meta !== "object") return undefined;
-  const out: any = {};
-  for (const k of Object.keys(meta)) {
-    if (k === "cursor") continue;
-    out[k] = meta[k];
-  }
-  return Object.keys(out).length ? out : undefined;
-};
-
-const nextEdgeIndex = (canKey: string, canSnap: any): number => {
-  if (!Array.isArray(canSnap?.edges) || canSnap.edges.length === 0) return 0;
-  let maxIdx = -1;
-  for (let i = 0; i < canSnap.edges.length; i++) {
-    const ref = canSnap.edges[i]?.__ref;
-    if (!ref) continue;
-    const m = ref.match(/\.edges\.(\d+)$/);
-    if (m) {
-      const n = Number(m[1]);
-      if (!Number.isNaN(n) && n > maxIdx) maxIdx = n;
-    }
-  }
-  return maxIdx + 1;
-};
-
-const findEdgeIndexByNode = (graph: GraphDeps, canSnap: any, entityKey: string): number => {
-  const edges = Array.isArray(canSnap?.edges) ? canSnap.edges : [];
-  for (let i = 0; i < edges.length; i++) {
-    const ref = edges[i]?.__ref;
-    if (!ref) continue;
-    const e = graph.getRecord(ref);
-    if (e?.node?.__ref === entityKey) return i;
-  }
-  return -1;
-};
-
-const nodeRefFromEdgeRef = (graph: GraphDeps, edgeRef?: string): string | null => {
-  if (!edgeRef) return null;
-  return (graph.getRecord(edgeRef)?.node?.__ref as string) || null;
-};
-
-const edgeRefForNodeInEdges = (graph: GraphDeps, edges: Array<{ __ref: string }> | undefined, entityKey: string): string | null => {
-  if (!Array.isArray(edges)) return null;
-  for (const r of edges) {
-    const nref = nodeRefFromEdgeRef(graph, r?.__ref);
-    if (nref === entityKey) return r.__ref;
-  }
-  return null;
-};
-
-const indexOfEdgeRef = (edges: Array<{ __ref: string }> | undefined, edgeRef: string): number =>
-  Array.isArray(edges) ? edges.findIndex(r => r?.__ref === edgeRef) : -1;
-
-const findAnchorIndex = (graph: GraphDeps, canSnap: any, anchorKey: string): number => {
-  const edges = Array.isArray(canSnap?.edges) ? canSnap.edges : [];
-  for (let i = 0; i < edges.length; i++) {
-    const ref = edges[i]?.__ref;
-    if (!ref) continue;
-    const e = graph.getRecord(ref);
-    if (e?.node?.__ref === anchorKey) return i;
-  }
-  const anchorId = anchorKey.includes(":") ? anchorKey.slice(anchorKey.indexOf(":") + 1) : anchorKey;
-  for (let i = 0; i < edges.length; i++) {
-    const ref = edges[i]?.__ref;
-    if (!ref) continue;
-    const e = graph.getRecord(ref);
-    const nref = e?.node?.__ref;
-    if (!nref) continue;
-    const node = graph.getRecord(nref);
-    if (node?.id != null && String(node.id) === String(anchorId)) return i;
-  }
-  return -1;
-};
-
-// Upsert into canonical with anchor
-const upsertCanonicalEdgeAnchored = (
-  graph: GraphDeps,
-  canKey: string,
-  canSnap: any,
-  entityKey: string,
-  edgeMeta: any,
-  position: "start" | "end" | "before" | "after",
-  anchorKey?: string | null,
-) => {
-  const edges = Array.isArray(canSnap.edges) ? canSnap.edges : (canSnap.edges = []);
-
-  const existingIdx = findEdgeIndexByNode(graph, canSnap, entityKey);
-  if (existingIdx >= 0) {
-    const edgeRef = edges[existingIdx]?.__ref;
-    if (edgeRef && edgeMeta && typeof edgeMeta === "object") {
-      const patch: any = {};
-      for (const k of Object.keys(edgeMeta)) patch[k] = edgeMeta[k];
-      graph.putRecord(edgeRef, patch);
-    }
-    return;
-  }
-
-  const idx = nextEdgeIndex(canKey, canSnap);
-  const edgeKey = `${canKey}.edges.${idx}`;
-  const nodeType = (entityKey.split(":")[0] || "").trim();
-  const edgeTypename = nodeType ? `${nodeType}Edge` : "Edge";
-
-  graph.putRecord(edgeKey, { __typename: edgeTypename, node: { __ref: entityKey }, ...(edgeMeta || {}) });
-  const ref = { __ref: edgeKey };
-
-  if (position === "start") return void edges.unshift(ref);
-  if (position === "end") return void edges.push(ref);
-
-  let insertAt = -1;
-  if (anchorKey) insertAt = findAnchorIndex(graph, canSnap, anchorKey);
-  if (insertAt < 0) {
-    if (position === "before") edges.unshift(ref);
-    else edges.push(ref);
-  } else {
-    edges.splice(position === "before" ? insertAt : insertAt + 1, 0, ref);
-  }
-};
-
-const removeCanonicalEdge = (graph: GraphDeps, _canKey: string, canSnap: any, entityKey: string): boolean => {
-  const edges = Array.isArray(canSnap.edges) ? canSnap.edges : [];
-  for (let i = 0; i < edges.length; i++) {
-    const edgeRef = edges[i]?.__ref;
-    if (!edgeRef) continue;
-    const edgeRec = graph.getRecord(edgeRef);
-    if (edgeRec?.node?.__ref === entityKey) {
-      edges.splice(i, 1);
-      return true;
-    }
-  }
-  return false;
-};
-
-/* ────────────────────────────────────────────────────────────────────────────
- * Types
- * -------------------------------------------------------------------------- */
 type EntityOp =
-  | { kind: "entityWrite"; recordId: string; patch: Record<string, any>; policy: "merge" | "replace" }
-  | { kind: "entityDelete"; recordId: string };
+  | { kind: typeof ENTITY_WRITE; recordId: string; patch: Record<string, any>; policy: "merge" | "replace" }
+  | { kind: typeof ENTITY_DELETE; recordId: string };
 
-type CanonOp =
-  | { kind: "canAddNode"; canKey: string; entityKey: string; meta?: any; position: "start" | "end" | "before" | "after"; anchor?: string | null }
-  | { kind: "canRemoveNode"; canKey: string; entityKey: string }
-  | { kind: "canPatch"; canKey: string; patch: Record<string, any> };
+type ConnectionOp =
+  | { kind: typeof CONNECTION_ADD_NODE; connectionKey: string; entityKey: string; meta?: any; position: "start" | "end" | "before" | "after"; anchor?: string | null }
+  | { kind: typeof CONNECTION_REMOVE_NODE; connectionKey: string; entityKey: string }
+  | { kind: typeof CONNECTION_PATCH; connectionKey: string; patch: Record<string, any> };
 
 type Layer = {
   id: number;
   entityOps: EntityOp[];
-  canOps: CanonOp[];
+  connectionOps: ConnectionOp[];
   touched: Set<string>;
   localBase: Map<string, any | null>;
-  builder: (tx: BuilderAPI, ctx: BuilderCtx) => void;
+  builder: (tx: BuilderInstance, ctx: BuilderContext) => void;
 };
 
 type ConnectionArgs = {
@@ -187,580 +35,785 @@ type ConnectionArgs = {
   filters?: Record<string, any>;
 };
 
-type BuilderAPI = {
-  patch: (
-    target: string | { __typename?: string; id?: any },
-    patchOrFn: Record<string, any> | ((prev: any) => Record<string, any>),
-    opts?: { mode?: "merge" | "replace" }
-  ) => void;
+type EntityRef = string | { __typename?: string; id?: any };
 
-  delete: (target: string | { __typename?: string; id?: any }) => void;
+type PatchInput = Record<string, any> | ((prev: any) => Record<string, any>);
 
-  connection: (argsOrKey: ConnectionArgs | string) => {
-    addNode: (node: any, opts?: {
-      position?: "start" | "end" | "before" | "after";
-      anchor?: string | { __typename: string; id: any };
-      edge?: Record<string, any>;
-    }) => void;
-    removeNode: (ref: { __typename?: string; id?: any } | string) => void;
-    patch: (patchOrFn: Record<string, any> | ((prev: any) => Record<string, any>)) => void;
-    key: string;
-  };
+type ConnectionAPI = {
+  addNode: (node: any, opts?: { position?: "start" | "end" | "before" | "after"; anchor?: EntityRef; edge?: Record<string, any> }) => void;
+  removeNode: (ref: EntityRef) => void;
+  patch: (patchOrFn: PatchInput) => void;
+  key: string;
 };
 
-type BuilderCtx = {
+type BuilderInstance = {
+  patch: (target: EntityRef, patchOrFn: PatchInput, opts?: { mode?: "merge" | "replace" }) => void;
+  delete: (target: EntityRef) => void;
+  connection: (argsOrKey: ConnectionArgs | string) => ConnectionAPI;
+};
+
+type BuilderContext = {
   phase: "optimistic" | "commit";
   data?: any;
 };
 
-/* ────────────────────────────────────────────────────────────────────────────
- * Main
- * -------------------------------------------------------------------------- */
-export const createOptimistic = ({ graph }: Deps) => {
-  const pending = new Set<Layer>();
-  let nextId = 1;
+const cloneJSON = <T,>(value: T): T => {
+  return JSON.parse(JSON.stringify(value));
+};
 
-  const replaceInPlace = (recordId: string, full: Record<string, any>) => {
-    const current = graph.getRecord(recordId) || {};
-    const deletions: Record<string, any> = {};
-    for (const k of Object.keys(current)) if (!(k in full)) deletions[k] = undefined;
-    if (Object.keys(deletions).length) graph.putRecord(recordId, deletions);
-    graph.putRecord(recordId, full);
+const parseRecordId = (recordId: string): { typename?: string; id?: string } => {
+  const colonIndex = recordId.indexOf(":");
+
+  if (colonIndex < 0) {
+    return {};
+  }
+
+  return {
+    typename: recordId.slice(0, colonIndex) || undefined,
+    id: recordId.slice(colonIndex + 1) || undefined,
+  };
+};
+
+const isCanonicalKey = (id: string): boolean => {
+  return id.startsWith("@connection.");
+};
+
+const extractEdgeMeta = (meta: any): any => {
+  if (!meta || typeof meta !== "object") {
+    return undefined;
+  }
+
+  const result: any = {};
+
+  for (const key in meta) {
+    if (key !== "cursor") {
+      result[key] = meta[key];
+    }
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
+};
+
+const getEdgeRefs = (canonical: any): string[] => {
+  const edgesField = canonical?.edges;
+
+  if (!edgesField || typeof edgesField !== "object") {
+    return [];
+  }
+
+  return Array.isArray(edgesField.__refs) ? edgesField.__refs : [];
+};
+
+const setEdgeRefs = (canonical: any, refs: string[]): void => {
+  if (!canonical.edges || typeof canonical.edges !== "object") {
+    canonical.edges = { __refs: refs };
+  } else {
+    canonical.edges.__refs = refs;
+  }
+};
+
+const shallowCopy = (source: any): any => {
+  const result: any = {};
+
+  for (const key in source) {
+    result[key] = source[key];
+  }
+
+  return result;
+};
+
+const findNextEdgeIndex = (canonical: any): number => {
+  const refs = getEdgeRefs(canonical);
+
+  if (refs.length === 0) {
+    return 0;
+  }
+
+  let maxIndex = -1;
+
+  for (let i = 0; i < refs.length; i++) {
+    const match = refs[i]?.match(EDGE_INDEX_REGEX);
+
+    if (match) {
+      const number = Number(match[1]);
+
+      if (!Number.isNaN(number) && number > maxIndex) {
+        maxIndex = number;
+      }
+    }
+  }
+
+  return maxIndex + 1;
+};
+
+const findEdgeByNode = (graph: GraphInstance, refs: string[], entityKey: string): number => {
+  for (let i = 0; i < refs.length; i++) {
+    const edge = graph.getRecord(refs[i]);
+
+    if (edge?.node?.__ref === entityKey) {
+      return i;
+    }
+  }
+
+  return -1;
+};
+
+const findAnchorIndex = (graph: GraphInstance, refs: string[], anchorKey: string): number => {
+  for (let i = 0; i < refs.length; i++) {
+    const edge = graph.getRecord(refs[i]);
+
+    if (edge?.node?.__ref === anchorKey) {
+      return i;
+    }
+  }
+
+  const anchorId = anchorKey.includes(":") ? anchorKey.slice(anchorKey.indexOf(":") + 1) : anchorKey;
+
+  for (let i = 0; i < refs.length; i++) {
+    const edge = graph.getRecord(refs[i]);
+    const nodeKey = edge?.node?.__ref;
+
+    if (!nodeKey) {
+      continue;
+    }
+
+    const node = graph.getRecord(nodeKey);
+
+    if (node?.id != null && String(node.id) === String(anchorId)) {
+      return i;
+    }
+  }
+
+  return -1;
+};
+
+const insertEdge = (graph: GraphInstance, canonicalKey: string, canonical: any, entityKey: string, edgeMeta: any, position: "start" | "end" | "before" | "after", anchorKey?: string | null): void => {
+  const refs = getEdgeRefs(canonical);
+  const existingIndex = findEdgeByNode(graph, refs, entityKey);
+
+  if (existingIndex >= 0) {
+    if (edgeMeta) {
+      graph.putRecord(refs[existingIndex]!, shallowCopy(edgeMeta));
+    }
+    return;
+  }
+
+  const edgeIndex = findNextEdgeIndex(canonical);
+  const edgeKey = `${canonicalKey}.edges:${edgeIndex}`;
+  const nodeType = entityKey.split(":")[0]?.trim() || "";
+  const edgeTypename = nodeType ? `${nodeType}Edge` : "Edge";
+
+  const edgeRecord: any = {
+    __typename: edgeTypename,
+    node: { __ref: entityKey },
   };
 
-  // Recording writers (optimistic)
-  const recEntityWrite = (L: Layer, recordId: string, patch: Record<string, any>, policy: "merge" | "replace") => {
-    if (!L.touched.has(recordId)) L.touched.add(recordId);
-    if (!L.localBase.has(recordId)) {
-      const prev = graph.getRecord(recordId);
-      L.localBase.set(recordId, prev ? cloneJSON(prev) : null);
+  if (edgeMeta) {
+    for (const key in edgeMeta) {
+      edgeRecord[key] = edgeMeta[key];
     }
+  }
 
-    const prev = graph.getRecord(recordId);
-    const { typename: riType, id: riId } = parseRecordId(recordId);
+  graph.putRecord(edgeKey, edgeRecord);
 
-    if (policy === "replace") {
-      const typename = (patch.__typename as string) ?? riType ?? prev?.__typename;
-      const id = (patch.id != null ? String(patch.id) : undefined) ?? riId ?? prev?.id;
-      const clean = { ...patch };
-      if (clean.__typename === undefined && typename) clean.__typename = typename;
-      if (clean.id === undefined && id != null) clean.id = id;
-      graph.putRecord(recordId, clean);
-      return;
-    }
+  const newRefs = [...refs];
 
-    if (!prev) {
-      const typename = (patch.__typename as string) ?? riType;
-      const id = patch.id != null ? String(patch.id) : riId;
-      const first = { ...patch };
-      if (typename && first.__typename === undefined) first.__typename = typename;
-      if (id != null && first.id === undefined) first.id = id;
-      graph.putRecord(recordId, first);
-      return;
-    }
+  if (position === "start") {
+    newRefs.unshift(edgeKey);
+  } else if (position === "end") {
+    newRefs.push(edgeKey);
+  } else {
+    const insertAt = anchorKey ? findAnchorIndex(graph, refs, anchorKey) : -1;
 
-    graph.putRecord(recordId, patch);
-  };
-
-  const recEntityDelete = (L: Layer, recordId: string) => {
-    if (!L.touched.has(recordId)) L.touched.add(recordId);
-    if (!L.localBase.has(recordId)) {
-      const prev = graph.getRecord(recordId);
-      L.localBase.set(recordId, prev ? cloneJSON(prev) : null);
-    }
-    graph.removeRecord(recordId);
-  };
-
-  const recCanonOp = (L: Layer, op: CanonOp) => {
-    if (!L.touched.has(op.canKey)) L.touched.add(op.canKey);
-    if (!L.localBase.has(op.canKey)) {
-      const prev = graph.getRecord(op.canKey);
-      L.localBase.set(op.canKey, prev ? cloneJSON(prev) : null);
-    }
-
-    let can = graph.getRecord(op.canKey);
-    if (!can || typeof can !== "object") {
-      can = { __typename: "Connection", edges: [], pageInfo: {} };
+    if (insertAt < 0) {
+      if (position === "before") {
+        newRefs.unshift(edgeKey);
+      } else {
+        newRefs.push(edgeKey);
+      }
     } else {
-      can = { ...can, edges: Array.isArray(can.edges) ? [...can.edges] : [], pageInfo: { ...(can.pageInfo || {}) } };
+      newRefs.splice(position === "before" ? insertAt : insertAt + 1, 0, edgeKey);
     }
+  }
 
-    if (op.kind === "canAddNode") {
-      upsertCanonicalEdgeAnchored(graph, op.canKey, can, op.entityKey, op.meta, op.position, op.anchor);
-      graph.putRecord(op.canKey, can);
-      return;
+  setEdgeRefs(canonical, newRefs);
+};
+
+const removeEdge = (graph: GraphInstance, canonical: any, entityKey: string): boolean => {
+  const refs = getEdgeRefs(canonical);
+
+  for (let i = 0; i < refs.length; i++) {
+    const edge = graph.getRecord(refs[i]);
+
+    if (edge?.node?.__ref === entityKey) {
+      const newRefs = [...refs];
+      newRefs.splice(i, 1);
+      setEdgeRefs(canonical, newRefs);
+
+      return true;
     }
-    if (op.kind === "canRemoveNode") {
-      removeCanonicalEdge(graph, op.canKey, can, op.entityKey);
-      graph.putRecord(op.canKey, can);
-      return;
-    }
-    if (op.kind === "canPatch") {
-      const prev = can;
-      const p = op.patch || {};
-      const next: any = { ...prev };
-      if (p.pageInfo && typeof p.pageInfo === "object") {
-        next.pageInfo = { ...(prev.pageInfo || {}), ...(p.pageInfo as any) };
-      }
-      for (const k of Object.keys(p)) {
-        if (k === "pageInfo") continue;
-        next[k] = (p as any)[k];
-      }
-      graph.putRecord(op.canKey, next);
-      return;
-    }
+  }
+
+  return false;
+};
+
+const createEmptyCanonical = (canonicalKey: string): any => {
+  return {
+    __typename: "Connection",
+    edges: { __refs: [] },
+    pageInfo: { __ref: `${canonicalKey}.pageInfo` },
   };
+};
 
-  // Write-through writers (commit(data) pass)
-  const wtEntityWrite = (recordId: string, patch: Record<string, any>, policy: "merge" | "replace") => {
-    const prev = graph.getRecord(recordId);
-    const { typename: riType, id: riId } = parseRecordId(recordId);
-    if (policy === "replace") {
-      const typename = (patch.__typename as string) ?? riType ?? prev?.__typename;
-      const id = (patch.id != null ? String(patch.id) : undefined) ?? riId ?? prev?.id;
-      const clean = { ...patch };
-      if (clean.__typename === undefined && typename) clean.__typename = typename;
-      if (clean.id === undefined && id != null) clean.id = id;
-      graph.putRecord(recordId, clean);
-      return;
+const cloneCanonical = (canonical: any): any => {
+  return {
+    __typename: canonical.__typename,
+    edges: { __refs: [...getEdgeRefs(canonical)] },
+    pageInfo: canonical.pageInfo || {},
+  };
+};
+
+const ensurePageInfo = (graph: GraphInstance, canonicalKey: string): void => {
+  const pageInfoKey = `${canonicalKey}.pageInfo`;
+  if (!graph.getRecord(pageInfoKey)) {
+    graph.putRecord(pageInfoKey, { __typename: "PageInfo" });
+  }
+};
+
+const patchPageInfo = (graph: GraphInstance, canonical: any, pageInfoPatch: any): void => {
+  const pageInfoRef = canonical.pageInfo?.__ref;
+
+  if (!pageInfoRef) {
+    return;
+  }
+
+  const current = graph.getRecord(pageInfoRef) || {};
+  const updated = shallowCopy(current);
+
+  for (const key in pageInfoPatch) {
+    updated[key] = pageInfoPatch[key];
+  }
+
+  graph.putRecord(pageInfoRef, updated);
+};
+
+const writeEntity = (graph: GraphInstance, recordId: string, patch: Record<string, any>, policy: "merge" | "replace"): void => {
+  const prevRecord = graph.getRecord(recordId);
+  const { typename, id } = parseRecordId(recordId);
+
+  if (policy === "replace" || !prevRecord) {
+    const nextTypename = (patch.__typename as string) ?? typename ?? prevRecord?.__typename;
+    const nextId = (patch.id != null ? String(patch.id) : undefined) ?? id ?? prevRecord?.id;
+    const record = shallowCopy(patch);
+
+    if (record.__typename === undefined && nextTypename) {
+      record.__typename = nextTypename;
     }
-    if (!prev) {
-      const typename = (patch.__typename as string) ?? riType;
-      const id = patch.id != null ? String(patch.id) : riId;
-      const first = { ...patch };
-      if (typename && first.__typename === undefined) first.__typename = typename;
-      if (id != null && first.id === undefined) first.id = id;
-      graph.putRecord(recordId, first);
-      return;
+
+    if (record.id === undefined && nextId) {
+      record.id = nextId;
     }
+
+    graph.putRecord(recordId, record);
+  } else {
     graph.putRecord(recordId, patch);
-  };
+  }
+};
 
-  const wtEntityDelete = (recordId: string) => {
+const deleteEntity = (graph: GraphInstance, recordId: string): void => {
+  graph.removeRecord(recordId);
+};
+
+const restoreEntity = (graph: GraphInstance, recordId: string, snapshot: any | null): void => {
+  if (snapshot === null) {
     graph.removeRecord(recordId);
-  };
+    return;
+  }
 
-  const wtCanonAdd = (canKey: string, entityKey: string, meta: any, position: "start" | "end" | "before" | "after", anchor?: string | null) => {
-    let can = graph.getRecord(canKey);
-    if (!can || typeof can !== "object") can = { __typename: "Connection", edges: [], pageInfo: {} };
-    else can = { ...can, edges: Array.isArray(can.edges) ? [...can.edges] : [], pageInfo: { ...(can.pageInfo || {}) } };
-    upsertCanonicalEdgeAnchored(graph, canKey, can, entityKey, meta, position, anchor);
-    graph.putRecord(canKey, can);
-  };
+  const current = graph.getRecord(recordId);
 
-  const wtCanonRemove = (canKey: string, entityKey: string) => {
-    let can = graph.getRecord(canKey);
-    if (!can || typeof can !== "object") can = { __typename: "Connection", edges: [], pageInfo: {} };
-    else can = { ...can, edges: Array.isArray(can.edges) ? [...can.edges] : [], pageInfo: { ...(can.pageInfo || {}) } };
-    removeCanonicalEdge(graph, canKey, can, entityKey);
-    graph.putRecord(canKey, can);
-  };
+  if (current) {
+    const deletions: Record<string, any> = {};
 
-  const wtCanonPatch = (canKey: string, patch: Record<string, any>) => {
-    const prev = graph.getRecord(canKey) || { __typename: "Connection", edges: [], pageInfo: {} };
-    const p = patch || {};
-    const next: any = { ...prev };
-    if (p.pageInfo && typeof p.pageInfo === "object") {
-      next.pageInfo = { ...(prev.pageInfo || {}), ...(p.pageInfo as any) };
+    for (const key in current) {
+      if (!(key in snapshot)) {
+        deletions[key] = undefined;
+      }
     }
-    for (const k of Object.keys(p)) {
-      if (k === "pageInfo") continue;
-      next[k] = (p as any)[k];
+
+    if (Object.keys(deletions).length > 0) {
+      graph.putRecord(recordId, deletions);
     }
-    graph.putRecord(canKey, next);
+  }
+
+  graph.putRecord(recordId, snapshot);
+};
+
+const captureBaseline = (layer: Layer, graph: GraphInstance, recordId: string): void => {
+  if (layer.touched.has(recordId)) {
+    return;
+  }
+
+  layer.touched.add(recordId);
+
+  if (!layer.localBase.has(recordId)) {
+    const snapshot = graph.getRecord(recordId);
+    layer.localBase.set(recordId, snapshot ? cloneJSON(snapshot) : null);
+  }
+};
+
+const applyEntityOp = (graph: GraphInstance, op: EntityOp): void => {
+  if (op.kind === ENTITY_WRITE) {
+    writeEntity(graph, op.recordId, op.patch, op.policy);
+  } else {
+    deleteEntity(graph, op.recordId);
+  }
+};
+
+const applyConnectionOp = (graph: GraphInstance, op: ConnectionOp): void => {
+  let canonical = graph.getRecord(op.connectionKey);
+
+  if (!canonical || typeof canonical !== "object") {
+    canonical = createEmptyCanonical(op.connectionKey);
+    if (op.kind !== CONNECTION_REMOVE_NODE) {
+      ensurePageInfo(graph, op.connectionKey);
+    }
+  } else {
+    canonical = cloneCanonical(canonical);
+  }
+
+  if (op.kind === CONNECTION_ADD_NODE) {
+    insertEdge(graph, op.connectionKey, canonical, op.entityKey, op.meta, op.position, op.anchor);
+  } else if (op.kind === CONNECTION_REMOVE_NODE) {
+    removeEdge(graph, canonical, op.entityKey);
+  } else {
+    if (op.patch.pageInfo) {
+      patchPageInfo(graph, canonical, op.patch.pageInfo);
+    }
+
+    for (const key in op.patch) {
+      if (key !== "pageInfo") {
+        canonical[key] = op.patch[key];
+      }
+    }
+  }
+
+  graph.putRecord(op.connectionKey, canonical);
+};
+
+const recordOp = (layer: Layer, graph: GraphInstance, op: EntityOp | ConnectionOp): void => {
+  const recordId = "recordId" in op ? op.recordId : op.connectionKey;
+  captureBaseline(layer, graph, recordId);
+
+  if ("recordId" in op) {
+    applyEntityOp(graph, op);
+  } else {
+    applyConnectionOp(graph, op);
+  }
+};
+
+const revertEntities = (layer: Layer, graph: GraphInstance): void => {
+  for (const [recordId, snapshot] of layer.localBase) {
+    if (!isCanonicalKey(recordId)) {
+      restoreEntity(graph, recordId, snapshot);
+    }
+  }
+};
+
+const revertConnectionOp = (layer: Layer, graph: GraphInstance, op: ConnectionOp): void => {
+  let canonical = graph.getRecord(op.connectionKey);
+
+  if (!canonical || typeof canonical !== "object") {
+    canonical = createEmptyCanonical(op.connectionKey);
+  } else {
+    canonical = cloneCanonical(canonical);
+  }
+
+  if (op.kind === CONNECTION_ADD_NODE) {
+    removeEdge(graph, canonical, op.entityKey);
+    graph.putRecord(op.connectionKey, canonical);
+    return;
+  }
+
+  if (op.kind === CONNECTION_REMOVE_NODE) {
+    const baseline = layer.localBase.get(op.connectionKey) || {};
+    const baseRefs = getEdgeRefs(baseline);
+
+    let edgeRef: string | null = null;
+
+    for (let i = 0; i < baseRefs.length; i++) {
+      const edge = graph.getRecord(baseRefs[i]);
+      if (edge?.node?.__ref === op.entityKey) {
+        edgeRef = baseRefs[i];
+        break;
+      }
+    }
+
+    if (edgeRef) {
+      const wantIndex = baseRefs.indexOf(edgeRef);
+      const currentRefs = getEdgeRefs(canonical);
+
+      if (!currentRefs.includes(edgeRef)) {
+        const newRefs = [...currentRefs];
+        newRefs.splice(Math.max(0, Math.min(wantIndex, newRefs.length)), 0, edgeRef);
+        setEdgeRefs(canonical, newRefs);
+      }
+    } else {
+      insertEdge(graph, op.connectionKey, canonical, op.entityKey, undefined, "end", null);
+    }
+
+    graph.putRecord(op.connectionKey, canonical);
+
+    return;
+  }
+
+  if (op.kind === CONNECTION_PATCH) {
+    const baseline = layer.localBase.get(op.connectionKey) || {};
+
+    if (op.patch.pageInfo) {
+      const pageInfoRef = canonical.pageInfo?.__ref;
+
+      if (pageInfoRef) {
+        const basePageInfo = baseline.pageInfo?.__ref ? graph.getRecord(baseline.pageInfo.__ref) || {} : {};
+        const current = graph.getRecord(pageInfoRef) || {};
+        const updated = shallowCopy(current);
+
+        for (const key in op.patch.pageInfo) {
+          const baseValue = basePageInfo[key];
+
+          if (baseValue === undefined) {
+            delete updated[key];
+          } else {
+            updated[key] = baseValue;
+          }
+        }
+
+        graph.putRecord(pageInfoRef, updated);
+      }
+    }
+
+    for (const key in op.patch) {
+      if (key === "pageInfo") {
+        continue;
+      }
+
+      const baseValue = baseline[key];
+      if (baseValue === undefined) {
+        delete canonical[key];
+      } else {
+        canonical[key] = baseValue;
+      }
+    }
+
+    graph.putRecord(op.connectionKey, canonical);
+  }
+};
+
+const revertConnections = (layer: Layer, graph: GraphInstance): void => {
+  for (let i = layer.connectionOps.length - 1; i >= 0; i--) {
+    revertConnectionOp(layer, graph, layer.connectionOps[i]);
+  }
+};
+
+export const createOptimistic = ({ graph }: OptimisticDependencies) => {
+  const pending = new Set<Layer>();
+  let nextLayerId = 1;
+
+  const resolveParentId = (parent: "Query" | string | { __typename?: string; id?: any }): string => {
+    if (typeof parent === "string") {
+      return parent === "Query" ? ROOT_ID : parent;
+    }
+
+    if (parent === "Query") {
+      return ROOT_ID;
+    }
+
+    return graph.identify(parent) || ROOT_ID;
   };
 
-  /* -------------------------------- modifyOptimistic -------------------------------- */
-  function modifyOptimistic(builder: (tx: BuilderAPI, ctx: BuilderCtx) => void) {
+  const createBuilder = (layer: Layer, recording: boolean): BuilderInstance => {
+    const ensureEntity = (node: any): string | null => {
+      const entityKey = graph.identify(node);
+
+      if (!entityKey) {
+        return null;
+      }
+
+      const patch: any = {};
+
+      for (const key in node) {
+        if (key !== "__typename" && key !== "id") {
+          patch[key] = node[key];
+        }
+      }
+
+      const op: EntityOp = { kind: ENTITY_WRITE, recordId: entityKey, patch, policy: "merge" };
+
+      if (recording) {
+        layer.entityOps.push(op);
+        recordOp(layer, graph, op);
+      } else {
+        writeEntity(graph, entityKey, patch, "merge");
+      }
+
+      return entityKey;
+    };
+
+    const resolveAnchor = (anchor?: string | { __typename: string; id: any } | null): string | null => {
+      if (!anchor) {
+        return null;
+      }
+
+      return typeof anchor === "string" ? anchor : graph.identify(anchor) || null;
+    };
+
+    return {
+      patch(target, patchOrFn, opts) {
+        const recordId = typeof target === "string" ? target : graph.identify(target);
+        if (!recordId) {
+          return;
+        }
+
+        const previous = graph.getRecord(recordId) || {};
+        const delta = typeof patchOrFn === "function" ? patchOrFn(cloneJSON(previous)) : patchOrFn;
+
+        if (!delta || typeof delta !== "object") {
+          return;
+        }
+
+        const mode = opts?.mode ?? "merge";
+        const patch = shallowCopy(delta);
+        const op: EntityOp = { kind: ENTITY_WRITE, recordId, patch, policy: mode };
+
+        if (recording) {
+          layer.entityOps.push(op);
+          recordOp(layer, graph, op);
+        } else {
+          writeEntity(graph, recordId, patch, mode);
+        }
+      },
+
+      delete(target) {
+        const recordId = typeof target === "string" ? target : graph.identify(target);
+        if (!recordId) {
+          return;
+        }
+
+        const op: EntityOp = { kind: ENTITY_DELETE, recordId };
+
+        if (recording) {
+          layer.entityOps.push(op);
+          recordOp(layer, graph, op);
+        } else {
+          deleteEntity(graph, recordId);
+        }
+      },
+
+      connection(input) {
+        let canonicalKey: string;
+
+        if (typeof input === "string") {
+          canonicalKey = input;
+        } else {
+          const parent = resolveParentId(input.parent);
+          const filters = input.filters || {};
+          const filterKeys = Object.keys(filters);
+
+          canonicalKey = buildConnectionCanonicalKey(
+            {
+              fieldName: input.key,
+              buildArgs: (v: any) => v || {},
+              connectionFilters: filterKeys,
+            } as any,
+            parent,
+            filters,
+          );
+        }
+
+        return {
+          addNode(node, opts = {}) {
+            const entityKey = ensureEntity(node);
+            if (!entityKey) {
+              return;
+            }
+
+            const meta = extractEdgeMeta(opts.edge);
+            const position = opts.position ?? "end";
+            const anchor = resolveAnchor(opts.anchor);
+
+            const op: ConnectionOp = { kind: CONNECTION_ADD_NODE, connectionKey: canonicalKey, entityKey, meta, position, anchor };
+
+            if (recording) {
+              layer.connectionOps.push(op);
+              recordOp(layer, graph, op);
+            } else {
+              applyConnectionOp(graph, op);
+            }
+          },
+
+          removeNode(ref) {
+            const entityKey = typeof ref === "string" ? ref : graph.identify(ref);
+            if (!entityKey) {
+              return;
+            }
+
+            const op: ConnectionOp = { kind: CONNECTION_REMOVE_NODE, connectionKey: canonicalKey, entityKey };
+
+            if (recording) {
+              layer.connectionOps.push(op);
+              recordOp(layer, graph, op);
+            } else {
+              applyConnectionOp(graph, op);
+            }
+          },
+
+          patch(patchOrFn) {
+            const previous = graph.getRecord(canonicalKey) || {};
+            const delta = typeof patchOrFn === "function" ? patchOrFn(cloneJSON(previous)) : patchOrFn;
+
+            if (!delta || typeof delta !== "object") {
+              return;
+            }
+
+            const patch = shallowCopy(delta);
+            const op: ConnectionOp = { kind: CONNECTION_PATCH, connectionKey: canonicalKey, patch };
+
+            if (recording) {
+              layer.connectionOps.push(op);
+              recordOp(layer, graph, op);
+            } else {
+              applyConnectionOp(graph, op);
+            }
+          },
+
+          key: canonicalKey,
+        };
+      },
+    };
+  };
+
+  const modifyOptimistic = (builder: (tx: BuilderInstance, ctx: BuilderContext) => void): OptimisticTransaction => {
     const layer: Layer = {
-      id: nextId++,
+      id: nextLayerId++,
       entityOps: [],
-      canOps: [],
+      connectionOps: [],
       touched: new Set(),
       localBase: new Map(),
       builder,
     };
 
-    const resolveParentId = (parent: "Query" | string | { __typename?: string; id?: any }): string => {
-      if (typeof parent === "string") return parent === "Query" ? ROOT_ID : parent;
-      return (parent as any) === "Query" ? ROOT_ID : (graph.identify(parent) || ROOT_ID);
-    };
-
-    const makeAPI = (recording: boolean): BuilderAPI => ({
-      patch(target, patchOrFn, opts) {
-        const mode = (opts?.mode ?? "merge") as "merge" | "replace";
-        const recordId = typeof target === "string" ? target : (graph.identify(target) || null);
-        if (!recordId) return;
-        const prev = graph.getRecord(recordId) || {};
-        const delta = typeof patchOrFn === "function" ? (patchOrFn as any)(cloneJSON(prev)) : patchOrFn;
-        if (!delta || typeof delta !== "object") return;
-
-        if (recording) {
-          layer.entityOps.push({ kind: "entityWrite", recordId, patch: { ...delta }, policy: mode });
-          recEntityWrite(layer, recordId, { ...delta }, mode);
-        } else {
-          wtEntityWrite(recordId, { ...delta }, mode);
-        }
-      },
-
-      delete(target) {
-        const recordId = typeof target === "string" ? target : (graph.identify(target) || null);
-        if (!recordId) return;
-
-        if (recording) {
-          layer.entityOps.push({ kind: "entityDelete", recordId });
-          recEntityDelete(layer, recordId);
-        } else {
-          wtEntityDelete(recordId);
-        }
-      },
-
-      connection(input: ConnectionArgs | string) {
-        const canKey =
-          typeof input === "string"
-            ? input
-            : (() => {
-              const parentId = resolveParentId(input.parent);
-              const filters = input.filters || {};
-              return buildConnectionCanonicalKey(
-                {
-                  fieldName: input.key,
-                  buildArgs: (v: any) => v || {},
-                  connectionFilters: Object.keys(filters),
-                } as any,
-                parentId,
-                filters
-              );
-            })();
-
-        const ensureEntity = (node: any): string | null => {
-          const entityKey = graph.identify(node);
-          if (!entityKey) return null;
-
-          const patch: any = { ...node };
-          delete patch.__typename;
-          delete patch.id;
-
-          if (recording) {
-            layer.entityOps.push({ kind: "entityWrite", recordId: entityKey, patch, policy: "merge" });
-            recEntityWrite(layer, entityKey, patch, "merge");
-          } else {
-            wtEntityWrite(entityKey, patch, "merge");
-          }
-          return entityKey;
-        };
-
-        const resolveAnchorKey = (anchor?: string | { __typename: string; id: any } | null): string | null => {
-          if (!anchor) return null;
-          if (typeof anchor === "string") return anchor;
-          return graph.identify(anchor) || null;
-        };
-
-        return {
-          addNode(node, opts = {}) {
-            const entityKey = ensureEntity(node);
-            if (!entityKey) return;
-
-            const meta = shallowEdgeMeta(opts.edge);
-            const position = (opts.position ?? "end") as "start" | "end" | "before" | "after";
-            const anchor = resolveAnchorKey(opts.anchor);
-
-            if (recording) {
-              const op: CanonOp = { kind: "canAddNode", canKey, entityKey, meta, position, anchor };
-              layer.canOps.push(op);
-              recCanonOp(layer, op);
-            } else {
-              wtCanonAdd(canKey, entityKey, meta, position, anchor);
-            }
-          },
-
-          removeNode(ref) {
-            const entityKey = typeof ref === "string" ? ref : (graph.identify(ref) || null);
-            if (!entityKey) return;
-
-            if (recording) {
-              const op: CanonOp = { kind: "canRemoveNode", canKey, entityKey };
-              layer.canOps.push(op);
-              recCanonOp(layer, op);
-            } else {
-              wtCanonRemove(canKey, entityKey);
-            }
-          },
-
-          patch(patchOrFn) {
-            const prev = graph.getRecord(canKey) || {};
-            const delta = typeof patchOrFn === "function" ? (patchOrFn as any)(cloneJSON(prev)) : patchOrFn;
-            if (!delta || typeof delta !== "object") return;
-
-            if (recording) {
-              const op: CanonOp = { kind: "canPatch", canKey, patch: { ...delta } };
-              layer.canOps.push(op);
-              recCanonOp(layer, op);
-            } else {
-              wtCanonPatch(canKey, { ...delta });
-            }
-          },
-
-          key: canKey,
-        };
-      },
-    });
-
-    // optimistic pass
-    const optimisticAPI = makeAPI(true);
     pending.add(layer);
-    layer.builder(optimisticAPI, { phase: "optimistic" });
+
+    builder(createBuilder(layer, true), { phase: "optimistic" });
 
     return {
-      /**
-       * commit(data?):
-       * Always finalize this layer:
-       *  - Undo this layer’s entity diffs (localBase)
-       *  - Invert this layer’s canonical ops (reverse order)
-       *  - Clear buffers
-       *  - Write-through once with { phase:'commit', data } (data optional)
-       *  - Drop this layer
-       */
       commit(data?: any) {
-        // ENTITIES → undo to local base
-        for (const [id, snap] of layer.localBase) {
-          if (isCanonicalKey(id)) continue;
-          if (snap === null) graph.removeRecord(id);
-          else replaceInPlace(id, snap);
-        }
+        revertEntities(layer, graph);
+        revertConnections(layer, graph);
 
-        // CANONICAL → inverse ops in reverse order
-        for (let i = layer.canOps.length - 1; i >= 0; i--) {
-          const op = layer.canOps[i];
-          const canKey = op.canKey;
-
-          let can = graph.getRecord(canKey);
-          if (!can || typeof can !== "object") {
-            can = { __typename: "Connection", edges: [], pageInfo: {} };
-          } else {
-            can = { ...can, edges: Array.isArray(can.edges) ? [...can.edges] : [], pageInfo: { ...(can.pageInfo || {}) } };
-          }
-
-          if (op.kind === "canAddNode") {
-            removeCanonicalEdge(graph, canKey, can, op.entityKey);
-            graph.putRecord(canKey, can);
-            continue;
-          }
-
-          if (op.kind === "canRemoveNode") {
-            const base = layer.localBase.get(canKey) || {};
-            const baseEdges: Array<{ __ref: string }> | undefined = base.edges;
-            const edgeRef = edgeRefForNodeInEdges(graph, baseEdges, op.entityKey);
-            if (edgeRef) {
-              const wantIndex = indexOfEdgeRef(baseEdges, edgeRef);
-              const exists = indexOfEdgeRef(can.edges, edgeRef) >= 0;
-              if (!exists) {
-                const insertAt = Math.max(0, Math.min(wantIndex, (can.edges as any[]).length));
-                (can.edges as any[]).splice(insertAt, 0, { __ref: edgeRef });
-                graph.putRecord(canKey, can);
-              }
-            } else {
-              upsertCanonicalEdgeAnchored(graph, canKey, can, op.entityKey, undefined, "end", null);
-              graph.putRecord(canKey, can);
-            }
-            continue;
-          }
-
-          if (op.kind === "canPatch") {
-            const base = layer.localBase.get(canKey) || {};
-            const reverted: any = { ...can };
-            for (const k of Object.keys(op.patch)) {
-              if (k === "pageInfo") {
-                const piPatch = (op.patch as any).pageInfo || {};
-                reverted.pageInfo = { ...(reverted.pageInfo || {}) };
-                for (const pk of Object.keys(piPatch)) {
-                  const baseVal = base?.pageInfo ? (base.pageInfo as any)[pk] : undefined;
-                  if (baseVal === undefined) delete reverted.pageInfo[pk];
-                  else reverted.pageInfo[pk] = baseVal;
-                }
-              } else {
-                const baseVal = (base as any)[k];
-                if (baseVal === undefined) delete reverted[k];
-                else reverted[k] = baseVal;
-              }
-            }
-            graph.putRecord(canKey, reverted);
-            continue;
-          }
-        }
-
-        // Clear buffers then write-through final
         layer.localBase.clear();
         layer.entityOps.length = 0;
-        layer.canOps.length = 0;
+        layer.connectionOps.length = 0;
         layer.touched.clear();
 
-        const wtAPI = makeAPI(false);
-        layer.builder(wtAPI, { phase: "commit", data });
-
-        // Drop this layer
+        layer.builder(createBuilder(layer, false), { phase: "commit", data });
         pending.delete(layer);
       },
 
-      /**
-       * revert():
-       * Only for live layers — undo entities from localBase and inverse canonical ops, then drop.
-       */
       revert() {
-        if (!pending.delete(layer)) return;
-
-        // ENTITIES
-        for (const [id, snap] of layer.localBase) {
-          if (isCanonicalKey(id)) continue;
-          if (snap === null) graph.removeRecord(id);
-          else replaceInPlace(id, snap);
+        if (!pending.delete(layer)) {
+          return;
         }
 
-        // CANONICAL inverse
-        for (let i = layer.canOps.length - 1; i >= 0; i--) {
-          const op = layer.canOps[i];
-          const canKey = op.canKey;
-
-          let can = graph.getRecord(canKey);
-          if (!can || typeof can !== "object") {
-            can = { __typename: "Connection", edges: [], pageInfo: {} };
-          } else {
-            can = { ...can, edges: Array.isArray(can.edges) ? [...can.edges] : [], pageInfo: { ...(can.pageInfo || {}) } };
-          }
-
-          if (op.kind === "canAddNode") {
-            removeCanonicalEdge(graph, canKey, can, op.entityKey);
-            graph.putRecord(canKey, can);
-            continue;
-          }
-
-          if (op.kind === "canRemoveNode") {
-            const base = layer.localBase.get(canKey) || {};
-            const baseEdges: Array<{ __ref: string }> | undefined = base.edges;
-            const edgeRef = edgeRefForNodeInEdges(graph, baseEdges, op.entityKey);
-            if (edgeRef) {
-              const wantIndex = indexOfEdgeRef(baseEdges, edgeRef);
-              const exists = indexOfEdgeRef(can.edges, edgeRef) >= 0;
-              if (!exists) {
-                const insertAt = Math.max(0, Math.min(wantIndex, (can.edges as any[]).length));
-                (can.edges as any[]).splice(insertAt, 0, { __ref: edgeRef });
-                graph.putRecord(canKey, can);
-              }
-            } else {
-              upsertCanonicalEdgeAnchored(graph, canKey, can, op.entityKey, undefined, "end", null);
-              graph.putRecord(canKey, can);
-            }
-            continue;
-          }
-
-          if (op.kind === "canPatch") {
-            const base = layer.localBase.get(canKey) || {};
-            const reverted: any = { ...can };
-            for (const k of Object.keys(op.patch)) {
-              if (k === "pageInfo") {
-                const piPatch = (op.patch as any).pageInfo || {};
-                reverted.pageInfo = { ...(reverted.pageInfo || {}) };
-                for (const pk of Object.keys(piPatch)) {
-                  const baseVal = base?.pageInfo ? (base.pageInfo as any)[pk] : undefined;
-                  if (baseVal === undefined) delete reverted.pageInfo[pk];
-                  else reverted.pageInfo[pk] = baseVal;
-                }
-              } else {
-                const baseVal = (base as any)[k];
-                if (baseVal === undefined) delete reverted[k];
-                else reverted[k] = baseVal;
-              }
-            }
-            graph.putRecord(canKey, reverted);
-            continue;
-          }
-        }
+        revertEntities(layer, graph);
+        revertConnections(layer, graph);
 
         layer.localBase.clear();
         layer.entityOps.length = 0;
-        layer.canOps.length = 0;
+        layer.connectionOps.length = 0;
         layer.touched.clear();
       },
     };
-  }
+  };
 
-  /* -------------------------------- replayOptimistic -------------------------------- */
-  function replayOptimistic(hint?: {
-    connections?: string[];
-    entities?: string[];
-  }): { added: string[]; removed: string[] } {
-    const conScope = new Set(hint?.connections || []);
-    const entScope = new Set(hint?.entities || []);
+  const replayOptimistic = (hint?: { connections?: string[]; entities?: string[] }): { added: string[]; removed: string[] } => {
+    const connectionScope = hint?.connections ? new Set(hint.connections) : null;
+    const entityScope = hint?.entities ? new Set(hint.entities) : null;
 
     const added: string[] = [];
     const removed: string[] = [];
 
-    const applyLayer = (L: Layer) => {
-      for (const e of L.entityOps) {
-        if (entScope.size && !entScope.has(e.recordId)) continue;
-        if (e.kind === "entityWrite") {
-          const prev = graph.getRecord(e.recordId) || {};
-          const mode = e.policy;
-          if (mode === "replace") {
-            graph.putRecord(e.recordId, { ...e.patch });
-          } else {
-            if (!prev) {
-              const { typename: riType, id: riId } = parseRecordId(e.recordId);
-              const first: any = { ...e.patch };
-              if (first.__typename === undefined && riType) first.__typename = riType;
-              if (first.id === undefined && riId != null) first.id = riId;
-              graph.putRecord(e.recordId, first);
-            } else {
-              graph.putRecord(e.recordId, e.patch);
-            }
-          }
-        } else {
-          graph.removeRecord(e.recordId);
+    const sortedLayers = Array.from(pending).sort((a, b) => a.id - b.id);
+
+    for (const layer of sortedLayers) {
+      for (const op of layer.entityOps) {
+        if (entityScope && !entityScope.has(op.recordId)) {
+          continue;
         }
+        applyEntityOp(graph, op);
       }
 
-      for (const c of L.canOps) {
-        if (conScope.size && !conScope.has(c.canKey)) continue;
-
-        if (c.kind === "canAddNode") {
-          added.push(c.entityKey);
-          wtCanonAdd(c.canKey, c.entityKey, c.meta, c.position, c.anchor);
-        } else if (c.kind === "canRemoveNode") {
-          removed.push(c.entityKey);
-          wtCanonRemove(c.canKey, c.entityKey);
-        } else {
-          wtCanonPatch(c.canKey, c.patch);
+      for (const op of layer.connectionOps) {
+        if (connectionScope && !connectionScope.has(op.connectionKey)) {
+          continue;
         }
-      }
-    };
 
-    for (const L of Array.from(pending).sort((a, b) => a.id - b.id)) applyLayer(L);
+        if (op.kind === CONNECTION_ADD_NODE) {
+          added.push(op.entityKey);
+        } else if (op.kind === CONNECTION_REMOVE_NODE) {
+          removed.push(op.entityKey);
+        }
+
+        applyConnectionOp(graph, op);
+      }
+    }
 
     return { added, removed };
-  }
+  };
 
-  function inspect() {
-    const layers = Array.from(pending)
-      .sort((a, b) => a.id - b.id)
-      .map((L) => {
-        const out: any = {
-          id: L.id,
-          entityOps: L.entityOps.map((op) => ({ ...op })),
-          canOps: L.canOps.map((op) => ({ ...op })),
-          touched: Array.from(L.touched),
-          localBaseKeys: Array.from(L.localBase.keys()),
-        };
+  const inspect = (): { total: number; layers: any[] } => {
+    const sortedLayers = Array.from(pending).sort((a, b) => a.id - b.id);
+    const layers: any[] = [];
 
-        const base: Record<string, any> = {};
-        for (const [k, v] of L.localBase) base[k] = cloneJSON(v);
-        out.localBase = base;
+    for (const layer of sortedLayers) {
+      const entityOps: any[] = [];
 
-        return out;
+      for (const op of layer.entityOps) {
+        entityOps.push(shallowCopy(op));
+      }
+
+      const connectionOps: any[] = [];
+
+      for (const op of layer.connectionOps) {
+        connectionOps.push(shallowCopy(op));
+      }
+
+      const touched: string[] = [];
+
+      for (const key of layer.touched) {
+        touched.push(key);
+      }
+
+      const localBaseKeys: string[] = [];
+      const localBase: Record<string, any> = {};
+
+      for (const [key, value] of layer.localBase) {
+        localBaseKeys.push(key);
+        localBase[key] = cloneJSON(value);
+      }
+
+      layers.push({
+        id: layer.id,
+        entityOps,
+        connectionOps,
+        touched,
+        localBaseKeys,
+        localBase,
       });
+    }
 
     return { total: layers.length, layers };
-  }
-
+  };
 
   return { modifyOptimistic, replayOptimistic, inspect };
 };
