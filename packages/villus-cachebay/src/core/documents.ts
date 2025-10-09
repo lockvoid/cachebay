@@ -32,13 +32,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     variables?: Record<string, any>;
     data: any;
   }) => {
-    const DEBUG = true;              // keep while refactoring
-    const ENABLE_CANONICAL = false;  // off for now
+    const DEBUG = true;
+    const ENABLE_CANONICAL = true;
 
     const plan = planner.getPlan(document);
     const isQuery = plan.operation === "query";
 
-    // Seed root record required by tests/spec.
+    // Seed root record
     graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
 
     if (DEBUG) {
@@ -47,12 +47,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     }
 
     type Frame = {
-      parentId: string;                                // record we’re currently writing into
-      fields: PlanField[] | undefined | null;          // selection set on this level
+      parentId: string;
+      fields: PlanField[] | undefined | null;
       fieldsMap: Map<string, PlanField> | undefined | null;
-      insideConnection: boolean;                       // true while traversing a connection page or its edges
-      pageKey: string | null;                          // current connection page key (if insideConnection)
-      inEdges: boolean;                                // true while iterating edges[]
+      insideConnection: boolean;
+      pageKey: string | null;
+      inEdges: boolean;
     };
 
     const initialFrame: Frame = {
@@ -84,9 +84,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       const planField =
         typeof responseKey === "string" && fieldsMap ? fieldsMap.get(responseKey) : undefined;
 
-      // ─────────────────────────────────────────────────────────────────────────
+      // ────────────────────────────────────────────────────────────────────────
       // ARRAYS
-      // ─────────────────────────────────────────────────────────────────────────
+      // ────────────────────────────────────────────────────────────────────────
       if (kind === TRAVERSE_ARRAY) {
         // Connection.edges → set edge refs on the page and dive into edge objects
         if (frame.insideConnection && responseKey === "edges") {
@@ -120,26 +120,24 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           return TRAVERSE_SKIP;
         }
 
-        // Other arrays-of-objects (rare outside edges) → just continue
         return frame;
       }
 
-      // ─────────────────────────────────────────────────────────────────────────
+      // ────────────────────────────────────────────────────────────────────────
       // OBJECTS
-      // ─────────────────────────────────────────────────────────────────────────
+      // ────────────────────────────────────────────────────────────────────────
       if (kind === TRAVERSE_OBJECT) {
         // Edge object inside edges[]
         if (frame.insideConnection && frame.inEdges && typeof responseKey === "number") {
           const edgeKey = `${frame.pageKey}.edges:${responseKey}`;
-          // create/ensure edge record exists; scalars (cursor, score, etc.) will fill via SCALAR visits
           if (valueNode && valueNode.__typename) {
             graph.putRecord(edgeKey, { __typename: valueNode.__typename });
           } else {
-            graph.putRecord(edgeKey, {}); // safe upsert
+            graph.putRecord(edgeKey, {});
           }
           if (DEBUG) console.log("[norm]   put edge %s", edgeKey);
 
-          // Link node ref early if identifiable (entity itself will be handled when we visit its object)
+          // Link node ref early if identifiable
           const nodeObj = (valueNode as any).node;
           if (nodeObj) {
             const nodeKey = graph.identify(nodeObj);
@@ -151,7 +149,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
           return {
             parentId: edgeKey,
-            fields: fieldsMap, // current level is Edge selection map already
+            fields: fieldsMap,
             fieldsMap: fieldsMap,
             insideConnection: true,
             pageKey: frame.pageKey,
@@ -165,21 +163,46 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           const parentFieldKey = buildFieldKey(planField, variables);
 
           if (DEBUG) {
-            console.log("[norm] CONNECTION field=%s parent=%s pageKey=%s", planField.responseKey, parentId, pageKey);
+            console.log(
+              "[norm] CONNECTION field=%s parent=%s pageKey=%s",
+              planField.responseKey,
+              parentId,
+              pageKey,
+            );
           }
 
-          // ensure page record exists (scalars will fill via SCALAR)
+          // Initialize page record with __typename and scalar fields
+          const pageRecord: Record<string, any> = {};
           if (valueNode && valueNode.__typename) {
-            graph.putRecord(pageKey, { __typename: valueNode.__typename });
-          } else {
-            graph.putRecord(pageKey, {});
+            pageRecord.__typename = valueNode.__typename;
           }
 
-          // If pageInfo child exists, link page → pageInfo (the pageInfo object itself will fill its scalars later)
+          // Copy scalar fields immediately (like totalCount)
+          if (valueNode) {
+            const keys = Object.keys(valueNode);
+            for (let i = 0; i < keys.length; i++) {
+              const key = keys[i];
+              // Skip structural fields - they'll be handled separately
+              if (key === "__typename" || key === "edges" || key === "pageInfo") {
+                continue;
+              }
+              // Copy scalar/primitive fields
+              const val = valueNode[key];
+              if (val !== undefined && val !== null && typeof val !== "object") {
+                pageRecord[key] = val;
+              } else if (Array.isArray(val) || (val !== null && typeof val === "object" && !val.__typename)) {
+                // Handle inline scalars/arrays that aren't entities
+                pageRecord[key] = val;
+              }
+            }
+          }
+
+          graph.putRecord(pageKey, pageRecord);
+
+          // If pageInfo child exists, link page → pageInfo
           if ((valueNode as any)?.pageInfo) {
             const pageInfoKey = `${pageKey}.pageInfo`;
             graph.putRecord(pageKey, { pageInfo: { __ref: pageInfoKey } });
-            // also ensure pageInfo record exists so scalar visits have a target
             const piTypename = (valueNode as any)?.pageInfo?.__typename;
             graph.putRecord(pageInfoKey, piTypename ? { __typename: piTypename } : {});
             if (DEBUG) console.log("[norm]   link %s.pageInfo -> %s", pageKey, pageInfoKey);
@@ -191,12 +214,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             if (DEBUG) console.log("[norm]   link %s.%s -> %s", parentId, parentFieldKey, pageKey);
           }
 
-          if (ENABLE_CANONICAL) {
-            // canonical.updateConnection(...)
-          }
-
           // descend into the page (its selection set)
-          return {
+          const nextFrame = {
             parentId: pageKey,
             fields: planField.selectionSet,
             fieldsMap: planField.selectionMap,
@@ -204,28 +223,34 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             pageKey,
             inEdges: false,
           } as Frame;
+
+          return nextFrame;
         }
 
         // Entity (identifiable)
         {
           const entityKey = graph.identify(valueNode);
           if (entityKey) {
-            // ensure entity record exists; scalars will fill via SCALAR visits
             if (valueNode && valueNode.__typename) {
               graph.putRecord(entityKey, { __typename: valueNode.__typename });
             } else {
               graph.putRecord(entityKey, {});
             }
-            if (DEBUG) console.log("[norm] entity upsert %s (field=%s, parent=%s)", entityKey, String(responseKey), parentId);
+            if (DEBUG)
+              console.log(
+                "[norm] entity upsert %s (field=%s, parent=%s)",
+                entityKey,
+                String(responseKey),
+                parentId,
+              );
 
-            // Link from parent (queries only), except edges.node (edge already links to node)
+            // Link from parent (queries only), except edges.node
             if (isQuery && planField && !(frame.insideConnection && planField.responseKey === "node")) {
               const parentFieldKey = buildFieldKey(planField, variables);
               graph.putRecord(parentId, { [parentFieldKey]: { __ref: entityKey } });
               if (DEBUG) console.log("[norm] link %s.%s -> %s", parentId, parentFieldKey, entityKey);
             }
 
-            // If this is edge.node, reset connection flags for nested connections
             const fromNode = !!planField && planField.responseKey === "node";
 
             return {
@@ -239,26 +264,29 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           }
         }
 
-        // Generic container — non-identifiable object (e.g., pageInfo or any inline object field)
+        // Generic container – non-identifiable object
         if (planField) {
           const containerFieldKey = buildFieldKey(planField, variables);
           const containerKey = `${parentId}.${containerFieldKey}`;
 
-          // ensure container record exists; scalars will fill via SCALAR visits
           if (valueNode && valueNode.__typename) {
             graph.putRecord(containerKey, { __typename: valueNode.__typename });
           } else {
             graph.putRecord(containerKey, {});
           }
-          if (DEBUG) console.log("[norm] container put %s (field=%s parent=%s)", containerKey, planField.responseKey, parentId);
+          if (DEBUG)
+            console.log(
+              "[norm] container put %s (field=%s parent=%s)",
+              containerKey,
+              planField.responseKey,
+              parentId,
+            );
 
-          // Link from parent (queries only)
           if (isQuery) {
             graph.putRecord(parentId, { [containerFieldKey]: { __ref: containerKey } });
             if (DEBUG) console.log("[norm] link %s.%s -> %s", parentId, containerFieldKey, containerKey);
           }
 
-          // If this is the pageInfo under a page, make sure parent page has the link (already done above, but safe)
           if (frame.insideConnection && containerFieldKey === "pageInfo" && frame.pageKey) {
             graph.putRecord(frame.pageKey, { pageInfo: { __ref: containerKey } });
           }
@@ -277,17 +305,22 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         return frame;
       }
 
-      // ─────────────────────────────────────────────────────────────────────────
+      // ────────────────────────────────────────────────────────────────────────
       // SCALARS
-      // ─────────────────────────────────────────────────────────────────────────
+      // ────────────────────────────────────────────────────────────────────────
       if (kind === TRAVERSE_SCALAR) {
-        // Only act when we can resolve a field from the plan at this level
         if (typeof responseKey === "string" && fieldsMap) {
           const f = fieldsMap.get(responseKey);
           if (f && !f.selectionSet) {
             const fieldKey = buildFieldKey(f, variables);
             graph.putRecord(frame.parentId, { [fieldKey]: valueNode });
-            if (DEBUG) console.log("[norm] scalar %s=%s (parent=%s)", fieldKey, JSON.stringify(valueNode), frame.parentId);
+            if (DEBUG)
+              console.log(
+                "[norm] scalar %s=%s (parent=%s)",
+                fieldKey,
+                JSON.stringify(valueNode),
+                frame.parentId,
+              );
           }
         }
         return frame;
@@ -297,6 +330,68 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     };
 
     traverseFast(data, initialFrame, visit);
+
+    // NOW call canonical update after normalization is complete
+    if (ENABLE_CANONICAL && isQuery) {
+      const visited = new Set<string>();
+
+      const collectConnectionPages = (
+        parentId: string,
+        fields: PlanField[] | undefined | null,
+      ): void => {
+        if (!fields || visited.has(parentId)) return;
+        visited.add(parentId);
+
+        const parentRecord = graph.getRecord(parentId);
+        if (!parentRecord) return;
+
+        for (let i = 0; i < fields.length; i++) {
+          const field = fields[i];
+
+          if (field.isConnection) {
+            const pageKey = buildConnectionKey(field, parentId, variables);
+            const pageRecord = graph.getRecord(pageKey);
+
+            if (pageRecord) {
+              canonical.updateConnection({
+                field,
+                parentId,
+                variables,
+                pageKey,
+                pageSnapshot: pageRecord,
+              });
+
+              if (DEBUG) {
+                console.log("[norm] canonical update for %s", pageKey);
+              }
+            }
+
+            // Also check for nested connections within edges.node
+            const edgesField = field.selectionMap?.get("edges");
+            const nodeField = edgesField?.selectionMap?.get("node");
+            if (nodeField?.selectionSet && pageRecord?.edges?.__refs) {
+              for (const edgeRef of pageRecord.edges.__refs) {
+                const edgeRecord = graph.getRecord(edgeRef);
+                const nodeRef = edgeRecord?.node?.__ref;
+                if (nodeRef) {
+                  collectConnectionPages(nodeRef, nodeField.selectionSet);
+                }
+              }
+            }
+          } else if (field.selectionSet) {
+            // Follow entity reference
+            const fieldKey = buildFieldKey(field, variables);
+            const link = parentRecord[fieldKey];
+
+            if (link?.__ref) {
+              collectConnectionPages(link.__ref, field.selectionSet);
+            }
+          }
+        }
+      };
+
+      collectConnectionPages(ROOT_ID, plan.root);
+    }
 
     if (DEBUG) {
       console.log("[norm] <<< traverse done");

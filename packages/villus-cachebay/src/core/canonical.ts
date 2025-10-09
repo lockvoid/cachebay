@@ -81,30 +81,13 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
 
   /**
    * Reads edge keys from concrete page record.
-   * Handles both new normalization { __refs: [...] } and legacy array formats.
    */
   const readPageEdges = (pageKey: string): string[] => {
     const page = graph.getRecord(pageKey);
-    if (!page?.edges) {
+    if (!page?.edges?.__refs || !Array.isArray(page.edges.__refs)) {
       return [];
     }
-
-    if (page.edges.__refs && Array.isArray(page.edges.__refs)) {
-      return page.edges.__refs;
-    }
-
-    if (Array.isArray(page.edges)) {
-      const edgeKeys: string[] = [];
-      for (let i = 0; i < page.edges.length; i++) {
-        const ref = page.edges[i]?.__ref;
-        if (typeof ref === "string") {
-          edgeKeys.push(ref);
-        }
-      }
-      return edgeKeys;
-    }
-
-    return [];
+    return page.edges.__refs;
   };
 
   /**
@@ -152,7 +135,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
    */
   const detectCursorRole = (
     field: PlanField,
-    variables: Record<string, any>
+    variables: Record<string, any>,
   ): { hasAfter: boolean; hasBefore: boolean; isLeader: boolean } => {
     const args = field.buildArgs ? (field.buildArgs(variables) || {}) : (variables || {});
 
@@ -261,12 +244,16 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
     const pageInfo = aggregatePageInfo(orderedPageKeys);
     const current = graph.getRecord(canonicalKey) || {};
 
+    // Create pageInfo as a separate record with a reference
+    const pageInfoKey = `${canonicalKey}.pageInfo`;
+    graph.putRecord(pageInfoKey, pageInfo);
+
     graph.putRecord(canonicalKey, {
       __typename: current.__typename || "Connection",
       edges: {
         __refs: canonicalEdgeRefs,
       },
-      pageInfo,
+      pageInfo: { __ref: pageInfoKey },
     });
   };
 
@@ -275,7 +262,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
    */
   const updateMeta = (
     canonicalKey: string,
-    updater: (meta: ConnectionMeta) => void
+    updater: (meta: ConnectionMeta) => void,
   ): ConnectionMeta => {
     const existing = graph.getRecord(metaKeyOf(canonicalKey)) as ConnectionMeta | undefined;
 
@@ -298,10 +285,18 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
    */
   const ensureCanonical = (canonicalKey: string): void => {
     if (!graph.getRecord(canonicalKey)) {
+      const pageInfoKey = `${canonicalKey}.pageInfo`;
+      graph.putRecord(pageInfoKey, {
+        __typename: "PageInfo",
+        startCursor: null,
+        endCursor: null,
+        hasPreviousPage: false,
+        hasNextPage: false,
+      });
       graph.putRecord(canonicalKey, {
         __typename: "Connection",
         edges: { __refs: [] },
-        pageInfo: {}
+        pageInfo: { __ref: pageInfoKey },
       });
     }
   };
@@ -364,10 +359,20 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
       const leaderPageInfo = readPageInfo(page) || pageSnapshot.pageInfo || {};
       const extras = extractExtras(pageSnapshot);
 
+      // Store pageInfo as a separate record
+      const pageInfoKey = `${canonicalKey}.pageInfo`;
+      graph.putRecord(pageInfoKey, {
+        __typename: leaderPageInfo.__typename || "PageInfo",
+        startCursor: leaderPageInfo.startCursor ?? null,
+        endCursor: leaderPageInfo.endCursor ?? null,
+        hasPreviousPage: !!leaderPageInfo.hasPreviousPage,
+        hasNextPage: !!leaderPageInfo.hasNextPage,
+      });
+
       graph.putRecord(canonicalKey, {
         __typename: pageSnapshot.__typename || "Connection",
         edges: { __refs: leaderEdgeRefs },
-        pageInfo: leaderPageInfo,
+        pageInfo: { __ref: pageInfoKey },
         ...extras,
       });
 
@@ -482,6 +487,6 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
 
   return {
     updateConnection,
-    mergeFromCache
+    mergeFromCache,
   };
 };

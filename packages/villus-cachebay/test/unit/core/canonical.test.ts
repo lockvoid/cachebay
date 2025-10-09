@@ -87,8 +87,8 @@ describe("Canonical", () => {
   let optimistic: ReturnType<typeof createOptimistic>;
   let canonical: ReturnType<typeof createCanonical>;
 
-  const getNodeIds = (connectionKey: string): string[] => {
-    const canonicalConnection = graph.getRecord(connectionKey);
+  const getNodeIds = (canonicalKey: string): string[] => {
+    const canonicalConnection = graph.getRecord(canonicalKey);
     const refs: string[] = canonicalConnection?.edges?.__refs || [];
     return refs
       .map((edgeRef: string) => {
@@ -99,8 +99,8 @@ describe("Canonical", () => {
       .filter(Boolean);
   };
 
-  const getMeta = (canKey: string) => {
-    return graph.getRecord(`${canKey}::meta`);
+  const getMeta = (canonicalKey: string) => {
+    return graph.getRecord(`${canonicalKey}::meta`);
   };
 
   beforeEach(() => {
@@ -127,14 +127,25 @@ describe("Canonical", () => {
           pageSnapshot: page,
         });
 
-        const canKey = "@connection.posts({})";
-        const canonicalConnection = graph.getRecord(canKey);
+        const canonicalKey = "@connection.posts({})";
+        const canonicalConnection = graph.getRecord(canonicalKey);
 
         expect(canonicalConnection).toBeDefined();
         expect(canonicalConnection.__typename).toBe("PostConnection");
-        expect(getNodeIds(canKey)).toEqual(["1", "2", "3"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3"]);
 
-        const meta = getMeta(canKey);
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+        const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
+        expect(pageInfo).toEqual({
+          __typename: "PageInfo",
+          startCursor: "p1",
+          endCursor: "p3",
+          hasPreviousPage: false,
+          hasNextPage: true,
+        });
+
+        const meta = getMeta(canonicalKey);
         expect(meta).toBeDefined();
         expect(meta.__typename).toBe("__ConnMeta");
         expect(meta.pages).toEqual(['@.posts({"after":null,"first":3})']);
@@ -187,17 +198,26 @@ describe("Canonical", () => {
           pageEdges: page0EdgeRefs,
         });
 
-        const canKey = "@connection.posts({})";
-        expect(getNodeIds(canKey)).toEqual(["1", "2", "3"]);
+        const canonicalKey = "@connection.posts({})";
+        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3"]);
 
-        const meta = getMeta(canKey);
+        // Check pageInfo structure
+        const canonicalConnection = graph.getRecord(canonicalKey);
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+        const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
+        expect(pageInfo.startCursor).toBe("p1");
+        expect(pageInfo.endCursor).toBe("p3");
+        expect(pageInfo.hasNextPage).toBe(true);
+
+        const meta = getMeta(canonicalKey);
         expect(meta.pages).toEqual(['@.posts({"after":null,"first":3})']);
         expect(meta.leader).toBe('@.posts({"after":null,"first":3})');
         expect(meta.hints).toEqual({ '@.posts({"after":null,"first":3})': "leader" });
       });
 
       it("resets meta to just leader page on leader refetch", () => {
-        const canKey = "@connection.posts({})";
+        const canonicalKey = "@connection.posts({})";
         const leaderPageKey = '@.posts({"after":null,"first":2})';
 
         const { page: p0, edges: e0 } = writePostPage(graph, leaderPageKey, [1, 2], { hasNext: true });
@@ -221,7 +241,7 @@ describe("Canonical", () => {
           pageEdges: e1,
         });
 
-        let meta = getMeta(canKey);
+        let meta = getMeta(canonicalKey);
         expect(meta.pages).toHaveLength(2);
 
         canonical.updateConnection({
@@ -233,11 +253,18 @@ describe("Canonical", () => {
           pageEdges: e0,
         });
 
-        meta = getMeta(canKey);
+        meta = getMeta(canonicalKey);
         expect(meta.pages).toEqual([leaderPageKey]);
         expect(meta.leader).toBe(leaderPageKey);
         expect(meta.hints).toEqual({ [leaderPageKey]: "leader" });
         expect(meta.origin).toEqual({ [leaderPageKey]: "network" });
+
+        // Check pageInfo structure
+        const canonicalConnection = graph.getRecord(canonicalKey);
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+        const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
+        expect(pageInfo).toBeDefined();
       });
 
       it("copies extra fields from page snapshot to canonical on leader fetch", () => {
@@ -255,17 +282,23 @@ describe("Canonical", () => {
           pageSnapshot: page,
         });
 
-        const canKey = "@connection.posts({})";
-        const canonicalConnection = graph.getRecord(canKey);
+        const canonicalKey = "@connection.posts({})";
+        const canonicalConnection = graph.getRecord(canonicalKey);
 
         expect(canonicalConnection.totalCount).toBe(100);
         expect(canonicalConnection.aggregations).toEqual({ scoring: 88 });
+
+        // Check pageInfo structure
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+        const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
+        expect(pageInfo).toBeDefined();
       });
     });
 
     describe("forward pagination", () => {
       it("appends forward page and updates meta with after hint", () => {
-        const canKey = "@connection.posts({})";
+        const canonicalKey = "@connection.posts({})";
 
         const { page: p0, edges: e0 } = writePostPage(
           graph,
@@ -299,9 +332,16 @@ describe("Canonical", () => {
           pageEdges: e1,
         });
 
-        expect(getNodeIds(canKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
 
-        const meta = getMeta(canKey);
+        // Check pageInfo structure
+        const canonicalConnection = graph.getRecord(canonicalKey);
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+        const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
+        expect(pageInfo).toBeDefined();
+
+        const meta = getMeta(canonicalKey);
         expect(meta.pages).toEqual([
           '@.posts({"after":null,"first":3})',
           '@.posts({"after":"p3","first":3})',
@@ -315,7 +355,7 @@ describe("Canonical", () => {
       });
 
       it("aggregates pageInfo correctly with forward pagination", () => {
-        const canKey = "@connection.posts({})";
+        const canonicalKey = "@connection.posts({})";
 
         const { page: p0, edges: e0 } = writePostPage(
           graph,
@@ -330,7 +370,6 @@ describe("Canonical", () => {
           variables: { first: 3, after: null },
           pageKey: '@.posts({"after":null,"first":3})',
           pageSnapshot: p0,
-          pageEdges: e0,
         });
 
         const { page: p1, edges: e1 } = writePostPage(
@@ -349,15 +388,23 @@ describe("Canonical", () => {
           pageEdges: e1,
         });
 
-        const pageInfo = graph.getRecord(canKey).pageInfo;
-        expect(pageInfo.startCursor).toBe("p1");
-        expect(pageInfo.endCursor).toBe("p6");
-        expect(pageInfo.hasPreviousPage).toBe(false);
-        expect(pageInfo.hasNextPage).toBe(false);
+        // Check pageInfo structure
+        const canonicalConnection = graph.getRecord(canonicalKey);
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+        // Check pageInfo values
+        const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
+        expect(pageInfo).toEqual({
+          __typename: "PageInfo",
+          startCursor: "p1",
+          endCursor: "p6",
+          hasPreviousPage: false,
+          hasNextPage: false,
+        });
       });
 
       it("replaces edges when reloading a forward slice", () => {
-        const canKey = "@connection.posts({})";
+        const canonicalKey = "@connection.posts({})";
 
         const { page: p0, edges: e0 } = writePostPage(
           graph,
@@ -390,7 +437,7 @@ describe("Canonical", () => {
           pageEdges: e1,
         });
 
-        expect(getNodeIds(canKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
 
         const { page: updatedP1, edges: updatedE1 } = writePostPage(
           graph,
@@ -408,9 +455,14 @@ describe("Canonical", () => {
           pageEdges: updatedE1,
         });
 
-        expect(getNodeIds(canKey)).toEqual(["1", "2", "3", "4", "6", "7"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "6", "7"]);
 
-        const pageInfo = graph.getRecord(canKey).pageInfo;
+        // Check pageInfo structure
+        const canonicalConnection = graph.getRecord(canonicalKey);
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+        // Check pageInfo values
+        const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
         expect(pageInfo.endCursor).toBe("p7");
         expect(pageInfo.hasNextPage).toBe(false);
       });
@@ -418,7 +470,7 @@ describe("Canonical", () => {
 
     describe("backward pagination", () => {
       it("prepends before page and preserves order in canonical", () => {
-        const canKey = "@connection.posts({})";
+        const canonicalKey = "@connection.posts({})";
 
         const { page: p1, edges: e1 } = writePostPage(
           graph,
@@ -452,14 +504,21 @@ describe("Canonical", () => {
           pageEdges: e0,
         });
 
-        expect(getNodeIds(canKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
 
-        const meta = getMeta(canKey);
+        // Check pageInfo structure
+        const canonicalConnection = graph.getRecord(canonicalKey);
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+        const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
+        expect(pageInfo).toBeDefined();
+
+        const meta = getMeta(canonicalKey);
         expect(meta.hints['@.posts({"before":"p4","last":3})']).toBe("before");
       });
 
       it("aggregates pageInfo correctly with before pagination", () => {
-        const canKey = "@connection.posts({})";
+        const canonicalKey = "@connection.posts({})";
 
         const { page: p1, edges: e1 } = writePostPage(
           graph,
@@ -493,17 +552,25 @@ describe("Canonical", () => {
           pageEdges: e0,
         });
 
-        const pageInfo = graph.getRecord(canKey).pageInfo;
-        expect(pageInfo.startCursor).toBe("p1");
-        expect(pageInfo.endCursor).toBe("p6");
-        expect(pageInfo.hasPreviousPage).toBe(false);
-        expect(pageInfo.hasNextPage).toBe(true);
+        // Check pageInfo structure
+        const canonicalConnection = graph.getRecord(canonicalKey);
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+        // Check pageInfo values
+        const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
+        expect(pageInfo).toEqual({
+          __typename: "PageInfo",
+          startCursor: "p1",
+          endCursor: "p6",
+          hasPreviousPage: false,
+          hasNextPage: true,
+        });
       });
     });
 
     describe("deduplication", () => {
       it("deduplicates nodes by reference across pages", () => {
-        const canKey = "@connection.posts({})";
+        const canonicalKey = "@connection.posts({})";
 
         const { page: p0, edges: e0 } = writePostPage(
           graph,
@@ -537,11 +604,18 @@ describe("Canonical", () => {
           pageEdges: e1,
         });
 
-        expect(getNodeIds(canKey)).toEqual(["1", "2", "3", "4", "5"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5"]);
+
+        // Check pageInfo structure
+        const canonicalConnection = graph.getRecord(canonicalKey);
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+        const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
+        expect(pageInfo).toBeDefined();
       });
 
       it("refreshes edge meta from duplicate without adding duplicate edge", () => {
-        const canKey = "@connection.posts({})";
+        const canonicalKey = "@connection.posts({})";
         const page1Key = '@.posts({"after":null,"first":2})';
         const page2Key = '@.posts({"after":"c2","first":2})';
 
@@ -586,8 +660,8 @@ describe("Canonical", () => {
         });
 
         // Verify initial state
-        expect(getNodeIds(canKey)).toEqual(["1", "2"]);
-        const canonicalAfterP1 = graph.getRecord(canKey);
+        expect(getNodeIds(canonicalKey)).toEqual(["1", "2"]);
+        const canonicalAfterP1 = graph.getRecord(canonicalKey);
         const edge1RefAfterP1 = canonicalAfterP1.edges.__refs[1];
         const edge1AfterP1 = graph.getRecord(edge1RefAfterP1);
         expect(edge1AfterP1.cursor).toBe("c2");
@@ -634,9 +708,9 @@ describe("Canonical", () => {
         });
 
         // Verify deduplication and metadata refresh
-        const canonicalConnection = graph.getRecord(canKey);
+        const canonicalConnection = graph.getRecord(canonicalKey);
         expect(canonicalConnection.edges.__refs.length).toBe(3);
-        expect(getNodeIds(canKey)).toEqual(["1", "2", "3"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3"]);
 
         // The canonical should still reference the first page's edge for node 2
         // but ALL metadata (including cursor) should be refreshed from the later occurrence
@@ -644,6 +718,12 @@ describe("Canonical", () => {
         expect(keptEdge.cursor).toBe("c2x"); // Cursor IS refreshed (metadata)
         expect(keptEdge.score).toBe(9);      // Score IS refreshed (metadata)
         expect(keptEdge.node.__ref).toBe("Post:2"); // Node reference stays the same
+
+        // Check pageInfo structure
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+        const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
+        expect(pageInfo).toBeDefined();
       });
     });
 
@@ -688,6 +768,19 @@ describe("Canonical", () => {
         expect(getNodeIds(userKey)).toEqual(["u3", "u4"]);
         expect(getMeta(adminKey)).toBeDefined();
         expect(getMeta(userKey)).toBeDefined();
+
+        // Check pageInfo structure for both
+        const adminConnection = graph.getRecord(adminKey);
+        expect(adminConnection.pageInfo).toEqual({ __ref: `${adminKey}.pageInfo` });
+
+        const adminPageInfoRecord = graph.getRecord(`${adminKey}.pageInfo`);
+        expect(adminPageInfoRecord).toBeDefined();
+
+        const userConnection = graph.getRecord(userKey);
+        expect(userConnection.pageInfo).toEqual({ __ref: `${userKey}.pageInfo` });
+
+        const userPageInfoRecord = graph.getRecord(`${userKey}.pageInfo`);
+        expect(userPageInfoRecord).toBeDefined();
       });
 
       it("maintains separate state for filtered connections after leader refetch", () => {
@@ -706,7 +799,6 @@ describe("Canonical", () => {
           variables: { role: "admin", first: 2, after: null },
           pageKey: '@.users({"after":null,"first":2,"role":"admin"})',
           pageSnapshot: page0,
-          pageEdges: page0EdgeRefs,
         });
 
         const { page: page1, edges: page1EdgeRefs } = writeUserPage(
@@ -722,7 +814,6 @@ describe("Canonical", () => {
           variables: { role: "admin", first: 2, after: "u2" },
           pageKey: '@.users({"after":"u2","first":2,"role":"admin"})',
           pageSnapshot: page1,
-          pageEdges: page1EdgeRefs,
         });
 
         expect(getNodeIds(adminKey)).toEqual(["u1", "u2", "u3", "u4"]);
@@ -733,12 +824,16 @@ describe("Canonical", () => {
           variables: { role: "admin", first: 2, after: null },
           pageKey: '@.users({"after":null,"first":2,"role":"admin"})',
           pageSnapshot: page0,
-          pageEdges: page0EdgeRefs,
         });
 
         expect(getNodeIds(adminKey)).toEqual(["u1", "u2"]);
 
-        const pageInfo = graph.getRecord(adminKey).pageInfo;
+        // Check pageInfo structure
+        const canonicalConnection = graph.getRecord(adminKey);
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${adminKey}.pageInfo` });
+
+        // Check pageInfo values
+        const pageInfo = graph.getRecord(`${adminKey}.pageInfo`);
         expect(pageInfo.startCursor).toBe("u1");
         expect(pageInfo.endCursor).toBe("u2");
       });
@@ -772,7 +867,7 @@ describe("Canonical", () => {
 
   describe("updateConnection - page mode", () => {
     it("directly replaces canonical with page snapshot without meta", () => {
-      const canKey = "@connection.tags({})";
+      const canonicalKey = "@connection.tags({})";
       const pageKey = '@.tags({"after":null,"first":10})';
 
       const { page, edges } = writeTagPage(
@@ -790,25 +885,25 @@ describe("Canonical", () => {
         variables: { first: 10, after: null },
         pageKey,
         pageSnapshot: page,
-        pageEdges: edges,
       });
 
-      const canonicalConnection = graph.getRecord(canKey);
+      const canonicalConnection = graph.getRecord(canonicalKey);
       expect(canonicalConnection.__typename).toBe("TagConnection");
-      expect(getNodeIds(canKey)).toEqual(["t1", "t2", "t3"]);
+      expect(getNodeIds(canonicalKey)).toEqual(["t1", "t2", "t3"]);
       expect(canonicalConnection.totalCount).toBe(3);
 
+      // In page mode, pageInfo can be inline (not a reference)
       const pageInfo = canonicalConnection.pageInfo;
       expect(pageInfo.startCursor).toBe("t1");
       expect(pageInfo.endCursor).toBe("t3");
       expect(pageInfo.hasNextPage).toBe(false);
 
-      const meta = getMeta(canKey);
+      const meta = getMeta(canonicalKey);
       expect(meta).toBeUndefined();
     });
 
     it("replaces entire canonical on each page mode update", () => {
-      const canKey = "@connection.tags({})";
+      const canonicalKey = "@connection.tags({})";
 
       const { page: p0, edges: e0 } = writeTagPage(
         graph,
@@ -823,10 +918,9 @@ describe("Canonical", () => {
         variables: { first: 10, after: null },
         pageKey: '@.tags({"after":null,"first":10})',
         pageSnapshot: p0,
-        pageEdges: e0,
       });
 
-      expect(getNodeIds(canKey)).toEqual(["t1", "t2"]);
+      expect(getNodeIds(canonicalKey)).toEqual(["t1", "t2"]);
 
       const { page: p1, edges: e1 } = writeTagPage(
         graph,
@@ -841,17 +935,16 @@ describe("Canonical", () => {
         variables: { first: 10, after: "t2" },
         pageKey: '@.tags({"after":"t2","first":10})',
         pageSnapshot: p1,
-        pageEdges: e1,
       });
 
-      expect(getNodeIds(canKey)).toEqual(["t3", "t4", "t5"]);
+      expect(getNodeIds(canonicalKey)).toEqual(["t3", "t4", "t5"]);
     });
   });
 
   describe("mergeFromCache", () => {
     describe("infinite mode", () => {
       it("creates canonical with cache origin in meta", () => {
-        const canKey = "@connection.posts({})";
+        const canonicalKey = "@connection.posts({})";
         const pageKey = '@.posts({"after":null,"first":3})';
 
         const { page, edges } = writePostPage(
@@ -869,15 +962,22 @@ describe("Canonical", () => {
           pageSnapshot: page,
         });
 
-        expect(getNodeIds(canKey)).toEqual(["1", "2", "3"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3"]);
 
-        const meta = getMeta(canKey);
+        // Check pageInfo structure
+        const canonicalConnection = graph.getRecord(canonicalKey);
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+        const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
+        expect(pageInfo).toBeDefined();
+
+        const meta = getMeta(canonicalKey);
         expect(meta.origin[pageKey]).toBe("cache");
         expect(meta.leader).toBe(pageKey);
       });
 
       it("merges multiple out-of-order pages and maintains leader-first order", () => {
-        const canKey = "@connection.posts({})";
+        const canonicalKey = "@connection.posts({})";
 
         const { page: p1, edges: e1 } = writePostPage(
           graph,
@@ -904,7 +1004,6 @@ describe("Canonical", () => {
           variables: { first: 3, after: "p3" },
           pageKey: '@.posts({"after":"p3","first":3})',
           pageSnapshot: p1,
-          pageEdges: e1,
         });
         canonical.mergeFromCache({
           field: POSTS_PLAN_FIELD,
@@ -912,7 +1011,6 @@ describe("Canonical", () => {
           variables: { first: 3, after: "p6" },
           pageKey: '@.posts({"after":"p6","first":3})',
           pageSnapshot: p2,
-          pageEdges: e2,
         });
         canonical.mergeFromCache({
           field: POSTS_PLAN_FIELD,
@@ -920,21 +1018,25 @@ describe("Canonical", () => {
           variables: { first: 3, after: null },
           pageKey: '@.posts({"after":null,"first":3})',
           pageSnapshot: p0,
-          pageEdges: e0,
         });
 
-        expect(getNodeIds(canKey)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
 
-        const pageInfo = graph.getRecord(canKey).pageInfo;
+        // Check pageInfo structure
+        const canonicalConnection = graph.getRecord(canonicalKey);
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+        // Check pageInfo values
+        const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
         expect(pageInfo.startCursor).toBe("p1");
         expect(pageInfo.endCursor).toBe("p8");
 
-        const meta = getMeta(canKey);
+        const meta = getMeta(canonicalKey);
         expect(meta.leader).toBe('@.posts({"after":null,"first":3})');
       });
 
       it("handles before/after pages consistently in prewarm", () => {
-        const canKey = "@connection.posts({})";
+        const canonicalKey = "@connection.posts({})";
 
         const { page: p1, edges: e1 } = writePostPage(
           graph,
@@ -980,20 +1082,25 @@ describe("Canonical", () => {
           pageEdges: e1,
         });
 
-        expect(getNodeIds(canKey)).toEqual(["-2", "-1", "0", "1", "2", "3", "4", "5"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["-2", "-1", "0", "1", "2", "3", "4", "5"]);
 
-        const pageInfo = graph.getRecord(canKey).pageInfo;
+        // Check pageInfo structure
+        const canonicalConnection = graph.getRecord(canonicalKey);
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+        // Check pageInfo values
+        const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
         expect(pageInfo.startCursor).toBe("p-2");
         expect(pageInfo.endCursor).toBe("p5");
 
-        const meta = getMeta(canKey);
+        const meta = getMeta(canonicalKey);
         expect(meta.hints['@.posts({"before":"p1","last":3})']).toBe("before");
         expect(meta.hints['@.posts({"after":null,"first":3})']).toBe("leader");
         expect(meta.hints['@.posts({"after":"p3","first":3})']).toBe("after");
       });
 
       it("network leader call resets prewarm union to leader only", () => {
-        const canKey = "@connection.posts({})";
+        const canonicalKey = "@connection.posts({})";
 
         const { page: p0, edges: e0 } = writePostPage(
           graph,
@@ -1025,7 +1132,7 @@ describe("Canonical", () => {
           pageEdges: e1,
         });
 
-        expect(getNodeIds(canKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
 
         canonical.updateConnection({
           field: POSTS_PLAN_FIELD,
@@ -1036,15 +1143,22 @@ describe("Canonical", () => {
           pageEdges: e0,
         });
 
-        expect(getNodeIds(canKey)).toEqual(["1", "2", "3"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3"]);
 
-        const meta = getMeta(canKey);
+        // Check pageInfo structure
+        const canonicalConnection = graph.getRecord(canonicalKey);
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+        const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
+        expect(pageInfo).toBeDefined();
+
+        const meta = getMeta(canonicalKey);
         expect(meta.pages).toEqual(['@.posts({"after":null,"first":3})']);
         expect(meta.origin['@.posts({"after":null,"first":3})']).toBe("network");
       });
 
       it("network forward call after prewarm maintains union", () => {
-        const canKey = "@connection.posts({})";
+        const canonicalKey = "@connection.posts({})";
 
         const { page: p0, edges: e0 } = writePostPage(
           graph,
@@ -1077,7 +1191,7 @@ describe("Canonical", () => {
           pageEdges: e1,
         });
 
-        expect(getNodeIds(canKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
 
         canonical.updateConnection({
           field: POSTS_PLAN_FIELD,
@@ -1088,9 +1202,16 @@ describe("Canonical", () => {
           pageEdges: e1,
         });
 
-        expect(getNodeIds(canKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
 
-        const meta = getMeta(canKey);
+        // Check pageInfo structure
+        const canonicalConnection = graph.getRecord(canonicalKey);
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+        const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
+        expect(pageInfo).toBeDefined();
+
+        const meta = getMeta(canonicalKey);
         expect(meta.origin['@.posts({"after":"p3","first":3})']).toBe("network");
       });
 
@@ -1120,7 +1241,7 @@ describe("Canonical", () => {
 
     describe("page mode", () => {
       it("directly replaces canonical without meta in page mode", () => {
-        const canKey = "@connection.tags({})";
+        const canonicalKey = "@connection.tags({})";
         const pageKey = '@.tags({"after":null,"first":10})';
 
         const { page, edges } = writeTagPage(graph, pageKey, ["t1", "t2"], { hasNext: false });
@@ -1133,15 +1254,15 @@ describe("Canonical", () => {
           pageSnapshot: page,
         });
 
-        expect(getNodeIds(canKey)).toEqual(["t1", "t2"]);
-        expect(getMeta(canKey)).toBeUndefined();
+        expect(getNodeIds(canonicalKey)).toEqual(["t1", "t2"]);
+        expect(getMeta(canonicalKey)).toBeUndefined();
       });
     });
   });
 
   describe("edge cases", () => {
     it("handles empty page gracefully", () => {
-      const canKey = "@connection.posts({})";
+      const canonicalKey = "@connection.posts({})";
       const pageKey = '@.posts({"after":null,"first":3})';
 
       const { page, edges } = writePostPage(
@@ -1160,14 +1281,22 @@ describe("Canonical", () => {
         pageEdges: edges,
       });
 
-      expect(getNodeIds(canKey)).toEqual([]);
-      const meta = getMeta(canKey);
+      expect(getNodeIds(canonicalKey)).toEqual([]);
+
+      // Check pageInfo structure
+      const canonicalConnection = graph.getRecord(canonicalKey);
+      expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+      const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
+      expect(pageInfo).toBeDefined();
+
+      const meta = getMeta(canonicalKey);
       expect(meta).toBeDefined();
       expect(meta.leader).toBe(pageKey);
     });
 
     it("handles page with no pageInfo", () => {
-      const canKey = "@connection.posts({})";
+      const canonicalKey = "@connection.posts({})";
       const pageKey = '@.posts({"after":null,"first":3})';
 
       graph.putRecord("Post:1", { __typename: "Post", id: "1" });
@@ -1191,15 +1320,20 @@ describe("Canonical", () => {
         pageEdges: [{ __ref: `${pageKey}.edges:0` }],
       });
 
-      expect(getNodeIds(canKey)).toEqual(["1"]);
-      const canonicalPageInfo = graph.getRecord(canKey).pageInfo;
-      expect(canonicalPageInfo).toBeDefined();
+      expect(getNodeIds(canonicalKey)).toEqual(["1"]);
+
+      // Check pageInfo structure
+      const canonicalConnection = graph.getRecord(canonicalKey);
+      expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+      const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
+      expect(pageInfo).toBeDefined();
     });
 
     it("ensures canonical record exists even before any pages", () => {
-      const canKey = "@connection.posts({})";
+      const canonicalKey = "@connection.posts({})";
 
-      let canonicalConnection = graph.getRecord(canKey);
+      let canonicalConnection = graph.getRecord(canonicalKey);
       expect(canonicalConnection).toBeUndefined();
 
       const { page, edges } = writePostPage(
@@ -1218,9 +1352,15 @@ describe("Canonical", () => {
         pageEdges: edges,
       });
 
-      canonicalConnection = graph.getRecord(canKey);
+      canonicalConnection = graph.getRecord(canonicalKey);
       expect(canonicalConnection).toBeDefined();
       expect(canonicalConnection.__typename).toBe("PostConnection");
+
+      // Check pageInfo structure
+      expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
+
+      const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
+      expect(pageInfo).toBeDefined();
     });
   });
 });
