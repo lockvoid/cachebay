@@ -77,7 +77,6 @@ export const createConnectionPlanField = (name: string): PlanField => {
   const edges = createPlanField("edges", false, [createPlanField("__typename"), createPlanField("cursor"), node]);
   return createPlanField(name, true, [createPlanField("__typename"), createPlanField("pageInfo"), edges]);
 };
-
 /**
  * Seeds a concrete connection page following new normalization rules:
  * - Concrete pages store edges as { __refs: string[] }
@@ -94,9 +93,7 @@ export const seedConnectionPage = (
   connectionTypename = "Connection",
 ) => {
   const edgeKeys: string[] = [];
-  const edgeRefs: Array<{ __ref: string }> = [];
 
-  // Create individual edge records
   for (let i = 0; i < edges.length; i++) {
     const e = edges[i];
     const edgeKey = `${pageKey}.edges:${i}`;
@@ -109,10 +106,8 @@ export const seedConnectionPage = (
     });
 
     edgeKeys.push(edgeKey);
-    edgeRefs.push({ __ref: edgeKey });
   }
 
-  // Create concrete page record with edges as { __refs: [...] }
   const pageRecord: Record<string, any> = {
     __typename: connectionTypename,
     edges: {
@@ -120,34 +115,32 @@ export const seedConnectionPage = (
     },
   };
 
-  // Add pageInfo (inline or as reference)
   if (pageInfo) {
     if (pageInfo.__ref) {
-      // PageInfo stored as separate record
       pageRecord.pageInfo = { __ref: pageInfo.__ref as string };
     } else {
-      // PageInfo stored inline
       pageRecord.pageInfo = { ...pageInfo };
     }
   }
 
-  // Add extra fields (e.g., totalCount, aggregations)
   if (extra) {
     Object.assign(pageRecord, extra);
   }
 
   graph.putRecord(pageKey, pageRecord);
 
-  // Return both the snapshot (for canonical API) and the concrete structure
-  return {
-    pageSnapshot: {
-      __typename: connectionTypename,
-      edges: edgeRefs,
-      pageInfo: pageInfo ? { ...pageInfo } : {},
-      ...(extra || {}),
+  const pageSnapshot = {
+    __typename: connectionTypename,
+    edges: {
+      __refs: edgeKeys,
     },
-    edgeRefs,
-    edgeKeys,
+    pageInfo: pageInfo ? { ...pageInfo } : {},
+    ...(extra || {}),
+  };
+
+  return {
+    page: pageSnapshot,
+    edges: { __refs: edgeKeys },
   };
 };
 
@@ -156,32 +149,7 @@ export const seedConnectionPage = (
  * - Creates entity records
  * - Creates edge records
  * - Creates concrete page record with { __refs: [...] }
- * - Returns snapshot for canonical API
- *
- * @param graph - Graph instance
- * @param pageKey - Concrete page key (e.g., '@.posts({"after":null,"first":3})')
- * @param nodeIds - Array of node IDs to create
- * @param options - Configuration options
- * @returns Page snapshot, edge refs, and edge keys
- *
- * @example
- * // Posts
- * const { page, edgeRefs } = writePageSnapshot(graph, pageKey, [1, 2, 3], {
- *   typename: "Post",
- *   edgeTypename: "PostEdge",
- *   connectionTypename: "PostConnection",
- *   createNode: (id) => ({ id: String(id), title: `Post ${id}` }),
- *   createCursor: (id) => `p${id}`,
- * });
- *
- * // Users
- * const { page, edgeRefs } = writePageSnapshot(graph, pageKey, ["u1", "u2"], {
- *   typename: "User",
- *   edgeTypename: "UserEdge",
- *   connectionTypename: "UserConnection",
- *   createNode: (id) => ({ id, name: `User ${id}` }),
- *   createCursor: (id) => id,
- * });
+ * - Returns page snapshot and edges for canonical API
  */
 export const writePageSnapshot = <TNodeId extends string | number>(
   graph: ReturnType<typeof createGraph>,
@@ -211,22 +179,18 @@ export const writePageSnapshot = <TNodeId extends string | number>(
   } = options;
 
   const edgeKeys: string[] = [];
-  const edgeRefs: Array<{ __ref: string }> = [];
 
-  // Create entity and edge records
   for (let i = 0; i < nodeIds.length; i++) {
     const nodeId = nodeIds[i];
     const edgeKey = `${pageKey}.edges:${i}`;
     const cursor = createCursor(nodeId);
 
-    // Create entity record
     const nodeData = createNode(nodeId);
     graph.putRecord(`${typename}:${nodeId}`, {
       __typename: typename,
       ...nodeData,
     });
 
-    // Create edge record
     graph.putRecord(edgeKey, {
       __typename: edgeTypename,
       cursor,
@@ -234,10 +198,8 @@ export const writePageSnapshot = <TNodeId extends string | number>(
     });
 
     edgeKeys.push(edgeKey);
-    edgeRefs.push({ __ref: edgeKey });
   }
 
-  // Determine pageInfo cursors
   const startCursor = pageInfo?.start || (nodeIds.length > 0 ? createCursor(nodeIds[0]) : null);
   const endCursor = pageInfo?.end || (nodeIds.length > 0 ? createCursor(nodeIds[nodeIds.length - 1]) : null);
 
@@ -249,7 +211,6 @@ export const writePageSnapshot = <TNodeId extends string | number>(
     hasPreviousPage: pageInfo?.hasPrev ?? false,
   };
 
-  // Create concrete page record with { __refs: [...] }
   graph.putRecord(pageKey, {
     __typename: connectionTypename,
     edges: {
@@ -258,17 +219,17 @@ export const writePageSnapshot = <TNodeId extends string | number>(
     pageInfo: pageInfoRecord,
   });
 
-  // Return snapshot for canonical API (edges as array of refs)
   const pageSnapshot = {
     __typename: connectionTypename,
-    edges: edgeRefs,
+    edges: {
+      __refs: edgeKeys,
+    },
     pageInfo: pageInfoRecord,
   };
 
   return {
     page: pageSnapshot,
-    edgeRefs,
-    edgeKeys,
+    edges: { __refs: edgeKeys },
   };
 };
 

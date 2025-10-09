@@ -299,7 +299,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
   const ensurePageEdges = (
     pageKey: string,
     pageSnapshot: any,
-    pageEdgeRefs: Array<{ __ref: string }>
+    pageEdges: { __refs: string[] }
   ): void => {
     const page = graph.getRecord(pageKey);
 
@@ -311,21 +311,11 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
       return;
     }
 
-    if (Array.isArray(pageEdgeRefs) && pageEdgeRefs.length > 0) {
-      const edgeKeys: string[] = [];
-      for (let i = 0; i < pageEdgeRefs.length; i++) {
-        const ref = pageEdgeRefs[i].__ref;
-        if (typeof ref === "string") {
-          edgeKeys.push(ref);
-        }
-      }
-
+    if (pageEdges?.__refs && Array.isArray(pageEdges.__refs) && pageEdges.__refs.length > 0) {
       graph.putRecord(pageKey, {
         __typename: page?.__typename || pageSnapshot?.__typename || "Connection",
         pageInfo: page?.pageInfo || pageSnapshot?.pageInfo || {},
-        edges: {
-          __refs: edgeKeys,
-        },
+        edges: pageEdges,
       });
     }
   };
@@ -353,7 +343,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
     variables: Record<string, any>;
     pageKey: string;
     pageSnapshot: Record<string, any>;
-    pageEdgeRefs: Array<{ __ref: string }>;
+    pageEdgeRefs: string[];
   }): void => {
     const { field, parentId, variables, pageKey, pageSnapshot, pageEdgeRefs } = args;
     const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
@@ -364,9 +354,16 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
 
     if (mode === "page") {
       const extras = extractExtras(pageSnapshot);
-      const edgeRefs = Array.isArray(pageSnapshot.edges)
-        ? pageSnapshot.edges.map((e: any) => e?.__ref).filter((ref: any) => typeof ref === "string")
-        : [];
+      const edgeRefs: string[] = [];
+
+      if (pageSnapshot.edges?.__refs && Array.isArray(pageSnapshot.edges.__refs)) {
+        for (let i = 0; i < pageSnapshot.edges.__refs.length; i++) {
+          const ref = pageSnapshot.edges.__refs[i];
+          if (typeof ref === "string") {
+            edgeRefs.push(ref);
+          }
+        }
+      }
 
       graph.putRecord(canonicalKey, {
         __typename: pageSnapshot.__typename || "Connection",
@@ -382,11 +379,17 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
 
     if (isLeader) {
       const edgeKeys = readPageEdges(pageKey);
-      const leaderEdgeRefs = edgeKeys.length > 0
-        ? edgeKeys
-        : (Array.isArray(pageSnapshot.edges) && pageSnapshot.edges.length > 0
-          ? pageSnapshot.edges.map((e: any) => e?.__ref).filter((ref: any) => typeof ref === "string")
-          : (Array.isArray(pageEdgeRefs) ? pageEdgeRefs.map(e => e.__ref).filter(ref => typeof ref === "string") : []));
+
+      let leaderEdgeRefs: string[];
+      if (edgeKeys.length > 0) {
+        leaderEdgeRefs = edgeKeys;
+      } else if (pageSnapshot.edges?.__refs && Array.isArray(pageSnapshot.edges.__refs)) {
+        leaderEdgeRefs = pageSnapshot.edges.__refs.slice();
+      } else if (Array.isArray(pageEdgeRefs) && pageEdgeRefs.length > 0) {
+        leaderEdgeRefs = pageEdgeRefs.slice();
+      } else {
+        leaderEdgeRefs = [];
+      }
 
       const page = graph.getRecord(pageKey);
       const leaderPageInfo = readPageInfo(page) || pageSnapshot.pageInfo || {};
@@ -447,7 +450,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
     variables: Record<string, any>;
     pageKey: string;
     pageSnapshot: Record<string, any>;
-    pageEdgeRefs: Array<{ __ref: string }>;
+    pageEdgeRefs: string[];
   }): void => {
     const { field, parentId, variables, pageKey, pageSnapshot, pageEdgeRefs } = args;
     const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
@@ -457,9 +460,16 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
     ensurePageEdges(pageKey, pageSnapshot, pageEdgeRefs);
 
     if (mode === "page") {
-      const edgeRefs = Array.isArray(pageSnapshot.edges)
-        ? pageSnapshot.edges.map((e: any) => e?.__ref).filter((ref: any) => typeof ref === "string")
-        : [];
+      const edgeRefs: string[] = [];
+
+      if (pageSnapshot.edges?.__refs && Array.isArray(pageSnapshot.edges.__refs)) {
+        for (let i = 0; i < pageSnapshot.edges.__refs.length; i++) {
+          const ref = pageSnapshot.edges.__refs[i];
+          if (typeof ref === "string") {
+            edgeRefs.push(ref);
+          }
+        }
+      }
 
       graph.putRecord(canonicalKey, {
         __typename: pageSnapshot.__typename || "Connection",
