@@ -1,5 +1,6 @@
 import { shallowReactive } from "vue";
 import { ID_FIELD, TYPENAME_FIELD, IDENTITY_FIELDS } from "./constants";
+import { isObject } from "./utils";
 
 export type GraphOptions = {
   keys?: Record<string, (obj: any) => string | null>;
@@ -92,7 +93,6 @@ const overlayRecordFull = (recordProxy: any, currentSnapshot: Record<string, any
  * Diff field changes and track what changed
  * @private
  */
-
 const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot: Record<string, any>): [string[], string[], boolean, boolean, boolean] => {
   let idChanged = false;
   let typenameChanged = false;
@@ -104,19 +104,9 @@ const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot
     const fieldName = fields[i];
     const incomingValue = partialSnapshot[fieldName];
 
+    // IMPORTANT: Ignore undefined patches (do NOT delete existing fields).
+    // Normalization may include keys with `undefined` when the server omits them.
     if (incomingValue === undefined) {
-      if (fieldName in currentSnapshot) {
-        delete currentSnapshot[fieldName];
-
-        if (fieldName === ID_FIELD) {
-          idChanged = true;
-        } else if (fieldName === TYPENAME_FIELD) {
-          typenameChanged = true;
-        } else {
-          removedFields.push(fieldName);
-        }
-      }
-
       continue;
     }
 
@@ -135,6 +125,15 @@ const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot
       if (currentSnapshot[TYPENAME_FIELD] !== incomingValue) {
         currentSnapshot[TYPENAME_FIELD] = incomingValue;
         typenameChanged = true;
+      }
+
+      continue;
+    }
+
+    if (incomingValue === null) {
+      if (fieldName in currentSnapshot) {
+        delete currentSnapshot[fieldName];
+        removedFields.push(fieldName);
       }
 
       continue;
@@ -198,6 +197,10 @@ class IdentityManager {
   }
 
   stringifyKey(object: any): string | null {
+    if (!isObject(object)) {
+      return null;
+    }
+
     const typename = this.getCanonicalTypename(object[TYPENAME_FIELD]) || object[TYPENAME_FIELD];
 
     if (!typename) {
@@ -240,7 +243,7 @@ export const createGraph = (options?: GraphOptions) => {
   };
 
   /**
-   * Update record with partial data, undefined values delete fields
+   * Update record with partial data, undefined values are ignored
    */
   const putRecord = (recordId: string, partialSnapshot: Record<string, any>): void => {
     const currentSnapshot = recordStore.get(recordId) || {};

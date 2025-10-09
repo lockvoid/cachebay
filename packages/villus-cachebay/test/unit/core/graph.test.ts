@@ -73,6 +73,39 @@ describe("core/graph.ts", () => {
       expect(snapshot.tags).toEqual(["red", "green", "blue"]);
       expect(snapshot.color).toEqual({ r: 1, g: 2, b: 3 });
     });
+
+    it("keeps existing scalar fields when patched with undefined (snapshot)", () => {
+      graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "john@example.com", name: "John" });
+
+      // Patch with undefined should NOT delete existing fields.
+      graph.putRecord("User:u1", { email: undefined, name: undefined });
+
+      expect(graph.getRecord("User:u1")).toEqual({
+        __typename: "User",
+        id: "u1",
+        email: "john@example.com",
+        name: "John",
+      });
+    });
+
+    it("keeps existing collection/object fields when patched with undefined (snapshot)", () => {
+      graph.putRecord("Post:p1", {
+        __typename: "Post",
+        id: "p1",
+        tags: ["react", "ts"],
+        meta: { r: 1, g: 2, b: 3 },
+      });
+
+      // Patch with undefined should NOT delete or alter existing fields.
+      graph.putRecord("Post:p1", { tags: undefined, meta: undefined });
+
+      expect(graph.getRecord("Post:p1")).toEqual({
+        __typename: "Post",
+        id: "p1",
+        tags: ["react", "ts"],
+        meta: { r: 1, g: 2, b: 3 },
+      });
+    });
   });
 
   describe("getRecord", () => {
@@ -143,18 +176,6 @@ describe("core/graph.ts", () => {
 
       expect(user1).toBe(user2);
       expect(user1.name).toBe("Jane");
-    });
-
-    it("handles field deletions in proxies", () => {
-      graph.putRecord("User:u1", { __typename: "User", id: "u1", name: "John", email: "john@example.com" });
-
-      const user1 = graph.materializeRecord("User:u1");
-      expect(user1.email).toBe("john@example.com");
-
-      graph.putRecord("User:u1", { email: undefined });
-
-      expect(user1.email).toBeUndefined();
-      expect("email" in user1).toBe(false);
     });
   });
 
