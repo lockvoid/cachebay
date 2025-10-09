@@ -35,7 +35,7 @@ describe("documents.normalizeDocument", () => {
     documents = createDocuments({ graph, views, canonical, planner });
   });
 
-  it.only("normalizes root reference and entity snapshot for single user query", () => {
+  it("normalizes root reference and entity snapshot for single user query", () => {
     documents.normalizeDocument({
       document: operations.USER_QUERY,
       variables: {
@@ -64,7 +64,7 @@ describe("documents.normalizeDocument", () => {
     });
   });
 
-  it.only("normalizes root users connection with edge records", () => {
+  it("normalizes root users connection with edge records", () => {
     documents.normalizeDocument({
       document: operations.USERS_QUERY,
       variables: {
@@ -170,7 +170,7 @@ describe("documents.normalizeDocument", () => {
     });
   });
 
-  it.only("preserves both category connections when writing tech then lifestyle posts", () => {
+  it("preserves both category connections when writing tech then lifestyle posts", () => {
     const userPostsTech = {
       user: {
         ...users.buildNode({
@@ -311,7 +311,7 @@ describe("documents.normalizeDocument", () => {
     });
   });
 
-  it.only("normalizes root users connection plus nested per-user posts connections", () => {
+  it("normalizes root users connection plus nested per-user posts connections", () => {
     const usersPostsData = {
       users: {
         ...users.buildConnection(
@@ -421,7 +421,7 @@ describe("documents.normalizeDocument", () => {
     });
   });
 
-  it.only("normalizes nested posts and comments connections as separate records", () => {
+  it("normalizes nested posts and comments connections as separate records", () => {
     const userPostsComments_page1 = {
       user: {
         ...users.buildNode({
@@ -611,7 +611,7 @@ describe("documents.normalizeDocument", () => {
     });
   });
 
-  it.only("normalizes root users connection and nested posts plus comments connections", () => {
+  it("normalizes root users connection and nested posts plus comments connections", () => {
     const usersPostsCommentsData = {
       users: {
         ...users.buildConnection(
@@ -715,7 +715,7 @@ describe("documents.normalizeDocument", () => {
     });
   });
 
-  it.only("normalizes mutation operations correctly", () => {
+  it("normalizes mutation operations correctly", () => {
     const updateUserData = {
       updateUser: {
         user: {
@@ -757,7 +757,7 @@ describe("documents.normalizeDocument", () => {
     });
   });
 
-  it.only("normalizes subscription operations correctly", () => {
+  it("normalizes subscription operations correctly", () => {
     const userUpdatedData = {
       userUpdated: {
         __typename: "UserUpdated",
@@ -1663,7 +1663,7 @@ describe("documents.normalizeDocument", () => {
     expect(profile.name).toBe("Dimitri");
   });
 
-  it.only("normalizes aggregations connections", () => {
+  it("normalizes aggregations connections", () => {
     documents.normalizeDocument({
       document: operations.POSTS_WITH_AGGREGATIONS_QUERY,
       variables: {
@@ -1938,7 +1938,7 @@ describe("documents.normalizeDocument", () => {
       key: "m2",
       mediaUrl: "https://m/2",
     });
-    /*
+
     expect(graph.getRecord("@connection.posts({})")).toMatchObject({
       __typename: "PostConnection",
       totalCount: 2,
@@ -2010,6 +2010,6 @@ describe("documents.normalizeDocument", () => {
     expect(graph.getRecord('@connection.Post:p1.aggregations.UserTags({"category":"user"})::meta')).toBeDefined();
 
     expect(graph.getRecord('@connection.Post:p2.aggregations.ModerationTags({"category":"moderation"})::meta')).toBeDefined();
-    expect(graph.getRecord('@connection.Post:p2.aggregations.UserTags({"category":"user"})::meta')).toBeDefined(); */
+    expect(graph.getRecord('@connection.Post:p2.aggregations.UserTags({"category":"user"})::meta')).toBeDefined();
   });
 });
