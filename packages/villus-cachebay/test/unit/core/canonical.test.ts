@@ -866,19 +866,18 @@ describe("Canonical", () => {
   });
 
   describe("updateConnection - page mode", () => {
-    it("directly replaces canonical with page snapshot without meta", () => {
+    it.only("directly replaces canonical with page snapshot without meta", () => {
       const canonicalKey = "@connection.tags({})";
       const pageKey = '@.tags({"after":null,"first":10})';
-
       const { page, edges } = writeTagPage(
         graph,
         pageKey,
         ["t1", "t2", "t3"],
         { start: "t1", end: "t3", hasNext: false },
       );
-
       page.totalCount = 3;
 
+      console.log(page);
       canonical.updateConnection({
         field: TAGS_PLAN_FIELD,
         parentId: ROOT_ID,
@@ -892,11 +891,17 @@ describe("Canonical", () => {
       expect(getNodeIds(canonicalKey)).toEqual(["t1", "t2", "t3"]);
       expect(canonicalConnection.totalCount).toBe(3);
 
-      // In page mode, pageInfo can be inline (not a reference)
-      const pageInfo = canonicalConnection.pageInfo;
+      // PageInfo is now always stored as a reference (consistent with infinite mode)
+      expect(canonicalConnection.pageInfo).toEqual({
+        __ref: "@connection.tags({}).pageInfo",
+      });
+
+      const pageInfoRef = canonicalConnection.pageInfo.__ref;
+      const pageInfo = graph.getRecord(pageInfoRef);
       expect(pageInfo.startCursor).toBe("t1");
       expect(pageInfo.endCursor).toBe("t3");
       expect(pageInfo.hasNextPage).toBe(false);
+      expect(pageInfo.hasPreviousPage).toBe(false);
 
       const meta = getMeta(canonicalKey);
       expect(meta).toBeUndefined();

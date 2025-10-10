@@ -66,13 +66,14 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
    */
   const extractExtras = (pageSnapshot: Record<string, any>): Record<string, any> => {
     const extras: Record<string, any> = {};
-    const keys = Object.keys(pageSnapshot || {});
 
-    for (let i = 0; i < keys.length; i++) {
+    for (let i = 0, keys = Object.keys(pageSnapshot || {}); i < keys.length; i++) {
       const key = keys[i];
+
       if (key === "edges" || key === "pageInfo" || key === "__typename") {
         continue;
       }
+
       extras[key] = pageSnapshot[key];
     }
 
@@ -84,9 +85,11 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
    */
   const readPageEdges = (pageKey: string): string[] => {
     const page = graph.getRecord(pageKey);
+
     if (!page?.edges?.__refs || !Array.isArray(page.edges.__refs)) {
       return [];
     }
+
     return page.edges.__refs;
   };
 
@@ -222,11 +225,13 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
 
       for (let j = 0; j < edgeKeys.length; j++) {
         const edgeRef = edgeKeys[j];
+
         if (!edgeRef) {
           continue;
         }
 
         const nodeRef = getNodeRef(edgeRef);
+
         if (!nodeRef) {
           continue;
         }
@@ -320,23 +325,41 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
 
     if (mode === "page") {
       const extras = extractExtras(pageSnapshot);
+
       const edgeRefs: string[] = [];
 
       if (pageSnapshot.edges?.__refs && Array.isArray(pageSnapshot.edges.__refs)) {
         for (let i = 0; i < pageSnapshot.edges.__refs.length; i++) {
           const ref = pageSnapshot.edges.__refs[i];
+
           if (typeof ref === "string") {
             edgeRefs.push(ref);
           }
         }
       }
 
+      // Read pageInfo from reference
+      const pageInfoRef = pageSnapshot.pageInfo?.__ref;
+      const pageInfoData = pageInfoRef ? graph.getRecord(pageInfoRef) : null;
+
+      // Store pageInfo as a separate record
+      const pageInfoKey = `${canonicalKey}.pageInfo`;
+      graph.putRecord(pageInfoKey, {
+        __typename: pageInfoData?.__typename || "PageInfo",
+        startCursor: pageInfoData?.startCursor ?? null,
+        endCursor: pageInfoData?.endCursor ?? null,
+        hasPreviousPage: !!pageInfoData?.hasPreviousPage,
+        hasNextPage: !!pageInfoData?.hasNextPage,
+      });
+
+      // Store canonical connection
       graph.putRecord(canonicalKey, {
         __typename: pageSnapshot.__typename || "Connection",
         edges: { __refs: edgeRefs },
-        pageInfo: pageSnapshot.pageInfo || {},
+        pageInfo: { __ref: pageInfoKey },
         ...extras,
       });
+
       optimistic.replayOptimistic({ connections: [canonicalKey] });
       return;
     }
@@ -347,6 +370,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
       const edgeKeys = readPageEdges(pageKey);
 
       let leaderEdgeRefs: string[];
+
       if (edgeKeys.length > 0) {
         leaderEdgeRefs = edgeKeys;
       } else if (pageSnapshot.edges?.__refs && Array.isArray(pageSnapshot.edges.__refs)) {

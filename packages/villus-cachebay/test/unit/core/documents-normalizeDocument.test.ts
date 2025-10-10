@@ -198,7 +198,7 @@ describe("documents.normalizeDocument", () => {
     ]);
   });
 
-  it("preserves both category connections when writing tech then lifestyle posts", () => {
+  it("preserves both category connections when writing posts", () => {
     const userPostsTech = {
       user: {
         ...users.buildNode({
@@ -378,7 +378,7 @@ describe("documents.normalizeDocument", () => {
     expect(canonicalLifestyleMeta.pages).toEqual(['@.User:u1.posts({"after":null,"category":"lifestyle","first":2})']);
   });
 
-  it("normalizes root users connection plus nested per-user posts connections", () => {
+  it("normalizes root users connection with neseted posts connections", () => {
     const usersPostsData = {
       users: {
         ...users.buildConnection(
@@ -765,7 +765,7 @@ describe("documents.normalizeDocument", () => {
     ]);
   });
 
-  it("normalizes root users connection and nested posts plus comments connections", () => {
+  it("normalizes root users connection with nested posts and comments connections", () => {
     const usersPostsCommentsData = {
       users: {
         ...users.buildConnection(
@@ -998,333 +998,525 @@ describe("documents.normalizeDocument", () => {
     expect(canonicalKeys.length).toBe(0);
   });
 
-  it("appends after cursor and prepends before cursor in canonical infinite mode", () => {
-    const adminUsersLeaderData = {
-      users: users.buildConnection(
+  it.only("appends after cursor and prepends before cursor in canonical infinite mode", () => {
+    const techPostsLeaderData = {
+      posts: posts.buildConnection(
         [
           {
-            id: "u1",
+            id: "p1",
+            title: "Post 1",
+            flags: ["react"],
           },
           {
-            id: "u2",
+            id: "p2",
+            title: "Post 2",
+            flags: ["vue"],
           },
         ],
         {
+          startCursor: "p1",
+          endCursor: "p2",
           hasNextPage: true,
         },
       ),
     };
-    adminUsersLeaderData.users.totalCount = 2;
 
     documents.normalizeDocument({
-      document: operations.USERS_QUERY,
+      document: operations.POSTS_QUERY,
       variables: {
-        role: "admin",
+        category: "tech",
+        sort: "recent",
         first: 2,
         after: null,
       },
-      data: adminUsersLeaderData,
+      data: techPostsLeaderData,
     });
 
-    const adminUsersAfterData = {
-      users: users.buildConnection(
-        [
-          {
-            id: "u3",
-          },
-        ],
-        {
-          startCursor: "u3",
-          endCursor: "u3",
-          hasNextPage: true,
-        },
-      ),
-    };
-    adminUsersAfterData.users.totalCount = 3;
-
-    documents.normalizeDocument({
-      document: operations.USERS_QUERY,
-      variables: {
-        role: "admin",
-        first: 2,
-        after: "u2",
-      },
-      data: adminUsersAfterData,
-    });
-
-    const adminUsersBeforeData = {
-      users: users.buildConnection(
-        [
-          {
-            id: "u0",
-          },
-        ],
-        {
-          startCursor: "u0",
-          endCursor: "u0",
-          hasNextPage: false,
-          hasPreviousPage: true,
-        },
-      ),
-    };
-    adminUsersBeforeData.users.totalCount = 99;
-
-    documents.normalizeDocument({
-      document: operations.USERS_QUERY,
-      variables: {
-        role: "admin",
-        last: 1,
-        before: "u1",
-      } as any,
-      data: adminUsersBeforeData,
-    });
-
-    const adminUsersConnection = graph.getRecord('@connection.users({"role":"admin"})')!;
-
-    expect(adminUsersConnection.edges).toEqual({
-      __refs: expect.any(Array),
-    });
-
-    const canonicalEdges = adminUsersConnection.edges.__refs;
-    expect(canonicalEdges.length).toBe(4);
-
-    expect(graph.getRecord(canonicalEdges[0])!).toEqual({
-      __typename: "UserEdge",
-      cursor: "u0",
-      node: {
-        __ref: "User:u0",
-      },
-    });
-
-    expect(graph.getRecord(canonicalEdges[1])!).toEqual({
-      __typename: "UserEdge",
-      cursor: "u1",
-      node: {
-        __ref: "User:u1",
-      },
-    });
-
-    expect(graph.getRecord(canonicalEdges[2])!).toEqual({
-      __typename: "UserEdge",
-      cursor: "u2",
-      node: {
-        __ref: "User:u2",
-      },
-    });
-
-    expect(graph.getRecord(canonicalEdges[3])!).toEqual({
-      __typename: "UserEdge",
-      cursor: "u3",
-      node: {
-        __ref: "User:u3",
-      },
-    });
-
-    expect(graph.getRecord('@connection.users({"role":"admin"}).pageInfo')).toEqual({
-      __typename: "PageInfo",
-      startCursor: "u0",
-      endCursor: "u3",
-      hasNextPage: true,
-      hasPreviousPage: true,
-    });
-
-    expect(graph.getRecord('@connection.users({"role":"admin"})::meta')).toBeDefined();
-
-    const adminMeta = graph.getRecord('@connection.users({"role":"admin"})::meta');
-    expect(adminMeta.pages).toEqual([
-      '@.users({"after":null,"first":2,"role":"admin"})',
-      '@.users({"after":"u2","first":2,"role":"admin"})',
-      '@.users({"before":"u1","last":1,"role":"admin"})',
-    ]);
-    expect(adminMeta.leader).toBeDefined();
-    expect(adminMeta.hints).toBeDefined();
-  });
-
-  it("appends after cursor and prepends before cursor in canonical page mode", () => {
-    const moderatorUsersLeaderData = {
-      users: users.buildConnection(
-        [
-          {
-            id: "m1",
-            email: "m1@example.com",
-          },
-          {
-            id: "m2",
-            email: "m2@example.com",
-          },
-        ],
-        {
-          startCursor: "m1",
-          endCursor: "m2",
-          hasNextPage: true,
-        },
-      ),
-    };
-    moderatorUsersLeaderData.users.totalCount = 10;
-
-    documents.normalizeDocument({
-      document: operations.USERS_QUERY,
-      variables: {
-        role: "moderator",
-        first: 2,
-        after: null,
-      },
-      data: moderatorUsersLeaderData,
-    });
-
-    const moderatorUsersAfterData = {
-      users: users.buildConnection(
-        [
-          {
-            id: "m3",
-            email: "m3@example.com",
-          },
-          {
-            id: "m4",
-            email: "m4@example.com",
-          },
-        ],
-        {
-          startCursor: "m3",
-          endCursor: "m4",
-          hasNextPage: true,
-        },
-      ),
-    };
-    moderatorUsersAfterData.users.totalCount = 12;
-
-    documents.normalizeDocument({
-      document: operations.USERS_QUERY,
-      variables: {
-        role: "moderator",
-        first: 2,
-        after: "m2",
-      },
-      data: moderatorUsersAfterData,
-    });
-
-    const moderatorUsersBeforeData = {
-      users: users.buildConnection(
-        [
-          {
-            id: "m0",
-            email: "m0@example.com",
-          },
-        ],
-        {
-          startCursor: "m0",
-          endCursor: "m0",
-          hasNextPage: false,
-          hasPreviousPage: true,
-        },
-      ),
-    };
-    moderatorUsersBeforeData.users.totalCount = 1;
-
-    documents.normalizeDocument({
-      document: operations.USERS_QUERY,
-      variables: {
-        role: "moderator",
-        last: 1,
-        before: "m3",
-      } as any,
-      data: moderatorUsersBeforeData,
-    });
-
-    expect(graph.getRecord('@.users({"after":"m2","first":2,"role":"moderator"})')).toEqual({
-      __typename: "UserConnection",
-      totalCount: 12,
+    // After leader fetch, canonical should show initial page
+    expect(graph.getRecord('@connection.posts({"category":"tech","sort":"recent"})')).toEqual({
+      __typename: "PostConnection",
       pageInfo: {
-        __ref: '@.users({"after":"m2","first":2,"role":"moderator"}).pageInfo',
+        __ref: '@connection.posts({"category":"tech","sort":"recent"}).pageInfo',
       },
       edges: {
         __refs: [
-          '@.users({"after":"m2","first":2,"role":"moderator"}).edges:0',
-          '@.users({"after":"m2","first":2,"role":"moderator"}).edges:1',
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:0',
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:1',
         ],
       },
     });
 
-    expect(graph.getRecord('@.users({"after":"m2","first":2,"role":"moderator"}).pageInfo')).toEqual({
+    expect(graph.getRecord('@connection.posts({"category":"tech","sort":"recent"}).pageInfo')).toEqual({
       __typename: "PageInfo",
-      startCursor: "m3",
-      endCursor: "m4",
-      hasNextPage: true,
+      startCursor: "p1",
+      endCursor: "p2",
       hasPreviousPage: false,
+      hasNextPage: true,
     });
 
-    expect(graph.getRecord('@.users({"after":"m2","first":2,"role":"moderator"}).edges:0')).toEqual({
-      __typename: "UserEdge",
-      cursor: "m3",
-      node: {
-        __ref: "User:m3",
+    const techPostsAfterData = {
+      posts: posts.buildConnection(
+        [
+          {
+            id: "p3",
+            title: "Post 3",
+            flags: ["js"],
+          },
+          {
+            id: "p4",
+            title: "Post 4",
+            flags: ["ts"],
+          },
+        ],
+        {
+          startCursor: "p3",
+          endCursor: "p4",
+          hasNextPage: true,
+        },
+      ),
+    };
+
+    documents.normalizeDocument({
+      document: operations.POSTS_QUERY,
+      variables: {
+        category: "tech",
+        sort: "recent",
+        first: 2,
+        after: "p2",
       },
+      data: techPostsAfterData,
     });
 
-    expect(graph.getRecord('@.users({"after":"m2","first":2,"role":"moderator"}).edges:1')).toEqual({
-      __typename: "UserEdge",
-      cursor: "m4",
-      node: {
-        __ref: "User:m4",
-      },
-    });
-
-    expect(graph.getRecord('@.users({"before":"m3","last":1,"role":"moderator"})')).toEqual({
-      __typename: "UserConnection",
-      totalCount: 1,
+    // After "after" fetch, canonical should APPEND the new page
+    expect(graph.getRecord('@connection.posts({"category":"tech","sort":"recent"})')).toEqual({
+      __typename: "PostConnection",
       pageInfo: {
-        __ref: '@.users({"before":"m3","last":1,"role":"moderator"}).pageInfo',
+        __ref: '@connection.posts({"category":"tech","sort":"recent"}).pageInfo',
       },
       edges: {
-        __refs: ['@.users({"before":"m3","last":1,"role":"moderator"}).edges:0'],
+        __refs: [
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:0',  // p1
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:1',  // p2
+          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:0',  // p3
+          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:1',  // p4
+        ],
       },
     });
 
-    expect(graph.getRecord('@.users({"before":"m3","last":1,"role":"moderator"}).pageInfo')).toEqual({
+    // PageInfo should reflect the merged view
+    expect(graph.getRecord('@connection.posts({"category":"tech","sort":"recent"}).pageInfo')).toEqual({
       __typename: "PageInfo",
-      startCursor: "m0",
-      endCursor: "m0",
-      hasNextPage: false,
-      hasPreviousPage: true,
+      startCursor: "p1",      // From head page
+      endCursor: "p4",        // From tail page
+      hasPreviousPage: false, // From head page
+      hasNextPage: true,      // From tail page
     });
 
-    expect(graph.getRecord('@.users({"before":"m3","last":1,"role":"moderator"}).edges:0')).toEqual({
-      __typename: "UserEdge",
-      cursor: "m0",
-      node: {
-        __ref: "User:m0",
+    const techPostsBeforeData = {
+      posts: posts.buildConnection(
+        [
+          {
+            id: "p0",
+            title: "Post 0",
+            flags: ["node"],
+          },
+        ],
+        {
+          startCursor: "p0",
+          endCursor: "p0",
+          hasNextPage: false,
+          hasPreviousPage: true,
+        },
+      ),
+    };
+
+    documents.normalizeDocument({
+      document: operations.POSTS_QUERY,
+      variables: {
+        category: "tech",
+        sort: "recent",
+        last: 1,
+        before: "p3",
       },
+      data: techPostsBeforeData,
     });
 
-    // Check canonical connection in page mode
-    const canonicalModerators = graph.getRecord('@connection.users({"role":"moderator"})');
-    expect(canonicalModerators).toBeDefined();
-    expect(canonicalModerators).toEqual({
-      __typename: "UserConnection",
-      totalCount: 1,
+    // After "before" fetch, canonical should PREPEND the new page before the leader
+    const canonicalTechPosts = graph.getRecord('@connection.posts({"category":"tech","sort":"recent"})');
+    expect(canonicalTechPosts).toBeDefined();
+    expect(canonicalTechPosts).toEqual({
+      __typename: "PostConnection",
       pageInfo: {
-        __ref: '@connection.users({"role":"moderator"}).pageInfo',
+        __ref: '@connection.posts({"category":"tech","sort":"recent"}).pageInfo',
       },
       edges: {
-        __refs: ['@.users({"before":"m3","last":1,"role":"moderator"}).edges:0'],
+        __refs: [
+          '@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"}).edges:0',   // p0 (prepended)
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:0',   // p1 (leader)
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:1',   // p2 (leader)
+          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:0',   // p3 (after)
+          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:1',   // p4 (after)
+        ],
       },
     });
 
-    const canonicalModeratorsMeta = graph.getRecord('@connection.users({"role":"moderator"})::meta');
-    expect(canonicalModeratorsMeta).toBeDefined();
-    expect(canonicalModeratorsMeta.pages).toEqual([
-      '@.users({"after":null,"first":2,"role":"moderator"})',
-      '@.users({"after":"m2","first":2,"role":"moderator"})',
-      '@.users({"before":"m3","last":1,"role":"moderator"})',
-    ]);
-    expect(canonicalModeratorsMeta.leader).toBeDefined();
-    expect(canonicalModeratorsMeta.hints).toBeDefined();
+    // PageInfo should reflect the full merged view
+    expect(graph.getRecord('@connection.posts({"category":"tech","sort":"recent"}).pageInfo')).toEqual({
+      __typename: "PageInfo",
+      startCursor: "p0",      // From new head page
+      endCursor: "p4",        // From tail page
+      hasPreviousPage: true,  // From new head page
+      hasNextPage: true,      // From tail page
+    });
 
-    // In page mode, canonical should point to the most recent page
-    const canonicalConnection = graph.getRecord('@connection.users({"role":"moderator"})');
-    expect(canonicalConnection.edges.__refs).toEqual([
-      '@.users({"before":"m3","last":1,"role":"moderator"}).edges:0',
+    // Metadata should track all pages with correct hints
+    const canonicalTechPostsMeta = graph.getRecord('@connection.posts({"category":"tech","sort":"recent"})::meta');
+    expect(canonicalTechPostsMeta).toBeDefined();
+    expect(canonicalTechPostsMeta.pages).toEqual([
+      '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"})',
+      '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"})',
+      '@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"})',
     ]);
+    expect(canonicalTechPostsMeta.leader).toBe('@.posts({"after":null,"category":"tech","first":2,"sort":"recent"})');
+    expect(canonicalTechPostsMeta.hints).toEqual({
+      '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"})': "leader",
+      '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"})': "after",
+      '@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"})': "before",
+    });
+    expect(canonicalTechPostsMeta.origin).toEqual({
+      '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"})': "network",
+      '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"})': "network",
+      '@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"})': "network",
+    });
+
+    // Verify concrete pages still exist independently
+    expect(graph.getRecord('@.posts({"after":null,"category":"tech","first":2,"sort":"recent"})')).toEqual({
+      __typename: "PostConnection",
+      pageInfo: {
+        __ref: '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).pageInfo',
+      },
+      edges: {
+        __refs: [
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:0',
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:1',
+        ],
+      },
+    });
+
+    expect(graph.getRecord('@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"})')).toEqual({
+      __typename: "PostConnection",
+      pageInfo: {
+        __ref: '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).pageInfo',
+      },
+      edges: {
+        __refs: [
+          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:0',
+          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:1',
+        ],
+      },
+    });
+
+    expect(graph.getRecord('@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"})')).toEqual({
+      __typename: "PostConnection",
+      pageInfo: {
+        __ref: '@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"}).pageInfo',
+      },
+      edges: {
+        __refs: ['@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"}).edges:0'],
+      },
+    });
+
+    // Verify individual edge records
+    expect(graph.getRecord('@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:0')).toEqual({
+      __typename: "PostEdge",
+      cursor: "p1",
+      node: {
+        __ref: "Post:p1",
+      },
+    });
+
+    expect(graph.getRecord('@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:0')).toEqual({
+      __typename: "PostEdge",
+      cursor: "p3",
+      node: {
+        __ref: "Post:p3",
+      },
+    });
+
+    expect(graph.getRecord('@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"}).edges:0')).toEqual({
+      __typename: "PostEdge",
+      cursor: "p0",
+      node: {
+        __ref: "Post:p0",
+      },
+    });
+
+    // Verify post entities
+    expect(graph.getRecord("Post:p1")).toMatchObject({
+      __typename: "Post",
+      id: "p1",
+      title: "Post 1",
+      flags: ["react"],
+    });
+
+    expect(graph.getRecord("Post:p3")).toMatchObject({
+      __typename: "Post",
+      id: "p3",
+      title: "Post 3",
+      flags: ["js"],
+    });
+
+    expect(graph.getRecord("Post:p0")).toMatchObject({
+      __typename: "Post",
+      id: "p0",
+      title: "Post 0",
+      flags: ["node"],
+    });
+  });
+
+  it.only("replaces canonical view on each fetch in page mode", () => {
+    const techPostsLeaderData = {
+      posts: posts.buildConnection(
+        [
+          {
+            id: "p1",
+            title: "Post 1",
+            flags: ["react"],
+          },
+          {
+            id: "p2",
+            title: "Post 2",
+            flags: ["vue"],
+          },
+        ],
+        {
+          startCursor: "p1",
+          endCursor: "p2",
+          hasNextPage: true,
+        },
+      ),
+    };
+
+    documents.normalizeDocument({
+      document: operations.POSTS_WITH_PAGE_QUERY,
+      variables: {
+        category: "tech",
+        sort: "recent",
+        first: 2,
+        after: null,
+      },
+      data: techPostsLeaderData,
+    });
+
+    expect(graph.getRecord('@connection.posts({"category":"tech","sort":"recent"})')).toEqual({
+      __typename: "PostConnection",
+      pageInfo: {
+        __ref: '@connection.posts({"category":"tech","sort":"recent"}).pageInfo',
+      },
+      edges: {
+        __refs: [
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:0',
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:1',
+        ],
+      },
+    });
+
+    expect(graph.getRecord('@connection.posts({"category":"tech","sort":"recent"}).pageInfo')).toEqual({
+      __typename: "PageInfo",
+      startCursor: "p1",
+      endCursor: "p2",
+      hasPreviousPage: false,
+      hasNextPage: true,
+    });
+
+    const techPostsAfterData = {
+      posts: posts.buildConnection(
+        [
+          {
+            id: "p3",
+            title: "Post 3",
+            flags: ["js"],
+          },
+          {
+            id: "p4",
+            title: "Post 4",
+            flags: ["ts"],
+          },
+        ],
+        {
+          startCursor: "p3",
+          endCursor: "p4",
+          hasNextPage: true,
+        },
+      ),
+    };
+
+    documents.normalizeDocument({
+      document: operations.POSTS_WITH_PAGE_QUERY,
+      variables: {
+        category: "tech",
+        sort: "recent",
+        first: 2,
+        after: "p2",
+      },
+      data: techPostsAfterData,
+    });
+
+    expect(graph.getRecord('@connection.posts({"category":"tech","sort":"recent"})')).toEqual({
+      __typename: "PostConnection",
+      pageInfo: {
+        __ref: '@connection.posts({"category":"tech","sort":"recent"}).pageInfo',
+      },
+      edges: {
+        __refs: [
+          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:0',
+          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:1',
+        ],
+      },
+    });
+
+    expect(graph.getRecord('@connection.posts({"category":"tech","sort":"recent"}).pageInfo')).toEqual({
+      __typename: "PageInfo",
+      startCursor: "p3",
+      endCursor: "p4",
+      hasPreviousPage: false,
+      hasNextPage: true,
+    });
+
+    const techPostsBeforeData = {
+      posts: posts.buildConnection(
+        [
+          {
+            id: "p0",
+            title: "Post 0",
+            flags: ["node"],
+          },
+        ],
+        {
+          startCursor: "p0",
+          endCursor: "p0",
+          hasNextPage: false,
+          hasPreviousPage: true,
+        },
+      ),
+    };
+
+    documents.normalizeDocument({
+      document: operations.POSTS_WITH_PAGE_QUERY,
+      variables: {
+        category: "tech",
+        sort: "recent",
+        last: 1,
+        before: "p3",
+      },
+      data: techPostsBeforeData,
+    });
+
+    const canonicalTechPosts = graph.getRecord('@connection.posts({"category":"tech","sort":"recent"})');
+    expect(canonicalTechPosts).toBeDefined();
+    expect(canonicalTechPosts).toEqual({
+      __typename: "PostConnection",
+      pageInfo: {
+        __ref: '@connection.posts({"category":"tech","sort":"recent"}).pageInfo',
+      },
+      edges: {
+        __refs: [
+          '@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"}).edges:0',
+        ],
+      },
+    });
+
+    expect(graph.getRecord('@connection.posts({"category":"tech","sort":"recent"}).pageInfo')).toEqual({
+      __typename: "PageInfo",
+      startCursor: "p0",
+      endCursor: "p0",
+      hasPreviousPage: true,
+      hasNextPage: false,
+    });
+
+    const canonicalMeta = graph.getRecord('@connection.posts({"category":"tech","sort":"recent"})::meta');
+    expect(canonicalMeta).toBeUndefined();
+
+    expect(graph.getRecord('@.posts({"after":null,"category":"tech","first":2,"sort":"recent"})')).toEqual({
+      __typename: "PostConnection",
+      pageInfo: {
+        __ref: '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).pageInfo',
+      },
+      edges: {
+        __refs: [
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:0',
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:1',
+        ],
+      },
+    });
+
+    expect(graph.getRecord('@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"})')).toEqual({
+      __typename: "PostConnection",
+      pageInfo: {
+        __ref: '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).pageInfo',
+      },
+      edges: {
+        __refs: [
+          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:0',
+          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:1',
+        ],
+      },
+    });
+
+    expect(graph.getRecord('@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"})')).toEqual({
+      __typename: "PostConnection",
+      pageInfo: {
+        __ref: '@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"}).pageInfo',
+      },
+      edges: {
+        __refs: ['@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"}).edges:0'],
+      },
+    });
+
+    expect(graph.getRecord('@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:0')).toEqual({
+      __typename: "PostEdge",
+      cursor: "p1",
+      node: {
+        __ref: "Post:p1",
+      },
+    });
+
+    expect(graph.getRecord('@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:0')).toEqual({
+      __typename: "PostEdge",
+      cursor: "p3",
+      node: {
+        __ref: "Post:p3",
+      },
+    });
+
+    expect(graph.getRecord('@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"}).edges:0')).toEqual({
+      __typename: "PostEdge",
+      cursor: "p0",
+      node: {
+        __ref: "Post:p0",
+      },
+    });
+
+    expect(graph.getRecord("Post:p1")).toMatchObject({
+      __typename: "Post",
+      id: "p1",
+      title: "Post 1",
+      flags: ["react"],
+    });
+
+    expect(graph.getRecord("Post:p3")).toMatchObject({
+      __typename: "Post",
+      id: "p3",
+      title: "Post 3",
+      flags: ["js"],
+    });
+
+    expect(graph.getRecord("Post:p0")).toMatchObject({
+      __typename: "Post",
+      id: "p0",
+      title: "Post 0",
+      flags: ["node"],
+    });
   });
 
   it("appends after cursor in canonical nested comments infinite mode", () => {
@@ -1650,7 +1842,7 @@ describe("documents.normalizeDocument", () => {
         postId: "p9",
         last: 1,
         before: "x3",
-      } as any,
+      },
       data: post9CommentsBeforeData,
     });
 

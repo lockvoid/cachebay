@@ -77,187 +77,6 @@ export const createConnectionPlanField = (name: string): PlanField => {
   const edges = createPlanField("edges", false, [createPlanField("__typename"), createPlanField("cursor"), node]);
   return createPlanField(name, true, [createPlanField("__typename"), createPlanField("pageInfo"), edges]);
 };
-/**
- * Seeds a concrete connection page following new normalization rules:
- * - Concrete pages store edges as { __refs: string[] }
- * - Individual edge records are created separately
- * - pageInfo is stored inline or as a separate record
- */
-export const seedConnectionPage = (
-  graph: ReturnType<typeof createGraph>,
-  pageKey: string,
-  edges: Array<{ nodeRef: string; cursor?: string; extra?: Record<string, any> }>,
-  pageInfo?: Record<string, any>,
-  extra?: Record<string, any>,
-  edgeTypename = "Edge",
-  connectionTypename = "Connection",
-) => {
-  const edgeKeys: string[] = [];
-
-  for (let i = 0; i < edges.length; i++) {
-    const e = edges[i];
-    const edgeKey = `${pageKey}.edges:${i}`;
-
-    graph.putRecord(edgeKey, {
-      __typename: edgeTypename,
-      cursor: e.cursor ?? null,
-      ...(e.extra || {}),
-      node: { __ref: e.nodeRef },
-    });
-
-    edgeKeys.push(edgeKey);
-  }
-
-  const pageRecord: Record<string, any> = {
-    __typename: connectionTypename,
-    edges: {
-      __refs: edgeKeys,
-    },
-  };
-
-  if (pageInfo) {
-    if (pageInfo.__ref) {
-      pageRecord.pageInfo = { __ref: pageInfo.__ref as string };
-    } else {
-      pageRecord.pageInfo = { ...pageInfo };
-    }
-  }
-
-  if (extra) {
-    Object.assign(pageRecord, extra);
-  }
-
-  graph.putRecord(pageKey, pageRecord);
-
-  const pageSnapshot = {
-    __typename: connectionTypename,
-    edges: {
-      __refs: edgeKeys,
-    },
-    pageInfo: pageInfo ? { ...pageInfo } : {},
-    ...(extra || {}),
-  };
-
-  return {
-    page: pageSnapshot,
-    edges: { __refs: edgeKeys },
-  };
-};
-
-/**
- * Generic helper to write a connection page snapshot following new normalization rules:
- * - Creates entity records
- * - Creates edge records
- * - Creates concrete page record with { __refs: [...] }
- * - Returns page snapshot and edges for canonical API
- */
-export const writePageSnapshot = <TNodeId extends string | number>(
-  graph: ReturnType<typeof createGraph>,
-  pageKey: string,
-  nodeIds: TNodeId[],
-  options: {
-    typename: string;
-    edgeTypename?: string;
-    connectionTypename?: string;
-    createNode: (id: TNodeId) => Record<string, any>;
-    createCursor?: (id: TNodeId) => string;
-    pageInfo?: {
-      start?: string;
-      end?: string;
-      hasNext?: boolean;
-      hasPrev?: boolean;
-    };
-  },
-) => {
-  const {
-    typename,
-    edgeTypename = `${typename}Edge`,
-    connectionTypename = `${typename}Connection`,
-    createNode,
-    createCursor = (id) => String(id),
-    pageInfo,
-  } = options;
-
-  const edgeKeys: string[] = [];
-
-  for (let i = 0; i < nodeIds.length; i++) {
-    const nodeId = nodeIds[i];
-    const edgeKey = `${pageKey}.edges:${i}`;
-    const cursor = createCursor(nodeId);
-
-    const nodeData = createNode(nodeId);
-    graph.putRecord(`${typename}:${nodeId}`, {
-      __typename: typename,
-      ...nodeData,
-    });
-
-    graph.putRecord(edgeKey, {
-      __typename: edgeTypename,
-      cursor,
-      node: { __ref: `${typename}:${nodeId}` },
-    });
-
-    edgeKeys.push(edgeKey);
-  }
-
-  const startCursor = pageInfo?.start || (nodeIds.length > 0 ? createCursor(nodeIds[0]) : null);
-  const endCursor = pageInfo?.end || (nodeIds.length > 0 ? createCursor(nodeIds[nodeIds.length - 1]) : null);
-
-  const pageInfoRecord = {
-    __typename: "PageInfo",
-    startCursor,
-    endCursor,
-    hasNextPage: pageInfo?.hasNext ?? false,
-    hasPreviousPage: pageInfo?.hasPrev ?? false,
-  };
-
-  graph.putRecord(pageKey, {
-    __typename: connectionTypename,
-    edges: {
-      __refs: edgeKeys,
-    },
-    pageInfo: pageInfoRecord,
-  });
-
-  const pageSnapshot = {
-    __typename: connectionTypename,
-    edges: {
-      __refs: edgeKeys,
-    },
-    pageInfo: pageInfoRecord,
-  };
-
-  return {
-    page: pageSnapshot,
-    edges: { __refs: edgeKeys },
-  };
-};
-
-/**
- * Creates a pageInfo record separately (for reference-based pageInfo storage)
- */
-export const createPageInfo = (
-  graph: ReturnType<typeof createGraph>,
-  pageInfoKey: string,
-  options: {
-    startCursor?: string | null;
-    endCursor?: string | null;
-    hasNextPage?: boolean;
-    hasPreviousPage?: boolean;
-  },
-) => {
-  const pageInfo = {
-    __typename: "PageInfo",
-    startCursor: options.startCursor ?? null,
-    endCursor: options.endCursor ?? null,
-    hasNextPage: options.hasNextPage ?? false,
-    hasPreviousPage: options.hasPreviousPage ?? false,
-  };
-
-  graph.putRecord(pageInfoKey, pageInfo);
-
-  return { __ref: pageInfoKey };
-};
 
 export const collectConnectionDirectives = (doc: DocumentNode): string[] => {
   const hits: string[] = [];
@@ -337,4 +156,58 @@ export const createSelection = (config: Record<string, any>): { fields: PlanFiel
   }
 
   return { fields, map };
+};
+
+import type { Connection, ConnectionRecord, ConnectionRef } from "./types";
+
+/**
+ * Writes a connection page to the graph following normalization rules.
+ * Takes fixture data (from users.buildConnection, posts.buildConnection, etc.)
+ * and normalizes it into the graph with proper references.
+ */
+export const writeConnectionPage = (graph: ReturnType<typeof createGraph>, pageKey: string, connectionData: Connection): { pageSnapshot: ConnectionRecord; pageSnapshotRefs: ConnectionRef } => {
+  const edgeKeys: string[] = [];
+
+  const { edges, pageInfo, ...connectionInfo } = connectionData;
+
+  for (let i = 0; i < edges.length; i++) {
+    const edge = edges[i];
+    const edgeKey = `${pageKey}.edges:${i}`;
+    const node = edge.node;
+    const nodeKey = graph.identify(node);
+
+    if (!nodeKey) {
+      throw new Error(`Cannot identify node: ${JSON.stringify(node)}`);
+    }
+
+    graph.putRecord(nodeKey, node);
+
+    const { node: _1, ...edgeFields } = edge;
+
+    graph.putRecord(edgeKey, {
+      __typename: edge.__typename || "Edge",
+      ...edgeFields,
+      node: { __ref: nodeKey },
+    });
+    edgeKeys.push(edgeKey);
+  }
+
+  const pageInfoKey = `${pageKey}.pageInfo`;
+
+  graph.putRecord(pageInfoKey, {
+    ...pageInfo,
+    __typename: "PageInfo",
+  });
+
+  graph.putRecord(pageKey, {
+    ...connectionInfo,
+    edges: { __refs: edgeKeys },
+    pageInfo: { __ref: pageInfoKey },
+  });
+
+  return {
+    ...connectionInfo,
+    edges: { __refs: edgeKeys },
+    pageInfo: { __ref: pageInfoKey },
+  };
 };
