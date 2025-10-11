@@ -15,20 +15,11 @@ type CursorIndex = { [cursor: string]: number };
 /**
  * Creates the canonical connection manager that merges paginated data
  * using Relay-style splice-based merging with cursor relationships.
- * Optimized for large lists (thousands of items).
+ * Highly optimized for large lists (thousands of items).
  */
 export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) => {
   /**
-   * Extracts the node reference from an edge record.
-   */
-  const getNodeRef = (edgeRef: string): string | null => {
-    const edge = graph.getRecord(edgeRef);
-    const nodeRef = edge?.node?.__ref;
-    return typeof nodeRef === "string" ? nodeRef : null;
-  };
-
-  /**
-   * Gets cursor from an edge.
+   * Gets cursor from an edge (cached inline).
    */
   const getEdgeCursor = (edgeRef: string): string | null => {
     const edge = graph.getRecord(edgeRef);
@@ -63,11 +54,16 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
     }
 
     // Fallback to linear scan (O(N))
-    return edgeRefs.findIndex((edgeRef) => getEdgeCursor(edgeRef) === cursor);
+    for (let i = 0; i < edgeRefs.length; i++) {
+      if (getEdgeCursor(edgeRefs[i]) === cursor) {
+        return i;
+      }
+    }
+    return -1;
   };
 
   /**
-   * Extracts extra fields from connection (everything except edges, pageInfo, __typename).
+   * Extracts extra fields from connection (everything except edges, pageInfo, __typename, __cursorIndex).
    */
   const getExtras = (connection: Record<string, any>): Record<string, any> => {
     const extras: Record<string, any> = {};
@@ -85,7 +81,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
   };
 
   /**
-   * Detects cursor role from variables.
+   * Detects cursor role from variables (O(1) with buildArgs).
    */
   const detectCursorRole = (
     field: PlanField,
@@ -93,31 +89,8 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
   ): { after: string | null; before: string | null; isLeader: boolean } => {
     const args = field.buildArgs ? (field.buildArgs(variables) || {}) : (variables || {});
 
-    let after: string | null = args.after ?? null;
-    let before: string | null = args.before ?? null;
-
-    // Fallback: check variable keys
-    if (!after) {
-      const varKeys = Object.keys(variables || {});
-      for (let i = 0; i < varKeys.length; i++) {
-        const key = varKeys[i];
-        if (key.toLowerCase().includes("after") && variables[key] != null) {
-          after = variables[key];
-          break;
-        }
-      }
-    }
-
-    if (!before) {
-      const varKeys = Object.keys(variables || {});
-      for (let i = 0; i < varKeys.length; i++) {
-        const key = varKeys[i];
-        if (key.toLowerCase().includes("before") && variables[key] != null) {
-          before = variables[key];
-          break;
-        }
-      }
-    }
+    const after: string | null = args.after ?? null;
+    const before: string | null = args.before ?? null;
 
     return {
       after,
@@ -166,19 +139,11 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
 
     ensureCanonical(canonicalKey);
 
+    // Get incoming edges (reuse array, no copy)
+    const incomingEdgeRefs = (normalizedPage.edges?.__refs as string[]) || [];
+
     // Page mode: replace entire canonical with incoming page
     if (mode === "page") {
-      const edgeRefs: string[] = [];
-
-      if (normalizedPage.edges?.__refs && Array.isArray(normalizedPage.edges.__refs)) {
-        for (let i = 0; i < normalizedPage.edges.__refs.length; i++) {
-          const ref = normalizedPage.edges.__refs[i];
-          if (typeof ref === "string") {
-            edgeRefs.push(ref);
-          }
-        }
-      }
-
       const pageInfoRef = normalizedPage.pageInfo?.__ref;
       const pageInfoData = pageInfoRef ? graph.getRecord(pageInfoRef) : null;
 
@@ -193,9 +158,9 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
 
       graph.putRecord(canonicalKey, {
         __typename: normalizedPage.__typename || "Connection",
-        edges: { __refs: edgeRefs },
+        edges: { __refs: incomingEdgeRefs }, // Reuse array
         pageInfo: { __ref: pageInfoKey },
-        __cursorIndex: buildCursorIndex(edgeRefs),
+        __cursorIndex: buildCursorIndex(incomingEdgeRefs),
         ...getExtras(normalizedPage),
       });
 
@@ -205,94 +170,139 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
 
     // Infinite mode: merge using cursor relationships
     const { after, before, isLeader } = detectCursorRole(field, variables);
-    const existing = graph.getRecord(canonicalKey);
 
-    // Get incoming edges
-    const incomingEdgeRefs: string[] = [];
-    if (normalizedPage.edges?.__refs && Array.isArray(normalizedPage.edges.__refs)) {
-      for (let i = 0; i < normalizedPage.edges.__refs.length; i++) {
-        const ref = normalizedPage.edges.__refs[i];
-        if (typeof ref === "string") {
-          incomingEdgeRefs.push(ref);
-        }
-      }
+    // Fast leader path: no merging needed
+    if (isLeader) {
+      const pageInfoRef = normalizedPage.pageInfo?.__ref;
+      const pi = pageInfoRef ? graph.getRecord(pageInfoRef) : null;
+
+      const pageInfoKey = `${canonicalKey}.pageInfo`;
+      graph.putRecord(pageInfoKey, {
+        __typename: pi?.__typename || "PageInfo",
+        startCursor: pi?.startCursor ?? (incomingEdgeRefs[0] ? getEdgeCursor(incomingEdgeRefs[0]) : null),
+        endCursor: pi?.endCursor ?? (incomingEdgeRefs.length ? getEdgeCursor(incomingEdgeRefs[incomingEdgeRefs.length - 1]) : null),
+        hasPreviousPage: !!pi?.hasPreviousPage,
+        hasNextPage: !!pi?.hasNextPage,
+      });
+
+      graph.putRecord(canonicalKey, {
+        __typename: normalizedPage.__typename || "Connection",
+        edges: { __refs: incomingEdgeRefs }, // Reuse array
+        pageInfo: { __ref: pageInfoKey },
+        __cursorIndex: buildCursorIndex(incomingEdgeRefs),
+        ...getExtras(normalizedPage),
+      });
+
+      optimistic.replayOptimistic({ connections: [canonicalKey] });
+      return;
     }
 
-    // Get incoming pageInfo
+    // Cache existing data (single read)
+    const existing = graph.getRecord(canonicalKey);
+    const existingEdges = (existing?.edges?.__refs as string[]) || [];
+    const existingCursorIndex = existing?.__cursorIndex as CursorIndex | undefined;
+
+    // Get incoming pageInfo (single read)
     const incomingPageInfoRef = normalizedPage.pageInfo?.__ref;
     const incomingPageInfo = incomingPageInfoRef ? graph.getRecord(incomingPageInfoRef) : null;
 
-    // Get existing edges and cursor index
-    const existingEdges = existing?.edges?.__refs ? [...existing.edges.__refs] : [];
-    const existingCursorIndex = existing?.__cursorIndex as CursorIndex | undefined;
-
-    // Build prefix and suffix based on cursor (optimized with index)
-    let prefix: string[] = [];
-    let suffix: string[] = [];
+    // Determine splice indices (no array allocations yet)
+    let prefixEnd = 0;
+    let suffixStart = 0;
+    let isPureAppend = false;
+    let isPurePrepend = false;
 
     if (after) {
-      // Forward pagination: find splice point using index
-      const index = findCursorIndex(existingEdges, after, existingCursorIndex);
-      if (index >= 0) {
-        // Keep everything up to and including the cursor
-        prefix = existingEdges.slice(0, index + 1);
+      const idx = findCursorIndex(existingEdges, after, existingCursorIndex);
+      if (idx >= 0) {
+        prefixEnd = idx + 1;
+        suffixStart = existingEdges.length; // No suffix for forward
+        isPureAppend = idx === existingEdges.length - 1;
       } else {
         // Cursor not found - append to end
-        prefix = existingEdges;
+        prefixEnd = existingEdges.length;
+        suffixStart = existingEdges.length;
+        isPureAppend = true;
       }
     } else if (before) {
-      // Backward pagination: find splice point using index
-      const index = findCursorIndex(existingEdges, before, existingCursorIndex);
-      if (index >= 0) {
-        // Keep everything from the cursor onwards
-        suffix = existingEdges.slice(index);
+      const idx = findCursorIndex(existingEdges, before, existingCursorIndex);
+      if (idx >= 0) {
+        prefixEnd = 0; // No prefix for backward
+        suffixStart = idx;
+        isPurePrepend = idx === 0;
       } else {
         // Cursor not found - prepend to start
-        suffix = existingEdges;
+        prefixEnd = 0;
+        suffixStart = 0;
+        isPurePrepend = true;
       }
-    } else if (isLeader) {
-      // Leader: reset (no after/before)
-      prefix = [];
-      suffix = [];
     }
 
-    // Merge edges efficiently with a single loop that also builds the index
-    // This avoids separate iterations for merging and index building
-    const mergedEdges: string[] = [];
-    const newCursorIndex: CursorIndex = {};
-    let position = 0;
+    // Calculate total size and preallocate
+    const prefixLen = prefixEnd;
+    const suffixLen = existingEdges.length - suffixStart;
+    const totalLen = prefixLen + incomingEdgeRefs.length + suffixLen;
+    const mergedEdges = new Array<string>(totalLen);
 
-    // Add prefix
-    for (let i = 0; i < prefix.length; i++) {
-      const ref = prefix[i];
-      mergedEdges.push(ref);
-      const cursor = getEdgeCursor(ref);
-      if (cursor) {
-        newCursorIndex[cursor] = position;
-      }
-      position++;
+    // Copy ranges directly into preallocated array
+    let writePos = 0;
+
+    // Copy prefix
+    for (let i = 0; i < prefixEnd; i++) {
+      mergedEdges[writePos++] = existingEdges[i];
     }
 
-    // Add incoming edges
+    // Copy incoming
     for (let i = 0; i < incomingEdgeRefs.length; i++) {
-      const ref = incomingEdgeRefs[i];
-      mergedEdges.push(ref);
-      const cursor = getEdgeCursor(ref);
-      if (cursor) {
-        newCursorIndex[cursor] = position;
-      }
-      position++;
+      mergedEdges[writePos++] = incomingEdgeRefs[i];
     }
 
-    // Add suffix
-    for (let i = 0; i < suffix.length; i++) {
-      const ref = suffix[i];
-      mergedEdges.push(ref);
-      const cursor = getEdgeCursor(ref);
-      if (cursor) {
-        newCursorIndex[cursor] = position;
+    // Copy suffix
+    for (let i = suffixStart; i < existingEdges.length; i++) {
+      mergedEdges[writePos++] = existingEdges[i];
+    }
+
+    // Build or update cursor index
+    let newCursorIndex: CursorIndex;
+
+    if (isPureAppend && existingCursorIndex) {
+      // Incremental append: extend existing index
+      newCursorIndex = { ...existingCursorIndex };
+      let pos = existingEdges.length;
+      for (let i = 0; i < incomingEdgeRefs.length; i++) {
+        const cursor = getEdgeCursor(incomingEdgeRefs[i]);
+        if (cursor) {
+          newCursorIndex[cursor] = pos++;
+        }
       }
-      position++;
+    } else if (isPurePrepend && existingCursorIndex) {
+      // Incremental prepend: shift existing indices
+      newCursorIndex = {};
+      const shift = incomingEdgeRefs.length;
+
+      // Shift existing
+      const existingKeys = Object.keys(existingCursorIndex);
+      for (let i = 0; i < existingKeys.length; i++) {
+        const key = existingKeys[i];
+        newCursorIndex[key] = existingCursorIndex[key] + shift;
+      }
+
+      // Add new
+      for (let i = 0; i < incomingEdgeRefs.length; i++) {
+        const cursor = getEdgeCursor(incomingEdgeRefs[i]);
+        if (cursor) {
+          newCursorIndex[cursor] = i;
+        }
+      }
+    } else {
+      // General case: build while we have the merged array
+      newCursorIndex = {};
+      for (let i = 0; i < mergedEdges.length; i++) {
+        const cursor = getEdgeCursor(mergedEdges[i]);
+        if (cursor) {
+          newCursorIndex[cursor] = i;
+        }
+      }
     }
 
     // Build pageInfo (Relay style)
@@ -312,42 +322,58 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
       ...(existingPageInfo || {}),
     };
 
+    // Track if boundaries changed (optimization for skipping pageInfo write)
+    let boundariesChanged = false;
+
     // Override pageInfo at boundaries (Relay logic)
-    // Only update boundary info when incoming page is actually at a boundary
-    if (!prefix.length) {
+    if (prefixLen === 0) {
       // Incoming page is at the START - it defines the new start boundary
       if (incomingPageInfo && incomingPageInfo.hasPreviousPage !== undefined) {
-        pageInfo.hasPreviousPage = !!incomingPageInfo.hasPreviousPage;
+        const newVal = !!incomingPageInfo.hasPreviousPage;
+        if (pageInfo.hasPreviousPage !== newVal) {
+          pageInfo.hasPreviousPage = newVal;
+          boundariesChanged = true;
+        }
       }
       if (incomingPageInfo && incomingPageInfo.startCursor !== undefined) {
-        pageInfo.startCursor = incomingPageInfo.startCursor;
+        if (pageInfo.startCursor !== incomingPageInfo.startCursor) {
+          pageInfo.startCursor = incomingPageInfo.startCursor;
+          boundariesChanged = true;
+        }
       }
     }
 
-    if (!suffix.length) {
+    if (suffixLen === 0) {
       // Incoming page is at the END - it defines the new end boundary
       if (incomingPageInfo && incomingPageInfo.hasNextPage !== undefined) {
-        pageInfo.hasNextPage = !!incomingPageInfo.hasNextPage;
+        const newVal = !!incomingPageInfo.hasNextPage;
+        if (pageInfo.hasNextPage !== newVal) {
+          pageInfo.hasNextPage = newVal;
+          boundariesChanged = true;
+        }
       }
       if (incomingPageInfo && incomingPageInfo.endCursor !== undefined) {
-        pageInfo.endCursor = incomingPageInfo.endCursor;
+        if (pageInfo.endCursor !== incomingPageInfo.endCursor) {
+          pageInfo.endCursor = incomingPageInfo.endCursor;
+          boundariesChanged = true;
+        }
       }
     }
 
     // Fallback: if pageInfo cursors are still missing, infer from edges
     if ((pageInfo.startCursor === null || pageInfo.startCursor === undefined) && mergedEdges.length > 0) {
-      const firstEdgeRef = mergedEdges[0];
-      const firstEdgeCursor = getEdgeCursor(firstEdgeRef);
+      const firstEdgeCursor = getEdgeCursor(mergedEdges[0]);
       if (firstEdgeCursor) {
         pageInfo.startCursor = firstEdgeCursor;
+        boundariesChanged = true;
       }
     }
 
     if ((pageInfo.endCursor === null || pageInfo.endCursor === undefined) && mergedEdges.length > 0) {
-      const lastEdgeRef = mergedEdges[mergedEdges.length - 1];
-      const lastEdgeCursor = getEdgeCursor(lastEdgeRef);
+      const lastEdgeCursor = getEdgeCursor(mergedEdges[mergedEdges.length - 1]);
       if (lastEdgeCursor) {
         pageInfo.endCursor = lastEdgeCursor;
+        boundariesChanged = true;
       }
     }
 
@@ -358,15 +384,17 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
     pageInfo.hasPreviousPage = !!pageInfo.hasPreviousPage;
     pageInfo.hasNextPage = !!pageInfo.hasNextPage;
 
-    // Write pageInfo
+    // Write pageInfo only if boundaries changed or it's new
     const pageInfoKey = `${canonicalKey}.pageInfo`;
-    graph.putRecord(pageInfoKey, pageInfo);
+    if (boundariesChanged || !existingPageInfo) {
+      graph.putRecord(pageInfoKey, pageInfo);
+    }
 
     // Merge extra fields (incoming overrides existing)
     const existingExtras = existing ? getExtras(existing) : {};
     const incomingExtras = getExtras(normalizedPage);
 
-    // Write canonical (cursor index already built during merge)
+    // Write canonical
     graph.putRecord(canonicalKey, {
       __typename: normalizedPage.__typename || existing?.__typename || "Connection",
       edges: { __refs: mergedEdges },
