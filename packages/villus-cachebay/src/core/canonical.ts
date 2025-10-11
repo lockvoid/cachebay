@@ -10,9 +10,12 @@ export type CanonicalDependencies = {
 
 export type CanonicalInstance = ReturnType<typeof createCanonical>;
 
+type CursorIndex = { [cursor: string]: number };
+
 /**
  * Creates the canonical connection manager that merges paginated data
  * using Relay-style splice-based merging with cursor relationships.
+ * Optimized for large lists (thousands of items).
  */
 export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) => {
   /**
@@ -33,6 +36,37 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
   };
 
   /**
+   * Builds a cursor-to-index map for O(1) lookups.
+   */
+  const buildCursorIndex = (edgeRefs: string[]): CursorIndex => {
+    const index: CursorIndex = {};
+    for (let i = 0; i < edgeRefs.length; i++) {
+      const cursor = getEdgeCursor(edgeRefs[i]);
+      if (cursor) {
+        index[cursor] = i;
+      }
+    }
+    return index;
+  };
+
+  /**
+   * Finds cursor position using index (O(1)) or fallback to scan (O(N)).
+   */
+  const findCursorIndex = (
+    edgeRefs: string[],
+    cursor: string,
+    cursorIndex?: CursorIndex,
+  ): number => {
+    // Try index first (O(1))
+    if (cursorIndex && cursor in cursorIndex) {
+      return cursorIndex[cursor];
+    }
+
+    // Fallback to linear scan (O(N))
+    return edgeRefs.findIndex((edgeRef) => getEdgeCursor(edgeRef) === cursor);
+  };
+
+  /**
    * Extracts extra fields from connection (everything except edges, pageInfo, __typename).
    */
   const getExtras = (connection: Record<string, any>): Record<string, any> => {
@@ -41,7 +75,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
 
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
-      if (key === "edges" || key === "pageInfo" || key === "__typename") {
+      if (key === "edges" || key === "pageInfo" || key === "__typename" || key === "__cursorIndex") {
         continue;
       }
       extras[key] = connection[key];
@@ -110,12 +144,13 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
         __typename: "Connection",
         edges: { __refs: [] },
         pageInfo: { __ref: pageInfoKey },
+        __cursorIndex: {},
       });
     }
   };
 
   /**
-   * Merges incoming page into canonical using Apollo-style splice logic.
+   * Merges incoming page into canonical using Relay-style splice logic.
    * Handles forward (after), backward (before), and leader (reset) pagination.
    */
   const updateConnection = (args: {
@@ -160,6 +195,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
         __typename: normalizedPage.__typename || "Connection",
         edges: { __refs: edgeRefs },
         pageInfo: { __ref: pageInfoKey },
+        __cursorIndex: buildCursorIndex(edgeRefs),
         ...getExtras(normalizedPage),
       });
 
@@ -186,29 +222,30 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
     const incomingPageInfoRef = normalizedPage.pageInfo?.__ref;
     const incomingPageInfo = incomingPageInfoRef ? graph.getRecord(incomingPageInfoRef) : null;
 
-    // Build prefix and suffix based on cursor
-    const existingEdges = existing?.edges?.__refs || [];
+    // Get existing edges and cursor index
+    const existingEdges = existing?.edges?.__refs ? [...existing.edges.__refs] : [];
+    const existingCursorIndex = existing?.__cursorIndex as CursorIndex | undefined;
+
+    // Build prefix and suffix based on cursor (optimized with index)
     let prefix: string[] = [];
     let suffix: string[] = [];
 
     if (after) {
-      // Forward pagination: find splice point
-      const index = existingEdges.findIndex((edgeRef) => getEdgeCursor(edgeRef) === after);
+      // Forward pagination: find splice point using index
+      const index = findCursorIndex(existingEdges, after, existingCursorIndex);
       if (index >= 0) {
         // Keep everything up to and including the cursor
         prefix = existingEdges.slice(0, index + 1);
-        // Everything after is discarded (suffix stays [])
       } else {
         // Cursor not found - append to end
         prefix = existingEdges;
       }
     } else if (before) {
-      // Backward pagination: find splice point
-      const index = existingEdges.findIndex((edgeRef) => getEdgeCursor(edgeRef) === before);
+      // Backward pagination: find splice point using index
+      const index = findCursorIndex(existingEdges, before, existingCursorIndex);
       if (index >= 0) {
         // Keep everything from the cursor onwards
         suffix = existingEdges.slice(index);
-        // Everything before is discarded (prefix stays [])
       } else {
         // Cursor not found - prepend to start
         suffix = existingEdges;
@@ -219,10 +256,46 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
       suffix = [];
     }
 
-    // Merge edges: prefix + incoming + suffix
-    const mergedEdges = [...prefix, ...incomingEdgeRefs, ...suffix];
+    // Merge edges efficiently with a single loop that also builds the index
+    // This avoids separate iterations for merging and index building
+    const mergedEdges: string[] = [];
+    const newCursorIndex: CursorIndex = {};
+    let position = 0;
 
-    // Build pageInfo (Apollo style)
+    // Add prefix
+    for (let i = 0; i < prefix.length; i++) {
+      const ref = prefix[i];
+      mergedEdges.push(ref);
+      const cursor = getEdgeCursor(ref);
+      if (cursor) {
+        newCursorIndex[cursor] = position;
+      }
+      position++;
+    }
+
+    // Add incoming edges
+    for (let i = 0; i < incomingEdgeRefs.length; i++) {
+      const ref = incomingEdgeRefs[i];
+      mergedEdges.push(ref);
+      const cursor = getEdgeCursor(ref);
+      if (cursor) {
+        newCursorIndex[cursor] = position;
+      }
+      position++;
+    }
+
+    // Add suffix
+    for (let i = 0; i < suffix.length; i++) {
+      const ref = suffix[i];
+      mergedEdges.push(ref);
+      const cursor = getEdgeCursor(ref);
+      if (cursor) {
+        newCursorIndex[cursor] = position;
+      }
+      position++;
+    }
+
+    // Build pageInfo (Relay style)
     const existingPageInfoRef = existing?.pageInfo?.__ref;
     const existingPageInfo = existingPageInfoRef ? graph.getRecord(existingPageInfoRef) : null;
 
@@ -239,7 +312,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
       ...(existingPageInfo || {}),
     };
 
-    // Override pageInfo at boundaries (Apollo logic)
+    // Override pageInfo at boundaries (Relay logic)
     // Only update boundary info when incoming page is actually at a boundary
     if (!prefix.length) {
       // Incoming page is at the START - it defines the new start boundary
@@ -293,11 +366,12 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
     const existingExtras = existing ? getExtras(existing) : {};
     const incomingExtras = getExtras(normalizedPage);
 
-    // Write canonical
+    // Write canonical (cursor index already built during merge)
     graph.putRecord(canonicalKey, {
       __typename: normalizedPage.__typename || existing?.__typename || "Connection",
       edges: { __refs: mergedEdges },
       pageInfo: { __ref: pageInfoKey },
+      __cursorIndex: newCursorIndex,
       ...existingExtras,
       ...incomingExtras, // Incoming overrides
     });

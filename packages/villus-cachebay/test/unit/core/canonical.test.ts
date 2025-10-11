@@ -66,7 +66,7 @@ describe("Canonical - Relay Style Pagination", () => {
       it("creates canonical record for leader page on first fetch", () => {
         const pageKey = '@.posts({"after":null,"first":3})';
         const connectionData = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { startCursor: "p1", endCursor: "p3", hasNextPage: true, hasPreviousPage: false },
         );
         const normalizedPage = writeConnectionPage(graph, pageKey, connectionData);
@@ -84,7 +84,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         expect(canonicalConnection).toBeDefined();
         expect(canonicalConnection.__typename).toBe("PostConnection");
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3"]);
         expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
 
         const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
@@ -102,7 +102,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey0 = '@.posts({"after":null,"first":3})';
         const connectionData0 = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { startCursor: "p1", endCursor: "p3", hasNextPage: true },
         );
         const normalizedPage0 = writeConnectionPage(graph, pageKey0, connectionData0);
@@ -117,7 +117,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey1 = '@.posts({"after":"p3","first":3})';
         const connectionData1 = posts.buildConnection(
-          [{ id: "4" }, { id: "5" }, { id: "6" }],
+          [{ id: "p4" }, { id: "p5" }, { id: "p6" }],
           { startCursor: "p4", endCursor: "p6", hasNextPage: false },
         );
         const normalizedPage1 = writeConnectionPage(graph, pageKey1, connectionData1);
@@ -130,7 +130,7 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage1,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p4", "p5", "p6"]);
 
         canonical.updateConnection({
           field: POSTS_PLAN_FIELD,
@@ -140,7 +140,7 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage0,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3"]);
 
         const canonicalConnection = graph.getRecord(canonicalKey);
         expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
@@ -154,7 +154,7 @@ describe("Canonical - Relay Style Pagination", () => {
       it("copies extra fields from page to canonical on leader fetch", () => {
         const pageKey = '@.posts({"after":null,"first":3})';
         const connectionData = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { hasNextPage: true },
         );
         connectionData.totalCount = 100;
@@ -184,7 +184,7 @@ describe("Canonical - Relay Style Pagination", () => {
       it("handles leader page with no cursors in pageInfo", () => {
         const pageKey = '@.posts({"after":null,"first":3})';
         const connectionData = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { hasNextPage: true },
         );
         const normalizedPage = writeConnectionPage(graph, pageKey, connectionData);
@@ -203,7 +203,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         expect(pageInfo.startCursor).toBeDefined();
         expect(pageInfo.endCursor).toBeDefined();
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3"]);
       });
     });
 
@@ -213,7 +213,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey0 = '@.posts({"after":null,"first":3})';
         const connectionData0 = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { endCursor: "p3", hasNextPage: true },
         );
         const normalizedPage0 = writeConnectionPage(graph, pageKey0, connectionData0);
@@ -228,7 +228,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey1 = '@.posts({"after":"p3","first":3})';
         const connectionData1 = posts.buildConnection(
-          [{ id: "4" }, { id: "5" }, { id: "6" }],
+          [{ id: "p4" }, { id: "p5" }, { id: "p6" }],
           { endCursor: "p6", hasNextPage: false },
         );
         const normalizedPage1 = writeConnectionPage(graph, pageKey1, connectionData1);
@@ -241,7 +241,7 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage1,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p4", "p5", "p6"]);
 
         const canonicalConnection = graph.getRecord(canonicalKey);
         expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
@@ -257,7 +257,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey0 = '@.posts({"after":null,"first":3})';
         const connectionData0 = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { startCursor: "p1", endCursor: "p3", hasNextPage: true, hasPreviousPage: false },
         );
         const normalizedPage0 = writeConnectionPage(graph, pageKey0, connectionData0);
@@ -272,7 +272,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey1 = '@.posts({"after":"p3","first":3})';
         const connectionData1 = posts.buildConnection(
-          [{ id: "4" }, { id: "5" }, { id: "6" }],
+          [{ id: "p4" }, { id: "p5" }, { id: "p6" }],
           { startCursor: "p4", endCursor: "p6", hasNextPage: false, hasPreviousPage: true },
         );
         const normalizedPage1 = writeConnectionPage(graph, pageKey1, connectionData1);
@@ -303,7 +303,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey0 = '@.posts({"after":null,"first":3})';
         const connectionData0 = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { endCursor: "p3", hasNextPage: true },
         );
         const normalizedPage0 = writeConnectionPage(graph, pageKey0, connectionData0);
@@ -318,7 +318,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey1 = '@.posts({"after":"p3","first":3})';
         const connectionData1 = posts.buildConnection(
-          [{ id: "4" }, { id: "5" }, { id: "6" }],
+          [{ id: "p4" }, { id: "p5" }, { id: "p6" }],
           { endCursor: "p6", hasNextPage: true },
         );
         const normalizedPage1 = writeConnectionPage(graph, pageKey1, connectionData1);
@@ -331,10 +331,10 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage1,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p4", "p5", "p6"]);
 
         const connectionData2 = posts.buildConnection(
-          [{ id: "4" }, { id: "5" }, { id: "6" }],
+          [{ id: "p4" }, { id: "p5" }, { id: "p6" }],
           { endCursor: "p6", hasNextPage: false },
         );
         const normalizedPage2 = writeConnectionPage(graph, pageKey1, connectionData2);
@@ -347,7 +347,7 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage2,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p4", "p5", "p6"]);
 
         const canonicalConnection = graph.getRecord(canonicalKey);
         expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
@@ -362,7 +362,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey0 = '@.posts({"after":null,"first":3})';
         const connectionData0 = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { startCursor: "p1", endCursor: "p3", hasNextPage: true },
         );
         const normalizedPage0 = writeConnectionPage(graph, pageKey0, connectionData0);
@@ -375,11 +375,11 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage0,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3"]);
 
         const pageKey1 = '@.posts({"after":"p3","first":3})';
         const connectionData1 = posts.buildConnection(
-          [{ id: "4" }, { id: "5" }, { id: "6" }],
+          [{ id: "p4" }, { id: "p5" }, { id: "p6" }],
           { startCursor: "p4", endCursor: "p6", hasNextPage: true },
         );
         const normalizedPage1 = writeConnectionPage(graph, pageKey1, connectionData1);
@@ -392,11 +392,11 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage1,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p4", "p5", "p6"]);
 
         const pageKey2 = '@.posts({"after":"p6","first":3})';
         const connectionData2 = posts.buildConnection(
-          [{ id: "7" }, { id: "8" }, { id: "9" }],
+          [{ id: "p7" }, { id: "p8" }, { id: "p9" }],
           { startCursor: "p7", endCursor: "p9", hasNextPage: false },
         );
         const normalizedPage2 = writeConnectionPage(graph, pageKey2, connectionData2);
@@ -409,10 +409,10 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage2,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9"]);
 
         const connectionData1Updated = posts.buildConnection(
-          [{ id: "4" }, { id: "5" }, { id: "6" }],
+          [{ id: "p4" }, { id: "p5" }, { id: "p6" }],
           { startCursor: "p4", endCursor: "p6", hasNextPage: true },
         );
         const normalizedPage1Updated = writeConnectionPage(graph, pageKey1, connectionData1Updated);
@@ -425,7 +425,7 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage1Updated,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p4", "p5", "p6"]);
 
         const canonicalConnection = graph.getRecord(canonicalKey);
         const pageInfo = graph.getRecord(canonicalConnection.pageInfo.__ref);
@@ -440,7 +440,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey0 = '@.posts({"after":null,"first":3})';
         const connectionData0 = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { endCursor: "p3", hasNextPage: true },
         );
         connectionData0.totalCount = 100;
@@ -462,7 +462,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey1 = '@.posts({"after":"p3","first":3})';
         const connectionData1 = posts.buildConnection(
-          [{ id: "4" }, { id: "5" }, { id: "6" }],
+          [{ id: "p4" }, { id: "p5" }, { id: "p6" }],
           { endCursor: "p6", hasNextPage: false },
         );
 
@@ -479,7 +479,7 @@ describe("Canonical - Relay Style Pagination", () => {
         canonicalConnection = graph.getRecord(canonicalKey);
         expect(canonicalConnection.totalCount).toBe(100);
         expect(canonicalConnection.aggregations).toEqual({ scoring: 88 });
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p4", "p5", "p6"]);
       });
 
       it("updates extra fields when incoming page has new values", () => {
@@ -487,7 +487,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey0 = '@.posts({"after":null,"first":3})';
         const connectionData0 = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { hasNextPage: true },
         );
         connectionData0.totalCount = 100;
@@ -505,7 +505,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey1 = '@.posts({"after":"p3","first":3})';
         const connectionData1 = posts.buildConnection(
-          [{ id: "4" }, { id: "5" }],
+          [{ id: "p4" }, { id: "p5" }],
           { hasNextPage: false },
         );
         connectionData1.totalCount = 105;
@@ -524,7 +524,7 @@ describe("Canonical - Relay Style Pagination", () => {
         const canonicalConnection = graph.getRecord(canonicalKey);
         expect(canonicalConnection.totalCount).toBe(105);
         expect(canonicalConnection.aggregations).toEqual({ scoring: 92 });
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p4", "p5"]);
       });
 
       it("preserves container references across pagination", () => {
@@ -532,7 +532,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey0 = '@.posts({"after":null,"first":2})';
         const connectionData0 = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }],
+          [{ id: "p1" }, { id: "p2" }],
           { hasNextPage: true },
         );
 
@@ -560,7 +560,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey1 = '@.posts({"after":"p2","first":2})';
         const connectionData1 = posts.buildConnection(
-          [{ id: "3" }, { id: "4" }],
+          [{ id: "p3" }, { id: "p4" }],
           { hasNextPage: false },
         );
         const normalizedPage1 = writeConnectionPage(graph, pageKey1, connectionData1);
@@ -575,7 +575,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         canonicalConnection = graph.getRecord(canonicalKey);
         expect(canonicalConnection.aggregations).toEqual({ __ref: aggregationsKey });
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p4"]);
 
         const aggregations = graph.getRecord(aggregationsKey);
         expect(aggregations.scoring).toBe(88);
@@ -587,7 +587,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey0 = '@.posts({"after":null,"first":3})';
         const connectionData0 = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { endCursor: "p3", hasNextPage: true },
         );
         const normalizedPage0 = writeConnectionPage(graph, pageKey0, connectionData0);
@@ -602,7 +602,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey1 = '@.posts({"after":"p99","first":3})';
         const connectionData1 = posts.buildConnection(
-          [{ id: "4" }, { id: "5" }, { id: "6" }],
+          [{ id: "p4" }, { id: "p5" }, { id: "p6" }],
           { endCursor: "p6", hasNextPage: false },
         );
         const normalizedPage1 = writeConnectionPage(graph, pageKey1, connectionData1);
@@ -615,7 +615,7 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage1,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p4", "p5", "p6"]);
       });
     });
 
@@ -625,7 +625,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey1 = '@.posts({"after":null,"first":3})';
         const connectionData1 = posts.buildConnection(
-          [{ id: "4" }, { id: "5" }, { id: "6" }],
+          [{ id: "p4" }, { id: "p5" }, { id: "p6" }],
           { startCursor: "p4", endCursor: "p6", hasNextPage: true, hasPreviousPage: true },
         );
         const normalizedPage1 = writeConnectionPage(graph, pageKey1, connectionData1);
@@ -640,7 +640,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey0 = '@.posts({"before":"p4","last":3})';
         const connectionData0 = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { startCursor: "p1", endCursor: "p3", hasNextPage: true, hasPreviousPage: false },
         );
         const normalizedPage0 = writeConnectionPage(graph, pageKey0, connectionData0);
@@ -653,7 +653,7 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage0,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p4", "p5", "p6"]);
 
         const canonicalConnection = graph.getRecord(canonicalKey);
         expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
@@ -667,7 +667,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey1 = '@.posts({"after":null,"first":3})';
         const connectionData1 = posts.buildConnection(
-          [{ id: "4" }, { id: "5" }, { id: "6" }],
+          [{ id: "p4" }, { id: "p5" }, { id: "p6" }],
           { startCursor: "p4", endCursor: "p6", hasNextPage: true, hasPreviousPage: true },
         );
         const normalizedPage1 = writeConnectionPage(graph, pageKey1, connectionData1);
@@ -682,7 +682,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey0 = '@.posts({"before":"p4","last":3})';
         const connectionData0 = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { startCursor: "p1", endCursor: "p3", hasNextPage: true, hasPreviousPage: false },
         );
         const normalizedPage0 = writeConnectionPage(graph, pageKey0, connectionData0);
@@ -713,7 +713,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey1 = '@.posts({"after":null,"first":3})';
         const connectionData1 = posts.buildConnection(
-          [{ id: "4" }, { id: "5" }, { id: "6" }],
+          [{ id: "p4" }, { id: "p5" }, { id: "p6" }],
           { startCursor: "p4", endCursor: "p6", hasNextPage: false },
         );
         const normalizedPage1 = writeConnectionPage(graph, pageKey1, connectionData1);
@@ -728,7 +728,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey0 = '@.posts({"before":"p99","last":3})';
         const connectionData0 = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { startCursor: "p1", endCursor: "p3", hasPreviousPage: false },
         );
         const normalizedPage0 = writeConnectionPage(graph, pageKey0, connectionData0);
@@ -741,7 +741,7 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage0,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p4", "p5", "p6"]);
       });
 
       it("handles multiple backward pages in sequence", () => {
@@ -749,7 +749,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey2 = '@.posts({"after":null,"first":2})';
         const connectionData2 = posts.buildConnection(
-          [{ id: "5" }, { id: "6" }],
+          [{ id: "p5" }, { id: "p6" }],
           { startCursor: "p5", endCursor: "p6", hasPreviousPage: true },
         );
         const normalizedPage2 = writeConnectionPage(graph, pageKey2, connectionData2);
@@ -764,7 +764,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey1 = '@.posts({"before":"p5","last":2})';
         const connectionData1 = posts.buildConnection(
-          [{ id: "3" }, { id: "4" }],
+          [{ id: "p3" }, { id: "p4" }],
           { startCursor: "p3", endCursor: "p4", hasPreviousPage: true },
         );
         const normalizedPage1 = writeConnectionPage(graph, pageKey1, connectionData1);
@@ -777,11 +777,11 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage1,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p3", "p4", "p5", "p6"]);
 
         const pageKey0 = '@.posts({"before":"p3","last":2})';
         const connectionData0 = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }],
+          [{ id: "p1" }, { id: "p2" }],
           { startCursor: "p1", endCursor: "p2", hasPreviousPage: false },
         );
         const normalizedPage0 = writeConnectionPage(graph, pageKey0, connectionData0);
@@ -794,7 +794,7 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage0,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p4", "p5", "p6"]);
 
         const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
         expect(pageInfo.startCursor).toBe("p1");
@@ -806,7 +806,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey2 = '@.posts({"after":null,"first":3})';
         const connectionData2 = posts.buildConnection(
-          [{ id: "7" }, { id: "8" }, { id: "9" }],
+          [{ id: "p7" }, { id: "p8" }, { id: "p9" }],
           { startCursor: "p7", endCursor: "p9", hasNextPage: false, hasPreviousPage: true },
         );
         const normalizedPage2 = writeConnectionPage(graph, pageKey2, connectionData2);
@@ -819,11 +819,11 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage2,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["7", "8", "9"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p7", "p8", "p9"]);
 
         const pageKey1 = '@.posts({"before":"p7","last":3})';
         const connectionData1 = posts.buildConnection(
-          [{ id: "4" }, { id: "5" }, { id: "6" }],
+          [{ id: "p4" }, { id: "p5" }, { id: "p6" }],
           { startCursor: "p4", endCursor: "p6", hasNextPage: true, hasPreviousPage: true },
         );
         const normalizedPage1 = writeConnectionPage(graph, pageKey1, connectionData1);
@@ -836,11 +836,11 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage1,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["4", "5", "6", "7", "8", "9"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p4", "p5", "p6", "p7", "p8", "p9"]);
 
         const pageKey0 = '@.posts({"before":"p4","last":3})';
         const connectionData0 = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { startCursor: "p1", endCursor: "p3", hasNextPage: true, hasPreviousPage: false },
         );
         const normalizedPage0 = writeConnectionPage(graph, pageKey0, connectionData0);
@@ -853,10 +853,10 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage0,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9"]);
 
         const connectionData1Updated = posts.buildConnection(
-          [{ id: "4" }, { id: "5" }, { id: "6" }],
+          [{ id: "p4" }, { id: "p5" }, { id: "p6" }],
           { startCursor: "p4", endCursor: "p6", hasNextPage: true, hasPreviousPage: true },
         );
         const normalizedPage1Updated = writeConnectionPage(graph, pageKey1, connectionData1Updated);
@@ -869,7 +869,7 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage1Updated,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["4", "5", "6", "7", "8", "9"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p4", "p5", "p6", "p7", "p8", "p9"]);
 
         const canonicalConnection = graph.getRecord(canonicalKey);
         const pageInfo = graph.getRecord(canonicalConnection.pageInfo.__ref);
@@ -887,7 +887,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey0 = '@.posts({"after":null,"first":3})';
         const connectionData0 = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { endCursor: "p3", hasNextPage: true },
         );
         const normalizedPage0 = writeConnectionPage(graph, pageKey0, connectionData0);
@@ -902,7 +902,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey1 = '@.posts({"after":"p3","first":3})';
         const connectionData1 = posts.buildConnection(
-          [{ id: "3" }, { id: "4" }, { id: "5" }],
+          [{ id: "p3" }, { id: "p4" }, { id: "p5" }],
           { endCursor: "p5", hasNextPage: false },
         );
         const normalizedPage1 = writeConnectionPage(graph, pageKey1, connectionData1);
@@ -915,7 +915,7 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage1,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "3", "4", "5"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p3", "p4", "p5"]);
 
         const canonicalConnection = graph.getRecord(canonicalKey);
         expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
@@ -929,7 +929,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey0 = '@.posts({"after":null,"first":4})';
         const connectionData0 = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }, { id: "4" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }, { id: "p4" }],
           { endCursor: "p4", hasNextPage: true },
         );
         const normalizedPage0 = writeConnectionPage(graph, pageKey0, connectionData0);
@@ -944,7 +944,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey1 = '@.posts({"after":"p4","first":4})';
         const connectionData1 = posts.buildConnection(
-          [{ id: "5" }, { id: "6" }, { id: "7" }, { id: "8" }],
+          [{ id: "p5" }, { id: "p6" }, { id: "p7" }, { id: "p8" }],
           { endCursor: "p8", hasNextPage: false },
         );
         const normalizedPage1 = writeConnectionPage(graph, pageKey1, connectionData1);
@@ -957,7 +957,7 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage1,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]);
 
         canonical.updateConnection({
           field: POSTS_PLAN_FIELD,
@@ -967,7 +967,7 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage0,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "4"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p4"]);
       });
 
       it("preserves edge order without deduplication", () => {
@@ -975,7 +975,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey0 = '@.posts({"after":null,"first":3})';
         const connectionData0 = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { hasNextPage: true },
         );
         const normalizedPage0 = writeConnectionPage(graph, pageKey0, connectionData0);
@@ -990,7 +990,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey1 = '@.posts({"after":"p3","first":3})';
         const connectionData1 = posts.buildConnection(
-          [{ id: "2" }, { id: "4" }, { id: "1" }],
+          [{ id: "p2" }, { id: "p4" }, { id: "p1" }],
           { hasNextPage: false },
         );
         const normalizedPage1 = writeConnectionPage(graph, pageKey1, connectionData1);
@@ -1003,7 +1003,7 @@ describe("Canonical - Relay Style Pagination", () => {
           normalizedPage: normalizedPage1,
         });
 
-        expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3", "2", "4", "1"]);
+        expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3", "p2", "p4", "p1"]);
       });
     });
 
@@ -1159,7 +1159,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
         const pageKey = '@.posts({"after":null,"first":3})';
         const connectionData = posts.buildConnection(
-          [{ id: "1" }, { id: "2" }, { id: "3" }],
+          [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
           { hasNextPage: true },
         );
         const normalizedPage = writeConnectionPage(graph, pageKey, connectionData);
@@ -1341,10 +1341,10 @@ describe("Canonical - Relay Style Pagination", () => {
       const canonicalKey = "@connection.posts({})";
       const pageKey = '@.posts({"after":null,"first":3})';
 
-      graph.putRecord("Post:1", { __typename: "Post", id: "1" });
+      graph.putRecord("Post:p1", { __typename: "Post", id: "p1" });
       graph.putRecord(`${pageKey}.edges:0`, {
         __typename: "PostEdge",
-        node: { __ref: "Post:1" },
+        node: { __ref: "Post:p1" },
       });
 
       const normalizedPage = {
@@ -1363,7 +1363,7 @@ describe("Canonical - Relay Style Pagination", () => {
         normalizedPage,
       });
 
-      expect(getNodeIds(canonicalKey)).toEqual(["1"]);
+      expect(getNodeIds(canonicalKey)).toEqual(["p1"]);
 
       const canonicalConnection = graph.getRecord(canonicalKey);
       expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
@@ -1382,7 +1382,7 @@ describe("Canonical - Relay Style Pagination", () => {
       expect(canonicalConnection).toBeUndefined();
 
       const pageKey = '@.posts({"after":null,"first":3})';
-      const connectionData = posts.buildConnection([{ id: "1" }], { hasNextPage: false });
+      const connectionData = posts.buildConnection([{ id: "p1" }], { hasNextPage: false });
       const normalizedPage = writeConnectionPage(graph, pageKey, connectionData);
 
       canonical.updateConnection({
@@ -1406,18 +1406,18 @@ describe("Canonical - Relay Style Pagination", () => {
       const canonicalKey = "@connection.posts({})";
       const pageKey = '@.posts({"after":null,"first":2})';
 
-      graph.putRecord("Post:1", { __typename: "Post", id: "1" });
-      graph.putRecord("Post:2", { __typename: "Post", id: "2" });
+      graph.putRecord("Post:p1", { __typename: "Post", id: "p1" });
+      graph.putRecord("Post:p2", { __typename: "Post", id: "p2" });
 
       graph.putRecord(`${pageKey}.edges:0`, {
         __typename: "PostEdge",
-        cursor: "edge_cursor_1",
-        node: { __ref: "Post:1" },
+        cursor: "edge_cursor_p1",
+        node: { __ref: "Post:p1" },
       });
       graph.putRecord(`${pageKey}.edges:1`, {
         __typename: "PostEdge",
-        cursor: "edge_cursor_2",
-        node: { __ref: "Post:2" },
+        cursor: "edge_cursor_p2",
+        node: { __ref: "Post:p2" },
       });
 
       graph.putRecord(`${pageKey}.pageInfo`, {
@@ -1443,8 +1443,8 @@ describe("Canonical - Relay Style Pagination", () => {
       const canonicalConnection = graph.getRecord(canonicalKey);
       const pageInfo = graph.getRecord(canonicalConnection.pageInfo.__ref);
 
-      expect(pageInfo.startCursor).toBe("edge_cursor_1");
-      expect(pageInfo.endCursor).toBe("edge_cursor_2");
+      expect(pageInfo.startCursor).toBe("edge_cursor_p1");
+      expect(pageInfo.endCursor).toBe("edge_cursor_p2");
       expect(pageInfo.hasNextPage).toBe(false);
       expect(pageInfo.hasPreviousPage).toBe(false);
     });
@@ -1479,12 +1479,12 @@ describe("Canonical - Relay Style Pagination", () => {
       const canonicalKey = "@connection.posts({})";
       const pageKey = '@.posts({"after":null,"first":2})';
 
-      graph.putRecord("Post:1", { __typename: "Post", id: "1" });
+      graph.putRecord("Post:p1", { __typename: "Post", id: "p1" });
 
       graph.putRecord(`${pageKey}.edges:0`, {
         __typename: "PostEdge",
         cursor: "c1",
-        node: { __ref: "Post:1" },
+        node: { __ref: "Post:p1" },
       });
 
       graph.putRecord(`${pageKey}.edges:1`, {
@@ -1511,14 +1511,14 @@ describe("Canonical - Relay Style Pagination", () => {
         normalizedPage,
       });
 
-      expect(getNodeIds(canonicalKey)).toEqual(["1"]);
+      expect(getNodeIds(canonicalKey)).toEqual(["p1"]);
     });
 
     it("handles very large page", () => {
       const canonicalKey = "@connection.posts({})";
       const pageKey = '@.posts({"after":null,"first":100})';
 
-      const largeSet = Array.from({ length: 100 }, (_, i) => ({ id: String(i + 1) }));
+      const largeSet = Array.from({ length: 100 }, (_, i) => ({ id: `p${i + 1}` }));
       const connectionData = posts.buildConnection(largeSet, { hasNextPage: false });
       const normalizedPage = writeConnectionPage(graph, pageKey, connectionData);
 
@@ -1532,8 +1532,8 @@ describe("Canonical - Relay Style Pagination", () => {
 
       const nodeIds = getNodeIds(canonicalKey);
       expect(nodeIds.length).toBe(100);
-      expect(nodeIds[0]).toBe("1");
-      expect(nodeIds[99]).toBe("100");
+      expect(nodeIds[0]).toBe("p1");
+      expect(nodeIds[99]).toBe("p100");
     });
 
     it("handles refetch with completely different data", () => {
@@ -1541,7 +1541,7 @@ describe("Canonical - Relay Style Pagination", () => {
       const pageKey = '@.posts({"after":null,"first":3})';
 
       const connectionData0 = posts.buildConnection(
-        [{ id: "1" }, { id: "2" }, { id: "3" }],
+        [{ id: "p1" }, { id: "p2" }, { id: "p3" }],
         { hasNextPage: false },
       );
       const normalizedPage0 = writeConnectionPage(graph, pageKey, connectionData0);
@@ -1554,10 +1554,10 @@ describe("Canonical - Relay Style Pagination", () => {
         normalizedPage: normalizedPage0,
       });
 
-      expect(getNodeIds(canonicalKey)).toEqual(["1", "2", "3"]);
+      expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3"]);
 
       const connectionData1 = posts.buildConnection(
-        [{ id: "100" }, { id: "101" }],
+        [{ id: "p100" }, { id: "p101" }],
         { hasNextPage: true },
       );
       const normalizedPage1 = writeConnectionPage(graph, pageKey, connectionData1);
@@ -1570,7 +1570,7 @@ describe("Canonical - Relay Style Pagination", () => {
         normalizedPage: normalizedPage1,
       });
 
-      expect(getNodeIds(canonicalKey)).toEqual(["100", "101"]);
+      expect(getNodeIds(canonicalKey)).toEqual(["p100", "p101"]);
     });
   });
 });
