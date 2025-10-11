@@ -10,26 +10,27 @@ export type ViewsDependencies = { graph: GraphInstance };
 /**
  * Single entrypoint view layer.
  *
- * - Exported API: getView({ source, selection?, selectionMap?, variables, canonical })
- * - Entities: follows __ref / __refs, applies selection, returns read-only proxy
- * - Connections: stable, shallowReactive edges array (built from edges.__refs),
- *                pageInfo and any container fields resolved via __ref and reactive,
- *                optional relinking of page containers → canonical containers when `canonical=true`
- * - Missing entity ref → `{}` (reactive placeholder from graph.materializeRecord)
- * - Missing connection page key → `undefined`
+ * - Exported API: getView({ source, field?, variables, canonical })
+ * - Entities: follows __ref / __refs, applies selection from `field`, returns read-only proxy
+ * - Connections: stable, shallowReactive edges array (from edges.__refs),
+ *                pageInfo/containers via __ref (reactive),
+ *                optional relinking page → canonical containers when `canonical=true`
+ * - Missing entity/container ref → `{}` (placeholder from graph.materializeRecord)
+ * - Missing connection page key (string source not found) → `undefined`
  * - All views are read-only (`set` returns false)
  */
 export const createViews = ({ graph }: ViewsDependencies) => {
   /**
    * Global cache:
-   * WeakMap<proxy, { bySel: Map<selKey, Map<canonFlag, { view: any, edgesCache?: { refs: string[], array: any[], sourceArray: string[] } }>> }>
+   * WeakMap<
+   *   proxy,
+   *   { bySel: Map<selKey, Map<canonFlag, { view: any, edgesCache?: { refs: string[], array: any[], sourceArray: string[] } }>> }
+   * >
+   * selKey is the actual PlanField object (or null) for identity-stable caching.
    */
   const cache = new WeakMap<object, any>();
 
-  const selectionKeyOf = (
-    selection?: PlanField[] | null,
-    selectionMap?: Map<string, PlanField>,
-  ) => selectionMap ?? selection ?? null;
+  const selectionKeyOf = (field?: PlanField | null) => field ?? null;
 
   const getOrCreateBucket = (proxy: object, selKey: any) => {
     let b = cache.get(proxy);
@@ -51,7 +52,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     (
       // normalized connections: edges.__refs (preferred)
       Array.isArray(rec?.edges?.__refs) ||
-      // fallback heuristics
+      // fallback heuristic
       (typeof rec.__typename === "string" && rec.__typename.endsWith("Connection"))
     );
 
@@ -67,11 +68,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
 
     if ((value as any).__ref) {
       const child = graph.materializeRecord((value as any).__ref);
-      return getView({
-        source: child,
-        variables,
-        canonical,
-      });
+      return getView({ source: child, variables, canonical });
     }
 
     if ((value as any).__refs && Array.isArray((value as any).__refs)) {
@@ -96,14 +93,14 @@ export const createViews = ({ graph }: ViewsDependencies) => {
   };
 
   /**
-   * Connection branch: stable edges, container relinking, pageInfo via __ref
+   * Connection branch: stable edges, container relinking, pageInfo via __ref.
    * `pageKeyStr` (if provided) enables canonical relinking of containers.
-   * `edgesFieldPlan` is the PlanField for "edges" (if available) to pass selection into edge items.
+   * `field` is the PlanField for the connection; we use it to pass "edges" selection to edge items.
    */
   const getConnectionViewInner = (
     proxy: any,
     pageKeyStr: string | undefined,
-    edgesFieldPlan: PlanField | undefined,
+    field: PlanField | undefined,
     variables: Record<string, any>,
     canonical: boolean,
     selKey: any,
@@ -129,14 +126,13 @@ export const createViews = ({ graph }: ViewsDependencies) => {
           // First read: construct shallowReactive stable array
           if (!ec) {
             const arr: any[] = shallowReactive([]);
+            const edgesFieldPlan = field?.selectionMap?.get("edges");
             for (let i = 0; i < refs.length; i++) {
               const edgeProxy = graph.materializeRecord(refs[i]);
-              // hand off to entity branch with the edge selection (cursor, node, etc.)
               arr.push(
                 getView({
                   source: edgeProxy,
-                  selection: edgesFieldPlan?.selectionSet || null,
-                  selectionMap: edgesFieldPlan?.selectionMap,
+                  field: edgesFieldPlan,
                   variables,
                   canonical,
                 }),
@@ -155,6 +151,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
 
           if (identityChanged || refsChanged) {
             const arr = ec.array as any[];
+            const edgesFieldPlan = field?.selectionMap?.get("edges");
 
             // shrink
             if (arr.length > refs.length) arr.splice(refs.length);
@@ -166,8 +163,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
               const edgeProxy = graph.materializeRecord(refs[i]);
               arr[i] = getView({
                 source: edgeProxy,
-                selection: edgesFieldPlan?.selectionSet || null,
-                selectionMap: edgesFieldPlan?.selectionMap,
+                field: edgesFieldPlan,
                 variables,
                 canonical,
               });
@@ -219,13 +215,12 @@ export const createViews = ({ graph }: ViewsDependencies) => {
   };
 
   /**
-   * Entity branch: follows __ref / __refs, applies selection, routes
-   * connection fields to the connection branch (with stable edges).
+   * Entity/container branch: follows __ref / __refs, applies selection from `field`,
+   * routes connection fields to the connection branch (with stable edges).
    */
   const getEntityViewInner = (
     proxy: any,
-    fields: PlanField[] | null,
-    fieldsMap: Map<string, PlanField> | undefined,
+    field: PlanField | null | undefined,
     variables: Record<string, any>,
     canonical: boolean,
     selKey: any,
@@ -239,8 +234,8 @@ export const createViews = ({ graph }: ViewsDependencies) => {
       get(target, prop, receiver) {
         // If selection identifies a connection field → hop to connection branch
         const planField =
-          fields && typeof prop === "string"
-            ? fieldsMap?.get(prop as string)
+          field && typeof prop === "string"
+            ? field.selectionMap?.get(prop as string)
             : undefined;
 
         if (planField?.isConnection) {
@@ -258,17 +253,13 @@ export const createViews = ({ graph }: ViewsDependencies) => {
           const pageProxy = graph.materializeRecord(pageKeyStr);
           if (!pageProxy) return undefined;
 
-          // compute the edges field plan to project edge items
-          const edgesFieldPlan = planField.selectionMap?.get("edges");
-          const connSelKey = selectionKeyOf(planField.selectionSet || null, planField.selectionMap);
-
           return getConnectionViewInner(
             pageProxy,
             pageKeyStr,
-            edgesFieldPlan,
+            planField,
             variables,
             canonical,
-            connSelKey,
+            selectionKeyOf(planField),
           );
         }
 
@@ -279,14 +270,13 @@ export const createViews = ({ graph }: ViewsDependencies) => {
         if (raw && typeof raw === "object" && (raw as any).__ref) {
           const child = graph.materializeRecord((raw as any).__ref);
           const sub =
-            fields && typeof prop === "string"
-              ? fieldsMap?.get(prop as string)
+            field && typeof prop === "string"
+              ? field.selectionMap?.get(prop as string)
               : undefined;
 
           return getView({
             source: child,
-            selection: sub?.selectionSet || null,
-            selectionMap: sub?.selectionMap,
+            field: sub ?? null,
             variables,
             canonical,
           });
@@ -314,19 +304,17 @@ export const createViews = ({ graph }: ViewsDependencies) => {
    * Public single entrypoint.
    *
    * - `source`: record key string OR a materialized proxy (entity/connection/container/edge) OR null
-   * - `selection/selectionMap`: selection for the `source` view (if any)
+   * - `field`: PlanField describing the current selection (if any)
    * - `canonical`: whether nested connections use canonical keys
    */
   const getView = ({
     source,
-    selection = null,
-    selectionMap,
+    field = null,
     variables,
     canonical,
   }: {
     source: string | object | null;
-    selection?: PlanField[] | null;
-    selectionMap?: Map<string, PlanField>;
+    field?: PlanField | null;
     variables: Record<string, any>;
     canonical: boolean;
   }): any => {
@@ -342,20 +330,17 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     // Missing entity/container ref → graph.materializeRecord returns {}, keep it (reactive placeholder).
     if (!proxy || typeof proxy !== "object") return proxy;
 
-    const selKey = selectionKeyOf(selection, selectionMap);
+    const selKey = selectionKeyOf(field);
 
-    // Detect connection pages and route to connection branch.
-    if (isConnectionRecord(proxy)) {
+    // Detect connection pages (or when caller explicitly marks a connection via PlanField)
+    if (isConnectionRecord(proxy) || field?.isConnection) {
       // When called with a string source, we can relay it for canonical relinking.
       const pageKeyStr = typeof source === "string" ? source : undefined;
-
-      // If a connection selection was provided directly, extract the "edges" plan for edge items
-      const edgesFieldPlan = selectionMap?.get("edges");
 
       return getConnectionViewInner(
         proxy,
         pageKeyStr,
-        edgesFieldPlan,
+        field ?? undefined,
         variables,
         canonical,
         selKey,
@@ -365,8 +350,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     // Otherwise, entity/container branch
     return getEntityViewInner(
       proxy,
-      selection,
-      selectionMap,
+      field,
       variables,
       canonical,
       selKey,

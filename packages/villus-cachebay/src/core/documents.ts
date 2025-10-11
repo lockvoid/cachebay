@@ -380,13 +380,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     }
   };
 
-  const materializeDocument = ({
-    document,
-    variables = {},
-  }: {
+  type MaterializeArgs = {
     document: DocumentNode | CachePlan;
     variables?: Record<string, any>;
-  }) => {
+  };
+  const materializeDocument = ({ document, variables = {} }: MaterializeArgs) => {
     const plan = planner.getPlan(document);
     const rootSnap = graph.getRecord(ROOT_ID) || {};
     const result: Record<string, any> = {};
@@ -394,53 +392,34 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     for (let i = 0; i < plan.root.length; i++) {
       const field = plan.root[i];
 
-      // Root-level @connection → always read the CANONICAL connection
+      // Root-level @connection → always read CANONICAL page
       if (field.isConnection) {
         const canKey = buildConnectionCanonicalKey(field, ROOT_ID, variables);
-        result[field.responseKey] = views.getConnectionView(
-          canKey,
+        result[field.responseKey] = views.getView({
+          source: canKey,
           field,
           variables,
-          /* canonical */ true,
-        );
+          canonical: true,
+        });
         continue;
       }
 
-      // Plain field linked off the root record
+      // Root entity link is stored as a field key with { __ref }
       const linkKey = buildFieldKey(field, variables);
       const link = (rootSnap as any)[linkKey];
 
-      if (!link?.__ref) {
-        result[field.responseKey] = undefined;
+      if (!link || !link.__ref) {
+        // preserve explicit null vs. missing
+        result[field.responseKey] = link === null ? null : undefined;
         continue;
       }
 
-      const entityProxy = graph.materializeRecord(link.__ref);
-      if (!entityProxy) {
-        result[field.responseKey] = undefined;
-        continue;
-      }
-
-      // If no sub-selection, return a live entity view (reactive proxy)
-      if (!field.selectionSet || field.selectionSet.length === 0) {
-        result[field.responseKey] = views.getEntityView(
-          entityProxy,
-          null,
-          undefined,
-          variables,
-          true,
-        );
-        continue;
-      }
-
-      // With a sub-selection, selection-aware live entity view
-      result[field.responseKey] = views.getEntityView(
-        entityProxy,
-        field.selectionSet,
-        field.selectionMap,
+      result[field.responseKey] = views.getView({
+        source: link.__ref,
+        field,
         variables,
-        true,
-      );
+        canonical: true,
+      });
     }
 
     return result;

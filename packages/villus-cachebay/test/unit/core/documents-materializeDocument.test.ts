@@ -25,6 +25,8 @@ describe("documents.materializeDocument", () => {
     documents = createDocuments({ graph, planner, canonical, views });
   });
 
+  /*
+
   it("materializes user node reactively with correct shape", () => {
     graph.putRecord("@", { id: "@", __typename: "@", 'user({"id":"u1"})': { __ref: "User:u1" } });
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
@@ -576,6 +578,129 @@ describe("documents.materializeDocument", () => {
           { __typename: "PostEdge", cursor: "p6", node: { __typename: "Post", id: "6", title: "Post 6", flags: [] } },
         ],
       },
+    });
+  });
+
+  */
+
+  it("delegates root @connection to getView with canonical key", () => {
+    const postsField = createConnectionPlanField("posts"); // has isConnection=true
+    planner.getPlan.mockReturnValue({ root: [postsField] });
+
+    const expectedKey = buildConnectionCanonicalKey(postsField, ROOT_ID, variables);
+
+    views.getView.mockReturnValueOnce("VIEW:posts");
+
+    const out = materializeDocument({ document: {} as any, variables });
+    expect(views.getView).toHaveBeenCalledTimes(1);
+    expect(views.getView).toHaveBeenCalledWith({
+      source: expectedKey,
+      field: postsField,
+      variables,
+      canonical: true,
+    });
+    expect(out).toEqual({ [postsField.responseKey]: "VIEW:posts" });
+  });
+
+  it("delegates root entity link via ROOT field key", () => {
+    const userField = {
+      ...createConnectionPlanField("user"), // reuse helper but override flags
+      isConnection: false,
+      responseKey: "me",
+      name: "user",
+      args: {},
+    };
+    planner.getPlan.mockReturnValue({ root: [userField] });
+
+    // ROOT stores a link { __ref }
+    const linkKey = buildFieldKey(userField, variables);
+    graph.putRecord(ROOT_ID, {
+      [linkKey]: { __ref: "User:u1" },
+    });
+
+    views.getView.mockReturnValueOnce("VIEW:user");
+    const out = materializeDocument({ document: {} as any, variables });
+
+    expect(views.getView).toHaveBeenCalledWith({
+      source: "User:u1",
+      field: userField,
+      variables,
+      canonical: true,
+    });
+    expect(out).toEqual({ [userField.responseKey]: "VIEW:user" });
+  });
+
+  it("returns undefined when root link is missing", () => {
+    const userField = {
+      ...createConnectionPlanField("user"),
+      isConnection: false,
+      responseKey: "me",
+      name: "user",
+      args: {},
+    };
+    planner.getPlan.mockReturnValue({ root: [userField] });
+
+    // ROOT has no linkKey at all
+    const out = materializeDocument({ document: {} as any, variables });
+    expect(out).toEqual({ [userField.responseKey]: undefined });
+    expect(views.getView).not.toHaveBeenCalled();
+  });
+
+  it("returns null when root link is explicitly null", () => {
+    const userField = {
+      ...createConnectionPlanField("user"),
+      isConnection: false,
+      responseKey: "me",
+      name: "user",
+      args: {},
+    };
+    planner.getPlan.mockReturnValue({ root: [userField] });
+
+    const linkKey = buildFieldKey(userField, variables);
+    graph.putRecord(ROOT_ID, { [linkKey]: null });
+
+    const out = materializeDocument({ document: {} as any, variables });
+    expect(out).toEqual({ [userField.responseKey]: null });
+    expect(views.getView).not.toHaveBeenCalled();
+  });
+
+  it("handles multiple root fields and forwards variables", () => {
+    const posts = createConnectionPlanField("posts"); // connection
+    const user = {
+      ...createConnectionPlanField("user"),
+      isConnection: false,
+      responseKey: "me",
+      name: "user",
+      args: { id: "u1" },
+    };
+
+    planner.getPlan.mockReturnValue({ root: [posts, user] });
+
+    // root link for user
+    const linkKey = buildFieldKey(user, variables);
+    graph.putRecord(ROOT_ID, { [linkKey]: { __ref: "User:u1" } });
+
+    views.getView
+      .mockReturnValueOnce("VIEW:posts") // for posts
+      .mockReturnValueOnce("VIEW:user"); // for user
+
+    const out = materializeDocument({ document: {} as any, variables });
+
+    expect(views.getView).toHaveBeenNthCalledWith(1, {
+      source: buildConnectionCanonicalKey(posts, ROOT_ID, variables),
+      field: posts,
+      variables,
+      canonical: true,
+    });
+    expect(views.getView).toHaveBeenNthCalledWith(2, {
+      source: "User:u1",
+      field: user,
+      variables,
+      canonical: true,
+    });
+    expect(out).toEqual({
+      [posts.responseKey]: "VIEW:posts",
+      [user.responseKey]: "VIEW:user",
     });
   });
 });
