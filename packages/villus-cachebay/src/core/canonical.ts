@@ -305,7 +305,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
       writeCursorIndex(canonicalKey, newCursorIndex);
     }
 
-    // Build pageInfo (Relay style with Apollo compat for extras)
+    // Build pageInfo
     const existingPageInfo = graph.getRecord(existing?.pageInfo?.__ref) || {};
 
     // Extract boundary fields from incoming

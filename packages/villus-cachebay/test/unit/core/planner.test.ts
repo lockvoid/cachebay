@@ -1,5 +1,3 @@
-import type { DocumentNode } from "graphql";
-
 vi.mock("@/src/compiler", () => {
   const compilePlan = vi.fn(() => Object.freeze({
     kind: "CachePlan" as const,
@@ -10,13 +8,16 @@ vi.mock("@/src/compiler", () => {
     networkQuery: {},
   }));
 
-  const isCachePlan = (x: any) => !!x && x.kind === "CachePlan";
+  const isCachePlan = (plan: any) => {
+    return !!plan && plan.kind === "CachePlan";
+  };
 
   return { compilePlan, isCachePlan };
 });
 
-import { createPlanner } from "@/src/core/planner";
 import { compilePlan } from "@/src/compiler";
+import { createPlanner } from "@/src/core/planner";
+import type { DocumentNode } from "graphql";
 
 const compileSpy = vi.mocked(compilePlan);
 
