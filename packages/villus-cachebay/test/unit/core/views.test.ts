@@ -14,9 +14,9 @@ describe("Views", () => {
   });
 
   // ────────────────────────────────────────────────────────────────────────────
-  // getEntityView
+  // getView
   // ────────────────────────────────────────────────────────────────────────────
-  describe("getEntityView", () => {
+  describe.only("getView", () => {
     it("creates reactive entity view", async () => {
       graph.putRecord("User:u1", {
         __typename: "User",
@@ -25,7 +25,13 @@ describe("Views", () => {
       });
 
       const userProxy = graph.materializeRecord("User:u1");
-      const userView = views.getEntityView(userProxy, null, undefined, {}, true);
+      const userView = views.getView({
+        source: userProxy,
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
       expect(userView.__typename).toBe("User");
       expect(userView.id).toBe("u1");
@@ -36,11 +42,10 @@ describe("Views", () => {
       });
 
       await nextTick();
-
       expect(userView.email).toBe("updated@example.com");
     });
 
-    it.only("follows __ref to child entity", async () => {
+    it("follows __ref to child entity", async () => {
       graph.putRecord("User:u1", {
         __typename: "User",
         id: "u1",
@@ -56,16 +61,24 @@ describe("Views", () => {
       });
 
       const postProxy = graph.materializeRecord("Post:p1");
-      const postView = views.getEntityView(postProxy, null, undefined, {}, true);
+      const postView = views.getView({
+        source: postProxy,
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
-      // Get a direct view of the user too
       const userProxy = graph.materializeRecord("User:u1");
-      const userView = views.getEntityView(userProxy, null, undefined, {}, true);
+      const userView = views.getView({
+        source: userProxy,
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
-      // The author should be the same view instance as userView
       expect(postView.author).toBe(userView);
-
-      // Whole object check
       expect(postView.author).toEqual({
         __typename: "User",
         id: "u1",
@@ -78,10 +91,7 @@ describe("Views", () => {
 
       await nextTick();
 
-      // Identity should still be maintained
       expect(postView.author).toBe(userView);
-
-      // Whole object check after update
       expect(postView.author).toEqual({
         __typename: "User",
         id: "u1",
@@ -89,15 +99,13 @@ describe("Views", () => {
       });
     });
 
-    it.only("maintains entity view identity through deeply nested inline objects", async () => {
+    it("maintains entity view identity through deeply nested inline objects", async () => {
       graph.putRecord("User:u1", {
         __typename: "User",
         id: "u1",
         email: "u1@example.com",
       });
 
-      // Deep inline nesting (no __typename on containers)
-      // Post -> nested1 -> nested2 -> nested3 -> author (entity ref)
       graph.putRecord("Post:p1", {
         __typename: "Post",
         id: "p1",
@@ -112,36 +120,39 @@ describe("Views", () => {
       });
 
       const postProxy = graph.materializeRecord("Post:p1");
-      const postView = views.getEntityView(postProxy, null, undefined, {}, true);
+      const postView = views.getView({
+        source: postProxy,
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
       const userProxy = graph.materializeRecord("User:u1");
-      const userView = views.getEntityView(userProxy, null, undefined, {}, true);
+      const userView = views.getView({
+        source: userProxy,
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
-      // Read once to avoid any accidental re-wrapping on repeated property access
       const authorFromPost = postView.nested1.nested2.nested3.author;
-
-      // Identity should match the cached user view instance
       expect(authorFromPost).toBe(userView);
-
-      // Value check
       expect(authorFromPost).toEqual({
         __typename: "User",
         id: "u1",
         email: "u1@example.com",
       });
 
-      // Update underlying entity
       graph.putRecord("User:u1", {
         email: "new@example.com",
       });
 
       await nextTick();
 
-      // Identity still stable after update
       const authorFromPostAfter = postView.nested1.nested2.nested3.author;
       expect(authorFromPostAfter).toBe(userView);
-
-      // Reactive value updated
       expect(authorFromPostAfter).toEqual({
         __typename: "User",
         id: "u1",
@@ -149,7 +160,7 @@ describe("Views", () => {
       });
     });
 
-    it.only("handles array of refs", () => {
+    it("handles array of refs", () => {
       graph.putRecord("User:u1", {
         __typename: "User",
         id: "u1",
@@ -168,32 +179,37 @@ describe("Views", () => {
       });
 
       const teamProxy = graph.materializeRecord("Team:t1");
-      const teamView = views.getEntityView(teamProxy, null, undefined, {}, true);
+      const teamView = views.getView({
+        source: teamProxy,
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
-      // Get direct user views
-      const user1Proxy = graph.materializeRecord("User:u1");
-      const user1View = views.getEntityView(user1Proxy, null, undefined, {}, true);
-      const user2Proxy = graph.materializeRecord("User:u2");
-      const user2View = views.getEntityView(user2Proxy, null, undefined, {}, true);
+      const user1View = views.getView({
+        source: graph.materializeRecord("User:u1"),
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
+      const user2View = views.getView({
+        source: graph.materializeRecord("User:u2"),
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
       expect(teamView.members).toHaveLength(2);
-
-      // Identity checks
       expect(teamView.members[0]).toBe(user1View);
       expect(teamView.members[1]).toBe(user2View);
-
-      // Value checks
-      expect(teamView.members[0]).toEqual({
-        __typename: "User",
-        id: "u1",
-      });
-      expect(teamView.members[1]).toEqual({
-        __typename: "User",
-        id: "u2",
-      });
+      expect(teamView.members[0]).toEqual({ __typename: "User", id: "u1" });
+      expect(teamView.members[1]).toEqual({ __typename: "User", id: "u2" });
     });
 
-    it.only("handles array with { __refs } format", () => {
+    it("handles array with { __refs } format", () => {
       graph.putRecord("User:u1", {
         __typename: "User",
         id: "u1",
@@ -205,38 +221,40 @@ describe("Views", () => {
       graph.putRecord("Team:t1", {
         __typename: "Team",
         id: "t1",
-        members: {
-          __refs: ["User:u1", "User:u2"],
-        },
+        members: { __refs: ["User:u1", "User:u2"] },
       });
 
-      const teamProxy = graph.materializeRecord("Team:t1");
-      const teamView = views.getEntityView(teamProxy, null, undefined, {}, true);
+      const teamView = views.getView({
+        source: graph.materializeRecord("Team:t1"),
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
-      // Get direct user views
-      const user1Proxy = graph.materializeRecord("User:u1");
-      const user1View = views.getEntityView(user1Proxy, null, undefined, {}, true);
-      const user2Proxy = graph.materializeRecord("User:u2");
-      const user2View = views.getEntityView(user2Proxy, null, undefined, {}, true);
+      const user1View = views.getView({
+        source: graph.materializeRecord("User:u1"),
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
+      const user2View = views.getView({
+        source: graph.materializeRecord("User:u2"),
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
       expect(teamView.members).toHaveLength(2);
-
-      // Identity checks
       expect(teamView.members[0]).toBe(user1View);
       expect(teamView.members[1]).toBe(user2View);
-
-      // Value checks
-      expect(teamView.members[0]).toEqual({
-        __typename: "User",
-        id: "u1",
-      });
-      expect(teamView.members[1]).toEqual({
-        __typename: "User",
-        id: "u2",
-      });
+      expect(teamView.members[0]).toEqual({ __typename: "User", id: "u1" });
+      expect(teamView.members[1]).toEqual({ __typename: "User", id: "u2" });
     });
 
-    it.only("handles deeply nested array of refs", () => {
+    it("handles deeply nested array of refs", () => {
       graph.putRecord("User:u1", {
         __typename: "User",
         id: "u1",
@@ -262,22 +280,32 @@ describe("Views", () => {
         },
       });
 
-      const teamProxy = graph.materializeRecord("Team:t1");
-      const teamView = views.getEntityView(teamProxy, null, undefined, {}, true);
+      const teamView = views.getView({
+        source: graph.materializeRecord("Team:t1"),
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
-      // Get direct user views
-      const user1Proxy = graph.materializeRecord("User:u1");
-      const user1View = views.getEntityView(user1Proxy, null, undefined, {}, true);
-      const user2Proxy = graph.materializeRecord("User:u2");
-      const user2View = views.getEntityView(user2Proxy, null, undefined, {}, true);
+      const user1View = views.getView({
+        source: graph.materializeRecord("User:u1"),
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
+      const user2View = views.getView({
+        source: graph.materializeRecord("User:u2"),
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
       expect(teamView.nested1.nested2.nested3.members).toHaveLength(2);
-
-      // Identity checks through deep nesting
       expect(teamView.nested1.nested2.nested3.members[0]).toBe(user1View);
       expect(teamView.nested1.nested2.nested3.members[1]).toBe(user2View);
-
-      // Value checks
       expect(teamView.nested1.nested2.nested3.members[0]).toEqual({
         __typename: "User",
         id: "u1",
@@ -290,7 +318,7 @@ describe("Views", () => {
       });
     });
 
-    it.only("handles deeply nested array with { __refs } format", () => {
+    it("handles deeply nested array with { __refs } format", () => {
       graph.putRecord("User:u1", {
         __typename: "User",
         id: "u1",
@@ -307,30 +335,38 @@ describe("Views", () => {
         nested1: {
           nested2: {
             nested3: {
-              members: {
-                __refs: ["User:u1", "User:u2"],
-              },
+              members: { __refs: ["User:u1", "User:u2"] },
             },
           },
         },
       });
 
-      const teamProxy = graph.materializeRecord("Team:t1");
-      const teamView = views.getEntityView(teamProxy, null, undefined, {}, true);
+      const teamView = views.getView({
+        source: graph.materializeRecord("Team:t1"),
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
-      // Get direct user views
-      const user1Proxy = graph.materializeRecord("User:u1");
-      const user1View = views.getEntityView(user1Proxy, null, undefined, {}, true);
-      const user2Proxy = graph.materializeRecord("User:u2");
-      const user2View = views.getEntityView(user2Proxy, null, undefined, {}, true);
+      const user1View = views.getView({
+        source: graph.materializeRecord("User:u1"),
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
+      const user2View = views.getView({
+        source: graph.materializeRecord("User:u2"),
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
       expect(teamView.nested1.nested2.nested3.members).toHaveLength(2);
-
-      // Identity checks through deep nesting
       expect(teamView.nested1.nested2.nested3.members[0]).toBe(user1View);
       expect(teamView.nested1.nested2.nested3.members[1]).toBe(user2View);
-
-      // Value checks
       expect(teamView.nested1.nested2.nested3.members[0]).toEqual({
         __typename: "User",
         id: "u1",
@@ -343,57 +379,62 @@ describe("Views", () => {
       });
     });
 
-    it.only("returns empty reactive placeholder for missing refs", () => {
+    it("returns empty reactive placeholder for missing refs", () => {
       graph.putRecord("Post:p1", {
         __typename: "Post",
         id: "p1",
-        author: {
-          __ref: "User:missing",
-        },
+        author: { __ref: "User:missing" },
       });
 
-      const postProxy = graph.materializeRecord("Post:p1");
-      const postView = views.getEntityView(postProxy, null, undefined, {}, true);
+      const postView = views.getView({
+        source: graph.materializeRecord("Post:p1"),
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
-      // placeholder object to keep reactivity
       expect(postView.author).toEqual({});
-      // sanity: it's a plain object, currently empty
       expect(typeof postView.author).toBe("object");
       expect(Object.keys(postView.author)).toHaveLength(0);
     });
 
-    it.only("returns null when field is explicitly null", () => {
+    it("returns null when field is explicitly null", () => {
       graph.putRecord("Post:p1", {
         __typename: "Post",
         id: "p1",
         author: null,
       });
-      const postView = views.getEntityView(graph.materializeRecord("Post:p1"), null, undefined, {}, true);
+
+      const postView = views.getView({
+        source: graph.materializeRecord("Post:p1"),
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
+
       expect(postView.author).toBeNull();
     });
 
-    it.only("returns empty placeholder for missing ref, then hydrates in place when record appears", async () => {
+    it("returns empty placeholder for missing ref, then hydrates in place when record appears", async () => {
       graph.putRecord("Post:p1", {
         __typename: "Post",
         id: "p1",
-        author: {
-          __ref: "User:u1",
-        },
+        author: { __ref: "User:u1" },
       });
 
-      const postView = views.getEntityView(
-        graph.materializeRecord("Post:p1"),
-        null,
-        undefined,
-        {},
-        true,
-      );
+      const postView = views.getView({
+        source: graph.materializeRecord("Post:p1"),
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
-      // starts as empty reactive object
       const authorView = postView.author;
       expect(authorView).toEqual({});
 
-      // now the entity arrives
       graph.putRecord("User:u1", {
         __typename: "User",
         id: "u1",
@@ -402,7 +443,6 @@ describe("Views", () => {
 
       await nextTick();
 
-      // identity is preserved (hydrates in place)
       expect(postView.author).toBe(authorView);
       expect(postView.author).toEqual({
         __typename: "User",
@@ -411,45 +451,53 @@ describe("Views", () => {
       });
     });
 
-    it.only("returns same view for same (proxy, selection, canonical)", () => {
+    it("returns same view for same (proxy, selection, canonical)", () => {
       graph.putRecord("User:u1", {
         __typename: "User",
         id: "u1",
       });
 
       const userProxy = graph.materializeRecord("User:u1");
-      const view1 = views.getEntityView(userProxy, null, undefined, {}, true);
-      const view2 = views.getEntityView(userProxy, null, undefined, {}, true);
+      const view1 = views.getView({
+        source: userProxy,
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
+      const view2 = views.getView({
+        source: userProxy,
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
       expect(view1).toBe(view2);
     });
 
-    it.only("returns empty placeholder for deeply nested missing ref, then hydrates", async () => {
+    it("returns empty placeholder for deeply nested missing ref, then hydrates", async () => {
       graph.putRecord("Post:p1", {
         __typename: "Post",
         id: "p1",
         nested1: {
           nested2: {
-            author: {
-              __ref: "User:u1",
-            },
+            author: { __ref: "User:u1" },
           },
         },
       });
 
-      const postView = views.getEntityView(
-        graph.materializeRecord("Post:p1"),
-        null,
-        undefined,
-        {},
-        true,
-      );
+      const postView = views.getView({
+        source: graph.materializeRecord("Post:p1"),
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
-      // Starts as empty reactive object (deeply nested)
       const authorView = postView.nested1.nested2.author;
       expect(authorView).toEqual({});
 
-      // Entity arrives
       graph.putRecord("User:u1", {
         __typename: "User",
         id: "u1",
@@ -458,7 +506,6 @@ describe("Views", () => {
 
       await nextTick();
 
-      // Identity preserved through deep nesting
       expect(postView.nested1.nested2.author).toBe(authorView);
       expect(postView.nested1.nested2.author).toEqual({
         __typename: "User",
@@ -467,20 +514,32 @@ describe("Views", () => {
       });
     });
 
-    it.only("returns different views for different canonical flag", () => {
+    it("returns different views for different canonical flag", () => {
       graph.putRecord("User:u1", {
         __typename: "User",
         id: "u1",
       });
 
       const userProxy = graph.materializeRecord("User:u1");
-      const canonicalView = views.getEntityView(userProxy, null, undefined, {}, true);
-      const pageView = views.getEntityView(userProxy, null, undefined, {}, false);
+      const canonicalView = views.getView({
+        source: userProxy,
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
+      const pageView = views.getView({
+        source: userProxy,
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: false,
+      });
 
       expect(canonicalView).not.toBe(pageView);
     });
 
-    it.only("returns different views for different selections", () => {
+    it("returns different views for different selections", () => {
       const field1 = createConnectionPlanField("posts");
       const field2 = createConnectionPlanField("comments");
 
@@ -490,131 +549,64 @@ describe("Views", () => {
       });
 
       const userProxy = graph.materializeRecord("User:u1");
-      const view1 = views.getEntityView(userProxy, [field1], new Map([["posts", field1]]), {}, true);
-      const view2 = views.getEntityView(userProxy, [field2], new Map([["comments", field2]]), {}, true);
+      const view1 = views.getView({
+        source: userProxy,
+        selection: [field1],
+        selectionMap: new Map([["posts", field1]]),
+        variables: {},
+        canonical: true,
+      });
+      const view2 = views.getView({
+        source: userProxy,
+        selection: [field2],
+        selectionMap: new Map([["comments", field2]]),
+        variables: {},
+        canonical: true,
+      });
 
       expect(view1).not.toBe(view2);
     });
 
-    it.only("returns null when entity proxy is null", () => {
-      const view = views.getEntityView(null, null, undefined, {}, true);
+    it("returns null when entity proxy is null", () => {
+      const view = views.getView({
+        source: null,
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
       expect(view).toBeNull();
     });
 
-    it.only("returns undefined when entity proxy is undefined", () => {
-      const view = views.getEntityView(undefined as any, null, undefined, {}, true);
+    it("returns undefined when entity proxy is undefined", () => {
+      const view = views.getView({
+        source: undefined as any,
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
       expect(view).toBeUndefined();
     });
 
-    it.only("is read-only", () => {
+    it("is read-only", () => {
       graph.putRecord("User:u1", {
         __typename: "User",
         id: "u1",
         email: "u1@example.com",
       });
 
-      const userProxy = graph.materializeRecord("User:u1");
-      const userView = views.getEntityView(userProxy, null, undefined, {}, true);
+      const userView = views.getView({
+        source: graph.materializeRecord("User:u1"),
+        selection: null,
+        selectionMap: undefined,
+        variables: {},
+        canonical: true,
+      });
 
       const result = Reflect.set(userView, "email", "hacker@example.com");
       expect(result).toBe(false);
       expect(userView.email).toBe("u1@example.com");
-    });
-  });
-
-  // ────────────────────────────────────────────────────────────────────────────
-  // getEdgeView
-  // ────────────────────────────────────────────────────────────────────────────
-  describe("getEdgeView", () => {
-    it("wraps edge.node as entity view", async () => {
-      const postsField = createConnectionPlanField("posts");
-      const edgesField = postsField.selectionMap?.get("edges");
-      const nodeField = edgesField?.selectionMap?.get("node");
-
-      graph.putRecord("Post:p1", {
-        __typename: "Post",
-        id: "p1",
-        title: "Post 1",
-      });
-      graph.putRecord("edge:1", {
-        __typename: "PostEdge",
-        cursor: "p1",
-        node: {
-          __ref: "Post:p1",
-        },
-      });
-
-      const edgeView = views.getEdgeView("edge:1", nodeField, {}, true);
-
-      expect(edgeView.cursor).toBe("p1");
-      expect(edgeView.node).toEqual({
-        __typename: "Post",
-        id: "p1",
-        title: "Post 1",
-      });
-
-      graph.putRecord("Post:p1", {
-        title: "Updated Post",
-      });
-      await nextTick();
-      expect(edgeView.node).toEqual({
-        __typename: "Post",
-        id: "p1",
-        title: "Updated Post",
-      });
-    });
-
-    it("returns undefined for edge without node", () => {
-      graph.putRecord("edge:1", {
-        __typename: "PostEdge",
-        cursor: "p1",
-      });
-
-      const edgeView = views.getEdgeView("edge:1", undefined, {}, true);
-      expect(edgeView?.node).toBeUndefined();
-    });
-
-    it("caches edge views", () => {
-      graph.putRecord("Post:p1", {
-        __typename: "Post",
-        id: "p1",
-      });
-      graph.putRecord("edge:1", {
-        __typename: "PostEdge",
-        node: {
-          __ref: "Post:p1",
-        },
-      });
-
-      const view1 = views.getEdgeView("edge:1", undefined, {}, true);
-      const view2 = views.getEdgeView("edge:1", undefined, {}, true);
-
-      expect(view1).toBe(view2);
-    });
-
-    it("returns undefined for missing edge", () => {
-      const edgeView = views.getEdgeView("missing:edge", undefined, {}, true);
-      expect(edgeView).toBeUndefined();
-    });
-
-    it("is read-only", () => {
-      graph.putRecord("Post:p1", {
-        __typename: "Post",
-        id: "p1",
-      });
-      graph.putRecord("edge:1", {
-        __typename: "PostEdge",
-        cursor: "p1",
-        node: {
-          __ref: "Post:p1",
-        },
-      });
-
-      const edgeView = views.getEdgeView("edge:1", undefined, {}, true);
-
-      const result = Reflect.set(edgeView, "cursor", "hacked");
-      expect(result).toBe(false);
-      expect(edgeView.cursor).toBe("p1");
     });
   });
 
@@ -1336,7 +1328,7 @@ describe("Views", () => {
       writeConnectionPage(graph, "@connection.User:u1.posts({})", connectionData);
 
       const userProxy = graph.materializeRecord("User:u1");
-      const userView = views.getEntityView(userProxy, [postsField], new Map([["posts", postsField]]), {}, true);
+      const userView = views.getView(userProxy, [postsField], new Map([["posts", postsField]]), {}, true);
 
       expect(userView.posts.edges).toHaveLength(1);
       expect(userView.posts.edges[0].node).toEqual({
@@ -1371,7 +1363,7 @@ describe("Views", () => {
       writeConnectionPage(graph, "@.User:u1.posts({})", connectionData);
 
       const userProxy = graph.materializeRecord("User:u1");
-      const userView = views.getEntityView(userProxy, [postsField], new Map([["posts", postsField]]), {}, false);
+      const userView = views.getView(userProxy, [postsField], new Map([["posts", postsField]]), {}, false);
 
       expect(userView.posts.edges).toHaveLength(1);
       expect(userView.posts.edges[0].node).toEqual({
