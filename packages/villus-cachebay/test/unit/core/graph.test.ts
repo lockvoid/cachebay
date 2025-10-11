@@ -106,6 +106,290 @@ describe("core/graph.ts", () => {
         meta: { r: 1, g: 2, b: 3 },
       });
     });
+
+    it("stores null values for scalar fields", () => {
+      graph.putRecord("User:u1", {
+        __typename: "User",
+        id: "u1",
+        name: "John",
+        email: "john@example.com",
+      });
+
+      graph.putRecord("User:u1", { email: null });
+
+      expect(graph.getRecord("User:u1")).toEqual({
+        __typename: "User",
+        id: "u1",
+        name: "John",
+        email: null,
+      });
+    });
+
+    it("stores null values for reference fields", () => {
+      graph.putRecord("Post:p1", {
+        __typename: "Post",
+        id: "p1",
+        title: "Title",
+        author: { __ref: "User:u1" },
+      });
+
+      graph.putRecord("Post:p1", { author: null });
+
+      expect(graph.getRecord("Post:p1")).toEqual({
+        __typename: "Post",
+        id: "p1",
+        title: "Title",
+        author: null,
+      });
+    });
+
+    it("stores null values for array fields", () => {
+      graph.putRecord("Post:p1", {
+        __typename: "Post",
+        id: "p1",
+        title: "Title",
+        tags: ["react", "vue"],
+      });
+
+      graph.putRecord("Post:p1", { tags: null });
+
+      expect(graph.getRecord("Post:p1")).toEqual({
+        __typename: "Post",
+        id: "p1",
+        title: "Title",
+        tags: null,
+      });
+    });
+
+    it("stores null values for object fields", () => {
+      graph.putRecord("Post:p1", {
+        __typename: "Post",
+        id: "p1",
+        title: "Title",
+        metadata: { views: 100, likes: 50 },
+      });
+
+      graph.putRecord("Post:p1", { metadata: null });
+
+      expect(graph.getRecord("Post:p1")).toEqual({
+        __typename: "Post",
+        id: "p1",
+        title: "Title",
+        metadata: null,
+      });
+    });
+
+    it("distinguishes between null and undefined", () => {
+      graph.putRecord("User:u1", {
+        __typename: "User",
+        id: "u1",
+        name: "John",
+        email: "john@example.com",
+        phone: "555-1234",
+      });
+
+      graph.putRecord("User:u1", {
+        email: null,
+        phone: undefined,
+      });
+
+      expect(graph.getRecord("User:u1")).toEqual({
+        __typename: "User",
+        id: "u1",
+        name: "John",
+        email: null,
+        phone: "555-1234",
+      });
+    });
+
+    it("handles null ID correctly", () => {
+      graph.putRecord("User:temp", { __typename: "User", id: null, name: "Guest" });
+
+      expect(graph.getRecord("User:temp")).toEqual({
+        __typename: "User",
+        id: null,
+        name: "Guest",
+      });
+    });
+
+    it("can update null field back to a value", () => {
+      graph.putRecord("User:u1", {
+        __typename: "User",
+        id: "u1",
+        email: null,
+      });
+
+      expect(graph.getRecord("User:u1")?.email).toBeNull();
+
+      graph.putRecord("User:u1", { email: "john@example.com" });
+
+      expect(graph.getRecord("User:u1")?.email).toBe("john@example.com");
+    });
+
+    it("handles PageInfo with null cursors", () => {
+      graph.putRecord("PageInfo:1", {
+        __typename: "PageInfo",
+        startCursor: null,
+        endCursor: null,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+
+      expect(graph.getRecord("PageInfo:1")).toEqual({
+        __typename: "PageInfo",
+        startCursor: null,
+        endCursor: null,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+    });
+
+    it("handles connection edges with null cursors", () => {
+      graph.putRecord("PostEdge:1", {
+        __typename: "PostEdge",
+        cursor: null,
+        node: { __ref: "Post:p1" },
+      });
+
+      expect(graph.getRecord("PostEdge:1")).toEqual({
+        __typename: "PostEdge",
+        cursor: null,
+        node: { __ref: "Post:p1" },
+      });
+    });
+
+    it("handles empty string values", () => {
+      graph.putRecord("User:u1", {
+        __typename: "User",
+        id: "u1",
+        name: "",
+        email: "",
+      });
+
+      expect(graph.getRecord("User:u1")).toEqual({
+        __typename: "User",
+        id: "u1",
+        name: "",
+        email: "",
+      });
+    });
+
+    it("handles zero values", () => {
+      graph.putRecord("Post:p1", {
+        __typename: "Post",
+        id: "p1",
+        views: 0,
+        likes: 0,
+      });
+
+      expect(graph.getRecord("Post:p1")).toEqual({
+        __typename: "Post",
+        id: "p1",
+        views: 0,
+        likes: 0,
+      });
+    });
+
+    it("handles boolean false values", () => {
+      graph.putRecord("User:u1", {
+        __typename: "User",
+        id: "u1",
+        isActive: false,
+        emailVerified: false,
+      });
+
+      expect(graph.getRecord("User:u1")).toEqual({
+        __typename: "User",
+        id: "u1",
+        isActive: false,
+        emailVerified: false,
+      });
+    });
+
+    it("handles empty arrays", () => {
+      graph.putRecord("Post:p1", {
+        __typename: "Post",
+        id: "p1",
+        tags: [],
+        comments: [],
+      });
+
+      expect(graph.getRecord("Post:p1")).toEqual({
+        __typename: "Post",
+        id: "p1",
+        tags: [],
+        comments: [],
+      });
+    });
+
+    it("handles empty objects", () => {
+      graph.putRecord("Post:p1", {
+        __typename: "Post",
+        id: "p1",
+        metadata: {},
+      });
+
+      expect(graph.getRecord("Post:p1")).toEqual({
+        __typename: "Post",
+        id: "p1",
+        metadata: {},
+      });
+    });
+
+    it("handles deeply nested null values", () => {
+      graph.putRecord("Post:p1", {
+        __typename: "Post",
+        id: "p1",
+        metadata: {
+          author: null,
+          stats: {
+            views: null,
+            likes: 10,
+          },
+        },
+      });
+
+      expect(graph.getRecord("Post:p1")?.metadata).toEqual({
+        author: null,
+        stats: {
+          views: null,
+          likes: 10,
+        },
+      });
+    });
+
+    it("handles NaN values", () => {
+      graph.putRecord("Post:p1", {
+        __typename: "Post",
+        id: "p1",
+        score: NaN,
+      });
+
+      expect(graph.getRecord("Post:p1")?.score).toBeNaN();
+    });
+
+    it("handles Infinity values", () => {
+      graph.putRecord("Post:p1", {
+        __typename: "Post",
+        id: "p1",
+        maxValue: Infinity,
+        minValue: -Infinity,
+      });
+
+      const post = graph.getRecord("Post:p1");
+      expect(post?.maxValue).toBe(Infinity);
+      expect(post?.minValue).toBe(-Infinity);
+    });
+
+    it("handles large numbers", () => {
+      graph.putRecord("User:u1", {
+        __typename: "User",
+        id: "u1",
+        balance: 9007199254740991,
+      });
+
+      expect(graph.getRecord("User:u1")?.balance).toBe(9007199254740991);
+    });
   });
 
   describe("getRecord", () => {
@@ -177,6 +461,67 @@ describe("core/graph.ts", () => {
       expect(user1).toBe(user2);
       expect(user1.name).toBe("Jane");
     });
+
+    it("reflects null values in materialized proxies", () => {
+      graph.putRecord("User:u1", {
+        __typename: "User",
+        id: "u1",
+        name: "John",
+        email: "john@example.com",
+      });
+
+      const user = graph.materializeRecord("User:u1");
+      expect(user.email).toBe("john@example.com");
+
+      graph.putRecord("User:u1", { email: null });
+
+      expect(user.email).toBeNull();
+    });
+
+    it("reflects field added after materialization", () => {
+      graph.putRecord("User:u1", {
+        __typename: "User",
+        id: "u1",
+        name: "John",
+      });
+
+      const user = graph.materializeRecord("User:u1");
+      expect(user.email).toBeUndefined();
+
+      graph.putRecord("User:u1", { email: "john@example.com" });
+
+      expect(user.email).toBe("john@example.com");
+    });
+
+    it("reflects field changed to null", () => {
+      graph.putRecord("User:u1", {
+        __typename: "User",
+        id: "u1",
+        email: "john@example.com",
+      });
+
+      const user = graph.materializeRecord("User:u1");
+      expect(user.email).toBe("john@example.com");
+
+      graph.putRecord("User:u1", { email: null });
+
+      expect(user.email).toBeNull();
+    });
+
+    it("reflects field changed from null to value", () => {
+      graph.putRecord("User:u1", {
+        __typename: "User",
+        id: "u1",
+        email: null,
+      });
+
+      const user = graph.materializeRecord("User:u1");
+      expect(user.email).toBeNull();
+
+      graph.putRecord("User:u1", { email: "john@example.com" });
+
+      expect(user.email).toBe("john@example.com");
+    });
   });
 
   describe("removeRecord", () => {
@@ -191,6 +536,32 @@ describe("core/graph.ts", () => {
 
       expect(user1).toEqual({});
       expect(graph.getRecord("User:u1")).toBeUndefined();
+    });
+
+    it("handles proxy after record is cleared and recreated", () => {
+      graph.putRecord("User:u1", {
+        __typename: "User",
+        id: "u1",
+        name: "John",
+      });
+
+      const user = graph.materializeRecord("User:u1");
+      expect(user.name).toBe("John");
+
+      graph.removeRecord("User:u1");
+      expect(user).toEqual({});
+
+      graph.putRecord("User:u1", {
+        __typename: "User",
+        id: "u1",
+        name: "Jane",
+      });
+
+      expect(user).toEqual({});
+
+      const user2 = graph.materializeRecord("User:u1");
+      expect(user2.name).toBe("Jane");
+      expect(user2).not.toBe(user);
     });
   });
 

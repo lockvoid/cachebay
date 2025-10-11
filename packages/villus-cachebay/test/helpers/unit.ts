@@ -1,3 +1,60 @@
+import type { Connection, ConnectionRecord, ConnectionRef } from "@/src/core/types";
+
+/**
+ * Writes a connection page to the graph following normalization rules.
+ * Takes fixture data (from users.buildConnection, posts.buildConnection, etc.)
+ * and normalizes it into the graph with proper references.
+ */
+export const writeConnectionPage = (graph: ReturnType<typeof createGraph>, pageKey: string, connectionData: Connection): { pageSnapshot: ConnectionRecord; pageSnapshotRefs: ConnectionRef } => {
+  const edgeKeys: string[] = [];
+
+  const { edges, pageInfo, ...connectionInfo } = connectionData;
+
+  for (let i = 0; i < edges.length; i++) {
+    const edge = edges[i];
+    const edgeKey = `${pageKey}.edges:${i}`;
+    const node = edge.node;
+    const nodeKey = graph.identify(node);
+
+    if (!nodeKey) {
+      throw new Error(`Cannot identify node: ${JSON.stringify(node)}`);
+    }
+
+    graph.putRecord(nodeKey, node);
+
+    const { node: _1, ...edgeFields } = edge;
+
+    graph.putRecord(edgeKey, {
+      __typename: edge.__typename || "Edge",
+      ...edgeFields,
+      node: { __ref: nodeKey },
+    });
+    edgeKeys.push(edgeKey);
+  }
+
+  const pageInfoKey = `${pageKey}.pageInfo`;
+
+  graph.putRecord(pageInfoKey, {
+    ...pageInfo,
+    __typename: "PageInfo",
+  });
+
+  graph.putRecord(pageKey, {
+    ...connectionInfo,
+    edges: { __refs: edgeKeys },
+    pageInfo: { __ref: pageInfoKey },
+  });
+
+  return {
+    ...connectionInfo,
+    edges: { __refs: edgeKeys },
+    pageInfo: { __ref: pageInfoKey },
+  };
+};
+
+// old
+
+
 import { visit, Kind, type DocumentNode, type SelectionSetNode } from "graphql";
 import gql from "graphql-tag";
 import type { PlanField } from "@/src/compiler";
@@ -156,58 +213,4 @@ export const createSelection = (config: Record<string, any>): { fields: PlanFiel
   }
 
   return { fields, map };
-};
-
-import type { Connection, ConnectionRecord, ConnectionRef } from "./types";
-
-/**
- * Writes a connection page to the graph following normalization rules.
- * Takes fixture data (from users.buildConnection, posts.buildConnection, etc.)
- * and normalizes it into the graph with proper references.
- */
-export const writeConnectionPage = (graph: ReturnType<typeof createGraph>, pageKey: string, connectionData: Connection): { pageSnapshot: ConnectionRecord; pageSnapshotRefs: ConnectionRef } => {
-  const edgeKeys: string[] = [];
-
-  const { edges, pageInfo, ...connectionInfo } = connectionData;
-
-  for (let i = 0; i < edges.length; i++) {
-    const edge = edges[i];
-    const edgeKey = `${pageKey}.edges:${i}`;
-    const node = edge.node;
-    const nodeKey = graph.identify(node);
-
-    if (!nodeKey) {
-      throw new Error(`Cannot identify node: ${JSON.stringify(node)}`);
-    }
-
-    graph.putRecord(nodeKey, node);
-
-    const { node: _1, ...edgeFields } = edge;
-
-    graph.putRecord(edgeKey, {
-      __typename: edge.__typename || "Edge",
-      ...edgeFields,
-      node: { __ref: nodeKey },
-    });
-    edgeKeys.push(edgeKey);
-  }
-
-  const pageInfoKey = `${pageKey}.pageInfo`;
-
-  graph.putRecord(pageInfoKey, {
-    ...pageInfo,
-    __typename: "PageInfo",
-  });
-
-  graph.putRecord(pageKey, {
-    ...connectionInfo,
-    edges: { __refs: edgeKeys },
-    pageInfo: { __ref: pageInfoKey },
-  });
-
-  return {
-    ...connectionInfo,
-    edges: { __refs: edgeKeys },
-    pageInfo: { __ref: pageInfoKey },
-  };
 };

@@ -46,6 +46,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       console.log("[norm] data %s", JSON.stringify(data, null, 2));
     }
 
+    // Collection for canonical updates (Option 2: Hybrid approach)
+    const connectionPages: Array<{
+      field: PlanField;
+      parentId: string;
+      pageKey: string;
+    }> = [];
+
     type Frame = {
       parentId: string;
       fields: PlanField[] | undefined | null;
@@ -214,7 +221,17 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             if (DEBUG) console.log("[norm]   link %s.%s -> %s", parentId, parentFieldKey, pageKey);
           }
 
-          // descend into the page (its selection set)
+          // ✅ Collect for later canonical update (Option 2: Hybrid)
+          if (isQuery) {
+            connectionPages.push({
+              field: planField,
+              parentId,
+              pageKey,
+            });
+            if (DEBUG) console.log("[norm]   collected connection page %s for canonical", pageKey);
+          }
+
+          // Descend into the page (its selection set)
           const nextFrame = {
             parentId: pageKey,
             fields: planField.selectionSet,
@@ -329,68 +346,33 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       return frame;
     };
 
+    // Main traversal - normalize all data
     traverseFast(data, initialFrame, visit);
 
-    // NOW call canonical update after normalization is complete
-    if (ENABLE_CANONICAL && isQuery) {
-      const visited = new Set<string>();
+    // ✅ Update canonical for all collected connection pages (Option 2: Hybrid)
+    if (ENABLE_CANONICAL && isQuery && connectionPages.length > 0) {
+      if (DEBUG) {
+        console.log("[norm] updating canonical for %d connection pages", connectionPages.length);
+      }
 
-      const collectConnectionPages = (
-        parentId: string,
-        fields: PlanField[] | undefined | null,
-      ): void => {
-        if (!fields || visited.has(parentId)) return;
-        visited.add(parentId);
+      for (let i = 0; i < connectionPages.length; i++) {
+        const { field, parentId, pageKey } = connectionPages[i];
+        const pageRecord = graph.getRecord(pageKey);
 
-        const parentRecord = graph.getRecord(parentId);
-        if (!parentRecord) return;
+        if (pageRecord) {
+          canonical.updateConnection({
+            field,
+            parentId,
+            variables,
+            pageKey,
+            normalizedPage: pageRecord,
+          });
 
-        for (let i = 0; i < fields.length; i++) {
-          const field = fields[i];
-
-          if (field.isConnection) {
-            const pageKey = buildConnectionKey(field, parentId, variables);
-            const pageRecord = graph.getRecord(pageKey);
-
-            if (pageRecord) {
-              canonical.updateConnection({
-                field,
-                parentId,
-                variables,
-                pageKey,
-                pageSnapshot: pageRecord,
-              });
-
-              if (DEBUG) {
-                console.log("[norm] canonical update for %s", pageKey);
-              }
-            }
-
-            // Also check for nested connections within edges.node
-            const edgesField = field.selectionMap?.get("edges");
-            const nodeField = edgesField?.selectionMap?.get("node");
-            if (nodeField?.selectionSet && pageRecord?.edges?.__refs) {
-              for (const edgeRef of pageRecord.edges.__refs) {
-                const edgeRecord = graph.getRecord(edgeRef);
-                const nodeRef = edgeRecord?.node?.__ref;
-                if (nodeRef) {
-                  collectConnectionPages(nodeRef, nodeField.selectionSet);
-                }
-              }
-            }
-          } else if (field.selectionSet) {
-            // Follow entity reference
-            const fieldKey = buildFieldKey(field, variables);
-            const link = parentRecord[fieldKey];
-
-            if (link?.__ref) {
-              collectConnectionPages(link.__ref, field.selectionSet);
-            }
+          if (DEBUG) {
+            console.log("[norm] canonical.updateConnection %s", pageKey);
           }
         }
-      };
-
-      collectConnectionPages(ROOT_ID, plan.root);
+      }
     }
 
     if (DEBUG) {

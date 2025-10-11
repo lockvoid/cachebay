@@ -10,22 +10,11 @@ export type CanonicalDependencies = {
 
 export type CanonicalInstance = ReturnType<typeof createCanonical>;
 
-type ConnectionMeta = {
-  __typename: "__ConnMeta";
-  pages: string[];
-  leader?: string;
-  hints?: Record<string, "before" | "after" | "leader">;
-  origin?: Record<string, "cache" | "network">;
-};
-
-const metaKeyOf = (canonicalKey: string): string => `${canonicalKey}::meta`;
-
 /**
  * Creates the canonical connection manager that merges paginated data
- * into stable, deduplicated views across network and cache paths.
+ * using Relay-style splice-based merging with cursor relationships.
  */
 export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) => {
-
   /**
    * Extracts the node reference from an edge record.
    */
@@ -36,253 +25,71 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
   };
 
   /**
-   * Refreshes all non-structural metadata from source edge to destination edge.
-   * Only preserves node reference and __typename (structural identity).
+   * Gets cursor from an edge.
    */
-  const refreshEdgeMeta = (dstEdgeRef: string, srcEdgeRef: string): void => {
-    const src = graph.getRecord(srcEdgeRef);
-    if (!src) {
-      return;
-    }
-
-    const patch: Record<string, any> = {};
-    const keys = Object.keys(src);
-
-    for (let i = 0; i < keys.length; i++) {
-      const key = keys[i];
-      if (key === "node" || key === "__typename") {
-        continue;
-      }
-      patch[key] = src[key];
-    }
-
-    if (Object.keys(patch).length > 0) {
-      graph.putRecord(dstEdgeRef, patch);
-    }
+  const getEdgeCursor = (edgeRef: string): string | null => {
+    const edge = graph.getRecord(edgeRef);
+    return edge?.cursor || null;
   };
 
   /**
-   * Extracts extra fields from page snapshot (everything except edges, pageInfo, __typename).
+   * Extracts extra fields from connection (everything except edges, pageInfo, __typename).
    */
-  const extractExtras = (pageSnapshot: Record<string, any>): Record<string, any> => {
+  const getExtras = (connection: Record<string, any>): Record<string, any> => {
     const extras: Record<string, any> = {};
+    const keys = Object.keys(connection || {});
 
-    for (let i = 0, keys = Object.keys(pageSnapshot || {}); i < keys.length; i++) {
+    for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
-
       if (key === "edges" || key === "pageInfo" || key === "__typename") {
         continue;
       }
-
-      extras[key] = pageSnapshot[key];
+      extras[key] = connection[key];
     }
 
     return extras;
   };
 
   /**
-   * Reads edge keys from concrete page record.
-   */
-  const readPageEdges = (pageKey: string): string[] => {
-    const page = graph.getRecord(pageKey);
-
-    if (!page?.edges?.__refs || !Array.isArray(page.edges.__refs)) {
-      return [];
-    }
-
-    return page.edges.__refs;
-  };
-
-  /**
-   * Reads pageInfo from page record (handles inline and reference formats).
-   */
-  const readPageInfo = (page: any): Record<string, any> => {
-    if (!page?.pageInfo) {
-      return {};
-    }
-
-    if (page.pageInfo.__ref) {
-      return graph.getRecord(page.pageInfo.__ref) || {};
-    }
-
-    return page.pageInfo;
-  };
-
-  /**
-   * Aggregates pageInfo from multiple pages:
-   * - Head page contributes startCursor and hasPreviousPage
-   * - Tail page contributes endCursor and hasNextPage
-   */
-  const aggregatePageInfo = (pageKeys: string[]): Record<string, any> => {
-    if (pageKeys.length === 0) {
-      return {};
-    }
-
-    const headPage = graph.getRecord(pageKeys[0]);
-    const tailPage = graph.getRecord(pageKeys[pageKeys.length - 1]) || headPage;
-
-    const headInfo = readPageInfo(headPage);
-    const tailInfo = readPageInfo(tailPage);
-
-    return {
-      __typename: headInfo.__typename || tailInfo.__typename || "PageInfo",
-      startCursor: headInfo.startCursor ?? null,
-      endCursor: tailInfo.endCursor ?? (headInfo.endCursor ?? null),
-      hasPreviousPage: !!headInfo.hasPreviousPage,
-      hasNextPage: !!tailInfo.hasNextPage,
-    };
-  };
-
-  /**
-   * Detects cursor role from variables (leader vs before vs after).
+   * Detects cursor role from variables.
    */
   const detectCursorRole = (
     field: PlanField,
     variables: Record<string, any>,
-  ): { hasAfter: boolean; hasBefore: boolean; isLeader: boolean } => {
+  ): { after: string | null; before: string | null; isLeader: boolean } => {
     const args = field.buildArgs ? (field.buildArgs(variables) || {}) : (variables || {});
 
-    let hasAfter = args.after != null;
-    let hasBefore = args.before != null;
+    let after: string | null = args.after ?? null;
+    let before: string | null = args.before ?? null;
 
-    if (!hasAfter) {
+    // Fallback: check variable keys
+    if (!after) {
       const varKeys = Object.keys(variables || {});
       for (let i = 0; i < varKeys.length; i++) {
         const key = varKeys[i];
         if (key.toLowerCase().includes("after") && variables[key] != null) {
-          hasAfter = true;
+          after = variables[key];
           break;
         }
       }
     }
 
-    if (!hasBefore) {
+    if (!before) {
       const varKeys = Object.keys(variables || {});
       for (let i = 0; i < varKeys.length; i++) {
         const key = varKeys[i];
         if (key.toLowerCase().includes("before") && variables[key] != null) {
-          hasBefore = true;
+          before = variables[key];
           break;
         }
       }
     }
 
     return {
-      hasAfter,
-      hasBefore,
-      isLeader: !hasAfter && !hasBefore,
+      after,
+      before,
+      isLeader: !after && !before,
     };
-  };
-
-  /**
-   * Computes deterministic page ordering based on hints and leader.
-   * Before pages are reversed to maintain chronological order.
-   */
-  const computeOrderedPages = (meta: ConnectionMeta): string[] => {
-    const hints = meta.hints || {};
-    const leader = meta.leader;
-
-    const beforePages: string[] = [];
-    const afterPages: string[] = [];
-
-    for (let i = 0; i < meta.pages.length; i++) {
-      const pageKey = meta.pages[i];
-      const hint = hints[pageKey];
-
-      if (hint === "before") {
-        beforePages.push(pageKey);
-      } else if (hint === "after") {
-        afterPages.push(pageKey);
-      } else if (hint === "leader") {
-        continue;
-      } else {
-        afterPages.push(pageKey);
-      }
-    }
-
-    if (leader) {
-      const beforeClean = beforePages.filter(pk => pk !== leader);
-      const afterClean = afterPages.filter(pk => pk !== leader);
-      const orderedBefore = beforeClean.slice().reverse();
-
-      return [...orderedBefore, leader, ...afterClean];
-    }
-
-    return meta.pages.slice();
-  };
-
-  /**
-   * Rebuilds canonical edges by deduplicating nodes across ordered pages.
-   * When duplicate nodes appear, keeps first occurrence and refreshes metadata.
-   */
-  const rebuildCanonical = (canonicalKey: string, orderedPageKeys: string[]): void => {
-    const canonicalEdgeRefs: string[] = [];
-    const nodeToEdge = new Map<string, string>();
-
-    for (let i = 0; i < orderedPageKeys.length; i++) {
-      const pageKey = orderedPageKeys[i];
-      const edgeKeys = readPageEdges(pageKey);
-
-      for (let j = 0; j < edgeKeys.length; j++) {
-        const edgeRef = edgeKeys[j];
-
-        if (!edgeRef) {
-          continue;
-        }
-
-        const nodeRef = getNodeRef(edgeRef);
-
-        if (!nodeRef) {
-          continue;
-        }
-
-        const existingEdge = nodeToEdge.get(nodeRef);
-        if (existingEdge) {
-          refreshEdgeMeta(existingEdge, edgeRef);
-        } else {
-          canonicalEdgeRefs.push(edgeRef);
-          nodeToEdge.set(nodeRef, edgeRef);
-        }
-      }
-    }
-
-    const pageInfo = aggregatePageInfo(orderedPageKeys);
-    const current = graph.getRecord(canonicalKey) || {};
-
-    // Create pageInfo as a separate record with a reference
-    const pageInfoKey = `${canonicalKey}.pageInfo`;
-    graph.putRecord(pageInfoKey, pageInfo);
-
-    graph.putRecord(canonicalKey, {
-      __typename: current.__typename || "Connection",
-      edges: {
-        __refs: canonicalEdgeRefs,
-      },
-      pageInfo: { __ref: pageInfoKey },
-    });
-  };
-
-  /**
-   * Updates connection metadata with provided updater function.
-   */
-  const updateMeta = (
-    canonicalKey: string,
-    updater: (meta: ConnectionMeta) => void,
-  ): ConnectionMeta => {
-    const existing = graph.getRecord(metaKeyOf(canonicalKey)) as ConnectionMeta | undefined;
-
-    const meta: ConnectionMeta = {
-      __typename: "__ConnMeta",
-      pages: Array.isArray(existing?.pages) ? existing.pages.slice() : [],
-      leader: existing?.leader,
-      hints: existing?.hints ? { ...existing.hints } : {},
-      origin: existing?.origin ? { ...existing.origin } : {},
-    };
-
-    updater(meta);
-    graph.putRecord(metaKeyOf(canonicalKey), meta);
-
-    return meta;
   };
 
   /**
@@ -298,6 +105,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
         hasPreviousPage: false,
         hasNextPage: false,
       });
+
       graph.putRecord(canonicalKey, {
         __typename: "Connection",
         edges: { __refs: [] },
@@ -307,42 +115,38 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
   };
 
   /**
-   * Updates connection from network fetch.
-   * Leader fetches collapse to single page; before/after extend union.
+   * Merges incoming page into canonical using Apollo-style splice logic.
+   * Handles forward (after), backward (before), and leader (reset) pagination.
    */
   const updateConnection = (args: {
     field: PlanField;
     parentId: string;
     variables: Record<string, any>;
     pageKey: string;
-    pageSnapshot: Record<string, any>;
+    normalizedPage: Record<string, any>;
   }): void => {
-    const { field, parentId, variables, pageKey, pageSnapshot } = args;
+    const { field, parentId, variables, pageKey, normalizedPage } = args;
     const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
     const mode = field.connectionMode || "infinite";
 
     ensureCanonical(canonicalKey);
 
+    // Page mode: replace entire canonical with incoming page
     if (mode === "page") {
-      const extras = extractExtras(pageSnapshot);
-
       const edgeRefs: string[] = [];
 
-      if (pageSnapshot.edges?.__refs && Array.isArray(pageSnapshot.edges.__refs)) {
-        for (let i = 0; i < pageSnapshot.edges.__refs.length; i++) {
-          const ref = pageSnapshot.edges.__refs[i];
-
+      if (normalizedPage.edges?.__refs && Array.isArray(normalizedPage.edges.__refs)) {
+        for (let i = 0; i < normalizedPage.edges.__refs.length; i++) {
+          const ref = normalizedPage.edges.__refs[i];
           if (typeof ref === "string") {
             edgeRefs.push(ref);
           }
         }
       }
 
-      // Read pageInfo from reference
-      const pageInfoRef = pageSnapshot.pageInfo?.__ref;
+      const pageInfoRef = normalizedPage.pageInfo?.__ref;
       const pageInfoData = pageInfoRef ? graph.getRecord(pageInfoRef) : null;
 
-      // Store pageInfo as a separate record
       const pageInfoKey = `${canonicalKey}.pageInfo`;
       graph.putRecord(pageInfoKey, {
         __typename: pageInfoData?.__typename || "PageInfo",
@@ -352,165 +156,156 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
         hasNextPage: !!pageInfoData?.hasNextPage,
       });
 
-      // Store canonical connection
       graph.putRecord(canonicalKey, {
-        __typename: pageSnapshot.__typename || "Connection",
+        __typename: normalizedPage.__typename || "Connection",
         edges: { __refs: edgeRefs },
         pageInfo: { __ref: pageInfoKey },
-        ...extras,
+        ...getExtras(normalizedPage),
       });
 
       optimistic.replayOptimistic({ connections: [canonicalKey] });
       return;
     }
 
-    const { hasBefore, isLeader } = detectCursorRole(field, variables);
+    // Infinite mode: merge using cursor relationships
+    const { after, before, isLeader } = detectCursorRole(field, variables);
+    const existing = graph.getRecord(canonicalKey);
 
-    if (isLeader) {
-      const edgeKeys = readPageEdges(pageKey);
-
-      let leaderEdgeRefs: string[];
-
-      if (edgeKeys.length > 0) {
-        leaderEdgeRefs = edgeKeys;
-      } else if (pageSnapshot.edges?.__refs && Array.isArray(pageSnapshot.edges.__refs)) {
-        leaderEdgeRefs = pageSnapshot.edges.__refs.slice();
-      } else {
-        leaderEdgeRefs = [];
-      }
-
-      const page = graph.getRecord(pageKey);
-      const leaderPageInfo = readPageInfo(page) || pageSnapshot.pageInfo || {};
-      const extras = extractExtras(pageSnapshot);
-
-      // Store pageInfo as a separate record
-      const pageInfoKey = `${canonicalKey}.pageInfo`;
-      graph.putRecord(pageInfoKey, {
-        __typename: leaderPageInfo.__typename || "PageInfo",
-        startCursor: leaderPageInfo.startCursor ?? null,
-        endCursor: leaderPageInfo.endCursor ?? null,
-        hasPreviousPage: !!leaderPageInfo.hasPreviousPage,
-        hasNextPage: !!leaderPageInfo.hasNextPage,
-      });
-
-      graph.putRecord(canonicalKey, {
-        __typename: pageSnapshot.__typename || "Connection",
-        edges: { __refs: leaderEdgeRefs },
-        pageInfo: { __ref: pageInfoKey },
-        ...extras,
-      });
-
-      graph.putRecord(metaKeyOf(canonicalKey), {
-        __typename: "__ConnMeta",
-        pages: [pageKey],
-        leader: pageKey,
-        hints: { [pageKey]: "leader" },
-        origin: { [pageKey]: "network" },
-      });
-
-      optimistic.replayOptimistic({ connections: [canonicalKey] });
-      return;
-    }
-
-    const meta = updateMeta(canonicalKey, (m) => {
-      if (!m.pages.includes(pageKey)) {
-        m.pages.push(pageKey);
-      }
-
-      if (!m.hints) {
-        m.hints = {};
-      }
-      if (!m.origin) {
-        m.origin = {};
-      }
-
-      m.origin[pageKey] = "network";
-      m.hints[pageKey] = hasBefore ? "before" : "after";
-
-      if (m.leader) {
-        m.hints[m.leader] = "leader";
-      }
-    });
-
-    const orderedPages = computeOrderedPages(meta);
-    rebuildCanonical(canonicalKey, orderedPages);
-
-    optimistic.replayOptimistic({ connections: [canonicalKey] });
-  };
-
-  /**
-   * Merges connection from cache (prewarm).
-   * Builds union without collapsing until network leader arrives.
-   */
-  const mergeFromCache = (args: {
-    field: PlanField;
-    parentId: string;
-    variables: Record<string, any>;
-    pageKey: string;
-    pageSnapshot: Record<string, any>;
-  }): void => {
-    const { field, parentId, variables, pageKey, pageSnapshot } = args;
-    const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
-    const mode = field.connectionMode || "infinite";
-
-    ensureCanonical(canonicalKey);
-
-    if (mode === "page") {
-      const edgeRefs: string[] = [];
-
-      if (pageSnapshot.edges?.__refs && Array.isArray(pageSnapshot.edges.__refs)) {
-        for (let i = 0; i < pageSnapshot.edges.__refs.length; i++) {
-          const ref = pageSnapshot.edges.__refs[i];
-          if (typeof ref === "string") {
-            edgeRefs.push(ref);
-          }
+    // Get incoming edges
+    const incomingEdgeRefs: string[] = [];
+    if (normalizedPage.edges?.__refs && Array.isArray(normalizedPage.edges.__refs)) {
+      for (let i = 0; i < normalizedPage.edges.__refs.length; i++) {
+        const ref = normalizedPage.edges.__refs[i];
+        if (typeof ref === "string") {
+          incomingEdgeRefs.push(ref);
         }
       }
-
-      graph.putRecord(canonicalKey, {
-        __typename: pageSnapshot.__typename || "Connection",
-        edges: { __refs: edgeRefs },
-        pageInfo: pageSnapshot.pageInfo || {},
-      });
-      optimistic.replayOptimistic({ connections: [canonicalKey] });
-      return;
     }
 
-    const { hasBefore, isLeader } = detectCursorRole(field, variables);
+    // Get incoming pageInfo
+    const incomingPageInfoRef = normalizedPage.pageInfo?.__ref;
+    const incomingPageInfo = incomingPageInfoRef ? graph.getRecord(incomingPageInfoRef) : null;
 
-    const meta = updateMeta(canonicalKey, (m) => {
-      if (!m.pages.includes(pageKey)) {
-        m.pages.push(pageKey);
-      }
+    // Build prefix and suffix based on cursor
+    const existingEdges = existing?.edges?.__refs || [];
+    let prefix: string[] = [];
+    let suffix: string[] = [];
 
-      if (!m.hints) {
-        m.hints = {};
-      }
-      if (!m.origin) {
-        m.origin = {};
-      }
-
-      m.origin[pageKey] = "cache";
-
-      if (isLeader) {
-        m.leader = pageKey;
-        m.hints[pageKey] = "leader";
+    if (after) {
+      // Forward pagination: find splice point
+      const index = existingEdges.findIndex((edgeRef) => getEdgeCursor(edgeRef) === after);
+      if (index >= 0) {
+        // Keep everything up to and including the cursor
+        prefix = existingEdges.slice(0, index + 1);
+        // Everything after is discarded (suffix stays [])
       } else {
-        m.hints[pageKey] = hasBefore ? "before" : "after";
-        if (m.leader) {
-          m.hints[m.leader] = "leader";
-        }
+        // Cursor not found - append to end
+        prefix = existingEdges;
       }
-    });
+    } else if (before) {
+      // Backward pagination: find splice point
+      const index = existingEdges.findIndex((edgeRef) => getEdgeCursor(edgeRef) === before);
+      if (index >= 0) {
+        // Keep everything from the cursor onwards
+        suffix = existingEdges.slice(index);
+        // Everything before is discarded (prefix stays [])
+      } else {
+        // Cursor not found - prepend to start
+        suffix = existingEdges;
+      }
+    } else if (isLeader) {
+      // Leader: reset (no after/before)
+      prefix = [];
+      suffix = [];
+    }
 
-    const orderedPages = computeOrderedPages(meta);
-    rebuildCanonical(canonicalKey, orderedPages);
+    // Merge edges: prefix + incoming + suffix
+    const mergedEdges = [...prefix, ...incomingEdgeRefs, ...suffix];
+
+    // Build pageInfo (Apollo style)
+    const existingPageInfoRef = existing?.pageInfo?.__ref;
+    const existingPageInfo = existingPageInfoRef ? graph.getRecord(existingPageInfoRef) : null;
+
+    // Start with defaults, then layer incoming, then existing (existing wins by default)
+    const pageInfo: Record<string, any> = {
+      __typename: "PageInfo",
+      startCursor: null,
+      endCursor: null,
+      hasPreviousPage: false,
+      hasNextPage: false,
+      // Layer incoming values
+      ...(incomingPageInfo || {}),
+      // Layer existing values (wins by default - preserves current boundaries)
+      ...(existingPageInfo || {}),
+    };
+
+    // Override pageInfo at boundaries (Apollo logic)
+    // Only update boundary info when incoming page is actually at a boundary
+    if (!prefix.length) {
+      // Incoming page is at the START - it defines the new start boundary
+      if (incomingPageInfo && incomingPageInfo.hasPreviousPage !== undefined) {
+        pageInfo.hasPreviousPage = !!incomingPageInfo.hasPreviousPage;
+      }
+      if (incomingPageInfo && incomingPageInfo.startCursor !== undefined) {
+        pageInfo.startCursor = incomingPageInfo.startCursor;
+      }
+    }
+
+    if (!suffix.length) {
+      // Incoming page is at the END - it defines the new end boundary
+      if (incomingPageInfo && incomingPageInfo.hasNextPage !== undefined) {
+        pageInfo.hasNextPage = !!incomingPageInfo.hasNextPage;
+      }
+      if (incomingPageInfo && incomingPageInfo.endCursor !== undefined) {
+        pageInfo.endCursor = incomingPageInfo.endCursor;
+      }
+    }
+
+    // Fallback: if pageInfo cursors are still missing, infer from edges
+    if ((pageInfo.startCursor === null || pageInfo.startCursor === undefined) && mergedEdges.length > 0) {
+      const firstEdgeRef = mergedEdges[0];
+      const firstEdgeCursor = getEdgeCursor(firstEdgeRef);
+      if (firstEdgeCursor) {
+        pageInfo.startCursor = firstEdgeCursor;
+      }
+    }
+
+    if ((pageInfo.endCursor === null || pageInfo.endCursor === undefined) && mergedEdges.length > 0) {
+      const lastEdgeRef = mergedEdges[mergedEdges.length - 1];
+      const lastEdgeCursor = getEdgeCursor(lastEdgeRef);
+      if (lastEdgeCursor) {
+        pageInfo.endCursor = lastEdgeCursor;
+      }
+    }
+
+    // Ensure pageInfo has required fields with proper types
+    pageInfo.__typename = pageInfo.__typename || "PageInfo";
+    pageInfo.startCursor = pageInfo.startCursor ?? null;
+    pageInfo.endCursor = pageInfo.endCursor ?? null;
+    pageInfo.hasPreviousPage = !!pageInfo.hasPreviousPage;
+    pageInfo.hasNextPage = !!pageInfo.hasNextPage;
+
+    // Write pageInfo
+    const pageInfoKey = `${canonicalKey}.pageInfo`;
+    graph.putRecord(pageInfoKey, pageInfo);
+
+    // Merge extra fields (incoming overrides existing)
+    const existingExtras = existing ? getExtras(existing) : {};
+    const incomingExtras = getExtras(normalizedPage);
+
+    // Write canonical
+    graph.putRecord(canonicalKey, {
+      __typename: normalizedPage.__typename || existing?.__typename || "Connection",
+      edges: { __refs: mergedEdges },
+      pageInfo: { __ref: pageInfoKey },
+      ...existingExtras,
+      ...incomingExtras, // Incoming overrides
+    });
 
     optimistic.replayOptimistic({ connections: [canonicalKey] });
   };
 
   return {
     updateConnection,
-    mergeFromCache,
   };
 };

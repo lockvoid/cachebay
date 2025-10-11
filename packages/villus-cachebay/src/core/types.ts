@@ -1,35 +1,69 @@
-export type EntityKey = string;
+/**
+ * Common GraphQL connection types for testing and type safety
+ */
 
-export type ConnectionEntry = { key: EntityKey; cursor: string | null; edge?: Record<string, any> };
-export type ConnectionEntrySnapshot = { key: string; cursor: string | null; edge?: Record<string, any> };
+export interface PageInfo {
+  __typename?: string;
+  startCursor: string | null;
+  endCursor: string | null;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+}
 
-export type ConnectionView = {
-  edges: any[];
-  pageInfo: any;
-  root: any;
-  edgesKey?: string;
-  pageInfoKey?: string;
-  pinned?: boolean;
-  limit?: number;
-  _lastLen?: number;
-};
+export interface Edge<T = any> {
+  __typename?: string;
+  cursor: string;
+  node: T;
+  [key: string]: any;
+}
 
-export type ConnectionState = {
-  list: ConnectionEntry[];
-  pageInfo: any;
-  meta: any;
-  views: Set<ConnectionView>;
-  keySet: Set<EntityKey>;
-  initialized: boolean;
-  __key?: string;
-};
+export interface Connection<T = any> {
+  __typename: string;
+  edges: Array<Edge<T>>;
+  pageInfo: PageInfo;
+  [key: string]: any;
+}
 
-export type RelayOptions = {
-  paths: { edges: string; node: string; pageInfo: string };
-  segs: { edges: string[]; node: string[]; pageInfo: string[] };
-  names: { edges: string; pageInfo: string; nodeField: string };
-  cursors: { after: string; before: string; first: string; last: string };
-  hasNodePath: boolean;
-  write?: "replace" | "merge"
-  mode?: "append" | "prepend" | "replace" | "auto";
-};
+/**
+ * Normalized edge reference in the graph
+ */
+export interface EdgeRef {
+  __typename?: string;
+  cursor?: string;
+  node: { __ref: string };
+  [key: string]: any;
+}
+
+/**
+ * Edges as array of references
+ */
+export interface EdgesRef {
+  __refs: string[];
+}
+
+/**
+ * PageInfo reference in the graph
+ */
+export interface PageInfoRef {
+  __ref: string;
+}
+
+/**
+ * Normalized connection record in the graph (with inline pageInfo)
+ */
+export interface ConnectionRecord {
+  __typename: string;
+  edges: EdgesRef;
+  pageInfo: PageInfo;
+  [key: string]: any;
+}
+
+/**
+ * Normalized connection reference in the graph (with pageInfo reference)
+ */
+export interface ConnectionRef {
+  __typename: string;
+  edges: EdgesRef;
+  pageInfo: PageInfoRef;
+  [key: string]: any;
+}

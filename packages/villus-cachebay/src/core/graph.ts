@@ -15,7 +15,7 @@ const RECORD_PROXY_VERSION = Symbol("graph:record-proxy-version");
  * Update proxy with only changed fields for optimal performance
  * @private
  */
-const overlayRecordDiff = (recordProxy: any, currentSnapshot: Record<string, any>, changedFields: string[], removedFields: string[], typenameChanged: boolean, idChanged: boolean, targetVersion: number) => {
+const overlayRecordDiff = (recordProxy: any, currentSnapshot: Record<string, any>, changedFields: string[], typenameChanged: boolean, idChanged: boolean, targetVersion: number) => {
   if (recordProxy[RECORD_PROXY_VERSION] === targetVersion) {
     return;
   }
@@ -30,10 +30,6 @@ const overlayRecordDiff = (recordProxy: any, currentSnapshot: Record<string, any
     } else {
       delete recordProxy[ID_FIELD];
     }
-  }
-
-  for (let i = 0; i < removedFields.length; i++) {
-    delete recordProxy[removedFields[i]];
   }
 
   for (let i = 0; i < changedFields.length; i++) {
@@ -93,12 +89,11 @@ const overlayRecordFull = (recordProxy: any, currentSnapshot: Record<string, any
  * Diff field changes and track what changed
  * @private
  */
-const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot: Record<string, any>): [string[], string[], boolean, boolean, boolean] => {
+const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot: Record<string, any>): [string[], boolean, boolean, boolean] => {
   let idChanged = false;
   let typenameChanged = false;
 
   const changedFields: string[] = [];
-  const removedFields: string[] = [];
 
   for (let i = 0, fields = Object.keys(partialSnapshot); i < fields.length; i++) {
     const fieldName = fields[i];
@@ -130,24 +125,16 @@ const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot
       continue;
     }
 
-    if (incomingValue === null) {
-      if (fieldName in currentSnapshot) {
-        delete currentSnapshot[fieldName];
-        removedFields.push(fieldName);
-      }
-
-      continue;
-    }
-
+    // Store all values including null (null is a valid GraphQL value)
     if (currentSnapshot[fieldName] !== incomingValue) {
       currentSnapshot[fieldName] = incomingValue;
       changedFields.push(fieldName);
     }
   }
 
-  const hasChanges = idChanged || typenameChanged || changedFields.length > 0 || removedFields.length > 0;
+  const hasChanges = idChanged || typenameChanged || changedFields.length > 0;
 
-  return [changedFields, removedFields, typenameChanged, idChanged, hasChanges];
+  return [changedFields, typenameChanged, idChanged, hasChanges];
 };
 
 /**
@@ -250,7 +237,7 @@ export const createGraph = (options?: GraphOptions) => {
 
     const changes = applyFieldChanges(currentSnapshot, partialSnapshot); // NOTE: Don't destructure for performance
 
-    if (!changes[4]) {
+    if (!changes[3]) {
       return;
     }
 
@@ -267,7 +254,7 @@ export const createGraph = (options?: GraphOptions) => {
     const proxy = proxyRef?.deref();
 
     if (proxy) {
-      overlayRecordDiff(proxy, currentSnapshot, changes[0], changes[1], changes[2], changes[3], nextVersion);
+      overlayRecordDiff(proxy, currentSnapshot, changes[0], changes[1], changes[2], nextVersion);
     }
   };
 
