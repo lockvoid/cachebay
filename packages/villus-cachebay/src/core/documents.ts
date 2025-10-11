@@ -628,89 +628,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     return true;
   };
 
-  const prewarmDocument = ({
-    document,
-    variables = {},
-  }: {
-    document: DocumentNode | CachePlan;
-    variables?: Record<string, any>;
-  }) => {
-    const plan = planner.getPlan(document);
-
-    // Helper: if the concrete page exists, forward it to canonical WITHOUT leader reset.
-    const tryForwardConcretePage = (field: PlanField, parentId: string) => {
-      const pageKey = buildConnectionKey(field, parentId, variables);
-      const page = graph.getRecord(pageKey);
-      if (!page || !Array.isArray(page.edges)) return;
-
-      // Rebuild edge refs as { __ref } list
-      const pageEdgeRefs = page.edges
-        .map((e: any) => (e && e.__ref ? { __ref: e.__ref } : null))
-        .filter(Boolean) as Array<{ __ref: string }>;
-
-      // Shallow snapshot without edges (includes __typename, pageInfo, extras)
-      const { edges, ...rest } = page;
-      const pageSnapshot: Record<string, any> = { ...rest };
-
-      canonical.mergeFromCache({
-        field,
-        parentId,
-        variables: variables,
-        pageKey,
-        pageSnapshot,
-        pageEdgeRefs,
-      });
-
-      // Nested child connections under node
-      const edgesField = field.selectionMap?.get("edges");
-      const nodeField = edgesField?.selectionMap?.get("node");
-      if (nodeField?.selectionMap) {
-        for (let i = 0; i < page.edges.length; i++) {
-          const edgeRef = page.edges[i]?.__ref;
-          if (!edgeRef) continue;
-          const edgeRec = graph.getRecord(edgeRef);
-          const childParentRef: string | undefined = edgeRec?.node?.__ref;
-          if (!childParentRef) continue;
-
-          for (const [, childField] of nodeField.selectionMap) {
-            if (!childField.isConnection) continue;
-            tryForwardConcretePage(childField, childParentRef);
-          }
-        }
-      }
-    };
-
-    // 1) Root connections
-    for (let i = 0; i < plan.root.length; i++) {
-      const field = plan.root[i];
-      if (!field.isConnection) continue;
-      tryForwardConcretePage(field, ROOT_ID);
-    }
-
-    // 2) Nested connections
-    const rootSnap = graph.getRecord(ROOT_ID) || {};
-    for (let i = 0; i < plan.root.length; i++) {
-      const parentField = plan.root[i];
-      if (parentField.isConnection) continue;
-
-      const childMap = parentField.selectionMap;
-      if (!childMap) continue;
-
-      const linkKey = buildFieldKey(parentField, variables);
-      const parentRef: string | undefined = (rootSnap as any)[linkKey]?.__ref;
-      if (!parentRef) continue;
-
-      for (const [, childField] of childMap) {
-        if (!childField.isConnection) continue;
-        tryForwardConcretePage(childField, parentRef);
-      }
-    }
-  };
-
   return {
     normalizeDocument,
     materializeDocument,
-    prewarmDocument,
     hasDocument,
   };
 };

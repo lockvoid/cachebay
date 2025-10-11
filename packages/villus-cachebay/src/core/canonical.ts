@@ -19,7 +19,29 @@ type CursorIndex = { [cursor: string]: number };
  */
 export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) => {
   /**
-   * Gets cursor from an edge (cached inline).
+   * Helper to get cursor index key for a canonical key.
+   */
+  const getCursorIndexKey = (canonicalKey: string): string => {
+    return `${canonicalKey}::cursorIndex`;
+  };
+
+  /**
+   * Reads cursor index from graph.
+   */
+  const readCursorIndex = (canonicalKey: string): CursorIndex => {
+    const index = graph.getRecord(getCursorIndexKey(canonicalKey));
+    return (index as CursorIndex) || {};
+  };
+
+  /**
+   * Writes cursor index to graph.
+   */
+  const writeCursorIndex = (canonicalKey: string, index: CursorIndex): void => {
+    graph.putRecord(getCursorIndexKey(canonicalKey), index);
+  };
+
+  /**
+   * Gets cursor from an edge.
    */
   const getEdgeCursor = (edgeRef: string): string | null => {
     const edge = graph.getRecord(edgeRef);
@@ -43,11 +65,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
   /**
    * Finds cursor position using index (O(1)) or fallback to scan (O(N)).
    */
-  const findCursorIndex = (
-    edgeRefs: string[],
-    cursor: string,
-    cursorIndex?: CursorIndex,
-  ): number => {
+  const findCursorIndex = (edgeRefs: string[], cursor: string, cursorIndex?: CursorIndex): number => {
     // Try index first (O(1))
     if (cursorIndex && cursor in cursorIndex) {
       return cursorIndex[cursor];
@@ -63,7 +81,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
   };
 
   /**
-   * Extracts extra fields from connection (everything except edges, pageInfo, __typename, __cursorIndex).
+   * Extracts extra fields from connection (everything except edges, pageInfo, __typename).
    */
   const getExtras = (connection: Record<string, any>): Record<string, any> => {
     const extras: Record<string, any> = {};
@@ -71,7 +89,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
 
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
-      if (key === "edges" || key === "pageInfo" || key === "__typename" || key === "__cursorIndex") {
+      if (key === "edges" || key === "pageInfo" || key === "__typename") {
         continue;
       }
       extras[key] = connection[key];
@@ -83,43 +101,40 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
   /**
    * Detects cursor role from variables (O(1) with buildArgs).
    */
-  const detectCursorRole = (
-    field: PlanField,
-    variables: Record<string, any>,
-  ): { after: string | null; before: string | null; isLeader: boolean } => {
+  const detectCursorRole = (field: PlanField, variables: Record<string, any>): { after: string | null; before: string | null; isLeader: boolean } => {
     const args = field.buildArgs ? (field.buildArgs(variables) || {}) : (variables || {});
 
     const after: string | null = args.after ?? null;
     const before: string | null = args.before ?? null;
+    const isLeader = !after && !before;
 
-    return {
-      after,
-      before,
-      isLeader: !after && !before,
-    };
+    return { after, before, isLeader };
   };
 
   /**
    * Ensures canonical record exists (prevents undefined reads).
    */
   const ensureCanonical = (canonicalKey: string): void => {
-    if (!graph.getRecord(canonicalKey)) {
-      const pageInfoKey = `${canonicalKey}.pageInfo`;
-      graph.putRecord(pageInfoKey, {
-        __typename: "PageInfo",
-        startCursor: null,
-        endCursor: null,
-        hasPreviousPage: false,
-        hasNextPage: false,
-      });
-
-      graph.putRecord(canonicalKey, {
-        __typename: "Connection",
-        edges: { __refs: [] },
-        pageInfo: { __ref: pageInfoKey },
-        __cursorIndex: {},
-      });
+    if (graph.getRecord(canonicalKey)) {
+      return;
     }
+
+    const pageInfoKey = `${canonicalKey}.pageInfo`;
+    graph.putRecord(pageInfoKey, {
+      __typename: "PageInfo",
+      startCursor: null,
+      endCursor: null,
+      hasPreviousPage: false,
+      hasNextPage: false,
+    });
+
+    graph.putRecord(canonicalKey, {
+      __typename: "Connection",
+      edges: { __refs: [] },
+      pageInfo: { __ref: pageInfoKey },
+    });
+
+    writeCursorIndex(canonicalKey, {});
   };
 
   /**
@@ -130,12 +145,10 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
     field: PlanField;
     parentId: string;
     variables: Record<string, any>;
-    pageKey: string;
     normalizedPage: Record<string, any>;
   }): void => {
-    const { field, parentId, variables, pageKey, normalizedPage } = args;
+    const { field, parentId, variables, normalizedPage } = args;
     const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
-    const mode = field.connectionMode || "infinite";
 
     ensureCanonical(canonicalKey);
 
@@ -143,7 +156,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
     const incomingEdgeRefs = (normalizedPage.edges?.__refs as string[]) || [];
 
     // Page mode: replace entire canonical with incoming page
-    if (mode === "page") {
+    if (field.connectionMode === "page") {
       const pageInfoRef = normalizedPage.pageInfo?.__ref;
       const pageInfoData = pageInfoRef ? graph.getRecord(pageInfoRef) : null;
 
@@ -158,12 +171,12 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
 
       graph.putRecord(canonicalKey, {
         __typename: normalizedPage.__typename || "Connection",
-        edges: { __refs: incomingEdgeRefs }, // Reuse array
+        edges: { __refs: incomingEdgeRefs },
         pageInfo: { __ref: pageInfoKey },
-        __cursorIndex: buildCursorIndex(incomingEdgeRefs),
         ...getExtras(normalizedPage),
       });
 
+      writeCursorIndex(canonicalKey, buildCursorIndex(incomingEdgeRefs));
       optimistic.replayOptimistic({ connections: [canonicalKey] });
       return;
     }
@@ -171,40 +184,13 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
     // Infinite mode: merge using cursor relationships
     const { after, before, isLeader } = detectCursorRole(field, variables);
 
-    // Fast leader path: no merging needed
-    if (isLeader) {
-      const pageInfoRef = normalizedPage.pageInfo?.__ref;
-      const pi = pageInfoRef ? graph.getRecord(pageInfoRef) : null;
-
-      const pageInfoKey = `${canonicalKey}.pageInfo`;
-      graph.putRecord(pageInfoKey, {
-        __typename: pi?.__typename || "PageInfo",
-        startCursor: pi?.startCursor ?? (incomingEdgeRefs[0] ? getEdgeCursor(incomingEdgeRefs[0]) : null),
-        endCursor: pi?.endCursor ?? (incomingEdgeRefs.length ? getEdgeCursor(incomingEdgeRefs[incomingEdgeRefs.length - 1]) : null),
-        hasPreviousPage: !!pi?.hasPreviousPage,
-        hasNextPage: !!pi?.hasNextPage,
-      });
-
-      graph.putRecord(canonicalKey, {
-        __typename: normalizedPage.__typename || "Connection",
-        edges: { __refs: incomingEdgeRefs }, // Reuse array
-        pageInfo: { __ref: pageInfoKey },
-        __cursorIndex: buildCursorIndex(incomingEdgeRefs),
-        ...getExtras(normalizedPage),
-      });
-
-      optimistic.replayOptimistic({ connections: [canonicalKey] });
-      return;
-    }
-
-    // Cache existing data (single read)
+    // Cache existing data
     const existing = graph.getRecord(canonicalKey);
     const existingEdges = (existing?.edges?.__refs as string[]) || [];
-    const existingCursorIndex = existing?.__cursorIndex as CursorIndex | undefined;
+    const existingCursorIndex = readCursorIndex(canonicalKey);
 
-    // Get incoming pageInfo (single read)
-    const incomingPageInfoRef = normalizedPage.pageInfo?.__ref;
-    const incomingPageInfo = incomingPageInfoRef ? graph.getRecord(incomingPageInfoRef) : null;
+    // Get incoming pageInfo
+    const incomingPageInfo = graph.getRecord(normalizedPage.pageInfo?.__ref) || {};
 
     // Determine splice indices (no array allocations yet)
     let prefixEnd = 0;
@@ -212,11 +198,15 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
     let isPureAppend = false;
     let isPurePrepend = false;
 
-    if (after) {
+    if (isLeader) {
+      // Leader: reset everything (discard all existing edges)
+      prefixEnd = 0;
+      suffixStart = existingEdges.length; // Start suffix past the end = no suffix
+    } else if (after) {
       const idx = findCursorIndex(existingEdges, after, existingCursorIndex);
       if (idx >= 0) {
         prefixEnd = idx + 1;
-        suffixStart = existingEdges.length; // No suffix for forward
+        suffixStart = existingEdges.length;
         isPureAppend = idx === existingEdges.length - 1;
       } else {
         // Cursor not found - append to end
@@ -227,7 +217,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
     } else if (before) {
       const idx = findCursorIndex(existingEdges, before, existingCursorIndex);
       if (idx >= 0) {
-        prefixEnd = 0; // No prefix for backward
+        prefixEnd = 0;
         suffixStart = idx;
         isPurePrepend = idx === 0;
       } else {
@@ -247,47 +237,51 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
     // Copy ranges directly into preallocated array
     let writePos = 0;
 
-    // Copy prefix
     for (let i = 0; i < prefixEnd; i++) {
       mergedEdges[writePos++] = existingEdges[i];
     }
 
-    // Copy incoming
     for (let i = 0; i < incomingEdgeRefs.length; i++) {
       mergedEdges[writePos++] = incomingEdgeRefs[i];
     }
 
-    // Copy suffix
     for (let i = suffixStart; i < existingEdges.length; i++) {
       mergedEdges[writePos++] = existingEdges[i];
     }
 
-    // Build or update cursor index
-    let newCursorIndex: CursorIndex;
+    // Build or update cursor index (copy-on-write optimization)
+    let newCursorIndex: CursorIndex = existingCursorIndex;
+    let copied = false;
 
-    if (isPureAppend && existingCursorIndex) {
+    const ensureCopy = () => {
+      if (!copied) {
+        newCursorIndex = { ...existingCursorIndex };
+        copied = true;
+      }
+    };
+
+    if (isPureAppend && Object.keys(existingCursorIndex).length > 0) {
       // Incremental append: extend existing index
-      newCursorIndex = { ...existingCursorIndex };
       let pos = existingEdges.length;
       for (let i = 0; i < incomingEdgeRefs.length; i++) {
         const cursor = getEdgeCursor(incomingEdgeRefs[i]);
         if (cursor) {
+          ensureCopy();
           newCursorIndex[cursor] = pos++;
         }
       }
-    } else if (isPurePrepend && existingCursorIndex) {
+    } else if (isPurePrepend && Object.keys(existingCursorIndex).length > 0) {
       // Incremental prepend: shift existing indices
       newCursorIndex = {};
+      copied = true;
       const shift = incomingEdgeRefs.length;
 
-      // Shift existing
       const existingKeys = Object.keys(existingCursorIndex);
       for (let i = 0; i < existingKeys.length; i++) {
         const key = existingKeys[i];
         newCursorIndex[key] = existingCursorIndex[key] + shift;
       }
 
-      // Add new
       for (let i = 0; i < incomingEdgeRefs.length; i++) {
         const cursor = getEdgeCursor(incomingEdgeRefs[i]);
         if (cursor) {
@@ -295,8 +289,9 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
         }
       }
     } else {
-      // General case: build while we have the merged array
+      // General case: rebuild full index
       newCursorIndex = {};
+      copied = true;
       for (let i = 0; i < mergedEdges.length; i++) {
         const cursor = getEdgeCursor(mergedEdges[i]);
         if (cursor) {
@@ -305,63 +300,62 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
       }
     }
 
-    // Build pageInfo (Relay style)
-    const existingPageInfoRef = existing?.pageInfo?.__ref;
-    const existingPageInfo = existingPageInfoRef ? graph.getRecord(existingPageInfoRef) : null;
+    // Write cursor index only if changed
+    if (copied) {
+      writeCursorIndex(canonicalKey, newCursorIndex);
+    }
 
-    // Start with defaults, then layer incoming, then existing (existing wins by default)
-    const pageInfo: Record<string, any> = {
-      __typename: "PageInfo",
-      startCursor: null,
-      endCursor: null,
-      hasPreviousPage: false,
-      hasNextPage: false,
-      // Layer incoming values
-      ...(incomingPageInfo || {}),
-      // Layer existing values (wins by default - preserves current boundaries)
-      ...(existingPageInfo || {}),
+    // Build pageInfo (Relay style with Apollo compat for extras)
+    const existingPageInfo = graph.getRecord(existing?.pageInfo?.__ref) || {};
+
+    // Extract boundary fields from incoming
+    const { hasPreviousPage, hasNextPage, startCursor, endCursor, __typename, ...incomingPageInfoExtras } = incomingPageInfo;
+
+    // Start from existing, apply incoming extras
+    const pageInfo: any = {
+      __typename,
+      ...existingPageInfo,
+      ...incomingPageInfoExtras,
     };
 
-    // Track if boundaries changed (optimization for skipping pageInfo write)
+    // Track if boundaries changed
     let boundariesChanged = false;
 
-    // Override pageInfo at boundaries (Relay logic)
+    // Override boundary fields based on position (Relay logic)
     if (prefixLen === 0) {
-      // Incoming page is at the START - it defines the new start boundary
-      if (incomingPageInfo && incomingPageInfo.hasPreviousPage !== undefined) {
-        const newVal = !!incomingPageInfo.hasPreviousPage;
+      if (hasPreviousPage !== undefined) {
+        const newVal = !!hasPreviousPage;
         if (pageInfo.hasPreviousPage !== newVal) {
           pageInfo.hasPreviousPage = newVal;
           boundariesChanged = true;
         }
       }
-      if (incomingPageInfo && incomingPageInfo.startCursor !== undefined) {
-        if (pageInfo.startCursor !== incomingPageInfo.startCursor) {
-          pageInfo.startCursor = incomingPageInfo.startCursor;
+      if (startCursor !== undefined) {
+        if (pageInfo.startCursor !== startCursor) {
+          pageInfo.startCursor = startCursor;
           boundariesChanged = true;
         }
       }
     }
 
     if (suffixLen === 0) {
-      // Incoming page is at the END - it defines the new end boundary
-      if (incomingPageInfo && incomingPageInfo.hasNextPage !== undefined) {
-        const newVal = !!incomingPageInfo.hasNextPage;
+      if (hasNextPage !== undefined) {
+        const newVal = !!hasNextPage;
         if (pageInfo.hasNextPage !== newVal) {
           pageInfo.hasNextPage = newVal;
           boundariesChanged = true;
         }
       }
-      if (incomingPageInfo && incomingPageInfo.endCursor !== undefined) {
-        if (pageInfo.endCursor !== incomingPageInfo.endCursor) {
-          pageInfo.endCursor = incomingPageInfo.endCursor;
+      if (endCursor !== undefined) {
+        if (pageInfo.endCursor !== endCursor) {
+          pageInfo.endCursor = endCursor;
           boundariesChanged = true;
         }
       }
     }
 
-    // Fallback: if pageInfo cursors are still missing, infer from edges
-    if ((pageInfo.startCursor === null || pageInfo.startCursor === undefined) && mergedEdges.length > 0) {
+    // Fallback: infer cursors from edges if missing
+    if (pageInfo.startCursor == null && mergedEdges.length > 0) {
       const firstEdgeCursor = getEdgeCursor(mergedEdges[0]);
       if (firstEdgeCursor) {
         pageInfo.startCursor = firstEdgeCursor;
@@ -369,7 +363,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
       }
     }
 
-    if ((pageInfo.endCursor === null || pageInfo.endCursor === undefined) && mergedEdges.length > 0) {
+    if (pageInfo.endCursor == null && mergedEdges.length > 0) {
       const lastEdgeCursor = getEdgeCursor(mergedEdges[mergedEdges.length - 1]);
       if (lastEdgeCursor) {
         pageInfo.endCursor = lastEdgeCursor;
@@ -377,31 +371,31 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
       }
     }
 
-    // Ensure pageInfo has required fields with proper types
+    // Ensure pageInfo has required fields
     pageInfo.__typename = pageInfo.__typename || "PageInfo";
     pageInfo.startCursor = pageInfo.startCursor ?? null;
     pageInfo.endCursor = pageInfo.endCursor ?? null;
     pageInfo.hasPreviousPage = !!pageInfo.hasPreviousPage;
     pageInfo.hasNextPage = !!pageInfo.hasNextPage;
 
-    // Write pageInfo only if boundaries changed or it's new
+    // Write pageInfo only if changed
     const pageInfoKey = `${canonicalKey}.pageInfo`;
+
     if (boundariesChanged || !existingPageInfo) {
       graph.putRecord(pageInfoKey, pageInfo);
     }
 
     // Merge extra fields (incoming overrides existing)
     const existingExtras = existing ? getExtras(existing) : {};
-    const incomingExtras = getExtras(normalizedPage);
+    const incomingConnectionExtras = getExtras(normalizedPage);
 
     // Write canonical
     graph.putRecord(canonicalKey, {
       __typename: normalizedPage.__typename || existing?.__typename || "Connection",
       edges: { __refs: mergedEdges },
       pageInfo: { __ref: pageInfoKey },
-      __cursorIndex: newCursorIndex,
       ...existingExtras,
-      ...incomingExtras, // Incoming overrides
+      ...incomingConnectionExtras,
     });
 
     optimistic.replayOptimistic({ connections: [canonicalKey] });
