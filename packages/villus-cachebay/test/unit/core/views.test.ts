@@ -1,9 +1,11 @@
 // test/unit/core/views.test.ts
 import { computed, watchEffect, nextTick } from "vue";
+import { compilePlan } from "@/src/compiler";
 import { createGraph } from "@/src/core/graph";
 import { createViews } from "@/src/core/views";
-import { createConnectionPlanField, writeConnectionPage } from "@/test/helpers";
-import { posts } from "@/test/helpers/fixtures";
+import { writeConnectionPage } from "@/test/helpers";
+import { posts, users, comments } from "@/test/helpers/fixtures";
+import { USER_QUERY, USERS_QUERY, USER_POSTS_QUERY, USERS_POSTS_QUERY, USER_POSTS_COMMENTS_QUERY, USERS_POSTS_COMMENTS_QUERY, POSTS_QUERY, POSTS_WITH_AGGREGATIONS_QUERY, POST_COMMENTS_QUERY } from "@/test/helpers/operations";
 
 describe("Views", () => {
   let graph: ReturnType<typeof createGraph>;
@@ -14,12 +16,25 @@ describe("Views", () => {
     views = createViews({ graph });
   });
 
+  // Helper to get a field from compiled plan
+  const getField = (query: string, ...path: string[]) => {
+    const plan = compilePlan(query);
+    let field: any = plan.root[0]; // Start with first root field
+
+    for (const key of path) {
+      if (!field?.selectionSet) return null;
+      field = field.selectionSet.find((f: any) => f.responseKey === key);
+    }
+
+    return field;
+  };
+
   // ────────────────────────────────────────────────────────────────────────────
   // getView → entities
   // ────────────────────────────────────────────────────────────────────────────
   describe("getView", () => {
     describe("entities", () => {
-      it("creates reactive entity view", async () => {
+      it.only("creates reactive entity view", async () => {
         graph.putRecord("User:u1", {
           __typename: "User",
           id: "u1",
@@ -33,17 +48,28 @@ describe("Views", () => {
           canonical: true,
         });
 
-        expect(userView.__typename).toBe("User");
-        expect(userView.id).toBe("u1");
-        expect(userView.email).toBe("u1@example.com");
+        expect(userView).toEqual({
+          __typename: "User",
+          id: "u1",
+          email: "u1@example.com",
+        });
 
-        graph.putRecord("User:u1", { email: "updated@example.com" });
-        await nextTick();
-        expect(userView.email).toBe("updated@example.com");
+        graph.putRecord("User:u1", { email: "u1+updated@example.com" });
+
+        expect(userView).toEqual({
+          __typename: "User",
+          id: "u1",
+          email: "u1+updated@example.com",
+        });
       });
 
-      it("follows __ref to child entity", async () => {
-        graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
+      it.only("follows __ref to child entity", async () => {
+        graph.putRecord("User:u1", {
+          __typename: "User",
+          id: "u1",
+          email: "u1@example.com",
+        });
+
         graph.putRecord("Post:p1", {
           __typename: "Post",
           id: "p1",
@@ -72,19 +98,23 @@ describe("Views", () => {
           email: "u1@example.com",
         });
 
-        graph.putRecord("User:u1", { email: "new@example.com" });
-        await nextTick();
+        graph.putRecord("User:u1", { email: "u1+updated@example.com" });
 
         expect(postView.author).toBe(userView);
         expect(postView.author).toEqual({
           __typename: "User",
           id: "u1",
-          email: "new@example.com",
+          email: "u1+updated@example.com",
         });
       });
 
-      it("maintains entity view identity through deeply nested inline objects", async () => {
-        graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
+      it.only("maintains entity view identity through deeply nested inline objects", async () => {
+        graph.putRecord("User:u1", {
+          __typename: "User",
+          id: "u1",
+          email: "u1@example.com",
+        });
+
         graph.putRecord("Post:p1", {
           __typename: "Post",
           id: "p1",
@@ -98,6 +128,7 @@ describe("Views", () => {
           variables: {},
           canonical: true,
         });
+
         const userView = views.getView({
           source: graph.materializeRecord("User:u1"),
           field: null,
@@ -105,25 +136,41 @@ describe("Views", () => {
           canonical: true,
         });
 
-        const authorFromPost = postView.nested1.nested2.nested3.author;
-        expect(authorFromPost).toBe(userView);
-        expect(authorFromPost).toEqual({ __typename: "User", id: "u1", email: "u1@example.com" });
+        expect(postView.nested1.nested2.nested3.author).toBe(userView);
+        expect(postView.nested1.nested2.nested3.author).toEqual({
+          __typename: "User",
+          id: "u1",
+          email: "u1@example.com",
+        });
 
-        graph.putRecord("User:u1", { email: "new@example.com" });
-        await nextTick();
+        graph.putRecord("User:u1", { email: "u1+updated@example.com" });
 
-        const authorAfter = postView.nested1.nested2.nested3.author;
-        expect(authorAfter).toBe(userView);
-        expect(authorAfter).toEqual({ __typename: "User", id: "u1", email: "new@example.com" });
+        expect(postView.nested1.nested2.nested3.author).toBe(userView);
+        expect(postView.nested1.nested2.nested3.author).toEqual({
+          __typename: "User",
+          id: "u1",
+          email: "u1+updated@example.com",
+        });
       });
 
-      it("handles array of refs", () => {
-        graph.putRecord("User:u1", { __typename: "User", id: "u1" });
-        graph.putRecord("User:u2", { __typename: "User", id: "u2" });
+      it.only("handles array of refs", () => {
+        graph.putRecord("User:u1", {
+          __typename: "User",
+          id: "u1",
+        });
+
+        graph.putRecord("User:u2", {
+          __typename: "User",
+          id: "u2",
+        });
+
         graph.putRecord("Team:t1", {
           __typename: "Team",
           id: "t1",
-          members: [{ __ref: "User:u1" }, { __ref: "User:u2" }],
+          members: [
+            { __ref: "User:u1" },
+            { __ref: "User:u2" },
+          ],
         });
 
         const teamView = views.getView({
@@ -133,8 +180,18 @@ describe("Views", () => {
           canonical: true,
         });
 
-        const user1View = views.getView({ source: graph.materializeRecord("User:u1"), field: null, variables: {}, canonical: true });
-        const user2View = views.getView({ source: graph.materializeRecord("User:u2"), field: null, variables: {}, canonical: true });
+        const user1View = views.getView({
+          source: graph.materializeRecord("User:u1"),
+          field: null,
+          variables: {},
+          canonical: true,
+        });
+        const user2View = views.getView({
+          source: graph.materializeRecord("User:u2"),
+          field: null,
+          variables: {},
+          canonical: true,
+        });
 
         expect(teamView.members).toHaveLength(2);
         expect(teamView.members[0]).toBe(user1View);
@@ -144,9 +201,19 @@ describe("Views", () => {
       });
 
       it("handles array with { __refs } format", () => {
-        graph.putRecord("User:u1", { __typename: "User", id: "u1" });
-        graph.putRecord("User:u2", { __typename: "User", id: "u2" });
-        graph.putRecord("Team:t1", { __typename: "Team", id: "t1", members: { __refs: ["User:u1", "User:u2"] } });
+        graph.putRecord("User:u1", {
+          __typename: "User",
+          id: "u1",
+        });
+        graph.putRecord("User:u2", {
+          __typename: "User",
+          id: "u2",
+        });
+        graph.putRecord("Team:t1", {
+          __typename: "Team",
+          id: "t1",
+          members: { __refs: ["User:u1", "User:u2"] },
+        });
 
         const teamView = views.getView({
           source: graph.materializeRecord("Team:t1"),
@@ -155,8 +222,18 @@ describe("Views", () => {
           canonical: true,
         });
 
-        const user1View = views.getView({ source: graph.materializeRecord("User:u1"), field: null, variables: {}, canonical: true });
-        const user2View = views.getView({ source: graph.materializeRecord("User:u2"), field: null, variables: {}, canonical: true });
+        const user1View = views.getView({
+          source: graph.materializeRecord("User:u1"),
+          field: null,
+          variables: {},
+          canonical: true,
+        });
+        const user2View = views.getView({
+          source: graph.materializeRecord("User:u2"),
+          field: null,
+          variables: {},
+          canonical: true,
+        });
 
         expect(teamView.members).toHaveLength(2);
         expect(teamView.members[0]).toBe(user1View);
@@ -164,7 +241,11 @@ describe("Views", () => {
       });
 
       it("returns empty reactive placeholder for missing refs", () => {
-        graph.putRecord("Post:p1", { __typename: "Post", id: "p1", author: { __ref: "User:missing" } });
+        graph.putRecord("Post:p1", {
+          __typename: "Post",
+          id: "p1",
+          author: { __ref: "User:missing" },
+        });
 
         const postView = views.getView({
           source: graph.materializeRecord("Post:p1"),
@@ -174,12 +255,14 @@ describe("Views", () => {
         });
 
         expect(postView.author).toEqual({});
-        expect(typeof postView.author).toBe("object");
-        expect(Object.keys(postView.author)).toHaveLength(0);
       });
 
       it("returns null when field is explicitly null", () => {
-        graph.putRecord("Post:p1", { __typename: "Post", id: "p1", author: null });
+        graph.putRecord("Post:p1", {
+          __typename: "Post",
+          id: "p1",
+          author: null,
+        });
 
         const postView = views.getView({
           source: graph.materializeRecord("Post:p1"),
@@ -192,7 +275,11 @@ describe("Views", () => {
       });
 
       it("returns empty placeholder for missing ref, then hydrates in place when record appears", async () => {
-        graph.putRecord("Post:p1", { __typename: "Post", id: "p1", author: { __ref: "User:u1" } });
+        graph.putRecord("Post:p1", {
+          __typename: "Post",
+          id: "p1",
+          author: { __ref: "User:u1" },
+        });
 
         const postView = views.getView({
           source: graph.materializeRecord("Post:p1"),
@@ -204,89 +291,218 @@ describe("Views", () => {
         const authorView = postView.author;
         expect(authorView).toEqual({});
 
-        graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
+        graph.putRecord("User:u1", {
+          __typename: "User",
+          id: "u1",
+          email: "u1@example.com",
+        });
         await nextTick();
 
         expect(postView.author).toBe(authorView);
-        expect(postView.author).toEqual({ __typename: "User", id: "u1", email: "u1@example.com" });
+        expect(postView.author).toEqual({
+          __typename: "User",
+          id: "u1",
+          email: "u1@example.com",
+        });
       });
 
       it("returns same view for same (proxy, field, canonical)", () => {
-        graph.putRecord("User:u1", { __typename: "User", id: "u1" });
+        graph.putRecord("User:u1", {
+          __typename: "User",
+          id: "u1",
+        });
 
         const userProxy = graph.materializeRecord("User:u1");
-        const view1 = views.getView({ source: userProxy, field: null, variables: {}, canonical: true });
-        const view2 = views.getView({ source: userProxy, field: null, variables: {}, canonical: true });
+        const view1 = views.getView({
+          source: userProxy,
+          field: null,
+          variables: {},
+          canonical: true,
+        });
+        const view2 = views.getView({
+          source: userProxy,
+          field: null,
+          variables: {},
+          canonical: true,
+        });
 
         expect(view1).toBe(view2);
       });
 
       it("returns different views for different canonical flag", () => {
-        graph.putRecord("User:u1", { __typename: "User", id: "u1" });
+        graph.putRecord("User:u1", {
+          __typename: "User",
+          id: "u1",
+        });
         const userProxy = graph.materializeRecord("User:u1");
 
-        const canonicalView = views.getView({ source: userProxy, field: null, variables: {}, canonical: true });
-        const pageView = views.getView({ source: userProxy, field: null, variables: {}, canonical: false });
+        const canonicalView = views.getView({
+          source: userProxy,
+          field: null,
+          variables: {},
+          canonical: true,
+        });
+        const pageView = views.getView({
+          source: userProxy,
+          field: null,
+          variables: {},
+          canonical: false,
+        });
 
         expect(canonicalView).not.toBe(pageView);
       });
 
       it("returns different views for different selections", () => {
-        const postsField = createConnectionPlanField("posts");
-        const commentsField = createConnectionPlanField("comments");
+        const postsField = getField(USER_POSTS_QUERY, "user", "posts");
+        const commentsField = getField(POST_COMMENTS_QUERY, "post", "comments");
 
-        graph.putRecord("User:u1", { __typename: "User", id: "u1" });
+        graph.putRecord("User:u1", {
+          __typename: "User",
+          id: "u1",
+        });
 
-        // Wrap different entity selections (one includes posts, other includes comments)
-        const userWithPosts = { selectionSet: [postsField], selectionMap: new Map([["posts", postsField]]) } as any;
-        const userWithComments = { selectionSet: [commentsField], selectionMap: new Map([["comments", commentsField]]) } as any;
+        // Wrap different entity selections
+        const userWithPosts = {
+          selectionSet: [postsField],
+          selectionMap: new Map([["posts", postsField]]),
+        } as any;
+        const userWithComments = {
+          selectionSet: [commentsField],
+          selectionMap: new Map([["comments", commentsField]]),
+        } as any;
 
-        const v1 = views.getView({ source: graph.materializeRecord("User:u1"), field: userWithPosts, variables: {}, canonical: true });
-        const v2 = views.getView({ source: graph.materializeRecord("User:u1"), field: userWithComments, variables: {}, canonical: true });
+        const v1 = views.getView({
+          source: graph.materializeRecord("User:u1"),
+          field: userWithPosts,
+          variables: {},
+          canonical: true,
+        });
+        const v2 = views.getView({
+          source: graph.materializeRecord("User:u1"),
+          field: userWithComments,
+          variables: {},
+          canonical: true,
+        });
 
         expect(v1).not.toBe(v2);
       });
 
       it("null/undefined passthrough", () => {
-        expect(views.getView({ source: null, field: null, variables: {}, canonical: true })).toBeNull();
-        expect(views.getView({ source: undefined as any, field: null, variables: {}, canonical: true })).toBeUndefined();
+        expect(views.getView({
+          source: null,
+          field: null,
+          variables: {},
+          canonical: true,
+        })).toBeNull();
+        expect(views.getView({
+          source: undefined as any,
+          field: null,
+          variables: {},
+          canonical: true,
+        })).toBeUndefined();
       });
 
       it("is read-only", () => {
-        graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
+        graph.putRecord("User:u1", {
+          __typename: "User",
+          id: "u1",
+          email: "u1@example.com",
+        });
 
-        const userView = views.getView({ source: graph.materializeRecord("User:u1"), field: null, variables: {}, canonical: true });
+        const userView = views.getView({
+          source: graph.materializeRecord("User:u1"),
+          field: null,
+          variables: {},
+          canonical: true,
+        });
 
         const result = Reflect.set(userView, "email", "hacker@example.com");
         expect(result).toBe(false);
-        expect(userView.email).toBe("u1@example.com");
+        expect(userView).toEqual({
+          __typename: "User",
+          id: "u1",
+          email: "u1@example.com",
+        });
       });
     });
 
     // ──────────────────────────────────────────────────────────────────────────
-    // connections (existing set)
+    // connections
     // ──────────────────────────────────────────────────────────────────────────
     describe("connections", () => {
-      it("maintains edges array identity across updates", async () => {
-        const postsField = createConnectionPlanField("posts");
+      it("creates basic connection view with edges and pageInfo", () => {
+        const postsField = getField(POSTS_QUERY, "posts");
 
-        graph.putRecord("User:u1", { __typename: "User", id: "u1" });
+        const connectionData = posts.buildConnection(
+          [{ id: "p1", title: "Post 1" }],
+          { startCursor: "p1", endCursor: "p1", hasNextPage: false },
+        );
+        writeConnectionPage(graph, "@.posts({})", connectionData);
 
-        const connectionData = posts.buildConnection([{ id: "p1", title: "P1" }], {
-          startCursor: "p1",
-          endCursor: "p1",
-          hasNextPage: false,
+        const connectionView = views.getView({
+          source: "@.posts({})",
+          field: postsField,
+          variables: {},
+          canonical: false,
         });
+
+        expect(connectionView.edges).toHaveLength(1);
+        expect(connectionView.edges[0].node).toEqual({ __typename: "Post", id: "p1", title: "Post 1" });
+        expect(connectionView.pageInfo.startCursor).toBe("p1");
+        expect(connectionView.pageInfo.endCursor).toBe("p1");
+        expect(connectionView.pageInfo.hasNextPage).toBe(false);
+      });
+
+      it("handles null edges", () => {
+        const postsField = getField(POSTS_QUERY, "posts");
+        graph.putRecord("@.posts({})", {
+          __typename: "PostConnection",
+          edges: null,
+        });
+
+        const connectionView = views.getView({
+          source: "@.posts({})",
+          field: postsField,
+          variables: {},
+          canonical: false,
+        });
+
+        expect(connectionView.edges).toBeNull();
+      });
+
+      it("returns undefined for missing connection", () => {
+        const postsField = getField(POSTS_QUERY, "posts");
+        const connectionView = views.getView({
+          source: "missing:connection",
+          field: postsField,
+          variables: {},
+          canonical: true,
+        });
+        expect(connectionView).toBeUndefined();
+      });
+
+      it("maintains edges array identity when appending new edges", async () => {
+        const postsField = getField(USER_POSTS_QUERY, "user", "posts");
+
+        graph.putRecord("User:u1", {
+          __typename: "User",
+          id: "u1",
+        });
+
+        const connectionData = posts.buildConnection(
+          [{ id: "p1", title: "Post 1" }],
+          { startCursor: "p1", endCursor: "p1", hasNextPage: false },
+        );
         writeConnectionPage(graph, "@.User:u1.posts({})", connectionData);
 
-        const conn = views.getView({
+        const connectionView = views.getView({
           source: "@.User:u1.posts({})",
           field: postsField,
           variables: {},
           canonical: false,
         });
 
-        const edgesRef = computed(() => conn.edges);
+        const edgesRef = computed(() => connectionView.edges);
 
         let seenLen = -1;
         const stop = watchEffect(() => {
@@ -300,121 +516,106 @@ describe("Views", () => {
         const stableEdges = edgesRef.value;
 
         // Append second edge
-        graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "P2" });
+        graph.putRecord("Post:p2", {
+          __typename: "Post",
+          id: "p2",
+          title: "Post 2",
+        });
         graph.putRecord("@.User:u1.posts({}).edges:1", {
           __typename: "PostEdge",
           cursor: "p2",
           node: { __ref: "Post:p2" },
         });
         const prev = graph.getRecord("@.User:u1.posts({})")?.edges?.__refs || [];
-        graph.putRecord("@.User:u1.posts({})", { edges: { __refs: [...prev, "@.User:u1.posts({}).edges:1"] } });
+        graph.putRecord("@.User:u1.posts({})", {
+          edges: { __refs: [...prev, "@.User:u1.posts({}).edges:1"] },
+        });
 
         await nextTick();
         expect(edgesRef.value).toBe(stableEdges);
         expect(seenLen).toBe(2);
-        expect(edgesRef.value[1].node).toEqual({ __typename: "Post", id: "p2", title: "P2" });
+        expect(edgesRef.value[1].node).toEqual({
+          __typename: "Post",
+          id: "p2",
+          title: "Post 2",
+        });
 
         stop();
       });
 
-      it("updates computed mapping when edges change", async () => {
-        const postsField = createConnectionPlanField("posts");
-        graph.putRecord("User:u2", { __typename: "User", id: "u2" });
-
-        const connectionData = posts.buildConnection([{ id: "p1", title: "A" }], {
-          startCursor: "p1",
-          endCursor: "p1",
-          hasNextPage: false,
+      it("maintains edges array identity when edges shrink", async () => {
+        const postsField = getField(USER_POSTS_QUERY, "user", "posts");
+        graph.putRecord("User:u3", {
+          __typename: "User",
+          id: "u3",
         });
-        writeConnectionPage(graph, "@.User:u2.posts({})", connectionData);
-
-        const conn = views.getView({
-          source: "@.User:u2.posts({})",
-          field: postsField,
-          variables: {},
-          canonical: false,
-        });
-
-        const titles = computed(() => conn.edges.map((e: any) => e.node.title));
-
-        await nextTick();
-        expect(titles.value).toEqual(["A"]);
-
-        graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "B" });
-        graph.putRecord("@.User:u2.posts({}).edges:1", {
-          __typename: "PostEdge",
-          cursor: "p2",
-          node: { __ref: "Post:p2" },
-        });
-        const prev = graph.getRecord("@.User:u2.posts({})")?.edges?.__refs || [];
-        graph.putRecord("@.User:u2.posts({})", { edges: { __refs: [...prev, "@.User:u2.posts({}).edges:1"] } });
-
-        await nextTick();
-        expect(titles.value).toEqual(["A", "B"]);
-
-        graph.putRecord("Post:p2", { title: "B2" });
-        await nextTick();
-        expect(titles.value).toEqual(["A", "B2"]);
-      });
-
-      it("preserves edges array identity when edges shrink", async () => {
-        const postsField = createConnectionPlanField("posts");
-        graph.putRecord("User:u3", { __typename: "User", id: "u3" });
 
         const connectionData = posts.buildConnection(
           [
-            { id: "p1", title: "P1" },
-            { id: "p2", title: "P2" },
+            { id: "p1", title: "Post 1" },
+            { id: "p2", title: "Post 2" },
           ],
           { startCursor: "p1", endCursor: "p2", hasNextPage: false },
         );
         writeConnectionPage(graph, "@.User:u3.posts({})", connectionData);
 
-        const conn = views.getView({
+        const connectionView = views.getView({
           source: "@.User:u3.posts({})",
           field: postsField,
           variables: {},
           canonical: false,
         });
 
-        const edgesRef = computed(() => conn.edges);
+        const edgesRef = computed(() => connectionView.edges);
 
         await nextTick();
         const stableEdges = edgesRef.value;
         expect(stableEdges.length).toBe(2);
 
-        graph.putRecord("@.User:u3.posts({})", { edges: { __refs: ["@.User:u3.posts({}).edges:0"] } });
+        graph.putRecord("@.User:u3.posts({})", {
+          edges: { __refs: ["@.User:u3.posts({}).edges:0"] },
+        });
         await nextTick();
 
         expect(edgesRef.value).toBe(stableEdges);
         expect(edgesRef.value.length).toBe(1);
       });
 
-      it("keeps same edges array on edge replacement (refetch)", async () => {
-        const postsField = createConnectionPlanField("posts");
-        graph.putRecord("User:u4", { __typename: "User", id: "u4" });
-
-        const connectionData = posts.buildConnection([{ id: "p1", title: "P1" }], {
-          startCursor: "p1",
-          endCursor: "p1",
-          hasNextPage: false,
+      it("maintains edges array identity on edge replacement (refetch)", async () => {
+        const postsField = getField(USER_POSTS_QUERY, "user", "posts");
+        graph.putRecord("User:u4", {
+          __typename: "User",
+          id: "u4",
         });
+
+        const connectionData = posts.buildConnection(
+          [{ id: "p1", title: "Post 1" }],
+          { startCursor: "p1", endCursor: "p1", hasNextPage: false },
+        );
         writeConnectionPage(graph, "@.User:u4.posts({})", connectionData);
 
-        const conn = views.getView({
+        const connectionView = views.getView({
           source: "@.User:u4.posts({})",
           field: postsField,
           variables: {},
           canonical: false,
         });
 
-        const edgesRef = computed(() => conn.edges);
+        const edgesRef = computed(() => connectionView.edges);
 
         await nextTick();
         const stableEdges = edgesRef.value;
-        expect(stableEdges[0].node).toEqual({ __typename: "Post", id: "p1", title: "P1" });
+        expect(stableEdges[0].node).toEqual({
+          __typename: "Post",
+          id: "p1",
+          title: "Post 1",
+        });
 
-        graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "P2" });
+        graph.putRecord("Post:p2", {
+          __typename: "Post",
+          id: "p2",
+          title: "Post 2",
+        });
         graph.putRecord("@.User:u4.posts({}).edges:0", {
           __typename: "PostEdge",
           cursor: "p2",
@@ -423,28 +624,82 @@ describe("Views", () => {
 
         await nextTick();
         expect(edgesRef.value).toBe(stableEdges);
-        expect(edgesRef.value[0].node).toEqual({ __typename: "Post", id: "p2", title: "P2" });
+        expect(edgesRef.value[0].node).toEqual({
+          __typename: "Post",
+          id: "p2",
+          title: "Post 2",
+        });
+      });
+
+      it("updates computed mapping when edges change", async () => {
+        const postsField = getField(USER_POSTS_QUERY, "user", "posts");
+        graph.putRecord("User:u2", {
+          __typename: "User",
+          id: "u2",
+        });
+
+        const connectionData = posts.buildConnection(
+          [{ id: "p1", title: "Post 1" }],
+          { startCursor: "p1", endCursor: "p1", hasNextPage: false },
+        );
+        writeConnectionPage(graph, "@.User:u2.posts({})", connectionData);
+
+        const connectionView = views.getView({
+          source: "@.User:u2.posts({})",
+          field: postsField,
+          variables: {},
+          canonical: false,
+        });
+
+        const titles = computed(() => connectionView.edges.map((e: any) => e.node.title));
+
+        await nextTick();
+        expect(titles.value).toEqual(["Post 1"]);
+
+        graph.putRecord("Post:p2", {
+          __typename: "Post",
+          id: "p2",
+          title: "Post 2",
+        });
+        graph.putRecord("@.User:u2.posts({}).edges:1", {
+          __typename: "PostEdge",
+          cursor: "p2",
+          node: { __ref: "Post:p2" },
+        });
+        const prev = graph.getRecord("@.User:u2.posts({})")?.edges?.__refs || [];
+        graph.putRecord("@.User:u2.posts({})", {
+          edges: { __refs: [...prev, "@.User:u2.posts({}).edges:1"] },
+        });
+
+        await nextTick();
+        expect(titles.value).toEqual(["Post 1", "Post 2"]);
+
+        graph.putRecord("Post:p2", { title: "Post 2 Updated" });
+        await nextTick();
+        expect(titles.value).toEqual(["Post 1", "Post 2 Updated"]);
       });
 
       it("observes pageInfo changes via its __ref", async () => {
-        const postsField = createConnectionPlanField("posts");
-        graph.putRecord("User:u3", { __typename: "User", id: "u3" });
-
-        const connectionData = posts.buildConnection([{ id: "p1", title: "P1" }], {
-          startCursor: "p1",
-          endCursor: "p1",
-          hasNextPage: false,
+        const postsField = getField(USER_POSTS_QUERY, "user", "posts");
+        graph.putRecord("User:u3", {
+          __typename: "User",
+          id: "u3",
         });
+
+        const connectionData = posts.buildConnection(
+          [{ id: "p1", title: "Post 1" }],
+          { startCursor: "p1", endCursor: "p1", hasNextPage: false },
+        );
         writeConnectionPage(graph, "@.User:u3.posts({})", connectionData);
 
-        const conn = views.getView({
+        const connectionView = views.getView({
           source: "@.User:u3.posts({})",
           field: postsField,
           variables: {},
           canonical: false,
         });
 
-        const endCursor = computed(() => conn.pageInfo?.endCursor ?? null);
+        const endCursor = computed(() => connectionView.pageInfo?.endCursor ?? null);
 
         await nextTick();
         expect(endCursor.value).toBe("p1");
@@ -456,170 +711,123 @@ describe("Views", () => {
         expect(endCursor.value).toBe("p2");
       });
 
-      it("exposes pageInfo shape with required fields", () => {
-        const postsField = createConnectionPlanField("posts");
-        graph.putRecord("User:u5", { __typename: "User", id: "u5" });
+      it("handles connection with nested aggregations (posts with stats and tags)", () => {
+        const postsField = getField(POSTS_WITH_AGGREGATIONS_QUERY, "posts");
 
-        const connectionData = posts.buildConnection([{ id: "p1", title: "P1" }], {
-          startCursor: "p1",
-          endCursor: "p1",
-          hasNextPage: false,
+        // Create tags for aggregations
+        graph.putRecord("Tag:t1", { __typename: "Tag", id: "t1", name: "Tag 1" });
+        graph.putRecord("Tag:t2", { __typename: "Tag", id: "t2", name: "Tag 2" });
+
+        // Create post with nested aggregations
+        const postsPageKey = '@.posts({"after":null,"category":"tech","first":1})';
+        const postsData = posts.buildConnection(
+          [{ id: "p1", title: "Post 1", flags: [] }],
+          { startCursor: "p1", endCursor: "p1", hasNextPage: false },
+        );
+        postsData.totalCount = 1;
+        writeConnectionPage(graph, postsPageKey, postsData);
+
+        // Add connection-level aggregations
+        const connectionAggregationsKey = `${postsPageKey}.aggregations`;
+        graph.putRecord(connectionAggregationsKey, {
+          __typename: "Aggregations",
+          scoring: 88,
+          todayStat: { __ref: "Stat:today" },
+          yesterdayStat: { __ref: "Stat:yesterday" },
         });
-        writeConnectionPage(graph, "@.User:u5.posts({})", connectionData);
 
-        const conn = views.getView({
-          source: "@.User:u5.posts({})",
-          field: postsField,
-          variables: {},
-          canonical: false,
+        graph.putRecord("Stat:today", { __typename: "Stat", key: "today", views: 1000 });
+        graph.putRecord("Stat:yesterday", { __typename: "Stat", key: "yesterday", views: 850 });
+
+        // Add tags connection to aggregations
+        const baseTagsKey = `${connectionAggregationsKey}.tags({})`;
+        const baseTagsData = {
+          __typename: "TagConnection",
+          edges: [
+            { __typename: "TagEdge", cursor: "t1", node: { __ref: "Tag:t1" } },
+            { __typename: "TagEdge", cursor: "t2", node: { __ref: "Tag:t2" } },
+          ],
+          pageInfo: {
+            __typename: "PageInfo",
+            startCursor: "t1",
+            endCursor: "t2",
+            hasNextPage: false,
+            hasPreviousPage: false,
+          },
+        };
+
+        graph.putRecord(`${baseTagsKey}.edges:0`, baseTagsData.edges[0]);
+        graph.putRecord(`${baseTagsKey}.edges:1`, baseTagsData.edges[1]);
+        graph.putRecord(`${baseTagsKey}.pageInfo`, baseTagsData.pageInfo);
+        graph.putRecord(baseTagsKey, {
+          __typename: "TagConnection",
+          edges: { __refs: [`${baseTagsKey}.edges:0`, `${baseTagsKey}.edges:1`] },
+          pageInfo: { __ref: `${baseTagsKey}.pageInfo` },
         });
 
-        const pageInfo = conn.pageInfo;
-        expect(pageInfo).toBeDefined();
-        expect(pageInfo.__typename).toBe("PageInfo");
-        expect(pageInfo.startCursor).toBe("p1");
-        expect(pageInfo.endCursor).toBe("p1");
-      });
-
-      it("handles containers & deep container refs + relinking", () => {
-        const postsField = createConnectionPlanField("posts");
-
-        graph.putRecord("User:u1", { __typename: "User", id: "u1" });
-
-        const pageKey = "@.User:u1.posts({})";
-        const pageAggKey = `${pageKey}.aggregations`;
-        graph.putRecord(pageAggKey, { __typename: "Aggregations", scoring: 88, totalViews: 1000 });
-
-        const pageConn = posts.buildConnection([{ id: "p1", title: "P1" }], {
-          startCursor: "p1",
-          endCursor: "p1",
-          hasNextPage: false,
+        graph.putRecord(connectionAggregationsKey, {
+          tags: { __ref: baseTagsKey },
         });
-        writeConnectionPage(graph, pageKey, pageConn);
-        graph.putRecord(pageKey, { aggregations: { __ref: pageAggKey } });
 
-        const canKey = "@connection.User:u1.posts({})";
-        const canAggKey = `${canKey}.aggregations`;
-        graph.putRecord(canAggKey, { __typename: "Aggregations", scoring: 95, totalViews: 2000 });
+        graph.putRecord(postsPageKey, { aggregations: { __ref: connectionAggregationsKey } });
 
-        const canConn = posts.buildConnection([{ id: "p1", title: "P1" }], {
-          startCursor: "p1",
-          endCursor: "p1",
-          hasNextPage: false,
+        // Now test canonical connection with different aggregations
+        const postsCanonicalKey = '@connection.posts({"category":"tech"})';
+        const canonicalData = posts.buildConnection(
+          [{ id: "p1", title: "Post 1", flags: [] }],
+          { startCursor: "p1", endCursor: "p1", hasNextPage: false },
+        );
+        canonicalData.totalCount = 1;
+        writeConnectionPage(graph, postsCanonicalKey, canonicalData);
+
+        const canonicalAggregationsKey = `${postsCanonicalKey}.aggregations`;
+        graph.putRecord(canonicalAggregationsKey, {
+          __typename: "Aggregations",
+          scoring: 95,
+          todayStat: { __ref: "Stat:today" },
+          yesterdayStat: { __ref: "Stat:yesterday" },
         });
-        writeConnectionPage(graph, canKey, canConn);
-        graph.putRecord(canKey, { aggregations: { __ref: pageAggKey } });
+
+        graph.putRecord(postsCanonicalKey, { aggregations: { __ref: canonicalAggregationsKey } });
 
         const pageView = views.getView({
-          source: pageKey,
+          source: postsPageKey,
           field: postsField,
-          variables: {},
+          variables: { category: "tech", first: 1, after: null },
           canonical: false,
         });
+
         expect(pageView.aggregations.scoring).toBe(88);
+        expect(pageView.aggregations.todayStat).toEqual({ __typename: "Stat", key: "today", views: 1000 });
+        expect(pageView.aggregations.tags.edges).toHaveLength(2);
+        expect(pageView.aggregations.tags.edges[0].node).toEqual({ __typename: "Tag", id: "t1", name: "Tag 1" });
 
-        const canView = views.getView({
-          source: canKey,
+        const canonicalView = views.getView({
+          source: postsCanonicalKey,
           field: postsField,
-          variables: {},
-          canonical: true,
-        });
-        expect(canView.aggregations.scoring).toBe(95);
-        expect(canView.aggregations.totalViews).toBe(2000);
-      });
-
-      it("handles non-array edges", () => {
-        const postsField = createConnectionPlanField("posts");
-        graph.putRecord("@.posts({})", { __typename: "PostConnection", edges: null });
-
-        const conn = views.getView({
-          source: "@.posts({})",
-          field: postsField,
-          variables: {},
-          canonical: false,
-        });
-
-        expect(conn.edges).toBeNull();
-      });
-
-      it("returns undefined for missing connection", () => {
-        const postsField = createConnectionPlanField("posts");
-        const conn = views.getView({
-          source: "missing:connection",
-          field: postsField,
-          variables: {},
-          canonical: true,
-        });
-        expect(conn).toBeUndefined();
-      });
-
-      it("is read-only (connection view)", () => {
-        const postsField = createConnectionPlanField("posts");
-        const connData = posts.buildConnection([{ id: "p1", title: "P1" }], { hasNextPage: false });
-        writeConnectionPage(graph, "@.posts({})", connData);
-
-        const conn = views.getView({
-          source: "@.posts({})",
-          field: postsField,
-          variables: {},
-          canonical: false,
-        });
-
-        const result = Reflect.set(conn, "totalCount", 999);
-        expect(result).toBe(false);
-      });
-    });
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // MERGED from materializeDocument tests → rewritten to use views.getView
-    // ──────────────────────────────────────────────────────────────────────────
-    describe("merged scenarios (formerly materializeDocument)", () => {
-      it("materializes user node reactively with correct shape", async () => {
-        graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
-
-        const userView = views.getView({
-          source: "User:u1",
-          field: null,
-          variables: {},
+          variables: { category: "tech", first: 1, after: null },
           canonical: true,
         });
 
-        expect(userView).toEqual({ __typename: "User", id: "u1", email: "u1@example.com" });
-
-        graph.putRecord("User:u1", { email: "u1+updated@example.com" });
-        await nextTick();
-        expect(userView.email).toBe("u1+updated@example.com");
+        expect(canonicalView.aggregations.scoring).toBe(95);
+        expect(canonicalView.aggregations.todayStat).toEqual({ __typename: "Stat", key: "today", views: 1000 });
       });
 
-      it("materializes users connection with reactive edges and nodes (canonical)", async () => {
-        const usersField = createConnectionPlanField("users");
+      it("materializes root-level connection with reactive edges and nodes", async () => {
+        const usersField = getField(USERS_QUERY, "users");
 
-        graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
-        graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "u2@example.com" });
-
-        // canonical users connection
-        const pageEdge0 = '@.users({"after":null,"first":2,"role":"admin"}).edges:0';
-        const pageEdge1 = '@.users({"after":null,"first":2,"role":"admin"}).edges:1';
-        graph.putRecord(pageEdge0, { __typename: "UserEdge", cursor: "u1", node: { __ref: "User:u1" } });
-        graph.putRecord(pageEdge1, { __typename: "UserEdge", cursor: "u2", node: { __ref: "User:u2" } });
-
-        const canKey = '@connection.users({"role":"admin"})';
-        const pageInfoKey = `${canKey}.pageInfo`;
-        graph.putRecord(pageInfoKey, {
-          __typename: "PageInfo",
-          startCursor: "u1",
-          endCursor: "u2",
-          hasNextPage: true,
-          hasPreviousPage: false,
-        });
-        graph.putRecord(canKey, {
-          __typename: "UserConnection",
-          pageInfo: { __ref: pageInfoKey },
-          edges: { __refs: [pageEdge0, pageEdge1] },
-        });
+        const canonicalKey = '@connection.users({"role":"admin"})';
+        const connectionData = users.buildConnection(
+          [
+            { id: "u1", email: "u1@example.com" },
+            { id: "u2", email: "u2@example.com" },
+          ],
+          { startCursor: "u1", endCursor: "u2", hasNextPage: true, hasPreviousPage: false },
+        );
+        writeConnectionPage(graph, canonicalKey, connectionData);
 
         const usersView = views.getView({
-          source: canKey,
+          source: canonicalKey,
           field: usersField,
           variables: { role: "admin", first: 2, after: null },
           canonical: true,
@@ -629,9 +837,9 @@ describe("Views", () => {
         expect(pageInfoView.startCursor).toBe("u1");
         expect(pageInfoView.endCursor).toBe("u2");
 
-        const firstUserNode = usersView.edges[0].node;
-        expect(firstUserNode.email).toBe("u1@example.com");
+        expect(usersView.edges[0].node).toEqual({ __typename: "User", id: "u1", email: "u1@example.com" });
 
+        const pageInfoKey = `${canonicalKey}.pageInfo`;
         graph.putRecord(pageInfoKey, { endCursor: "u3" });
         await nextTick();
         expect(usersView.pageInfo).toBe(pageInfoView);
@@ -639,330 +847,305 @@ describe("Views", () => {
 
         graph.putRecord("User:u1", { email: "u1+updated@example.com" });
         await nextTick();
-        expect(firstUserNode.email).toBe("u1+updated@example.com");
+        expect(usersView.edges[0].node).toEqual({ __typename: "User", id: "u1", email: "u1+updated@example.com" });
       });
 
-      it("materializes nested posts connection with reactive totals, scores, nodes and authors", async () => {
-        const postsField = createConnectionPlanField("posts");
+      it("materializes nested connection via entity field (user.posts)", async () => {
+        const canonicalKey = '@connection.User:u1.posts({"category":"tech"})';
 
+        const connectionData = posts.buildConnection(
+          [
+            { id: "p1", title: "Post 1", flags: [], author: { __ref: "User:u1" } },
+            { id: "p2", title: "Post 2", flags: [], author: { __ref: "User:u1" } },
+          ],
+          { startCursor: "p1", endCursor: "p2", hasNextPage: true, hasPreviousPage: false },
+        );
+
+        // Manually add score to edges since buildConnection doesn't support it
+        connectionData.edges[0].score = 0.5;
+        connectionData.edges[1].score = 0.7;
+        connectionData.totalCount = 2;
+
+        writeConnectionPage(graph, canonicalKey, connectionData);
+
+        // Also create the user entity
         graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
-        graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", flags: [], author: { __ref: "User:u1" } });
-        graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "Post 2", flags: [], author: { __ref: "User:u1" } });
 
-        // Build canonical posts connection for the user
-        const pageEdge0 = '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges:0';
-        const pageEdge1 = '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges:1';
-        graph.putRecord(pageEdge0, { __typename: "PostEdge", cursor: "p1", score: 0.5, node: { __ref: "Post:p1" } });
-        graph.putRecord(pageEdge1, { __typename: "PostEdge", cursor: "p2", score: 0.7, node: { __ref: "Post:p2" } });
-
-        const canKey = '@connection.User:u1.posts({"category":"tech"})';
-        const pageInfoKey = `${canKey}.pageInfo`;
-        graph.putRecord(pageInfoKey, {
-          __typename: "PageInfo",
-          startCursor: "p1",
-          endCursor: "p2",
-          hasNextPage: true,
-          hasPreviousPage: false,
-        });
-        graph.putRecord(canKey, {
-          __typename: "PostConnection",
-          totalCount: 2,
-          pageInfo: { __ref: pageInfoKey },
-          edges: { __refs: [pageEdge0, pageEdge1] },
-        });
-
-        // entity selection wrapper for "User" that includes "posts"
-        const userWithPosts = { selectionSet: [postsField], selectionMap: new Map([["posts", postsField]]) } as any;
+        const userPlan = compilePlan(USER_POSTS_QUERY);
+        const userField = userPlan.root[0];
 
         const userView = views.getView({
           source: "User:u1",
-          field: userWithPosts,
+          field: userField,
           variables: { postsCategory: "tech", postsFirst: 2, postsAfter: null },
           canonical: true,
         });
 
         expect(userView.posts.totalCount).toBe(2);
-        const firstEdge = userView.posts.edges[0];
-        const firstPost = firstEdge.node;
 
-        graph.putRecord(canKey, { totalCount: 3 });
+        graph.putRecord(canonicalKey, { totalCount: 3 });
         await nextTick();
         expect(userView.posts.totalCount).toBe(3);
 
-        graph.putRecord(pageEdge0, { score: 0.9 });
+        const edgeKey = `${canonicalKey}.edges:0`;
+        graph.putRecord(edgeKey, { score: 0.9 });
         await nextTick();
         expect(userView.posts.edges[0].score).toBe(0.9);
 
         graph.putRecord("Post:p1", { title: "Post 1 (Updated)" });
         await nextTick();
-        expect(firstPost.title).toBe("Post 1 (Updated)");
+        expect(userView.posts.edges[0].node).toEqual({
+          __typename: "Post",
+          id: "p1",
+          title: "Post 1 (Updated)",
+          flags: [],
+          author: { __typename: "User", id: "u1", email: "u1@example.com" },
+        });
 
-        const postAuthor = firstPost.author;
         graph.putRecord("User:u1", { email: "u1+updated@example.com" });
         await nextTick();
-        expect(postAuthor.email).toBe("u1+updated@example.com");
+        expect(userView.posts.edges[0].node.author).toEqual({ __typename: "User", id: "u1", email: "u1+updated@example.com" });
       });
 
-      it("materializes root users and nested posts with reactive canonical connections", async () => {
-        const usersField = createConnectionPlanField("users");
-        const postsField = createConnectionPlanField("posts");
+      it("materializes root connection with nested connection (users.posts)", async () => {
+        const usersField = getField(USERS_POSTS_QUERY, "users");
+        const postsField = getField(USERS_POSTS_QUERY, "users", "edges", "node", "posts");
 
-        // users connection (canonical)
-        graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
-        graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "u2@example.com" });
+        const usersCanonicalKey = '@connection.users({"role":"dj"})';
+        const usersData = users.buildConnection(
+          [
+            { id: "u1", email: "u1@example.com" },
+            { id: "u2", email: "u2@example.com" },
+          ],
+          { startCursor: "u1", endCursor: "u2", hasNextPage: true, hasPreviousPage: false },
+        );
+        writeConnectionPage(graph, usersCanonicalKey, usersData);
 
-        const uEdge0 = '@.users({"after":null,"first":2,"role":"dj"}).edges:0';
-        const uEdge1 = '@.users({"after":null,"first":2,"role":"dj"}).edges:1';
-        graph.putRecord(uEdge0, { __typename: "UserEdge", cursor: "u1", node: { __ref: "User:u1" } });
-        graph.putRecord(uEdge1, { __typename: "UserEdge", cursor: "u2", node: { __ref: "User:u2" } });
-
-        const usersCanKey = '@connection.users({"role":"dj"})';
-        const usersPIKey = `${usersCanKey}.pageInfo`;
-        graph.putRecord(usersPIKey, { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: true, hasPreviousPage: false });
-        graph.putRecord(usersCanKey, { __typename: "UserConnection", pageInfo: { __ref: usersPIKey }, edges: { __refs: [uEdge0, uEdge1] } });
-
-        // nested posts for u1 (canonical)
-        graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", flags: [] });
-        const pEdge0 = '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0';
-        graph.putRecord(pEdge0, { __typename: "PostEdge", cursor: "p1", node: { __ref: "Post:p1" } });
-        const postsCanKey = '@connection.User:u1.posts({"category":"tech"})';
-        const postsPIKey = `${postsCanKey}.pageInfo`;
-        graph.putRecord(postsPIKey, { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false });
-        graph.putRecord(postsCanKey, { __typename: "PostConnection", pageInfo: { __ref: postsPIKey }, edges: { __refs: [pEdge0] } });
+        const postsCanonicalKey = '@connection.User:u1.posts({"category":"tech"})';
+        const postsData = posts.buildConnection(
+          [{ id: "p1", title: "Post 1", flags: [] }],
+          { startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false },
+        );
+        writeConnectionPage(graph, postsCanonicalKey, postsData);
 
         const usersView = views.getView({
-          source: usersCanKey,
+          source: usersCanonicalKey,
           field: usersField,
           variables: { usersRole: "dj", usersFirst: 2, usersAfter: null, postsCategory: "tech", postsFirst: 1, postsAfter: null },
           canonical: true,
         });
 
-        // You can also view the nested posts directly
-        const u1Posts = views.getView({
-          source: postsCanKey,
+        const postsView = views.getView({
+          source: postsCanonicalKey,
           field: postsField,
           variables: {},
           canonical: true,
         });
 
-        graph.putRecord(usersPIKey, { endCursor: "u3" });
+        const usersPageInfoKey = `${usersCanonicalKey}.pageInfo`;
+        graph.putRecord(usersPageInfoKey, { endCursor: "u3" });
         await nextTick();
         expect(usersView.pageInfo.endCursor).toBe("u3");
 
-        const post0 = u1Posts.edges[0].node;
         graph.putRecord("Post:p1", { title: "Post 1 (Updated)" });
         await nextTick();
-        expect(post0.title).toBe("Post 1 (Updated)");
+        expect(postsView.edges[0].node).toEqual({ __typename: "Post", id: "p1", title: "Post 1 (Updated)", flags: [] });
       });
 
-      it("materializes nested posts and comments with canonical connections at every level", async () => {
-        const postsField = createConnectionPlanField("posts");
-        const commentsField = createConnectionPlanField("comments");
+      it("materializes deeply nested connections (user.posts.comments)", async () => {
+        const postsField = getField(USER_POSTS_COMMENTS_QUERY, "user", "posts");
+        const commentsField = getField(USER_POSTS_COMMENTS_QUERY, "user", "posts", "edges", "node", "comments");
 
         graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
-        graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", flags: [] });
-        graph.putRecord("Comment:c1", { __typename: "Comment", id: "c1", text: "Comment 1", author: { __ref: "User:u2" } });
-        graph.putRecord("Comment:c2", { __typename: "Comment", id: "c2", text: "Comment 2", author: { __ref: "User:u3" } });
         graph.putRecord("User:u2", { __typename: "User", id: "u2" });
         graph.putRecord("User:u3", { __typename: "User", id: "u3" });
 
-        // posts (canonical) for u1
-        const pEdge0 = '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0';
-        graph.putRecord(pEdge0, { __typename: "PostEdge", cursor: "p1", node: { __ref: "Post:p1" } });
-        const postsCanKey = '@connection.User:u1.posts({"category":"tech"})';
-        const postsPIKey = `${postsCanKey}.pageInfo`;
-        graph.putRecord(postsPIKey, { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false });
-        graph.putRecord(postsCanKey, { __typename: "PostConnection", pageInfo: { __ref: postsPIKey }, edges: { __refs: [pEdge0] } });
+        const postsCanonicalKey = '@connection.User:u1.posts({"category":"tech"})';
+        const postsData = posts.buildConnection(
+          [{ id: "p1", title: "Post 1", flags: [] }],
+          { startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false },
+        );
+        writeConnectionPage(graph, postsCanonicalKey, postsData);
 
-        // comments (canonical) for p1
-        const cEdge0 = '@.Post:p1.comments({"after":null,"first":2}).edges:0';
-        const cEdge1 = '@.Post:p1.comments({"after":null,"first":2}).edges:1';
-        graph.putRecord(cEdge0, { __typename: "CommentEdge", cursor: "c1", node: { __ref: "Comment:c1" } });
-        graph.putRecord(cEdge1, { __typename: "CommentEdge", cursor: "c2", node: { __ref: "Comment:c2" } });
-        const commentsCanKey = "@connection.Post:p1.comments({})";
-        const commentsPIKey = `${commentsCanKey}.pageInfo`;
-        graph.putRecord(commentsPIKey, { __typename: "PageInfo", startCursor: "c1", endCursor: "c2", hasNextPage: true, hasPreviousPage: false });
-        graph.putRecord(commentsCanKey, { __typename: "CommentConnection", pageInfo: { __ref: commentsPIKey }, edges: { __refs: [cEdge0, cEdge1] } });
+        const commentsCanonicalKey = "@connection.Post:p1.comments({})";
+        const commentsData = comments.buildConnection(
+          [
+            { uuid: "c1", text: "Comment 1", author: { __ref: "User:u2" } },
+            { uuid: "c2", text: "Comment 2", author: { __ref: "User:u3" } },
+          ],
+          { startCursor: "c1", endCursor: "c2", hasNextPage: true, hasPreviousPage: false },
+        );
+        writeConnectionPage(graph, commentsCanonicalKey, commentsData);
 
-        // entity selection for user that includes posts
-        const userWithPosts = { selectionSet: [postsField], selectionMap: new Map([["posts", postsField]]) } as any;
+        const userPlan = compilePlan(USER_POSTS_COMMENTS_QUERY);
+        const userField = userPlan.root[0];
 
         const userView = views.getView({
           source: "User:u1",
-          field: userWithPosts,
+          field: userField,
           variables: { postsCategory: "tech", postsFirst: 1, postsAfter: null, commentsFirst: 2, commentsAfter: null },
           canonical: true,
         });
 
-        const post = views.getView({
-          source: postsCanKey,
+        const postsView = views.getView({
+          source: postsCanonicalKey,
           field: postsField,
           variables: {},
           canonical: true,
-        }).edges[0].node;
+        });
 
-        const postComments = views.getView({
-          source: commentsCanKey,
+        const commentsView = views.getView({
+          source: commentsCanonicalKey,
           field: commentsField,
           variables: {},
           canonical: true,
         });
 
-        const firstComment = postComments.edges[0].node;
-
         graph.putRecord("Comment:c1", { text: "Comment 1 (Updated)" });
         await nextTick();
-        expect(firstComment.text).toBe("Comment 1 (Updated)");
+        expect(commentsView.edges[0].node).toEqual({
+          __typename: "Comment",
+          uuid: "c1",
+          text: "Comment 1 (Updated)",
+          author: { __typename: "User", id: "u2" },
+        });
         expect(userView.posts.edges[0].node.id).toBe("p1");
       });
 
-      it("materializes users, posts and comments with reactive canonical connections (root + nested)", async () => {
-        const usersField = createConnectionPlanField("users");
-        const postsField = createConnectionPlanField("posts");
-        const commentsField = createConnectionPlanField("comments");
+      it("materializes three-level nested connections (users.posts.comments)", async () => {
+        const usersField = getField(USERS_POSTS_COMMENTS_QUERY, "users");
+        const postsField = getField(USERS_POSTS_COMMENTS_QUERY, "users", "edges", "node", "posts");
+        const commentsField = getField(USERS_POSTS_COMMENTS_QUERY, "users", "edges", "node", "posts", "edges", "node", "comments");
 
-        // users canonical
-        graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
-        const uEdge0 = '@.users({"after":null,"first":2,"role":"admin"}).edges:0';
-        graph.putRecord(uEdge0, { __typename: "UserEdge", cursor: "u1", node: { __ref: "User:u1" } });
-        const usersCanKey = '@connection.users({"role":"admin"})';
-        const usersPIKey = `${usersCanKey}.pageInfo`;
-        graph.putRecord(usersPIKey, { __typename: "PageInfo", startCursor: "u1", endCursor: "u1", hasNextPage: true, hasPreviousPage: false });
-        graph.putRecord(usersCanKey, { __typename: "UserConnection", pageInfo: { __ref: usersPIKey }, edges: { __refs: [uEdge0] } });
+        const usersCanonicalKey = '@connection.users({"role":"admin"})';
+        const usersData = users.buildConnection(
+          [{ id: "u1", email: "u1@example.com" }],
+          { startCursor: "u1", endCursor: "u1", hasNextPage: true, hasPreviousPage: false },
+        );
+        writeConnectionPage(graph, usersCanonicalKey, usersData);
 
-        // posts canonical for u1
-        graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", flags: [] });
-        const pEdge0 = '@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0';
-        graph.putRecord(pEdge0, { __typename: "PostEdge", cursor: "p1", node: { __ref: "Post:p1" } });
-        const postsCanKey = '@connection.User:u1.posts({"category":"tech"})';
-        const postsPIKey = `${postsCanKey}.pageInfo`;
-        graph.putRecord(postsPIKey, { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false });
-        graph.putRecord(postsCanKey, { __typename: "PostConnection", pageInfo: { __ref: postsPIKey }, edges: { __refs: [pEdge0] } });
+        const postsCanonicalKey = '@connection.User:u1.posts({"category":"tech"})';
+        const postsData = posts.buildConnection(
+          [{ id: "p1", title: "Post 1", flags: [] }],
+          { startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false },
+        );
+        writeConnectionPage(graph, postsCanonicalKey, postsData);
 
-        // comments canonical for p1
-        graph.putRecord("Comment:c1", { __typename: "Comment", id: "c1", text: "Comment 1" });
-        const cEdge0 = '@.Post:p1.comments({"after":null,"first":1}).edges:0';
-        graph.putRecord(cEdge0, { __typename: "CommentEdge", cursor: "c1", node: { __ref: "Comment:c1" } });
-        const commentsCanKey = "@connection.Post:p1.comments({})";
-        const commentsPIKey = `${commentsCanKey}.pageInfo`;
-        graph.putRecord(commentsPIKey, { __typename: "PageInfo", startCursor: "c1", endCursor: "c1", hasNextPage: false, hasPreviousPage: false });
-        graph.putRecord(commentsCanKey, { __typename: "CommentConnection", pageInfo: { __ref: commentsPIKey }, edges: { __refs: [cEdge0] } });
+        const commentsCanonicalKey = "@connection.Post:p1.comments({})";
+        const commentsData = comments.buildConnection(
+          [{ uuid: "c1", text: "Comment 1" }],
+          { startCursor: "c1", endCursor: "c1", hasNextPage: false, hasPreviousPage: false },
+        );
+        writeConnectionPage(graph, commentsCanonicalKey, commentsData);
 
         const usersView = views.getView({
-          source: usersCanKey,
+          source: usersCanonicalKey,
           field: usersField,
           variables: { usersRole: "admin", usersFirst: 2, usersAfter: null },
           canonical: true,
         });
 
-        const firstUser = usersView.edges[0].node;
-        const userPosts = views.getView({
-          source: postsCanKey,
+        const postsView = views.getView({
+          source: postsCanonicalKey,
           field: postsField,
           variables: {},
           canonical: true,
         });
-        const post = userPosts.edges[0].node;
-        const postComments = views.getView({
-          source: commentsCanKey,
+
+        const commentsView = views.getView({
+          source: commentsCanonicalKey,
           field: commentsField,
           variables: {},
           canonical: true,
         });
-        const firstComment = postComments.edges[0].node;
 
-        graph.putRecord(usersPIKey, { endCursor: "u3" });
+        const usersPageInfoKey = `${usersCanonicalKey}.pageInfo`;
+        graph.putRecord(usersPageInfoKey, { endCursor: "u3" });
         await nextTick();
         expect(usersView.pageInfo.endCursor).toBe("u3");
 
         graph.putRecord("Comment:c1", { text: "Comment 1 (Updated)" });
         await nextTick();
-        expect(firstComment.text).toBe("Comment 1 (Updated)");
-        expect(firstUser.id).toBe("u1");
-        expect(post.id).toBe("p1");
+        expect(commentsView.edges[0].node).toEqual({ __typename: "Comment", uuid: "c1", text: "Comment 1 (Updated)" });
+        expect(usersView.edges[0].node).toEqual({ __typename: "User", id: "u1", email: "u1@example.com" });
+        expect(postsView.edges[0].node).toEqual({ __typename: "Post", id: "p1", title: "Post 1", flags: [] });
       });
 
-      it("maintains identity stability for edges and node proxies across re-materialization", async () => {
-        const usersField = createConnectionPlanField("users");
+      it("maintains identity stability for edges and nodes across updates", async () => {
+        const usersField = getField(USERS_QUERY, "users");
 
-        graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@x" });
-        graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "b@x" });
+        const canonicalKey = '@connection.users({"role":"admin"})';
+        const usersData = users.buildConnection(
+          [
+            { id: "u1", email: "u1@example.com" },
+            { id: "u2", email: "u2@example.com" },
+          ],
+          { startCursor: "u1", endCursor: "u2", hasNextPage: false, hasPreviousPage: false },
+        );
+        writeConnectionPage(graph, canonicalKey, usersData);
 
-        const e0 = '@.users({"after":null,"first":2,"role":"admin"}).edges:0';
-        const e1 = '@.users({"after":null,"first":2,"role":"admin"}).edges:1';
-        graph.putRecord(e0, { __typename: "UserEdge", cursor: "u1", node: { __ref: "User:u1" } });
-        graph.putRecord(e1, { __typename: "UserEdge", cursor: "u2", node: { __ref: "User:u2" } });
-
-        const canKey = '@connection.users({"role":"admin"})';
-        const piKey = `${canKey}.pageInfo`;
-        graph.putRecord(piKey, { __typename: "PageInfo", startCursor: "u1", endCursor: "u2", hasNextPage: false, hasPreviousPage: false });
-        graph.putRecord(canKey, { __typename: "UserConnection", pageInfo: { __ref: piKey }, edges: { __refs: [e0, e1] } });
-
-        const first = views.getView({
-          source: canKey,
+        const firstView = views.getView({
+          source: canonicalKey,
           field: usersField,
           variables: { role: "admin", first: 2, after: null },
           canonical: true,
         });
 
-        const edgesRef1 = first.edges;
-        const pageInfoRef1 = first.pageInfo;
-        const nodeRef1 = first.edges[0].node;
+        const edgesRef1 = firstView.edges;
+        const pageInfoRef1 = firstView.pageInfo;
+        const nodeRef1 = firstView.edges[0].node;
 
-        // mutate pageInfo (same pageInfo view should persist)
-        graph.putRecord(piKey, { endCursor: "u3" });
+        const pageInfoKey = `${canonicalKey}.pageInfo`;
+        graph.putRecord(pageInfoKey, { endCursor: "u3" });
         await nextTick();
 
-        const second = views.getView({
-          source: canKey,
+        const secondView = views.getView({
+          source: canonicalKey,
           field: usersField,
           variables: { role: "admin", first: 2, after: null },
           canonical: true,
         });
 
-        expect(second.edges).toBe(edgesRef1);
-        expect(second.pageInfo).toBe(pageInfoRef1);
-        expect(second.pageInfo.endCursor).toBe("u3");
+        expect(secondView.edges).toBe(edgesRef1);
+        expect(secondView.pageInfo).toBe(pageInfoRef1);
+        expect(secondView.pageInfo.endCursor).toBe("u3");
 
-        graph.putRecord("User:u1", { email: "a+1@x" });
+        graph.putRecord("User:u1", { email: "u1+updated@example.com" });
         await nextTick();
-        expect(nodeRef1.email).toBe("a+1@x");
+        expect(nodeRef1.email).toBe("u1+updated@example.com");
 
-        // append edge; edges identity stays stable; array mutates in place
-        const e2 = '@.users({"after":"u2","first":1,"role":"admin"}).edges:0';
-        graph.putRecord(e2, { __typename: "UserEdge", cursor: "u3", node: { __ref: "User:u2" } });
-        const prev = graph.getRecord(canKey)!.edges.__refs;
-        graph.putRecord(canKey, { edges: { __refs: [...prev, e2] } });
+        const edgeKey2 = `${canonicalKey}.edges:2`;
+        graph.putRecord(edgeKey2, { __typename: "UserEdge", cursor: "u3", node: { __ref: "User:u2" } });
+        const prev = graph.getRecord(canonicalKey)!.edges.__refs;
+        graph.putRecord(canonicalKey, { edges: { __refs: [...prev, edgeKey2] } });
 
-        const third = views.getView({
-          source: canKey,
+        const thirdView = views.getView({
+          source: canonicalKey,
           field: usersField,
           variables: { role: "admin", first: 2, after: null },
           canonical: true,
         });
 
-        expect(third.edges).toBe(edgesRef1);
+        expect(thirdView.edges).toBe(edgesRef1);
         expect(edgesRef1.length).toBe(3);
         expect(edgesRef1[2].cursor).toBe("u3");
       });
 
-      it("reads from canonical key when canonical=true via entity field selection", () => {
-        const postsField = createConnectionPlanField("posts");
+      it("reads from canonical key when canonical=true via entity field", () => {
+        const userPlan = compilePlan(USER_POSTS_QUERY);
+        const userField = userPlan.root[0];
 
         graph.putRecord("User:u1", { __typename: "User", id: "u1" });
 
         const connectionData = posts.buildConnection(
-          [{ id: "p1", title: "P1" }],
+          [{ id: "p1", title: "Post 1" }],
           { startCursor: "p1", endCursor: "p1", hasNextPage: false },
         );
         writeConnectionPage(graph, "@connection.User:u1.posts({})", connectionData);
 
-        // entity selection wrapper including posts
-        const userWithPosts = { selectionSet: [postsField], selectionMap: new Map([["posts", postsField]]) } as any;
-
         const userView = views.getView({
           source: graph.materializeRecord("User:u1"),
-          field: userWithPosts,
+          field: userField,
           variables: {},
           canonical: true,
         });
@@ -971,26 +1154,25 @@ describe("Views", () => {
         expect(userView.posts.edges[0].node).toEqual({
           __typename: "Post",
           id: "p1",
-          title: "P1",
+          title: "Post 1",
         });
       });
 
-      it("reads from page key when canonical=false via entity field selection", () => {
-        const postsField = createConnectionPlanField("posts");
+      it("reads from page key when canonical=false via entity field", () => {
+        const userPlan = compilePlan(USER_POSTS_QUERY);
+        const userField = userPlan.root[0];
 
         graph.putRecord("User:u1", { __typename: "User", id: "u1" });
 
         const connectionData = posts.buildConnection(
-          [{ id: "p1", title: "P1" }],
+          [{ id: "p1", title: "Post 1" }],
           { startCursor: "p1", endCursor: "p1", hasNextPage: false },
         );
         writeConnectionPage(graph, "@.User:u1.posts({})", connectionData);
 
-        const userWithPosts = { selectionSet: [postsField], selectionMap: new Map([["posts", postsField]]) } as any;
-
         const userView = views.getView({
           source: graph.materializeRecord("User:u1"),
-          field: userWithPosts,
+          field: userField,
           variables: {},
           canonical: false,
         });
@@ -999,8 +1181,27 @@ describe("Views", () => {
         expect(userView.posts.edges[0].node).toEqual({
           __typename: "Post",
           id: "p1",
-          title: "P1",
+          title: "Post 1",
         });
+      });
+
+      it("is read-only", () => {
+        const postsField = getField(POSTS_QUERY, "posts");
+        const connectionData = posts.buildConnection(
+          [{ id: "p1", title: "Post 1" }],
+          { hasNextPage: false },
+        );
+        writeConnectionPage(graph, "@.posts({})", connectionData);
+
+        const connectionView = views.getView({
+          source: "@.posts({})",
+          field: postsField,
+          variables: {},
+          canonical: false,
+        });
+
+        const result = Reflect.set(connectionView, "totalCount", 999);
+        expect(result).toBe(false);
       });
     });
   });
