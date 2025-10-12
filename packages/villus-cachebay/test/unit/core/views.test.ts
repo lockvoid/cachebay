@@ -4,7 +4,7 @@ import { compilePlan } from "@/src/compiler";
 import { createGraph } from "@/src/core/graph";
 import { createViews } from "@/src/core/views";
 import { writeConnectionPage } from "@/test/helpers";
-import { posts, users, comments } from "@/test/helpers/fixtures";
+import { posts, users, comments, tags } from "@/test/helpers/fixtures";
 import { USER_QUERY, USERS_QUERY, USER_POSTS_QUERY, USERS_POSTS_QUERY, USER_POSTS_COMMENTS_QUERY, USERS_POSTS_COMMENTS_QUERY, POSTS_QUERY, POSTS_WITH_AGGREGATIONS_QUERY, POST_COMMENTS_QUERY } from "@/test/helpers/operations";
 
 describe("Views", () => {
@@ -34,12 +34,10 @@ describe("Views", () => {
   // ────────────────────────────────────────────────────────────────────────────
   describe("getView", () => {
     describe("entities", () => {
-      it.only("creates reactive entity view", async () => {
-        graph.putRecord("User:u1", {
-          __typename: "User",
-          id: "u1",
-          email: "u1@example.com",
-        });
+      it("creates reactive entity view", async () => {
+        const user1 = users.buildNode({ id: "u1", email: "u1@example.com" });
+
+        graph.putRecord("User:u1", user1);
 
         const userView = views.getView({
           source: graph.materializeRecord("User:u1"),
@@ -48,11 +46,7 @@ describe("Views", () => {
           canonical: true,
         });
 
-        expect(userView).toEqual({
-          __typename: "User",
-          id: "u1",
-          email: "u1@example.com",
-        });
+        expect(userView).toEqual(user1);
 
         graph.putRecord("User:u1", { email: "u1+updated@example.com" });
 
@@ -63,20 +57,22 @@ describe("Views", () => {
         });
       });
 
-      it.only("follows __ref to child entity", async () => {
-        graph.putRecord("User:u1", {
-          __typename: "User",
+      it("follows __ref to child entity", async () => {
+        const user1 = users.buildNode({
           id: "u1",
           email: "u1@example.com",
         });
 
-        graph.putRecord("Post:p1", {
-          __typename: "Post",
+        graph.putRecord("User:u1", user1);
+
+        const post1 = posts.buildNode({
           id: "p1",
           title: "Post 1",
           author: { __ref: "User:u1" },
         });
 
+        graph.putRecord("Post:p1", post1);
+
         const postView = views.getView({
           source: graph.materializeRecord("Post:p1"),
           field: null,
@@ -108,20 +104,22 @@ describe("Views", () => {
         });
       });
 
-      it.only("maintains entity view identity through deeply nested inline objects", async () => {
-        graph.putRecord("User:u1", {
-          __typename: "User",
+      it("maintains entity view identity through deeply nested inline objects", async () => {
+        const user1 = users.buildNode({
           id: "u1",
           email: "u1@example.com",
         });
 
-        graph.putRecord("Post:p1", {
-          __typename: "Post",
+        graph.putRecord("User:u1", user1);
+
+        const post1 = posts.buildNode({
           id: "p1",
           title: "Post 1",
           nested1: { nested2: { nested3: { author: { __ref: "User:u1" } } } },
         });
 
+        graph.putRecord("Post:p1", post1);
+
         const postView = views.getView({
           source: graph.materializeRecord("Post:p1"),
           field: null,
@@ -153,99 +151,133 @@ describe("Views", () => {
         });
       });
 
-      it.only("handles array of refs", () => {
-        graph.putRecord("User:u1", {
-          __typename: "User",
-          id: "u1",
-        });
-
-        graph.putRecord("User:u2", {
-          __typename: "User",
-          id: "u2",
-        });
-
-        graph.putRecord("Team:t1", {
-          __typename: "Team",
+      it("handles array of refs", () => {
+        const tag1 = tags.buildNode({
           id: "t1",
-          members: [
-            { __ref: "User:u1" },
-            { __ref: "User:u2" },
+          name: "Tag 1",
+        });
+
+        graph.putRecord("Tag:t1", tag1);
+
+        const tag2 = tags.buildNode({
+          id: "t2",
+          name: "Tag 2",
+        });
+
+        graph.putRecord("Tag:t2", tag2);
+
+        const post1 = posts.buildNode({
+          id: "p1",
+          title: "Post 1",
+          tags: [
+            { __ref: "Tag:t1" },
+            { __ref: "Tag:t2" },
           ],
         });
 
-        const teamView = views.getView({
-          source: graph.materializeRecord("Team:t1"),
+        graph.putRecord("Post:p1", post1);
+
+        const postView = views.getView({
+          source: graph.materializeRecord("Post:p1"),
           field: null,
           variables: {},
           canonical: true,
         });
 
-        const user1View = views.getView({
-          source: graph.materializeRecord("User:u1"),
-          field: null,
-          variables: {},
-          canonical: true,
-        });
-        const user2View = views.getView({
-          source: graph.materializeRecord("User:u2"),
+        const tag1View = views.getView({
+          source: graph.materializeRecord("Tag:t1"),
           field: null,
           variables: {},
           canonical: true,
         });
 
-        expect(teamView.members).toHaveLength(2);
-        expect(teamView.members[0]).toBe(user1View);
-        expect(teamView.members[1]).toBe(user2View);
-        expect(teamView.members[0]).toEqual({ __typename: "User", id: "u1" });
-        expect(teamView.members[1]).toEqual({ __typename: "User", id: "u2" });
+        const tag2View = views.getView({
+          source: graph.materializeRecord("Tag:t2"),
+          field: null,
+          variables: {},
+          canonical: true,
+        });
+
+        expect(postView.tags).toHaveLength(2);
+        expect(postView.tags[0]).toBe(tag1View);
+        expect(postView.tags[1]).toBe(tag2View);
+        expect(postView.tags[0]).toEqual({
+          __typename: "Tag",
+          id: "t1",
+          name: "Tag 1",
+        });
+        expect(postView.tags[1]).toEqual({
+          __typename: "Tag",
+          id: "t2",
+          name: "Tag 2",
+        });
       });
 
       it("handles array with { __refs } format", () => {
-        graph.putRecord("User:u1", {
-          __typename: "User",
-          id: "u1",
-        });
-        graph.putRecord("User:u2", {
-          __typename: "User",
-          id: "u2",
-        });
-        graph.putRecord("Team:t1", {
-          __typename: "Team",
+        const tag1 = tags.buildNode({
           id: "t1",
-          members: { __refs: ["User:u1", "User:u2"] },
+          name: "Tag 1",
         });
 
-        const teamView = views.getView({
-          source: graph.materializeRecord("Team:t1"),
+        graph.putRecord("Tag:t1", tag1);
+
+        const tag2 = tags.buildNode({
+          id: "t2",
+          name: "Tag 2",
+        });
+
+        graph.putRecord("Tag:t2", tag2);
+
+        const post1 = posts.buildNode({
+          id: "p1",
+          title: "Post 1",
+          tags: { __refs: ["Tag:t1", "Tag:t2"] },
+        });
+
+        graph.putRecord("Post:p1", post1);
+
+        const postView = views.getView({
+          source: graph.materializeRecord("Post:p1"),
           field: null,
           variables: {},
           canonical: true,
         });
 
-        const user1View = views.getView({
-          source: graph.materializeRecord("User:u1"),
+        const tag1View = views.getView({
+          source: graph.materializeRecord("Tag:t1"),
           field: null,
           variables: {},
           canonical: true,
         });
-        const user2View = views.getView({
-          source: graph.materializeRecord("User:u2"),
+        const tag2View = views.getView({
+          source: graph.materializeRecord("Tag:t2"),
           field: null,
           variables: {},
           canonical: true,
         });
 
-        expect(teamView.members).toHaveLength(2);
-        expect(teamView.members[0]).toBe(user1View);
-        expect(teamView.members[1]).toBe(user2View);
+        expect(postView.tags).toHaveLength(2);
+        expect(postView.tags[0]).toBe(tag1View);
+        expect(postView.tags[1]).toBe(tag2View);
+        expect(postView.tags[0]).toEqual({
+          __typename: "Tag",
+          id: "t1",
+          name: "Tag 1",
+        });
+        expect(postView.tags[1]).toEqual({
+          __typename: "Tag",
+          id: "t2",
+          name: "Tag 2",
+        });
       });
 
       it("returns empty reactive placeholder for missing refs", () => {
-        graph.putRecord("Post:p1", {
-          __typename: "Post",
+        const post1 = posts.buildNode({
           id: "p1",
           author: { __ref: "User:missing" },
         });
+
+        graph.putRecord("Post:p1", post1);
 
         const postView = views.getView({
           source: graph.materializeRecord("Post:p1"),
@@ -258,11 +290,12 @@ describe("Views", () => {
       });
 
       it("returns null when field is explicitly null", () => {
-        graph.putRecord("Post:p1", {
-          __typename: "Post",
+        const post1 = posts.buildNode({
           id: "p1",
           author: null,
         });
+
+        graph.putRecord("Post:p1", post1);
 
         const postView = views.getView({
           source: graph.materializeRecord("Post:p1"),
@@ -275,11 +308,12 @@ describe("Views", () => {
       });
 
       it("returns empty placeholder for missing ref, then hydrates in place when record appears", async () => {
-        graph.putRecord("Post:p1", {
-          __typename: "Post",
+        const post1 = posts.buildNode({
           id: "p1",
           author: { __ref: "User:u1" },
         });
+
+        graph.putRecord("Post:p1", post1);
 
         const postView = views.getView({
           source: graph.materializeRecord("Post:p1"),
@@ -288,17 +322,12 @@ describe("Views", () => {
           canonical: true,
         });
 
-        const authorView = postView.author;
-        expect(authorView).toEqual({});
+        expect(postView.author).toEqual({});
 
-        graph.putRecord("User:u1", {
-          __typename: "User",
-          id: "u1",
-          email: "u1@example.com",
-        });
-        await nextTick();
+        const user1 = users.buildNode({ id: "u1", email: "u1@example.com" });
 
-        expect(postView.author).toBe(authorView);
+        graph.putRecord("User:u1", user1);
+
         expect(postView.author).toEqual({
           __typename: "User",
           id: "u1",
@@ -307,20 +336,19 @@ describe("Views", () => {
       });
 
       it("returns same view for same (proxy, field, canonical)", () => {
-        graph.putRecord("User:u1", {
-          __typename: "User",
-          id: "u1",
-        });
+        const user1 = users.buildNode({ id: "u1" });
 
-        const userProxy = graph.materializeRecord("User:u1");
+        graph.putRecord("User:u1", user1);
+
         const view1 = views.getView({
-          source: userProxy,
+          source: graph.materializeRecord("User:u1"),
           field: null,
           variables: {},
           canonical: true,
         });
+
         const view2 = views.getView({
-          source: userProxy,
+          source: graph.materializeRecord("User:u1"),
           field: null,
           variables: {},
           canonical: true,
@@ -330,20 +358,19 @@ describe("Views", () => {
       });
 
       it("returns different views for different canonical flag", () => {
-        graph.putRecord("User:u1", {
-          __typename: "User",
-          id: "u1",
-        });
-        const userProxy = graph.materializeRecord("User:u1");
+        const user1 = users.buildNode({ id: "u1" });
+
+        graph.putRecord("User:u1", user1);
 
         const canonicalView = views.getView({
-          source: userProxy,
+          source: graph.materializeRecord("User:u1"),
           field: null,
           variables: {},
           canonical: true,
         });
+
         const pageView = views.getView({
-          source: userProxy,
+          source: graph.materializeRecord("User:u1"),
           field: null,
           variables: {},
           canonical: false,
@@ -353,23 +380,25 @@ describe("Views", () => {
       });
 
       it("returns different views for different selections", () => {
-        const postsField = getField(USER_POSTS_QUERY, "user", "posts");
-        const commentsField = getField(POST_COMMENTS_QUERY, "post", "comments");
-
-        graph.putRecord("User:u1", {
-          __typename: "User",
+        const user1 = users.buildNode({
           id: "u1",
         });
 
-        // Wrap different entity selections
+        graph.putRecord("User:u1", user1);
+
+        const postsField = getField(USER_POSTS_QUERY, "user", "posts");
+
         const userWithPosts = {
           selectionSet: [postsField],
           selectionMap: new Map([["posts", postsField]]),
-        } as any;
+        };
+
+        const commentsField = getField(POST_COMMENTS_QUERY, "post", "comments");
+
         const userWithComments = {
           selectionSet: [commentsField],
           selectionMap: new Map([["comments", commentsField]]),
-        } as any;
+        };
 
         const v1 = views.getView({
           source: graph.materializeRecord("User:u1"),
@@ -377,6 +406,7 @@ describe("Views", () => {
           variables: {},
           canonical: true,
         });
+
         const v2 = views.getView({
           source: graph.materializeRecord("User:u1"),
           field: userWithComments,
@@ -388,26 +418,18 @@ describe("Views", () => {
       });
 
       it("null/undefined passthrough", () => {
-        expect(views.getView({
-          source: null,
-          field: null,
-          variables: {},
-          canonical: true,
-        })).toBeNull();
-        expect(views.getView({
-          source: undefined as any,
-          field: null,
-          variables: {},
-          canonical: true,
-        })).toBeUndefined();
+        expect(views.getView({ source: null, field: null, variables: {}, canonical: true })).toBeNull();
+
+        expect(views.getView({ source: undefined, field: null, variables: {}, canonical: true })).toBeUndefined();
       });
 
       it("is read-only", () => {
-        graph.putRecord("User:u1", {
-          __typename: "User",
+        const user1 = users.buildNode({
           id: "u1",
           email: "u1@example.com",
         });
+
+        graph.putRecord("User:u1", user1);
 
         const userView = views.getView({
           source: graph.materializeRecord("User:u1"),
@@ -416,13 +438,8 @@ describe("Views", () => {
           canonical: true,
         });
 
-        const result = Reflect.set(userView, "email", "hacker@example.com");
-        expect(result).toBe(false);
-        expect(userView).toEqual({
-          __typename: "User",
-          id: "u1",
-          email: "u1@example.com",
-        });
+        expect(Reflect.set(userView, "email", "hacker@example.com")).toBe(false);
+        expect(userView).toEqual(user1);
       });
     });
 
@@ -430,64 +447,86 @@ describe("Views", () => {
     // connections
     // ──────────────────────────────────────────────────────────────────────────
     describe("connections", () => {
-      it("creates basic connection view with edges and pageInfo", () => {
+      it.only("creates basic connection view with edges and pageInfo", () => {
         const postsField = getField(POSTS_QUERY, "posts");
 
-        const connectionData = posts.buildConnection(
+        const postsData = posts.buildConnection(
           [{ id: "p1", title: "Post 1" }],
           { startCursor: "p1", endCursor: "p1", hasNextPage: false },
         );
-        writeConnectionPage(graph, "@.posts({})", connectionData);
 
-        const connectionView = views.getView({
+        writeConnectionPage(graph, "@.posts({})", postsData);
+
+        const postsView = views.getView({
           source: "@.posts({})",
           field: postsField,
           variables: {},
           canonical: false,
         });
 
-        expect(connectionView.edges).toHaveLength(1);
-        expect(connectionView.edges[0].node).toEqual({ __typename: "Post", id: "p1", title: "Post 1" });
-        expect(connectionView.pageInfo.startCursor).toBe("p1");
-        expect(connectionView.pageInfo.endCursor).toBe("p1");
-        expect(connectionView.pageInfo.hasNextPage).toBe(false);
+        expect(postsView.edges).toHaveLength(1);
+        expect(postsView.edges[0].node).toEqual({ __typename: "Post", id: "p1", title: "Post 1", flags: [] });
+        expect(postsView.pageInfo.startCursor).toBe("p1");
+        expect(postsView.pageInfo.endCursor).toBe("p1");
+        expect(postsView.pageInfo.hasNextPage).toBe(false);
       });
 
-      it("handles null edges", () => {
+      it("exposes edges as a stable empty array when no refs, upgrades when refs arrive", async () => {
         const postsField = getField(POSTS_QUERY, "posts");
+
+        const post1 = posts.buildNode({ id: "p1", title: "Post 1" });
+        graph.putRecord("Post:p1", post1);
+
         graph.putRecord("@.posts({})", {
           __typename: "PostConnection",
           edges: null,
         });
 
-        const connectionView = views.getView({
+        const postsView = views.getView({
           source: "@.posts({})",
           field: postsField,
           variables: {},
           canonical: false,
         });
 
-        expect(connectionView.edges).toBeNull();
+        const postsEdges = postsView.edges;
+
+        expect(Array.isArray(postsEdges)).toBe(true);
+        expect(postsEdges.length).toBe(0);
+
+        graph.putRecord("@.posts({}).edges:0", {
+          __typename: "PostEdge",
+          cursor: "p1",
+          node: { __ref: "Post:p1" },
+        });
+
+        graph.putRecord("@.posts({})", {
+          edges: { __refs: ["@.posts({}).edges:0"] },
+        });
+
+        expect(postsView.edges).toBe(postsEdges);
+        expect(postsEdges.length).toBe(1);
+        expect(postsEdges[0].node).toEqual(post1);
       });
 
-      it("returns undefined for missing connection", () => {
+      it.only("returns undefined for missing connection", () => {
         const postsField = getField(POSTS_QUERY, "posts");
+
         const connectionView = views.getView({
           source: "missing:connection",
           field: postsField,
           variables: {},
           canonical: true,
         });
+
         expect(connectionView).toBeUndefined();
       });
 
       it("maintains edges array identity when appending new edges", async () => {
         const postsField = getField(USER_POSTS_QUERY, "user", "posts");
 
-        graph.putRecord("User:u1", {
-          __typename: "User",
-          id: "u1",
-        });
+        const user1 = users.buildNode({ id: "u1" });
+        graph.putRecord("User:u1", user1);
 
         const connectionData = posts.buildConnection(
           [{ id: "p1", title: "Post 1" }],
@@ -516,11 +555,8 @@ describe("Views", () => {
         const stableEdges = edgesRef.value;
 
         // Append second edge
-        graph.putRecord("Post:p2", {
-          __typename: "Post",
-          id: "p2",
-          title: "Post 2",
-        });
+        const post2 = posts.buildNode({ id: "p2", title: "Post 2" });
+        graph.putRecord("Post:p2", post2);
         graph.putRecord("@.User:u1.posts({}).edges:1", {
           __typename: "PostEdge",
           cursor: "p2",
@@ -534,21 +570,16 @@ describe("Views", () => {
         await nextTick();
         expect(edgesRef.value).toBe(stableEdges);
         expect(seenLen).toBe(2);
-        expect(edgesRef.value[1].node).toEqual({
-          __typename: "Post",
-          id: "p2",
-          title: "Post 2",
-        });
+        expect(edgesRef.value[1].node).toEqual(post2);
 
         stop();
       });
 
       it("maintains edges array identity when edges shrink", async () => {
         const postsField = getField(USER_POSTS_QUERY, "user", "posts");
-        graph.putRecord("User:u3", {
-          __typename: "User",
-          id: "u3",
-        });
+
+        const user3 = users.buildNode({ id: "u3" });
+        graph.putRecord("User:u3", user3);
 
         const connectionData = posts.buildConnection(
           [
