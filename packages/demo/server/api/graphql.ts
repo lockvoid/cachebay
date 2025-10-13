@@ -156,16 +156,6 @@ builder.queryType({
               params.push(`%${filter.query}%`, `%${filter.query}%`, `%${filter.query}%`);
             }
 
-            if (after != null) {
-              where.push("id > ?");
-              params.push(after);
-            }
-
-            if (before != null) {
-              where.push("id < ?");
-              params.push(before);
-            }
-
             let orderBy = "id";
             let orderDirection = inverted ? "DESC" : "ASC";
 
@@ -185,6 +175,18 @@ builder.queryType({
                   orderBy = "id";
                   orderDirection = inverted ? "DESC" : "ASC";
               }
+            }
+
+            const isDescending = orderDirection === "DESC";
+
+            if (after != null) {
+              where.push(isDescending ? "id < ?" : "id > ?");
+              params.push(after);
+            }
+
+            if (before != null) {
+              where.push(isDescending ? "id > ?" : "id < ?");
+              params.push(before);
             }
 
             const querySql = `SELECT * FROM spells ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY ${orderBy} ${orderDirection} LIMIT ?`;
