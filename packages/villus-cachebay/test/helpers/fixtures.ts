@@ -1,4 +1,3 @@
-
 export interface UserNode {
   id: string;
   email: string;
@@ -9,7 +8,7 @@ export interface UserNode {
 export interface PostNode {
   id: string;
   title: string;
-  tags?: string[];
+  flags?: string[];
   typename?: "Post" | "AudioPost" | "VideoPost";
   [key: string]: any;
 }
@@ -21,6 +20,20 @@ export interface CommentNode {
   [key: string]: any;
 }
 
+export interface TagNode {
+  id: string;
+  name: string;
+  typename?: "Tag";
+  [key: string]: any;
+}
+
+export interface MediaNode {
+  key: string;
+  mediaUrl: string;
+  typename?: "Media";
+  [key: string]: any;
+}
+
 export const user = ({ id, email, typename = "User", ...extras }: UserNode) => ({
   __typename: typename,
   id,
@@ -28,32 +41,45 @@ export const user = ({ id, email, typename = "User", ...extras }: UserNode) => (
   ...extras,
 });
 
-export const post = ({ id, title, tags = [], typename = "Post", ...extras }: PostNode) => ({
+export const post = ({ id, title, flags = [], typename = "Post", ...extras }: PostNode) => ({
   __typename: typename,
   id,
   title,
-  tags,
+  flags,
   ...extras,
 });
 
 export const comment = ({ uuid, text, typename = "Comment", ...extras }: CommentNode) => ({
   __typename: typename,
-  // id: uuid,
   uuid,
   text,
   ...extras,
 });
 
-export const users = {
-  buildNode(userData: Partial<UserNode>, index = 0) {
-    const { email, id = `u${index + 1}`, typename, ...extras } = userData;
+export const tag = ({ id, name, typename = "Tag", ...extras }: TagNode) => ({
+  __typename: typename,
+  id,
+  name,
+  ...extras,
+});
 
-    return user({ id, email, typename, ...extras });
+export const media = ({ key, mediaUrl, typename = "Media", ...extras }: MediaNode) => ({
+  __typename: typename,
+  key,
+  mediaUrl,
+  ...extras,
+});
+
+export const users = {
+  buildNode(userData: Partial<UserNode>) {
+    const { email, id, ...extras } = userData;
+
+    return user({ ...extras, id, email });
   },
 
   buildConnection(items: Array<Partial<UserNode>>, customPageInfo = {}) {
-    const edges = items.map((itemData, i) => {
-      const node = users.buildNode(itemData, i);
+    const edges = items.map((itemData) => {
+      const node = users.buildNode(itemData);
 
       return {
         __typename: "UserEdge",
@@ -81,15 +107,15 @@ export const users = {
 };
 
 export const posts = {
-  buildNode(postData: Partial<PostNode>, index = 0) {
-    const { title, id = `p${index + 1}`, typename, ...extras } = postData;
+  buildNode(postData: Partial<PostNode>) {
+    const { title, id, ...extras } = postData;
 
-    return post({ id, title, typename, ...extras });
+    return post({ id, title, ...extras });
   },
 
   buildConnection(items: Array<Partial<PostNode>>, customPageInfo = {}) {
-    const edges = items.map((itemData, i) => {
-      const node = posts.buildNode(itemData, i);
+    const edges = items.map((itemData) => {
+      const node = posts.buildNode(itemData);
 
       return {
         __typename: "PostEdge",
@@ -117,15 +143,15 @@ export const posts = {
 };
 
 export const comments = {
-  buildNode(commentData: Partial<CommentNode>, index = 0) {
-    const { text, uuid = `c${index + 1}`, ...extras } = commentData;
+  buildNode(commentData: Partial<CommentNode>) {
+    const { text, uuid, ...extras } = commentData;
 
-    return comment({ uuid, text, ...extras });
+    return comment({ ...extras, uuid, text });
   },
 
   buildConnection(items: Array<Partial<CommentNode>>, customPageInfo = {}) {
-    const edges = items.map((itemData, i) => {
-      const node = comments.buildNode(itemData, i);
+    const edges = items.map((itemData) => {
+      const node = comments.buildNode(itemData);
 
       return {
         __typename: "CommentEdge",
@@ -146,6 +172,78 @@ export const comments = {
 
     return {
       __typename: "CommentConnection",
+      edges,
+      pageInfo,
+    };
+  },
+};
+
+export const tags = {
+  buildNode(tagData: Partial<TagNode>) {
+    const { name, id, ...extras } = tagData;
+
+    return tag({ ...extras, id, name });
+  },
+
+  buildConnection(items: Array<Partial<TagNode>>, customPageInfo = {}) {
+    const edges = items.map((itemData) => {
+      const node = tags.buildNode(itemData);
+
+      return {
+        __typename: "TagEdge",
+        cursor: node.id,
+        node,
+      };
+    });
+
+    const pageInfo = {
+      __typename: "PageInfo",
+      startCursor: edges.length ? edges[0].cursor : null,
+      endCursor: edges.length ? edges[edges.length - 1].cursor : null,
+      hasNextPage: false,
+      hasPreviousPage: false,
+
+      ...customPageInfo,
+    };
+
+    return {
+      __typename: "TagConnection",
+      edges,
+      pageInfo,
+    };
+  },
+};
+
+export const medias = {
+  buildNode(mediaData: Partial<MediaNode>) {
+    const { name, id, ...extras } = mediaData;
+
+    return media({ ...extras, id, name });
+  },
+
+  buildConnection(items: Array<Partial<MediaNode>>, customPageInfo = {}) {
+    const edges = items.map((itemData) => {
+      const node = medias.buildNode(itemData);
+
+      return {
+        __typename: "MediaEdge",
+        cursor: node.id,
+        node,
+      };
+    });
+
+    const pageInfo = {
+      __typename: "PageInfo",
+      startCursor: edges.length ? edges[0].cursor : null,
+      endCursor: edges.length ? edges[edges.length - 1].cursor : null,
+      hasNextPage: false,
+      hasPreviousPage: false,
+
+      ...customPageInfo,
+    };
+
+    return {
+      __typename: "MediaConnection",
       edges,
       pageInfo,
     };

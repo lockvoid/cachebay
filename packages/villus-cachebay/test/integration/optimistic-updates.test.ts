@@ -261,179 +261,130 @@ describe("Optimistic updates", () => {
     let requestIndex = 0;
 
     const routes = [
+      // 0: A leader
       {
-        when: () => {
-          return requestIndex === 0 && (requestIndex++, true);
-        },
-
-        respond: () => {
-          const posts = [
-            { id: "pa1", title: "A1" },
-            { id: "pa2", title: "A2" },
-            { id: "pa3", title: "A3" },
-          ];
-
-          return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
-        },
-
+        when: () => requestIndex === 0 && (requestIndex++, true),
+        respond: () => ({
+          data: {
+            __typename: "Query",
+            posts: fixtures.posts.buildConnection(
+              [{ id: "pa1", title: "A1" }, { id: "pa2", title: "A2" }, { id: "pa3", title: "A3" }],
+            ),
+          },
+        }),
         delay: 20,
       },
-
+      // 1: A after pa3
       {
-        when: () => {
-          return requestIndex === 1 && (requestIndex++, true);
-        },
-
-        respond: () => {
-          const posts = [
-            { id: "pa4", title: "A4" },
-            { id: "pa5", title: "A5" },
-            { id: "pa6", title: "A6" },
-          ];
-
-          return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
-        },
-
+        when: () => requestIndex === 1 && (requestIndex++, true),
+        respond: () => ({
+          data: {
+            __typename: "Query",
+            posts: fixtures.posts.buildConnection(
+              [{ id: "pa4", title: "A4" }, { id: "pa5", title: "A5" }, { id: "pa6", title: "A6" }],
+            ),
+          },
+        }),
         delay: 20,
       },
-
+      // 2: A after pa6
       {
-        when: () => {
-          return requestIndex === 2 && (requestIndex++, true);
-        },
-
-        respond: () => {
-          const posts = [
-            { id: "pa7", title: "A7" },
-            { id: "pa8", title: "A8" },
-            { id: "pa9", title: "A9" },
-          ];
-
-          return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
-        },
-
+        when: () => requestIndex === 2 && (requestIndex++, true),
+        respond: () => ({
+          data: {
+            __typename: "Query",
+            posts: fixtures.posts.buildConnection(
+              [{ id: "pa7", title: "A7" }, { id: "pa8", title: "A8" }, { id: "pa9", title: "A9" }],
+            ),
+          },
+        }),
         delay: 20,
       },
-
+      // 3: B leader
       {
-        when: () => {
-          return requestIndex === 3 && (requestIndex++, true);
-        },
-
-        respond: () => {
-          const posts = [
-            { id: "pb1", title: "B1" },
-            { id: "pb2", title: "B2" },
-          ];
-
-          return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
-        },
-
+        when: () => requestIndex === 3 && (requestIndex++, true),
+        respond: () => ({
+          data: {
+            __typename: "Query",
+            posts: fixtures.posts.buildConnection([{ id: "pb1", title: "B1" }, { id: "pb2", title: "B2" }]),
+          },
+        }),
         delay: 20,
       },
-
+      // 4: A leader refresh (resets canonical to leader slice only)
       {
-        when: () => {
-          return requestIndex === 4 && (requestIndex++, true);
-        },
-
-        respond: () => {
-          const posts = [
-            { id: "pa1", title: "A1" },
-            { id: "pa2", title: "A2" },
-            { id: "pa3", title: "A3" },
-          ];
-
-          return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
-        },
-
+        when: () => requestIndex === 4 && (requestIndex++, true),
+        respond: () => ({
+          data: {
+            __typename: "Query",
+            posts: fixtures.posts.buildConnection(
+              [{ id: "pa1", title: "A1" }, { id: "pa2", title: "A2" }, { id: "pa3", title: "A3" }],
+            ),
+          },
+        }),
         delay: 20,
       },
-
+      // 5: A after pa3 (still includes pa5; optimistic removal persists in canonical union state)
       {
-        when: () => {
-          return requestIndex === 5 && (requestIndex++, true);
-        },
-
-        respond: () => {
-          const posts = [
-            { id: "pa4", title: "A4" },
-            { id: "pa5", title: "A5" },
-            { id: "pa6", title: "A6" },
-          ];
-
-          return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
-        },
-      },
-
-      {
-        when: () => {
-          return requestIndex === 6 && (requestIndex++, true);
-        },
-
-        respond: () => {
-          const posts = [
-            { id: "pb1", title: "B1" },
-            { id: "pb2", title: "B2" },
-          ];
-
-          return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
-        },
-
+        when: () => requestIndex === 5 && (requestIndex++, true),
+        respond: () => ({
+          data: {
+            __typename: "Query",
+            posts: fixtures.posts.buildConnection(
+              [{ id: "pa4", title: "A4" }, { id: "pa5", title: "A5" }, { id: "pa6", title: "A6" }],
+            ),
+          },
+        }),
         delay: 20,
       },
-
+      // 6: B leader again
       {
-        when: () => {
-          return requestIndex === 7 && (requestIndex++, true);
-        },
-
-        respond: () => {
-          const posts = [
-            { id: "pa1", title: "A1" },
-            { id: "pa2", title: "A2" },
-            { id: "pa3", title: "A3" },
-          ];
-
-          return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
-        },
-
+        when: () => requestIndex === 6 && (requestIndex++, true),
+        respond: () => ({
+          data: {
+            __typename: "Query",
+            posts: fixtures.posts.buildConnection([{ id: "pb1", title: "B1" }, { id: "pb2", title: "B2" }]),
+          },
+        }),
         delay: 20,
       },
-
+      // 7: A leader refresh again
       {
-        when: () => {
-          return requestIndex === 8 && (requestIndex++, true);
-        },
-
-        respond: () => {
-          const posts = [
-            { id: "pa4", title: "A4" },
-            { id: "pa6", title: "A6" },
-            { id: "pa7", title: "A7" },
-          ];
-
-          return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
-        },
-
+        when: () => requestIndex === 7 && (requestIndex++, true),
+        respond: () => ({
+          data: {
+            __typename: "Query",
+            posts: fixtures.posts.buildConnection(
+              [{ id: "pa1", title: "A1" }, { id: "pa2", title: "A2" }, { id: "pa3", title: "A3" }],
+            ),
+          },
+        }),
         delay: 20,
       },
-
+      // 8: A after pa3 (server now omits pa5 and includes pa7)
       {
-        when: () => {
-          return requestIndex === 9 && (requestIndex++, true);
-        },
-
-        respond: () => {
-          const posts = [
-            { id: "pa8", title: "A8" },
-            { id: "pa9", title: "A9" },
-            { id: "pa10", title: "A10" },
-          ];
-
-          return { data: { __typename: "Query", posts: fixtures.posts.buildConnection(posts) } };
-        },
-
+        when: () => requestIndex === 8 && (requestIndex++, true),
+        respond: () => ({
+          data: {
+            __typename: "Query",
+            posts: fixtures.posts.buildConnection(
+              [{ id: "pa4", title: "A4" }, { id: "pa6", title: "A6" }, { id: "pa7", title: "A7" }],
+            ),
+          },
+        }),
+        delay: 20,
+      },
+      // 9: A after pa7
+      {
+        when: () => requestIndex === 9 && (requestIndex++, true),
+        respond: () => ({
+          data: {
+            __typename: "Query",
+            posts: fixtures.posts.buildConnection(
+              [{ id: "pa8", title: "A8" }, { id: "pa9", title: "A9" }, { id: "pa10", title: "A10" }],
+            ),
+          },
+        }),
         delay: 20,
       },
     ];
@@ -442,123 +393,99 @@ describe("Optimistic updates", () => {
 
     const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
       cachePolicy: "cache-and-network",
-
-      connectionFn: (data) => {
-        return data.posts;
-      },
+      connectionFn: (data) => data.posts,
     });
 
     const wrapper = mount(Cmp, {
-      props: {
-        category: "A",
-        first: 3,
-        after: null,
-      },
-
-      global: {
-        plugins: [client, cache],
-      },
+      props: { category: "A", first: 3, after: null },
+      global: { plugins: [client, cache] },
     });
 
-    // 1. Initial load: fetch first page of category A posts (request 0)
+    // 1. Initial A leader
     await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3"]);
 
-    // 2. Paginate: load next page after cursor "pa3" (request 1)
+    // 2. Paginate after pa3
     await wrapper.setProps({ category: "A", first: 3, after: "pa3" });
-
     await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A5", "A6"]);
 
-    // 3. Optimistic remove: delete "A5" from connection (no request)
+    // 3. Optimistic remove A5
     const removeTx = cache.modifyOptimistic((o) => {
       const c = o.connection({ parent: "Query", key: "posts", filters: { category: "A" } });
-
       c.removeNode({ __typename: "Post", id: "pa5" });
     });
-
     await delay(10);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A6"]);
 
-    // 4. Continue pagination: load more posts after "pa6" (request 2)
+    // 4. Continue after pa6
     await wrapper.setProps({ category: "A", first: 3, after: "pa6" });
-
     await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9"]);
 
-    // 5. Filter switch: change to category B posts (request 3)
+    // 5. Switch to B
     await wrapper.setProps({ category: "B", first: 2, after: null });
-
     await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
 
-    // 6. Filter back: return to category A (cached with optimistic changes, no request)
+    // 6. Switch back to A (serve cached union with optimistic remove)
     await wrapper.setProps({ category: "A", first: 3, after: null });
-
     await delay(10);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9"]);
 
-    // 7. Network refresh: server data overwrites cached optimistic state (request 4)
+    // 7. Network refresh (leader) resets canonical to leader slice only
     await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3"]);
 
-    // 8. Re-paginate: load second page again (request 5)
+    // 8. Re-paginate after pa3 with canonical-first: after network page lands show A4 & A6 (pa5 removed optimistically in the past)
     await wrapper.setProps({ category: "A", first: 3, after: "pa3" });
-
     await delay(10);
-    expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A6"]);
-
+    expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3"]);
     await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A6"]);
 
-    // 9. Filter switch again: back to category B (request 6)
+    // 9. Switch to B again
     await wrapper.setProps({ category: "B", first: 2, after: null });
-
     await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
 
-    // 10. Return to category A: cached state preserved (no request)
+    // 10. Back to A (cached union shows A4 & A6)
     await wrapper.setProps({ category: "A", first: 3, after: null });
-
     await delay(10);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A6"]);
 
-    // 11. Network refresh: server overwrites cache again (request 7)
+    // 11. Leader refresh resets again
     await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3"]);
 
-    // 12. Re-paginate: load second page with optimistic changes intact (request 8)
+    // 12. Re-paginate after pa3 again (server now also returns A7)
     await wrapper.setProps({ category: "A", first: 3, after: "pa3" });
-
     await delay(10);
-    expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A6"]);
+    expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3"]);
+    await delay(30);
+    expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A6", "A7"]);
 
-    // 13. Commit optimistic remove: make it permanent (no request)
+    // 13. Commit optimistic remove permanently
     removeTx.commit();
 
-    // 14. New optimistic adds: prepend and append nodes (no request)
-    const addTx = (cache as any).modifyOptimistic((o) => {
+    // 14. New optimistic adds (prepend A0, append A100)
+    const addTx = (cache as any).modifyOptimistic((o: any) => {
       const c = o.connection({ parent: "Query", key: "posts", filters: { category: "A" } });
-
-      c.addNode({ __typename: "Post", id: "pa0", title: "A0" }, { position: "start" });
-      c.addNode({ __typename: "Post", id: "pa100", title: "A100" }, { position: "end" });
+      c.addNode({ __typename: "Post", id: "pa0", title: "A0", flags: [] }, { position: "start" });
+      c.addNode({ __typename: "Post", id: "pa100", title: "A100", flags: [] }, { position: "end" });
     });
-
     await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["A0", "A1", "A2", "A3", "A4", "A6", "A7", "A100"]);
 
-    // 15. Final pagination: load more posts after "pa7" (request 9)
+    // 15. Final pagination: after pa7
     await wrapper.setProps({ category: "A", first: 3, after: "pa7" });
-
     await delay(10);
     expect(getEdges(wrapper, "title")).toEqual(["A0", "A1", "A2", "A3", "A4", "A6", "A7", "A100"]);
-
     await delay(30);
     expect(getEdges(wrapper, "title")).toEqual(["A0", "A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9", "A10", "A100"]);
 
-    // 16. Revert optimistic adds: remove prepended and appended nodes (no request)
+    // 16. Revert optimistic adds
     addTx.revert();
-
     await delay(10);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A6", "A7", "A8", "A9", "A10"]);
   });
@@ -887,8 +814,8 @@ describe("Optimistic updates", () => {
 
     // Commit an optimistic node A4 at start
     const tx = cache.modifyOptimistic((o) => {
-      o.connection({ parent: "Query", key: "posts" })
-        .addNode({ __typename: "Post", id: "pa4", title: "A4" }, { position: "start" });
+      const c = o.connection({ parent: "Query", key: "posts" });
+      c.addNode({ __typename: "Post", id: "pa4", title: "A4", flags: [] }, { position: "start" });
     });
     tx.commit();
 
@@ -968,8 +895,8 @@ describe("Optimistic updates", () => {
 
     // Commit optimistic A4 at start
     const tx = cache.modifyOptimistic((o) => {
-      o.connection({ parent: "Query", key: "posts" })
-        .addNode({ __typename: "Post", id: "pa4", title: "A4" }, { position: "start" });
+      const c = o.connection({ parent: "Query", key: "posts" });
+      c.addNode({ __typename: "Post", id: "pa4", title: "A4", flags: [] }, { position: "start" });
     });
     tx.commit();
 
@@ -993,5 +920,4 @@ describe("Optimistic updates", () => {
 
     await fx.restore();
   });
-
 });

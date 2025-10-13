@@ -1,304 +1,578 @@
 import { shallowReactive } from "vue";
-import { buildConnectionKey, buildConnectionCanonicalKey } from "./utils";
+import { buildConnectionKey, buildConnectionCanonicalKey, isObject } from "./utils";
 import type { GraphInstance } from "./graph";
 import type { PlanField } from "../compiler";
 
+// Type declarations
 export type ViewsInstance = ReturnType<typeof createViews>;
 export type ViewsDependencies = { graph: GraphInstance };
 
+type StableArrayCache = {
+  refs: string[];
+  array: any[];
+  sourceArray: string[] | null;
+};
+
+type ViewCacheEntry = {
+  view: any;
+  edgeCache?: StableArrayCache;
+};
+
+type CacheBucket = Map<boolean, ViewCacheEntry>;
+type SelectionCache = Map<any, CacheBucket>;
+type ProxyCache = { bySelection: SelectionCache };
+
 /**
- * View helpers: reactive wrappers for entities, edges and (page/canonical) connections.
- * Caching is explicit per (entityProxy, selectionKey, canonicalFlag).
+ * Creates a view system that provides stable, reactive proxies over graph records.
+ * Views are cached by (proxy, selection, canonical) to ensure identity stability.
+ *
+ * @param dependencies - Object containing the graph instance
+ * @returns Object with getView function for creating/retrieving views
  */
 export const createViews = ({ graph }: ViewsDependencies) => {
-  // ONE cache for all views we produce
-  const viewCache = new WeakMap<object, any>();
+  const cache = new WeakMap<object, ProxyCache>();
+  const inlineCache = new WeakMap<object, Map<any, Map<boolean, any>>>();
+  const refsArrayCache = new WeakMap<
+    object,
+    Map<string | symbol, Map<any, Map<boolean, StableArrayCache>>>
+  >();
+
+  const EMPTY_MAP: ReadonlyMap<string, PlanField> = new Map();
+
+  const selectionKeyOf = (field?: PlanField | null) => (field ?? null) as const;
+
+  const READONLY_HANDLERS = {
+    has: Reflect.has,
+    ownKeys: Reflect.ownKeys,
+    getOwnPropertyDescriptor: Reflect.getOwnPropertyDescriptor,
+    set() {
+      return false;
+    },
+    deleteProperty() {
+      return false;
+    },
+    defineProperty() {
+      return false;
+    },
+    setPrototypeOf() {
+      return false;
+    },
+  } as const;
 
   /**
-   * Entity view memoized per (entityProxy, selectionKey, canonicalFlag).
-   * - fieldsMap MUST come from the compiler (rootSelectionMap or field.selectionMap)
-   * - canonical=true makes nested connection fields read from the canonical connection
-   *   (false → concrete page key)
+   * Gets or creates a cache bucket for a given proxy and selection key.
+   * Three-level cache structure: proxy -> selection -> canonical -> entry
    */
-  const getEntityView = (
-    entityProxy: any,
-    fields: PlanField[] | null,
-    fieldsMap: Map<string, PlanField> | undefined,
-    variables: Record<string, any>,
-    canonical: boolean,
-  ): any => {
-    if (!entityProxy || typeof entityProxy !== "object") return entityProxy;
-
-    // Bucket per entity proxy. Inside, cache by selectionKey → (canonicalFlag → view)
-    let bucket = viewCache.get(entityProxy);
-    if (!bucket || bucket.kind !== "entity") {
-      bucket = { kind: "entity", bySelection: new Map<any, Map<number, any>>() };
-      viewCache.set(entityProxy, bucket);
+  const getOrCreateBucket = (proxy: object, selectionKey: any): CacheBucket => {
+    let bucket = cache.get(proxy);
+    if (!bucket) {
+      bucket = { bySelection: new Map() };
+      cache.set(proxy, bucket);
     }
 
-    const selectionKey = fieldsMap ?? fields ?? null;
     let byCanonical = bucket.bySelection.get(selectionKey);
     if (!byCanonical) {
-      byCanonical = new Map<number, any>();
+      byCanonical = new Map();
       bucket.bySelection.set(selectionKey, byCanonical);
-    } else {
-      const hit = byCanonical.get(canonical ? 1 : 0);
-      if (hit) return hit;
     }
 
-    const view = new Proxy(entityProxy, {
-      get(target, prop, receiver) {
-        // PlanField lookup (when we have a selection)
-        const planField =
-          fields && typeof prop === "string"
-            ? fieldsMap?.get(prop as string)
-            : undefined;
-
-        // Connection field → lazy connection view (canonical or page)
-        if (planField?.isConnection) {
-          const typename = (target as any).__typename;
-          const id = (target as any).id;
-          const parentId =
-            typename && id != null
-              ? `${typename}:${id}`
-              : (graph.identify({ __typename: typename, id }) || "");
-
-          const connKey = canonical
-            ? buildConnectionCanonicalKey(planField, parentId, variables)
-            : buildConnectionKey(planField, parentId, variables);
-
-          return getConnectionView(connKey, planField, variables, canonical);
-        }
-
-        // Plain property
-        const value = Reflect.get(target, prop, receiver);
-
-        // Deref { __ref } → child entity view (keeps same canonical mode)
-        if (value && typeof value === "object" && (value as any).__ref) {
-          const childProxy = graph.materializeRecord((value as any).__ref);
-          const sub =
-            fields && typeof prop === "string"
-              ? fieldsMap?.get(prop as string)
-              : undefined;
-          const subFields = sub ? sub.selectionSet || null : null;
-          const subMap = sub ? sub.selectionMap : undefined;
-          return childProxy
-            ? getEntityView(childProxy, subFields, subMap, variables, canonical)
-            : undefined;
-        }
-
-        // Arrays of refs → map with child entity views when we know a sub-selection
-        if (Array.isArray(value)) {
-          const sub =
-            fields && typeof prop === "string"
-              ? fieldsMap?.get(prop as string)
-              : undefined;
-
-          if (!sub?.selectionSet || sub.selectionSet.length === 0) {
-            return value.slice();
-          }
-
-          const out = new Array(value.length);
-          for (let i = 0; i < value.length; i++) {
-            const item = value[i];
-            if (item && typeof item === "object" && (item as any).__ref) {
-              const rec = graph.materializeRecord((item as any).__ref);
-              out[i] = rec
-                ? getEntityView(rec, sub.selectionSet || null, sub.selectionMap, variables, canonical)
-                : undefined;
-            } else {
-              out[i] = item;
-            }
-          }
-          return out;
-        }
-
-        return value;
-      },
-      has: (t, p) => Reflect.has(t, p),
-      ownKeys: (t) => Reflect.ownKeys(t),
-      getOwnPropertyDescriptor: (t, p) => Reflect.getOwnPropertyDescriptor(t, p),
-      set() { return false; },
-    });
-
-    byCanonical.set(canonical ? 1 : 0, view);
-    return view;
+    return byCanonical;
   };
 
-  /** Edge view (memoized by edge record proxy). Node is an entity view. */
-  const getEdgeView = (
-    edgeKey: string,
-    nodeField: PlanField | undefined,
+  /**
+   * Synchronizes a stable reactive array with a new refs array.
+   * Uses pointer check (fast path) then content check (fallback).
+   * Updates array in-place to preserve identity.
+   *
+   * @returns true if array was modified, false otherwise
+   */
+  const syncStableArray = (
+    cache: StableArrayCache,
+    refs: string[],
+    mapRef: (ref: string) => any,
+  ): boolean => {
+    const identityChanged = cache.sourceArray !== refs;
+    let contentChanged = false;
+
+    if (!identityChanged) {
+      if (cache.refs.length !== refs.length) {
+        contentChanged = true;
+      } else {
+        for (let i = 0; i < refs.length; i++) {
+          if (cache.refs[i] !== refs[i]) {
+            contentChanged = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (identityChanged || contentChanged) {
+      const arr = cache.array;
+
+      if (arr.length > refs.length) {
+        arr.splice(refs.length);
+      }
+
+      for (let i = arr.length; i < refs.length; i++) {
+        arr.splice(i, 0, undefined);
+      }
+
+      for (let i = 0; i < refs.length; i++) {
+        arr[i] = mapRef(refs[i]);
+      }
+
+      cache.refs = refs.slice();
+      cache.sourceArray = refs;
+      return true;
+    }
+
+    return false;
+  };
+
+  /**
+   * Ensures connection skeleton exists in graph with proper structure.
+   * Creates pageInfo and connection container if missing.
+   */
+  const ensureConnectionSkeleton = (pageKeyStr: string, typename: string) => {
+    const pageInfoKey = `${pageKeyStr}.pageInfo`;
+
+    if (!graph.getRecord(pageInfoKey)) {
+      graph.putRecord(pageInfoKey, {
+        __typename: "PageInfo",
+        hasNextPage: false,
+        hasPreviousPage: false,
+        startCursor: null,
+        endCursor: null,
+      });
+    }
+
+    if (!graph.getRecord(pageKeyStr)) {
+      graph.putRecord(pageKeyStr, {
+        __typename: typename,
+        edges: null,
+        pageInfo: { __ref: pageInfoKey },
+      });
+    }
+
+    return graph.materializeRecord(pageKeyStr);
+  };
+
+  /**
+   * Creates a stable, reactive array from { __refs } that updates in-place.
+   * Keyed by (holder, prop, plan, canonical) to ensure proper identity.
+   *
+   * @param holder - Parent object containing the refs
+   * @param prop - Property name on the holder
+   * @param refs - Array of reference keys
+   * @param plan - Selection plan for child items
+   * @param variables - Query variables
+   * @param canonical - Whether to use canonical keys
+   * @returns Stable reactive array that updates in-place
+   */
+  const getStableRefsArray = (
+    holder: object,
+    prop: string | symbol,
+    refs: string[],
+    plan: PlanField | null | undefined,
     variables: Record<string, any>,
     canonical: boolean,
-  ): any => {
-    const edgeProxy = graph.materializeRecord(edgeKey);
-    if (!edgeProxy) return undefined;
+  ): any[] => {
+    const selectionKey = plan ?? null;
 
-    let bucket = viewCache.get(edgeProxy);
-    if (bucket?.kind === "edge" && bucket.view) return bucket.view;
-
-    const view = new Proxy(edgeProxy, {
-      get(target, prop, receiver) {
-        if (prop === "node" && (target as any).node?.__ref) {
-          const nodeProxy = graph.materializeRecord((target as any).node.__ref);
-          return nodeProxy
-            ? getEntityView(nodeProxy, nodeField?.selectionSet || null, nodeField?.selectionMap, variables, canonical)
-            : undefined;
-        }
-
-        const value = Reflect.get(target, prop, receiver);
-
-        if (value && typeof value === "object" && (value as any).__ref) {
-          const rec = graph.materializeRecord((value as any).__ref);
-          return rec ? getEntityView(rec, null, undefined, variables, canonical) : undefined;
-        }
-
-        if (Array.isArray(value)) {
-          const out = new Array(value.length);
-          for (let i = 0; i < value.length; i++) {
-            const item = value[i];
-            if (item && typeof item === "object" && (item as any).__ref) {
-              const rec = graph.materializeRecord((item as any).__ref);
-              out[i] = rec ? getEntityView(rec, null, undefined, variables, canonical) : undefined;
-            } else {
-              out[i] = item;
-            }
-          }
-          return out;
-        }
-
-        return value;
-      },
-      has: (t, p) => Reflect.has(t, p),
-      ownKeys: (t) => Reflect.ownKeys(t),
-      getOwnPropertyDescriptor: (t, p) => Reflect.getOwnPropertyDescriptor(t, p),
-      set() { return false; },
-    });
-
-    if (!bucket || bucket.kind !== "edge") {
-      bucket = { kind: "edge", view };
-      viewCache.set(edgeProxy, bucket);
-    } else {
-      bucket.view = view;
+    let byProp = refsArrayCache.get(holder);
+    if (!byProp) {
+      byProp = new Map();
+      refsArrayCache.set(holder, byProp);
     }
 
-    return view;
+    let bySelection = byProp.get(prop);
+    if (!bySelection) {
+      bySelection = new Map();
+      byProp.set(prop, bySelection);
+    }
+
+    let byCanonical = bySelection.get(selectionKey);
+    if (!byCanonical) {
+      byCanonical = new Map<boolean, StableArrayCache>();
+      bySelection.set(selectionKey, byCanonical);
+    }
+
+    let stable = byCanonical.get(canonical);
+
+    const viewOf = (src: string | object, field?: PlanField | null) =>
+      getView({ source: src, field: field ?? null, variables, canonical });
+
+    if (!stable) {
+      const arr: any[] = shallowReactive(
+        refs.map(ref => viewOf(graph.materializeRecord(ref), plan)),
+      );
+      stable = { refs: refs.slice(), array: arr, sourceArray: refs };
+      byCanonical.set(canonical, stable);
+      return arr;
+    }
+
+    syncStableArray(stable, refs, (ref) => viewOf(graph.materializeRecord(ref), plan));
+    return stable.array;
   };
 
-  /** Connection (page or canonical) view (memoized) + stable edges array per key */
+  /**
+   * Creates lazy, plan-guided inline view for objects/arrays with __ref/__refs.
+   * Only materializes what's accessed, guided by the PlanField selection.
+   *
+   * @param obj - Raw object or array to wrap
+   * @param plan - Selection plan to guide lazy materialization
+   * @param variables - Query variables
+   * @param canonical - Whether to use canonical keys
+   * @param holder - Parent object (for stable __refs arrays)
+   * @param prop - Property name (for stable __refs arrays)
+   */
+  const wrapInline = (
+    obj: any,
+    plan: PlanField | null | undefined,
+    variables: Record<string, any>,
+    canonical: boolean,
+    holder?: object,
+    prop?: string | symbol,
+  ): any => {
+    if (!isObject(obj)) {
+      return obj;
+    }
+
+    if ((obj as any).__ref) {
+      const child = graph.materializeRecord((obj as any).__ref);
+      return getView({ source: child, field: plan ?? null, variables, canonical });
+    }
+
+    if ((obj as any).__refs && Array.isArray((obj as any).__refs)) {
+      const refs = (obj as any).__refs as string[];
+      if (holder !== undefined && prop !== undefined) {
+        return getStableRefsArray(holder, prop, refs, plan ?? null, variables, canonical);
+      }
+
+      return refs.map(ref =>
+        getView({ source: graph.materializeRecord(ref), field: plan ?? null, variables, canonical }),
+      );
+    }
+
+    if (Array.isArray(obj)) {
+      return obj.map(v => wrapInline(v, plan ?? null, variables, canonical));
+    }
+
+    let byPlan = inlineCache.get(obj);
+    if (!byPlan) {
+      byPlan = new Map();
+      inlineCache.set(obj, byPlan);
+    }
+
+    const planKey = plan ?? null;
+    let byCanonical = byPlan.get(planKey);
+    if (!byCanonical) {
+      byCanonical = new Map();
+      byPlan.set(planKey, byCanonical);
+    }
+
+    const existing = byCanonical.get(canonical);
+    if (existing) {
+      return existing;
+    }
+
+    const selectionMap = plan?.selectionMap ?? EMPTY_MAP;
+
+    const inlineView = new Proxy(obj, {
+      get(target, p, receiver) {
+        const raw = Reflect.get(target, p, receiver);
+        const subPlan = typeof p === "string" ? selectionMap.get(p) : undefined;
+
+        if (subPlan?.isConnection && isObject(raw) && (raw as any).__ref) {
+          const refKey = (raw as any).__ref as string;
+          return getView({ source: refKey, field: subPlan, variables, canonical });
+        }
+
+        if (isObject(raw)) {
+          return wrapInline(raw, subPlan ?? null, variables, canonical, target, p);
+        }
+
+        return raw;
+      },
+      has: READONLY_HANDLERS.has,
+      ownKeys: READONLY_HANDLERS.ownKeys,
+      getOwnPropertyDescriptor: READONLY_HANDLERS.getOwnPropertyDescriptor,
+      set: READONLY_HANDLERS.set,
+      deleteProperty: READONLY_HANDLERS.deleteProperty,
+      defineProperty: READONLY_HANDLERS.defineProperty,
+      setPrototypeOf: READONLY_HANDLERS.setPrototypeOf,
+    });
+
+    byCanonical.set(canonical, inlineView);
+    return inlineView;
+  };
+
+  /**
+   * Creates a connection view with stable edges array and container relinking.
+   * Handles pageInfo via __ref and ensures connection skeleton exists.
+   *
+   * @param proxy - Materialized connection proxy
+   * @param pageKeyStr - Connection page key for canonical relinking
+   * @param field - PlanField describing the connection
+   * @param variables - Query variables
+   * @param canonical - Whether to use canonical container keys
+   * @param selectionKey - Cache key for this selection
+   */
   const getConnectionView = (
-    pageKey: string,
-    field: PlanField,
+    proxy: any,
+    pageKeyStr: string | undefined,
+    field: PlanField | undefined,
     variables: Record<string, any>,
     canonical: boolean,
-  ): any => {
-    const pageProxy = graph.materializeRecord(pageKey);
-    if (!pageProxy) return undefined;
+    selectionKey: any,
+  ) => {
+    if (pageKeyStr && isObject(proxy) && Object.keys(proxy).length === 0) {
+      const typename = field?.fieldName
+        ? `${field.fieldName.charAt(0).toUpperCase()}${field.fieldName.slice(1)}Connection`
+        : "Connection";
+      proxy = ensureConnectionSkeleton(pageKeyStr, typename);
+    }
 
-    let bucket = viewCache.get(pageProxy);
-    if (bucket?.kind === "page" && bucket.view) return bucket.view;
+    const byCanonical = getOrCreateBucket(proxy, selectionKey);
+    const cached = byCanonical.get(canonical);
+    if (cached?.view) {
+      return cached.view;
+    }
 
-    const edgesField = field.selectionMap?.get("edges");
-    const nodeField = edgesField ? edgesField.selectionMap?.get("node") : undefined;
+    const edgesFieldPlan = field?.selectionMap?.get("edges");
+    const selectionMap = field?.selectionMap ?? EMPTY_MAP;
 
-    const view = new Proxy(pageProxy, {
-      get(target, prop, receiver) {
-        if (prop === "edges") {
-          const list = (target as any).edges;
-          if (!Array.isArray(list)) return list;
+    const state: { edgeCache?: StableArrayCache } =
+      cached?.edgeCache ? { edgeCache: cached.edgeCache } : {};
 
-          const refs = list.map((r: any) => (r && r.__ref) || "");
-          let cached = bucket?.edgesCache;
+    const view = new Proxy(proxy, {
+      get(target, p, receiver) {
+        if (p === "edges") {
+          const refs: string[] | undefined = (target as any)?.edges?.__refs;
 
-          // First time: create a shallowReactive array we will keep forever
-          if (!cached) {
+          if (!Array.isArray(refs)) {
+            let edgeCache = state.edgeCache;
+            if (!edgeCache) {
+              const arr: any[] = shallowReactive([]);
+              state.edgeCache = edgeCache = { refs: [], array: arr, sourceArray: null };
+            }
+            return edgeCache.array;
+          }
+
+          let edgeCache = state.edgeCache;
+
+          if (!edgeCache) {
             const arr: any[] = shallowReactive([]);
             for (let i = 0; i < refs.length; i++) {
-              const ek = refs[i];
-              arr.push(ek ? getEdgeView(ek, nodeField, variables, canonical) : undefined);
+              const edgeProxy = graph.materializeRecord(refs[i]);
+              arr.push(
+                getView({ source: edgeProxy, field: edgesFieldPlan ?? null, variables, canonical }),
+              );
             }
-
-            if (!bucket || bucket.kind !== "page") {
-              bucket = { kind: "page", view, edgesCache: { refs, array: arr, sourceArray: list } };
-              viewCache.set(pageProxy, bucket);
-            } else {
-              bucket.view = view;
-              bucket.edgesCache = { refs, array: arr, sourceArray: list };
-            }
-
+            state.edgeCache = edgeCache = { refs: refs.slice(), array: arr, sourceArray: refs };
             return arr;
           }
 
-          // Subsequent reads: mutate the same array in place if refs changed
-          const identityChanged = cached.sourceArray !== list;
-          const refsChanged =
-            cached.refs.length !== refs.length ||
-            !cached.refs.every((v: string, i: number) => v === refs[i]);
+          syncStableArray(edgeCache, refs, (ref) =>
+            getView({
+              source: graph.materializeRecord(ref),
+              field: edgesFieldPlan ?? null,
+              variables,
+              canonical,
+            }),
+          );
 
-          if (identityChanged || refsChanged) {
-            const arr = cached.array as any[];
-
-            // shrink
-            if (arr.length > refs.length) arr.splice(refs.length);
-            // grow
-            for (let i = arr.length; i < refs.length; i++) arr.splice(i, 0, undefined);
-
-            // refresh items
-            for (let i = 0; i < refs.length; i++) {
-              const ek = refs[i];
-              arr[i] = ek ? getEdgeView(ek, nodeField, variables, canonical) : undefined;
-            }
-
-            cached.refs = refs;
-            cached.sourceArray = list;
-          }
-
-          return cached.array;
+          return edgeCache.array;
         }
 
-        const value = Reflect.get(target, prop, receiver);
+        const raw = Reflect.get(target, p, receiver);
 
-        if (value && typeof value === "object" && (value as any).__ref) {
-          const rec = graph.materializeRecord((value as any).__ref);
-          return rec ? getEntityView(rec, null, undefined, variables, canonical) : undefined;
-        }
+        if (isObject(raw) && (raw as any).__ref) {
+          let refKey = (raw as any).__ref as string;
+          const subPlan = typeof p === "string" ? selectionMap.get(p) : undefined;
 
-        if (Array.isArray(value)) {
-          const out = new Array(value.length);
-          for (let i = 0; i < value.length; i++) {
-            const item = value[i];
-            if (item && typeof item === "object" && (item as any).__ref) {
-              const rec = graph.materializeRecord((item as any).__ref);
-              out[i] = rec ? getEntityView(rec, null, undefined, variables, canonical) : undefined;
-            } else {
-              out[i] = item;
+          if (canonical && pageKeyStr && subPlan) {
+            const canonicalContainerKey = `${pageKeyStr}.${String(p)}`;
+            if (graph.getRecord(canonicalContainerKey)) {
+              refKey = canonicalContainerKey;
             }
           }
-          return out;
+
+          return getView({ source: refKey, field: subPlan ?? null, variables, canonical });
         }
 
-        return value;
+        const subPlan = typeof p === "string" ? selectionMap.get(p) : undefined;
+        if (Array.isArray(raw)) {
+          return raw.map((v) => wrapInline(v, subPlan ?? null, variables, canonical));
+        }
+
+        if (isObject(raw)) {
+          return wrapInline(raw, subPlan ?? null, variables, canonical, target, p);
+        }
+
+        return raw;
       },
-      has: (t, p) => Reflect.has(t, p),
-      ownKeys: (t) => Reflect.ownKeys(t),
-      getOwnPropertyDescriptor: (t, p) => Reflect.getOwnPropertyDescriptor(t, p),
-      set() { return false; },
+      has: READONLY_HANDLERS.has,
+      ownKeys: READONLY_HANDLERS.ownKeys,
+      getOwnPropertyDescriptor: READONLY_HANDLERS.getOwnPropertyDescriptor,
+      set: READONLY_HANDLERS.set,
+      deleteProperty: READONLY_HANDLERS.deleteProperty,
+      defineProperty: READONLY_HANDLERS.defineProperty,
+      setPrototypeOf: READONLY_HANDLERS.setPrototypeOf,
     });
 
-    if (!bucket || bucket.kind !== "page") {
-      bucket = { kind: "page", view, edgesCache: undefined };
-      viewCache.set(pageProxy, bucket);
-    } else {
-      bucket.view = view;
-    }
-
+    byCanonical.set(canonical, { view, edgeCache: state.edgeCache });
     return view;
   };
 
-  return {
-    getEntityView,
-    getEdgeView,
-    getConnectionView,
+  /**
+   * Creates an entity or container view with plan-guided selection.
+   * Follows __ref/__refs, routes connection fields to connection branch.
+   *
+   * @param proxy - Materialized entity or container proxy
+   * @param field - PlanField describing the selection
+   * @param variables - Query variables
+   * @param canonical - Whether to use canonical keys for nested connections
+   * @param selectionKey - Cache key for this selection
+   */
+  const getEntityView = (
+    proxy: any,
+    field: PlanField | null | undefined,
+    variables: Record<string, any>,
+    canonical: boolean,
+    selectionKey: any,
+  ) => {
+    const byCanonical = getOrCreateBucket(proxy, selectionKey);
+    const cached = byCanonical.get(canonical);
+    if (cached?.view) {
+      return cached.view;
+    }
+
+    const entityId = graph.identify(proxy);
+    const isContainer = !entityId;
+
+    const selectionMap = field?.selectionMap ?? EMPTY_MAP;
+
+    if (isContainer) {
+      const wrapped = wrapInline(proxy, field, variables, canonical);
+      byCanonical.set(canonical, { view: wrapped });
+      return wrapped;
+    }
+
+    const view = new Proxy(proxy, {
+      get(target, p, receiver) {
+        const planField = typeof p === "string" ? selectionMap.get(p) : undefined;
+
+        if (planField?.isConnection) {
+          const parentId = entityId || "";
+          const pageKeyStr = canonical
+            ? buildConnectionCanonicalKey(planField, parentId, variables)
+            : buildConnectionKey(planField, parentId, variables);
+
+          const pageProxy = graph.materializeRecord(pageKeyStr);
+
+          if (!pageProxy || (isObject(pageProxy) && Object.keys(pageProxy).length === 0)) {
+            const typename = planField.fieldName
+              ? `${planField.fieldName.charAt(0).toUpperCase()}${planField.fieldName.slice(1)}Connection`
+              : "Connection";
+
+            const materializedProxy = ensureConnectionSkeleton(pageKeyStr, typename);
+
+            return getConnectionView(
+              materializedProxy,
+              pageKeyStr,
+              planField,
+              variables,
+              canonical,
+              selectionKeyOf(planField),
+            );
+          }
+
+          return getConnectionView(
+            pageProxy,
+            pageKeyStr,
+            planField,
+            variables,
+            canonical,
+            selectionKeyOf(planField),
+          );
+        }
+
+        const raw = Reflect.get(target, p, receiver);
+
+        if (isObject(raw) && (raw as any).__ref) {
+          const child = graph.materializeRecord((raw as any).__ref);
+          const subPlan = typeof p === "string" ? selectionMap.get(p) : undefined;
+
+          return getView({ source: child, field: subPlan ?? null, variables, canonical });
+        }
+
+        const subPlan = typeof p === "string" ? selectionMap.get(p) : undefined;
+        if (Array.isArray(raw)) {
+          return raw.map((v) => wrapInline(v, subPlan ?? null, variables, canonical));
+        }
+
+        if (isObject(raw)) {
+          return wrapInline(raw, subPlan ?? null, variables, canonical, target, p);
+        }
+
+        return raw;
+      },
+      has: READONLY_HANDLERS.has,
+      ownKeys: READONLY_HANDLERS.ownKeys,
+      getOwnPropertyDescriptor: READONLY_HANDLERS.getOwnPropertyDescriptor,
+      set: READONLY_HANDLERS.set,
+      deleteProperty: READONLY_HANDLERS.deleteProperty,
+      defineProperty: READONLY_HANDLERS.defineProperty,
+      setPrototypeOf: READONLY_HANDLERS.setPrototypeOf,
+    });
+
+    byCanonical.set(canonical, { view });
+    return view;
   };
+
+  /**
+   * Gets or creates a stable, reactive view over a graph record.
+   * Views are cached by (source, selection, canonical) to ensure identity stability.
+   *
+   * @param source - Record key string, materialized proxy, or null
+   * @param field - PlanField describing the current selection
+   * @param variables - Query variables for connection key building
+   * @param canonical - Whether nested connections use canonical keys
+   * @returns Stable reactive proxy view
+   */
+  const getView = ({
+    source,
+    field = null,
+    variables,
+    canonical,
+  }: {
+    source: string | object | null;
+    field?: PlanField | null;
+    variables: Record<string, any>;
+    canonical: boolean;
+  }): any => {
+    if (source == null) {
+      return source;
+    }
+
+    const proxy = typeof source === "string" ? graph.materializeRecord(source) : source;
+
+    if (!isObject(proxy)) {
+      return proxy;
+    }
+
+    const selectionKey = selectionKeyOf(field);
+
+    if (field?.isConnection) {
+      const pageKeyStr = typeof source === "string" ? source : undefined;
+
+      return getConnectionView(proxy, pageKeyStr, field ?? undefined, variables, canonical, selectionKey);
+    }
+
+    return getEntityView(proxy, field, variables, canonical, selectionKey);
+  };
+
+  return { getView };
 };

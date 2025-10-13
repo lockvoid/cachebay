@@ -201,7 +201,7 @@ describe("Cache Policies Behavior", () => {
 
         data: {
           __typename: "Query",
-          users: fixtures.users.buildConnection([{ email: "old.news@example.com" }]),
+          users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }]),
         },
       });
 
@@ -211,7 +211,7 @@ describe("Cache Policies Behavior", () => {
             return variables.usersRole === "news";
           },
           respond: () => {
-            return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ email: "fresh.news@example.com" }]) } };
+            return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ id: "u1", email: "u1+updated@example.com" }]) } };
           },
           delay: 15,
         },
@@ -240,10 +240,10 @@ describe("Cache Policies Behavior", () => {
       });
 
       await delay(10);
-      expect(getEdges(wrapper, "email")).toEqual(["old.news@example.com"]);
+      expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
 
       await delay(20);
-      expect(getEdges(wrapper, "email")).toEqual(["fresh.news@example.com"]);
+      expect(getEdges(wrapper, "email")).toEqual(["u1+updated@example.com"]);
       expect(fx.calls.length).toBe(1);
 
       await fx.restore();
@@ -261,7 +261,7 @@ describe("Cache Policies Behavior", () => {
         },
         data: {
           __typename: "Query",
-          users: fixtures.users.buildConnection([{ email: "u1@example.com" }]),
+          users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }]),
         },
       });
 
@@ -271,7 +271,7 @@ describe("Cache Policies Behavior", () => {
             return variables.usersRole === "admin";
           },
           respond: () => {
-            return { data: { data: { __typename: "Query", users: fixtures.users.buildConnection([{ email: "u1@example.com" }]) } } };
+            return { data: { data: { __typename: "Query", users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }]) } } };
           },
           delay: 10,
         },
@@ -322,7 +322,7 @@ describe("Cache Policies Behavior", () => {
 
         data: {
           __typename: "Query",
-          users: fixtures.users.buildConnection([{ email: "u1@example.com" }]),
+          users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }]),
         },
       });
 
@@ -332,7 +332,7 @@ describe("Cache Policies Behavior", () => {
             return variables.usersRole === "admin";
           },
           respond: () => {
-            return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ email: "u1+updated@example.com" }]) } };
+            return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ id: "u1", email: "u1+updated@example.com" }]) } };
           },
           delay: 10,
         },
@@ -426,6 +426,7 @@ describe("Cache Policies Behavior", () => {
 
           posts: fixtures.posts.buildConnection([
             {
+              id: "p1",
               title: "Post 1",
               comments: fixtures.comments.buildConnection([
                 {
@@ -452,6 +453,7 @@ describe("Cache Policies Behavior", () => {
 
           posts: fixtures.posts.buildConnection([
             {
+              id: "p1",
               title: "Post 1",
               comments: fixtures.comments.buildConnection([
                 {
@@ -551,12 +553,13 @@ describe("Cache Policies Behavior", () => {
 
         data: {
           __typename: "Query",
-          users: fixtures.users.buildConnection([{ email: "u1@example.com" }, { email: "u2@example.com" }]),
+          users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }, { id: "u2", email: "u2@example.com" }]),
         },
       });
 
       await seedCache(cache, {
         query: operations.USERS_QUERY,
+
         variables: {
           usersRole: "admin",
           usersFirst: 2,
@@ -565,7 +568,7 @@ describe("Cache Policies Behavior", () => {
 
         data: {
           __typename: "Query",
-          users: fixtures.users.buildConnection([{ email: "u3@example.com" }]),
+          users: fixtures.users.buildConnection([{ id: "u3", email: "u3@example.com" }]),
         },
       });
 
@@ -575,7 +578,7 @@ describe("Cache Policies Behavior", () => {
             return variables.usersRole === "admin" && variables.usersAfter == null;
           },
           respond: () => {
-            return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ email: "u1@example.com" }, { email: "u2@example.com" }]) } };
+            return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }, { id: "u2", email: "u2@example.com" }]) } };
           },
           delay: 15,
         },
@@ -711,6 +714,7 @@ describe("Cache Policies Behavior", () => {
 
           posts: fixtures.posts.buildConnection([
             {
+              id: "p1",
               title: "Post 1",
 
               comments: fixtures.comments.buildConnection([
@@ -788,7 +792,7 @@ describe("Cache Policies Behavior", () => {
 
         data: {
           __typename: "Query",
-          users: fixtures.users.buildConnection([{ email: "u1@example.com" }]),
+          users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }]),
         },
       });
 

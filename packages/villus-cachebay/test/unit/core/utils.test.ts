@@ -1,77 +1,101 @@
 import { ROOT_ID } from "@/src/core/constants";
-import { traverseFast, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, TRAVERSE_SKIP, isObject } from "@/src/core/utils";
+import { traverseFast, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, TRAVERSE_SKIP, TRAVERSE_SCALAR, TRAVERSE_ARRAY, TRAVERSE_OBJECT, isObject } from "@/src/core/utils";
 import { operations, createTestPlan } from "@/test/helpers";
 
 describe("Utils", () => {
   describe("traverseFast", () => {
-    let visitedNodes: Array<{ parentNode: any; valueNode: any; fieldKey: string | number | null; frameContext: any }>;
+    let visitedNodes: Array<{ parentNode: any; valueNode: any; fieldKey: string | number | null; kind: any; frameContext: any }>;
     let visitMock: ReturnType<typeof vi.fn>;
 
     beforeEach(() => {
       visitedNodes = [];
 
-      visitMock = vi.fn((parentNode, valueNode, fieldKey, frameContext) => {
-        visitedNodes.push({ parentNode, valueNode, fieldKey, frameContext });
+      visitMock = vi.fn((parentNode, valueNode, fieldKey, kind, frameContext) => {
+        visitedNodes.push({ parentNode, valueNode, fieldKey, kind, frameContext });
       });
     });
 
     it("traverses a simple object", () => {
       traverseFast({ a: { value: 1 }, b: { value: 2 } }, { initial: true }, visitMock);
 
-      expect(visitMock).toHaveBeenCalledTimes(3);
-      expect(visitMock).toHaveBeenCalledWith(null, { a: { value: 1 }, b: { value: 2 } }, null, { initial: true });
-      expect(visitMock).toHaveBeenCalledWith({ a: { value: 1 }, b: { value: 2 } }, { value: 1 }, "a", { initial: true });
-      expect(visitMock).toHaveBeenCalledWith({ a: { value: 1 }, b: { value: 2 } }, { value: 2 }, "b", { initial: true });
+      expect(visitMock).toHaveBeenCalledTimes(5);
+      expect(visitMock).toHaveBeenCalledWith(null, { a: { value: 1 }, b: { value: 2 } }, null, TRAVERSE_OBJECT, { initial: true });
+      expect(visitMock).toHaveBeenCalledWith({ a: { value: 1 }, b: { value: 2 } }, { value: 1 }, "a", TRAVERSE_OBJECT, { initial: true });
+      expect(visitMock).toHaveBeenCalledWith({ value: 1 }, 1, "value", TRAVERSE_SCALAR, { initial: true });
+      expect(visitMock).toHaveBeenCalledWith({ a: { value: 1 }, b: { value: 2 } }, { value: 2 }, "b", TRAVERSE_OBJECT, { initial: true });
+      expect(visitMock).toHaveBeenCalledWith({ value: 2 }, 2, "value", TRAVERSE_SCALAR, { initial: true });
     });
 
     it("traverses nested objects", () => {
       traverseFast({ level1: { level2: { level3: { value: "deep" } } } }, {}, visitMock);
 
-      expect(visitMock).toHaveBeenCalledTimes(4);
-      expect(visitedNodes[0]).toEqual({ parentNode: null, valueNode: { level1: { level2: { level3: { value: "deep" } } } }, fieldKey: null, frameContext: {} });
+      expect(visitMock).toHaveBeenCalledTimes(5);
+      expect(visitedNodes[0]).toEqual({
+        parentNode: null,
+        valueNode: { level1: { level2: { level3: { value: "deep" } } } },
+        fieldKey: null,
+        kind: TRAVERSE_OBJECT,
+        frameContext: {},
+      });
       expect(visitedNodes[1].fieldKey).toBe("level1");
       expect(visitedNodes[2].fieldKey).toBe("level2");
       expect(visitedNodes[3].fieldKey).toBe("level3");
+      expect(visitedNodes[4].fieldKey).toBe("value");
+      expect(visitedNodes[4].kind).toBe(TRAVERSE_SCALAR);
     });
 
     it("traverses arrays", () => {
       traverseFast([{ id: 1 }, { id: 2 }, { id: 3 }], {}, visitMock);
 
-      expect(visitMock).toHaveBeenCalledTimes(4);
-      expect(visitMock).toHaveBeenCalledWith(null, [{ id: 1 }, { id: 2 }, { id: 3 }], null, {});
-      expect(visitMock).toHaveBeenCalledWith([{ id: 1 }, { id: 2 }, { id: 3 }], { id: 1 }, 0, {});
-      expect(visitMock).toHaveBeenCalledWith([{ id: 1 }, { id: 2 }, { id: 3 }], { id: 2 }, 1, {});
-      expect(visitMock).toHaveBeenCalledWith([{ id: 1 }, { id: 2 }, { id: 3 }], { id: 3 }, 2, {});
+      expect(visitMock).toHaveBeenCalledTimes(7);
+      expect(visitMock).toHaveBeenCalledWith(null, [{ id: 1 }, { id: 2 }, { id: 3 }], null, TRAVERSE_ARRAY, {});
+      expect(visitMock).toHaveBeenCalledWith([{ id: 1 }, { id: 2 }, { id: 3 }], { id: 1 }, 0, TRAVERSE_OBJECT, {});
+      expect(visitMock).toHaveBeenCalledWith({ id: 1 }, 1, "id", TRAVERSE_SCALAR, {});
+      expect(visitMock).toHaveBeenCalledWith([{ id: 1 }, { id: 2 }, { id: 3 }], { id: 2 }, 1, TRAVERSE_OBJECT, {});
+      expect(visitMock).toHaveBeenCalledWith({ id: 2 }, 2, "id", TRAVERSE_SCALAR, {});
+      expect(visitMock).toHaveBeenCalledWith([{ id: 1 }, { id: 2 }, { id: 3 }], { id: 3 }, 2, TRAVERSE_OBJECT, {});
+      expect(visitMock).toHaveBeenCalledWith({ id: 3 }, 3, "id", TRAVERSE_SCALAR, {});
     });
 
     it("traverses mixed objects and arrays", () => {
       traverseFast({ items: [{ name: "Item1", details: { color: "black" } }, { name: "Item2", details: { color: "white" } }] }, {}, visitMock);
 
-      expect(visitMock).toHaveBeenCalledTimes(6);
+      expect(visitMock).toHaveBeenCalledTimes(10);
 
       const arrayNode = visitedNodes.find(v => Array.isArray(v.valueNode));
       expect(arrayNode).toBeDefined();
       expect(arrayNode?.fieldKey).toBe("items");
+      expect(arrayNode?.kind).toBe(TRAVERSE_ARRAY);
     });
 
-    it("skips non-object primitives in objects", () => {
+    it("visits primitives in objects with TRAVERSE_SCALAR", () => {
       traverseFast({ string: "string", number: 42, boolean: true, null: null, object: { nested: true } }, {}, visitMock);
 
-      expect(visitMock).toHaveBeenCalledTimes(2);
-      expect(visitMock).toHaveBeenCalledWith(null, { string: "string", number: 42, boolean: true, null: null, object: { nested: true } }, null, {});
-      expect(visitMock).toHaveBeenCalledWith({ string: "string", number: 42, boolean: true, null: null, object: { nested: true } }, { nested: true }, "object", {});
+      expect(visitMock).toHaveBeenCalledTimes(7);
+      expect(visitMock).toHaveBeenCalledWith(null, { string: "string", number: 42, boolean: true, null: null, object: { nested: true } }, null, TRAVERSE_OBJECT, {});
+      expect(visitMock).toHaveBeenCalledWith({ string: "string", number: 42, boolean: true, null: null, object: { nested: true } }, "string", "string", TRAVERSE_SCALAR, {});
+      expect(visitMock).toHaveBeenCalledWith({ string: "string", number: 42, boolean: true, null: null, object: { nested: true } }, 42, "number", TRAVERSE_SCALAR, {});
+      expect(visitMock).toHaveBeenCalledWith({ string: "string", number: 42, boolean: true, null: null, object: { nested: true } }, true, "boolean", TRAVERSE_SCALAR, {});
+      expect(visitMock).toHaveBeenCalledWith({ string: "string", number: 42, boolean: true, null: null, object: { nested: true } }, null, "null", TRAVERSE_SCALAR, {});
+      expect(visitMock).toHaveBeenCalledWith({ string: "string", number: 42, boolean: true, null: null, object: { nested: true } }, { nested: true }, "object", TRAVERSE_OBJECT, {});
+      expect(visitMock).toHaveBeenCalledWith({ nested: true }, true, "nested", TRAVERSE_SCALAR, {});
     });
 
-    it("skips non-object primitives in arrays", () => {
+    it("visits primitives in arrays with TRAVERSE_SCALAR", () => {
       traverseFast(["string", 42, true, null, { id: 1 }], {}, visitMock);
 
-      expect(visitMock).toHaveBeenCalledTimes(2);
-      expect(visitMock).toHaveBeenCalledWith(null, ["string", 42, true, null, { id: 1 }], null, {});
-      expect(visitMock).toHaveBeenCalledWith(["string", 42, true, null, { id: 1 }], { id: 1 }, 4, {});
+      expect(visitMock).toHaveBeenCalledTimes(7);
+      expect(visitMock).toHaveBeenCalledWith(null, ["string", 42, true, null, { id: 1 }], null, TRAVERSE_ARRAY, {});
+      expect(visitMock).toHaveBeenCalledWith(["string", 42, true, null, { id: 1 }], "string", 0, TRAVERSE_SCALAR, {});
+      expect(visitMock).toHaveBeenCalledWith(["string", 42, true, null, { id: 1 }], 42, 1, TRAVERSE_SCALAR, {});
+      expect(visitMock).toHaveBeenCalledWith(["string", 42, true, null, { id: 1 }], true, 2, TRAVERSE_SCALAR, {});
+      expect(visitMock).toHaveBeenCalledWith(["string", 42, true, null, { id: 1 }], null, 3, TRAVERSE_SCALAR, {});
+      expect(visitMock).toHaveBeenCalledWith(["string", 42, true, null, { id: 1 }], { id: 1 }, 4, TRAVERSE_OBJECT, {});
+      expect(visitMock).toHaveBeenCalledWith({ id: 1 }, 1, "id", TRAVERSE_SCALAR, {});
     });
 
     it("handles TRAVERSE_SKIP for objects", () => {
-      const skipVisit = vi.fn((parentNode, valueNode, fieldKey) => {
+      const skipVisit = vi.fn((parentNode, valueNode, fieldKey, kind) => {
         if (fieldKey === "skipMe") {
           return TRAVERSE_SKIP;
         }
@@ -79,17 +103,18 @@ describe("Utils", () => {
 
       traverseFast({ skipMe: { child: { value: "should not visit" } }, visitMe: { child: { value: "should visit" } } }, {}, skipVisit);
 
-      expect(skipVisit).toHaveBeenCalledTimes(4);
-      expect(skipVisit).toHaveBeenCalledWith(null, { skipMe: { child: { value: "should not visit" } }, visitMe: { child: { value: "should visit" } } }, null, {});
-      expect(skipVisit).toHaveBeenCalledWith({ skipMe: { child: { value: "should not visit" } }, visitMe: { child: { value: "should visit" } } }, { child: { value: "should not visit" } }, "skipMe", {});
-      expect(skipVisit).toHaveBeenCalledWith({ skipMe: { child: { value: "should not visit" } }, visitMe: { child: { value: "should visit" } } }, { child: { value: "should visit" } }, "visitMe", {});
-      expect(skipVisit).toHaveBeenCalledWith({ child: { value: "should visit" } }, { value: "should visit" }, "child", {});
+      expect(skipVisit).toHaveBeenCalledTimes(5);
+      expect(skipVisit).toHaveBeenCalledWith(null, { skipMe: { child: { value: "should not visit" } }, visitMe: { child: { value: "should visit" } } }, null, TRAVERSE_OBJECT, {});
+      expect(skipVisit).toHaveBeenCalledWith({ skipMe: { child: { value: "should not visit" } }, visitMe: { child: { value: "should visit" } } }, { child: { value: "should not visit" } }, "skipMe", TRAVERSE_OBJECT, {});
+      expect(skipVisit).toHaveBeenCalledWith({ skipMe: { child: { value: "should not visit" } }, visitMe: { child: { value: "should visit" } } }, { child: { value: "should visit" } }, "visitMe", TRAVERSE_OBJECT, {});
+      expect(skipVisit).toHaveBeenCalledWith({ child: { value: "should visit" } }, { value: "should visit" }, "child", TRAVERSE_OBJECT, {});
+      expect(skipVisit).toHaveBeenCalledWith({ value: "should visit" }, "should visit", "value", TRAVERSE_SCALAR, {});
 
-      expect(skipVisit).not.toHaveBeenCalledWith({ child: { value: "should not visit" } }, { value: "should not visit" }, "child", {});
+      expect(skipVisit).not.toHaveBeenCalledWith({ child: { value: "should not visit" } }, { value: "should not visit" }, "child", TRAVERSE_OBJECT, {});
     });
 
     it("respects TRAVERSE_SKIP for arrays", () => {
-      const skipVisit = vi.fn((parentNode, valueNode) => {
+      const skipVisit = vi.fn((parentNode, valueNode, fieldKey, kind) => {
         if (Array.isArray(valueNode)) {
           return TRAVERSE_SKIP;
         }
@@ -98,77 +123,83 @@ describe("Utils", () => {
       traverseFast([{ id: 1, children: [{ nested: true }] }, { id: 2 }], {}, skipVisit);
 
       expect(skipVisit).toHaveBeenCalledTimes(1);
-      expect(skipVisit).toHaveBeenCalledWith(null, [{ id: 1, children: [{ nested: true }] }, { id: 2 }], null, {});
+      expect(skipVisit).toHaveBeenCalledWith(null, [{ id: 1, children: [{ nested: true }] }, { id: 2 }], null, TRAVERSE_ARRAY, {});
     });
 
     it("updates context when visitor returns new context", () => {
-      const contextVisit = vi.fn((parentNode, valueNode, fieldKey, frameContext) => {
+      const contextVisit = vi.fn((parentNode, valueNode, fieldKey, kind, frameContext) => {
         if (fieldKey === "a") {
           return { count: frameContext.count + 1 };
-        };
+        }
       });
 
       traverseFast({ a: { b: { value: 1 } } }, { count: 0 }, contextVisit);
 
-      expect(contextVisit).toHaveBeenCalledTimes(3);
-      expect(contextVisit).toHaveBeenNthCalledWith(1, null, { a: { b: { value: 1 } } }, null, { count: 0 });
-      expect(contextVisit).toHaveBeenNthCalledWith(2, { a: { b: { value: 1 } } }, { b: { value: 1 } }, "a", { count: 0 });
-      expect(contextVisit).toHaveBeenNthCalledWith(3, { b: { value: 1 } }, { value: 1 }, "b", { count: 1 });
+      expect(contextVisit).toHaveBeenCalledTimes(4);
+      expect(contextVisit).toHaveBeenNthCalledWith(1, null, { a: { b: { value: 1 } } }, null, TRAVERSE_OBJECT, { count: 0 });
+      expect(contextVisit).toHaveBeenNthCalledWith(2, { a: { b: { value: 1 } } }, { b: { value: 1 } }, "a", TRAVERSE_OBJECT, { count: 0 });
+      expect(contextVisit).toHaveBeenNthCalledWith(3, { b: { value: 1 } }, { value: 1 }, "b", TRAVERSE_OBJECT, { count: 1 });
+      expect(contextVisit).toHaveBeenNthCalledWith(4, { value: 1 }, 1, "value", TRAVERSE_SCALAR, { count: 1 });
     });
 
     it("passes updated context to nested objects", () => {
-      const contextVisit = vi.fn((parentNode, valueNode, fieldKey, frameContext) => {
+      const contextVisit = vi.fn((parentNode, valueNode, fieldKey, kind, frameContext) => {
         return { level: frameContext.level + 1 };
       });
 
       traverseFast({ parent: { child: {} } }, { level: 0 }, contextVisit);
 
       expect(contextVisit).toHaveBeenCalledTimes(3);
-      expect(contextVisit).toHaveBeenNthCalledWith(1, null, { parent: { child: {} } }, null, { level: 0 });
-      expect(contextVisit).toHaveBeenNthCalledWith(2, { parent: { child: {} } }, { child: {} }, "parent", { level: 1 });
-      expect(contextVisit).toHaveBeenNthCalledWith(3, { child: {} }, {}, "child", { level: 2 });
+      expect(contextVisit).toHaveBeenNthCalledWith(1, null, { parent: { child: {} } }, null, TRAVERSE_OBJECT, { level: 0 });
+      expect(contextVisit).toHaveBeenNthCalledWith(2, { parent: { child: {} } }, { child: {} }, "parent", TRAVERSE_OBJECT, { level: 1 });
+      expect(contextVisit).toHaveBeenNthCalledWith(3, { child: {} }, {}, "child", TRAVERSE_OBJECT, { level: 2 });
     });
 
     it("handles empty objects", () => {
       traverseFast({}, {}, visitMock);
 
       expect(visitMock).toHaveBeenCalledTimes(1);
-      expect(visitMock).toHaveBeenCalledWith(null, {}, null, {});
+      expect(visitMock).toHaveBeenCalledWith(null, {}, null, TRAVERSE_OBJECT, {});
     });
 
     it("handles empty arrays", () => {
       traverseFast([], {}, visitMock);
 
       expect(visitMock).toHaveBeenCalledTimes(1);
-      expect(visitMock).toHaveBeenCalledWith(null, [], null, {});
+      expect(visitMock).toHaveBeenCalledWith(null, [], null, TRAVERSE_ARRAY, {});
     });
 
     it("handles null root", () => {
       traverseFast(null, {}, visitMock);
 
-      expect(visitMock).not.toHaveBeenCalled();
+      expect(visitMock).toHaveBeenCalledTimes(1);
+      expect(visitMock).toHaveBeenCalledWith(null, null, null, TRAVERSE_SCALAR, {});
     });
 
     it("handles undefined root", () => {
       traverseFast(undefined, {}, visitMock);
 
-      expect(visitMock).not.toHaveBeenCalled();
+      expect(visitMock).toHaveBeenCalledTimes(1);
+      expect(visitMock).toHaveBeenCalledWith(null, undefined, null, TRAVERSE_SCALAR, {});
     });
 
     it("handles primitive root values", () => {
       traverseFast("string", {}, visitMock);
 
-      expect(visitMock).not.toHaveBeenCalled();
+      expect(visitMock).toHaveBeenCalledTimes(1);
+      expect(visitMock).toHaveBeenCalledWith(null, "string", null, TRAVERSE_SCALAR, {});
 
       visitMock.mockClear();
 
       traverseFast(42, {}, visitMock);
-      expect(visitMock).not.toHaveBeenCalled();
+      expect(visitMock).toHaveBeenCalledTimes(1);
+      expect(visitMock).toHaveBeenCalledWith(null, 42, null, TRAVERSE_SCALAR, {});
 
       visitMock.mockClear();
 
       traverseFast(true, {}, visitMock);
-      expect(visitMock).not.toHaveBeenCalled();
+      expect(visitMock).toHaveBeenCalledTimes(1);
+      expect(visitMock).toHaveBeenCalledWith(null, true, null, TRAVERSE_SCALAR, {});
     });
 
     it("maintains correct parent-child relationships", () => {
@@ -179,6 +210,7 @@ describe("Utils", () => {
       const parent1Visits = visitedNodes.filter(v => v.parentNode === root.parent1);
 
       expect(parent1Visits).toHaveLength(2);
+      // Stack-based traversal visits in reverse order
       expect(parent1Visits[0].fieldKey).toBe("child2");
       expect(parent1Visits[1].fieldKey).toBe("child1");
 
@@ -192,14 +224,84 @@ describe("Utils", () => {
       traverseFast({ first: {}, second: {}, third: {} }, {}, visitMock);
 
       const keys = visitedNodes.map(v => v.fieldKey).filter(k => k !== null);
+      // Stack-based traversal processes object keys in reverse order
       expect(keys).toEqual(["third", "second", "first"]);
     });
 
     it("visits array elements in correct order", () => {
       traverseFast([{ index: 0 }, { index: 1 }, { index: 2 }], {}, visitMock);
 
-      const indices = visitedNodes.filter(v => typeof v.fieldKey === "number").map(v => v.fieldKey);
+      const indices = visitedNodes.filter(v => typeof v.fieldKey === "number" && v.kind === TRAVERSE_OBJECT).map(v => v.fieldKey);
       expect(indices).toEqual([0, 1, 2]);
+    });
+
+    it("correctly identifies node kinds", () => {
+      traverseFast({ obj: { nested: 1 }, arr: [1, 2], scalar: "test" }, {}, visitMock);
+
+      const objectNodes = visitedNodes.filter(v => v.kind === TRAVERSE_OBJECT);
+      const arrayNodes = visitedNodes.filter(v => v.kind === TRAVERSE_ARRAY);
+      const scalarNodes = visitedNodes.filter(v => v.kind === TRAVERSE_SCALAR);
+
+      expect(objectNodes.length).toBeGreaterThan(0);
+      expect(arrayNodes.length).toBeGreaterThan(0);
+      expect(scalarNodes.length).toBeGreaterThan(0);
+    });
+
+    it("handles deeply nested structures", () => {
+      const deep = { a: { b: { c: { d: { e: { value: "deep" } } } } } };
+
+      traverseFast(deep, {}, visitMock);
+
+      const depthLevels = visitedNodes.filter(v => v.kind === TRAVERSE_OBJECT).length;
+      expect(depthLevels).toBe(6); // root + a + b + c + d + e
+    });
+
+    it("handles mixed array and object nesting", () => {
+      const mixed = { users: [{ name: "Alice", tags: ["admin", "user"] }, { name: "Bob", tags: ["user"] }] };
+
+      traverseFast(mixed, {}, visitMock);
+
+      const arrayKinds = visitedNodes.filter(v => v.kind === TRAVERSE_ARRAY);
+      const objectKinds = visitedNodes.filter(v => v.kind === TRAVERSE_OBJECT);
+      const scalarKinds = visitedNodes.filter(v => v.kind === TRAVERSE_SCALAR);
+
+      expect(arrayKinds.length).toBe(3); // users array + 2 tags arrays
+      expect(objectKinds.length).toBeGreaterThan(0);
+      expect(scalarKinds.length).toBeGreaterThan(0);
+    });
+
+    it("context propagates through TRAVERSE_SKIP", () => {
+      const contextVisit = vi.fn((parentNode, valueNode, fieldKey, kind, frameContext) => {
+        if (fieldKey === null) {
+          return { counter: 1 };
+        }
+        if (fieldKey === "skip") {
+          return TRAVERSE_SKIP;
+        }
+        return { counter: frameContext.counter + 1 };
+      });
+
+      traverseFast({ skip: { nested: {} }, visit: { nested: {} } }, {}, contextVisit);
+
+      const visitedContexts = contextVisit.mock.calls.map(call => call[4]);
+      const maxCounter = Math.max(...visitedContexts.map(ctx => ctx.counter || 0));
+
+      expect(maxCounter).toBeGreaterThan(1);
+    });
+
+    it("handles arrays with only primitive values in reverse order due to stack", () => {
+      traverseFast([1, 2, 3, "four", true], {}, visitMock);
+
+      const scalarCalls = visitedNodes.filter(v => v.kind === TRAVERSE_SCALAR);
+      expect(scalarCalls).toHaveLength(5);
+      expect(scalarCalls.map(v => v.valueNode)).toEqual([true, "four", 3, 2, 1]);
+    });
+
+    it("handles objects with only primitive values", () => {
+      traverseFast({ a: 1, b: "two", c: true, d: null }, {}, visitMock);
+
+      const scalarCalls = visitedNodes.filter(v => v.kind === TRAVERSE_SCALAR);
+      expect(scalarCalls).toHaveLength(4);
     });
   });
 
@@ -229,7 +331,7 @@ describe("Utils", () => {
     });
 
     it("returns bare field name when all args are missing/undefined (stringifyArgs → '{}')", () => {
-      const plan  = createTestPlan(operations.POSTS_QUERY);
+      const plan = createTestPlan(operations.POSTS_QUERY);
       const posts = plan.rootSelectionMap!.get("posts")!;
 
       const key1 = buildFieldKey(posts, {});

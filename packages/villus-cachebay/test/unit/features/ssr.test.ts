@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createGraph } from "@/src/core/graph";
 import { createSSR } from "@/src/features/ssr";
 import { delay } from "@/test/helpers";
-import { seedConnectionPage } from "@/test/helpers/unit";
+import { writeConnectionPage } from "@/test/helpers/unit";
 
 describe("SSR", () => {
   let graph: ReturnType<typeof createGraph>;
@@ -81,15 +81,19 @@ describe("SSR", () => {
 
       const pageKey = '@.User:u1.posts({"after":null,"category":"tech","first":1})';
 
-      seedConnectionPage(
-        graph,
-        pageKey,
-        [{ nodeRef: "Post:p1", cursor: "p1" }],
-        { __typename: "PageInfo", startCursor: "p1", endCursor: "p1", hasNextPage: false },
-        { totalCount: 1 },
-        "PostEdge",
-        "PostConnection",
-      );
+      // Seed normalized connection page using the new helper
+      writeConnectionPage(graph, pageKey, {
+        __typename: "PostConnection",
+        totalCount: 1,
+        pageInfo: { startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false },
+        edges: [
+          {
+            __typename: "PostEdge",
+            cursor: "p1",
+            node: { __typename: "Post", id: "p1", title: "Post 1" },
+          },
+        ],
+      });
 
       // 1) Dehydrate
       const snapshot = ssr.dehydrate();
@@ -112,10 +116,15 @@ describe("SSR", () => {
 
       const pageRecord = graph.getRecord(pageKey);
       expect(pageRecord.__typename).toBe("PostConnection");
-      expect(pageRecord.pageInfo.endCursor).toBe("p1");
 
-      const edgeRef = pageRecord.edges[0].__ref;
-      const edgeRecord = graph.getRecord(edgeRef);
+      // pageInfo is stored by ref
+      const pageInfoRef = pageRecord.pageInfo.__ref;
+      const pageInfoRecord = graph.getRecord(pageInfoRef);
+      expect(pageInfoRecord.endCursor).toBe("p1");
+
+      // edges are stored as __refs
+      const firstEdgeKey = pageRecord.edges.__refs[0];
+      const edgeRecord = graph.getRecord(firstEdgeKey);
       expect(edgeRecord.cursor).toBe("p1");
       expect(edgeRecord.node.__ref).toBe("Post:p1");
     });

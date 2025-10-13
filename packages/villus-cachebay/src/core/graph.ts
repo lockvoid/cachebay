@@ -1,11 +1,20 @@
 import { shallowReactive } from "vue";
 import { ID_FIELD, TYPENAME_FIELD, IDENTITY_FIELDS } from "./constants";
+import { isObject } from "./utils";
 
+/**
+ * Configuration options for graph store
+ */
 export type GraphOptions = {
-  keys?: Record<string, (obj: any) => string | null>;
+  /** Custom key functions for entity identification by typename */
+  keys?: Record<string, (obj: Record<string, unknown>) => string | null>;
+  /** Interface to implementation mappings */
   interfaces?: Record<string, string[]>;
 };
 
+/**
+ * Graph store instance type
+ */
 export type GraphInstance = ReturnType<typeof createGraph>;
 
 const RECORD_PROXY_VERSION = Symbol("graph:record-proxy-version");
@@ -14,7 +23,7 @@ const RECORD_PROXY_VERSION = Symbol("graph:record-proxy-version");
  * Update proxy with only changed fields for optimal performance
  * @private
  */
-const overlayRecordDiff = (recordProxy: any, currentSnapshot: Record<string, any>, changedFields: string[], removedFields: string[], typenameChanged: boolean, idChanged: boolean, targetVersion: number) => {
+const overlayRecordDiff = (recordProxy: any, currentSnapshot: Record<string, any>, changedFields: string[], typenameChanged: boolean, idChanged: boolean, targetVersion: number) => {
   if (recordProxy[RECORD_PROXY_VERSION] === targetVersion) {
     return;
   }
@@ -29,10 +38,6 @@ const overlayRecordDiff = (recordProxy: any, currentSnapshot: Record<string, any
     } else {
       delete recordProxy[ID_FIELD];
     }
-  }
-
-  for (let i = 0; i < removedFields.length; i++) {
-    delete recordProxy[removedFields[i]];
   }
 
   for (let i = 0; i < changedFields.length; i++) {
@@ -92,30 +97,19 @@ const overlayRecordFull = (recordProxy: any, currentSnapshot: Record<string, any
  * Diff field changes and track what changed
  * @private
  */
-
-const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot: Record<string, any>): [string[], string[], boolean, boolean, boolean] => {
+const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot: Record<string, any>): [string[], boolean, boolean, boolean] => {
   let idChanged = false;
   let typenameChanged = false;
+
   const changedFields: string[] = [];
-  const removedFields: string[] = [];
 
   for (let i = 0, fields = Object.keys(partialSnapshot); i < fields.length; i++) {
     const fieldName = fields[i];
     const incomingValue = partialSnapshot[fieldName];
 
+    // IMPORTANT: Ignore undefined patches (do NOT delete existing fields).
+    // Normalization may include keys with `undefined` when the server omits them.
     if (incomingValue === undefined) {
-      if (fieldName in currentSnapshot) {
-        delete currentSnapshot[fieldName];
-
-        if (fieldName === ID_FIELD) {
-          idChanged = true;
-        } else if (fieldName === TYPENAME_FIELD) {
-          typenameChanged = true;
-        } else {
-          removedFields.push(fieldName);
-        }
-      }
-
       continue;
     }
 
@@ -139,19 +133,21 @@ const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot
       continue;
     }
 
+    // Store all values including null (null is a valid GraphQL value)
     if (currentSnapshot[fieldName] !== incomingValue) {
       currentSnapshot[fieldName] = incomingValue;
       changedFields.push(fieldName);
     }
   }
 
-  const hasChanges = idChanged || typenameChanged || changedFields.length > 0 || removedFields.length > 0;
+  const hasChanges = idChanged || typenameChanged || changedFields.length > 0;
 
-  return [changedFields, removedFields, typenameChanged, idChanged, hasChanges];
+  return [changedFields, typenameChanged, idChanged, hasChanges];
 };
 
 /**
- * Unified identity manager handling key parsing, interface resolution, and keyer functions
+ * Identity manager for entity key generation and interface resolution
+ * Handles typename mapping, key parsing, and custom key functions
  * @private
  */
 class IdentityManager {
@@ -197,6 +193,10 @@ class IdentityManager {
   }
 
   stringifyKey(object: any): string | null {
+    if (!isObject(object)) {
+      return null;
+    }
+
     const typename = this.getCanonicalTypename(object[TYPENAME_FIELD]) || object[TYPENAME_FIELD];
 
     if (!typename) {
@@ -217,6 +217,11 @@ class IdentityManager {
   }
 }
 
+/**
+ * Create a normalized graph store with reactive proxies
+ * @param options - Configuration for keys and interfaces
+ * @returns Graph store instance with CRUD and materialization methods
+ */
 export const createGraph = (options?: GraphOptions) => {
   const identityManager = new IdentityManager({ keys: options?.keys || {}, interfaces: options?.interfaces || {} });
 
@@ -239,14 +244,14 @@ export const createGraph = (options?: GraphOptions) => {
   };
 
   /**
-   * Update record with partial data, undefined values delete fields
+   * Update record with partial data, undefined values are ignored
    */
   const putRecord = (recordId: string, partialSnapshot: Record<string, any>): void => {
     const currentSnapshot = recordStore.get(recordId) || {};
 
     const changes = applyFieldChanges(currentSnapshot, partialSnapshot); // NOTE: Don't destructure for performance
 
-    if (!changes[4]) {
+    if (!changes[3]) {
       return;
     }
 
@@ -263,7 +268,7 @@ export const createGraph = (options?: GraphOptions) => {
     const proxy = proxyRef?.deref();
 
     if (proxy) {
-      overlayRecordDiff(proxy, currentSnapshot, changes[0], changes[1], changes[2], changes[3], nextVersion);
+      overlayRecordDiff(proxy, currentSnapshot, changes[0], changes[1], changes[2], nextVersion);
     }
   };
 

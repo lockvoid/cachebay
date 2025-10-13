@@ -1,4 +1,3 @@
-
 import { createInspect } from "../features/inspect";
 import { createSSR } from "../features/ssr";
 import { createCanonical } from "./canonical";
@@ -9,32 +8,80 @@ import { createOptimistic } from "./optimistic";
 import { createPlanner } from "./planner";
 import { createPlugin, provideCachebay } from "./plugin";
 import { createViews } from "./views";
-import type { CachebayOptions } from "../types";
+import type { CachebayOptions } from "./types";
 import type { ClientPlugin } from "villus";
 import type { App } from "vue";
 
+/**
+ * Main Cachebay instance type
+ * Extends Villus ClientPlugin with cache-specific methods
+ */
 export type CachebayInstance = ClientPlugin & {
-  // SSR
-  dehydrate: () => any;
-  hydrate: (input: any | ((emit: (snapshot: any) => void) => void)) => void;
+  /**
+   * Serialize cache state for SSR
+   * @returns Serializable snapshot of the cache
+   */
+  dehydrate: () => Record<string, unknown>;
 
-  // Identity
-  identify: (obj: any) => string | null;
+  /**
+   * Restore cache state from SSR snapshot
+   * @param input - Snapshot object or function that emits snapshot
+   */
+  hydrate: (input: Record<string, unknown> | ((emit: (snapshot: Record<string, unknown>) => void) => void)) => void;
 
-  // Fragments
-  readFragment: (args: { id: string; fragment: any; variables?: Record<string, any> }) => any;
-  writeFragment: (args: { id: string; fragment: any; data: any; variables?: Record<string, any> }) => void;
+  /**
+   * Generate stable cache key for an object
+   * @param obj - GraphQL object with __typename and id
+   * @returns Cache key string (typename:id) or null if not identifiable
+   */
+  identify: (obj: Record<string, unknown>) => string | null;
 
-  // Optimistic
+  /**
+   * Read fragment data from cache reactively
+   * @template TData - Expected fragment data type
+   * @param args - Fragment read arguments
+   * @returns Reactive fragment data or undefined
+   */
+  readFragment: <TData = unknown>(args: {
+    id: string;
+    fragment: unknown;
+    fragmentName?: string;
+    variables?: Record<string, unknown>;
+  }) => TData | undefined;
+
+  /**
+   * Write fragment data into cache
+   * @template TData - Fragment data type
+   * @param args - Fragment write arguments
+   */
+  writeFragment: <TData = unknown>(args: {
+    id: string;
+    fragment: unknown;
+    fragmentName?: string;
+    data: TData;
+    variables?: Record<string, unknown>;
+  }) => void;
+
+  /**
+   * Apply optimistic updates with transaction support
+   */
   modifyOptimistic: ReturnType<typeof createOptimistic>["modifyOptimistic"];
 
-  // Debug
+  /**
+   * Debug inspection API for cache internals
+   */
   inspect: ReturnType<typeof createInspect>;
 
-  // Vue plugin
+  /**
+   * Vue plugin install method
+   * @param app - Vue application instance
+   */
   install: (app: App) => void;
 
-  // internals for tests/debug
+  /**
+   * Internal APIs for testing and debugging
+   * @internal
+   */
   __internals: {
     graph: ReturnType<typeof createGraph>;
     views: ReturnType<typeof createViews>;
@@ -47,6 +94,11 @@ export type CachebayInstance = ClientPlugin & {
   };
 };
 
+/**
+ * Create a new Cachebay cache instance
+ * @param options - Configuration options for the cache
+ * @returns Configured cache instance with Villus plugin interface
+ */
 export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Core
   const graph = createGraph({ keys: options.keys || {}, interfaces: options.interfaces || {} });

@@ -1,5 +1,5 @@
 import { compilePlan } from "@/src/compiler";
-import type { CachePlanV1, PlanField } from "@/src/compiler/types";
+import type { CachePlan, PlanField } from "@/src/compiler/types";
 import { operations, collectConnectionDirectives, hasTypenames } from "@/test/helpers";
 
 const findField = (fields: PlanField[], responseKey: string): PlanField | null => {
@@ -13,7 +13,7 @@ const findField = (fields: PlanField[], responseKey: string): PlanField | null =
 describe("Compiler x Operations", () => {
   it("compiles USER_QUERY: flattens fragments and builds arg pickers", () => {
     const plan = compilePlan(operations.USER_QUERY);
-    expect(plan.kind).toBe("CachePlanV1");
+    expect(plan.kind).toBe("CachePlan");
     expect(plan.operation).toBe("query");
     expect(plan.rootTypename).toBe("Query");
 
@@ -75,11 +75,11 @@ describe("Compiler x Operations", () => {
     const node = findField(edges.selectionSet!, "node")!;
     const id = findField(node.selectionSet!, "id");
     const title = findField(node.selectionSet!, "title");
-    const tags = findField(node.selectionSet!, "tags");
+    const flags = findField(node.selectionSet!, "flags");
     const author = findField(node.selectionSet!, "author");
     expect(id).toBeTruthy();
     expect(title).toBeTruthy();
-    expect(tags).toBeTruthy();
+    expect(flags).toBeTruthy();
     expect(author).toBeTruthy();
 
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
@@ -87,7 +87,7 @@ describe("Compiler x Operations", () => {
   });
 
   it("compiles USERS_POSTS_COMMENTS_QUERY: users, posts, comments marked with filters & default mode", () => {
-    const plan: CachePlanV1 = compilePlan(operations.USERS_POSTS_COMMENTS_QUERY);
+    const plan: CachePlan = compilePlan(operations.USERS_POSTS_COMMENTS_QUERY);
 
     const users = findField(plan.root, "users")!;
     expect(users.isConnection).toBe(true);

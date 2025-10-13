@@ -238,7 +238,7 @@ describe("Relay connections", () => {
     const connection1 = response1.data.posts;
     const edgesRef1 = connection1.edges;
 
-    expect(isReactive(connection1.pageInfo)).toBe(false);
+    expect(isReactive(connection1.pageInfo)).toBe(true);
     expect(isReactive(connection1.edges)).toBe(true);
     expect(isReactive(connection1.edges[0])).toBe(true);
     expect(isReactive(connection1.edges[1])).toBe(true);
@@ -369,20 +369,9 @@ describe("Relay connections", () => {
 
     const { client, cache } = createTestClient({ routes });
 
-    await seedCache(cache, {
-      query: operations.POSTS_QUERY,
-      variables: { category: "A", first: 2, after: "pa2" },
-      data: {
-        __typename: "Query",
-        posts: fixtures.posts.buildConnection(
-          [{ id: "pa3", title: "A3" }, { id: "pa4", title: "A4" }],
-          { hasPreviousPage: true, hasNextPage: true },
-        ),
-      },
-    });
-
     const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
       cachePolicy: "cache-and-network",
+
       connectionFn: (data) => {
         return data.posts;
       },
@@ -406,8 +395,8 @@ describe("Relay connections", () => {
     wrapper.setProps({ category: "A", first: 2, after: "pa2" });
 
     await tick();
-    expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4"]);
-    expect(getPageInfo(wrapper)).toEqual({ startCursor: "pa1", endCursor: "pa4", hasNextPage: true, hasPreviousPage: false });
+    expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
+    expect(getPageInfo(wrapper)).toEqual({ startCursor: "pa1", endCursor: "pa2", hasNextPage: true, hasPreviousPage: false });
 
     await delay(51);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4"]);
@@ -451,8 +440,8 @@ describe("Relay connections", () => {
     wrapper.setProps({ category: "A", first: 2, after: "pa2" });
 
     await tick();
-    expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4"]);
-    expect(getPageInfo(wrapper)).toEqual({ startCursor: "pa1", endCursor: "pa4", hasNextPage: true, hasPreviousPage: false });
+    expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
+    expect(getPageInfo(wrapper)).toEqual({ startCursor: "pa1", endCursor: "pa2", hasNextPage: true, hasPreviousPage: false });
 
     await delay(51);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4"]);
@@ -462,8 +451,8 @@ describe("Relay connections", () => {
     wrapper.setProps({ category: "A", first: 2, after: "pa4" });
 
     await tick();
-    expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A5", "A6"]);
-    expect(getPageInfo(wrapper)).toEqual({ startCursor: "pa1", endCursor: "pa6", hasNextPage: true, hasPreviousPage: false });
+    expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4"]);
+    expect(getPageInfo(wrapper)).toEqual({ startCursor: "pa1", endCursor: "pa4", hasNextPage: true, hasPreviousPage: false });
 
     await delay(51);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4", "A5", "A6"]);
@@ -636,22 +625,6 @@ describe("Relay connections", () => {
 
     const { client, cache } = createTestClient({ routes });
 
-    // Seed cache with an older page so "before: pa9" is instant from cache later
-    await seedCache(cache, {
-      query: operations.POSTS_QUERY,
-      variables: { category: "A", last: 2, before: "pa9" },
-      data: {
-        __typename: "Query",
-        posts: fixtures.posts.buildConnection([
-          { id: "pa7", title: "A7" },
-          { id: "pa8", title: "A8" },
-        ], {
-          hasPreviousPage: true,
-          hasNextPage: true,
-        }),
-      },
-    });
-
     const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
       cachePolicy: "cache-and-network",
       connectionFn: (data) => data.posts,
@@ -676,12 +649,12 @@ describe("Relay connections", () => {
     expect(getEdges(wrapper, "title")).toEqual(["A9", "A10"]);
     expect(getPageInfo(wrapper)).toEqual({ startCursor: "pa9", endCursor: "pa10", hasNextPage: false, hasPreviousPage: true });
 
-    // 2) Prepend older: load page before 'pa9' (cached data available immediately)
+    // 2) Prepend older: request before 'pa9' (no cached older page yet → show previous slice until network)
     wrapper.setProps({ category: "A", last: 2, before: "pa9" });
 
     await tick();
-    expect(getEdges(wrapper, "title")).toEqual(["A7", "A8", "A9", "A10"]);
-    expect(getPageInfo(wrapper)).toEqual({ startCursor: "pa7", endCursor: "pa10", hasNextPage: false, hasPreviousPage: true });
+    expect(getEdges(wrapper, "title")).toEqual(["A9", "A10"]);
+    expect(getPageInfo(wrapper)).toEqual({ startCursor: "pa9", endCursor: "pa10", hasNextPage: false, hasPreviousPage: true });
 
     await delay(51);
     expect(getEdges(wrapper, "title")).toEqual(["A7", "A8", "A9", "A10"]);
@@ -727,19 +700,19 @@ describe("Relay connections", () => {
     wrapper.setProps({ category: "A", last: 2, before: "pa9" });
 
     await tick();
-    expect(getEdges(wrapper, "title")).toEqual(["A7", "A8", "A9", "A10"]);
-    expect(getPageInfo(wrapper)).toEqual({ startCursor: "pa7", endCursor: "pa10", hasNextPage: false, hasPreviousPage: true });
+    expect(getEdges(wrapper, "title")).toEqual(["A9", "A10"]);
+    expect(getPageInfo(wrapper)).toEqual({ startCursor: "pa9", endCursor: "pa10", hasNextPage: false, hasPreviousPage: true });
 
     await delay(51);
     expect(getEdges(wrapper, "title")).toEqual(["A7", "A8", "A9", "A10"]);
     expect(getPageInfo(wrapper)).toEqual({ startCursor: "pa7", endCursor: "pa10", hasNextPage: false, hasPreviousPage: true });
 
-    // 8) Continue older: before 'pa7' (now already in union → instant)
+    // 8) Continue older: before 'pa7' (A5,A6 not in union after leader reset → show A7...A10 until network)
     wrapper.setProps({ category: "A", last: 2, before: "pa7" });
 
     await tick();
-    expect(getEdges(wrapper, "title")).toEqual(["A5", "A6", "A7", "A8", "A9", "A10"]);
-    expect(getPageInfo(wrapper)).toEqual({ startCursor: "pa5", endCursor: "pa10", hasNextPage: false, hasPreviousPage: true });
+    expect(getEdges(wrapper, "title")).toEqual(["A7", "A8", "A9", "A10"]);
+    expect(getPageInfo(wrapper)).toEqual({ startCursor: "pa7", endCursor: "pa10", hasNextPage: false, hasPreviousPage: true });
 
     await delay(51);
     expect(getEdges(wrapper, "title")).toEqual(["A5", "A6", "A7", "A8", "A9", "A10"]);

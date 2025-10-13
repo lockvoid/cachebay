@@ -1,26 +1,37 @@
 import { unref, watchEffect, readonly, type Ref, shallowRef } from "vue";
 import { useCache } from "./useCache";
 
-export type UseFragmentOptions = {
+/**
+ * Options for useFragment composable
+ * @template TData - Expected fragment data type
+ */
+export type UseFragmentOptions<TData = unknown> = {
+  /** Entity ID (typename:id) or reactive ref to ID */
   id: string | Ref<string>;
-  fragment: any; // string | DocumentNode | CachePlanV1
+  /** GraphQL fragment document or compiled plan */
+  fragment: unknown;
+  /** Fragment name if document contains multiple fragments */
   fragmentName?: string;
-  variables?: Record<string, any> | Ref<Record<string, any> | undefined>;
+  /** GraphQL variables or reactive ref to variables */
+  variables?: Record<string, unknown> | Ref<Record<string, unknown> | undefined>;
 };
 
 /**
- * Live, fragment-shaped data Ref (reactive view).
- * - Uses cache.readFragment (which returns a reactive entity/selection view).
- * - Updates when id/fragment/variables change.
+ * Create a reactive fragment view from cache
+ * Returns a readonly ref that updates when the fragment data changes
+ * @template TData - Expected fragment data type
+ * @param options - Fragment configuration
+ * @returns Readonly reactive ref to fragment data
+ * @throws Error if cache doesn't expose readFragment method
  */
-export function useFragment(options: UseFragmentOptions): Readonly<Ref<any>> {
-  const cache = useCache() as any; // must expose readFragment()
+export function useFragment<TData = unknown>(options: UseFragmentOptions<TData>): Readonly<Ref<TData | undefined>> {
+  const cache = useCache();
 
-  if (typeof cache?.readFragment !== "function") {
+  if (typeof cache.readFragment !== "function") {
     throw new Error("[useFragment] cache must expose readFragment()");
   }
 
-  const data = shallowRef<any>(undefined);
+  const data = shallowRef<TData | undefined>(undefined);
 
   watchEffect(() => {
     const id = unref(options.id);
@@ -29,8 +40,8 @@ export function useFragment(options: UseFragmentOptions): Readonly<Ref<any>> {
       data.value = undefined;
       return;
     }
-    // readFragment returns a reactive view; we keep it as-is
-    const view = cache.readFragment({
+
+    const view = cache.readFragment<TData>({
       id,
       fragment: options.fragment,
       fragmentName: options.fragmentName,

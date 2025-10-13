@@ -8,6 +8,10 @@ export type { CachebayInstance } from "./core/internals";
 // Vue composables
 export { useCache } from "./composables/useCache";
 export { useFragment } from "./composables/useFragment";
+export type { UseFragmentOptions } from "./composables/useFragment";
+
+// Fragment operations
+export type { ReadFragmentArgs, WriteFragmentArgs } from "./core/fragments";
 
 // Public types + helpers for user-land
-export * from "./types";
+export * from "./core/types";
