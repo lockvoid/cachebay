@@ -62,7 +62,7 @@ describe("Edge cases", () => {
     });
 
     // Leader lands
-    await delay(8);
+    await delay(9);
     expect(getEdges(wrapper, "title")).toEqual(["Post 1", "Post 2"]);
 
     // Append lands
