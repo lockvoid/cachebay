@@ -257,7 +257,7 @@ describe("Optimistic updates", () => {
     expect(getEdges(wrapper, "title")).toEqual([]);
   });
 
-  it.only("handles complex flow with pagination, optimistic updates, filtering, and dynamic changes", async () => {
+  it("handles complex flow with pagination, optimistic updates, filtering, and dynamic changes", async () => {
     let requestIndex = 0;
 
     const routes = [

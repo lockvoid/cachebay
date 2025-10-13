@@ -1,0 +1,52 @@
+{
+  "name": "benchmarks",
+  "version": "0.5.0",
+  "license": "MIT",
+  "author": "LockVoid",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "relay": "relay-compiler",
+    "bench:infinite": "vitest bench --run suites/infinite-feed.dom.bench.ts --config ./vitest.bench.dom.config.ts"
+  },
+  "dependencies": {
+    "@apollo/client": "^3.8.10",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@urql/core": "^6.0.1",
+    "@urql/exchange-graphcache": "^7.2.4",
+    "@urql/vue": "^1.4.3",
+    "@vue/apollo-composable": "^4.2.1",
+    "graphql": "^16.11.0",
+    "graphql-tag": "^2.12.6",
+    "graphql-yoga": "^5.10.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-relay": "^16.2.0",
+    "relay-runtime": "^16.2.0",
+    "tinybench": "^5.0.1",
+    "urql": "^4.1.0",
+    "villus": "^3.5.2",
+    "villus-cachebay": "workspace:*",
+    "vue": "^3.5.18",
+    "vue-router": "^4.5.1"
+  },
+  "devDependencies": {
+    "@lockvoid/eslint-config": "^0.7.0",
+    "@nuxt/test-utils": "^3.19.2",
+    "@vitejs/plugin-react": "^4.7.0",
+    "@vue/test-utils": "^2.4.6",
+    "babel-plugin-relay": "^16.2.0",
+    "eslint": "^9.31.0",
+    "eslint-plugin-tailwindcss": "^4.0.0-beta.0",
+    "eslint-plugin-vue": "^10.4.0",
+    "glob": "^11.0.3",
+    "graphql": "^16.11.0",
+    "happy-dom": "^18.0.1",
+    "relay-compiler": "^16.2.0",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.41.0",
+    "vite-plugin-relay": "^2.1.0",
+    "vitest": "^3.2.4"
+  }
+}
