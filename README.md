@@ -42,7 +42,7 @@ A quick architectural overview of how Cachebay works — see **[Keynotes](./docs
 
 ## Demo app
 
-**[Nuxt 4 Demo App ϟ](./demo)**
+**[Nuxt 4 Demo App ϟ](./packages/demo)**
 
 or try live [https://harrypotter.exp.lockvoid.com/](https://harrypotter.exp.lockvoid.com/)
 
