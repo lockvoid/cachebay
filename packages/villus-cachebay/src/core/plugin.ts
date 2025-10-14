@@ -15,6 +15,8 @@ type PluginDependencies = {
   ssr: SSRInstance;
 };
 
+type CachePolicy = "cache-and-network" | "cache-first" | "network-only" | "cache-only";
+
 /**
  * Configuration options for Cachebay plugin
  */
@@ -24,45 +26,35 @@ export type PluginOptions = {
 };
 
 /**
- * Create Villus client plugin for Cachebay
- * Handles query caching, normalization, and cache policies
- * @param options - Plugin configuration
- * @param deps - Required dependencies (graph, planner, documents, ssr)
- * @returns Villus ClientPlugin instance
+ * Creates a Cachebay client plugin for Villus GraphQL client.
+ * Handles query/mutation/subscription caching with configurable policies.
  */
 export function createPlugin(options: PluginOptions, deps: PluginDependencies): ClientPlugin {
   const { planner, documents, ssr } = deps;
   const { suspensionTimeout = 1000 } = options ?? {};
 
-  // After-result window per op key
   const lastResultAtMs = new Map<number, number>();
 
   return (ctx: ClientPluginContext) => {
     const op = ctx.operation;
-    const vars: Record<string, any> = op.variables || {};
+    const variables: Record<string, any> = op.variables || {};
     const document: DocumentNode = op.query as DocumentNode;
     const plan = planner.getPlan(document);
 
-    // Always use compiled networkQuery (strips @connection, adds __typename)
     op.query = plan.networkQuery;
 
-    const publish = (payload: OperationResult, terminal: boolean) =>
-      ctx.useResult(payload, terminal);
+    const policy: CachePolicy = ((op as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network") as CachePolicy;
 
-    const policy: "cache-and-network" | "cache-first" | "network-only" | "cache-only" =
-      ((op as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network") as any;
-
-    const buildCachedFrame = (): OperationResult<any> | null => {
-      if (!documents.hasDocument({ document, variables: vars })) {
+    const readCacheFrame = (): OperationResult<any> | null => {
+      if (!documents.hasDocument({ document, variables })) {
         return null;
       }
 
-      const data = documents.materializeDocument({ document, variables: vars });
+      const data = documents.materializeDocument({ document, variables });
 
       return { data, error: null };
     };
 
-    // Mutations: normalize into cache, return server payload (unchanged shape)
     if (plan.operation === "mutation") {
       const originalUseResult = ctx.useResult;
 
@@ -71,14 +63,14 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
           return originalUseResult(incoming, true);
         }
 
-        documents.normalizeDocument({ document, variables: vars, data: incoming.data });
+        documents.normalizeDocument({ document, variables, data: incoming.data });
+
         return originalUseResult({ data: incoming.data, error: null }, true);
       };
 
       return;
     }
 
-    // Subscriptions: normalize each frame, pass-through frames
     if (plan.operation === "subscription") {
       const originalUseResult = ctx.useResult;
 
@@ -92,12 +84,19 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
             return incoming.subscribe({
               next: (frame: any) => {
                 if (frame?.data) {
-                  documents.normalizeDocument({ document, variables: vars, data: frame.data });
+                  documents.normalizeDocument({ document, variables, data: frame.data });
                 }
+
                 observer.next(frame);
               },
-              error: (error: any) => observer.error?.(error),
-              complete: () => observer.complete?.(),
+
+              error: (error: any) => {
+                observer.error?.(error);
+              },
+
+              complete: () => {
+                observer.complete?.();
+              },
             });
           },
         };
@@ -108,79 +107,69 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       return;
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Queries
-    // ─────────────────────────────────────────────────────────────────────────
+    if (ssr?.isHydrating?.() && policy !== "network-only") {
+      const cached = readCacheFrame();
 
-    // SSR: during hydrate, for non-network-only policies serve cached and stop.
-    if (ssr?.isHydrating?.()) {
-      if (policy !== "network-only") {
-        const cached = buildCachedFrame();
-        if (cached) {
-          return publish(cached, true);
-        }
+      if (cached) {
+        return ctx.useResult(cached, true);
       }
     }
 
     const key = op.key as number;
     const last = lastResultAtMs.get(key);
-    const withinSuspension = last != null && performance.now() - last <= suspensionTimeout;
+    const isWithinSuspensionWindow = last != null && performance.now() - last <= suspensionTimeout;
 
-    // cache-only
     if (policy === "cache-only") {
-      const cached = buildCachedFrame();
-      if (cached) return publish(cached, true);
+      const cached = readCacheFrame();
 
-      const err = new CombinedError({
+      if (cached) {
+        return ctx.useResult(cached, true);
+      }
+
+      const error = new CombinedError({
         networkError: Object.assign(new Error("CACHE_ONLY_MISS"), { name: "CacheOnlyMiss" }),
         graphqlErrors: [],
         response: undefined,
       });
-      return publish({ error: err, data: undefined }, true);
+
+      return ctx.useResult({ error, data: undefined }, true);
     }
 
-    // cache-first
     if (policy === "cache-first") {
-      const cached = buildCachedFrame();
+      const cached = readCacheFrame();
+
       if (cached) {
-        publish(cached, true);
+        ctx.useResult(cached, true);
         return;
       }
-      // fall through to network
+
       lastResultAtMs.set(key, performance.now());
     }
 
-    // cache-and-network
     if (policy === "cache-and-network") {
-      const cached = buildCachedFrame();
+      const cached = readCacheFrame();
 
       if (cached) {
-        if (withinSuspension) {
-          // If we just finished a network result, treat this as terminal to avoid refetch loops
-          publish(cached, true);
+        if (isWithinSuspensionWindow) {
+          ctx.useResult(cached, true);
           return;
         }
 
-        // Emit cached now (non-terminal), then proceed to network
-        publish(cached, false);
+        ctx.useResult(cached, false);
+
         lastResultAtMs.set(key, performance.now());
       }
-      // else: no cache, proceed to network
     }
 
-    // network-only (and the network leg of cache-and-network)
-    // If within suspension window, skip a duplicate fetch by serving cache if present
-    if (policy === "network-only") {
-      if (withinSuspension) {
-        const cached = buildCachedFrame();
-        if (cached) {
-          publish(cached, true);
-          return;
-        }
+    if (policy === "network-only" && isWithinSuspensionWindow) {
+      const cached = readCacheFrame();
+
+      if (cached) {
+        ctx.useResult(cached, true);
+        return;
       }
     }
 
-    // Intercept network response to normalize then materialize (canonical-first model)
     const originalUseResult = ctx.useResult;
 
     ctx.useResult = (incoming: OperationResult) => {
@@ -190,9 +179,9 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         return originalUseResult(incoming, true);
       }
 
-      documents.normalizeDocument({ document, variables: vars, data: incoming.data });
+      documents.normalizeDocument({ document, variables, data: incoming.data });
 
-      const data = documents.materializeDocument({ document, variables: vars });
+      const data = documents.materializeDocument({ document, variables });
 
       return originalUseResult({ data, error: null }, true);
     };
@@ -200,10 +189,8 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 }
 
 /**
- * Provide Cachebay instance to Vue app
- * Makes cache available via useCache() composable
- * @param app - Vue application instance
- * @param instance - Cachebay cache instance
+ * Provides Cachebay instance to Vue app.
+ * Makes cache available via useCache() composable.
  */
 export function provideCachebay(app: App, instance: unknown): void {
   app.provide(CACHEBAY_KEY, instance);

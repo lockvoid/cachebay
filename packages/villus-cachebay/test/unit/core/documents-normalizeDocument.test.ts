@@ -126,8 +126,8 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.users({"after":null,"first":2,"role":"admin"}).edges:0',
-          '@.users({"after":null,"first":2,"role":"admin"}).edges:1',
+          '@.users({"after":null,"first":2,"role":"admin"}).edges.0',
+          '@.users({"after":null,"first":2,"role":"admin"}).edges.1',
         ],
       },
     });
@@ -140,7 +140,7 @@ describe("documents.normalizeDocument", () => {
       hasPreviousPage: false,
     });
 
-    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges:0')).toEqual({
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges.0')).toEqual({
       __typename: "UserEdge",
       cursor: "u1",
       node: {
@@ -148,7 +148,7 @@ describe("documents.normalizeDocument", () => {
       },
     });
 
-    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges:1')).toEqual({
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges.1')).toEqual({
       __typename: "UserEdge",
       cursor: "u2",
       node: {
@@ -162,11 +162,11 @@ describe("documents.normalizeDocument", () => {
         __ref: '@.users({"after":"u2","first":2,"role":"admin"}).pageInfo',
       },
       edges: {
-        __refs: ['@.users({"after":"u2","first":2,"role":"admin"}).edges:0'],
+        __refs: ['@.users({"after":"u2","first":2,"role":"admin"}).edges.0'],
       },
     });
 
-    expect(graph.getRecord('@.users({"after":"u2","first":2,"role":"admin"}).edges:0')).toEqual({
+    expect(graph.getRecord('@.users({"after":"u2","first":2,"role":"admin"}).edges.0')).toEqual({
       __typename: "UserEdge",
       cursor: "u3",
       node: {
@@ -183,9 +183,9 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.users({"after":null,"first":2,"role":"admin"}).edges:0',
-          '@.users({"after":null,"first":2,"role":"admin"}).edges:1',
-          '@.users({"after":"u2","first":2,"role":"admin"}).edges:0',
+          '@.users({"after":null,"first":2,"role":"admin"}).edges.0',
+          '@.users({"after":null,"first":2,"role":"admin"}).edges.1',
+          '@.users({"after":"u2","first":2,"role":"admin"}).edges.0',
         ],
       },
     });
@@ -302,13 +302,13 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges:0',
-          '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges:1',
+          '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0',
+          '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.1',
         ],
       },
     });
 
-    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges:0')).toEqual({
+    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0')).toEqual({
       __typename: "PostEdge",
       cursor: "p1",
       score: 0.5,
@@ -325,8 +325,8 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges:0',
-          '@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges:1',
+          '@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges.0',
+          '@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges.1',
         ],
       },
     });
@@ -341,8 +341,8 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges:0',
-          '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges:1',
+          '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.0',
+          '@.User:u1.posts({"after":null,"category":"tech","first":2}).edges.1',
         ],
       },
     });
@@ -356,8 +356,8 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges:0',
-          '@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges:1',
+          '@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges.0',
+          '@.User:u1.posts({"after":null,"category":"lifestyle","first":2}).edges.1',
         ],
       },
     });
@@ -420,13 +420,13 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.users({"after":null,"first":2,"role":"dj"}).edges:0',
-          '@.users({"after":null,"first":2,"role":"dj"}).edges:1',
+          '@.users({"after":null,"first":2,"role":"dj"}).edges.0',
+          '@.users({"after":null,"first":2,"role":"dj"}).edges.1',
         ],
       },
     });
 
-    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"dj"}).edges:0')).toEqual({
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"dj"}).edges.0')).toEqual({
       __typename: "UserEdge",
       cursor: "u1",
       node: {
@@ -434,7 +434,7 @@ describe("documents.normalizeDocument", () => {
       },
     });
 
-    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"dj"}).edges:1')).toEqual({
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"dj"}).edges.1')).toEqual({
       __typename: "UserEdge",
       cursor: "u2",
       node: {
@@ -448,11 +448,11 @@ describe("documents.normalizeDocument", () => {
         __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).pageInfo',
       },
       edges: {
-        __refs: ['@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0'],
+        __refs: ['@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0'],
       },
     });
 
-    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0')).toEqual({
+    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0')).toEqual({
       __typename: "PostEdge",
       cursor: "p1",
       node: {
@@ -479,8 +479,8 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.users({"after":null,"first":2,"role":"dj"}).edges:0',
-          '@.users({"after":null,"first":2,"role":"dj"}).edges:1',
+          '@.users({"after":null,"first":2,"role":"dj"}).edges.0',
+          '@.users({"after":null,"first":2,"role":"dj"}).edges.1',
         ],
       },
     });
@@ -492,7 +492,7 @@ describe("documents.normalizeDocument", () => {
         __ref: '@connection.User:u1.posts({"category":"tech"}).pageInfo',
       },
       edges: {
-        __refs: ['@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0'],
+        __refs: ['@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0'],
       },
     });
 
@@ -611,11 +611,11 @@ describe("documents.normalizeDocument", () => {
         __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).pageInfo',
       },
       edges: {
-        __refs: ['@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0'],
+        __refs: ['@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0'],
       },
     });
 
-    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0')).toEqual({
+    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0')).toEqual({
       __typename: "PostEdge",
       cursor: "p1",
       node: {
@@ -630,8 +630,8 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.Post:p1.comments({"after":null,"first":2}).edges:0',
-          '@.Post:p1.comments({"after":null,"first":2}).edges:1',
+          '@.Post:p1.comments({"after":null,"first":2}).edges.0',
+          '@.Post:p1.comments({"after":null,"first":2}).edges.1',
         ],
       },
     });
@@ -642,11 +642,11 @@ describe("documents.normalizeDocument", () => {
         __ref: '@.Post:p1.comments({"after":"c2","first":1}).pageInfo',
       },
       edges: {
-        __refs: ['@.Post:p1.comments({"after":"c2","first":1}).edges:0'],
+        __refs: ['@.Post:p1.comments({"after":"c2","first":1}).edges.0'],
       },
     });
 
-    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2}).edges:0')).toEqual({
+    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2}).edges.0')).toEqual({
       __typename: "CommentEdge",
       cursor: "c1",
       node: {
@@ -654,7 +654,7 @@ describe("documents.normalizeDocument", () => {
       },
     });
 
-    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2}).edges:1')).toEqual({
+    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2}).edges.1')).toEqual({
       __typename: "CommentEdge",
       cursor: "c2",
       node: {
@@ -662,7 +662,7 @@ describe("documents.normalizeDocument", () => {
       },
     });
 
-    expect(graph.getRecord('@.Post:p1.comments({"after":"c2","first":1}).edges:0')).toEqual({
+    expect(graph.getRecord('@.Post:p1.comments({"after":"c2","first":1}).edges.0')).toEqual({
       __typename: "CommentEdge",
       cursor: "c3",
       node: {
@@ -705,7 +705,7 @@ describe("documents.normalizeDocument", () => {
         __ref: '@connection.User:u1.posts({"category":"tech"}).pageInfo',
       },
       edges: {
-        __refs: ['@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0'],
+        __refs: ['@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0'],
       },
     });
 
@@ -717,9 +717,9 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.Post:p1.comments({"after":null,"first":2}).edges:0',
-          '@.Post:p1.comments({"after":null,"first":2}).edges:1',
-          '@.Post:p1.comments({"after":"c2","first":1}).edges:0',
+          '@.Post:p1.comments({"after":null,"first":2}).edges.0',
+          '@.Post:p1.comments({"after":null,"first":2}).edges.1',
+          '@.Post:p1.comments({"after":"c2","first":1}).edges.0',
         ],
       },
     });
@@ -780,11 +780,11 @@ describe("documents.normalizeDocument", () => {
         __ref: '@.users({"after":null,"first":2,"role":"admin"}).pageInfo',
       },
       edges: {
-        __refs: ['@.users({"after":null,"first":2,"role":"admin"}).edges:0'],
+        __refs: ['@.users({"after":null,"first":2,"role":"admin"}).edges.0'],
       },
     });
 
-    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges:0')).toEqual({
+    expect(graph.getRecord('@.users({"after":null,"first":2,"role":"admin"}).edges.0')).toEqual({
       __typename: "UserEdge",
       cursor: "u1",
       node: {
@@ -798,11 +798,11 @@ describe("documents.normalizeDocument", () => {
         __ref: '@.User:u1.posts({"after":null,"category":"tech","first":1}).pageInfo',
       },
       edges: {
-        __refs: ['@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0'],
+        __refs: ['@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0'],
       },
     });
 
-    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0')).toEqual({
+    expect(graph.getRecord('@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0')).toEqual({
       __typename: "PostEdge",
       cursor: "p1",
       node: {
@@ -816,11 +816,11 @@ describe("documents.normalizeDocument", () => {
         __ref: '@.Post:p1.comments({"after":null,"first":1}).pageInfo',
       },
       edges: {
-        __refs: ['@.Post:p1.comments({"after":null,"first":1}).edges:0'],
+        __refs: ['@.Post:p1.comments({"after":null,"first":1}).edges.0'],
       },
     });
 
-    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":1}).edges:0')).toEqual({
+    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":1}).edges.0')).toEqual({
       __typename: "CommentEdge",
       cursor: "c1",
       node: {
@@ -836,7 +836,7 @@ describe("documents.normalizeDocument", () => {
         __ref: '@connection.users({"role":"admin"}).pageInfo',
       },
       edges: {
-        __refs: ['@.users({"after":null,"first":2,"role":"admin"}).edges:0'],
+        __refs: ['@.users({"after":null,"first":2,"role":"admin"}).edges.0'],
       },
     });
 
@@ -847,7 +847,7 @@ describe("documents.normalizeDocument", () => {
         __ref: '@connection.User:u1.posts({"category":"tech"}).pageInfo',
       },
       edges: {
-        __refs: ['@.User:u1.posts({"after":null,"category":"tech","first":1}).edges:0'],
+        __refs: ['@.User:u1.posts({"after":null,"category":"tech","first":1}).edges.0'],
       },
     });
 
@@ -858,7 +858,7 @@ describe("documents.normalizeDocument", () => {
         __ref: "@connection.Post:p1.comments({}).pageInfo",
       },
       edges: {
-        __refs: ['@.Post:p1.comments({"after":null,"first":1}).edges:0'],
+        __refs: ['@.Post:p1.comments({"after":null,"first":1}).edges.0'],
       },
     });
   });
@@ -988,8 +988,8 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:0',
-          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:1',
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges.0',
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges.1',
         ],
       },
     });
@@ -1043,10 +1043,10 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:0',  // p1
-          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:1',  // p2
-          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:0',  // p3
-          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:1',  // p4
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges.0',  // p1
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges.1',  // p2
+          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges.0',  // p3
+          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges.1',  // p4
         ],
       },
     });
@@ -1099,9 +1099,9 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"}).edges:0',   // p0
-          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:0',   // p3
-          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:1',   // p4
+          '@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"}).edges.0',   // p0
+          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges.0',   // p3
+          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges.1',   // p4
         ],
       },
     });
@@ -1123,8 +1123,8 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:0',
-          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:1',
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges.0',
+          '@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges.1',
         ],
       },
     });
@@ -1136,8 +1136,8 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:0',
-          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:1',
+          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges.0',
+          '@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges.1',
         ],
       },
     });
@@ -1148,12 +1148,12 @@ describe("documents.normalizeDocument", () => {
         __ref: '@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"}).pageInfo',
       },
       edges: {
-        __refs: ['@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"}).edges:0'],
+        __refs: ['@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"}).edges.0'],
       },
     });
 
     // Verify individual edge records
-    expect(graph.getRecord('@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges:0')).toEqual({
+    expect(graph.getRecord('@.posts({"after":null,"category":"tech","first":2,"sort":"recent"}).edges.0')).toEqual({
       __typename: "PostEdge",
       cursor: "p1",
       node: {
@@ -1161,7 +1161,7 @@ describe("documents.normalizeDocument", () => {
       },
     });
 
-    expect(graph.getRecord('@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges:0')).toEqual({
+    expect(graph.getRecord('@.posts({"after":"p2","category":"tech","first":2,"sort":"recent"}).edges.0')).toEqual({
       __typename: "PostEdge",
       cursor: "p3",
       node: {
@@ -1169,7 +1169,7 @@ describe("documents.normalizeDocument", () => {
       },
     });
 
-    expect(graph.getRecord('@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"}).edges:0')).toEqual({
+    expect(graph.getRecord('@.posts({"before":"p3","category":"tech","last":1,"sort":"recent"}).edges.0')).toEqual({
       __typename: "PostEdge",
       cursor: "p0",
       node: {
@@ -1299,9 +1299,9 @@ describe("documents.normalizeDocument", () => {
 
     expect(post1CommentsConnection.edges).toEqual({
       __refs: [
-        '@.Post:p1.comments({"after":null,"first":2}).edges:0',
-        '@.Post:p1.comments({"after":null,"first":2}).edges:1',
-        '@.Post:p1.comments({"after":"c2","first":1}).edges:0',
+        '@.Post:p1.comments({"after":null,"first":2}).edges.0',
+        '@.Post:p1.comments({"after":null,"first":2}).edges.1',
+        '@.Post:p1.comments({"after":"c2","first":1}).edges.0',
       ],
     });
 
@@ -1309,7 +1309,7 @@ describe("documents.normalizeDocument", () => {
 
     expect(canonicalEdges.length).toBe(3);
 
-    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2}).edges:0')).toEqual({
+    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2}).edges.0')).toEqual({
       __typename: "CommentEdge",
       cursor: "c1",
       node: {
@@ -1317,7 +1317,7 @@ describe("documents.normalizeDocument", () => {
       },
     });
 
-    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2}).edges:1')).toEqual({
+    expect(graph.getRecord('@.Post:p1.comments({"after":null,"first":2}).edges.1')).toEqual({
       __typename: "CommentEdge",
       cursor: "c2",
       node: {
@@ -1325,7 +1325,7 @@ describe("documents.normalizeDocument", () => {
       },
     });
 
-    expect(graph.getRecord('@.Post:p1.comments({"after":"c2","first":1}).edges:0')).toEqual({
+    expect(graph.getRecord('@.Post:p1.comments({"after":"c2","first":1}).edges.0')).toEqual({
       __typename: "CommentEdge",
       cursor: "c3",
       node: {
@@ -1385,12 +1385,12 @@ describe("documents.normalizeDocument", () => {
 
     expect(post9CommentsConnection.edges).toEqual({
       __refs: [
-        '@.Post:p9.comments({"after":null,"first":2}).edges:0',
-        '@.Post:p9.comments({"after":null,"first":2}).edges:1',
+        '@.Post:p9.comments({"after":null,"first":2}).edges.0',
+        '@.Post:p9.comments({"after":null,"first":2}).edges.1',
       ],
     });
 
-    expect(graph.getRecord('@.Post:p9.comments({"after":null,"first":2}).edges:0')).toEqual({
+    expect(graph.getRecord('@.Post:p9.comments({"after":null,"first":2}).edges.0')).toEqual({
       __typename: "CommentEdge",
       cursor: "x1",
       node: {
@@ -1398,7 +1398,7 @@ describe("documents.normalizeDocument", () => {
       },
     });
 
-    expect(graph.getRecord('@.Post:p9.comments({"after":null,"first":2}).edges:1')).toEqual({
+    expect(graph.getRecord('@.Post:p9.comments({"after":null,"first":2}).edges.1')).toEqual({
       __typename: "CommentEdge",
       cursor: "x2",
       node: {
@@ -1456,12 +1456,12 @@ describe("documents.normalizeDocument", () => {
     expect(post9CommentsAfterPage.totalCount).toBe(12);
     expect(post9CommentsAfterPage.edges).toEqual({
       __refs: [
-        '@.Post:p9.comments({"after":"x2","first":2}).edges:0',
-        '@.Post:p9.comments({"after":"x2","first":2}).edges:1',
+        '@.Post:p9.comments({"after":"x2","first":2}).edges.0',
+        '@.Post:p9.comments({"after":"x2","first":2}).edges.1',
       ],
     });
 
-    expect(graph.getRecord('@.Post:p9.comments({"after":"x2","first":2}).edges:0')).toEqual({
+    expect(graph.getRecord('@.Post:p9.comments({"after":"x2","first":2}).edges.0')).toEqual({
       __typename: "CommentEdge",
       cursor: "x3",
       node: {
@@ -1469,7 +1469,7 @@ describe("documents.normalizeDocument", () => {
       },
     });
 
-    expect(graph.getRecord('@.Post:p9.comments({"after":"x2","first":2}).edges:1')).toEqual({
+    expect(graph.getRecord('@.Post:p9.comments({"after":"x2","first":2}).edges.1')).toEqual({
       __typename: "CommentEdge",
       cursor: "x4",
       node: {
@@ -1521,10 +1521,10 @@ describe("documents.normalizeDocument", () => {
 
     expect(post9CommentsBeforePage.totalCount).toBe(1);
     expect(post9CommentsBeforePage.edges).toEqual({
-      __refs: ['@.Post:p9.comments({"before":"x3","last":1}).edges:0'],
+      __refs: ['@.Post:p9.comments({"before":"x3","last":1}).edges.0'],
     });
 
-    expect(graph.getRecord('@.Post:p9.comments({"before":"x3","last":1}).edges:0')).toEqual({
+    expect(graph.getRecord('@.Post:p9.comments({"before":"x3","last":1}).edges.0')).toEqual({
       __typename: "CommentEdge",
       cursor: "x0",
       node: {
@@ -1903,8 +1903,8 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.posts({"after":null,"first":2}).edges:0',
-          '@.posts({"after":null,"first":2}).edges:1',
+          '@.posts({"after":null,"first":2}).edges.0',
+          '@.posts({"after":null,"first":2}).edges.1',
         ],
       },
       aggregations: {
@@ -1946,20 +1946,20 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:0',
-          '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:1',
+          '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges.0',
+          '@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges.1',
         ],
       },
     });
 
-    expect(graph.getRecord('@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:0')).toEqual({
+    expect(graph.getRecord('@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges.0')).toEqual({
       __typename: "TagEdge",
       node: {
         __ref: "Tag:t1",
       },
     });
 
-    expect(graph.getRecord('@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges:1')).toEqual({
+    expect(graph.getRecord('@.posts({"after":null,"first":2}).aggregations.tags({"first":50}).edges.1')).toEqual({
       __typename: "TagEdge",
       node: {
         __ref: "Tag:t2",
@@ -1995,11 +1995,11 @@ describe("documents.normalizeDocument", () => {
         __ref: '@.Post:p1.aggregations.tags({"category":"moderation","first":25}).pageInfo',
       },
       edges: {
-        __refs: ['@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges:0'],
+        __refs: ['@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges.0'],
       },
     });
 
-    expect(graph.getRecord('@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges:0')).toEqual({
+    expect(graph.getRecord('@.Post:p1.aggregations.tags({"category":"moderation","first":25}).edges.0')).toEqual({
       __typename: "TagEdge",
       node: {
         __ref: "Tag:t1",
@@ -2012,11 +2012,11 @@ describe("documents.normalizeDocument", () => {
         __ref: '@.Post:p1.aggregations.tags({"category":"user","first":25}).pageInfo',
       },
       edges: {
-        __refs: ['@.Post:p1.aggregations.tags({"category":"user","first":25}).edges:0'],
+        __refs: ['@.Post:p1.aggregations.tags({"category":"user","first":25}).edges.0'],
       },
     });
 
-    expect(graph.getRecord('@.Post:p1.aggregations.tags({"category":"user","first":25}).edges:0')).toEqual({
+    expect(graph.getRecord('@.Post:p1.aggregations.tags({"category":"user","first":25}).edges.0')).toEqual({
       __typename: "TagEdge",
       node: {
         __ref: "Tag:tu1",
@@ -2052,14 +2052,14 @@ describe("documents.normalizeDocument", () => {
       },
     });
 
-    expect(graph.getRecord('@.Post:p2.aggregations.tags({"category":"moderation","first":25}).edges:0')).toEqual({
+    expect(graph.getRecord('@.Post:p2.aggregations.tags({"category":"moderation","first":25}).edges.0')).toEqual({
       __typename: "TagEdge",
       node: {
         __ref: "Tag:t2",
       },
     });
 
-    expect(graph.getRecord('@.Post:p2.aggregations.tags({"category":"user","first":25}).edges:0')).toEqual({
+    expect(graph.getRecord('@.Post:p2.aggregations.tags({"category":"user","first":25}).edges.0')).toEqual({
       __typename: "TagEdge",
       node: {
         __ref: "Tag:tu2",
@@ -2081,8 +2081,8 @@ describe("documents.normalizeDocument", () => {
       },
       edges: {
         __refs: [
-          '@.posts({"after":null,"first":2}).edges:0',
-          '@.posts({"after":null,"first":2}).edges:1',
+          '@.posts({"after":null,"first":2}).edges.0',
+          '@.posts({"after":null,"first":2}).edges.1',
         ],
       },
       aggregations: {

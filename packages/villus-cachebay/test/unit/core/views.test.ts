@@ -501,14 +501,14 @@ describe("Views", () => {
         expect(Array.isArray(postsEdges)).toBe(true);
         expect(postsEdges.length).toBe(0);
 
-        graph.putRecord("@.posts({}).edges:0", {
+        graph.putRecord("@.posts({}).edges.0", {
           __typename: "PostEdge",
           cursor: "p1",
           node: { __ref: "Post:p1" },
         });
 
         graph.putRecord("@.posts({})", {
-          edges: { __refs: ["@.posts({}).edges:0"] },
+          edges: { __refs: ["@.posts({}).edges.0"] },
         });
 
         expect(postsView.edges).toBe(postsEdges);
@@ -570,14 +570,14 @@ describe("Views", () => {
 
         const post2 = posts.buildNode({ id: "p2", title: "Post 2" });
         graph.putRecord("Post:p2", post2);
-        graph.putRecord("@.User:u1.posts({}).edges:1", {
+        graph.putRecord("@.User:u1.posts({}).edges.1", {
           __typename: "PostEdge",
           cursor: "p2",
           node: { __ref: "Post:p2" },
         });
         const prev = graph.getRecord("@.User:u1.posts({})")?.edges?.__refs || [];
         graph.putRecord("@.User:u1.posts({})", {
-          edges: { __refs: [...prev, "@.User:u1.posts({}).edges:1"] },
+          edges: { __refs: [...prev, "@.User:u1.posts({}).edges.1"] },
         });
 
         await nextTick();
@@ -617,7 +617,7 @@ describe("Views", () => {
         expect(stableEdges.length).toBe(2);
 
         graph.putRecord("@.User:u3.posts({})", {
-          edges: { __refs: ["@.User:u3.posts({}).edges:0"] },
+          edges: { __refs: ["@.User:u3.posts({}).edges.0"] },
         });
         await nextTick();
 
@@ -706,14 +706,14 @@ describe("Views", () => {
           id: "p2",
           title: "Post 2",
         });
-        graph.putRecord("@.User:u2.posts({}).edges:1", {
+        graph.putRecord("@.User:u2.posts({}).edges.1", {
           __typename: "PostEdge",
           cursor: "p2",
           node: { __ref: "Post:p2" },
         });
         const prev = graph.getRecord("@.User:u2.posts({})")?.edges?.__refs || [];
         graph.putRecord("@.User:u2.posts({})", {
-          edges: { __refs: [...prev, "@.User:u2.posts({}).edges:1"] },
+          edges: { __refs: [...prev, "@.User:u2.posts({}).edges.1"] },
         });
 
         await nextTick();
@@ -799,7 +799,7 @@ describe("Views", () => {
         await nextTick();
         expect(nodeRef1.email).toBe("u1+updated@example.com");
 
-        const edgeKey2 = `${canonicalKey}.edges:2`;
+        const edgeKey2 = `${canonicalKey}.edges.2`;
         graph.putRecord(edgeKey2, { __typename: "UserEdge", cursor: "u3", node: { __ref: "User:u2" } });
         const prev = graph.getRecord(canonicalKey)!.edges.__refs;
         graph.putRecord(canonicalKey, { edges: { __refs: [...prev, edgeKey2] } });
@@ -1267,12 +1267,12 @@ describe("Views", () => {
           },
         };
 
-        graph.putRecord(`${pageTagsKey}.edges:0`, pageTagsData.edges[0]);
-        graph.putRecord(`${pageTagsKey}.edges:1`, pageTagsData.edges[1]);
+        graph.putRecord(`${pageTagsKey}.edges.0`, pageTagsData.edges[0]);
+        graph.putRecord(`${pageTagsKey}.edges.1`, pageTagsData.edges[1]);
         graph.putRecord(`${pageTagsKey}.pageInfo`, pageTagsData.pageInfo);
         graph.putRecord(pageTagsKey, {
           __typename: "TagConnection",
-          edges: { __refs: [`${pageTagsKey}.edges:0`, `${pageTagsKey}.edges:1`] },
+          edges: { __refs: [`${pageTagsKey}.edges.0`, `${pageTagsKey}.edges.1`] },
           pageInfo: { __ref: `${pageTagsKey}.pageInfo` },
         });
 
@@ -1326,12 +1326,12 @@ describe("Views", () => {
           },
         };
 
-        graph.putRecord(`${canonicalTagsKey}.edges:0`, canonicalTagsData.edges[0]);
-        graph.putRecord(`${canonicalTagsKey}.edges:1`, canonicalTagsData.edges[1]);
+        graph.putRecord(`${canonicalTagsKey}.edges.0`, canonicalTagsData.edges[0]);
+        graph.putRecord(`${canonicalTagsKey}.edges.1`, canonicalTagsData.edges[1]);
         graph.putRecord(`${canonicalTagsKey}.pageInfo`, canonicalTagsData.pageInfo);
         graph.putRecord(canonicalTagsKey, {
           __typename: "TagConnection",
-          edges: { __refs: [`${canonicalTagsKey}.edges:0`, `${canonicalTagsKey}.edges:1`] },
+          edges: { __refs: [`${canonicalTagsKey}.edges.0`, `${canonicalTagsKey}.edges.1`] },
           pageInfo: { __ref: `${canonicalTagsKey}.pageInfo` },
         });
 

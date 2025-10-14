@@ -3,6 +3,73 @@ import { isReactive } from "vue";
 import { createTestClient, createConnectionComponent, seedCache, getPageInfo, getEdges, fixtures, operations, delay, tick } from "@/test/helpers";
 
 describe("Relay connections", () => {
+  describe("cache-first", () => {
+    it("appends new pages at end and updates pageInfo from tail cursor (cache-first)", async () => {
+      const routes = [
+        {
+          when: ({ variables }) => {
+            return !variables.after && variables.first === 2;
+          },
+
+          respond: () => {
+            return {
+              data: {
+                __typename: "Query",
+                posts: fixtures.posts.buildConnection([{ id: "p1", title: "A1" }, { id: "p2", title: "A2" }], { hasNextPage: true }),
+              },
+            };
+          },
+        },
+
+        {
+          when: ({ variables }) => {
+            return variables.after === "p2" && variables.first === 2;
+          },
+
+          respond: () => {
+            return {
+              data: {
+                __typename: "Query",
+                posts: fixtures.posts.buildConnection([{ id: "p3", title: "A3" }, { id: "p4", title: "A4" }]),
+              },
+            };
+          },
+        },
+      ];
+
+      const { client, cache } = createTestClient({ routes });
+
+      const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
+        cachePolicy: "cache-first",
+
+        connectionFn: (data) => {
+          return data.posts;
+        },
+      });
+
+      const wrapper = mount(Cmp, {
+        props: {
+          first: 2,
+          after: null,
+        },
+
+        global: {
+          plugins: [client, cache],
+        },
+      });
+
+      await tick(2);
+      expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
+      expect(getPageInfo(wrapper)).toEqual({ startCursor: "p1", endCursor: "p2", hasNextPage: true, hasPreviousPage: false });
+
+      wrapper.setProps({ first: 2, after: "p2" });
+
+      await tick(2);
+      expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3", "A4"]);
+      expect(getPageInfo(wrapper)).toEqual({ startCursor: "p1", endCursor: "p4", hasNextPage: false, hasPreviousPage: false });
+    });
+  });
+
   it("appends new pages at end and updates pageInfo from tail cursor", async () => {
     const routes = [
       {

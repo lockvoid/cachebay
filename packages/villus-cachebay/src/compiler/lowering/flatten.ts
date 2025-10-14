@@ -125,10 +125,16 @@ const parseConnectionDirective = (field: FieldNode): {
 /* main lowering                                                              */
 /* ────────────────────────────────────────────────────────────────────────── */
 
+/**
+ * Lower a GraphQL SelectionSet into PlanField[].
+ * `guardType` is the active inline-fragment/fragment-spread type condition to apply
+ * to produced fields (so runtime can skip mismatched implementors).
+ */
 export const lowerSelectionSet = (
   selectionSet: SelectionSetNode | null | undefined,
   parentTypename: string,
   fragmentsByName: Map<string, FragmentDefinitionNode>,
+  guardType?: string, // ← NEW
 ): PlanField[] => {
   if (!selectionSet) return [];
 
@@ -146,7 +152,8 @@ export const lowerSelectionSet = (
       let childMap: Map<string, PlanField> | undefined;
       if (fieldNode.selectionSet) {
         const childParent = inferChildParentTypename(fieldNode.selectionSet, parentTypename, fragmentsByName);
-        childPlan = lowerSelectionSet(fieldNode.selectionSet, childParent, fragmentsByName);
+        // propagate current guardType down the tree
+        childPlan = lowerSelectionSet(fieldNode.selectionSet, childParent, fragmentsByName, guardType);
         childMap = indexByResponseKey(childPlan);
       }
 
@@ -189,7 +196,9 @@ export const lowerSelectionSet = (
         connectionKey,
         connectionFilters,
         connectionMode,
-      });
+        // 🔑 attach type guard if this field is produced under an inline fragment/spread
+        typeCondition: guardType, // ← NEW
+      } as PlanField);
       continue;
     }
 
@@ -197,7 +206,11 @@ export const lowerSelectionSet = (
     if (sel.kind === Kind.INLINE_FRAGMENT) {
       const ifrag = sel as InlineFragmentNode;
       const nextParent = ifrag.typeCondition ? ifrag.typeCondition.name.value : parentTypename;
-      const lowered = lowerSelectionSet(ifrag.selectionSet, nextParent, fragmentsByName);
+
+      // If the fragment has a type condition, it *becomes* the active guard for its subtree.
+      const nextGuard = ifrag.typeCondition ? ifrag.typeCondition.name.value : guardType;
+
+      const lowered = lowerSelectionSet(ifrag.selectionSet, nextParent, fragmentsByName, nextGuard);
       for (let i = 0; i < lowered.length; i++) out.push(lowered[i]);
       continue;
     }
@@ -207,8 +220,11 @@ export const lowerSelectionSet = (
       const spread = sel as FragmentSpreadNode;
       const frag = fragmentsByName.get(spread.name.value);
       if (!frag) continue;
+
       const nextParent = frag.typeCondition.name.value;
-      const lowered = lowerSelectionSet(frag.selectionSet, nextParent, fragmentsByName);
+      const nextGuard = frag.typeCondition.name.value; // spreads always carry a type condition
+
+      const lowered = lowerSelectionSet(frag.selectionSet, nextParent, fragmentsByName, nextGuard);
       for (let i = 0; i < lowered.length; i++) out.push(lowered[i]);
       continue;
     }

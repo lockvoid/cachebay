@@ -322,7 +322,7 @@ const insertEdge = (
 
   // Use O(1) counter instead of scanning existing refs
   const edgeIndex = findNextEdgeIndex(canonical, graph, canonicalKey);
-  const edgeKey = `${canonicalKey}.edges:${edgeIndex}`;
+  const edgeKey = `${canonicalKey}.edges.${edgeIndex}`;
   const nodeType = entityKey.split(":")[0]?.trim() || "";
   const edgeTypename = nodeType ? `${nodeType}Edge` : "Edge";
 

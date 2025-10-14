@@ -6,6 +6,7 @@ import { createGraph } from "@/src/core/graph";
 import { createPlanner } from "@/src/core/planner";
 import { createViews } from "@/src/core/views";
 import * as operations from "@/test/helpers/operations";
+import { writeConnectionPage } from "@/test/helpers";
 
 describe("documents.hasDocument", () => {
   let graph: ReturnType<typeof createGraph>;
@@ -47,20 +48,18 @@ describe("documents.hasDocument", () => {
     expect(ok).toBe(false);
   });
 
-  it("returns true when the root connection CANONICAL page exists (USERS_QUERY)", () => {
-    // USERS_QUERY has @connection(filters: ["role"]) → canonical key includes role
-    const canKey = '@connection.users({"role":"admin"})';
-    graph.putRecord(canKey, {
+  it("returns true when the root connection ACTUAL page exists (USERS_QUERY)", () => {
+    const pageKey = '@.users({"after":null,"first":2,"role":"admin"})';
+
+    writeConnectionPage(graph, pageKey, {
       __typename: "UserConnection",
-      edges: { __refs: [] },
-      pageInfo: { __ref: `${canKey}.pageInfo` },
-    });
-    graph.putRecord(`${canKey}.pageInfo`, {
-      __typename: "PageInfo",
-      startCursor: "u1",
-      endCursor: "u2",
-      hasNextPage: true,
-      hasPreviousPage: false,
+      edges: [],
+      pageInfo: {
+        startCursor: "u1",
+        endCursor: "u2",
+        hasNextPage: true,
+        hasPreviousPage: false,
+      },
     });
 
     const ok = documents.hasDocument({
@@ -71,7 +70,7 @@ describe("documents.hasDocument", () => {
     expect(ok).toBe(true);
   });
 
-  it("returns false when the root connection CANONICAL page is missing (USERS_QUERY)", () => {
+  it("returns false when the root connection ACTUAL page is missing (USERS_QUERY)", () => {
     const ok = documents.hasDocument({
       document: operations.USERS_QUERY,
       variables: { role: "admin", first: 2, after: null },
@@ -81,7 +80,6 @@ describe("documents.hasDocument", () => {
   });
 
   it("returns false when multiple root branches have missing parts, then true when both present (MULTIPLE_USERS_QUERY)", () => {
-    // With your planner, @connection (no explicit filters) still filters by non-pagination args (role)
     graph.putRecord(ROOT_ID, {
       id: ROOT_ID,
       __typename: ROOT_ID,
@@ -95,19 +93,16 @@ describe("documents.hasDocument", () => {
     });
     expect(miss).toBe(false);
 
-    // ✅ use role in the CANONICAL key (planner includes role as a filter)
-    const usersCanKey = '@connection.users({"role":"admin"})';
-    graph.putRecord(usersCanKey, {
+    const usersPageKey = '@.users({"after":null,"first":2,"role":"admin"})';
+    writeConnectionPage(graph, usersPageKey, {
       __typename: "UserConnection",
-      edges: { __refs: [] },
-      pageInfo: { __ref: `${usersCanKey}.pageInfo` },
-    });
-    graph.putRecord(`${usersCanKey}.pageInfo`, {
-      __typename: "PageInfo",
-      startCursor: "u1",
-      endCursor: "u2",
-      hasNextPage: true,
-      hasPreviousPage: false,
+      edges: [],
+      pageInfo: {
+        startCursor: "u1",
+        endCursor: "u2",
+        hasNextPage: true,
+        hasPreviousPage: false,
+      },
     });
 
     const ok = documents.hasDocument({
@@ -118,18 +113,17 @@ describe("documents.hasDocument", () => {
   });
 
   it("accepts precompiled plan", () => {
-    const canKey = '@connection.users({"role":"admin"})';
-    graph.putRecord(canKey, {
+    const pageKey = '@.users({"after":null,"first":2,"role":"admin"})';
+
+    writeConnectionPage(graph, pageKey, {
       __typename: "UserConnection",
-      edges: { __refs: [] },
-      pageInfo: { __ref: `${canKey}.pageInfo` },
-    });
-    graph.putRecord(`${canKey}.pageInfo`, {
-      __typename: "PageInfo",
-      startCursor: "u1",
-      endCursor: "u2",
-      hasNextPage: true,
-      hasPreviousPage: false,
+      edges: [],
+      pageInfo: {
+        startCursor: "u1",
+        endCursor: "u2",
+        hasNextPage: true,
+        hasPreviousPage: false,
+      },
     });
 
     const ok = documents.hasDocument({
@@ -140,39 +134,37 @@ describe("documents.hasDocument", () => {
     expect(ok).toBe(true);
   });
 
-  it("returns different results when variables change the CANONICAL key (filters: ['role'])", () => {
-    const adminKey = '@connection.users({"role":"admin"})';
-    graph.putRecord(adminKey, {
+  it("returns false when variables don't match the cached page args", () => {
+    const adminPageKey = '@.users({"after":null,"first":2,"role":"admin"})';
+
+    writeConnectionPage(graph, adminPageKey, {
       __typename: "UserConnection",
-      edges: { __refs: [] },
-      pageInfo: { __ref: `${adminKey}.pageInfo` },
-    });
-    graph.putRecord(`${adminKey}.pageInfo`, {
-      __typename: "PageInfo",
-      startCursor: "u1",
-      endCursor: "u2",
-      hasNextPage: true,
-      hasPreviousPage: false,
+      edges: [],
+      pageInfo: {
+        startCursor: "u1",
+        endCursor: "u2",
+        hasNextPage: true,
+        hasPreviousPage: false,
+      },
     });
 
     const miss = documents.hasDocument({
       document: operations.USERS_QUERY,
-      variables: { role: "mod", first: 2, after: null },
+      variables: { role: "moderator", first: 2, after: null },
     });
     expect(miss).toBe(false);
 
-    const modKey = '@connection.users({"role":"moderator"})';
-    graph.putRecord(modKey, {
+    const modPageKey = '@.users({"after":null,"first":2,"role":"moderator"})';
+
+    writeConnectionPage(graph, modPageKey, {
       __typename: "UserConnection",
-      edges: { __refs: [] },
-      pageInfo: { __ref: `${modKey}.pageInfo` },
-    });
-    graph.putRecord(`${modKey}.pageInfo`, {
-      __typename: "PageInfo",
-      startCursor: "u3",
-      endCursor: "u3",
-      hasNextPage: false,
-      hasPreviousPage: false,
+      edges: [],
+      pageInfo: {
+        startCursor: "u3",
+        endCursor: "u3",
+        hasNextPage: false,
+        hasPreviousPage: false,
+      },
     });
 
     const ok = documents.hasDocument({
@@ -182,11 +174,32 @@ describe("documents.hasDocument", () => {
     expect(ok).toBe(true);
   });
 
+  it("returns false when different pagination args result in different page keys", () => {
+    const page1Key = '@.users({"after":null,"first":2,"role":"admin"})';
+
+    writeConnectionPage(graph, page1Key, {
+      __typename: "UserConnection",
+      edges: [],
+      pageInfo: {
+        startCursor: "u1",
+        endCursor: "u2",
+        hasNextPage: true,
+        hasPreviousPage: false,
+      },
+    });
+
+    const miss = documents.hasDocument({
+      document: operations.USERS_QUERY,
+      variables: { role: "admin", first: 5, after: null },
+    });
+    expect(miss).toBe(false);
+  });
+
   it("returns false when link is present but entity snapshot is missing (strict leaf check)", () => {
     graph.putRecord(ROOT_ID, {
       id: ROOT_ID,
       __typename: ROOT_ID,
-      ['user({"id":"u1"})']: { __ref: "User:u1" }, // link only
+      ['user({"id":"u1"})']: { __ref: "User:u1" },
     });
 
     const ok = documents.hasDocument({
@@ -197,7 +210,7 @@ describe("documents.hasDocument", () => {
     expect(ok).toBe(false);
   });
 
-  it("returns false when a nested connection CANONICAL page is missing under a present root link (USER_POSTS_QUERY)", () => {
+  it("returns false when a nested connection ACTUAL page is missing under a present root link (USER_POSTS_QUERY)", () => {
     graph.putRecord(ROOT_ID, {
       id: ROOT_ID,
       __typename: ROOT_ID,
@@ -213,7 +226,7 @@ describe("documents.hasDocument", () => {
     expect(ok).toBe(false);
   });
 
-  it("returns true when the nested connection CANONICAL page exists under the root link (USER_POSTS_QUERY)", () => {
+  it("returns true when the nested connection ACTUAL page exists under the root link (USER_POSTS_QUERY)", () => {
     graph.putRecord(ROOT_ID, {
       id: ROOT_ID,
       __typename: ROOT_ID,
@@ -221,21 +234,18 @@ describe("documents.hasDocument", () => {
     });
     graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
 
-    // USER_POSTS_QUERY selects totalCount on posts connection → include it
-    // filters: ["category","sort"] but only category provided → canonical includes category only
-    const postsCanKey = '@connection.User:u1.posts({"category":"tech"})';
-    graph.putRecord(postsCanKey, {
+    const postsPageKey = '@.User:u1.posts({"after":null,"category":"tech","first":2})';
+
+    writeConnectionPage(graph, postsPageKey, {
       __typename: "PostConnection",
       totalCount: 0,
-      edges: { __refs: [] },
-      pageInfo: { __ref: `${postsCanKey}.pageInfo` },
-    });
-    graph.putRecord(`${postsCanKey}.pageInfo`, {
-      __typename: "PageInfo",
-      startCursor: "p1",
-      endCursor: "p2",
-      hasNextPage: true,
-      hasPreviousPage: false,
+      edges: [],
+      pageInfo: {
+        startCursor: "p1",
+        endCursor: "p2",
+        hasNextPage: true,
+        hasPreviousPage: false,
+      },
     });
 
     const ok = documents.hasDocument({
@@ -244,5 +254,705 @@ describe("documents.hasDocument", () => {
     });
 
     expect(ok).toBe(true);
+  });
+
+  it("returns false when connection page missing totalCount scalar field", () => {
+    graph.putRecord(ROOT_ID, {
+      id: ROOT_ID,
+      __typename: ROOT_ID,
+      ['user({"id":"u1"})']: { __ref: "User:u1" },
+    });
+    graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
+
+    const postsPageKey = '@.User:u1.posts({"after":null,"category":"tech","first":2})';
+    const pageInfoKey = `${postsPageKey}.pageInfo`;
+
+    graph.putRecord(pageInfoKey, {
+      __typename: "PageInfo",
+      startCursor: "p1",
+      endCursor: "p2",
+      hasNextPage: true,
+      hasPreviousPage: false,
+    });
+
+    graph.putRecord(postsPageKey, {
+      __typename: "PostConnection",
+      edges: { __refs: [] },
+      pageInfo: { __ref: pageInfoKey },
+    });
+
+    const ok = documents.hasDocument({
+      document: operations.USER_POSTS_QUERY,
+      variables: { id: "u1", postsCategory: "tech", postsFirst: 2, postsAfter: null },
+    });
+
+    expect(ok).toBe(false);
+  });
+
+  it("returns true when connection has edges with node data", () => {
+    const pageKey = '@.users({"after":null,"first":2,"role":"admin"})';
+
+    writeConnectionPage(graph, pageKey, {
+      __typename: "UserConnection",
+      edges: [
+        {
+          __typename: "UserEdge",
+          cursor: "u1",
+          node: { __typename: "User", id: "u1", email: "u1@example.com" },
+        },
+        {
+          __typename: "UserEdge",
+          cursor: "u2",
+          node: { __typename: "User", id: "u2", email: "u2@example.com" },
+        },
+      ],
+      pageInfo: {
+        startCursor: "u1",
+        endCursor: "u2",
+        hasNextPage: true,
+        hasPreviousPage: false,
+      },
+    });
+
+    const ok = documents.hasDocument({
+      document: operations.USERS_QUERY,
+      variables: { role: "admin", first: 2, after: null },
+    });
+
+    expect(ok).toBe(true);
+  });
+
+  it("returns false when connection edges exist but node data is incomplete", () => {
+    const pageKey = '@.users({"after":null,"first":2,"role":"admin"})';
+
+    graph.putRecord(pageKey, {
+      __typename: "UserConnection",
+      edges: { __refs: [`${pageKey}.edges.0`] },
+      pageInfo: { __ref: `${pageKey}.pageInfo` },
+    });
+    graph.putRecord(`${pageKey}.pageInfo`, {
+      __typename: "PageInfo",
+      startCursor: "u1",
+      endCursor: "u1",
+      hasNextPage: false,
+      hasPreviousPage: false,
+    });
+    graph.putRecord(`${pageKey}.edges.0`, {
+      __typename: "UserEdge",
+      node: { __ref: "User:u1" },
+      cursor: "u1",
+    });
+    graph.putRecord("User:u1", { __typename: "User", id: "u1" });
+
+    const ok = documents.hasDocument({
+      document: operations.USERS_QUERY,
+      variables: { role: "admin", first: 2, after: null },
+    });
+
+    expect(ok).toBe(false);
+  });
+
+  describe("POSTS_WITH_AGGREGATIONS_QUERY", () => {
+    it("returns false when root posts connection is missing", () => {
+      const ok = documents.hasDocument({
+        document: operations.POSTS_WITH_AGGREGATIONS_QUERY,
+        variables: { category: "tech", first: 10, after: null },
+      });
+
+      expect(ok).toBe(false);
+    });
+
+    it("returns false when root posts connection exists but missing totalCount", () => {
+      const postsPageKey = '@.posts({"after":null,"category":"tech","first":10})';
+
+      graph.putRecord(postsPageKey, {
+        __typename: "PostConnection",
+        edges: { __refs: [] },
+        pageInfo: { __ref: `${postsPageKey}.pageInfo` },
+      });
+      graph.putRecord(`${postsPageKey}.pageInfo`, {
+        __typename: "PageInfo",
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+
+      const ok = documents.hasDocument({
+        document: operations.POSTS_WITH_AGGREGATIONS_QUERY,
+        variables: { category: "tech", first: 10, after: null },
+      });
+
+      expect(ok).toBe(false);
+    });
+
+    it("returns false when root posts connection exists but missing aggregations", () => {
+      const postsPageKey = '@.posts({"after":null,"category":"tech","first":10})';
+
+      writeConnectionPage(graph, postsPageKey, {
+        __typename: "PostConnection",
+        totalCount: 0,
+        edges: [],
+        pageInfo: {
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      const ok = documents.hasDocument({
+        document: operations.POSTS_WITH_AGGREGATIONS_QUERY,
+        variables: { category: "tech", first: 10, after: null },
+      });
+
+      expect(ok).toBe(false);
+    });
+
+    it("returns false when aggregations exist but missing scoring scalar", () => {
+      const postsPageKey = '@.posts({"after":null,"category":"tech","first":10})';
+
+      writeConnectionPage(graph, postsPageKey, {
+        __typename: "PostConnection",
+        totalCount: 0,
+        edges: [],
+        pageInfo: {
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      const aggKey = `${postsPageKey}.aggregations`;
+      graph.putRecord(aggKey, {
+        __typename: "PostAggregations",
+      });
+      graph.putRecord(postsPageKey, {
+        aggregations: { __ref: aggKey },
+      });
+
+      const ok = documents.hasDocument({
+        document: operations.POSTS_WITH_AGGREGATIONS_QUERY,
+        variables: { category: "tech", first: 10, after: null },
+      });
+
+      expect(ok).toBe(false);
+    });
+
+    it("returns false when aggregations.todayStat is missing", () => {
+      const postsPageKey = '@.posts({"after":null,"category":"tech","first":10})';
+
+      writeConnectionPage(graph, postsPageKey, {
+        __typename: "PostConnection",
+        totalCount: 0,
+        edges: [],
+        pageInfo: {
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      const aggKey = `${postsPageKey}.aggregations`;
+      graph.putRecord(aggKey, {
+        __typename: "PostAggregations",
+        scoring: 42,
+      });
+      graph.putRecord(postsPageKey, {
+        aggregations: { __ref: aggKey },
+      });
+
+      const ok = documents.hasDocument({
+        document: operations.POSTS_WITH_AGGREGATIONS_QUERY,
+        variables: { category: "tech", first: 10, after: null },
+      });
+
+      expect(ok).toBe(false);
+    });
+
+    it("returns false when aggregations.tags connection is missing", () => {
+      const postsPageKey = '@.posts({"after":null,"category":"tech","first":10})';
+
+      writeConnectionPage(graph, postsPageKey, {
+        __typename: "PostConnection",
+        totalCount: 0,
+        edges: [],
+        pageInfo: {
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      const aggKey = `${postsPageKey}.aggregations`;
+      const todayStatKey = `${aggKey}.stat({"key":"today"})`;
+      const yesterdayStatKey = `${aggKey}.stat({"key":"yesterday"})`;
+
+      graph.putRecord(todayStatKey, {
+        __typename: "Stat",
+        key: "today",
+        views: 100,
+      });
+      graph.putRecord(yesterdayStatKey, {
+        __typename: "Stat",
+        key: "yesterday",
+        views: 90,
+      });
+      graph.putRecord(aggKey, {
+        __typename: "PostAggregations",
+        scoring: 42,
+        ['stat({"key":"today"})']: { __ref: todayStatKey },
+        ['stat({"key":"yesterday"})']: { __ref: yesterdayStatKey },
+      });
+      graph.putRecord(postsPageKey, {
+        aggregations: { __ref: aggKey },
+      });
+
+      const ok = documents.hasDocument({
+        document: operations.POSTS_WITH_AGGREGATIONS_QUERY,
+        variables: { category: "tech", first: 10, after: null },
+      });
+
+      expect(ok).toBe(false);
+    });
+
+    it("returns true when all connection-level aggregations are present with empty edges", () => {
+      const postsPageKey = '@.posts({"after":null,"category":"tech","first":10})';
+
+      writeConnectionPage(graph, postsPageKey, {
+        __typename: "PostConnection",
+        totalCount: 0,
+        edges: [],
+        pageInfo: {
+          startCursor: null,
+          endCursor: null,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      graph.putRecord(ROOT_ID, {
+        ['posts({"after":null,"category":"tech","first":10})']: { __ref: postsPageKey },
+      });
+
+      const aggKey = `${postsPageKey}.aggregations`;
+      const todayStatKey = `${aggKey}.stat({"key":"today"})`;
+      const yesterdayStatKey = `${aggKey}.stat({"key":"yesterday"})`;
+
+      graph.putRecord(todayStatKey, {
+        __typename: "Stat",
+        key: "today",
+        views: 100,
+      });
+      graph.putRecord(yesterdayStatKey, {
+        __typename: "Stat",
+        key: "yesterday",
+        views: 90,
+      });
+
+      const baseTagsKey = '@.posts({"after":null,"category":"tech","first":10}).aggregations.tags({"first":50})';
+      writeConnectionPage(graph, baseTagsKey, {
+        __typename: "TagConnection",
+        edges: [],
+        pageInfo: {
+          startCursor: null,
+          endCursor: null,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      graph.putRecord(aggKey, {
+        __typename: "PostAggregations",
+        scoring: 42,
+        ['stat({"key":"today"})']: { __ref: todayStatKey },
+        ['stat({"key":"yesterday"})']: { __ref: yesterdayStatKey },
+        ['tags({"first":50})']: { __ref: baseTagsKey },
+      });
+
+      const existingPage = graph.getRecord(postsPageKey);
+      graph.putRecord(postsPageKey, {
+        ...existingPage,
+        aggregations: { __ref: aggKey },
+      });
+
+      const ok = documents.hasDocument({
+        document: operations.POSTS_WITH_AGGREGATIONS_QUERY,
+        variables: { category: "tech", first: 10, after: null },
+      });
+
+      expect(ok).toBe(true);
+    });
+
+    it("returns false when post node exists but missing nested aggregations", () => {
+      const postsPageKey = '@.posts({"after":null,"category":"tech","first":10})';
+
+      writeConnectionPage(graph, postsPageKey, {
+        __typename: "PostConnection",
+        totalCount: 1,
+        edges: [
+          {
+            __typename: "PostEdge",
+            cursor: "p1",
+            node: {
+              __typename: "VideoPost",
+              id: "p1",
+              title: "Video Title",
+              flags: [],
+            },
+          },
+        ],
+        pageInfo: {
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      const aggKey = `${postsPageKey}.aggregations`;
+      const todayStatKey = `${aggKey}.stat({"key":"today"})`;
+      const yesterdayStatKey = `${aggKey}.stat({"key":"yesterday"})`;
+
+      graph.putRecord(todayStatKey, {
+        __typename: "Stat",
+        key: "today",
+        views: 100,
+      });
+      graph.putRecord(yesterdayStatKey, {
+        __typename: "Stat",
+        key: "yesterday",
+        views: 90,
+      });
+
+      const baseTagsKey = '@.posts({"after":null,"category":"tech","first":10}).aggregations.tags({"first":50})';
+      writeConnectionPage(graph, baseTagsKey, {
+        __typename: "TagConnection",
+        edges: [],
+        pageInfo: {
+          startCursor: null,
+          endCursor: null,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      graph.putRecord(aggKey, {
+        __typename: "PostAggregations",
+        scoring: 42,
+        ['stat({"key":"today"})']: { __ref: todayStatKey },
+        ['stat({"key":"yesterday"})']: { __ref: yesterdayStatKey },
+        ['tags({"first":50})']: { __ref: baseTagsKey },
+      });
+      graph.putRecord(postsPageKey, {
+        aggregations: { __ref: aggKey },
+      });
+
+      const ok = documents.hasDocument({
+        document: operations.POSTS_WITH_AGGREGATIONS_QUERY,
+        variables: { category: "tech", first: 10, after: null },
+      });
+
+      expect(ok).toBe(false);
+    });
+
+    it("returns false when post.aggregations exists but missing moderationTags connection", () => {
+      const postsPageKey = '@.posts({"after":null,"category":"tech","first":10})';
+
+      writeConnectionPage(graph, postsPageKey, {
+        __typename: "PostConnection",
+        totalCount: 1,
+        edges: [
+          {
+            __typename: "VideoPost",
+            cursor: "p1",
+            node: {
+              __typename: "VideoPost",
+              id: "p1",
+              title: "Video Title",
+              flags: [],
+            },
+          },
+        ],
+        pageInfo: {
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      const aggKey = `${postsPageKey}.aggregations`;
+      const todayStatKey = `${aggKey}.stat({"key":"today"})`;
+      const yesterdayStatKey = `${aggKey}.stat({"key":"yesterday"})`;
+
+      graph.putRecord(todayStatKey, {
+        __typename: "Stat",
+        key: "today",
+        views: 100,
+      });
+      graph.putRecord(yesterdayStatKey, {
+        __typename: "Stat",
+        key: "yesterday",
+        views: 90,
+      });
+
+      const baseTagsKey = '@.posts({"after":null,"category":"tech","first":10}).aggregations.tags({"first":50})';
+      writeConnectionPage(graph, baseTagsKey, {
+        __typename: "TagConnection",
+        edges: [],
+        pageInfo: {
+          startCursor: null,
+          endCursor: null,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      graph.putRecord(aggKey, {
+        __typename: "PostAggregations",
+        scoring: 42,
+        ['stat({"key":"today"})']: { __ref: todayStatKey },
+        ['stat({"key":"yesterday"})']: { __ref: yesterdayStatKey },
+        ['tags({"first":50})']: { __ref: baseTagsKey },
+      });
+      graph.putRecord(postsPageKey, {
+        aggregations: { __ref: aggKey },
+      });
+
+      const postAggKey = `VideoPost:p1.aggregations`;
+      graph.putRecord(postAggKey, {
+        __typename: "PostAggregations",
+      });
+      graph.putRecord("VideoPost:p1", {
+        aggregations: { __ref: postAggKey },
+      });
+
+      const ok = documents.hasDocument({
+        document: operations.POSTS_WITH_AGGREGATIONS_QUERY,
+        variables: { category: "tech", first: 10, after: null },
+      });
+
+      expect(ok).toBe(false);
+    });
+
+    it("returns false when VideoPost node exists but missing video field", () => {
+      const postsPageKey = '@.posts({"after":null,"category":"tech","first":10})';
+
+      writeConnectionPage(graph, postsPageKey, {
+        __typename: "PostConnection",
+        totalCount: 1,
+        edges: [
+          {
+            __typename: "PostEdge",
+            cursor: "p1",
+            node: {
+              __typename: "VideoPost",
+              id: "p1",
+              title: "Video Title",
+              flags: [],
+            },
+          },
+        ],
+        pageInfo: {
+          startCursor: "p1",
+          endCursor: "p1",
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      graph.putRecord(ROOT_ID, {
+        ['posts({"after":null,"category":"tech","first":10})']: { __ref: postsPageKey },
+      });
+
+      const aggKey = `${postsPageKey}.aggregations`;
+      const todayStatKey = `${aggKey}.stat({"key":"today"})`;
+      const yesterdayStatKey = `${aggKey}.stat({"key":"yesterday"})`;
+
+      graph.putRecord(todayStatKey, { __typename: "Stat", key: "today", views: 100 });
+      graph.putRecord(yesterdayStatKey, { __typename: "Stat", key: "yesterday", views: 90 });
+
+      const baseTagsKey = '@.posts({"after":null,"category":"tech","first":10}).aggregations.tags({"first":50})';
+      writeConnectionPage(graph, baseTagsKey, {
+        __typename: "TagConnection",
+        edges: [],
+        pageInfo: {
+          startCursor: null,
+          endCursor: null,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      graph.putRecord(aggKey, {
+        __typename: "PostAggregations",
+        scoring: 42,
+        ['stat({"key":"today"})']: { __ref: todayStatKey },
+        ['stat({"key":"yesterday"})']: { __ref: yesterdayStatKey },
+        ['tags({"first":50})']: { __ref: baseTagsKey },
+      });
+      graph.putRecord(postsPageKey, { aggregations: { __ref: aggKey } });
+
+      const postAggKey = `Post:p1.aggregations`;
+      const modTagsKey = '@.Post:p1.aggregations.tags({"category":"moderation","first":25})';
+      const userTagsKey = '@.Post:p1.aggregations.tags({"category":"user","first":25})';
+
+      writeConnectionPage(graph, modTagsKey, {
+        __typename: "TagConnection",
+        edges: [],
+        pageInfo: {
+          startCursor: null,
+          endCursor: null,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      writeConnectionPage(graph, userTagsKey, {
+        __typename: "TagConnection",
+        edges: [],
+        pageInfo: {
+          startCursor: null,
+          endCursor: null,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      graph.putRecord(postAggKey, {
+        __typename: "PostAggregations",
+        ['tags({"category":"moderation","first":25})']: { __ref: modTagsKey },
+        ['tags({"category":"user","first":25})']: { __ref: userTagsKey },
+      });
+
+      graph.putRecord("Post:p1", {
+        __typename: "VideoPost",
+        id: "p1",
+        title: "Video Title",
+        flags: [],
+        aggregations: { __ref: postAggKey },
+      });
+
+      const ok = documents.hasDocument({
+        document: operations.POSTS_WITH_AGGREGATIONS_QUERY,
+        variables: { category: "tech", first: 10, after: null },
+      });
+
+      expect(ok).toBe(false);
+    });
+
+    it("returns true when all fields present including VideoPost with video and nested connections", () => {
+      const postsPageKey = '@.posts({"after":null,"category":"tech","first":10})';
+
+      writeConnectionPage(graph, postsPageKey, {
+        __typename: "PostConnection",
+        totalCount: 1,
+        edges: [
+          {
+            __typename: "PostEdge",
+            cursor: "p1",
+            node: {
+              __typename: "VideoPost",
+              id: "p1",
+              title: "Video Title",
+              flags: [],
+            },
+          },
+        ],
+        pageInfo: {
+          startCursor: "p1",
+          endCursor: "p1",
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      graph.putRecord(ROOT_ID, {
+        ['posts({"after":null,"category":"tech","first":10})']: { __ref: postsPageKey },
+      });
+
+      const aggKey = `${postsPageKey}.aggregations`;
+      const todayStatKey = `${aggKey}.stat({"key":"today"})`;
+      const yesterdayStatKey = `${aggKey}.stat({"key":"yesterday"})`;
+
+      graph.putRecord(todayStatKey, {
+        __typename: "Stat",
+        key: "today",
+        views: 100,
+      });
+      graph.putRecord(yesterdayStatKey, {
+        __typename: "Stat",
+        key: "yesterday",
+        views: 90,
+      });
+
+      const baseTagsKey = '@.posts({"after":null,"category":"tech","first":10}).aggregations.tags({"first":50})';
+      writeConnectionPage(graph, baseTagsKey, {
+        __typename: "TagConnection",
+        edges: [],
+        pageInfo: {
+          startCursor: null,
+          endCursor: null,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      graph.putRecord(aggKey, {
+        __typename: "PostAggregations",
+        scoring: 42,
+        ['stat({"key":"today"})']: { __ref: todayStatKey },
+        ['stat({"key":"yesterday"})']: { __ref: yesterdayStatKey },
+        ['tags({"first":50})']: { __ref: baseTagsKey },
+      });
+      graph.putRecord(postsPageKey, {
+        aggregations: { __ref: aggKey },
+      });
+
+      const postAggKey = `Post:p1.aggregations`;
+      const modTagsKey = '@.Post:p1.aggregations.tags({"category":"moderation","first":25})';
+      const userTagsKey = '@.Post:p1.aggregations.tags({"category":"user","first":25})';
+
+      writeConnectionPage(graph, modTagsKey, {
+        __typename: "TagConnection",
+        edges: [],
+        pageInfo: {
+          startCursor: null,
+          endCursor: null,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      writeConnectionPage(graph, userTagsKey, {
+        __typename: "TagConnection",
+        edges: [],
+        pageInfo: {
+          startCursor: null,
+          endCursor: null,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+
+      graph.putRecord(postAggKey, {
+        __typename: "PostAggregations",
+        ['tags({"category":"moderation","first":25})']: { __ref: modTagsKey },
+        ['tags({"category":"user","first":25})']: { __ref: userTagsKey },
+      });
+
+      const videoKey = `Post:p1.video`;
+      graph.putRecord(videoKey, {
+        __typename: "Media",
+        key: "video-123",
+        mediaUrl: "https://example.com/video.mp4",
+      });
+
+      graph.putRecord("Post:p1", {
+        __typename: "VideoPost",
+        id: "p1",
+        title: "Video Title",
+        flags: [],
+        aggregations: { __ref: postAggKey },
+        video: { __ref: videoKey },
+      });
+
+      const ok = documents.hasDocument({
+        document: operations.POSTS_WITH_AGGREGATIONS_QUERY,
+        variables: { category: "tech", first: 10, after: null },
+      });
+
+      expect(ok).toBe(true);
+    });
   });
 });

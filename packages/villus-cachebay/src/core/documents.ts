@@ -25,14 +25,38 @@ export type DocumentsDependencies = {
   canonical: CanonicalInstance;
 };
 
+type Frame = {
+  parentId: string;
+  fields: PlanField[] | undefined | null;
+  fieldsMap: Map<string, PlanField> | undefined | null;
+  insideConnection: boolean;
+  pageKey: string | null;
+  inEdges: boolean;
+};
+
+type ConnectionPage = {
+  field: PlanField;
+  parentId: string;
+  pageKey: string;
+};
+
+type MaterializeArgs = {
+  document: DocumentNode | CachePlan;
+  variables?: Record<string, any>;
+};
+
 export type DocumentsInstance = ReturnType<typeof createDocuments>;
 
+/**
+ * Creates a documents manager for normalizing and materializing GraphQL documents.
+ * Handles normalization of responses into the graph store and materialization back into JS objects.
+ */
 export const createDocuments = (deps: DocumentsDependencies) => {
   const { graph, views, planner, canonical } = deps;
 
   /**
-   * Normalize a GraphQL response (document + variables + data) into the graph store,
-   * and update canonical connection pages for queries.
+   * Normalizes a GraphQL response into the graph store.
+   * Updates canonical connection pages for queries.
    */
   const normalizeDocument = ({
     document,
@@ -46,24 +70,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const plan = planner.getPlan(document);
     const isQuery = plan.operation === "query";
 
-    // Seed root record
     graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
 
-    // Collect connection pages for a post-pass canonical update
-    const connectionPages: Array<{
-      field: PlanField;
-      parentId: string;
-      pageKey: string;
-    }> = [];
-
-    type Frame = {
-      parentId: string;
-      fields: PlanField[] | undefined | null;
-      fieldsMap: Map<string, PlanField> | undefined | null;
-      insideConnection: boolean;
-      pageKey: string | null;
-      inEdges: boolean;
-    };
+    const connectionPages: ConnectionPage[] = [];
 
     const initialFrame: Frame = {
       parentId: ROOT_ID,
@@ -81,28 +90,27 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       kind: symbol,
       frame?: Frame,
     ) => {
-      if (!frame) return;
+      if (!frame) {
+        return;
+      }
 
-      // root tick
       if (responseKey == null) {
         return frame;
       }
 
       const parentId = frame.parentId;
       const fieldsMap = frame.fieldsMap as Map<string, PlanField> | undefined;
-      const planField =
-        typeof responseKey === "string" && fieldsMap ? fieldsMap.get(responseKey) : undefined;
+      const planField = typeof responseKey === "string" && fieldsMap ? fieldsMap.get(responseKey) : undefined;
 
-      // ────────────────────────────────────────────────────────────────────────
-      // ARRAYS
-      // ────────────────────────────────────────────────────────────────────────
       if (kind === TRAVERSE_ARRAY) {
-        // Connection.edges → set edge refs on the page and dive into edge objects
         if (frame.insideConnection && responseKey === "edges") {
           const pageKey = frame.pageKey as string;
           const rawEdges: any[] = Array.isArray(valueNode) ? valueNode : [];
           const edgeRefs: string[] = new Array(rawEdges.length);
-          for (let i = 0; i < rawEdges.length; i++) edgeRefs[i] = `${pageKey}.edges:${i}`;
+
+          for (let i = 0; i < rawEdges.length; i++) {
+            edgeRefs[i] = `${pageKey}.edges.${i}`;
+          }
 
           graph.putRecord(pageKey, { edges: { __refs: edgeRefs } });
 
@@ -117,12 +125,15 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           } as Frame;
         }
 
-        // Scalar arrays (e.g., Post.flags) → write inline on current record
         if (planField && !planField.selectionSet) {
           const fieldKey = buildFieldKey(planField, variables);
           const arr = valueNode as any[];
           const out = new Array(arr.length);
-          for (let i = 0; i < arr.length; i++) out[i] = arr[i];
+
+          for (let i = 0; i < arr.length; i++) {
+            out[i] = arr[i];
+          }
+
           graph.putRecord(parentId, { [fieldKey]: out });
           return TRAVERSE_SKIP;
         }
@@ -130,20 +141,16 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         return frame;
       }
 
-      // ────────────────────────────────────────────────────────────────────────
-      // OBJECTS
-      // ────────────────────────────────────────────────────────────────────────
       if (kind === TRAVERSE_OBJECT) {
-        // Edge object inside edges[]
         if (frame.insideConnection && frame.inEdges && typeof responseKey === "number") {
-          const edgeKey = `${frame.pageKey}.edges:${responseKey}`;
+          const edgeKey = `${frame.pageKey}.edges.${responseKey}`;
+
           if (valueNode && valueNode.__typename) {
             graph.putRecord(edgeKey, { __typename: valueNode.__typename });
           } else {
             graph.putRecord(edgeKey, {});
           }
 
-          // Link node ref early if identifiable
           const nodeObj = (valueNode as any).node;
           if (nodeObj) {
             const nodeKey = graph.identify(nodeObj);
@@ -162,31 +169,28 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           } as Frame;
         }
 
-        // Connection page object
         if (planField && planField.isConnection) {
           const pageKey = buildConnectionKey(planField, parentId, variables);
           const parentFieldKey = buildFieldKey(planField, variables);
 
-          // Initialize page record with __typename and scalar fields
           const pageRecord: Record<string, any> = {};
           if (valueNode && valueNode.__typename) {
             pageRecord.__typename = valueNode.__typename;
           }
 
-          // Copy scalar fields immediately (e.g., totalCount)
           if (valueNode) {
             const keys = Object.keys(valueNode);
             for (let i = 0; i < keys.length; i++) {
               const k = keys[i];
-              if (k === "__typename" || k === "edges" || k === "pageInfo") continue;
+              if (k === "__typename" || k === "edges" || k === "pageInfo") {
+                continue;
+              }
+
               const v = (valueNode as any)[k];
 
               if (v !== undefined && v !== null && typeof v !== "object") {
                 pageRecord[k] = v;
-              } else if (
-                Array.isArray(v) ||
-                (v !== null && typeof v === "object" && !(v && (v as any).__typename))
-              ) {
+              } else if (Array.isArray(v) || (v !== null && typeof v === "object" && !(v && (v as any).__typename))) {
                 pageRecord[k] = v;
               }
             }
@@ -194,25 +198,22 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
           graph.putRecord(pageKey, pageRecord);
 
-          // If pageInfo child exists, link page → pageInfo
           if ((valueNode as any)?.pageInfo) {
             const pageInfoKey = `${pageKey}.pageInfo`;
             graph.putRecord(pageKey, { pageInfo: { __ref: pageInfoKey } });
+
             const piTypename = (valueNode as any)?.pageInfo?.__typename;
             graph.putRecord(pageInfoKey, piTypename ? { __typename: piTypename } : {});
           }
 
-          // Link page under parent (queries only)
           if (isQuery) {
             graph.putRecord(parentId, { [parentFieldKey]: { __ref: pageKey } });
           }
 
-          // Collect for canonical update
           if (isQuery) {
             connectionPages.push({ field: planField, parentId, pageKey });
           }
 
-          // Descend into the page (its selection set)
           return {
             parentId: pageKey,
             fields: planField.selectionSet,
@@ -223,7 +224,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           } as Frame;
         }
 
-        // Entity (identifiable)
         {
           const entityKey = graph.identify(valueNode);
           if (entityKey) {
@@ -233,7 +233,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               graph.putRecord(entityKey, {});
             }
 
-            // Link from parent (queries only), except edges.node
             if (isQuery && planField && !(frame.insideConnection && planField.responseKey === "node")) {
               const parentFieldKey = buildFieldKey(planField, variables);
               graph.putRecord(parentId, { [parentFieldKey]: { __ref: entityKey } });
@@ -252,7 +251,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           }
         }
 
-        // Generic container – non-identifiable object
         if (planField) {
           const containerFieldKey = buildFieldKey(planField, variables);
           const containerKey = `${parentId}.${containerFieldKey}`;
@@ -284,9 +282,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         return frame;
       }
 
-      // ────────────────────────────────────────────────────────────────────────
-      // SCALARS
-      // ────────────────────────────────────────────────────────────────────────
       if (kind === TRAVERSE_SCALAR) {
         if (typeof responseKey === "string" && fieldsMap) {
           const f = fieldsMap.get(responseKey);
@@ -295,21 +290,23 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             graph.putRecord(frame.parentId, { [fieldKey]: valueNode });
           }
         }
+
         return frame;
       }
 
       return frame;
     };
 
-    // Main traversal - normalize all data
     traverseFast(data, initialFrame, visit);
 
-    // Post-pass → update canonical pages for queries
     if (isQuery && connectionPages.length > 0) {
       for (let i = 0; i < connectionPages.length; i++) {
         const { field, parentId, pageKey } = connectionPages[i];
         const pageRecord = graph.getRecord(pageKey);
-        if (!pageRecord) continue;
+
+        if (!pageRecord) {
+          continue;
+        }
 
         canonical.updateConnection({
           field,
@@ -322,16 +319,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     }
   };
 
-  type MaterializeArgs = {
-    document: DocumentNode | CachePlan;
-    variables?: Record<string, any>;
-  };
-
   /**
-   * Read a materialized JS object for a document from the current graph.
-   * - Root @connection fields read via canonical keys.
-   * - Root object fields deref via stored links { __ref }.
-   * - Preserves `null` vs `undefined` for missing links.
+   * Reads a materialized JS object for a document from the current graph.
+   * Root @connection fields read via canonical keys.
+   * Root object fields deref via stored links { __ref }.
+   * Preserves null vs undefined for missing links.
    */
   const materializeDocument = ({ document, variables = {} }: MaterializeArgs) => {
     const plan = planner.getPlan(document);
@@ -372,9 +364,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   };
 
   /**
-   * Return true if all required data for a document is present in the graph
-   * (including canonical connection pages, pageInfo, connection-level scalars, and
-   * deep node selections via edges).
+   * Returns true if all required data for a document is present in the graph.
+   * Checks actual normalized pages, not canonical aggregates.
    */
   const hasDocument = ({
     document,
@@ -384,88 +375,251 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     variables?: Record<string, any>;
   }): boolean => {
     const plan = planner.getPlan(document);
-    if (plan.operation === "fragment") return false;
-
-    const keyOf = (f: PlanField) =>
-      (f.responseKey && f.responseKey !== f.fieldName ? f.responseKey : f.fieldName) || f.responseKey;
-
-    const deref = (v: any) =>
-      v && typeof v === "object" && "__ref" in v ? graph.getRecord((v as any).__ref) : v;
-
-    const ensureScalars = (obj: any, sel: PlanField[] | undefined | null): boolean => {
-      const rec = deref(obj);
-      if (!sel || sel.length === 0) return true;
-      if (!rec || typeof rec !== "object") return false;
-
-      for (let i = 0; i < sel.length; i++) {
-        const f = sel[i];
-        const k = keyOf(f);
-
-        if (f.selectionSet && f.selectionSet.length) {
-          const child = (rec as any)[k];
-          if (!ensureScalars(child, f.selectionSet)) return false;
-        } else {
-          if (!(k in (rec as any))) return false;
-        }
-      }
-      return true;
-    };
+    if (plan.operation === "fragment") {
+      return false;
+    }
 
     const visited = new Set<string>();
 
-    const checkSelection = (parentId: string, field: PlanField): boolean => {
-      // @connection → verify canonical page
-      if (field.isConnection) {
-        const canKey = buildConnectionCanonicalKey(field, parentId, variables);
-        const page = graph.getRecord(canKey);
-        if (!page) return false;
+    const hasOwn = (obj: any, k: string): boolean => {
+      return obj != null && Object.prototype.hasOwnProperty.call(obj, k);
+    };
 
-        const selMap = field.selectionMap;
-        if (selMap && selMap.size) {
-          // pageInfo
-          const piField = selMap.get("pageInfo");
-          if (piField) {
-            const piContainer = (page as any).pageInfo;
-            if (!piContainer) return false;
-            if (!ensureScalars(piContainer, piField.selectionSet)) return false;
+    const getTypeName = (id: string): string | undefined => {
+      const rec = graph.getRecord(id);
+      return rec ? (rec.__typename as string | undefined) : undefined;
+    };
+
+    const getGuard = (f: PlanField): string | undefined => {
+      return (f as any).typeCondition as string | undefined;
+    };
+
+    const getSelMap = (f: PlanField): any => {
+      return (f as any).selectionMap || null;
+    };
+
+    const selGet = (container: PlanField, key: string): PlanField | undefined => {
+      const map = getSelMap(container);
+      if (!map) {
+        return undefined;
+      }
+
+      if (typeof map.get === "function") {
+        return map.get(key);
+      }
+
+      return map[key];
+    };
+
+    const selForEach = (container: PlanField, cb: (rk: string, child: PlanField) => void): void => {
+      const map = getSelMap(container);
+      if (!map) {
+        return;
+      }
+
+      if (typeof map.forEach === "function") {
+        (map as Map<string, PlanField>).forEach((child, rk) => cb(rk, child));
+        return;
+      }
+
+      const keys = Object.keys(map);
+      for (let i = 0; i < keys.length; i++) {
+        const rk = keys[i];
+        cb(rk, map[rk]);
+      }
+    };
+
+    const buildTypeCaseSkipSet = (field: PlanField): Set<string> | null => {
+      const tc = (field as any).typeCases;
+      if (!tc) {
+        return null;
+      }
+
+      const skip = new Set<string>();
+
+      if (typeof (tc as any).forEach === "function") {
+        (tc as Map<string, PlanField[]>).forEach((arr: PlanField[]) => {
+          if (!arr || !arr.length) {
+            return;
           }
 
-          // other connection-level fields (e.g., totalCount)
-          for (const [rk, f] of selMap) {
-            if (rk === "edges" || rk === "pageInfo") continue;
+          for (let i = 0; i < arr.length; i++) {
+            skip.add(buildFieldKey(arr[i], variables));
+          }
+        });
+        return skip;
+      }
 
-            if (f.selectionSet && f.selectionSet.length) {
-              const child = (page as any)[keyOf(f)];
-              if (!ensureScalars(child, f.selectionSet)) return false;
-            } else {
-              const rec = deref(page);
-              if (!(keyOf(f) in (rec || {}))) return false;
+      const obj = tc as Record<string, PlanField[]>;
+      const tks = Object.keys(obj);
+      for (let i = 0; i < tks.length; i++) {
+        const arr = obj[tks[i]];
+        if (!arr || !arr.length) {
+          continue;
+        }
+
+        for (let j = 0; j < arr.length; j++) {
+          skip.add(buildFieldKey(arr[j], variables));
+        }
+      }
+
+      return skip;
+    };
+
+    const checkPolymorphicSelection = (parentId: string, field: PlanField, parentTypeName?: string): boolean => {
+      const typeCaseSkip = buildTypeCaseSkipSet(field);
+
+      const baseMap = getSelMap(field);
+      if (baseMap) {
+        let ok = true;
+
+        selForEach(field, (_rk, child) => {
+          if (!ok) {
+            return;
+          }
+
+          const guard = getGuard(child);
+          if (guard && parentTypeName && guard !== parentTypeName) {
+            return;
+          }
+
+          if (typeCaseSkip && typeCaseSkip.has(buildFieldKey(child, variables))) {
+            return;
+          }
+
+          if (!checkSelection(parentId, child, parentTypeName)) {
+            ok = false;
+          }
+        });
+
+        if (!ok) {
+          return false;
+        }
+      }
+
+      if (parentTypeName) {
+        const tc = (field as any).typeCases;
+        if (tc) {
+          const list = typeof (tc as any).get === "function"
+            ? (tc as Map<string, PlanField[]>).get(parentTypeName)
+            : (tc as Record<string, PlanField[]>)[parentTypeName];
+
+          if (list && list.length) {
+            for (let i = 0; i < list.length; i++) {
+              if (!checkSelection(parentId, list[i], parentTypeName)) {
+                return false;
+              }
+            }
+          }
+        }
+      }
+
+      return true;
+    };
+
+    const checkSelection = (parentId: string, field: PlanField, parentTypeName?: string): boolean => {
+      const guard = getGuard(field);
+      if (guard && parentTypeName && guard !== parentTypeName) {
+        return true;
+      }
+
+      if (field.isConnection) {
+        const pageKey = buildConnectionKey(field, parentId, variables);
+        const page = graph.getRecord(pageKey);
+        if (!page) {
+          return false;
+        }
+
+        const map = getSelMap(field);
+        if (map) {
+          const piField = selGet(field, "pageInfo");
+          if (piField) {
+            const piLink = (page as any).pageInfo;
+            if (!piLink || !piLink.__ref) {
+              return false;
+            }
+
+            const piId = piLink.__ref as string;
+            if (getSelMap(piField)) {
+              if (!checkPolymorphicSelection(piId, piField, getTypeName(piId))) {
+                return false;
+              }
             }
           }
 
-          // edges → node selection (only if edges exist and node has selection)
-          const edgesField = selMap.get("edges");
-          const nodeField = edgesField?.selectionMap?.get("node");
-          if (edgesField && nodeField?.selectionSet?.length) {
+          let ok = true;
+          selForEach(field, (rk, child) => {
+            if (!ok) {
+              return;
+            }
+
+            if (rk === "edges" || rk === "pageInfo") {
+              return;
+            }
+
+            const key = buildFieldKey(child, variables);
+
+            if (child.selectionSet && child.selectionSet.length) {
+              const link = (page as any)[key];
+              if (!link || !link.__ref) {
+                ok = false;
+                return;
+              }
+
+              const id = link.__ref as string;
+              const token = `${pageKey}:${key}:${id}`;
+              if (!visited.has(token)) {
+                visited.add(token);
+                if (!checkPolymorphicSelection(id, child, getTypeName(id))) {
+                  ok = false;
+                }
+              }
+            } else {
+              if (!hasOwn(page, key)) {
+                ok = false;
+              }
+            }
+          });
+
+          if (!ok) {
+            return false;
+          }
+
+          const edgesField = selGet(field, "edges");
+          const nodeField = edgesField && selGet(edgesField, "node");
+          if (edgesField && nodeField && nodeField.selectionSet && nodeField.selectionSet.length) {
             const edges = (page as any).edges;
-            const refs: string[] =
-              edges && edges.__refs
-                ? edges.__refs
-                : Array.isArray(edges)
-                  ? edges.map((_: any, i: number) => `${canKey}.edges:${i}`)
-                  : [];
+            let refs: string[] | null = null;
 
-            for (let i = 0; i < refs.length; i++) {
-              const edgeRec = graph.getRecord(refs[i]);
-              const nodeRef = edgeRec?.node?.__ref;
-              if (!nodeRef) continue;
+            if (edges && typeof edges === "object" && Array.isArray(edges.__refs)) {
+              refs = edges.__refs as string[];
+            } else if (Array.isArray(edges)) {
+              const len = edges.length;
+              refs = new Array(len);
+              for (let i = 0; i < len; i++) {
+                refs[i] = `${pageKey}.edges.${i}`;
+              }
+            }
 
-              const guard = `${canKey}:node:${nodeRef}`;
-              if (visited.has(guard)) continue;
-              visited.add(guard);
+            if (refs && refs.length) {
+              for (let i = 0; i < refs.length; i++) {
+                const edgeRec = graph.getRecord(refs[i]);
+                const nodeRef = edgeRec && edgeRec.node ? edgeRec.node.__ref : undefined;
+                if (!nodeRef) {
+                  continue;
+                }
 
-              for (const [, childSel] of nodeField.selectionMap!) {
-                if (!checkSelection(nodeRef, childSel)) return false;
+                const nodeId = nodeRef as string;
+                const token = `${pageKey}:node:${nodeId}`;
+                if (visited.has(token)) {
+                  continue;
+                }
+
+                visited.add(token);
+
+                if (!checkPolymorphicSelection(nodeId, nodeField, getTypeName(nodeId))) {
+                  return false;
+                }
               }
             }
           }
@@ -474,55 +628,57 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         return true;
       }
 
-      // Non-connection field
       const parentSnap = graph.getRecord(parentId) || {};
-
       if (field.selectionSet && field.selectionSet.length) {
         const linkKey = buildFieldKey(field, variables);
         const link = (parentSnap as any)[linkKey];
-        if (!link?.__ref) return false;
+        if (!link || !link.__ref) {
+          return false;
+        }
 
         const childId = link.__ref as string;
-        const guard = `${parentId}:${keyOf(field)}:${childId}`;
-        if (visited.has(guard)) return true;
-        visited.add(guard);
-
-        const childMap = field.selectionMap!;
-        for (const [, child] of childMap) {
-          if (!checkSelection(childId, child)) return false;
+        const token = `${parentId}:${field.responseKey || field.fieldName}:${childId}`;
+        if (!visited.has(token)) {
+          visited.add(token);
+          if (!checkPolymorphicSelection(childId, field, getTypeName(childId))) {
+            return false;
+          }
         }
+
         return true;
       }
 
-      // scalar leaf on this parent entity
-      const prop = keyOf(field);
-      return prop in (parentSnap as any);
+      return hasOwn(parentSnap, buildFieldKey(field, variables));
     };
 
-    // Deep walk from root
     const rootSnap = graph.getRecord(ROOT_ID) || {};
     for (let i = 0; i < plan.root.length; i++) {
       const f = plan.root[i];
 
       if (f.isConnection) {
-        if (!checkSelection(ROOT_ID, f)) return false;
+        if (!checkSelection(ROOT_ID, f, getTypeName(ROOT_ID))) {
+          return false;
+        }
         continue;
       }
 
       if (f.selectionSet && f.selectionSet.length) {
         const linkKey = buildFieldKey(f, variables);
         const link = (rootSnap as any)[linkKey];
-        if (!link?.__ref) return false;
+        if (!link || !link.__ref) {
+          return false;
+        }
 
         const childId = link.__ref as string;
-        for (const [, child] of f.selectionMap!) {
-          if (!checkSelection(childId, child)) return false;
+        if (!checkPolymorphicSelection(childId, f, getTypeName(childId))) {
+          return false;
         }
         continue;
       }
 
-      const prop = keyOf(f);
-      if (!(prop in (rootSnap as any))) return false;
+      if (!hasOwn(rootSnap, buildFieldKey(f, variables))) {
+        return false;
+      }
     }
 
     return true;

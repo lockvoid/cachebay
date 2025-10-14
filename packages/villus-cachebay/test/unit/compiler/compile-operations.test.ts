@@ -150,4 +150,109 @@ describe("Compiler x Operations", () => {
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
     expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
+
+  it("inline fragments on implementors set typeCondition on fields", () => {
+    const DOC = `
+      query Query {
+        posts(first: 10) @connection {
+          edges {
+            node {
+              id
+              title
+
+              ... on VideoPost {
+                video { key mediaUrl }
+              }
+
+              ... on AudioPost {
+                audio { key mediaUrl }
+              }
+            }
+          }
+          pageInfo { hasNextPage }
+          totalCount
+        }
+      }
+    `;
+
+    const plan = compilePlan(DOC);
+
+    expect(plan.kind).toBe("CachePlan");
+    expect(plan.operation).toBe("query");
+    expect(hasTypenames(plan.networkQuery)).toBe(false);
+    expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]); // stripped
+
+    const posts = plan.rootSelectionMap!.get("posts")!;
+    const edges = posts.selectionMap!.get("edges")!;
+    const node = edges.selectionMap!.get("node")!;
+    expect(node.fieldName).toBe("node");
+
+    // Base fields must have no guard
+    const id = node.selectionMap!.get("id")!;
+    const title = node.selectionMap!.get("title")!;
+    expect(id.typeCondition).toBeUndefined();
+    expect(title.typeCondition).toBeUndefined();
+
+    // Polymorphic children must be guarded
+    const video = node.selectionMap!.get("video")!;
+    const audio = node.selectionMap!.get("audio")!;
+    expect(video.typeCondition).toBe("VideoPost");
+    expect(audio.typeCondition).toBe("AudioPost");
+
+    // And their own children inherit the guard (useful but not strictly required)
+    const videoKey = video.selectionMap!.get("key")!;
+    const videoUrl = video.selectionMap!.get("mediaUrl")!;
+    expect(videoKey.typeCondition).toBe("VideoPost");
+    expect(videoUrl.typeCondition).toBe("VideoPost");
+
+    const audioKey = audio.selectionMap!.get("key")!;
+    const audioUrl = audio.selectionMap!.get("mediaUrl")!;
+    expect(audioKey.typeCondition).toBe("AudioPost");
+    expect(audioUrl.typeCondition).toBe("AudioPost");
+  });
+
+  it("fragment spreads on implementors set typeCondition on fields", () => {
+    const DOC = `
+      fragment VideoFrag on VideoPost {
+        video { key mediaUrl }
+      }
+
+      fragment AudioFrag on AudioPost {
+        audio { key mediaUrl }
+      }
+
+      query Query {
+        posts(first: 5) @connection {
+          edges {
+            node {
+              id
+              ...VideoFrag
+              ...AudioFrag
+            }
+          }
+        }
+      }
+    `;
+
+    const plan = compilePlan(DOC);
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
+    expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
+
+    const posts = plan.rootSelectionMap!.get("posts")!;
+    const edges = posts.selectionMap!.get("edges")!;
+    const node = edges.selectionMap!.get("node")!;
+
+    const id = node.selectionMap!.get("id")!;
+    const video = node.selectionMap!.get("video")!;
+    const audio = node.selectionMap!.get("audio")!;
+
+    // Base vs guarded
+    expect(id.typeCondition).toBeUndefined();
+    expect(video.typeCondition).toBe("VideoPost");
+    expect(audio.typeCondition).toBe("AudioPost");
+
+    // Children inherit guard
+    expect(video.selectionMap!.get("key")!.typeCondition).toBe("VideoPost");
+    expect(audio.selectionMap!.get("key")!.typeCondition).toBe("AudioPost");
+  });
 });

@@ -1340,14 +1340,14 @@ describe("Canonical - Relay Style Pagination", () => {
       const pageKey = '@.posts({"after":null,"first":3})';
 
       graph.putRecord("Post:p1", { __typename: "Post", id: "p1" });
-      graph.putRecord(`${pageKey}.edges:0`, {
+      graph.putRecord(`${pageKey}.edges.0`, {
         __typename: "PostEdge",
         node: { __ref: "Post:p1" },
       });
 
       const normalizedPage = {
         __typename: "PostConnection",
-        edges: { __refs: [`${pageKey}.edges:0`] },
+        edges: { __refs: [`${pageKey}.edges.0`] },
         pageInfo: { __ref: `${pageKey}.pageInfo` },
       };
 
@@ -1412,13 +1412,13 @@ describe("Canonical - Relay Style Pagination", () => {
         id: "p2",
       });
 
-      graph.putRecord(`${pageKey}.edges:0`, {
+      graph.putRecord(`${pageKey}.edges.0`, {
         __typename: "PostEdge",
         cursor: "edge_cursor_p1",
         node: { __ref: "Post:p1" },
       });
 
-      graph.putRecord(`${pageKey}.edges:1`, {
+      graph.putRecord(`${pageKey}.edges.1`, {
         __typename: "PostEdge",
         cursor: "edge_cursor_p2",
         node: { __ref: "Post:p2" },
@@ -1432,7 +1432,7 @@ describe("Canonical - Relay Style Pagination", () => {
 
       const normalizedPage = {
         __typename: "PostConnection",
-        edges: { __refs: [`${pageKey}.edges:0`, `${pageKey}.edges:1`] },
+        edges: { __refs: [`${pageKey}.edges.0`, `${pageKey}.edges.1`] },
         pageInfo: { __ref: `${pageKey}.pageInfo` },
       };
 
@@ -1485,20 +1485,20 @@ describe("Canonical - Relay Style Pagination", () => {
 
       graph.putRecord("Post:p1", { __typename: "Post", id: "p1" });
 
-      graph.putRecord(`${pageKey}.edges:0`, {
+      graph.putRecord(`${pageKey}.edges.0`, {
         __typename: "PostEdge",
         cursor: "c1",
         node: { __ref: "Post:p1" },
       });
 
-      graph.putRecord(`${pageKey}.edges:1`, {
+      graph.putRecord(`${pageKey}.edges.1`, {
         __typename: "PostEdge",
         cursor: "c2",
       });
 
       const normalizedPage = {
         __typename: "PostConnection",
-        edges: { __refs: [`${pageKey}.edges:0`, `${pageKey}.edges:1`] },
+        edges: { __refs: [`${pageKey}.edges.0`, `${pageKey}.edges.1`] },
         pageInfo: { __ref: `${pageKey}.pageInfo` },
       };
 
