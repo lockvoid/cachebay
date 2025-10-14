@@ -35,38 +35,172 @@ describe("documents.normalizeDocument", () => {
     documents = createDocuments({ graph, views, canonical, planner });
   });
 
-  it("normalizes root reference and entity snapshot for single user query", () => {
-    documents.normalizeDocument({
-      document: operations.USER_QUERY,
-      variables: {
-        id: "u1",
-      },
-      data: {
-        user: users.buildNode({
-          id: "u1",
-          email: "u1@example.com",
-        }),
-      },
+  describe('primitives', () => {
+    it('normalizes string', () => {
+      documents.normalizeDocument({
+        document: `
+          query {
+            entity(id: "e1") {
+              id
+              data
+            }
+          }
+        `,
+
+        data: {
+          entity: {
+            __typename: "Entity",
+            id: "e1",
+            data: "string",
+          }
+        },
+      });
+
+      expect(graph.getRecord("Entity:e1")).toEqual({
+        __typename: "Entity",
+        id: "e1",
+        data: "string",
+      });
     });
 
-    expect(graph.getRecord("@")).toEqual({
-      id: "@",
-      __typename: "@",
-      'user({"id":"u1"})': {
-        __ref: "User:u1",
-      },
+    it('normalizes number', () => {
+      documents.normalizeDocument({
+        document: `
+          query {
+            entity(id: "e1") {
+              id
+              data
+            }
+          }
+        `,
+
+        data: {
+          entity: {
+            __typename: "Entity",
+            id: "e1",
+            data: 123,
+          }
+        },
+      });
+
+      expect(graph.getRecord("Entity:e1")).toEqual({
+        __typename: "Entity",
+        id: "e1",
+        data: 123,
+      });
     });
 
-    expect(graph.getRecord("User:u1")).toEqual({
-      id: "u1",
-      __typename: "User",
-      email: "u1@example.com",
+    it('normalizes boolean', () => {
+      documents.normalizeDocument({
+        document: `
+          query {
+            entity(id: "e1") {
+              id
+              data
+            }
+          }
+        `,
+
+        data: {
+          entity: {
+            __typename: "Entity",
+            id: "e1",
+            data: true,
+          }
+        },
+      });
+
+      expect(graph.getRecord("Entity:e1")).toEqual({
+        __typename: "Entity",
+        id: "e1",
+        data: true,
+      });
     });
 
-    // No canonical connection for single entity queries
-    const keys = graph.keys();
-    const canonicalKeys = keys.filter((k) => k.startsWith("@connection"));
-    expect(canonicalKeys.length).toBe(0);
+    it('normalizes null', () => {
+      documents.normalizeDocument({
+        document: `
+          query {
+            entity(id: "e1") {
+              id
+              data
+            }
+          }
+        `,
+
+        data: {
+          entity: {
+            __typename: "Entity",
+            id: "e1",
+            data: null,
+          }
+        },
+      });
+
+      expect(graph.getRecord("Entity:e1")).toEqual({
+        __typename: "Entity",
+        id: "e1",
+        data: null,
+      });
+    });
+
+    it('normalizes json', () => {
+      documents.normalizeDocument({
+        document: `
+          query {
+            entity(id: "e1") {
+              id
+              data
+            }
+          }
+        `,
+
+        data: {
+          entity: {
+            __typename: "Entity",
+            id: "e1",
+            data: { foo: { bar: "baz" } },
+          }
+        },
+      });
+
+      expect(graph.getRecord("Entity:e1")).toEqual({
+        __typename: "Entity",
+        id: "e1",
+        data: { foo: { bar: "baz" } },
+      });
+    });
+  });
+
+  describe('aliases', () => {
+    it('normalizes without aliases', () => {
+      documents.normalizeDocument({
+        document: `
+          query {
+            entity(id: "e1") {
+              id
+              dataUrl
+              previewUrl: dataUrl(variant: "preview")
+            }
+          }
+        `,
+
+        data: {
+          entity: {
+            __typename: "Entity",
+            id: "e1",
+            data: { dataUrl: "1", previewUrl: "2" },
+          }
+        },
+      });
+
+      expect(graph.getRecord("Entity:e1")).toEqual({
+        __typename: "Entity",
+        id: "e1",
+        "dataUrl": "1",
+        'dataUrl({"variant":"preview"})': "2",
+      });
+    });
   });
 
   it("normalizes root users connection with edge records", () => {

@@ -142,6 +142,14 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
 
       if (kind === TRAVERSE_OBJECT) {
+        if (planField && !planField.selectionSet) {
+          const fieldKey = buildFieldKey(planField, variables);
+
+          graph.putRecord(parentId, { [fieldKey]: valueNode });
+
+          return TRAVERSE_SKIP;
+        }
+
         if (frame.insideConnection && frame.inEdges && typeof responseKey === "number") {
           const edgeKey = `${frame.pageKey}.edges.${responseKey}`;
 
