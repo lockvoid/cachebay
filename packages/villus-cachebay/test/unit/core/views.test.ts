@@ -39,6 +39,200 @@ describe("Views", () => {
   };
 
   describe("getView", () => {
+    describe("primitives (views)", () => {
+      it("reads string scalar via entity view", () => {
+        graph.putRecord("Entity:e1", {
+          __typename: "Entity",
+          id: "e1",
+          data: "string",
+        });
+
+        const field = getField(`
+          query {
+            entity(id: "e1") {
+              id
+              data
+            }
+          }
+        `, "entity");
+
+        const entityView = views.getView({
+          source: "Entity:e1",
+          field,
+          variables: {},
+          canonical: true,
+        });
+
+        expect(entityView.id).toBe("e1");
+        expect(entityView.data).toBe("string");
+      });
+
+      it("reads number scalar via entity view", () => {
+        graph.putRecord("Entity:e1", {
+          __typename: "Entity",
+          id: "e1",
+          data: 123,
+        });
+
+        const field = getField(`
+          query {
+            entity(id: "e1") {
+              id
+              data
+            }
+          }
+        `, "entity");
+
+        const entityView = views.getView({
+          source: "Entity:e1",
+          field,
+          variables: {},
+          canonical: true,
+        });
+
+        expect(entityView.data).toBe(123);
+      });
+
+      it("reads boolean scalar via entity view", () => {
+        graph.putRecord("Entity:e1", {
+          __typename: "Entity",
+          id: "e1",
+          data: true,
+        });
+
+        const field = getField(`
+          query {
+            entity(id: "e1") {
+              id
+              data
+            }
+          }
+        `, "entity");
+
+        const entityView = views.getView({
+          source: "Entity:e1",
+          field,
+          variables: {},
+          canonical: true,
+        });
+
+        expect(entityView.data).toBe(true);
+      });
+
+      it("reads null scalar via entity view", () => {
+        graph.putRecord("Entity:e1", {
+          __typename: "Entity",
+          id: "e1",
+          data: null,
+        });
+
+        const field = getField(`
+          query {
+            entity(id: "e1") {
+              id
+              data
+            }
+          }
+        `, "entity");
+
+        const entityView = views.getView({
+          source: "Entity:e1",
+          field,
+          variables: {},
+          canonical: true,
+        });
+
+        expect(entityView.data).toBeNull();
+      });
+
+      it("reads JSON scalar (object) inline via entity view", () => {
+        graph.putRecord("Entity:e1", {
+          __typename: "Entity",
+          id: "e1",
+          data: { foo: { bar: "baz" } },
+        });
+
+        const field = getField(`
+          query {
+            entity(id: "e1") {
+              id
+              data
+            }
+          }
+        `, "entity");
+
+        const entityView = views.getView({
+          source: "Entity:e1",
+          field,
+          variables: {},
+          canonical: true,
+        });
+
+        expect(entityView.data).toEqual({ foo: { bar: "baz" } });
+      });
+    });
+
+    describe("aliases (views)", () => {
+      it("maps alias + args to response keys (previewUrl) from stored field keys", () => {
+        // Storage has built keys: plain dataUrl, and arg-keyed variant
+        graph.putRecord("Entity:e1", {
+          __typename: "Entity",
+          id: "e1",
+          dataUrl: "1",
+          'dataUrl({"variant":"preview"})': "2",
+        });
+
+        const entityField = getField(`
+          query {
+            entity(id: "e1") {
+              id
+              dataUrl
+              previewUrl: dataUrl(variant: "preview")
+            }
+          }
+        `, "entity");
+
+        const entityView = views.getView({
+          source: "Entity:e1",
+          field: entityField,
+          variables: {},
+          canonical: true,
+        });
+
+        // View exposes response keys, not storage keys
+        expect(entityView).toEqual({
+          __typename: "Entity",
+          id: "e1",
+          dataUrl: "1",
+          previewUrl: "2",
+        });
+      });
+
+      it("without a selection, exposes raw storage keys (no alias mapping)", () => {
+        graph.putRecord("Entity:e1", {
+          __typename: "Entity",
+          id: "e1",
+          dataUrl: "1",
+          'dataUrl({"variant":"preview"})': "2",
+        });
+
+        // No field selection: direct materialization
+        const entityView = views.getView({
+          source: graph.materializeRecord("Entity:e1"),
+          field: null,
+          variables: {},
+          canonical: true,
+        });
+
+        expect(entityView).toEqual({
+          __typename: "Entity",
+          id: "e1",
+          dataUrl: "1",
+          'dataUrl({"variant":"preview"})': "2",
+        });
+      });
+    });
+
     describe("entities", () => {
       it("creates reactive entity view", async () => {
         const user1 = users.buildNode({ id: "u1", email: "u1@example.com" });

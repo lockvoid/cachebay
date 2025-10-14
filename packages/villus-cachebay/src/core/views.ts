@@ -1,9 +1,8 @@
 import { shallowReactive } from "vue";
-import { buildConnectionKey, buildConnectionCanonicalKey, isObject } from "./utils";
+import { buildConnectionKey, buildConnectionCanonicalKey, buildFieldKey, isObject } from "./utils";
 import type { GraphInstance } from "./graph";
 import type { PlanField } from "../compiler";
 
-// Type declarations
 export type ViewsInstance = ReturnType<typeof createViews>;
 export type ViewsDependencies = { graph: GraphInstance };
 
@@ -22,13 +21,6 @@ type CacheBucket = Map<boolean, ViewCacheEntry>;
 type SelectionCache = Map<any, CacheBucket>;
 type ProxyCache = { bySelection: SelectionCache };
 
-/**
- * Creates a view system that provides stable, reactive proxies over graph records.
- * Views are cached by (proxy, selection, canonical) to ensure identity stability.
- *
- * @param dependencies - Object containing the graph instance
- * @returns Object with getView function for creating/retrieving views
- */
 export const createViews = ({ graph }: ViewsDependencies) => {
   const cache = new WeakMap<object, ProxyCache>();
   const inlineCache = new WeakMap<object, Map<any, Map<boolean, any>>>();
@@ -59,10 +51,6 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     },
   } as const;
 
-  /**
-   * Gets or creates a cache bucket for a given proxy and selection key.
-   * Three-level cache structure: proxy -> selection -> canonical -> entry
-   */
   const getOrCreateBucket = (proxy: object, selectionKey: any): CacheBucket => {
     let bucket = cache.get(proxy);
     if (!bucket) {
@@ -79,13 +67,6 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     return byCanonical;
   };
 
-  /**
-   * Synchronizes a stable reactive array with a new refs array.
-   * Uses pointer check (fast path) then content check (fallback).
-   * Updates array in-place to preserve identity.
-   *
-   * @returns true if array was modified, false otherwise
-   */
   const syncStableArray = (
     cache: StableArrayCache,
     refs: string[],
@@ -130,10 +111,6 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     return false;
   };
 
-  /**
-   * Ensures connection skeleton exists in graph with proper structure.
-   * Creates pageInfo and connection container if missing.
-   */
   const ensureConnectionSkeleton = (pageKeyStr: string, typename: string) => {
     const pageInfoKey = `${pageKeyStr}.pageInfo`;
 
@@ -158,18 +135,6 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     return graph.materializeRecord(pageKeyStr);
   };
 
-  /**
-   * Creates a stable, reactive array from { __refs } that updates in-place.
-   * Keyed by (holder, prop, plan, canonical) to ensure proper identity.
-   *
-   * @param holder - Parent object containing the refs
-   * @param prop - Property name on the holder
-   * @param refs - Array of reference keys
-   * @param plan - Selection plan for child items
-   * @param variables - Query variables
-   * @param canonical - Whether to use canonical keys
-   * @returns Stable reactive array that updates in-place
-   */
   const getStableRefsArray = (
     holder: object,
     prop: string | symbol,
@@ -216,17 +181,6 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     return stable.array;
   };
 
-  /**
-   * Creates lazy, plan-guided inline view for objects/arrays with __ref/__refs.
-   * Only materializes what's accessed, guided by the PlanField selection.
-   *
-   * @param obj - Raw object or array to wrap
-   * @param plan - Selection plan to guide lazy materialization
-   * @param variables - Query variables
-   * @param canonical - Whether to use canonical keys
-   * @param holder - Parent object (for stable __refs arrays)
-   * @param prop - Property name (for stable __refs arrays)
-   */
   const wrapInline = (
     obj: any,
     plan: PlanField | null | undefined,
@@ -284,6 +238,11 @@ export const createViews = ({ graph }: ViewsDependencies) => {
         const raw = Reflect.get(target, p, receiver);
         const subPlan = typeof p === "string" ? selectionMap.get(p) : undefined;
 
+        if (subPlan && !subPlan.selectionSet && typeof p === "string") {
+          const storageKey = buildFieldKey(subPlan, variables);
+          return (target as any)[storageKey];
+        }
+
         if (subPlan?.isConnection && isObject(raw) && (raw as any).__ref) {
           const refKey = (raw as any).__ref as string;
           return getView({ source: refKey, field: subPlan, variables, canonical });
@@ -295,9 +254,43 @@ export const createViews = ({ graph }: ViewsDependencies) => {
 
         return raw;
       },
-      has: READONLY_HANDLERS.has,
-      ownKeys: READONLY_HANDLERS.ownKeys,
-      getOwnPropertyDescriptor: READONLY_HANDLERS.getOwnPropertyDescriptor,
+      ownKeys(target) {
+        const visible = new Set<PropertyKey>();
+        if ("__typename" in (target as any)) visible.add("__typename");
+        if ("id" in (target as any)) visible.add("id");
+        for (const [respKey] of selectionMap as Map<string, any>) {
+          visible.add(respKey);
+        }
+        const plannedStorage = new Set<string>();
+        for (const [, pf] of selectionMap as Map<string, any>) {
+          plannedStorage.add(buildFieldKey(pf, variables));
+        }
+        for (const k of Reflect.ownKeys(target)) {
+          if (typeof k === "string" && plannedStorage.has(k)) continue;
+          visible.add(k);
+        }
+        return Array.from(visible);
+      },
+      getOwnPropertyDescriptor(target, p) {
+        if (typeof p === "string") {
+          const pf = (selectionMap as Map<string, any>).get(p);
+          if (pf && !pf.selectionSet) {
+            const storageKey = buildFieldKey(pf, variables);
+            return {
+              enumerable: true,
+              configurable: true,
+              value: (target as any)[storageKey],
+            };
+          }
+        }
+        return Reflect.getOwnPropertyDescriptor(target, p);
+      },
+      has(target, p) {
+        if (typeof p === "string" && (selectionMap as Map<string, any>).has(p)) {
+          return true;
+        }
+        return Reflect.has(target, p);
+      },
       set: READONLY_HANDLERS.set,
       deleteProperty: READONLY_HANDLERS.deleteProperty,
       defineProperty: READONLY_HANDLERS.defineProperty,
@@ -308,17 +301,6 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     return inlineView;
   };
 
-  /**
-   * Creates a connection view with stable edges array and container relinking.
-   * Handles pageInfo via __ref and ensures connection skeleton exists.
-   *
-   * @param proxy - Materialized connection proxy
-   * @param pageKeyStr - Connection page key for canonical relinking
-   * @param field - PlanField describing the connection
-   * @param variables - Query variables
-   * @param canonical - Whether to use canonical container keys
-   * @param selectionKey - Cache key for this selection
-   */
   const getConnectionView = (
     proxy: any,
     pageKeyStr: string | undefined,
@@ -386,6 +368,12 @@ export const createViews = ({ graph }: ViewsDependencies) => {
           return edgeCache.array;
         }
 
+        const planField = typeof p === "string" ? selectionMap.get(p) : undefined;
+        if (planField && !planField.selectionSet && typeof p === "string") {
+          const storageKey = buildFieldKey(planField, variables);
+          return (target as any)[storageKey];
+        }
+
         const raw = Reflect.get(target, p, receiver);
 
         if (isObject(raw) && (raw as any).__ref) {
@@ -413,9 +401,41 @@ export const createViews = ({ graph }: ViewsDependencies) => {
 
         return raw;
       },
-      has: READONLY_HANDLERS.has,
-      ownKeys: READONLY_HANDLERS.ownKeys,
-      getOwnPropertyDescriptor: READONLY_HANDLERS.getOwnPropertyDescriptor,
+      ownKeys(target) {
+        const visible = new Set<PropertyKey>();
+        for (const [respKey] of selectionMap as Map<string, any>) {
+          visible.add(respKey);
+        }
+        const plannedStorage = new Set<string>();
+        for (const [, pf] of selectionMap as Map<string, any>) {
+          plannedStorage.add(buildFieldKey(pf, variables));
+        }
+        for (const k of Reflect.ownKeys(target)) {
+          if (typeof k === "string" && plannedStorage.has(k)) continue;
+          visible.add(k);
+        }
+        return Array.from(visible);
+      },
+      getOwnPropertyDescriptor(target, p) {
+        if (typeof p === "string") {
+          const pf = (selectionMap as Map<string, any>).get(p);
+          if (pf && !pf.selectionSet) {
+            const storageKey = buildFieldKey(pf, variables);
+            return {
+              enumerable: true,
+              configurable: true,
+              value: (target as any)[storageKey],
+            };
+          }
+        }
+        return Reflect.getOwnPropertyDescriptor(target, p);
+      },
+      has(target, p) {
+        if (typeof p === "string" && (selectionMap as Map<string, any>).has(p)) {
+          return true;
+        }
+        return Reflect.has(target, p);
+      },
       set: READONLY_HANDLERS.set,
       deleteProperty: READONLY_HANDLERS.deleteProperty,
       defineProperty: READONLY_HANDLERS.defineProperty,
@@ -426,16 +446,6 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     return view;
   };
 
-  /**
-   * Creates an entity or container view with plan-guided selection.
-   * Follows __ref/__refs, routes connection fields to connection branch.
-   *
-   * @param proxy - Materialized entity or container proxy
-   * @param field - PlanField describing the selection
-   * @param variables - Query variables
-   * @param canonical - Whether to use canonical keys for nested connections
-   * @param selectionKey - Cache key for this selection
-   */
   const getEntityView = (
     proxy: any,
     field: PlanField | null | undefined,
@@ -499,6 +509,11 @@ export const createViews = ({ graph }: ViewsDependencies) => {
           );
         }
 
+        if (planField && !planField.selectionSet && typeof p === "string") {
+          const storageKey = buildFieldKey(planField, variables);
+          return (target as any)[storageKey];
+        }
+
         const raw = Reflect.get(target, p, receiver);
 
         if (isObject(raw) && (raw as any).__ref) {
@@ -519,9 +534,43 @@ export const createViews = ({ graph }: ViewsDependencies) => {
 
         return raw;
       },
-      has: READONLY_HANDLERS.has,
-      ownKeys: READONLY_HANDLERS.ownKeys,
-      getOwnPropertyDescriptor: READONLY_HANDLERS.getOwnPropertyDescriptor,
+      ownKeys(target) {
+        const visible = new Set<PropertyKey>();
+        if ("__typename" in (target as any)) visible.add("__typename");
+        if ("id" in (target as any)) visible.add("id");
+        for (const [respKey] of selectionMap as Map<string, any>) {
+          visible.add(respKey);
+        }
+        const plannedStorage = new Set<string>();
+        for (const [, pf] of selectionMap as Map<string, any>) {
+          plannedStorage.add(buildFieldKey(pf, variables));
+        }
+        for (const k of Reflect.ownKeys(target)) {
+          if (typeof k === "string" && plannedStorage.has(k)) continue;
+          visible.add(k);
+        }
+        return Array.from(visible);
+      },
+      getOwnPropertyDescriptor(target, p) {
+        if (typeof p === "string") {
+          const pf = (selectionMap as Map<string, any>).get(p);
+          if (pf && !pf.selectionSet) {
+            const storageKey = buildFieldKey(pf, variables);
+            return {
+              enumerable: true,
+              configurable: true,
+              value: (target as any)[storageKey],
+            };
+          }
+        }
+        return Reflect.getOwnPropertyDescriptor(target, p);
+      },
+      has(target, p) {
+        if (typeof p === "string" && (selectionMap as Map<string, any>).has(p)) {
+          return true;
+        }
+        return Reflect.has(target, p);
+      },
       set: READONLY_HANDLERS.set,
       deleteProperty: READONLY_HANDLERS.deleteProperty,
       defineProperty: READONLY_HANDLERS.defineProperty,
@@ -532,16 +581,6 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     return view;
   };
 
-  /**
-   * Gets or creates a stable, reactive view over a graph record.
-   * Views are cached by (source, selection, canonical) to ensure identity stability.
-   *
-   * @param source - Record key string, materialized proxy, or null
-   * @param field - PlanField describing the current selection
-   * @param variables - Query variables for connection key building
-   * @param canonical - Whether nested connections use canonical keys
-   * @returns Stable reactive proxy view
-   */
   const getView = ({
     source,
     field = null,
