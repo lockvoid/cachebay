@@ -704,7 +704,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it.only("handles paginated comments with cursor-based navigation", async () => {
+    it("handles paginated comments with cursor-based navigation", async () => {
       const data1 = {
         __typename: "Query",
 

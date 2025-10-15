@@ -25,7 +25,6 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
   const { planner, documents, ssr } = deps;
   const { suspensionTimeout = 1000 } = options ?? {};
 
-  // Active queries registry + reverse dependency index
   type ActiveEntry = {
     document: DocumentNode;
     variables: Record<string, any>;
@@ -34,14 +33,14 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
   };
 
   const activeQueries = new Map<number, ActiveEntry>();
-  const depIndex = new Map<string, Set<number>>(); // depId -> opKeys
+  const depIndex = new Map<string, Set<number>>();
   const lastResultAtMs = new Map<number, number>();
 
   const addDepsForQuery = (opKey: number, newDeps: Iterable<string>) => {
     const entry = activeQueries.get(opKey);
     if (!entry) return;
 
-    // Remove old deps from index
+    // remove old
     for (const d of entry.deps) {
       const set = depIndex.get(d);
       if (set) {
@@ -50,10 +49,10 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       }
     }
 
-    // Set new deps
+    // set new
     entry.deps = new Set(newDeps);
 
-    // Add to index
+    // index new
     for (const d of entry.deps) {
       let set = depIndex.get(d);
       if (!set) {
@@ -64,11 +63,10 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     }
   };
 
-  // Exclude a specific opKey (the initiator) to avoid double-emitting to itself
+  // excludeOpKey avoids double-emitting to the same query that caused the write
   const broadcastTouched = (touched?: Set<string>, excludeOpKey?: number) => {
     if (!touched || touched.size === 0) return;
 
-    // Collect affected queries via depIndex
     const affected = new Set<number>();
     for (const id of touched) {
       const qs = depIndex.get(id);
@@ -83,7 +81,6 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       const entry = activeQueries.get(k);
       if (!entry) continue;
 
-      // Non-terminal refreshes always use CANONICAL for best-effort UI
       const r = documents.materializeDocument({
         document: entry.document,
         variables: entry.variables,
@@ -92,15 +89,12 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
       if (!r || r.status !== "FULFILLED") continue;
 
-      // Update deps (graph shape may have shifted)
       addDepsForQuery(k, Array.isArray(r.deps) ? r.deps : []);
-
       entry.emit({ data: r.data, error: null }, false);
       lastResultAtMs.set(k, now);
     }
   };
 
-  // Map cache policy to decision mode for the FIRST cache read
   const firstReadMode = (policy: CachePolicy): "strict" | "canonical" => {
     switch (policy) {
       case "cache-first":
@@ -119,11 +113,10 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     const document: DocumentNode = op.query as DocumentNode;
     const plan = planner.getPlan(document);
 
-    // Use compiled network query
+    // use compiled network query
     op.query = plan.networkQuery;
 
     const policy: CachePolicy = ((op as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network") as CachePolicy;
-
     const downstreamUseResult = ctx.useResult;
 
     const readCacheFrame = (
@@ -134,24 +127,20 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       return { frame: { data: r.data, error: null }, deps: Array.isArray(r.deps) ? r.deps : [] };
     };
 
-    // ---- MUTATION ----
+    // MUTATION
     if (plan.operation === "mutation") {
       ctx.useResult = (incoming: OperationResult) => {
         if (incoming?.error) {
           return downstreamUseResult(incoming, true);
         }
         const res: any = documents.normalizeDocument({ document, variables, data: incoming.data });
-
-        // Re-materialize impacted queries (non-terminal)
         broadcastTouched(res?.touched);
-
-        // Return mutation payload to caller (terminal)
         return downstreamUseResult({ data: incoming.data, error: null }, true);
       };
       return;
     }
 
-    // ---- SUBSCRIPTION ----
+    // SUBSCRIPTION
     if (plan.operation === "subscription") {
       ctx.useResult = (incoming, terminal) => {
         if (typeof incoming?.subscribe !== "function") {
@@ -177,10 +166,9 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       return;
     }
 
-    // ---- QUERY ----
+    // QUERY
     const opKey = op.key as number;
 
-    // Register active query
     activeQueries.set(opKey, {
       document,
       variables,
@@ -188,7 +176,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       deps: new Set(),
     });
 
-    // SSR hydration: prefer STRICT so we don't accidentally accept only-canonical cache
+    // SSR hydration: prefer STRICT cache
     if (ssr?.isHydrating?.() && policy !== "network-only") {
       const { frame, deps } = readCacheFrame("strict");
       if (frame) {
@@ -236,12 +224,12 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
           return;
         }
         addDepsForQuery(opKey, deps);
-        downstreamUseResult(frame, false); // non-terminal, allow network to arrive
+        downstreamUseResult(frame, false); // allow network to arrive
         lastResultAtMs.set(opKey, performance.now());
       }
     }
 
-    // NETWORK-ONLY: short-circuit with recent cached result (use CANONICAL for best-effort)
+    // NETWORK-ONLY: short-circuit with recent cached result (CANONICAL)
     if (policy === "network-only" && isWithinSuspensionWindow) {
       const { frame, deps } = readCacheFrame("canonical");
       if (frame) {
@@ -261,17 +249,22 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
       const res: any = documents.normalizeDocument({ document, variables, data: incoming.data });
 
-      // Re-materialize THIS query terminally using CANONICAL (ensures unions for pagination)
+      // Try canonical materialization for terminal emission
       const r = documents.materializeDocument({
         document,
         variables,
         decisionMode: "canonical",
       }) as any;
 
-      addDepsForQuery(opKey, Array.isArray(r.deps) ? r.deps : []);
-      downstreamUseResult({ data: r.data, error: null }, true);
+      if (r && r.status === "FULFILLED") {
+        addDepsForQuery(opKey, Array.isArray(r.deps) ? r.deps : []);
+        downstreamUseResult({ data: r.data, error: null }, true);
+      } else {
+        // Fallback: still deliver the raw network payload
+        downstreamUseResult({ data: incoming.data, error: null }, true);
+      }
 
-      // Notify only impacted OTHER queries (exclude this one)
+      // Notify impacted OTHER queries (exclude this one)
       broadcastTouched(res?.touched, opKey);
     };
   };
