@@ -44,13 +44,17 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
     if (plan.operation === "mutation") {
       const originalUseResult = ctx.useResult;
+
       ctx.useResult = (incoming: OperationResult) => {
         if (incoming?.error) {
           return originalUseResult(incoming, true);
         }
+
         documents.normalizeDocument({ document, variables, data: incoming.data });
+
         return originalUseResult({ data: incoming.data, error: null }, true);
       };
+
       return;
     }
 
