@@ -505,6 +505,29 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       return Boolean((f as any).isConnection || (f as any).connectionKey || looksLikeConn);
     };
 
+    // ---- type-conditions (inline fragments) helpers ----
+    const isSubtype = (actual?: string, expected?: string): boolean => {
+      if (!expected || !actual) return true;
+      if (actual === expected) return true;
+      const intfMap =
+        (graph as any)?.interfaces ||
+        (graph as any)?.__interfaces ||
+        undefined;
+      const impls: string[] | undefined = intfMap?.[expected];
+      return Array.isArray(impls) ? impls.includes(actual) : false;
+    };
+
+    const fieldAppliesToType = (pf: any, actualType?: string): boolean => {
+      const one = pf?.typeCondition ?? pf?.onType ?? pf?.typeName ?? undefined;
+      const many = pf?.typeConditions ?? pf?.onTypes ?? pf?.typeNames ?? undefined;
+
+      if (!one && !many) return true;
+      if (one) return isSubtype(actualType, one);
+      if (Array.isArray(many)) return many.some((t: string) => isSubtype(actualType, t));
+      return true;
+    };
+    // ----------------------------------------------------
+
     while (tasks.length) {
       const task = tasks.pop() as Task;
 
@@ -512,7 +535,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const { parentId, field, out, outKey } = task;
 
         const treatAsConn = isConnectionField(field);
-        // eslint-disable-next-line no-console
         console.log("[docs] root-field", { field: field.responseKey, treatAsConn });
 
         if (treatAsConn) {
@@ -526,7 +548,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           if (!link || !link.__ref) {
             out[outKey] = link === null ? null : undefined;
             allOk = false;
-            // eslint-disable-next-line no-console
             console.log("[docs] missing root link", { field: field.responseKey, parentId, link });
             continue;
           }
@@ -542,7 +563,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           out[outKey] = (root as any).__typename;
         } else {
           const sk = buildFieldKey(field, variables);
-          out[outKey] = (root as any)[sk]; // undefined allowed
+          out[outKey] = (root as any)[sk];
         }
         continue;
       }
@@ -552,12 +573,16 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const rec = graph.getRecord(id);
         touch(id);
 
-        // eslint-disable-next-line no-console
-        console.log("[docs] entity", { id, field: field.responseKey, treatAsConnNext: (field.selectionMap as any)?.get?.("posts") && isConnectionField((field.selectionMap as any)?.get?.("posts")) });
+        console.log("[docs] entity", {
+          id,
+          field: field.responseKey,
+          treatAsConnNext:
+            (field.selectionMap as any)?.get?.("posts") &&
+            isConnectionField((field.selectionMap as any)?.get?.("posts")),
+        });
 
         if (!rec) {
           allOk = false;
-          // eslint-disable-next-line no-console
           console.log("[docs] entity record MISSING", { id, field: field.responseKey });
         }
 
@@ -567,9 +592,14 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           out.__typename = (snap as any).__typename;
         }
 
+        const actualType = (snap as any).__typename as string | undefined;
         const sel = field.selectionSet || [];
         for (let i = sel.length - 1; i >= 0; i--) {
           const f = sel[i];
+
+          if (!fieldAppliesToType(f, actualType)) {
+            continue;
+          }
 
           const treatAsConn = isConnectionField(f);
           if (treatAsConn) {
@@ -580,7 +610,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           if (f.selectionSet && f.selectionSet.length) {
             const link = (snap as any)[buildFieldKey(f, variables)];
 
-            // NEW: array-of-refs (e.g., tags: { __refs: [...] })
+            // array-of-refs
             if (link && typeof link === "object" && Array.isArray(link.__refs)) {
               const refs: string[] = link.__refs.slice();
               const arrOut: any[] = new Array(refs.length);
@@ -594,11 +624,10 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
-            // Fallback: single ref or missing
+            // single ref or missing
             if (!link || !link.__ref) {
               out[f.responseKey] = link === null ? null : undefined;
               allOk = false;
-              // eslint-disable-next-line no-console
               console.log("[docs] missing nested link", { parentId: id, field: f.responseKey, link });
               continue;
             }
@@ -615,7 +644,20 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             out[f.responseKey] = (snap as any).__typename;
           } else {
             const sk = buildFieldKey(f, variables);
-            out[f.responseKey] = (snap as any)[sk]; // undefined allowed
+            out[f.responseKey] = (snap as any)[sk];
+          }
+        }
+
+        // Scalar fallback (covers interface-gated scalars)
+        if (Array.isArray(field.selectionSet) && field.selectionSet.length) {
+          for (let i = 0; i < field.selectionSet.length; i++) {
+            const pf = field.selectionSet[i];
+            if (pf.selectionSet) continue;
+            if (out[pf.responseKey] !== undefined) continue;
+            const sk = buildFieldKey(pf, variables);
+            if (sk in (snap as any)) {
+              out[pf.responseKey] = (snap as any)[sk];
+            }
           }
         }
 
@@ -628,7 +670,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         touch(pageKey);
         const page = graph.getRecord(pageKey);
 
-        // eslint-disable-next-line no-console
         console.log("[docs] connection", { parentId, field: field.responseKey, pageKey, hasPage: !!page });
 
         const conn: any = { edges: [], pageInfo: {} };
@@ -636,56 +677,90 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
         if (!page) {
           allOk = false;
-          // eslint-disable-next-line no-console
           console.log("[docs] missing connection page", { parentId, field: field.responseKey, pageKey });
           continue;
         }
 
         const selMap = (field as any).selectionMap as Map<string, PlanField> | undefined;
-        const edgesPlan = selMap?.get("edges");
-        const pageInfoPlan = selMap?.get("pageInfo");
 
-        // connection-level scalars
-        if (selMap) {
+        if (selMap && selMap.size) {
           for (const [rk, pf] of selMap) {
-            if (rk === "edges" || rk === "pageInfo") continue;
-            if (pf.fieldName === "__typename") {
-              conn[pf.responseKey] = (page as any).__typename;
+            if (rk === "pageInfo") {
+              const piLink = (page as any).pageInfo;
+              if (piLink && piLink.__ref) {
+                tasks.push({ t: "PAGE_INFO", id: piLink.__ref as string, field: pf, out: conn });
+              } else {
+                conn.pageInfo = {};
+              }
               continue;
             }
-            if (!pf.selectionSet) {
-              const sk = buildFieldKey(pf, variables);
-              conn[pf.responseKey] = (page as any)[sk];
+
+            if (rk === "edges") {
+              const edgesRaw = (page as any).edges;
+              let refs: string[] = [];
+              if (edgesRaw && typeof edgesRaw === "object" && Array.isArray(edgesRaw.__refs)) {
+                refs = edgesRaw.__refs.slice();
+              } else if (Array.isArray(edgesRaw)) {
+                refs = edgesRaw.map((_: any, i: number) => `${pageKey}.edges.${i}`);
+              }
+
+              const arr: any[] = new Array(refs.length);
+              conn.edges = arr;
+
+              for (let i = refs.length - 1; i >= 0; i--) {
+                const eid = refs[i];
+                tasks.push({ t: "EDGE", id: eid, idx: i, field: pf, outArr: arr });
+              }
+              continue;
             }
-          }
-        }
 
-        // pageInfo
-        if (pageInfoPlan) {
-          const piLink = (page as any).pageInfo;
-          if (piLink && piLink.__ref) {
-            tasks.push({ t: "PAGE_INFO", id: piLink.__ref as string, field: pageInfoPlan, out: conn });
-          } else {
-            conn.pageInfo = {};
-          }
-        }
+            // Other fields on the page:
+            if (!pf.selectionSet) {
+              // simple scalar on the page record
+              if (pf.fieldName === "__typename") {
+                conn[pf.responseKey] = (page as any).__typename;
+              } else {
+                const sk = buildFieldKey(pf, variables);
+                conn[pf.responseKey] = (page as any)[sk];
+              }
+              continue;
+            }
 
-        // edges
-        const edgesRaw = (page as any).edges;
-        let refs: string[] = [];
-        if (edgesRaw && typeof edgesRaw === "object" && Array.isArray(edgesRaw.__refs)) {
-          refs = edgesRaw.__refs.slice();
-        } else if (Array.isArray(edgesRaw)) {
-          refs = edgesRaw.map((_: any, i: number) => `${pageKey}.edges.${i}`);
-        }
+            // selectionSet present → could be container/entity or even a nested connection
+            if (isConnectionField(pf)) {
+              // nested connection directly under the page
+              tasks.push({ t: "CONNECTION", parentId: pageKey, field: pf, out: conn, outKey: pf.responseKey });
+              continue;
+            }
 
-        const arr: any[] = new Array(refs.length);
-        conn.edges = arr;
+            // container/entity under the page (e.g., aggregations)
+            const link = (page as any)[buildFieldKey(pf, variables)];
 
-        if (edgesPlan) {
-          for (let i = refs.length - 1; i >= 0; i--) {
-            const eid = refs[i];
-            tasks.push({ t: "EDGE", id: eid, idx: i, field: edgesPlan, outArr: arr });
+            // array-of-refs on page (rare, but supported)
+            if (link && typeof link === "object" && Array.isArray(link.__refs)) {
+              const refs: string[] = link.__refs.slice();
+              const arrOut: any[] = new Array(refs.length);
+              conn[pf.responseKey] = arrOut;
+
+              for (let j = refs.length - 1; j >= 0; j--) {
+                const childOut: any = {};
+                arrOut[j] = childOut;
+                tasks.push({ t: "ENTITY", id: refs[j], field: pf, out: childOut });
+              }
+              continue;
+            }
+
+            if (!link || !link.__ref) {
+              conn[pf.responseKey] = link === null ? null : undefined;
+              allOk = false;
+              console.log("[docs] missing connection nested link", { pageKey, field: pf.responseKey, link });
+              continue;
+            }
+
+            const childId = link.__ref as string;
+            const childOut: any = {};
+            conn[pf.responseKey] = childOut;
+            tasks.push({ t: "ENTITY", id: childId, field: pf, out: childOut });
           }
         }
 
@@ -721,7 +796,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const edgeOut: any = {};
         outArr[idx] = edgeOut;
 
-        // ✅ Always include __typename for edges if present (even if not explicitly selected)
         if ((edge as any).__typename !== undefined) {
           edgeOut.__typename = (edge as any).__typename;
         }
@@ -747,7 +821,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             }
           } else if (!pf.selectionSet) {
             if (pf.fieldName === "__typename") {
-              // (still handle explicit __typename selections too)
               edgeOut[rk] = (edge as any).__typename;
               continue;
             }
@@ -760,7 +833,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
     }
 
-    // eslint-disable-next-line no-console
     console.log("[docs] materialize:status", allOk ? "FULFILLED" : "MISSING");
 
     if (!allOk) {

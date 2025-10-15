@@ -1327,6 +1327,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       __typename: "VideoPost",
       id: "p1",
       title: "Video Post",
+      flags: [],
     });
     expect(d.data.posts.edges[0].node.video).toMatchObject({
       __typename: "Media",
@@ -1371,6 +1372,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       __typename: "AudioPost",
       id: "p2",
       title: "Audio Post",
+      flags: [],
     });
     expect(d.data.posts.edges[1].node.audio).toMatchObject({
       __typename: "Media",
