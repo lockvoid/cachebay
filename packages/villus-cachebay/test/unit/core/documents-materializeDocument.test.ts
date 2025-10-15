@@ -1211,7 +1211,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
     });
   });
 
-  it.only("materializes POSTS_WITH_AGGREGATIONS_QUERY with nested aggregations", () => {
+  it("materializes POSTS_WITH_AGGREGATIONS_QUERY with nested aggregations", () => {
     // Post-level aggregations
     const moderationTagsP1 = tags.buildConnection(
       [

@@ -131,8 +131,8 @@ describe("Plugin (canonical-first)", () => {
       expect(emissions[0].terminal).toBe(true);
 
       // ensure normalized into cache
-      const view = documents.materializeDocument({ document: operations.USER_QUERY, variables: { id: "u9" } });
-      expect(view.user.email).toBe("u9@example.com");
+      const document = documents.materializeDocument({ document: operations.USER_QUERY, variables: { id: "u9" } });
+      expect(document.data.user.email).toBe("u9@example.com");
     });
 
     it("returns nested connection edges from seeded cache data", () => {
