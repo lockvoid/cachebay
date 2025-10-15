@@ -133,7 +133,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
   it("materializes a ROOT connection via canonical key (edges + pageInfo)", () => {
     const QUERY = compilePlan(/* GraphQL */ `
       query AdminUsers($role: String!, $first: Int, $after: ID) {
-        users(role: $role, first: $first, after: $after) {
+        users(role: $role, first: $first, after: $after) @connection {
           edges { cursor node { id email __typename } __typename }
           pageInfo { startCursor endCursor hasNextPage hasPreviousPage __typename }
           __typename
@@ -169,7 +169,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       query UserPosts($id: ID!, $first: Int, $after: ID, $category: String!) {
         user(id: $id) {
           id
-          posts(first: $first, after: $after, category: $category) {
+          posts(first: $first, after: $after, category: $category) @connection {
             edges { cursor node { id title __typename } __typename }
             pageInfo { startCursor endCursor hasNextPage hasPreviousPage __typename }
             __typename
@@ -443,8 +443,6 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
         },
       }
 
-      console.log(data1);
-
       documents.normalizeDocument({
         document: USER_POSTS_QUERY,
         variables: { id: "u1", postsCategory: "tech", postsFirst: 10 },
@@ -626,8 +624,6 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
           ],
         },
       };
-
-      console.log(JSON.stringify(data1, null, 2));
 
       documents.normalizeDocument({
         document: QUERY,
@@ -831,8 +827,6 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
         posts: postsData,
       },
     };
-
-    console.log(JSON.stringify(data1, null, 2));
 
     documents.normalizeDocument({
       document: USER_POSTS_COMMENTS_QUERY,
@@ -1286,8 +1280,6 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       yesterdayStat: { __typename: "Stat", key: "yesterday", views: 1200 },
       tags: connectionTags,
     };
-
-    console.log("postsData", JSON.stringify(postsData, null, 2));
 
     documents.normalizeDocument({
       document: POSTS_WITH_AGGREGATIONS_QUERY,

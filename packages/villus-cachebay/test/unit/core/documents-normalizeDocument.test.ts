@@ -2253,8 +2253,6 @@ describe("documents.normalizeDocument", () => {
       },
     };
 
-    console.log(JSON.stringify(data1, null, 2));
-
     documents.normalizeDocument({
       document: QUERY,
       variables: { id: "p1" },

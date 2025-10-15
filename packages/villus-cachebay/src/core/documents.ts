@@ -496,14 +496,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       tasks.push({ t: "ROOT_FIELD", parentId: ROOT_ID, field: f, out: data, outKey: f.responseKey });
     }
 
-    // eslint-disable-next-line no-console
-    console.log("[docs] materialize:start", { op: plan.operation, rootFields: plan.root.map(f => f.responseKey) });
-
-    const isConnectionField = (f: PlanField): boolean => {
-      const selMap = (f as any).selectionMap as Map<string, PlanField> | undefined;
-      const looksLikeConn = !!selMap?.get?.("edges") || !!selMap?.get?.("pageInfo");
-      return Boolean((f as any).isConnection || (f as any).connectionKey || looksLikeConn);
-    };
+    // Planner-driven check only
+    const isConnectionField = (f: PlanField): boolean => Boolean((f as any).isConnection);
 
     // ---- type-conditions (inline fragments) helpers ----
     const isSubtype = (actual?: string, expected?: string): boolean => {
@@ -534,10 +528,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       if (task.t === "ROOT_FIELD") {
         const { parentId, field, out, outKey } = task;
 
-        const treatAsConn = isConnectionField(field);
-        console.log("[docs] root-field", { field: field.responseKey, treatAsConn });
-
-        if (treatAsConn) {
+        if (isConnectionField(field)) {
           tasks.push({ t: "CONNECTION", parentId, field, out, outKey });
           continue;
         }
@@ -548,7 +539,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           if (!link || !link.__ref) {
             out[outKey] = link === null ? null : undefined;
             allOk = false;
-            console.log("[docs] missing root link", { field: field.responseKey, parentId, link });
             continue;
           }
           const childId = link.__ref as string;
@@ -573,17 +563,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const rec = graph.getRecord(id);
         touch(id);
 
-        console.log("[docs] entity", {
-          id,
-          field: field.responseKey,
-          treatAsConnNext:
-            (field.selectionMap as any)?.get?.("posts") &&
-            isConnectionField((field.selectionMap as any)?.get?.("posts")),
-        });
-
         if (!rec) {
           allOk = false;
-          console.log("[docs] entity record MISSING", { id, field: field.responseKey });
         }
 
         const snap = rec || {};
@@ -601,8 +582,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             continue;
           }
 
-          const treatAsConn = isConnectionField(f);
-          if (treatAsConn) {
+          if (isConnectionField(f)) {
             tasks.push({ t: "CONNECTION", parentId: id, field: f, out, outKey: f.responseKey });
             continue;
           }
@@ -628,7 +608,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             if (!link || !link.__ref) {
               out[f.responseKey] = link === null ? null : undefined;
               allOk = false;
-              console.log("[docs] missing nested link", { parentId: id, field: f.responseKey, link });
               continue;
             }
 
@@ -670,14 +649,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         touch(pageKey);
         const page = graph.getRecord(pageKey);
 
-        console.log("[docs] connection", { parentId, field: field.responseKey, pageKey, hasPage: !!page });
-
         const conn: any = { edges: [], pageInfo: {} };
         out[outKey] = conn;
 
         if (!page) {
           allOk = false;
-          console.log("[docs] missing connection page", { parentId, field: field.responseKey, pageKey });
           continue;
         }
 
@@ -716,7 +692,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
             // Other fields on the page:
             if (!pf.selectionSet) {
-              // simple scalar on the page record
               if (pf.fieldName === "__typename") {
                 conn[pf.responseKey] = (page as any).__typename;
               } else {
@@ -726,9 +701,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
-            // selectionSet present → could be container/entity or even a nested connection
+            // selectionSet present → could be container/entity or nested connection
             if (isConnectionField(pf)) {
-              // nested connection directly under the page
               tasks.push({ t: "CONNECTION", parentId: pageKey, field: pf, out: conn, outKey: pf.responseKey });
               continue;
             }
@@ -736,7 +710,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             // container/entity under the page (e.g., aggregations)
             const link = (page as any)[buildFieldKey(pf, variables)];
 
-            // array-of-refs on page (rare, but supported)
+            // array-of-refs on page
             if (link && typeof link === "object" && Array.isArray(link.__refs)) {
               const refs: string[] = link.__refs.slice();
               const arrOut: any[] = new Array(refs.length);
@@ -753,7 +727,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             if (!link || !link.__ref) {
               conn[pf.responseKey] = link === null ? null : undefined;
               allOk = false;
-              console.log("[docs] missing connection nested link", { pageKey, field: pf.responseKey, link });
               continue;
             }
 
@@ -812,7 +785,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             if (!nlink || !nlink.__ref) {
               edgeOut.node = nlink === null ? null : undefined;
               allOk = false;
-              console.log("[docs] missing edge.node link", { edgeId: id });
             } else {
               const nid = nlink.__ref as string;
               const nOut: any = {};
@@ -832,8 +804,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         continue;
       }
     }
-
-    console.log("[docs] materialize:status", allOk ? "FULFILLED" : "MISSING");
 
     if (!allOk) {
       return { status: "MISSING", data: undefined };
