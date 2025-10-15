@@ -2224,4 +2224,62 @@ describe("documents.normalizeDocument", () => {
       },
     });
   });
+
+  it("handles arrays", () => {
+    const QUERY = `
+      query Query($id: ID!) {
+        post(id: $id) {
+          __typename
+          id
+          title
+          tags {
+            __typename
+            id
+            name
+          }
+        }
+      }
+    `;
+
+    const data1 = {
+      post: {
+        __typename: "Post",
+        id: "p1",
+        title: "Post 1",
+        tags: [
+          tags.buildNode({ id: "t1", name: "Tag 1" }),
+          tags.buildNode({ id: "t2", name: "Tag 2" }),
+        ],
+      },
+    };
+
+    console.log(JSON.stringify(data1, null, 2));
+
+    documents.normalizeDocument({
+      document: QUERY,
+      variables: { id: "p1" },
+      data: data1,
+    });
+
+    expect(graph.getRecord('Post:p1')).toEqual({
+      __typename: "Post",
+      id: "p1",
+      title: "Post 1",
+      tags: {
+        __refs: ["Tag:t1", "Tag:t2"],
+      },
+    });
+
+    expect(graph.getRecord('Tag:t1')).toEqual({
+      __typename: "Tag",
+      id: "t1",
+      name: "Tag 1",
+    });
+
+    expect(graph.getRecord('Tag:t2')).toEqual({
+      __typename: "Tag",
+      id: "t2",
+      name: "Tag 2",
+    });
+  });
 });
