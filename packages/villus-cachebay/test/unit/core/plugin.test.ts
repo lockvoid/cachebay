@@ -11,7 +11,7 @@ import { createSSR } from "@/src/features/ssr";
 import { operations, writeConnectionPage } from "@/test/helpers";
 import type { OperationResult } from "villus";
 
-describe("Plugin (canonical-first)", () => {
+describe("Plugin", () => {
   let graph: ReturnType<typeof createGraph>;
   let ssr: ReturnType<typeof createSSR>;
   let optimistic: ReturnType<typeof createOptimistic>;

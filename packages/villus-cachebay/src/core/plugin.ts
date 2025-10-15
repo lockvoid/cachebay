@@ -64,7 +64,8 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     }
   };
 
-  const broadcastTouched = (touched?: Set<string>) => {
+  // Exclude a specific opKey (the initiator) to avoid double-emitting to itself
+  const broadcastTouched = (touched?: Set<string>, excludeOpKey?: number) => {
     if (!touched || touched.size === 0) return;
 
     // Collect affected queries via depIndex
@@ -77,6 +78,8 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
     const now = performance.now();
     for (const k of affected) {
+      if (excludeOpKey != null && k === excludeOpKey) continue;
+
       const entry = activeQueries.get(k);
       if (!entry) continue;
 
@@ -181,7 +184,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     activeQueries.set(opKey, {
       document,
       variables,
-      emit: (payload, terminal) => downstreamUseResult(payload, terminal),
+      emit: (payload, terminal) => { downstreamUseResult(payload, terminal); },
       deps: new Set(),
     });
 
@@ -265,16 +268,11 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         decisionMode: "canonical",
       }) as any;
 
-      if (r && r.status === "FULFILLED") {
-        addDepsForQuery(opKey, Array.isArray(r.deps) ? r.deps : []);
-        downstreamUseResult({ data: r.data, error: null }, true);
-      } else {
-        // Fallback: return raw payload if materialization fails
-        downstreamUseResult({ data: incoming.data, error: null }, true);
-      }
+      addDepsForQuery(opKey, Array.isArray(r.deps) ? r.deps : []);
+      downstreamUseResult({ data: r.data, error: null }, true);
 
-      // Notify only impacted OTHER queries
-      broadcastTouched(res?.touched);
+      // Notify only impacted OTHER queries (exclude this one)
+      broadcastTouched(res?.touched, opKey);
     };
   };
 }

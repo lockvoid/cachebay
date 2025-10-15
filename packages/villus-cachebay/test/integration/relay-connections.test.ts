@@ -4,7 +4,7 @@ import { createTestClient, createConnectionComponent, seedCache, getPageInfo, ge
 
 describe("Relay connections", () => {
   describe("cache-first", () => {
-    it.only("appends new pages at end and updates pageInfo from tail cursor (cache-first)", async () => {
+    it("appends new pages at end and updates pageInfo from tail cursor (cache-first)", async () => {
       const routes = [
         {
           when: ({ variables }) => {
