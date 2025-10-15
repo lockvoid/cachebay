@@ -1,4 +1,4 @@
-import { useSubscription } from 'villus';
+import { useSubscription } from 'cachebay/vue';
 
 export const HOGWARTS_TIME_FIELDS = `
   fragment HogwartsTimeFields on HogwartsTime {
@@ -23,7 +23,7 @@ export const useHogwartsTime = () => {
     }
 
     if (data) {
-      // console.log('Hogwarts time:', data.hogwartsTimeUpdated);
+      console.log('Hogwarts time:', data.hogwartsTimeUpdated);
     }
   });
 };

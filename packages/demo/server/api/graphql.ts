@@ -25,7 +25,7 @@ const db = new DatabaseSync(process.env.NODE_ENV === "production" ? "/app/data/h
 const pubSub = createPubSub();
 
 setInterval(() => {
-  pubSub.publish("hogwartsTimeUpdated", { id: '1', time: new Date().toISOString() });
+  pubSub.publish("hogwartsTimeUpdated", { id: "1", time: new Date().toISOString() });
 }, 1000);
 
 const builder = new SchemaBuilder({
@@ -231,7 +231,7 @@ builder.mutationType({
       },
 
       resolve: async (_, { input }: { input: any }) => {
-        await delay(3000);
+        await randomDelay();
 
         const { id, ...fields } = input;
 
@@ -286,7 +286,7 @@ const schema = builder.toSchema();
 const yoga = createYoga({
   schema,
 
-  graphqlEndpoint: '/api/graphql',
+  graphqlEndpoint: "/api/graphql",
 
   graphiql: {
     title: "Harry Potter",

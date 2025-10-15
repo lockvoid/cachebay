@@ -24,7 +24,7 @@
       <div class="relative flex gap-2">
         <UiSearchInput v-model="spellsPagination.filter.query" placeholder="Search spells..." />
 
-        <select v-model="spellsPagination.filter.sort" class="select-inline absolute top-1/2 right-2 -translate-y-1/2">
+        <select v-model="spellsPagination.filter.sort" class="select-inline absolute top-1/2 right-3 -translate-y-1/2">
           <option value="CREATE_DATE_DESC">
             Create Date
           </option>

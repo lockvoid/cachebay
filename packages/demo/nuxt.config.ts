@@ -19,7 +19,8 @@ export default defineNuxtConfig({
   ],
 
   alias: {
-    "villus-cachebay": resolve("../villus-cachebay/src"),
+    "cachebay$": resolve("../cachebay/src/index.ts"),
+    "cachebay/vue$": resolve("../cachebay/src/adapters/vue/index.ts"),
   },
 
   imports: {
@@ -49,7 +50,7 @@ export default defineNuxtConfig({
 
   build: {
     transpile: [
-      "villus-cachebay",
+      "cachebay",
     ],
   },
 
@@ -72,14 +73,15 @@ export default defineNuxtConfig({
 
     ssr: {
       noExternal: [
-        "villus-cachebay",
+        "cachebay",
       ],
     },
 
     resolve: {
-      alias: {
-        "villus-cachebay": resolve("../villus-cachebay/src"),
-      },
+      alias: [
+        { find: /^cachebay\/vue$/, replacement: resolve("../cachebay/src/adapters/vue/index.ts") },
+        { find: /^cachebay$/, replacement: resolve("../cachebay/src/index.ts") },
+      ],
     },
   },
 

@@ -1,0 +1,4 @@
+dist
+
+# All benchmark results (CodSpeed tracks performance automatically)
+.bench-results/

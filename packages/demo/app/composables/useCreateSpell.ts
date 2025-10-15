@@ -1,5 +1,4 @@
-import { useMutation } from "villus";
-import { useCache } from "villus-cachebay";
+import { useMutation, useCachebay } from "cachebay/vue";
 import { SPELL_FIELDS } from "./useSpellQuery";
 
 export const CREATE_SPELL_MUTATION = `
@@ -17,14 +16,14 @@ export const CREATE_SPELL_MUTATION = `
 export const useCreateSpell = () => {
   const settings = useSettings();
 
-  const cache = useCache();
+  const cachebay = useCachebay();
 
-  const createSpell = useMutation(CREATE_SPELL_MUTATION);
+  const createSpell = useMutation({ query: CREATE_SPELL_MUTATION });
 
   const execute = async (variables) => {
     if (settings.optimistic) {
-      const tx = cache.modifyOptimistic((o, { data }) => {
-        const keys = cache.inspect.connectionKeys({ parent: `Query`, key: "spells" });
+      const tx = cachebay.modifyOptimistic((o, { data }) => {
+        const keys = cachebay.inspect.getConnectionKeys({ parent: `Query`, key: "spells" });
 
         keys.forEach((key) => {
           const c = o.connection(key);
@@ -37,22 +36,17 @@ export const useCreateSpell = () => {
         });
       });
 
-      try {
-        const result = await createSpell.execute({ input: variables.input })
-
-        tx?.commit(result.data.createSpell.spell);
-
-        return result;
-      } catch (error) {
-        tx?.revert();
-
-        throw error;
-      }
+      const result = await createSpell.execute({ input: variables.input }).then((result, error) => {
+        if (result.error || error) {
+          tx?.revert();
+        } else {
+          tx?.commit();
+        }
+      });
     } else {
       return createSpell.execute({ input: variables.input });
     }
   };
 
   return { ...createSpell, execute };
-
 };

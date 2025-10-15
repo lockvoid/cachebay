@@ -1,203 +1,217 @@
 # Fragments
 
-Fragments are the ergonomic surface for working with **normalized entities**:
+**Reading & tracking partial entity data** with Cachebay, agnostic and Vue bindings.
 
-- Compute an entity key (`__typename:id`) with **`identify`**
-- Read a **reactive** entity via **`readFragment`** (materialized proxy that stays in sync)
-- Update fields with **`writeFragment`**
-- Pairs cleanly with **Relay connections** and **optimistic updates**
+* Agnostic API: `readFragment`, `writeFragment`, `watchFragment`
+* Vue: `useFragment` (from `cachebay/vue`)
 
----
-
-## Identify
-
-Computes a unique entity key for a given object based on its `__typename` and identifier field. Returns a string key in the format `"Type:id"` or `null` if the object cannot be identified. Uses custom key configuration if provided during cache creation, otherwise falls back to the `id` field.
-
-**Options:**
-- `object` - The entity object containing `__typename` and identifier fields
-
-**Imperative**
-```ts
-const key = cache.identify({ __typename: 'Post', id: '42' }) // → "Post:42" | null
-```
-
-**Composable**
-```ts
-import { useCache } from 'villus-cachebay'
-const { identify } = useCache()
-identify({ __typename: 'User', id: 'alice123' }) // → "User:alice123"
-identify({ __typename: 'Comment', uuid: 'comment-xyz' }) // → "Comment:comment-xyz" (if uuid is configured as key)
-```
-
-If you configured type keys in `createCache({ keys: { ... } })`, those rules are used first.
+> IDs are canonical: `"Typename:value"` (e.g., `"Post:p1"`). With interfaces enabled, interface IDs (e.g., `"Post:123"`) resolve to concrete types once known.
 
 ---
-## Read Fragment
 
-Retrieves a normalized entity from the cache as a reactive Vue proxy. The returned object automatically updates when the underlying entity changes through queries, mutations, optimistic updates, or fragment writes. Accepts an entity key and optional GraphQL fragment to specify which fields to include.
+## `readFragment` (agnostic)
 
-**Options:**
-- `id` - Entity key in format `"Type:id"`
-- `fragment` - GraphQL fragment string (optional)
-- `fragmentName` - Name of the fragment (optional)
-- `variables` - Variables for the fragment (optional)
+Materializes a fragment for a **single entity** from cache only.
 
-**Imperative**
+**Options**
+
+* `id: string` — canonical record id (e.g., `"Post:p1"`)
+* `fragment: string | DocumentNode | CachePlan`
+* `fragmentName?: string` — when the document contains multiple fragments
+* `variables?: Record<string, any>`
+
+**Returns**
+
+`T | null`
+
+**Example**
+
 ```ts
-const post = cache.readFragment('Post:42', PostFragment, 'PostDetails', { locale: 'en' })
-```
+const post = cache.readFragment<{ id: string; title: string }>({
+  id: 'Post:p1',
 
-**Composable**
-```ts
-import { useCache } from 'villus-cachebay'
-const { readFragment } = useCache()
-const post = readFragment('Post:42')
-const userProfile = readFragment('User:alice123', `
-  fragment UserProfile on User {
-    id
-    name
-    email
-    avatar
-  }
-`, 'UserProfile')
-```
-
-**Composable (useFragment)**
-```ts
-import { useFragment } from 'villus-cachebay'
-const post = useFragment({
-  id: 'Post:42',
   fragment: `
-    fragment PostDetails on Post {
+    fragment PostFields on Post {
       id
       title
-      content
-      author { name }
     }
   `,
-  fragmentName: 'PostDetails',
-  variables: { includeComments: true }
-})
-```
 
-Returns a **Vue proxy** that updates when the store changes (queries, mutations, optimistic edits, fragment writes).
+  fragmentName: 'PostFields',
+});
+```
 
 ---
 
-## Write Fragment
+## `writeFragment` (agnostic)
 
-Updates a single normalized entity in the cache immediately. Accepts an entity key, GraphQL fragment definition, and the new data to write. The update is synchronous and will trigger reactivity for any components reading this entity. Commonly used for optimistic updates and local state modifications.
+Writes raw data for a **single entity** under its record id.
 
-**Options:**
-- `id` - Entity key in format `"Type:id"`
-- `fragment` - GraphQL fragment string
-- `fragmentName` - Name of the fragment
-- `variables` - Variables for the fragment (optional)
-- `data` - The data object to write to the entity
+**Options**
 
-**Imperative**
+* `id: string`
+* `fragment: string | DocumentNode | CachePlan`
+* `fragmentName?: string`
+* `data: any`
+* `variables?: Record<string, any>`
+
+**Returns**
+
+`void`
+
+**Example**
+
 ```ts
 cache.writeFragment({
-  id: 'Post:42',
-  fragment: PostFragment,
-  fragmentName: 'PostUpdate',
-  variables: {},
-  data: {
-    __typename: 'Post',
-    id: '42',
-    title: 'Updated Post Title',
-    updatedAt: new Date().toISOString(),
-  }
-})
-```
+  id: 'Post:p1',
 
-**Composable**
-
-```ts
-import { useCache } from 'villus-cachebay'
-const { writeFragment } = useCache()
-writeFragment({
-  id: 'User:alice123',
   fragment: `
-    fragment UserStatus on User {
-      isOnline
-      lastSeen
-    }
-  `,
-  fragmentName: 'UserStatus',
-  data: {
-    __typename: 'User',
-    id: 'alice123',
-    isOnline: true,
-    lastSeen: new Date().toISOString(),
-  }
-})
-```
-
-**Composable (useFragment)**
-
-```ts
-import { useFragment } from 'villus-cachebay'
-const { writeFragment } = useFragment()
-writeFragment({
-  id: 'Post:42',
-  fragment: `
-    fragment PostContent on Post {
+    fragment PostFields on Post {
+      id
       title
-      content
-      tags
     }
   `,
-  fragmentName: 'PostContent',
+
+  fragmentName: 'PostFields',
+
   data: {
-    __typename: 'Post',
-    id: '42',
-    title: 'New Title',
-    content: 'Updated content...',
-    tags: ['react', 'graphql']
-  }
-})
+    __typename: 'Post', id: 'p1', title: 'Hello'
+  },
+});
 ```
 
 ---
-## Entity keys & interfaces
 
-Customize identity and enable interface-style addressing at **cache creation**:
+## `watchFragment` (agnostic)
+
+Watches a fragment and **pushes updates** when dependent fields of that entity change. Effectively recycles views for rendering performance.
+
+**Options**
+
+* `id: string`
+* `fragment: string | DocumentNode | CachePlan`
+* `fragmentName?: string`
+* `variables?: Record<string, any>`
+* `onData: (data: any) => void`
+* `onError?: (error: Error) => void`
+* `immediate?: boolean` (default: `true` — emit current cache value if present)
+
+**Returns**
+
+`{ unsubscribe(): void; update({ id?, variables?, immediate? }): void }`
+
+**Example**
 
 ```ts
-import { createCache } from 'villus-cachebay'
+const watcher = cache.watchFragment({
+  id: 'Post:p1',
 
-const cache = createCache({
+  fragment: `
+    fragment PostFields on Post {
+      id
+      title
+    }
+  `,
 
-  keys: {
-    User: (user) => user.id ?? null,
-    Post: (post) => post.uuid ?? null,
+  fragmentName: 'PostFields',
+
+  onData: (data) => {
+    console.log('post updated', data)
   },
+});
 
-  interfaces: {
-    Post: ['AudioPost', 'VideoPost'],
-  },
-})
+// Later: retarget to another entity or change variables
+watcher.update({ id: 'Post:p2', immediate: true })
 
+// Cleanup
+watcher.unsubscribe()
 ```
 
-**How keys work**
-
-- A key function receives the raw object and must return a **stable string** or `null`.
-- `identify()` and the normalizer derive the canonical record id (`"Type:value"`).
-- If no key rule matches a type, Cachebay falls back to `id` (if present).
-
-**How interfaces work**
-
-- Declaring `interfaces.Post = ['AudioPost','VideoPost']` lets you **address by parent type**:
-  - `readFragment('Post:123')` resolves to the concrete record once known (e.g., `"AudioPost:123"`).
-- Writes still happen on **concrete** records (e.g., `{ __typename:'AudioPost', uuid:'123' }`).
-- Best practice: ensure implementors don't **collide** on the same id space unless that's intentional.
+> Notes
+>
+> * Cache misses do **not** trigger `onError`; the watcher waits until data becomes available.
+> * Internally uses dependency indexing, microtask batching, and snapshot recycling for stable object identities.
 
 ---
+
+## Vue
+
+## `useFragment`
+
+Create a reactive view of a single entity’s fragment.
+
+**Options**
+
+* `id: string | Ref<string>`
+* `fragment: string | DocumentNode | CachePlan`
+* `fragmentName?: string`
+* `variables?: Record<string, any> | Ref<Record<string, any> | undefined>`
+
+**Returns**
+
+`Readonly<Ref<TData | undefined>>`
+
+**Basic usage**
+
+```ts
+import { useFragment } from 'cachebay/vue'
+
+const post = useFragment<{ id: string; title: string }>({
+  id: 'Post:p1',
+
+  fragment: `
+    fragment PostFields on Post {
+      id
+      title
+    }
+  `,
+
+  fragmentName: 'PostFields',
+})
+```
+
+**Reactive id/variables**
+
+```ts
+import { ref } from 'vue'
+import { useFragment } from 'cachebay/vue'
+
+const id = ref('Post:p1')
+const variables = ref<{ locale?: string }>({ locale: 'en' })
+
+const post = useFragment<{ id: string; title: string }>({
+  id,
+
+  variables,
+
+  fragment: `
+    fragment PostFields on Post {
+      id
+      title
+    }
+  `,
+
+  fragmentName: 'PostFields',
+})
+
+// Later
+id.value = 'Post:p2'
+variables.value = { locale: 'de' }
+```
+
+> Tip: With interfaces configured, `id: 'Post:123'` will resolve to the concrete record (`'AudioPost:123'`, `'VideoPost:123'`, etc.) once known.
+
+---
+
+## Next steps
+
+Continue to [MUTATIONS.md](./MUTATIONS.md) to learn about executing mutations, write merging, and optimistic update patterns.
 
 ## See also
 
-- **Composables** — `useCache()`, `useFragment()`: [COMPOSABLES.md](./COMPOSABLES.md)
-- **Relay connections** — directive, merge modes, policy matrix: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)
-- **Optimistic updates** — layering, entity ops, `addNode` / `removeNode` / `patch`: [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)
+* **Setup** — keys & interfaces: [SETUP.md](./SETUP.md)
+* **Queries** — read/write/watch queries: [QUERIES.md](./QUERIES.md)
+* **Mutations** — write merging & optimistic: [MUTATIONS.md](./MUTATIONS.md)
+* **Optimistic updates** — entity helpers: [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)
+* **Relay connections** — pagination: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)
+* **SSR** — hydrate/dehydrate entities: [SSR.md](./SSR.md)

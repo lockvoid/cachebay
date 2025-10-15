@@ -7,10 +7,10 @@
   "type": "module",
   "scripts": {
     "relay": "relay-compiler",
-    "server:infinite-feed": "NODE_ENV=production tsx scripts/start-server-infinite-feed.ts",
-    "server:nested-query": "NODE_ENV=production tsx scripts/start-server-nested-query.ts",
-    "bench:infinite-feed": "NODE_ENV=production tsx scripts/start-server-infinite-feed.ts & sleep 2 && NODE_ENV=production vitest bench --run --mode production suites/infinite-feed.dom.bench.ts --config ./vitest.bench.dom.config.ts; kill %1",
-    "bench:nested-query": "NODE_ENV=production tsx scripts/start-server-nested-query.ts & sleep 2 && NODE_ENV=production vitest bench --run --mode production suites/nested-query.dom.bench.ts --config ./vitest.bench.dom.config.ts; kill %1"
+    "bench:api": "NODE_ENV=production vitest bench --run --mode production --config vitest.happydom.config.ts bench/api",
+    "bench:dom": "NODE_ENV=production vitest bench --run --mode production --config vitest.chromium.config.ts bench/dom",
+    "bench:happydom": "NODE_ENV=production vitest bench --run --mode production --config vitest.happydom.config.ts",
+    "bench:chromium": "NODE_ENV=production vitest bench --run --mode production --config vitest.chromium.config.ts"
   },
   "dependencies": {
     "@apollo/client": "^3.8.10",
@@ -20,6 +20,8 @@
     "@urql/exchange-graphcache": "^7.2.4",
     "@urql/vue": "^1.4.3",
     "@vue/apollo-composable": "^4.2.1",
+    "cachebay": "workspace:*",
+    "cli-table3": "^0.6.5",
     "graphql": "^16.11.0",
     "graphql-tag": "^2.12.6",
     "graphql-yoga": "^5.10.5",
@@ -29,15 +31,15 @@
     "relay-runtime": "^16.2.0",
     "tinybench": "^5.0.1",
     "urql": "^4.1.0",
-    "villus": "^3.5.2",
-    "villus-cachebay": "workspace:*",
     "vue": "^3.5.18",
     "vue-router": "^4.5.1"
   },
   "devDependencies": {
     "@lockvoid/eslint-config": "^0.7.0",
     "@nuxt/test-utils": "^3.19.2",
+    "@swc/plugin-relay": "^9.1.0",
     "@vitejs/plugin-react": "^4.7.0",
+    "@vitest/browser": "^3.2.4",
     "@vue/test-utils": "^2.4.6",
     "babel-plugin-relay": "^16.2.0",
     "eslint": "^9.31.0",
@@ -46,6 +48,7 @@
     "glob": "^11.0.3",
     "graphql": "^16.11.0",
     "happy-dom": "^18.0.1",
+    "playwright": "^1.56.1",
     "relay-compiler": "^16.2.0",
     "tsx": "^4.19.2",
     "typescript": "^5.9.2",

@@ -1,8 +1,4 @@
 <script setup lang="ts">
-  import { SPELL_QUERY } from "@/composables/useSpellQuery";
-
-  const { $villus } = useNuxtApp();
-
   const router = useRouter();
 
   const settings = useSettings();

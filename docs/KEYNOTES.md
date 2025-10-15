@@ -14,10 +14,10 @@ Everything is kept in a single, normalized **graph**:
   { "__typename":"PostEdge", "cursor":"p42", "node": { "__ref":"Post:42" } }
   ```
 - **Connections** — records with:
-  - `edges: [{ "__ref": "<EdgeKey>" }, ...]`
-  - `pageInfo: { ... }` (reactive)
+  - `edges: { "__refs": ["@connection.posts.edges:0", ...] }`
+  - `pageInfo: { "__ref": "@connection.posts.pageInfo" }` (reactive)
   - any extra **connection-level fields** your server returns (merged shallowly)
-- **Pages** — concrete page slices (e.g., `@.posts({"first":2,"after":"p2"})`) whose `edges[]` are re-used by the canonical list.
+- **Pages** — concrete page slices (e.g., `@.posts({"first":2,"after":"p2"})`) whose edge records are re-used by the canonical list.
 
 Pointers are simple `__ref` strings; views “chase” refs—no deep tree copies—so updates are fast, deterministic, and shared across components.
 
@@ -50,7 +50,7 @@ Ordering is anchored by the **leader** (no cursor). “After” extends the tail
 
 **Materialize**
 Views are **reactive proxies**:
-- `edges[]` containers are **stable**; their contents update (no array churn).
+- `edges[]` container is **stable**; items are **recycled** when identity is unchanged (reused proxies), and replaced only when identity changes.
 - `pageInfo` & connection fields are reactive.
 - `edge.node` is a **shared entity proxy**; the same object appears everywhere.
 
@@ -72,10 +72,10 @@ This avoids fragile diffing; final state is **correct and deterministic**.
 
 ---
 
-## 5) Villus plugin: policies, SSR, Suspense windows
+## 5) Runtime: policies, SSR, Suspense windows
 
 - **Policies**
-  - `cache-only`: serve cache or `CacheOnlyMiss`.
+  - `cache-only`: serve cache or `CacheMiss`.
   - `cache-first`: cached terminal else one network.
   - `cache-and-network`: cached immediately **and** revalidate.
   - `network-only`: always network.
@@ -105,7 +105,7 @@ This avoids fragile diffing; final state is **correct and deterministic**.
 ## 7) Performance principles
 
 - **Microtask batching** — write bursts collapse; UIs update once per tick.
-- **Zero array churn** — container arrays stay; elements mutate in place.
+- **No container churn** — the edges array stays stable; items are **recycled** when identity is the same, and swapped only on identity change (minimizes churn while preserving referential stability).
 - **Pointer-chasing only** — `__ref` hops and O(1) map lookups; **no deep tree walks**.
 - **No spread storms** — shallow merges where needed; avoid full-object cloning.
 - **Idempotent merges** — replays, retries, out-of-order pages converge.
@@ -139,24 +139,13 @@ Network ─▶│ Normalize│───▶ Entities / Edges / Page records
                │
                ▼
           ┌────────────┐
-          │ Materialize│───▶ Reactive views (edges[], pageInfo, shared node proxies)
-          └────┬───────┘
+          │ Materialize│───▶ Reactive views (stable edges[], recycled items,
+          └────┬───────┘     pageInfo, shared node proxies)
                │
                ▼
           Publish (policy-aware; SSR/Suspense windows considered)
 ```
 
 The graph is the single source of truth; views are reactive projections of it.
-
----
-
-## 10) Compiler mode (alpha)
-
-- **Compiler mode (alpha)** pre-analyzes documents (queries & fragments) ahead of time:
-  - strips client directives,
-  - stamps connection metadata (mode, filters),
-  - inlines selection knowledge to fast-path normalization/materialization.
-
-  The aim is to trim per-request work and improve hot-path predictability on large trees.
 
 MIT © LockVoid Labs ~●~

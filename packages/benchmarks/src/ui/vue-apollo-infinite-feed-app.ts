@@ -1,149 +1,93 @@
-import { createApp, defineComponent, nextTick, computed, watch } from 'vue';
-import { ApolloClient, InMemoryCache, HttpLink } from '@apollo/client/core';
-import { relayStylePagination } from '@apollo/client/utilities';
-import { gql } from 'graphql-tag';
-import { DefaultApolloClient, useLazyQuery } from '@vue/apollo-composable';
+import { DefaultApolloClient, useLazyQuery } from "@vue/apollo-composable";
+import { createApp, defineComponent, ref, watch, nextTick } from "vue";
+import { createApolloClient } from "../adapters";
+import { createDeferred } from "../utils/concurrency";
+import { USERS_APOLLO_QUERY } from "../utils/queries";
 
-// Dev/error messages so Apollo stops giving opaque URLs
-try {
-  // These are no-ops in prod builds
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { loadErrorMessages, loadDevMessages } = require('@apollo/client/dev');
-  loadDevMessages?.();
-  loadErrorMessages?.();
-} catch { /* ignore if not present */ }
+export const createVueApolloNestedApp = (
+  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
+  yoga: any
+) => {
+    const client = createApolloClient({ yoga, cachePolicy });
 
-const FEED_QUERY = gql`
-  query Feed($first: Int!, $after: String) {
-    feed(first: $first, after: $after) {
-      edges { cursor node { id title } }
-      pageInfo { endCursor hasNextPage }
-    }
-  }
-`;
-
-export type VueApolloController = {
-  mount(target?: Element): void;
-  unmount(): void;
-  loadNextPage(): Promise<void>;
-  getCount(): number;
-  getTotalRenderTime(): number;
-};
-
-export function createVueApolloApp(serverUrl: string): VueApolloController {
-  const client = new ApolloClient({
-    cache: new InMemoryCache({
-      typePolicies: {
-        Query: {
-          fields: {
-            // keep your original behavior
-            feed: relayStylePagination(['first']),
-          },
-        },
-      },
-    }),
-    link: new HttpLink({ uri: serverUrl, fetch }),
-    defaultOptions: { query: { fetchPolicy: 'cache-first' } },
-  });
-
-  // Strip any 'canonizeResults' that might be set elsewhere (3.14 removed it)
-  const stripCanon = (o?: Record<string, unknown>) => {
-    if (!o) return;
-    // delete + fallback to undefined in case delete is blocked by TS narrowing
-    if ('canonizeResults' in o) { try { delete (o as any).canonizeResults; } catch { (o as any).canonizeResults = undefined; } }
-  };
-  stripCanon(client.defaultOptions?.query);
-  stripCanon(client.defaultOptions?.watchQuery);
-  stripCanon(client.defaultOptions?.mutate);
-
-  const _watchQuery = client.watchQuery.bind(client);
-  client.watchQuery = (opts: any) => {
-    stripCanon(opts);
-    return _watchQuery(opts);
-  };
-  const _query = client.query.bind(client);
-  client.query = (opts: any) => {
-    stripCanon(opts);
-    return _query(opts);
-  };
-
-  let totalRenderTime = 0;
   let app: ReturnType<typeof createApp> | null = null;
   let container: Element | null = null;
-  let onRenderComplete: (() => void) | null = null;
 
-  const InfiniteList = defineComponent({
+  let deferred = createDeferred();
+  let lastUserCount = 0;
+
+  const NestedList = defineComponent({
     setup() {
-      const { result, load, fetchMore, loading } = useLazyQuery(
-        FEED_QUERY,
-        {},
-        { fetchPolicy: 'cache-first', errorPolicy: 'ignore' }
-      );
+      const { result, load, fetchMore, loading } = useLazyQuery(USERS_APOLLO_QUERY, { first: 30, after: null }, { fetchPolicy: cachePolicy });
 
-      const edgeCount = computed(() => result.value?.feed?.edges?.length || 0);
-      let previousCount = 0;
-      let isFirstLoad = true;
+      watch(result, (v) => {
+        const totalUsers = result.value?.users?.edges?.length ?? 0;
 
-      watch(edgeCount, (newCount) => {
-        if (newCount > previousCount) {
-          previousCount = newCount;
-          nextTick(() => {
-            onRenderComplete?.();
-          });
+        globalThis.apollo.totalEntities += totalUsers;
+
+        if (totalUsers > lastUserCount) {
+          lastUserCount = totalUsers;
+          deferred.resolve();
         }
-      });
+      }, { immediate: true });
 
       const loadNextPage = async () => {
-        if (loading.value) return;
+        const t0 = performance.now();
 
         try {
-          const renderStart = performance.now();
-          
-          const renderComplete = new Promise<void>(resolve => {
-            onRenderComplete = resolve;
-          });
+          if (!result.value) {
+            await load();
 
-          if (isFirstLoad) {
-            await load(FEED_QUERY, { first: 50, after: null });
-            isFirstLoad = false;
+            await deferred.promise;
+            deferred = createDeferred();
           } else {
-            await fetchMore({
-              variables: {
-                first: 50,
-                after: result.value?.feed?.pageInfo?.endCursor,
-              },
-            });
+            const cursor = result.value.users.pageInfo.endCursor;
+            const hasNext = result.value.users.pageInfo.hasNextPage;
+
+            if (!hasNext) {
+              console.warn("Apollo: No more pages to load");
+              return;
+            }
+
+            await fetchMore({ variables: { after: cursor } });
+
+            await deferred.promise;
+            deferred = createDeferred();
           }
-
-          await renderComplete;
-          onRenderComplete = null;
-          
-          const renderEnd = performance.now();
-          totalRenderTime += renderEnd - renderStart;
-
         } catch (error) {
-          console.warn('Apollo load/fetchMore error (ignored):', error);
+          console.error("Apollo loadNextPage error:", error);
+          throw error;
         }
+
+        const t2 = performance.now();
+
+        await nextTick();
+
+        const t3 = performance.now();
+
+        globalThis.apollo.totalRenderTime += (t3 - t0);
+        globalThis.apollo.totalNetworkTime += (t2 - t0);
       };
 
-      // watch(result, (newData) => {
-      //   console.log('Apollo data updated:', newData?.feed?.edges?.length || 0, 'edges');
-      // });
-
       return {
-        data: result,
+        result,
         loadNextPage,
-        loading,
       };
     },
 
     template: `
       <div>
-        <ul>
-          <li v-for="edge in data?.feed?.edges" :key="edge.node.id">
-            {{ edge.node.title }}
-          </li>
-        </ul>
+        <div v-for="userEdge in result?.users?.edges" :key="userEdge.node.id">
+          <h3>{{ userEdge.node.name }}</h3>
+          <div v-for="postEdge in userEdge.node.posts?.edges" :key="postEdge.node.id">
+            <h4>{{ postEdge.node.title }} ({{ postEdge.node.likeCount }} likes)</h4>
+            <ul>
+              <li v-for="commentEdge in postEdge.node.comments?.edges" :key="commentEdge.node.id">
+                {{ commentEdge.node.text }} - {{ commentEdge.node.author.name }}
+              </li>
+            </ul>
+          </div>
+        </div>
       </div>
     `,
   });
@@ -154,16 +98,16 @@ export function createVueApolloApp(serverUrl: string): VueApolloController {
     mount(target?: Element) {
       if (app) return;
 
-      container = target ?? document.createElement('div');
+      container = target ?? document.createElement("div");
       if (!target) document.body.appendChild(container);
 
-      app = createApp(InfiniteList);
+      app = createApp(NestedList);
       app.provide(DefaultApolloClient, client);
       componentInstance = app.mount(container);
     },
 
     async loadNextPage() {
-      await componentInstance?.loadNextPage();
+      await componentInstance.loadNextPage();
     },
 
     unmount() {
@@ -176,15 +120,6 @@ export function createVueApolloApp(serverUrl: string): VueApolloController {
         container = null;
         componentInstance = null;
       }
-      client.stop();
-    },
-
-    getCount() {
-      return componentInstance?.data?.feed?.edges?.length || 0;
-    },
-
-    getTotalRenderTime() {
-      return totalRenderTime;
     },
   };
 }

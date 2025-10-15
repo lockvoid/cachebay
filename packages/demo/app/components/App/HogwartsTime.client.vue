@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { useFragment } from "villus-cachebay" ;
+  import { useFragment } from "cachebay/vue" ;
   import { HOGWARTS_TIME_FIELDS } from "~/composables/useHogwartsTime";
 
   useHogwartsTime();
@@ -12,7 +12,7 @@
 </script>
 
 <template>
-  <div class="flex items-center text-xs">
+  <div v-if="hogwartsTime" class="flex items-center text-xs">
     Hogwarts time: {{ hogwartsTime.time ? timeFormatter.format(new Date(hogwartsTime.time)) : "" }}
   </div>
 </template>

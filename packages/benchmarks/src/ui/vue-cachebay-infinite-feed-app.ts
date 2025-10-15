@@ -1,133 +1,100 @@
-import { createApp, defineComponent, ref, reactive, nextTick, computed, watch } from 'vue';
-import { createClient, useQuery, fetch as fetchPlugin } from 'villus';
-import { gql } from 'graphql-tag';
-import { createCache } from 'villus-cachebay';
+import { createApp, defineComponent, watch, ref, nextTick } from "vue";
+import { createCachebay, useQuery } from "../../../cachebay/src/adapters/vue";
+import { USERS_CACHEBAY_QUERY } from "../utils/queries";
 
-const FEED_QUERY = gql`
-  query Feed($first: Int!, $after: String) {
-    feed(first: $first, after: $after) @connection {
-      edges {
-        cursor
-        node { id title }
-      }
-      pageInfo {
-        endCursor
-        hasNextPage
-      }
-    }
-  }
-`;
+export const createVueCachebayNestedApp = (
+  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
+  yoga: any
+) => {
+    const transport = {
+    http: async (context: any) => {
+      const response = await yoga.fetch("http://localhost/graphql", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: context.query,
+          variables: context.variables,
+        }),
+      });
 
-export type VueCachebayController = {
-  mount(target?: Element): void;
-  unmount(): void;
-  loadNextPage(): Promise<void>;
-  getCount(): number;
-  getTotalRenderTime(): number;
-};
+      const result = await response.json();
 
-export function createVueCachebayApp(serverUrl: string): VueCachebayController {
-  const cachebay = createCache({});
+      return { data: result.data, error: result.errors?.[0] };
+    },
+  };
 
-  const client = createClient({
-    url: serverUrl,
-    use: [cachebay, fetchPlugin()],
-    cachePolicy: 'network-only'
+  const plugin = createCachebay({
+    hydrationTimeout: 0,
+    suspensionTimeout: 0,
+    transport,
   });
 
-  let totalRenderTime = 0;
-  let app: ReturnType<typeof createApp> | null = null;
+  let app: any = null;
   let container: Element | null = null;
-  let onRenderComplete: (() => void) | null = null;
+  let componentInstance: any = null;
 
-  const InfiniteList = defineComponent({
+  const NestedList = defineComponent({
     setup() {
-      const variables = reactive({
-        first: 50,
-        after: null as string | null
-      });
+      const { data, error, refetch, isFetching } = useQuery({ query: USERS_CACHEBAY_QUERY, variables: { first: 30, after: null }, cachePolicy, lazy: true });
 
-      const { data, execute } = useQuery({
-        query: FEED_QUERY,
-        paused: true,
-      });
+      const endCursor = ref(null);
 
-      const edgeCount = computed(() => data.value?.feed?.edges?.length || 0);
-      let previousCount = 0;
+      watch(data, () => {
+        const totalUsers = data.value?.users?.edges?.length ?? 0;
 
-      watch(edgeCount, (newCount) => {
-        if (newCount > previousCount) {
-          previousCount = newCount;
-          nextTick(() => {
-            onRenderComplete?.();
-          });
-        }
-      });
+        globalThis.cachebay.totalEntities += totalUsers;
+      }, { immediate: true });
 
       const loadNextPage = async () => {
-        try {
-          const renderStart = performance.now();
-          
-          const renderComplete = new Promise<void>(resolve => {
-            onRenderComplete = resolve;
-          });
+        const t0 = performance.now();
 
-          await execute({ variables });
+        await refetch({ variables: { first: 30, after: endCursor.value } }).then((result) => {
+          endCursor.value = result.data?.users?.pageInfo?.endCursor;
+        });
 
-          if (data.value?.feed?.pageInfo?.endCursor) {
-            variables.after = data.value.feed.pageInfo.endCursor;
-          }
+        const t2 = performance.now();
 
-          await renderComplete;
-          onRenderComplete = null;
-          
-          const renderEnd = performance.now();
-          totalRenderTime += renderEnd - renderStart;
+        await nextTick();
 
-        } catch (error) {
-          console.warn('Cachebay execute error (ignored):', error);
-        }
+        const t3 = performance.now();
+
+        globalThis.cachebay.totalRenderTime += (t3 - t0);
+        globalThis.cachebay.totalNetworkTime += (t2 - t0);
       };
 
-      // watch(data, (newData) => {
-      //   console.log('Cachebay data updated:', newData?.feed?.edges?.length || 0, 'edges');
-      // });
-
-      return {
-        data,
-        loadNextPage
-      };
+      return { data, loadNextPage };
     },
 
     template: `
       <div>
-        <ul>
-          <li v-for="edge in data?.feed?.edges" :key="edge.node.id">
-            {{ edge.node.title }}
-          </li>
-        </ul>
+        <div v-for="userEdge in data?.users?.edges" :key="userEdge.node.id">
+          <h3>{{ userEdge.node.name }}</h3>
+          <div v-for="postEdge in userEdge.node.posts?.edges" :key="postEdge.node.id">
+            <h4>{{ postEdge.node.title }} ({{ postEdge.node.likeCount }} likes)</h4>
+            <ul>
+              <li v-for="commentEdge in postEdge.node.comments?.edges" :key="commentEdge.node.id">
+                {{ commentEdge.node.text }} - {{ commentEdge.node.author.name }}
+              </li>
+            </ul>
+          </div>
+        </div>
       </div>
-    `
+    `,
   });
-
-  let componentInstance: any = null;
 
   return {
     mount(target?: Element) {
       if (app) return;
-
-      container = target ?? document.createElement('div');
+      container = target ?? document.createElement("div");
       if (!target) document.body.appendChild(container);
 
-      app = createApp(InfiniteList);
-      app.use(client);
+      app = createApp(NestedList);
+      app.use(plugin);
       componentInstance = app.mount(container);
     },
 
     async loadNextPage() {
-      if (componentInstance) {
-        await componentInstance.loadNextPage();
-      }
+      await componentInstance.loadNextPage();
     },
 
     unmount() {
@@ -141,13 +108,5 @@ export function createVueCachebayApp(serverUrl: string): VueCachebayController {
         componentInstance = null;
       }
     },
-
-    getCount() {
-      return componentInstance?.data?.feed?.edges?.length || 0;
-    },
-
-    getTotalRenderTime() {
-      return totalRenderTime;
-    }
   };
 }

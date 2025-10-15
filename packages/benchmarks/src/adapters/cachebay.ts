@@ -1,45 +1,31 @@
+import { createCachebay } from "../../../cachebay/src/core";
+import { createYogaFetcher } from '../utils/graphql';
 
-import { createClient, cache as cachePlugin, fetch as fetchPlugin } from 'villus';
-import { gql } from 'graphql-tag';
-import type { Adapter, FeedResult } from './types';
-import { createCache } from 'villus-cachebay';
+export type CachebayPluginConfig = {
+  yoga: any;
+  cachePolicy?: "network-only" | "cache-first" | "cache-and-network";
+};
 
-const FEED = gql`
-  query Feed($first: Int!, $after: String) {
-    feed(first: $first, after: $after) @connection {
-      edges { cursor node { id title } }
-      pageInfo { endCursor hasNextPage }
-    }
-  }
-`;
+export const createCachebayPlugin = ({ yoga, cachePolicy }: CachebayPluginConfig) => {
+  const fetcher = createYogaFetcher(yoga, 'http://localhost/graphql');
 
-export function createCachebayAdapter(url: string): Adapter {
-  const cachebay = createCache({});
+  const transport = {
+    http: async (context: any) => {
+      const result = await fetcher(context.query, context.variables);
 
-  console.log('Cachebay adapter created', cachebay);
-
-  const client = createClient({
-    url,
-
-    cachePolicy: 'cache-first',
-
-    use: [cachePlugin, fetchPlugin]
-  });
-
-  return {
-    name: 'cachebay',
-    async setup() {
-      return {};
-    },
-    async fetchPage({ first, after }): Promise<FeedResult> {
-      const { data, error } = await client.executeQuery({ query: FEED, variables: { first, after } });
-
-      if (error) throw error;
-
-      return data!.feed;
-    },
-    async teardown() {
-      // no-op
+      return {
+        data: result.data || null,
+        error: result.errors?.[0] || null
+      };
     },
   };
+
+  const plugin = createCachebay({
+    interfaces: { Node: ["User", "Post", "Comment"] },
+    hydrationTimeout: 0,
+    suspensionTimeout: 0,
+    transport,
+  });
+
+  return plugin;
 }

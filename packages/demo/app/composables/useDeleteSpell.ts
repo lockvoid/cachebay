@@ -1,5 +1,4 @@
-import { useMutation } from "villus";
-import { useCache } from "villus-cachebay";
+import { useMutation, useCachebay } from "cachebay/vue";
 import { useSettings } from "../stores/settings";
 
 export const DELETE_SPELL = `
@@ -11,26 +10,29 @@ export const DELETE_SPELL = `
 export const useDeleteSpell = () => {
   const settings = useSettings();
 
-  const deleteSpell = useMutation(DELETE_SPELL);
+  const deleteSpell = useMutation({ query: DELETE_SPELL });
 
-  const cache = useCache();
+  const cachebay = useCachebay();
 
   const execute = async (variables) => {
     if (settings.optimistic) {
-      const tx = cache.modifyOptimistic((state) => {
-        const connection = state.connection({ parent: "Query", key: "spells" });
+      const tx = cachebay.modifyOptimistic((o) => {
+        const keys = cachebay.inspect.getConnectionKeys({ parent: "Query", key: "spells" });
 
-        connection.removeNode(`Spell:${variables.input.id}`); // ...or connection.remove({ __typename: "Spell", id: variables.input.id });
+        keys.forEach((key) => {
+          const c = o.connection(key);
+
+          c.removeNode(`Spell:${variables.input.id}`); // ...or connection.removeNode({ __typename: "Spell", id: variables.input.id });
+        });
       });
 
-      return deleteSpell.execute({ input: variables.input })
-        .then((result, error) => {
-          if (result.error || error) {
-            tx?.revert();
-          } else {
-            tx?.commit();
-          }
-        });
+      return deleteSpell.execute({ input: variables.input }).then((result, error) => {
+        if (result.error || error) {
+          tx?.revert();
+        } else {
+          tx?.commit();
+        }
+      });
     } else {
       return deleteSpell.execute({ id: variables.id });
     }

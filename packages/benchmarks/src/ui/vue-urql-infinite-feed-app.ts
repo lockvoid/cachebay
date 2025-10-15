@@ -1,104 +1,103 @@
-import { createApp, defineComponent, reactive, nextTick, computed, watch } from 'vue';
-import urql, { useQuery } from '@urql/vue';
-import { createClient as createUrqlClient, fetchExchange } from '@urql/core';
-import { cacheExchange as graphcache } from '@urql/exchange-graphcache';
-import { relayPagination } from '@urql/exchange-graphcache/extras';
-import { gql } from 'graphql-tag';
+import { createClient as createUrqlClient, fetchExchange } from "@urql/core";
+import { cacheExchange as graphcache } from "@urql/exchange-graphcache";
+import { relayPagination } from "@urql/exchange-graphcache/extras";
+import urql, { useQuery } from "@urql/vue";
+import { createApp, defineComponent, ref, watch, nextTick } from "vue";
+import { createDeferred } from "../utils/concurrency";
+import { USERS_APOLLO_QUERY } from "../utils/queries";
 
-const FEED_QUERY = gql`
-  query Feed($first: Int!, $after: String) {
-    feed(first: $first, after: $after) {
-      edges { cursor node { id title } }
-      pageInfo { endCursor hasNextPage }
-    }
-  }
-`;
-
-export type VueUrqlController = {
-  mount(target?: Element): void;
-  unmount(): void;
-  loadNextPage(): Promise<void>;
-  getCount(): number;
-  getTotalRenderTime(): number;
-};
-
-export function createVueUrqlApp(serverUrl: string): VueUrqlController {
-  const cache = graphcache({
+export const createVueUrqlNestedApp = (
+  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
+  yoga: any
+) => {
+    const cache = graphcache({
     resolvers: {
-      Query: { feed: relayPagination() },
+      Query: { users: relayPagination() },
+      User: { posts: relayPagination(), followers: relayPagination() },
+      Post: { comments: relayPagination() },
     },
   });
 
+  const customFetch = async (url: string, options: any) => {
+    return await yoga.fetch(url, options);
+  };
+
   const client = createUrqlClient({
-    url: serverUrl,
-    requestPolicy: 'network-only',
+    url: 'http://localhost/graphql',
+    requestPolicy: cachePolicy,
     exchanges: [cache, fetchExchange],
+    fetch: customFetch,
   });
 
-  let totalRenderTime = 0;
   let app: ReturnType<typeof createApp> | null = null;
   let container: Element | null = null;
   let componentInstance: any = null;
-  let onRenderComplete: (() => void) | null = null;
 
-  const InfiniteList = defineComponent({
+  let deferred = createDeferred();
+  let isFirstCall = true;
+
+  const NestedList = defineComponent({
     setup() {
-      const variables = reactive<{ first: number; after: string | null }>({
-        first: 50,
-        after: null,
-      });
+      const variables = ref({ first: 30, after: null });
 
       const { data, executeQuery } = useQuery({
-        query: FEED_QUERY,
+        query: USERS_APOLLO_QUERY,
         variables,
-        pause: true,
       });
 
-      const edgeCount = computed(() => data.value?.feed?.edges?.length || 0);
-      let previousCount = 0;
+      watch(data, (v) => {
+        const totalUsers = data.value?.users?.edges?.length ?? 0;
 
-      watch(edgeCount, (newCount) => {
-        if (newCount > previousCount) {
-          previousCount = newCount;
-          nextTick(() => {
-            onRenderComplete?.();
-          });
+        globalThis.urql.totalEntities += totalUsers;
+
+        deferred.resolve();
+      }, { immediate: true });
+
+      const loadNextPage = async (isLastPage) => {
+        if (isFirstCall) {
+          await deferred.promise;
+          isFirstCall = false;
         }
-      });
 
-      const loadNextPage = async () => {
-        const renderStart = performance.now();
-        
-        const renderComplete = new Promise<void>(resolve => {
-          onRenderComplete = resolve;
-        });
+        const t0 = performance.now();
 
-        await executeQuery({ variables, requestPolicy: 'network-only' });
+        deferred = createDeferred();
 
-        const endCursor = data.value?.feed?.pageInfo?.endCursor ?? null;
-        if (endCursor) variables.after = endCursor;
+        variables.value = {
+          first: 30,
+          after: data.value?.users?.pageInfo?.endCursor || null,
+        };
 
-        await renderComplete;
-        onRenderComplete = null;
-        
-        const renderEnd = performance.now();
-        totalRenderTime += renderEnd - renderStart;
+        executeQuery({ requestPolicy: "network-only" });
+
+        await deferred.promise;
+
+        const t2 = performance.now();
+
+        await nextTick();
+
+        const t3 = performance.now();
+
+        globalThis.urql.totalRenderTime += (t3 - t0);
+        globalThis.urql.totalNetworkTime += (t2 - t0);
       };
-
-      // watch(data, (d) => {
-      //   console.log('urql data updated:', d?.feed?.edges?.length || 0, 'edges');
-      // });
 
       return { data, loadNextPage };
     },
 
     template: `
       <div>
-        <ul>
-          <li v-for="edge in data?.feed?.edges" :key="edge.node.id">
-            {{ edge.node.title }}
-          </li>
-        </ul>
+        <div v-for="userEdge in data?.users?.edges" :key="userEdge.node.id">
+          <h3>{{ userEdge.node.name }}</h3>
+          <div v-for="postEdge in userEdge.node.posts?.edges" :key="postEdge.node.id">
+            <h4>{{ postEdge.node.title }} ({{ postEdge.node.likeCount }} likes)</h4>
+            <ul>
+              <li v-for="commentEdge in postEdge.node.comments?.edges" :key="commentEdge.node.id">
+                {{ commentEdge.node.text }} - {{ commentEdge.node.author.name }}
+              </li>
+            </ul>
+          </div>
+        </div>
       </div>
     `,
   });
@@ -106,33 +105,27 @@ export function createVueUrqlApp(serverUrl: string): VueUrqlController {
   return {
     mount(target?: Element) {
       if (app) return;
-      container = target ?? document.createElement('div');
+      container = target ?? document.createElement("div");
       if (!target) document.body.appendChild(container);
-      app = createApp(InfiniteList);
+      app = createApp(NestedList);
       app.use(urql, client);
       componentInstance = app.mount(container);
     },
 
     async loadNextPage() {
-      await componentInstance?.loadNextPage();
+      await componentInstance?.loadNextPage?.();
     },
 
     unmount() {
       if (app && container) {
         app.unmount();
-        if (container.parentElement) container.remove();
+        if (!container.parentElement) {
+          container.remove();
+        }
         app = null;
         container = null;
         componentInstance = null;
       }
-    },
-
-    getCount() {
-      return componentInstance?.data?.feed?.edges?.length || 0;
-    },
-
-    getTotalRenderTime() {
-      return totalRenderTime;
     },
   };
 }
