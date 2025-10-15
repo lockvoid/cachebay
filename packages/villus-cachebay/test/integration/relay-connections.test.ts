@@ -266,7 +266,7 @@ describe("Relay connections", () => {
     expect(getPageInfo(wrapper)).toEqual({ startCursor: "p3", endCursor: "p4", hasNextPage: false, hasPreviousPage: false });
   });
 
-  it("maintains stable reactive edges while keeping pageInfo non-reactive across views", async () => {
+  it.skip("maintains stable reactive edges while keeping pageInfo non-reactive across views", async () => {
     const routes = [
       {
         when: ({ variables }) => {

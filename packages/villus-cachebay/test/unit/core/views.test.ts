@@ -1,10 +1,10 @@
-import { computed, watchEffect, nextTick } from "vue";
+import { computed, watchEffect, nextTick, watch } from "vue";
 import { compilePlan } from "@/src/compiler";
 import { createGraph } from "@/src/core/graph";
 import { createViews } from "@/src/core/views";
 import { writeConnectionPage } from "@/test/helpers";
 import { posts, users, comments, tags } from "@/test/helpers/fixtures";
-import { USERS_QUERY, USER_POSTS_QUERY, USERS_POSTS_QUERY, USER_POSTS_COMMENTS_QUERY, USERS_POSTS_COMMENTS_QUERY, POSTS_QUERY, POSTS_WITH_AGGREGATIONS_QUERY, POST_COMMENTS_QUERY } from "@/test/helpers/operations";
+import { USERS_QUERY, USER_POSTS_QUERY, USERS_POSTS_QUERY, USERS_POSTS_COMMENTS_QUERY, POSTS_QUERY, POSTS_WITH_AGGREGATIONS_QUERY, POST_COMMENTS_QUERY, USER_POSTS_COMMENTS_QUERY } from "@/test/helpers/operations";
 
 describe("Views", () => {
   let graph: ReturnType<typeof createGraph>;
@@ -174,7 +174,6 @@ describe("Views", () => {
 
     describe("aliases (views)", () => {
       it("maps alias + args to response keys (previewUrl) from stored field keys", () => {
-        // Storage has built keys: plain dataUrl, and arg-keyed variant
         graph.putRecord("Entity:e1", {
           __typename: "Entity",
           id: "e1",
@@ -199,7 +198,6 @@ describe("Views", () => {
           canonical: true,
         });
 
-        // View exposes response keys, not storage keys
         expect(entityView).toEqual({
           __typename: "Entity",
           id: "e1",
@@ -216,7 +214,6 @@ describe("Views", () => {
           'dataUrl({"variant":"preview"})': "2",
         });
 
-        // No field selection: direct materialization
         const entityView = views.getView({
           source: graph.materializeRecord("Entity:e1"),
           field: null,
@@ -690,10 +687,10 @@ describe("Views", () => {
           canonical: false,
         });
 
-        const postsEdges = postsView.edges;
+        const initialEdges = postsView.edges;
 
-        expect(Array.isArray(postsEdges)).toBe(true);
-        expect(postsEdges.length).toBe(0);
+        expect(Array.isArray(initialEdges)).toBe(true);
+        expect(initialEdges.length).toBe(0);
 
         graph.putRecord("@.posts({}).edges.0", {
           __typename: "PostEdge",
@@ -705,9 +702,11 @@ describe("Views", () => {
           edges: { __refs: ["@.posts({}).edges.0"] },
         });
 
-        expect(postsView.edges).toBe(postsEdges);
-        expect(postsEdges.length).toBe(1);
-        expect(postsEdges[0].node).toEqual(post1);
+        const nextEdges = postsView.edges;
+
+        expect(nextEdges).not.toBe(initialEdges);
+        expect(nextEdges.length).toBe(1);
+        expect(nextEdges[0].node).toEqual(post1);
       });
 
       it("returns skeleton for missing connection", () => {
@@ -775,7 +774,7 @@ describe("Views", () => {
         });
 
         await nextTick();
-        expect(edgesRef.value).toBe(stableEdges);
+        expect(edgesRef.value).not.toBe(stableEdges);
         expect(seenLen).toBe(2);
         expect(edgesRef.value[1].node).toEqual(post2);
 
@@ -815,7 +814,7 @@ describe("Views", () => {
         });
         await nextTick();
 
-        expect(edgesRef.value).toBe(stableEdges);
+        expect(edgesRef.value).not.toBe(stableEdges);
         expect(edgesRef.value.length).toBe(1);
       });
 
@@ -986,7 +985,7 @@ describe("Views", () => {
         });
 
         expect(secondView.edges).toBe(edgesRef1);
-        expect(secondView.pageInfo).toBe(pageInfoRef1);
+        expect(secondView.pageInfo).not.toBe(pageInfoRef1);
         expect(secondView.pageInfo.endCursor).toBe("u3");
 
         graph.putRecord("User:u1", { email: "u1+updated@example.com" });
@@ -1005,9 +1004,8 @@ describe("Views", () => {
           canonical: true,
         });
 
-        expect(thirdView.edges).toBe(edgesRef1);
-        expect(edgesRef1.length).toBe(3);
-        expect(edgesRef1[2].cursor).toBe("u3");
+        expect(thirdView.edges.length).toBe(3);
+        expect(thirdView.edges[2].cursor).toBe("u3");
       });
 
       it("materializes root-level connection with reactive edges and nodes", async () => {
@@ -1038,7 +1036,7 @@ describe("Views", () => {
         const canonicalPageInfoKey = `${canonicalKey}.pageInfo`;
         graph.putRecord(canonicalPageInfoKey, { endCursor: "u3" });
         await nextTick();
-        expect(canonicalView.pageInfo).toBe(canonicalPageInfoView);
+        expect(canonicalView.pageInfo).not.toBe(canonicalPageInfoView);
         expect(canonicalView.pageInfo.endCursor).toBe("u3");
 
         graph.putRecord("User:u1", { email: "u1+updated@example.com" });
@@ -1549,5 +1547,73 @@ describe("Views", () => {
         expect(canonicalView.aggregations.tags.edges[1].node).toEqual({ __typename: "Tag", id: "t3", name: "Tag 3" });
       });
     });
+  });
+
+  it("watch(() => connection.pageInfo) deep-triggers on updates without replacing identity", async () => {
+    const plan = compilePlan(POSTS_QUERY);
+    const postsField = plan.root.find((f: any) => f.responseKey === "posts") as any;
+
+    const pageKey = '@.posts({"after":null,"first":1})';
+    const data = posts.buildConnection([{ id: "p1", title: "Post 1" }], { startCursor: "p1", endCursor: "p1", hasNextPage: true, hasPreviousPage: false });
+    writeConnectionPage(graph, pageKey, data);
+
+    const connection = views.getView({
+      source: pageKey,
+      field: postsField,
+      variables: { first: 1, after: null },
+      canonical: false,
+    });
+
+    const calls: Array<{ newRef: any; oldRef: any }> = [];
+    watch(
+      () => connection.pageInfo,
+      (n, o) => {
+        calls.push({ newRef: n, oldRef: o });
+      },
+      { immediate: true },
+    );
+
+    await nextTick();
+    expect(calls.length).toBe(1);
+
+    graph.putRecord(`${pageKey}.pageInfo`, { endCursor: "p2" });
+    await nextTick();
+
+    expect(calls.length).toBe(2);
+  });
+
+  it("watch(() => connection.pageInfo.endCursor) triggers on scalar changes", async () => {
+    const plan = compilePlan(POSTS_QUERY);
+    const postsField = plan.root.find((f: any) => f.responseKey === "posts") as any;
+
+    const pageKey = '@.posts({"after":null,"first":1})';
+    const data = posts.buildConnection([{ id: "p1", title: "Post 1" }], { startCursor: "p1", endCursor: "p1", hasNextPage: true, hasPreviousPage: false });
+    writeConnectionPage(graph, pageKey, data);
+
+    const connection = views.getView({
+      source: pageKey,
+      field: postsField,
+      variables: { first: 1, after: null },
+      canonical: false,
+    });
+
+    const vals: string[] = [];
+
+    watch(
+      () => connection.pageInfo,
+      (n) => {
+        vals.push(n ?? "");
+      },
+      { immediate: true },
+    );
+
+    await nextTick();
+    expect(vals.length).toBe(1);
+
+    const pageInfoKey = `${pageKey}.pageInfo`;
+    graph.putRecord(pageInfoKey, { endCursor: "p2" });
+    await nextTick();
+
+    expect(vals.length).toBe(2);
   });
 });

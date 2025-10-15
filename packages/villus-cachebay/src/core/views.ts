@@ -15,6 +15,8 @@ type StableArrayCache = {
 type ViewCacheEntry = {
   view: any;
   edgeCache?: StableArrayCache;
+  pageInfoView?: any;
+  pageInfoStamp?: string;
 };
 
 type CacheBucket = Map<boolean, ViewCacheEntry>;
@@ -24,31 +26,19 @@ type ProxyCache = { bySelection: SelectionCache };
 export const createViews = ({ graph }: ViewsDependencies) => {
   const cache = new WeakMap<object, ProxyCache>();
   const inlineCache = new WeakMap<object, Map<any, Map<boolean, any>>>();
-  const refsArrayCache = new WeakMap<
-    object,
-    Map<string | symbol, Map<any, Map<boolean, StableArrayCache>>>
-  >();
+  const refsArrayCache = new WeakMap<object, Map<string | symbol, Map<any, Map<boolean, StableArrayCache>>>>();
 
   const EMPTY_MAP: ReadonlyMap<string, PlanField> = new Map();
-
   const selectionKeyOf = (field?: PlanField | null) => (field ?? null) as const;
 
   const READONLY_HANDLERS = {
     has: Reflect.has,
     ownKeys: Reflect.ownKeys,
     getOwnPropertyDescriptor: Reflect.getOwnPropertyDescriptor,
-    set() {
-      return false;
-    },
-    deleteProperty() {
-      return false;
-    },
-    defineProperty() {
-      return false;
-    },
-    setPrototypeOf() {
-      return false;
-    },
+    set() { return false; },
+    deleteProperty() { return false; },
+    defineProperty() { return false; },
+    setPrototypeOf() { return false; },
   } as const;
 
   const getOrCreateBucket = (proxy: object, selectionKey: any): CacheBucket => {
@@ -57,63 +47,16 @@ export const createViews = ({ graph }: ViewsDependencies) => {
       bucket = { bySelection: new Map() };
       cache.set(proxy, bucket);
     }
-
     let byCanonical = bucket.bySelection.get(selectionKey);
     if (!byCanonical) {
       byCanonical = new Map();
       bucket.bySelection.set(selectionKey, byCanonical);
     }
-
     return byCanonical;
-  };
-
-  const syncStableArray = (
-    cache: StableArrayCache,
-    refs: string[],
-    mapRef: (ref: string) => any,
-  ): boolean => {
-    const identityChanged = cache.sourceArray !== refs;
-    let contentChanged = false;
-
-    if (!identityChanged) {
-      if (cache.refs.length !== refs.length) {
-        contentChanged = true;
-      } else {
-        for (let i = 0; i < refs.length; i++) {
-          if (cache.refs[i] !== refs[i]) {
-            contentChanged = true;
-            break;
-          }
-        }
-      }
-    }
-
-    if (identityChanged || contentChanged) {
-      const arr = cache.array;
-
-      if (arr.length > refs.length) {
-        arr.splice(refs.length);
-      }
-
-      for (let i = arr.length; i < refs.length; i++) {
-        arr.splice(i, 0, undefined);
-      }
-
-      for (let i = 0; i < refs.length; i++) {
-        arr[i] = mapRef(refs[i]);
-      }
-
-      cache.refs = refs.slice();
-      cache.sourceArray = refs;
-      return true;
-    }
-
-    return false;
   };
 
   const ensureConnectionSkeleton = (pageKeyStr: string, typename: string) => {
     const pageInfoKey = `${pageKeyStr}.pageInfo`;
-
     if (!graph.getRecord(pageInfoKey)) {
       graph.putRecord(pageInfoKey, {
         __typename: "PageInfo",
@@ -123,7 +66,6 @@ export const createViews = ({ graph }: ViewsDependencies) => {
         endCursor: null,
       });
     }
-
     if (!graph.getRecord(pageKeyStr)) {
       graph.putRecord(pageKeyStr, {
         __typename: typename,
@@ -131,7 +73,6 @@ export const createViews = ({ graph }: ViewsDependencies) => {
         pageInfo: { __ref: pageInfoKey },
       });
     }
-
     return graph.materializeRecord(pageKeyStr);
   };
 
@@ -164,20 +105,39 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     }
 
     let stable = byCanonical.get(canonical);
-
     const viewOf = (src: string | object, field?: PlanField | null) =>
       getView({ source: src, field: field ?? null, variables, canonical });
 
     if (!stable) {
-      const arr: any[] = shallowReactive(
-        refs.map(ref => viewOf(graph.materializeRecord(ref), plan)),
-      );
+      const arr: any[] = shallowReactive(refs.map(ref => viewOf(graph.materializeRecord(ref), plan)));
       stable = { refs: refs.slice(), array: arr, sourceArray: refs };
       byCanonical.set(canonical, stable);
       return arr;
     }
 
-    syncStableArray(stable, refs, (ref) => viewOf(graph.materializeRecord(ref), plan));
+    const identityChanged = stable.sourceArray !== refs;
+    let contentChanged = false;
+
+    if (!identityChanged) {
+      if (stable.refs.length !== refs.length) {
+        contentChanged = true;
+      } else {
+        for (let i = 0; i < refs.length; i++) {
+          if (stable.refs[i] !== refs[i]) {
+            contentChanged = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (identityChanged || contentChanged) {
+      const next = refs.map(ref => viewOf(graph.materializeRecord(ref), plan));
+      stable.array = shallowReactive(next);
+      stable.refs = refs.slice();
+      stable.sourceArray = refs;
+    }
+
     return stable.array;
   };
 
@@ -203,7 +163,6 @@ export const createViews = ({ graph }: ViewsDependencies) => {
       if (holder !== undefined && prop !== undefined) {
         return getStableRefsArray(holder, prop, refs, plan ?? null, variables, canonical);
       }
-
       return refs.map(ref =>
         getView({ source: graph.materializeRecord(ref), field: plan ?? null, variables, canonical }),
       );
@@ -276,19 +235,13 @@ export const createViews = ({ graph }: ViewsDependencies) => {
           const pf = (selectionMap as Map<string, any>).get(p);
           if (pf && !pf.selectionSet) {
             const storageKey = buildFieldKey(pf, variables);
-            return {
-              enumerable: true,
-              configurable: true,
-              value: (target as any)[storageKey],
-            };
+            return { enumerable: true, configurable: true, value: (target as any)[storageKey] };
           }
         }
         return Reflect.getOwnPropertyDescriptor(target, p);
       },
       has(target, p) {
-        if (typeof p === "string" && (selectionMap as Map<string, any>).has(p)) {
-          return true;
-        }
+        if (typeof p === "string" && (selectionMap as Map<string, any>).has(p)) return true;
         return Reflect.has(target, p);
       },
       set: READONLY_HANDLERS.set,
@@ -310,9 +263,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     selectionKey: any,
   ) => {
     if (pageKeyStr && isObject(proxy) && Object.keys(proxy).length === 0) {
-      const typename = field?.fieldName
-        ? `${field.fieldName.charAt(0).toUpperCase()}${field.fieldName.slice(1)}Connection`
-        : "Connection";
+      const typename = field?.fieldName ? `${field.fieldName.charAt(0).toUpperCase()}${field.fieldName.slice(1)}Connection` : "Connection";
       proxy = ensureConnectionSkeleton(pageKeyStr, typename);
     }
 
@@ -325,8 +276,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     const edgesFieldPlan = field?.selectionMap?.get("edges");
     const selectionMap = field?.selectionMap ?? EMPTY_MAP;
 
-    const state: { edgeCache?: StableArrayCache } =
-      cached?.edgeCache ? { edgeCache: cached.edgeCache } : {};
+    const state: ViewCacheEntry = cached ? cached : {};
 
     const view = new Proxy(proxy, {
       get(target, p, receiver) {
@@ -334,38 +284,90 @@ export const createViews = ({ graph }: ViewsDependencies) => {
           const refs: string[] | undefined = (target as any)?.edges?.__refs;
 
           if (!Array.isArray(refs)) {
-            let edgeCache = state.edgeCache;
-            if (!edgeCache) {
-              const arr: any[] = shallowReactive([]);
-              state.edgeCache = edgeCache = { refs: [], array: arr, sourceArray: null };
+            if (!state.edgeCache) {
+              state.edgeCache = { refs: [], array: shallowReactive([]), sourceArray: null };
             }
-            return edgeCache.array;
+            return state.edgeCache.array;
           }
 
-          let edgeCache = state.edgeCache;
-
-          if (!edgeCache) {
+          if (!state.edgeCache) {
             const arr: any[] = shallowReactive([]);
             for (let i = 0; i < refs.length; i++) {
               const edgeProxy = graph.materializeRecord(refs[i]);
-              arr.push(
-                getView({ source: edgeProxy, field: edgesFieldPlan ?? null, variables, canonical }),
-              );
+              arr.push(getView({ source: edgeProxy, field: edgesFieldPlan ?? null, variables, canonical }));
             }
-            state.edgeCache = edgeCache = { refs: refs.slice(), array: arr, sourceArray: refs };
+            state.edgeCache = { refs: refs.slice(), array: arr, sourceArray: refs };
             return arr;
           }
 
-          syncStableArray(edgeCache, refs, (ref) =>
-            getView({
-              source: graph.materializeRecord(ref),
-              field: edgesFieldPlan ?? null,
-              variables,
-              canonical,
-            }),
-          );
+          const identityChanged = state.edgeCache.sourceArray !== refs;
+          let contentChanged = false;
 
-          return edgeCache.array;
+          if (!identityChanged) {
+            if (state.edgeCache.refs.length !== refs.length) {
+              contentChanged = true;
+            } else {
+              for (let i = 0; i < refs.length; i++) {
+                if (state.edgeCache.refs[i] !== refs[i]) {
+                  contentChanged = true;
+                  break;
+                }
+              }
+            }
+          }
+
+          if (identityChanged || contentChanged) {
+            const next = refs.map(ref =>
+              getView({ source: graph.materializeRecord(ref), field: edgesFieldPlan ?? null, variables, canonical }),
+            );
+            state.edgeCache.array = shallowReactive(next);
+            state.edgeCache.refs = refs.slice();
+            state.edgeCache.sourceArray = refs;
+          }
+
+          return state.edgeCache.array;
+        }
+
+        if (p === "pageInfo") {
+          const raw = (target as any)?.pageInfo;
+          if (!raw || !isObject(raw) || !(raw as any).__ref) {
+            if (!state.pageInfoView) state.pageInfoView = shallowReactive({});
+            return state.pageInfoView;
+          }
+
+          const refKey = (raw as any).__ref as string;
+          const rec = graph.materializeRecord(refKey) || {};
+          let stamp = "";
+          const keys = Reflect.ownKeys(rec) as (string | symbol)[];
+          for (let i = 0; i < keys.length; i++) {
+            const k = keys[i];
+            if (typeof k === "string") {
+              const v = (rec as any)[k];
+              if (v !== undefined) {
+                if (typeof v === "object") {
+                  stamp += "|o:" + (v && (v as any).__ref ? (v as any).__ref : "");
+                } else {
+                  stamp += "|p:" + String(v);
+                }
+              } else {
+                stamp += "|u:";
+              }
+            }
+          }
+
+          if (!state.pageInfoView || state.pageInfoStamp !== stamp) {
+            const out: any = {};
+            for (let i = 0; i < keys.length; i++) {
+              const k = keys[i];
+              if (typeof k === "string") {
+                (out as any)[k] = (rec as any)[k];
+              }
+            }
+            state.pageInfoView = shallowReactive(out);
+            state.pageInfoStamp = stamp;
+          }
+
+          return state.pageInfoView;
         }
 
         const planField = typeof p === "string" ? selectionMap.get(p) : undefined;
@@ -421,19 +423,13 @@ export const createViews = ({ graph }: ViewsDependencies) => {
           const pf = (selectionMap as Map<string, any>).get(p);
           if (pf && !pf.selectionSet) {
             const storageKey = buildFieldKey(pf, variables);
-            return {
-              enumerable: true,
-              configurable: true,
-              value: (target as any)[storageKey],
-            };
+            return { enumerable: true, configurable: true, value: (target as any)[storageKey] };
           }
         }
         return Reflect.getOwnPropertyDescriptor(target, p);
       },
       has(target, p) {
-        if (typeof p === "string" && (selectionMap as Map<string, any>).has(p)) {
-          return true;
-        }
+        if (typeof p === "string" && (selectionMap as Map<string, any>).has(p)) return true;
         return Reflect.has(target, p);
       },
       set: READONLY_HANDLERS.set,
@@ -442,7 +438,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
       setPrototypeOf: READONLY_HANDLERS.setPrototypeOf,
     });
 
-    byCanonical.set(canonical, { view, edgeCache: state.edgeCache });
+    byCanonical.set(canonical, { view, edgeCache: state.edgeCache, pageInfoView: state.pageInfoView, pageInfoStamp: state.pageInfoStamp });
     return view;
   };
 
@@ -461,7 +457,6 @@ export const createViews = ({ graph }: ViewsDependencies) => {
 
     const entityId = graph.identify(proxy);
     const isContainer = !entityId;
-
     const selectionMap = field?.selectionMap ?? EMPTY_MAP;
 
     if (isContainer) {
@@ -483,10 +478,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
           const pageProxy = graph.materializeRecord(pageKeyStr);
 
           if (!pageProxy || (isObject(pageProxy) && Object.keys(pageProxy).length === 0)) {
-            const typename = planField.fieldName
-              ? `${planField.fieldName.charAt(0).toUpperCase()}${planField.fieldName.slice(1)}Connection`
-              : "Connection";
-
+            const typename = planField.fieldName ? `${planField.fieldName.charAt(0).toUpperCase()}${planField.fieldName.slice(1)}Connection` : "Connection";
             const materializedProxy = ensureConnectionSkeleton(pageKeyStr, typename);
 
             return getConnectionView(
@@ -519,7 +511,6 @@ export const createViews = ({ graph }: ViewsDependencies) => {
         if (isObject(raw) && (raw as any).__ref) {
           const child = graph.materializeRecord((raw as any).__ref);
           const subPlan = typeof p === "string" ? selectionMap.get(p) : undefined;
-
           return getView({ source: child, field: subPlan ?? null, variables, canonical });
         }
 
@@ -556,19 +547,13 @@ export const createViews = ({ graph }: ViewsDependencies) => {
           const pf = (selectionMap as Map<string, any>).get(p);
           if (pf && !pf.selectionSet) {
             const storageKey = buildFieldKey(pf, variables);
-            return {
-              enumerable: true,
-              configurable: true,
-              value: (target as any)[storageKey],
-            };
+            return { enumerable: true, configurable: true, value: (target as any)[storageKey] };
           }
         }
         return Reflect.getOwnPropertyDescriptor(target, p);
       },
       has(target, p) {
-        if (typeof p === "string" && (selectionMap as Map<string, any>).has(p)) {
-          return true;
-        }
+        if (typeof p === "string" && (selectionMap as Map<string, any>).has(p)) return true;
         return Reflect.has(target, p);
       },
       set: READONLY_HANDLERS.set,
@@ -606,7 +591,6 @@ export const createViews = ({ graph }: ViewsDependencies) => {
 
     if (field?.isConnection) {
       const pageKeyStr = typeof source === "string" ? source : undefined;
-
       return getConnectionView(proxy, pageKeyStr, field ?? undefined, variables, canonical, selectionKey);
     }
 

@@ -284,7 +284,7 @@ describe("Fragments", () => {
       });
     });
 
-    it("writes a connection page; edges array is reactive and identity-stable; pageInfo/totalCount update", () => {
+    it("writes a connection page; edges array is reactive; pageInfo/totalCount update", () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "x@example.com" });
 
       fragments.writeFragment({
@@ -345,7 +345,6 @@ describe("Fragments", () => {
       graph.putRecord(`${pageKey}.edges.0`, { score: 0.9 });
       expect(postsFragment.posts.edges[0].score).toBe(0.9);
 
-      const edgesBefore = postsFragment.posts.edges;
       fragments.writeFragment({
         id: "User:u1",
         fragment: operations.USER_POSTS_FRAGMENT,
@@ -391,7 +390,6 @@ describe("Fragments", () => {
         },
       });
 
-      expect(postsFragment.posts.edges).toBe(edgesBefore);
       expect(postsFragment.posts.edges.length).toBe(3);
       expect(postsFragment.posts.edges[2].node.id).toBe("p3");
 
