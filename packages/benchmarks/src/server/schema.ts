@@ -1,6 +1,6 @@
 import { createYoga, createSchema } from 'graphql-yoga';
-import { createServer as createHttpServer } from 'node:http';
-import { Buffer } from 'node:buffer';
+import { createServer as createHttpServer } from 'http';
+import { Buffer } from 'buffer';
 import type { Post } from '../utils/seed';
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -27,61 +27,53 @@ export type ServerCtrl = {
 
 export async function startServer(
   dataset: Post[],
-  opts?: { artificialDelayMs?: number }
+  opts: { artificialDelayMs?: number; port?: number } = {}
 ): Promise<ServerCtrl> {
-  const artificialDelayMs = opts?.artificialDelayMs ?? 20;
+  const port = opts.port || 4000;
 
   const yoga = createYoga({
-    graphqlEndpoint: '/graphql',
-    cors: true,
     schema: createSchema({
       typeDefs: /* GraphQL */ `
         type Query {
           feed(first: Int!, after: String): FeedConnection!
         }
-
         type FeedConnection {
           edges: [FeedEdge!]!
           pageInfo: PageInfo!
         }
-
         type FeedEdge {
           cursor: String!
           node: Post!
         }
-
+        type Post {
+          id: ID!
+          title: String!
+        }
         type PageInfo {
           startCursor: String
           endCursor: String
           hasPreviousPage: Boolean!
           hasNextPage: Boolean!
         }
-
-        type Post {
-          id: ID!
-          title: String!
-        }
       `,
       resolvers: {
         Query: {
-          feed: async (_: unknown, args: { first: number; after?: string }) => {
-            await delay(artificialDelayMs);
+          feed: async (_parent, { first, after }) => {
+            if (opts.artificialDelayMs) await delay(opts.artificialDelayMs);
 
-            // after=null -> decodeCursor returns -1, so start at 0
-            const startIndex = decodeCursor(args.after) + 1;
+            const startIndex = after ? decodeCursor(after) + 1 : 0;
+            const endIndex = Math.min(startIndex + first - 1, dataset.length - 1);
 
-            const slice = dataset.slice(startIndex, startIndex + args.first);
+            const edges = [];
+            for (let i = startIndex; i <= endIndex; i++) {
+              edges.push({
+                cursor: encodeCursor(i),
+                node: dataset[i],
+              });
+            }
 
-            const edges = slice.map((node, i) => ({
-              cursor: encodeCursor(startIndex + i),
-              node,
-            }));
-
-            const endIndex = startIndex + slice.length - 1;
-
-            const startCursor = slice.length > 0 ? encodeCursor(startIndex) : null;
-            const endCursor = slice.length > 0 ? encodeCursor(endIndex) : null;
-
+            const startCursor = edges.length > 0 ? edges[0].cursor : null;
+            const endCursor = edges.length > 0 ? edges[edges.length - 1].cursor : null;
             const hasPreviousPage = startIndex > 0;
             const hasNextPage = endIndex < dataset.length - 1;
 
@@ -98,11 +90,9 @@ export async function startServer(
   // ✅ Use named import to avoid "default.createServer is not a function"
   const server = createHttpServer(yoga);
 
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  const addr = server.address();
-  if (!addr || typeof addr === 'string') throw new Error('Failed to bind server');
+  await new Promise<void>(resolve => server.listen(port, '127.0.0.1', resolve));
 
-  const url = `http://127.0.0.1:${addr.port}/graphql`;
+  const url = `http://127.0.0.1:${port}/graphql`;
 
   return {
     url,

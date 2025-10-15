@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<710d33f739991e58469caffe63341e95>>
+ * @generated SignedSource<<9518332de20836ae0fab9c42ae27d1ce>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -10,7 +10,7 @@
 
 import { ReaderFragment, RefetchableFragment } from 'relay-runtime';
 import { FragmentRefs } from "relay-runtime";
-export type reactRelayApp_FeedList_query$data = {
+export type reactRelayInfiniteFeedApp_FeedList_query$data = {
   readonly feed: {
     readonly edges: ReadonlyArray<{
       readonly cursor: string;
@@ -26,14 +26,14 @@ export type reactRelayApp_FeedList_query$data = {
       readonly startCursor: string | null | undefined;
     };
   };
-  readonly " $fragmentType": "reactRelayApp_FeedList_query";
+  readonly " $fragmentType": "reactRelayInfiniteFeedApp_FeedList_query";
 };
-export type reactRelayApp_FeedList_query$key = {
-  readonly " $data"?: reactRelayApp_FeedList_query$data;
-  readonly " $fragmentSpreads": FragmentRefs<"reactRelayApp_FeedList_query">;
+export type reactRelayInfiniteFeedApp_FeedList_query$key = {
+  readonly " $data"?: reactRelayInfiniteFeedApp_FeedList_query$data;
+  readonly " $fragmentSpreads": FragmentRefs<"reactRelayInfiniteFeedApp_FeedList_query">;
 };
 
-import reactRelayApp_FeedPaginationQuery_graphql from './reactRelayApp_FeedPaginationQuery.graphql';
+import reactRelayInfiniteFeedAppFeedPaginationQuery_graphql from './reactRelayInfiniteFeedAppFeedPaginationQuery.graphql';
 
 const node: ReaderFragment = (function(){
 var v0 = [
@@ -72,10 +72,10 @@ return {
         "path": (v0/*: any*/)
       },
       "fragmentPathInResult": [],
-      "operation": reactRelayApp_FeedPaginationQuery_graphql
+      "operation": reactRelayInfiniteFeedAppFeedPaginationQuery_graphql
     }
   },
-  "name": "reactRelayApp_FeedList_query",
+  "name": "reactRelayInfiniteFeedApp_FeedList_query",
   "selections": [
     {
       "alias": "feed",
@@ -183,6 +183,6 @@ return {
 };
 })();
 
-(node as any).hash = "dfa6d1cb7cf7af88f23318c2ba5bed01";
+(node as any).hash = "58eeb002a08e0f799cf5ffbd2272218d";
 
 export default node;

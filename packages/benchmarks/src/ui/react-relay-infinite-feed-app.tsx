@@ -28,17 +28,17 @@ function createRelayEnvironment(serverUrl: string) {
   return new Environment({ network, store: new Store(new RecordSource()) });
 }
 
-// Names must start with module name: reactRelayApp_*
+// Names must start with module name: reactRelayInfiniteFeedApp_*
 
 const FeedRootQuery = graphql`
-  query reactRelayApp_FeedRootQuery($count: Int!, $cursor: String) {
-    ...reactRelayApp_FeedList_query @arguments(count: $count, cursor: $cursor)
+  query reactRelayInfiniteFeedAppFeedRootQuery($count: Int!, $cursor: String) {
+    ...reactRelayInfiniteFeedApp_FeedList_query @arguments(count: $count, cursor: $cursor)
   }
 `;
 
 const FeedListFragment = graphql`
-  fragment reactRelayApp_FeedList_query on Query
-  @refetchable(queryName: "reactRelayApp_FeedPaginationQuery")
+  fragment reactRelayInfiniteFeedApp_FeedList_query on Query
+  @refetchable(queryName: "reactRelayInfiniteFeedAppFeedPaginationQuery")
   @argumentDefinitions(
     count: { type: "Int!" }
     cursor: { type: "String" }
@@ -76,6 +76,7 @@ function FeedList(props: {
           loadNext(50, { onComplete: (err) => (err ? reject(err) : resolve()) });
         });
       }
+      // If no more data, resolve immediately
     });
   }, [hasNext, isLoadingNext, loadNext, props]);
 
@@ -141,18 +142,16 @@ export function createReactRelayApp(serverUrl: string): ReactRelayController {
       await ready;
       if (!doLoadNext) return;
 
-      // Prepare a promise that resolves when the component commits the new edges
-      const rendered = new Promise<void>(resolve => { resolveRender = resolve; });
+      const tStart = performance.now();
 
-      // 1) Wait for network + cache (Relay) to finish for this page
+      // Wait for network + cache to finish
       await doLoadNext();
 
-      // 2) Now measure render-only: from data-available -> DOM commit
-      const tData = performance.now();
-      await rendered; // resolved by FeedList's onAfterRender() after edges length changes
-      const tPaint = performance.now();
+      // Wait a microtask to ensure React has committed
+      await new Promise(resolve => setTimeout(resolve, 0));
 
-      totalRenderTime += tPaint - tData;
+      const tEnd = performance.now();
+      totalRenderTime += tEnd - tStart;
     },
 
     unmount() {

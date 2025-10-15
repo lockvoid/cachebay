@@ -1,5 +1,10 @@
+interface Node {
+  id: ID!
+}
+
 type Query {
   feed(first: Int!, after: String): FeedConnection!
+  users(first: Int!, after: String): UserConnection!
 }
 
 type FeedConnection {
@@ -12,6 +17,36 @@ type FeedEdge {
   node: Post!
 }
 
+type UserConnection {
+  edges: [UserEdge!]!
+  pageInfo: PageInfo!
+}
+
+type UserEdge {
+  cursor: String!
+  node: User!
+}
+
+type PostConnection {
+  edges: [PostEdge!]!
+  pageInfo: PageInfo!
+}
+
+type PostEdge {
+  cursor: String!
+  node: Post!
+}
+
+type CommentConnection {
+  edges: [CommentEdge!]!
+  pageInfo: PageInfo!
+}
+
+type CommentEdge {
+  cursor: String!
+  node: Comment!
+}
+
 type PageInfo {
   startCursor: String
   endCursor: String
@@ -19,7 +54,26 @@ type PageInfo {
   hasNextPage: Boolean!
 }
 
-type Post {
+type User implements Node {
+  id: ID!
+  name: String!
+  avatar: String!
+  posts(first: Int!, after: String): PostConnection!
+  followers(first: Int!, after: String): UserConnection!
+}
+
+type Post implements Node {
   id: ID!
   title: String!
+  content: String!
+  author: User!
+  comments(first: Int!, after: String): CommentConnection!
+  likeCount: Int!
+}
+
+type Comment implements Node {
+  id: ID!
+  text: String!
+  author: User!
+  post: Post!
 }

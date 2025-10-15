@@ -1,4 +1,4 @@
-import { createApp, defineComponent, ref, watch, nextTick } from 'vue';
+import { createApp, defineComponent, nextTick, computed, watch } from 'vue';
 import { ApolloClient, InMemoryCache, HttpLink } from '@apollo/client/core';
 import { relayStylePagination } from '@apollo/client/utilities';
 import { gql } from 'graphql-tag';
@@ -67,9 +67,10 @@ export function createVueApolloApp(serverUrl: string): VueApolloController {
     return _query(opts);
   };
 
-  let totalRenderTime = 0; // render-only (post-data -> nextTick)
+  let totalRenderTime = 0;
   let app: ReturnType<typeof createApp> | null = null;
   let container: Element | null = null;
+  let onRenderComplete: (() => void) | null = null;
 
   const InfiniteList = defineComponent({
     setup() {
@@ -79,14 +80,30 @@ export function createVueApolloApp(serverUrl: string): VueApolloController {
         { fetchPolicy: 'cache-first', errorPolicy: 'ignore' }
       );
 
+      const edgeCount = computed(() => result.value?.feed?.edges?.length || 0);
+      let previousCount = 0;
       let isFirstLoad = true;
+
+      watch(edgeCount, (newCount) => {
+        if (newCount > previousCount) {
+          previousCount = newCount;
+          nextTick(() => {
+            onRenderComplete?.();
+          });
+        }
+      });
 
       const loadNextPage = async () => {
         if (loading.value) return;
 
         try {
+          const renderStart = performance.now();
+          
+          const renderComplete = new Promise<void>(resolve => {
+            onRenderComplete = resolve;
+          });
+
           if (isFirstLoad) {
-            // keep your original call signature
             await load(FEED_QUERY, { first: 50, after: null });
             isFirstLoad = false;
           } else {
@@ -98,12 +115,11 @@ export function createVueApolloApp(serverUrl: string): VueApolloController {
             });
           }
 
-          // ---- render-only timing (post-data -> DOM flush) ----
-          const renderStart = performance.now();
-          await nextTick();
+          await renderComplete;
+          onRenderComplete = null;
+          
           const renderEnd = performance.now();
           totalRenderTime += renderEnd - renderStart;
-          // -----------------------------------------------------
 
         } catch (error) {
           console.warn('Apollo load/fetchMore error (ignored):', error);

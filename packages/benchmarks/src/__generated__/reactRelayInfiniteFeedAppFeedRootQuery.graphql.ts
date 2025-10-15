@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<9f778770c456f628a03c3d6deab16405>>
+ * @generated SignedSource<<a53e031d82da905d0d2c6750c3a703c1>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -10,16 +10,16 @@
 
 import { ConcreteRequest, Query } from 'relay-runtime';
 import { FragmentRefs } from "relay-runtime";
-export type reactRelayApp_FeedPaginationQuery$variables = {
+export type reactRelayInfiniteFeedAppFeedRootQuery$variables = {
   count: number;
   cursor?: string | null | undefined;
 };
-export type reactRelayApp_FeedPaginationQuery$data = {
-  readonly " $fragmentSpreads": FragmentRefs<"reactRelayApp_FeedList_query">;
+export type reactRelayInfiniteFeedAppFeedRootQuery$data = {
+  readonly " $fragmentSpreads": FragmentRefs<"reactRelayInfiniteFeedApp_FeedList_query">;
 };
-export type reactRelayApp_FeedPaginationQuery = {
-  response: reactRelayApp_FeedPaginationQuery$data;
-  variables: reactRelayApp_FeedPaginationQuery$variables;
+export type reactRelayInfiniteFeedAppFeedRootQuery = {
+  response: reactRelayInfiniteFeedAppFeedRootQuery$data;
+  variables: reactRelayInfiniteFeedAppFeedRootQuery$variables;
 };
 
 const node: ConcreteRequest = (function(){
@@ -52,7 +52,7 @@ return {
     "argumentDefinitions": (v0/*: any*/),
     "kind": "Fragment",
     "metadata": null,
-    "name": "reactRelayApp_FeedPaginationQuery",
+    "name": "reactRelayInfiniteFeedAppFeedRootQuery",
     "selections": [
       {
         "args": [
@@ -68,7 +68,7 @@ return {
           }
         ],
         "kind": "FragmentSpread",
-        "name": "reactRelayApp_FeedList_query"
+        "name": "reactRelayInfiniteFeedApp_FeedList_query"
       }
     ],
     "type": "Query",
@@ -78,7 +78,7 @@ return {
   "operation": {
     "argumentDefinitions": (v0/*: any*/),
     "kind": "Operation",
-    "name": "reactRelayApp_FeedPaginationQuery",
+    "name": "reactRelayInfiniteFeedAppFeedRootQuery",
     "selections": [
       {
         "alias": null,
@@ -192,16 +192,16 @@ return {
     ]
   },
   "params": {
-    "cacheID": "002d41c6cca0394d872a7ca65241c4ca",
+    "cacheID": "976be8a1316089f6fcc8062113dc19ea",
     "id": null,
     "metadata": {},
-    "name": "reactRelayApp_FeedPaginationQuery",
+    "name": "reactRelayInfiniteFeedAppFeedRootQuery",
     "operationKind": "query",
-    "text": "query reactRelayApp_FeedPaginationQuery(\n  $count: Int!\n  $cursor: String\n) {\n  ...reactRelayApp_FeedList_query_1G22uz\n}\n\nfragment reactRelayApp_FeedList_query_1G22uz on Query {\n  feed(first: $count, after: $cursor) {\n    edges {\n      cursor\n      node {\n        id\n        title\n        __typename\n      }\n    }\n    pageInfo {\n      startCursor\n      endCursor\n      hasPreviousPage\n      hasNextPage\n    }\n  }\n}\n"
+    "text": "query reactRelayInfiniteFeedAppFeedRootQuery(\n  $count: Int!\n  $cursor: String\n) {\n  ...reactRelayInfiniteFeedApp_FeedList_query_1G22uz\n}\n\nfragment reactRelayInfiniteFeedApp_FeedList_query_1G22uz on Query {\n  feed(first: $count, after: $cursor) {\n    edges {\n      cursor\n      node {\n        id\n        title\n        __typename\n      }\n    }\n    pageInfo {\n      startCursor\n      endCursor\n      hasPreviousPage\n      hasNextPage\n    }\n  }\n}\n"
   }
 };
 })();
 
-(node as any).hash = "dfa6d1cb7cf7af88f23318c2ba5bed01";
+(node as any).hash = "45d39e19e14dc76fbf5d812212da3451";
 
 export default node;

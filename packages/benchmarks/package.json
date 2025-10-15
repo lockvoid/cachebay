@@ -7,7 +7,10 @@
   "type": "module",
   "scripts": {
     "relay": "relay-compiler",
-    "bench:infinite": "vitest bench --run suites/infinite-feed.dom.bench.ts --config ./vitest.bench.dom.config.ts"
+    "server:infinite-feed": "NODE_ENV=production tsx scripts/start-server-infinite-feed.ts",
+    "server:nested-query": "NODE_ENV=production tsx scripts/start-server-nested-query.ts",
+    "bench:infinite-feed": "NODE_ENV=production tsx scripts/start-server-infinite-feed.ts & sleep 2 && NODE_ENV=production vitest bench --run --mode production suites/infinite-feed.dom.bench.ts --config ./vitest.bench.dom.config.ts; kill %1",
+    "bench:nested-query": "NODE_ENV=production tsx scripts/start-server-nested-query.ts & sleep 2 && NODE_ENV=production vitest bench --run --mode production suites/nested-query.dom.bench.ts --config ./vitest.bench.dom.config.ts; kill %1"
   },
   "dependencies": {
     "@apollo/client": "^3.8.10",
@@ -44,6 +47,7 @@
     "graphql": "^16.11.0",
     "happy-dom": "^18.0.1",
     "relay-compiler": "^16.2.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.41.0",
     "vite-plugin-relay": "^2.1.0",

@@ -1,4 +1,4 @@
-import { createApp, defineComponent, ref, watch, reactive, nextTick } from 'vue';
+import { createApp, defineComponent, ref, reactive, nextTick, computed, watch } from 'vue';
 import { createClient, useQuery, fetch as fetchPlugin } from 'villus';
 import { gql } from 'graphql-tag';
 import { createCache } from 'villus-cachebay';
@@ -35,9 +35,10 @@ export function createVueCachebayApp(serverUrl: string): VueCachebayController {
     cachePolicy: 'network-only'
   });
 
-  let totalRenderTime = 0; // render-only total (post-data -> nextTick)
+  let totalRenderTime = 0;
   let app: ReturnType<typeof createApp> | null = null;
   let container: Element | null = null;
+  let onRenderComplete: (() => void) | null = null;
 
   const InfiniteList = defineComponent({
     setup() {
@@ -51,20 +52,37 @@ export function createVueCachebayApp(serverUrl: string): VueCachebayController {
         paused: true,
       });
 
+      const edgeCount = computed(() => data.value?.feed?.edges?.length || 0);
+      let previousCount = 0;
+
+      watch(edgeCount, (newCount) => {
+        if (newCount > previousCount) {
+          previousCount = newCount;
+          nextTick(() => {
+            onRenderComplete?.();
+          });
+        }
+      });
+
       const loadNextPage = async () => {
         try {
+          const renderStart = performance.now();
+          
+          const renderComplete = new Promise<void>(resolve => {
+            onRenderComplete = resolve;
+          });
+
           await execute({ variables });
 
           if (data.value?.feed?.pageInfo?.endCursor) {
             variables.after = data.value.feed.pageInfo.endCursor;
           }
 
-          // ---- render-only timing (post-data -> DOM flush) ----
-          const renderStart = performance.now();
-          await nextTick();
+          await renderComplete;
+          onRenderComplete = null;
+          
           const renderEnd = performance.now();
           totalRenderTime += renderEnd - renderStart;
-          // -----------------------------------------------------
 
         } catch (error) {
           console.warn('Cachebay execute error (ignored):', error);

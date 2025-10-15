@@ -1,4 +1,4 @@
-import { createApp, defineComponent, reactive, nextTick, watch } from 'vue';
+import { createApp, defineComponent, reactive, nextTick, computed, watch } from 'vue';
 import urql, { useQuery } from '@urql/vue';
 import { createClient as createUrqlClient, fetchExchange } from '@urql/core';
 import { cacheExchange as graphcache } from '@urql/exchange-graphcache';
@@ -35,10 +35,11 @@ export function createVueUrqlApp(serverUrl: string): VueUrqlController {
     exchanges: [cache, fetchExchange],
   });
 
-  let totalRenderTime = 0; // render-only (post-data -> nextTick)
+  let totalRenderTime = 0;
   let app: ReturnType<typeof createApp> | null = null;
   let container: Element | null = null;
   let componentInstance: any = null;
+  let onRenderComplete: (() => void) | null = null;
 
   const InfiniteList = defineComponent({
     setup() {
@@ -53,18 +54,35 @@ export function createVueUrqlApp(serverUrl: string): VueUrqlController {
         pause: true,
       });
 
+      const edgeCount = computed(() => data.value?.feed?.edges?.length || 0);
+      let previousCount = 0;
+
+      watch(edgeCount, (newCount) => {
+        if (newCount > previousCount) {
+          previousCount = newCount;
+          nextTick(() => {
+            onRenderComplete?.();
+          });
+        }
+      });
+
       const loadNextPage = async () => {
+        const renderStart = performance.now();
+        
+        const renderComplete = new Promise<void>(resolve => {
+          onRenderComplete = resolve;
+        });
+
         await executeQuery({ variables, requestPolicy: 'network-only' });
 
         const endCursor = data.value?.feed?.pageInfo?.endCursor ?? null;
         if (endCursor) variables.after = endCursor;
 
-        // ---- render-only timing (post-data -> DOM flush) ----
-        const renderStart = performance.now();
-        await nextTick();
+        await renderComplete;
+        onRenderComplete = null;
+        
         const renderEnd = performance.now();
         totalRenderTime += renderEnd - renderStart;
-        // -----------------------------------------------------
       };
 
       // watch(data, (d) => {

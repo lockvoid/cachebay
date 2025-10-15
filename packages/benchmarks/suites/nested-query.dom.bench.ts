@@ -1,14 +1,13 @@
-
 import { bench, describe } from "vitest";
-import { createReactRelayApp } from "../src/ui/react-relay-infinite-feed-app";
-import { createVueApolloApp } from "../src/ui/vue-apollo-infinite-feed-app";
-import { createVueCachebayApp } from "../src/ui/vue-cachebay-infinite-feed-app";
-import { createVueUrqlApp } from "../src/ui/vue-urql-infinite-feed-app";
+import { createReactRelayNestedApp } from "../src/ui/react-relay-nested-query-app";
+import { createVueApolloNestedApp } from "../src/ui/vue-apollo-nested-query-app";
+import { createVueCachebayNestedApp } from "../src/ui/vue-cachebay-nested-query-app";
+import { createVueUrqlNestedApp } from "../src/ui/vue-urql-nested-query-app";
 
 const DEBUG = process.env.DEBUG === 'true';
-const PAGES_TO_LOAD = 100;
+const PAGES_TO_LOAD = 10; // 1000 users / 10 per page = 100 pages
 
-const serverUrl = process.env.BENCH_SERVER_URL || 'http://127.0.0.1:4000/graphql';
+const serverUrl = process.env.BENCH_SERVER_URL || 'http://127.0.0.1:4001/graphql';
 
 if (DEBUG) {
   console.log(`Using server at: ${serverUrl}`);
@@ -20,16 +19,16 @@ async function runScenario(appType: "cachebay" | "apollo" | "urql" | "relay") {
 
     switch (appType) {
       case "cachebay":
-        app = createVueCachebayApp(serverUrl);
+        app = createVueCachebayNestedApp(serverUrl);
         break;
       case "apollo":
-        app = createVueApolloApp(serverUrl);
+        app = createVueApolloNestedApp(serverUrl);
         break;
       case "urql":
-        app = createVueUrqlApp(serverUrl);
+        app = createVueUrqlNestedApp(serverUrl);
         break;
       case "relay":
-        app = createReactRelayApp(serverUrl);
+        app = createReactRelayNestedApp(serverUrl);
         break;
       default:
         throw new Error(`Unknown app type: ${appType}`);
@@ -42,10 +41,9 @@ async function runScenario(appType: "cachebay" | "apollo" | "urql" | "relay") {
     }
 
     const pageTimes: number[] = [];
-    const totalPages = 1 + PAGES_TO_LOAD;
 
-    // Load initial page + extra pages
-    for (let i = 0; i < totalPages; i++) {
+    // Load pages with nested data
+    for (let i = 0; i < PAGES_TO_LOAD; i++) {
       try {
         const pageStart = performance.now();
         await app.loadNextPage();
@@ -54,9 +52,9 @@ async function runScenario(appType: "cachebay" | "apollo" | "urql" | "relay") {
         const pageTime = pageEnd - pageStart;
         pageTimes.push(pageTime);
 
-        if (DEBUG && (i < 5 || i % 50 === 0 || i === totalPages - 1)) {
+        if (DEBUG) {
           const count = app.getCount();
-          console.log(`[${appType}] Page ${i + 1}/${totalPages}: ${pageTime.toFixed(1)}ms | Total posts: ${count}`);
+          console.log(`[${appType}] Page ${i + 1}/${PAGES_TO_LOAD}: ${pageTime.toFixed(1)}ms | Total entities: ${count}`);
         }
       } catch (error) {
         console.error(`Error loading page ${i + 1}:`, error);
@@ -72,11 +70,9 @@ async function runScenario(appType: "cachebay" | "apollo" | "urql" | "relay") {
       console.log(`  Total time (UX): ${totalPageTime.toFixed(1)}ms`);
       console.log(`  Render time (cache): ${totalRenderTime.toFixed(1)}ms`);
       console.log(`  Network time: ${(totalPageTime - totalRenderTime).toFixed(1)}ms`);
-      console.log(`  Final post count: ${finalCount}`);
-      console.log(`  Avg per page: ${(totalPageTime / totalPages).toFixed(1)}ms`);
-      console.log(`  Render %: ${((totalRenderTime / totalPageTime) * 100).toFixed(1)}%`);
-      console.log(`  First 5 pages: ${pageTimes.slice(0, 5).map(t => t.toFixed(1)).join(', ')}ms`);
-      console.log(`  Last 5 pages: ${pageTimes.slice(-5).map(t => t.toFixed(1)).join(', ')}ms\n`);
+      console.log(`  Final entity count: ${finalCount}`);
+      console.log(`  Avg per page: ${(totalPageTime / PAGES_TO_LOAD).toFixed(1)}ms`);
+      console.log(`  Render %: ${((totalRenderTime / totalPageTime) * 100).toFixed(1)}%\n`);
     }
 
     app.unmount();
@@ -89,7 +85,7 @@ async function runScenario(appType: "cachebay" | "apollo" | "urql" | "relay") {
   }
 }
 
-describe("DOM Infinite feed (happy-dom): Vue apps with useQuery", () => {
+describe("DOM Nested query (happy-dom): interfaces, custom keys, nested pagination", () => {
   bench("cachebay(vue)", async () => {
     return await runScenario("cachebay");
   });
