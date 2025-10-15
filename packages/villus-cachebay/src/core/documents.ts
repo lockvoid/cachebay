@@ -361,8 +361,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     variables?: Record<string, any>;
   };
 
+  // bump as needed
+  const MATERIALIZE_LRU_CAP = 512;
+
   class LRU<K, V> {
-    constructor(private cap = 64) { }
+    constructor(private cap = MATERIALIZE_LRU_CAP) { }
     private m = new Map<K, V>();
     get(k: K): V | undefined {
       const v = this.m.get(k);
@@ -391,26 +394,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     return "{" + keys.map(k => JSON.stringify(k) + ":" + stableStringify(v[k])).join(",") + "}";
   };
 
-  const stampOfRecord = (rec: any): string => {
-    if (!rec || typeof rec !== "object") return String(rec);
-    const keys = Object.keys(rec).sort();
-    let s = "";
-    for (const k of keys) {
-      const v = (rec as any)[k];
-      if (v === undefined) { s += `|${k}:u`; continue; }
-      if (v === null) { s += `|${k}:n`; continue; }
-      if (typeof v === "object") {
-        if ((v as any).__ref) s += `|${k}:r:${(v as any).__ref}`;
-        else if (Array.isArray((v as any).__refs)) s += `|${k}:rs:${(v as any).__refs.join(",")}`;
-        else if (Array.isArray(v)) s += `|${k}:a:${v.length}`;
-        else s += `|${k}:o:${Object.keys(v).length}`;
-      } else {
-        s += `|${k}:p:${String(v)}`;
-      }
-    }
-    return s;
-  };
-
   type MaterializeResult = { data?: any; status: "FULFILLED" | "MISSING"; deps?: string[] };
   type CacheEntry = { data: any; stamp: string };
 
@@ -418,7 +401,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   const getLRU = (plan: CachePlan) => {
     let lru = lruByPlan.get(plan);
     if (!lru) {
-      lru = new LRU<string, CacheEntry>(64);
+      lru = new LRU<string, CacheEntry>();
       lruByPlan.set(plan, lru);
     }
     return lru;
@@ -461,18 +444,14 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     const isConnectionField = (f: PlanField): boolean => Boolean((f as any).isConnection);
 
-    // ---- type-conditions (inline fragments) helpers ----
+    // type-conditions (inline fragments)
+    const intfMap = (graph as any).interfaces as Record<string, string[]> | undefined;
     const isSubtype = (actual?: string, expected?: string): boolean => {
       if (!expected || !actual) return true;
       if (actual === expected) return true;
-      const intfMap =
-        (graph as any)?.interfaces ||
-        (graph as any)?.__interfaces ||
-        undefined;
-      const impls: string[] | undefined = intfMap?.[expected];
+      const impls = intfMap?.[expected];
       return Array.isArray(impls) ? impls.includes(actual) : false;
     };
-
     const fieldAppliesToType = (pf: any, actualType?: string): boolean => {
       const one = pf?.typeCondition ?? pf?.onType ?? pf?.typeName ?? undefined;
       const many = pf?.typeConditions ?? pf?.onTypes ?? pf?.typeNames ?? undefined;
@@ -481,7 +460,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       if (Array.isArray(many)) return many.some((t: string) => isSubtype(actualType, t));
       return true;
     };
-    // ----------------------------------------------------
 
     while (tasks.length) {
       const task = tasks.pop() as Task;
@@ -509,7 +487,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           continue;
         }
 
-        // scalar at root
         if (field.fieldName === "__typename") {
           out[outKey] = (root as any).__typename;
         } else {
@@ -551,7 +528,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           if (f.selectionSet && f.selectionSet.length) {
             const link = (snap as any)[buildFieldKey(f, variables)];
 
-            // array-of-refs
             if (link && typeof link === "object" && Array.isArray(link.__refs)) {
               const refs: string[] = link.__refs.slice();
               const arrOut: any[] = new Array(refs.length);
@@ -565,7 +541,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
-            // single ref or missing
             if (!link || !link.__ref) {
               out[f.responseKey] = link === null ? null : undefined;
               allOk = false;
@@ -579,7 +554,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             continue;
           }
 
-          // scalar
           if (f.fieldName === "__typename") {
             out[f.responseKey] = (snap as any).__typename;
           } else {
@@ -588,7 +562,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           }
         }
 
-        // Scalar fallback (covers interface-gated scalars)
+        // scalar fallback for interface-gated fields
         if (Array.isArray(field.selectionSet) && field.selectionSet.length) {
           for (let i = 0; i < field.selectionSet.length; i++) {
             const pf = field.selectionSet[i];
@@ -607,12 +581,10 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       if (task.t === "CONNECTION") {
         const { parentId, field, out, outKey } = task;
 
-        // Always read from CANONICAL page to build the data we return…
         const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
         touch(canonicalKey);
         const pageCanonical = graph.getRecord(canonicalKey);
 
-        // …but the *decision* whether this frame is "fulfilled" depends on decisionMode:
         let ok = !!pageCanonical;
         if (ok && decisionMode === "strict") {
           const strictKey = buildConnectionKey(field, parentId, variables);
@@ -662,7 +634,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
-            // Other fields on the page:
             if (!pf.selectionSet) {
               if (pf.fieldName === "__typename") {
                 conn[pf.responseKey] = (page as any).__typename;
@@ -673,16 +644,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
-            // Nested connection directly under the page
             if (isConnectionField(pf)) {
               tasks.push({ t: "CONNECTION", parentId: canonicalKey, field: pf, out: conn, outKey: pf.responseKey });
               continue;
             }
 
-            // container/entity under the page (e.g., aggregations)
             const link = (page as any)[buildFieldKey(pf, variables)];
 
-            // array-of-refs on page
             if (link && typeof link === "object" && Array.isArray(link.__refs)) {
               const refs: string[] = link.__refs.slice();
               const arrOut: any[] = new Array(refs.length);
@@ -781,11 +749,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       return { status: "MISSING", data: undefined, deps: Array.from(deps) as any };
     }
 
+    // Fast stamp: versions only
     const ids = Array.from(deps).sort();
     let stamp = "";
-    for (const id of ids) {
-      const rec = graph.getRecord(id) || {};
-      stamp += id + ":" + stampOfRecord(rec) + ";";
+    const getVersion = (graph as any).getVersion as (id: string) => number;
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      stamp += id + "#" + (getVersion(id) || 0) + ";";
     }
 
     const cached = lru.get(vkey);
