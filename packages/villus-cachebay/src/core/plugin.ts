@@ -80,18 +80,33 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       const entry = activeQueries.get(k);
       if (!entry) continue;
 
+      // Non-terminal refreshes always use CANONICAL for best-effort UI
       const r = documents.materializeDocument({
         document: entry.document,
         variables: entry.variables,
+        decisionMode: "canonical",
       }) as any;
 
       if (!r || r.status !== "FULFILLED") continue;
 
-      // Update deps for this query (they may change after the write)
+      // Update deps (graph shape may have shifted)
       addDepsForQuery(k, Array.isArray(r.deps) ? r.deps : []);
 
-      entry.emit({ data: r.data, error: null }, false); // non-terminal broadcast
+      entry.emit({ data: r.data, error: null }, false);
       lastResultAtMs.set(k, now);
+    }
+  };
+
+  // Map cache policy to decision mode for the FIRST cache read
+  const firstReadMode = (policy: CachePolicy): "strict" | "canonical" => {
+    switch (policy) {
+      case "cache-first":
+      case "cache-only":
+        return "strict";
+      case "cache-and-network":
+      case "network-only":
+      default:
+        return "canonical";
     }
   };
 
@@ -108,8 +123,10 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
     const downstreamUseResult = ctx.useResult;
 
-    const readCacheFrame = (): { frame: OperationResult<any> | null; deps: string[] } => {
-      const r = documents.materializeDocument({ document, variables }) as any;
+    const readCacheFrame = (
+      mode: "strict" | "canonical",
+    ): { frame: OperationResult<any> | null; deps: string[] } => {
+      const r = documents.materializeDocument({ document, variables, decisionMode: mode }) as any;
       if (!r || r.status !== "FULFILLED") return { frame: null, deps: [] };
       return { frame: { data: r.data, error: null }, deps: Array.isArray(r.deps) ? r.deps : [] };
     };
@@ -121,8 +138,10 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
           return downstreamUseResult(incoming, true);
         }
         const res: any = documents.normalizeDocument({ document, variables, data: incoming.data });
-        // Only broadcast to queries whose deps intersect the touched ids
+
+        // Re-materialize impacted queries (non-terminal)
         broadcastTouched(res?.touched);
+
         // Return mutation payload to caller (terminal)
         return downstreamUseResult({ data: incoming.data, error: null }, true);
       };
@@ -158,7 +177,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     // ---- QUERY ----
     const opKey = op.key as number;
 
-    // Register active query (deps will be filled on first cache read/materialization)
+    // Register active query
     activeQueries.set(opKey, {
       document,
       variables,
@@ -166,12 +185,9 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       deps: new Set(),
     });
 
-    // Ensure we clean up on subsequent re-run (optional: if your environment re-creates plugin per query, this is fine)
-    // In real app you'd also remove on unmount; test env resets between tests.
-
-    // SSR hydration
+    // SSR hydration: prefer STRICT so we don't accidentally accept only-canonical cache
     if (ssr?.isHydrating?.() && policy !== "network-only") {
-      const { frame, deps } = readCacheFrame();
+      const { frame, deps } = readCacheFrame("strict");
       if (frame) {
         addDepsForQuery(opKey, deps);
         return downstreamUseResult(frame, true);
@@ -183,7 +199,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
     // CACHE-ONLY
     if (policy === "cache-only") {
-      const { frame, deps } = readCacheFrame();
+      const { frame, deps } = readCacheFrame(firstReadMode(policy));
       if (frame) {
         addDepsForQuery(opKey, deps);
         return downstreamUseResult(frame, true);
@@ -198,7 +214,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
     // CACHE-FIRST
     if (policy === "cache-first") {
-      const { frame, deps } = readCacheFrame();
+      const { frame, deps } = readCacheFrame(firstReadMode(policy)); // STRICT
       if (frame) {
         addDepsForQuery(opKey, deps);
         downstreamUseResult(frame, true);
@@ -209,7 +225,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
     // CACHE-AND-NETWORK
     if (policy === "cache-and-network") {
-      const { frame, deps } = readCacheFrame();
+      const { frame, deps } = readCacheFrame(firstReadMode(policy)); // CANONICAL
       if (frame) {
         if (isWithinSuspensionWindow) {
           addDepsForQuery(opKey, deps);
@@ -222,9 +238,9 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       }
     }
 
-    // NETWORK-ONLY: short-circuit with recent cached result
+    // NETWORK-ONLY: short-circuit with recent cached result (use CANONICAL for best-effort)
     if (policy === "network-only" && isWithinSuspensionWindow) {
-      const { frame, deps } = readCacheFrame();
+      const { frame, deps } = readCacheFrame("canonical");
       if (frame) {
         addDepsForQuery(opKey, deps);
         downstreamUseResult(frame, true);
@@ -242,12 +258,18 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
       const res: any = documents.normalizeDocument({ document, variables, data: incoming.data });
 
-      // Re-materialize THIS query terminally
-      const r = documents.materializeDocument({ document, variables }) as any;
+      // Re-materialize THIS query terminally using CANONICAL (ensures unions for pagination)
+      const r = documents.materializeDocument({
+        document,
+        variables,
+        decisionMode: "canonical",
+      }) as any;
+
       if (r && r.status === "FULFILLED") {
         addDepsForQuery(opKey, Array.isArray(r.deps) ? r.deps : []);
         downstreamUseResult({ data: r.data, error: null }, true);
       } else {
+        // Fallback: return raw payload if materialization fails
         downstreamUseResult({ data: incoming.data, error: null }, true);
       }
 

@@ -434,13 +434,15 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   const materializeDocument = ({
     document,
     variables = {},
+    decisionMode = "canonical",
   }: {
     document: DocumentNode | CachePlan;
     variables?: Record<string, any>;
+    decisionMode?: "strict" | "canonical";
   }): MaterializeResult => {
     const plan = planner.getPlan(document);
     const lru = getLRU(plan);
-    const vkey = stableStringify(variables);
+    const vkey = `${decisionMode}|${stableStringify(variables)}`;
 
     const deps = new Set<string>();
     const touch = (id?: string | null) => { if (id) deps.add(id); };
@@ -459,6 +461,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     const isConnectionField = (f: PlanField): boolean => Boolean((f as any).isConnection);
 
+    // ---- type-conditions (inline fragments) helpers ----
     const isSubtype = (actual?: string, expected?: string): boolean => {
       if (!expected || !actual) return true;
       if (actual === expected) return true;
@@ -478,6 +481,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       if (Array.isArray(many)) return many.some((t: string) => isSubtype(actualType, t));
       return true;
     };
+    // ----------------------------------------------------
 
     while (tasks.length) {
       const task = tasks.pop() as Task;
@@ -505,6 +509,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           continue;
         }
 
+        // scalar at root
         if (field.fieldName === "__typename") {
           out[outKey] = (root as any).__typename;
         } else {
@@ -546,6 +551,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           if (f.selectionSet && f.selectionSet.length) {
             const link = (snap as any)[buildFieldKey(f, variables)];
 
+            // array-of-refs
             if (link && typeof link === "object" && Array.isArray(link.__refs)) {
               const refs: string[] = link.__refs.slice();
               const arrOut: any[] = new Array(refs.length);
@@ -559,6 +565,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
+            // single ref or missing
             if (!link || !link.__ref) {
               out[f.responseKey] = link === null ? null : undefined;
               allOk = false;
@@ -572,6 +579,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             continue;
           }
 
+          // scalar
           if (f.fieldName === "__typename") {
             out[f.responseKey] = (snap as any).__typename;
           } else {
@@ -580,7 +588,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           }
         }
 
-        // Scalar fallback
+        // Scalar fallback (covers interface-gated scalars)
         if (Array.isArray(field.selectionSet) && field.selectionSet.length) {
           for (let i = 0; i < field.selectionSet.length; i++) {
             const pf = field.selectionSet[i];
@@ -598,18 +606,29 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
       if (task.t === "CONNECTION") {
         const { parentId, field, out, outKey } = task;
-        const pageKey = buildConnectionCanonicalKey(field, parentId, variables);
-        touch(pageKey);
-        const page = graph.getRecord(pageKey);
+
+        // Always read from CANONICAL page to build the data we return…
+        const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
+        touch(canonicalKey);
+        const pageCanonical = graph.getRecord(canonicalKey);
+
+        // …but the *decision* whether this frame is "fulfilled" depends on decisionMode:
+        let ok = !!pageCanonical;
+        if (ok && decisionMode === "strict") {
+          const strictKey = buildConnectionKey(field, parentId, variables);
+          const pageStrict = graph.getRecord(strictKey);
+          ok = !!pageStrict;
+        }
 
         const conn: any = { edges: [], pageInfo: {} };
         out[outKey] = conn;
 
-        if (!page) {
+        if (!ok) {
           allOk = false;
           continue;
         }
 
+        const page = pageCanonical!;
         const selMap = (field as any).selectionMap as Map<string, PlanField> | undefined;
 
         if (selMap && selMap.size) {
@@ -630,7 +649,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               if (edgesRaw && typeof edgesRaw === "object" && Array.isArray(edgesRaw.__refs)) {
                 refs = edgesRaw.__refs.slice();
               } else if (Array.isArray(edgesRaw)) {
-                refs = edgesRaw.map((_: any, i: number) => `${pageKey}.edges.${i}`);
+                refs = edgesRaw.map((_: any, i: number) => `${canonicalKey}.edges.${i}`);
               }
 
               const arr: any[] = new Array(refs.length);
@@ -643,7 +662,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
-            // Other fields on the page
+            // Other fields on the page:
             if (!pf.selectionSet) {
               if (pf.fieldName === "__typename") {
                 conn[pf.responseKey] = (page as any).__typename;
@@ -654,13 +673,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
-            // Nested connection under the page
+            // Nested connection directly under the page
             if (isConnectionField(pf)) {
-              tasks.push({ t: "CONNECTION", parentId: pageKey, field: pf, out: conn, outKey: pf.responseKey });
+              tasks.push({ t: "CONNECTION", parentId: canonicalKey, field: pf, out: conn, outKey: pf.responseKey });
               continue;
             }
 
-            // container/entity under the page (e.g. aggregations)
+            // container/entity under the page (e.g., aggregations)
             const link = (page as any)[buildFieldKey(pf, variables)];
 
             // array-of-refs on page
@@ -759,7 +778,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     }
 
     if (!allOk) {
-      return { status: "MISSING", data: undefined, deps: Array.from(deps) };
+      return { status: "MISSING", data: undefined, deps: Array.from(deps) as any };
     }
 
     const ids = Array.from(deps).sort();
@@ -771,11 +790,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     const cached = lru.get(vkey);
     if (cached && cached.stamp === stamp) {
-      return { data: cached.data, status: "FULFILLED", deps: ids };
+      return { data: cached.data, status: "FULFILLED", deps: ids as any };
     }
 
     lru.set(vkey, { data, stamp });
-    return { data, status: "FULFILLED", deps: ids };
+    return { data, status: "FULFILLED", deps: ids as any };
   };
   /* MATERIALIZE DOCUMENT END */
 
