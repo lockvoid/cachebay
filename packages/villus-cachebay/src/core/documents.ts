@@ -501,8 +501,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     const isConnectionField = (f: PlanField): boolean => {
       const selMap = (f as any).selectionMap as Map<string, PlanField> | undefined;
-      const looksLikeConn =
-        !!selMap?.get?.("edges") || !!selMap?.get?.("pageInfo");
+      const looksLikeConn = !!selMap?.get?.("edges") || !!selMap?.get?.("pageInfo");
       return Boolean((f as any).isConnection || (f as any).connectionKey || looksLikeConn);
     };
 
@@ -580,6 +579,22 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
           if (f.selectionSet && f.selectionSet.length) {
             const link = (snap as any)[buildFieldKey(f, variables)];
+
+            // NEW: array-of-refs (e.g., tags: { __refs: [...] })
+            if (link && typeof link === "object" && Array.isArray(link.__refs)) {
+              const refs: string[] = link.__refs.slice();
+              const arrOut: any[] = new Array(refs.length);
+              out[f.responseKey] = arrOut;
+
+              for (let j = refs.length - 1; j >= 0; j--) {
+                const childOut: any = {};
+                arrOut[j] = childOut;
+                tasks.push({ t: "ENTITY", id: refs[j], field: f, out: childOut });
+              }
+              continue;
+            }
+
+            // Fallback: single ref or missing
             if (!link || !link.__ref) {
               out[f.responseKey] = link === null ? null : undefined;
               allOk = false;
@@ -587,6 +602,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               console.log("[docs] missing nested link", { parentId: id, field: f.responseKey, link });
               continue;
             }
+
             const childId = link.__ref as string;
             const childOut: any = {};
             out[f.responseKey] = childOut;
@@ -629,7 +645,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const edgesPlan = selMap?.get("edges");
         const pageInfoPlan = selMap?.get("pageInfo");
 
-        // connection-level scalars (non-downgrading)
+        // connection-level scalars
         if (selMap) {
           for (const [rk, pf] of selMap) {
             if (rk === "edges" || rk === "pageInfo") continue;
@@ -705,6 +721,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const edgeOut: any = {};
         outArr[idx] = edgeOut;
 
+        // ✅ Always include __typename for edges if present (even if not explicitly selected)
+        if ((edge as any).__typename !== undefined) {
+          edgeOut.__typename = (edge as any).__typename;
+        }
+
         const sel = field.selectionSet || [];
         const nodePlan = field.selectionMap?.get("node");
 
@@ -717,7 +738,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             if (!nlink || !nlink.__ref) {
               edgeOut.node = nlink === null ? null : undefined;
               allOk = false;
-              // eslint-disable-next-line no-console
               console.log("[docs] missing edge.node link", { edgeId: id });
             } else {
               const nid = nlink.__ref as string;
@@ -727,6 +747,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             }
           } else if (!pf.selectionSet) {
             if (pf.fieldName === "__typename") {
+              // (still handle explicit __typename selections too)
               edgeOut[rk] = (edge as any).__typename;
               continue;
             }
