@@ -394,25 +394,39 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     return "{" + keys.map(k => JSON.stringify(k) + ":" + stableStringify(v[k])).join(",") + "}";
   };
 
-  type MaterializeResult = { data?: any; status: "FULFILLED" | "MISSING"; deps?: string[] };
-  type CacheEntry = { data: any; stamp: string };
-
-  const lruByPlan = new WeakMap<CachePlan, LRU<string, CacheEntry>>();
-  const getLRU = (plan: CachePlan) => {
-    let lru = lruByPlan.get(plan);
-    if (!lru) {
-      lru = new LRU<string, CacheEntry>();
-      lruByPlan.set(plan, lru);
-    }
-    return lru;
-  };
-
   type Task =
     | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string }
     | { t: "ENTITY"; id: string; field: PlanField; out: any }
     | { t: "CONNECTION"; parentId: string; field: PlanField; out: any; outKey: string }
     | { t: "PAGE_INFO"; id: string; field: PlanField; out: any }
     | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[] };
+
+  // --- inside createDocuments(...) ---
+
+  type MaterializeResult = { data?: any; status: "FULFILLED" | "MISSING"; deps?: string[] };
+  type CacheEntry = { data: any; stamp: string; deps: string[] };
+
+  const lruByPlan = new WeakMap<CachePlan, LRU<string, CacheEntry>>();
+  const getLRU = (plan: CachePlan) => {
+    let lru = lruByPlan.get(plan);
+    if (!lru) {
+      // bump capacity a bit; adjust to your workload
+      lru = new LRU<string, CacheEntry>(512);
+      lruByPlan.set(plan, lru);
+    }
+    return lru;
+  };
+
+  const makeVersionStamp = (ids: string[]): string => {
+    // relies on graph.getVersion(id) always being available
+    // order must be stable; keep ids sorted in cache entry
+    let s = "";
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      s += id + ":" + graph.getVersion(id) + ";";
+    }
+    return s;
+  };
 
   const materializeDocument = ({
     document,
@@ -427,6 +441,18 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const lru = getLRU(plan);
     const vkey = `${decisionMode}|${stableStringify(variables)}`;
 
+    // ---- O(deps) fast path using versions ----
+    const cached = lru.get(vkey);
+    if (cached) {
+      const currentStamp = makeVersionStamp(cached.deps);
+      if (currentStamp === cached.stamp) {
+        // fully hot: no traversal, return cached data immediately
+        return { data: cached.data, status: "FULFILLED", deps: cached.deps.slice() };
+      }
+      // else fall through to recompute below
+    }
+
+    // ---- full traversal to build data + deps ----
     const deps = new Set<string>();
     const touch = (id?: string | null) => { if (id) deps.add(id); };
 
@@ -436,6 +462,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const root = graph.getRecord(ROOT_ID) || {};
     touch(ROOT_ID);
 
+    type Task =
+      | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string }
+      | { t: "ENTITY"; id: string; field: PlanField; out: any }
+      | { t: "CONNECTION"; parentId: string; field: PlanField; out: any; outKey: string }
+      | { t: "PAGE_INFO"; id: string; field: PlanField; out: any }
+      | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[] };
+
     const tasks: Task[] = [];
     for (let i = plan.root.length - 1; i >= 0; i--) {
       const f = plan.root[i];
@@ -444,14 +477,14 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     const isConnectionField = (f: PlanField): boolean => Boolean((f as any).isConnection);
 
-    // type-conditions (inline fragments)
-    const intfMap = (graph as any).interfaces as Record<string, string[]> | undefined;
     const isSubtype = (actual?: string, expected?: string): boolean => {
       if (!expected || !actual) return true;
       if (actual === expected) return true;
-      const impls = intfMap?.[expected];
+      const intfMap = (graph as any)?.interfaces || (graph as any)?.__interfaces || undefined;
+      const impls: string[] | undefined = intfMap?.[expected];
       return Array.isArray(impls) ? impls.includes(actual) : false;
     };
+
     const fieldAppliesToType = (pf: any, actualType?: string): boolean => {
       const one = pf?.typeCondition ?? pf?.onType ?? pf?.typeName ?? undefined;
       const many = pf?.typeConditions ?? pf?.onTypes ?? pf?.typeNames ?? undefined;
@@ -562,7 +595,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           }
         }
 
-        // scalar fallback for interface-gated fields
+        // Scalar fallback (covers interface-gated scalars)
         if (Array.isArray(field.selectionSet) && field.selectionSet.length) {
           for (let i = 0; i < field.selectionSet.length; i++) {
             const pf = field.selectionSet[i];
@@ -746,27 +779,16 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     }
 
     if (!allOk) {
-      return { status: "MISSING", data: undefined, deps: Array.from(deps) as any };
+      return { status: "MISSING", data: undefined, deps: Array.from(deps) };
     }
 
-    // Fast stamp: versions only
+    // build new stamp using versions (fast) and cache
     const ids = Array.from(deps).sort();
-    let stamp = "";
-    const getVersion = (graph as any).getVersion as (id: string) => number;
-    for (let i = 0; i < ids.length; i++) {
-      const id = ids[i];
-      stamp += id + "#" + (getVersion(id) || 0) + ";";
-    }
+    const stamp = makeVersionStamp(ids);
 
-    const cached = lru.get(vkey);
-    if (cached && cached.stamp === stamp) {
-      return { data: cached.data, status: "FULFILLED", deps: ids as any };
-    }
-
-    lru.set(vkey, { data, stamp });
-    return { data, status: "FULFILLED", deps: ids as any };
+    lru.set(vkey, { data, stamp, deps: ids });
+    return { data, status: "FULFILLED", deps: ids };
   };
-  /* MATERIALIZE DOCUMENT END */
 
   return {
     normalizeDocument,

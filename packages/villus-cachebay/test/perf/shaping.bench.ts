@@ -96,7 +96,7 @@ const QUERY = gql`
 
 function seed(documents: ReturnType<typeof createDocuments>, { posts, comments }: { posts: number; comments: number }) {
   const data = makeResponse({ posts, comments });
-  
+
   documents.normalizeDocument({ document: QUERY, variables: { first: posts }, data });
 }
 
@@ -127,7 +127,7 @@ describe("cachebay-core", () => {
     });
 
     bench(`materialize:canonical(${label})`, () => {
-      documents.materializeDocument({
+      const result = documents.materializeDocument({
         document: QUERY,
         variables: { first: s.posts },
         decisionMode: "canonical",
@@ -142,7 +142,7 @@ describe("cachebay-core", () => {
     });
 
     bench(`materialize:strict(${label})`, () => {
-      documents.materializeDocument({
+      const result = documents.materializeDocument({
         document: QUERY,
         variables: { first: s.posts },
         decisionMode: "strict",
@@ -158,7 +158,7 @@ describe("cachebay-core", () => {
 
     // stamp+LRU hit check (best-case)
     bench(`materialize:canonical (hot LRU)(${label})`, () => {
-      documents.materializeDocument({
+      const result = documents.materializeDocument({
         document: QUERY,
         variables: { first: s.posts },
         decisionMode: "canonical",
