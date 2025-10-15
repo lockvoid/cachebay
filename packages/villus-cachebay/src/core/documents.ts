@@ -15,12 +15,10 @@ import type { CachePlan, PlanField } from "../compiler";
 import type { CanonicalInstance } from "./canonical";
 import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
-import type { ViewsInstance } from "./views";
 import type { DocumentNode } from "graphql";
 
 export type DocumentsDependencies = {
   graph: GraphInstance;
-  views: ViewsInstance;
   planner: PlannerInstance;
   canonical: CanonicalInstance;
 };
@@ -40,24 +38,15 @@ type ConnectionPage = {
   pageKey: string;
 };
 
-type MaterializeArgs = {
-  document: DocumentNode | CachePlan;
-  variables?: Record<string, any>;
-};
-
 export type DocumentsInstance = ReturnType<typeof createDocuments>;
 
-/**
- * Creates a documents manager for normalizing and materializing GraphQL documents.
- * Handles normalization of responses into the graph store and materialization back into JS objects.
- */
 export const createDocuments = (deps: DocumentsDependencies) => {
-  const { graph, views, planner, canonical } = deps;
+  const { graph, planner, canonical } = deps;
 
   /**
-   * Normalizes a GraphQL response into the graph store.
-   * Updates canonical connection pages for queries.
-   */
+    * Normalizes a GraphQL response into the graph store.
+    * Updates canonical connection pages for queries.
+    */
   const normalizeDocument = ({
     document,
     variables = {},
@@ -327,374 +316,392 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     }
   };
 
-  /**
-   * Reads a materialized JS object for a document from the current graph.
-   * Root @connection fields read via canonical keys.
-   * Root object fields deref via stored links { __ref }.
-   * Preserves null vs undefined for missing links.
-   */
-  const materializeDocument = ({ document, variables = {} }: MaterializeArgs) => {
-    const plan = planner.getPlan(document);
-    const rootSnap = graph.getRecord(ROOT_ID) || {};
-    const result: Record<string, any> = {};
+  /* MATERIALIZE DOCUMENT START */
 
-    for (let i = 0; i < plan.root.length; i++) {
-      const field = plan.root[i];
 
-      if (field.isConnection) {
-        const canKey = buildConnectionCanonicalKey(field, ROOT_ID, variables);
-        result[field.responseKey] = views.getView({
-          source: canKey,
-          field,
-          variables,
-          canonical: true,
-        });
-        continue;
-      }
-
-      const linkKey = buildFieldKey(field, variables);
-      const link = (rootSnap as any)[linkKey];
-
-      if (!link || !link.__ref) {
-        result[field.responseKey] = link === null ? null : undefined;
-        continue;
-      }
-
-      result[field.responseKey] = views.getView({
-        source: link.__ref,
-        field,
-        variables,
-        canonical: true,
-      });
-    }
-
-    return result;
+  type MaterializeArgs = {
+    document: DocumentNode | CachePlan;
+    variables?: Record<string, any>;
   };
 
-  /**
-   * Returns true if all required data for a document is present in the graph.
-   * Checks actual normalized pages, not canonical aggregates.
-   */
-  const hasDocument = ({
+  // Tiny LRU for document results
+  class LRU<K, V> {
+    constructor(private cap = 64) { }
+    private m = new Map<K, V>();
+    get(k: K): V | undefined {
+      const v = this.m.get(k);
+      if (v !== undefined) {
+        this.m.delete(k);
+        this.m.set(k, v);
+      }
+      return v;
+    }
+    set(k: K, v: V): void {
+      if (this.m.has(k)) this.m.delete(k);
+      this.m.set(k, v);
+      if (this.m.size > this.cap) {
+        const oldest = this.m.keys().next().value as K;
+        this.m.delete(oldest);
+      }
+    }
+    delete(k: K) { this.m.delete(k); }
+    clear() { this.m.clear(); }
+  }
+
+  // Stable stringify for variables → cache key
+  const stableStringify = (v: any): string => {
+    if (v === null || typeof v !== "object") return JSON.stringify(v);
+    if (Array.isArray(v)) return "[" + v.map(stableStringify).join(",") + "]";
+    const keys = Object.keys(v).sort();
+    return "{" + keys.map(k => JSON.stringify(k) + ":" + stableStringify(v[k])).join(",") + "}";
+  };
+
+  // Build a compact stamp for a normalized record
+  const stampOfRecord = (rec: any): string => {
+    if (!rec || typeof rec !== "object") return String(rec);
+    const keys = Object.keys(rec).sort();
+    let s = "";
+    for (const k of keys) {
+      const v = (rec as any)[k];
+      if (v === undefined) { s += `|${k}:u`; continue; }
+      if (v === null) { s += `|${k}:n`; continue; }
+      if (typeof v === "object") {
+        if ((v as any).__ref) s += `|${k}:r:${(v as any).__ref}`;
+        else if (Array.isArray((v as any).__refs)) s += `|${k}:rs:${(v as any).__refs.join(",")}`;
+        else if (Array.isArray(v)) s += `|${k}:a:${v.length}`;
+        else s += `|${k}:o:${Object.keys(v).length}`;
+      } else {
+        s += `|${k}:p:${String(v)}`;
+      }
+    }
+    return s;
+  };
+
+  type MaterializeResult = { data?: any; status: "FULFILLED" | "MISSING" };
+  type CacheEntry = { data: any; stamp: string };
+
+  // Per-plan LRU (bound by plan identity, then variables)
+  const lruByPlan = new WeakMap<CachePlan, LRU<string, CacheEntry>>();
+  const getLRU = (plan: CachePlan) => {
+    let lru = lruByPlan.get(plan);
+    if (!lru) {
+      lru = new LRU<string, CacheEntry>(64);
+      lruByPlan.set(plan, lru);
+    }
+    return lru;
+  };
+
+  // ---------- Iterative materializer (no recursion) ----------
+
+  type Task =
+    | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string }
+    | { t: "ENTITY"; id: string; field: PlanField; out: any }
+    | { t: "CONNECTION"; parentId: string; field: PlanField; out: any; outKey: string }
+    | { t: "PAGE_INFO"; id: string; field: PlanField; out: any } // field is the pageInfo PlanField
+    | { t: "EDGE"; id: string; field: PlanField; outArr: any[] }; // field is the edges PlanField
+
+  const materializeDocument = ({
     document,
     variables = {},
   }: {
     document: DocumentNode | CachePlan;
     variables?: Record<string, any>;
-  }): boolean => {
+  }): MaterializeResult => {
     const plan = planner.getPlan(document);
-    if (plan.operation === "fragment") {
-      return false;
+    const lru = getLRU(plan);
+    const vkey = stableStringify(variables);
+
+    const deps = new Set<string>();
+    const touch = (id?: string | null) => { if (id) deps.add(id); };
+
+    type Task =
+      | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string }
+      | { t: "ENTITY"; id: string; field: PlanField; out: any }
+      | { t: "CONNECTION"; parentId: string; field: PlanField; out: any; outKey: string }
+      | { t: "PAGE_INFO"; id: string; field: PlanField; out: any }
+      | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[] };
+
+    const data: Record<string, any> = {};
+    let allOk = true;
+
+    const root = graph.getRecord(ROOT_ID) || {};
+    touch(ROOT_ID);
+
+    const tasks: Task[] = [];
+    for (let i = plan.root.length - 1; i >= 0; i--) {
+      const f = plan.root[i];
+      tasks.push({ t: "ROOT_FIELD", parentId: ROOT_ID, field: f, out: data, outKey: f.responseKey });
     }
 
-    const visited = new Set<string>();
+    // eslint-disable-next-line no-console
+    console.log("[docs] materialize:start", { op: plan.operation, rootFields: plan.root.map(f => f.responseKey) });
 
-    const hasOwn = (obj: any, k: string): boolean => {
-      return obj != null && Object.prototype.hasOwnProperty.call(obj, k);
+    const isConnectionField = (f: PlanField): boolean => {
+      const selMap = (f as any).selectionMap as Map<string, PlanField> | undefined;
+      const looksLikeConn =
+        !!selMap?.get?.("edges") || !!selMap?.get?.("pageInfo");
+      return Boolean((f as any).isConnection || (f as any).connectionKey || looksLikeConn);
     };
 
-    const getTypeName = (id: string): string | undefined => {
-      const rec = graph.getRecord(id);
-      return rec ? (rec.__typename as string | undefined) : undefined;
-    };
+    while (tasks.length) {
+      const task = tasks.pop() as Task;
 
-    const getGuard = (f: PlanField): string | undefined => {
-      return (f as any).typeCondition as string | undefined;
-    };
+      if (task.t === "ROOT_FIELD") {
+        const { parentId, field, out, outKey } = task;
 
-    const getSelMap = (f: PlanField): any => {
-      return (f as any).selectionMap || null;
-    };
+        const treatAsConn = isConnectionField(field);
+        // eslint-disable-next-line no-console
+        console.log("[docs] root-field", { field: field.responseKey, treatAsConn });
 
-    const selGet = (container: PlanField, key: string): PlanField | undefined => {
-      const map = getSelMap(container);
-      if (!map) {
-        return undefined;
-      }
-
-      if (typeof map.get === "function") {
-        return map.get(key);
-      }
-
-      return map[key];
-    };
-
-    const selForEach = (container: PlanField, cb: (rk: string, child: PlanField) => void): void => {
-      const map = getSelMap(container);
-      if (!map) {
-        return;
-      }
-
-      if (typeof map.forEach === "function") {
-        (map as Map<string, PlanField>).forEach((child, rk) => cb(rk, child));
-        return;
-      }
-
-      const keys = Object.keys(map);
-      for (let i = 0; i < keys.length; i++) {
-        const rk = keys[i];
-        cb(rk, map[rk]);
-      }
-    };
-
-    const buildTypeCaseSkipSet = (field: PlanField): Set<string> | null => {
-      const tc = (field as any).typeCases;
-      if (!tc) {
-        return null;
-      }
-
-      const skip = new Set<string>();
-
-      if (typeof (tc as any).forEach === "function") {
-        (tc as Map<string, PlanField[]>).forEach((arr: PlanField[]) => {
-          if (!arr || !arr.length) {
-            return;
-          }
-
-          for (let i = 0; i < arr.length; i++) {
-            skip.add(buildFieldKey(arr[i], variables));
-          }
-        });
-        return skip;
-      }
-
-      const obj = tc as Record<string, PlanField[]>;
-      const tks = Object.keys(obj);
-      for (let i = 0; i < tks.length; i++) {
-        const arr = obj[tks[i]];
-        if (!arr || !arr.length) {
+        if (treatAsConn) {
+          tasks.push({ t: "CONNECTION", parentId, field, out, outKey });
           continue;
         }
 
-        for (let j = 0; j < arr.length; j++) {
-          skip.add(buildFieldKey(arr[j], variables));
+        if (field.selectionSet && field.selectionSet.length) {
+          const snap = graph.getRecord(parentId) || {};
+          const link = (snap as any)[buildFieldKey(field, variables)];
+          if (!link || !link.__ref) {
+            out[outKey] = link === null ? null : undefined;
+            allOk = false;
+            // eslint-disable-next-line no-console
+            console.log("[docs] missing root link", { field: field.responseKey, parentId, link });
+            continue;
+          }
+          const childId = link.__ref as string;
+          const childOut: any = {};
+          out[outKey] = childOut;
+          tasks.push({ t: "ENTITY", id: childId, field, out: childOut });
+          continue;
         }
+
+        // scalar at root
+        if (field.fieldName === "__typename") {
+          out[outKey] = (root as any).__typename;
+        } else {
+          const sk = buildFieldKey(field, variables);
+          out[outKey] = (root as any)[sk]; // undefined allowed
+        }
+        continue;
       }
 
-      return skip;
-    };
+      if (task.t === "ENTITY") {
+        const { id, field, out } = task;
+        const rec = graph.getRecord(id);
+        touch(id);
 
-    const checkPolymorphicSelection = (parentId: string, field: PlanField, parentTypeName?: string): boolean => {
-      const typeCaseSkip = buildTypeCaseSkipSet(field);
+        // eslint-disable-next-line no-console
+        console.log("[docs] entity", { id, field: field.responseKey, treatAsConnNext: (field.selectionMap as any)?.get?.("posts") && isConnectionField((field.selectionMap as any)?.get?.("posts")) });
 
-      const baseMap = getSelMap(field);
-      if (baseMap) {
-        let ok = true;
-
-        selForEach(field, (_rk, child) => {
-          if (!ok) {
-            return;
-          }
-
-          const guard = getGuard(child);
-          if (guard && parentTypeName && guard !== parentTypeName) {
-            return;
-          }
-
-          if (typeCaseSkip && typeCaseSkip.has(buildFieldKey(child, variables))) {
-            return;
-          }
-
-          if (!checkSelection(parentId, child, parentTypeName)) {
-            ok = false;
-          }
-        });
-
-        if (!ok) {
-          return false;
+        if (!rec) {
+          allOk = false;
+          // eslint-disable-next-line no-console
+          console.log("[docs] entity record MISSING", { id, field: field.responseKey });
         }
-      }
 
-      if (parentTypeName) {
-        const tc = (field as any).typeCases;
-        if (tc) {
-          const list = typeof (tc as any).get === "function"
-            ? (tc as Map<string, PlanField[]>).get(parentTypeName)
-            : (tc as Record<string, PlanField[]>)[parentTypeName];
+        const snap = rec || {};
 
-          if (list && list.length) {
-            for (let i = 0; i < list.length; i++) {
-              if (!checkSelection(parentId, list[i], parentTypeName)) {
-                return false;
-              }
+        if ((snap as any).__typename !== undefined) {
+          out.__typename = (snap as any).__typename;
+        }
+
+        const sel = field.selectionSet || [];
+        for (let i = sel.length - 1; i >= 0; i--) {
+          const f = sel[i];
+
+          const treatAsConn = isConnectionField(f);
+          if (treatAsConn) {
+            tasks.push({ t: "CONNECTION", parentId: id, field: f, out, outKey: f.responseKey });
+            continue;
+          }
+
+          if (f.selectionSet && f.selectionSet.length) {
+            const link = (snap as any)[buildFieldKey(f, variables)];
+            if (!link || !link.__ref) {
+              out[f.responseKey] = link === null ? null : undefined;
+              allOk = false;
+              // eslint-disable-next-line no-console
+              console.log("[docs] missing nested link", { parentId: id, field: f.responseKey, link });
+              continue;
             }
+            const childId = link.__ref as string;
+            const childOut: any = {};
+            out[f.responseKey] = childOut;
+            tasks.push({ t: "ENTITY", id: childId, field: f, out: childOut });
+            continue;
+          }
+
+          // scalar
+          if (f.fieldName === "__typename") {
+            out[f.responseKey] = (snap as any).__typename;
+          } else {
+            const sk = buildFieldKey(f, variables);
+            out[f.responseKey] = (snap as any)[sk]; // undefined allowed
           }
         }
+
+        continue;
       }
 
-      return true;
-    };
-
-    const checkSelection = (parentId: string, field: PlanField, parentTypeName?: string): boolean => {
-      const guard = getGuard(field);
-      if (guard && parentTypeName && guard !== parentTypeName) {
-        return true;
-      }
-
-      if (field.isConnection) {
-        const pageKey = buildConnectionKey(field, parentId, variables);
+      if (task.t === "CONNECTION") {
+        const { parentId, field, out, outKey } = task;
+        const pageKey = buildConnectionCanonicalKey(field, parentId, variables);
+        touch(pageKey);
         const page = graph.getRecord(pageKey);
+
+        // eslint-disable-next-line no-console
+        console.log("[docs] connection", { parentId, field: field.responseKey, pageKey, hasPage: !!page });
+
+        const conn: any = { edges: [], pageInfo: {} };
+        out[outKey] = conn;
+
         if (!page) {
-          return false;
+          allOk = false;
+          // eslint-disable-next-line no-console
+          console.log("[docs] missing connection page", { parentId, field: field.responseKey, pageKey });
+          continue;
         }
 
-        const map = getSelMap(field);
-        if (map) {
-          const piField = selGet(field, "pageInfo");
-          if (piField) {
-            const piLink = (page as any).pageInfo;
-            if (!piLink || !piLink.__ref) {
-              return false;
-            }
+        const selMap = (field as any).selectionMap as Map<string, PlanField> | undefined;
+        const edgesPlan = selMap?.get("edges");
+        const pageInfoPlan = selMap?.get("pageInfo");
 
-            const piId = piLink.__ref as string;
-            if (getSelMap(piField)) {
-              if (!checkPolymorphicSelection(piId, piField, getTypeName(piId))) {
-                return false;
-              }
+        // connection-level scalars (non-downgrading)
+        if (selMap) {
+          for (const [rk, pf] of selMap) {
+            if (rk === "edges" || rk === "pageInfo") continue;
+            if (pf.fieldName === "__typename") {
+              conn[pf.responseKey] = (page as any).__typename;
+              continue;
+            }
+            if (!pf.selectionSet) {
+              const sk = buildFieldKey(pf, variables);
+              conn[pf.responseKey] = (page as any)[sk];
             }
           }
+        }
 
-          let ok = true;
-          selForEach(field, (rk, child) => {
-            if (!ok) {
-              return;
-            }
+        // pageInfo
+        if (pageInfoPlan) {
+          const piLink = (page as any).pageInfo;
+          if (piLink && piLink.__ref) {
+            tasks.push({ t: "PAGE_INFO", id: piLink.__ref as string, field: pageInfoPlan, out: conn });
+          } else {
+            conn.pageInfo = {};
+          }
+        }
 
-            if (rk === "edges" || rk === "pageInfo") {
-              return;
-            }
+        // edges
+        const edgesRaw = (page as any).edges;
+        let refs: string[] = [];
+        if (edgesRaw && typeof edgesRaw === "object" && Array.isArray(edgesRaw.__refs)) {
+          refs = edgesRaw.__refs.slice();
+        } else if (Array.isArray(edgesRaw)) {
+          refs = edgesRaw.map((_: any, i: number) => `${pageKey}.edges.${i}`);
+        }
 
-            const key = buildFieldKey(child, variables);
+        const arr: any[] = new Array(refs.length);
+        conn.edges = arr;
 
-            if (child.selectionSet && child.selectionSet.length) {
-              const link = (page as any)[key];
-              if (!link || !link.__ref) {
-                ok = false;
-                return;
-              }
+        if (edgesPlan) {
+          for (let i = refs.length - 1; i >= 0; i--) {
+            const eid = refs[i];
+            tasks.push({ t: "EDGE", id: eid, idx: i, field: edgesPlan, outArr: arr });
+          }
+        }
 
-              const id = link.__ref as string;
-              const token = `${pageKey}:${key}:${id}`;
-              if (!visited.has(token)) {
-                visited.add(token);
-                if (!checkPolymorphicSelection(id, child, getTypeName(id))) {
-                  ok = false;
-                }
-              }
+        continue;
+      }
+
+      if (task.t === "PAGE_INFO") {
+        const { id, field, out } = task;
+        touch(id);
+        const pi = graph.getRecord(id) || {};
+        const piOut: any = {};
+        const sel = field.selectionSet || [];
+
+        for (let i = 0; i < sel.length; i++) {
+          const pf = sel[i];
+          if (pf.selectionSet) continue;
+          if (pf.fieldName === "__typename") {
+            piOut[pf.responseKey] = (pi as any).__typename;
+            continue;
+          }
+          const sk = buildFieldKey(pf, variables);
+          piOut[pf.responseKey] = (pi as any)[sk];
+        }
+
+        out.pageInfo = piOut;
+        continue;
+      }
+
+      if (task.t === "EDGE") {
+        const { id, idx, field, outArr } = task;
+        touch(id);
+        const edge = graph.getRecord(id) || {};
+        const edgeOut: any = {};
+        outArr[idx] = edgeOut;
+
+        const sel = field.selectionSet || [];
+        const nodePlan = field.selectionMap?.get("node");
+
+        for (let i = 0; i < sel.length; i++) {
+          const pf = sel[i];
+          const rk = pf.responseKey;
+
+          if (rk === "node") {
+            const nlink = (edge as any).node;
+            if (!nlink || !nlink.__ref) {
+              edgeOut.node = nlink === null ? null : undefined;
+              allOk = false;
+              // eslint-disable-next-line no-console
+              console.log("[docs] missing edge.node link", { edgeId: id });
             } else {
-              if (!hasOwn(page, key)) {
-                ok = false;
-              }
+              const nid = nlink.__ref as string;
+              const nOut: any = {};
+              edgeOut.node = nOut;
+              tasks.push({ t: "ENTITY", id: nid, field: nodePlan as PlanField, out: nOut });
             }
-          });
-
-          if (!ok) {
-            return false;
-          }
-
-          const edgesField = selGet(field, "edges");
-          const nodeField = edgesField && selGet(edgesField, "node");
-          if (edgesField && nodeField && nodeField.selectionSet && nodeField.selectionSet.length) {
-            const edges = (page as any).edges;
-            let refs: string[] | null = null;
-
-            if (edges && typeof edges === "object" && Array.isArray(edges.__refs)) {
-              refs = edges.__refs as string[];
-            } else if (Array.isArray(edges)) {
-              const len = edges.length;
-              refs = new Array(len);
-              for (let i = 0; i < len; i++) {
-                refs[i] = `${pageKey}.edges.${i}`;
-              }
+          } else if (!pf.selectionSet) {
+            if (pf.fieldName === "__typename") {
+              edgeOut[rk] = (edge as any).__typename;
+              continue;
             }
-
-            if (refs && refs.length) {
-              for (let i = 0; i < refs.length; i++) {
-                const edgeRec = graph.getRecord(refs[i]);
-                const nodeRef = edgeRec && edgeRec.node ? edgeRec.node.__ref : undefined;
-                if (!nodeRef) {
-                  continue;
-                }
-
-                const nodeId = nodeRef as string;
-                const token = `${pageKey}:node:${nodeId}`;
-                if (visited.has(token)) {
-                  continue;
-                }
-
-                visited.add(token);
-
-                if (!checkPolymorphicSelection(nodeId, nodeField, getTypeName(nodeId))) {
-                  return false;
-                }
-              }
-            }
+            const sk = buildFieldKey(pf, variables);
+            edgeOut[rk] = (edge as any)[sk];
           }
         }
 
-        return true;
-      }
-
-      const parentSnap = graph.getRecord(parentId) || {};
-      if (field.selectionSet && field.selectionSet.length) {
-        const linkKey = buildFieldKey(field, variables);
-        const link = (parentSnap as any)[linkKey];
-        if (!link || !link.__ref) {
-          return false;
-        }
-
-        const childId = link.__ref as string;
-        const token = `${parentId}:${field.responseKey || field.fieldName}:${childId}`;
-        if (!visited.has(token)) {
-          visited.add(token);
-          if (!checkPolymorphicSelection(childId, field, getTypeName(childId))) {
-            return false;
-          }
-        }
-
-        return true;
-      }
-
-      return hasOwn(parentSnap, buildFieldKey(field, variables));
-    };
-
-    const rootSnap = graph.getRecord(ROOT_ID) || {};
-    for (let i = 0; i < plan.root.length; i++) {
-      const f = plan.root[i];
-
-      if (f.isConnection) {
-        if (!checkSelection(ROOT_ID, f, getTypeName(ROOT_ID))) {
-          return false;
-        }
         continue;
-      }
-
-      if (f.selectionSet && f.selectionSet.length) {
-        const linkKey = buildFieldKey(f, variables);
-        const link = (rootSnap as any)[linkKey];
-        if (!link || !link.__ref) {
-          return false;
-        }
-
-        const childId = link.__ref as string;
-        if (!checkPolymorphicSelection(childId, f, getTypeName(childId))) {
-          return false;
-        }
-        continue;
-      }
-
-      if (!hasOwn(rootSnap, buildFieldKey(f, variables))) {
-        return false;
       }
     }
 
-    return true;
+    // eslint-disable-next-line no-console
+    console.log("[docs] materialize:status", allOk ? "FULFILLED" : "MISSING");
+
+    if (!allOk) {
+      return { status: "MISSING", data: undefined };
+    }
+
+    const ids = Array.from(deps).sort();
+    let stamp = "";
+    for (const id of ids) {
+      const rec = graph.getRecord(id) || {};
+      stamp += id + ":" + stampOfRecord(rec) + ";";
+    }
+
+    const cached = lru.get(vkey);
+    if (cached && cached.stamp === stamp) {
+      return { data: cached.data, status: "FULFILLED" };
+    }
+
+    lru.set(vkey, { data, stamp });
+    return { data, status: "FULFILLED" };
   };
+  /* MATERIALIZE DOCUMENT END */
 
   return {
     normalizeDocument,
     materializeDocument,
-    hasDocument,
   };
 };

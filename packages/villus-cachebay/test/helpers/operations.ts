@@ -425,6 +425,7 @@ export const USER_POSTS_QUERY = `
 
             author {
               id
+              email
             }
           }
         }
