@@ -1287,6 +1287,8 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       tags: connectionTags,
     };
 
+    console.log("postsData", JSON.stringify(postsData, null, 2));
+
     documents.normalizeDocument({
       document: POSTS_WITH_AGGREGATIONS_QUERY,
       variables: {
