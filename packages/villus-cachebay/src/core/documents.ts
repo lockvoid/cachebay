@@ -44,9 +44,10 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   const { graph, planner, canonical } = deps;
 
   /**
-    * Normalizes a GraphQL response into the graph store.
-    * Updates canonical connection pages for queries.
-    */
+   * Normalizes a GraphQL response into the graph store.
+   * Updates canonical connection pages for queries.
+   * RETURNS the set of touched ids (records/pages) for targeted re-emits.
+   */
   const normalizeDocument = ({
     document,
     variables = {},
@@ -55,11 +56,17 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     document: DocumentNode | CachePlan;
     variables?: Record<string, any>;
     data: any;
-  }): void => {
+  }): { touched: Set<string> } => {
+    const touched = new Set<string>();
+    const put = (id: string, patch: Record<string, any>) => {
+      touched.add(id);
+      graph.putRecord(id, patch);
+    };
+
     const plan = planner.getPlan(document);
     const isQuery = plan.operation === "query";
 
-    graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
+    put(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
 
     const connectionPages: ConnectionPage[] = [];
 
@@ -88,7 +95,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
       /* ====== ARRAYS ====== */
       if (kind === TRAVERSE_ARRAY) {
-        // Connection edges special-case
+        // Connection edges
         if (frame.insideConnection && responseKey === "edges") {
           const pageKey = frame.pageKey as string;
           const rawEdges: any[] = Array.isArray(valueNode) ? valueNode : [];
@@ -96,7 +103,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           for (let i = 0; i < rawEdges.length; i++) {
             edgeRefs[i] = `${pageKey}.edges.${i}`;
           }
-          graph.putRecord(pageKey, { edges: { __refs: edgeRefs } });
+          put(pageKey, { edges: { __refs: edgeRefs } });
 
           const edgesField = fieldsMap?.get("edges");
           return {
@@ -109,92 +116,72 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           } as Frame;
         }
 
-        // Plain arrays (no selection) -> store raw array as-is
+        // Plain array scalar/object values without selection → store raw array
         if (planField && !planField.selectionSet) {
           const fieldKey = buildFieldKey(planField, variables);
           const arr = valueNode as any[];
           const out = new Array(arr.length);
           for (let i = 0; i < arr.length; i++) out[i] = arr[i];
-          graph.putRecord(parentId, { [fieldKey]: out });
+          put(parentId, { [fieldKey]: out });
           return TRAVERSE_SKIP;
         }
 
-        // Arrays of OBJECTS with a selection (e.g., post.tags)
+        // Arrays of objects WITH a selection
         if (planField && planField.selectionSet) {
           const fieldKey = buildFieldKey(planField, variables);
           const arr = Array.isArray(valueNode) ? (valueNode as any[]) : [];
           const baseKey = `${parentId}.${fieldKey}`;
 
-          // Build refs and pre-create item records
           const refs: string[] = new Array(arr.length);
           for (let i = 0; i < arr.length; i++) {
             const item = arr[i];
             const entKey = isObject(item) ? graph.identify(item) : null;
             const itemKey = entKey ?? `${baseKey}.${i}`;
-
-            // Ensure the record exists (with typename if provided)
             if (isObject(item)) {
-              if ((item as any).__typename) {
-                graph.putRecord(itemKey, { __typename: (item as any).__typename });
-              } else {
-                graph.putRecord(itemKey, {});
-              }
+              if ((item as any).__typename) put(itemKey, { __typename: (item as any).__typename });
+              else put(itemKey, {});
             }
-
             refs[i] = itemKey;
           }
 
-          // Link parent -> array via __refs
-          graph.putRecord(parentId, { [fieldKey]: { __refs: refs } });
+          put(parentId, { [fieldKey]: { __refs: refs } });
 
-          // Tell traversal we're entering array items; reuse pageKey to carry baseKey
           return {
-            parentId,                                // parent stays same; items handled in next TRAVERSE_OBJECT
-            fields: planField.selectionSet,          // the item's selection
+            parentId,
+            fields: planField.selectionSet,
             fieldsMap: planField.selectionMap,
             insideConnection: false,
-            pageKey: baseKey,                        // used to derive inline container keys
-            inEdges: true,                           // "edge-like" iteration over array indices
+            pageKey: baseKey,
+            inEdges: true,
           } as Frame;
         }
 
-        // Nothing special to do; keep current frame
         return frame;
       }
 
       /* ====== OBJECTS ====== */
       if (kind === TRAVERSE_OBJECT) {
-        // Plain object field with no selection → store inline value
+        // Plain object field with no selection
         if (planField && !planField.selectionSet) {
           const fieldKey = buildFieldKey(planField, variables);
-          graph.putRecord(parentId, { [fieldKey]: valueNode });
+          put(parentId, { [fieldKey]: valueNode });
           return TRAVERSE_SKIP;
         }
 
-        // Array item objects (generic arrays of objects, not connections)
+        // Generic array item objects (not connection edges)
         if (!frame.insideConnection && frame.inEdges && typeof responseKey === "number") {
-          // Compute the per-item storage key:
-          // - entity objects use their identified id
-          // - inline containers use "<parent>.<fieldKey>.<index>"
           const item = valueNode as any;
           const entKey = isObject(item) ? graph.identify(item) : null;
-
-          // frame.pageKey holds "<parentId>.<fieldKey>" from the array branch
           const itemKey = entKey ?? `${frame.pageKey}.${responseKey}`;
 
-          // Ensure record exists; set typename if present
           if (isObject(item)) {
-            if (item.__typename) {
-              graph.putRecord(itemKey, { __typename: item.__typename });
-            } else {
-              graph.putRecord(itemKey, {});
-            }
+            if (item.__typename) put(itemKey, { __typename: item.__typename });
+            else put(itemKey, {});
           }
 
-          // Dive into the item using the array's item selection
           return {
             parentId: itemKey,
-            fields: frame.fields,       // selection for array items
+            fields: frame.fields,
             fieldsMap: frame.fieldsMap,
             insideConnection: false,
             pageKey: frame.pageKey,
@@ -202,22 +189,17 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           } as Frame;
         }
 
-        // Connection edge objects (edges[i])
+        // Connection edges[i]
         if (frame.insideConnection && frame.inEdges && typeof responseKey === "number") {
           const edgeKey = `${frame.pageKey}.edges.${responseKey}`;
 
-          if (valueNode && (valueNode as any).__typename) {
-            graph.putRecord(edgeKey, { __typename: (valueNode as any).__typename });
-          } else {
-            graph.putRecord(edgeKey, {});
-          }
+          if (valueNode && (valueNode as any).__typename) put(edgeKey, { __typename: (valueNode as any).__typename });
+          else put(edgeKey, {});
 
           const nodeObj = (valueNode as any).node;
           if (nodeObj) {
             const nodeKey = graph.identify(nodeObj);
-            if (nodeKey) {
-              graph.putRecord(edgeKey, { node: { __ref: nodeKey } });
-            }
+            if (nodeKey) put(edgeKey, { node: { __ref: nodeKey } });
           }
 
           return {
@@ -245,9 +227,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             for (let i = 0; i < keys.length; i++) {
               const k = keys[i];
               if (k === "__typename" || k === "edges" || k === "pageInfo") continue;
-
               const v = (valueNode as any)[k];
-
               if (v !== undefined && v !== null && typeof v !== "object") {
                 pageRecord[k] = v;
               } else if (Array.isArray(v) || (v !== null && typeof v === "object" && !(v && (v as any).__typename))) {
@@ -256,21 +236,17 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             }
           }
 
-          graph.putRecord(pageKey, pageRecord);
+          put(pageKey, pageRecord);
 
           if ((valueNode as any)?.pageInfo) {
             const pageInfoKey = `${pageKey}.pageInfo`;
-            graph.putRecord(pageKey, { pageInfo: { __ref: pageInfoKey } });
-
+            put(pageKey, { pageInfo: { __ref: pageInfoKey } });
             const piTypename = (valueNode as any)?.pageInfo?.__typename;
-            graph.putRecord(pageInfoKey, piTypename ? { __typename: piTypename } : {});
+            put(pageInfoKey, piTypename ? { __typename: piTypename } : {});
           }
 
           if (isQuery) {
-            graph.putRecord(parentId, { [parentFieldKey]: { __ref: pageKey } });
-          }
-
-          if (isQuery) {
+            put(parentId, { [parentFieldKey]: { __ref: pageKey } });
             connectionPages.push({ field: planField, parentId, pageKey });
           }
 
@@ -288,15 +264,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         {
           const entityKey = graph.identify(valueNode);
           if (entityKey) {
-            if (valueNode && (valueNode as any).__typename) {
-              graph.putRecord(entityKey, { __typename: (valueNode as any).__typename });
-            } else {
-              graph.putRecord(entityKey, {});
-            }
+            if (valueNode && (valueNode as any).__typename) put(entityKey, { __typename: (valueNode as any).__typename });
+            else put(entityKey, {});
 
             if (isQuery && planField && !(frame.insideConnection && planField.responseKey === "node")) {
               const parentFieldKey = buildFieldKey(planField, variables);
-              graph.putRecord(parentId, { [parentFieldKey]: { __ref: entityKey } });
+              put(parentId, { [parentFieldKey]: { __ref: entityKey } });
             }
 
             const fromNode = !!planField && planField.responseKey === "node";
@@ -312,23 +285,20 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           }
         }
 
-        // Inline container object
+        // Inline container
         if (planField) {
           const containerFieldKey = buildFieldKey(planField, variables);
           const containerKey = `${parentId}.${containerFieldKey}`;
 
-          if (valueNode && (valueNode as any).__typename) {
-            graph.putRecord(containerKey, { __typename: (valueNode as any).__typename });
-          } else {
-            graph.putRecord(containerKey, {});
-          }
+          if (valueNode && (valueNode as any).__typename) put(containerKey, { __typename: (valueNode as any).__typename });
+          else put(containerKey, {});
 
           if (isQuery) {
-            graph.putRecord(parentId, { [containerFieldKey]: { __ref: containerKey } });
+            put(parentId, { [containerFieldKey]: { __ref: containerKey } });
           }
 
           if (frame.insideConnection && containerFieldKey === "pageInfo" && frame.pageKey) {
-            graph.putRecord(frame.pageKey, { pageInfo: { __ref: containerKey } });
+            put(frame.pageKey, { pageInfo: { __ref: containerKey } });
           }
 
           return {
@@ -350,7 +320,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           const f = fieldsMap.get(responseKey);
           if (f && !f.selectionSet) {
             const fieldKey = buildFieldKey(f, variables);
-            graph.putRecord(frame.parentId, { [fieldKey]: valueNode });
+            put(frame.parentId, { [fieldKey]: valueNode });
           }
         }
         return frame;
@@ -361,7 +331,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     traverseFast(data, initialFrame, visit);
 
-    // Update canonical connections (queries only)
+    // Update canonical connections (queries only) and mark canonical key as touched
     if (isQuery && connectionPages.length > 0) {
       for (let i = 0; i < connectionPages.length; i++) {
         const { field, parentId, pageKey } = connectionPages[i];
@@ -375,19 +345,22 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           pageKey,
           normalizedPage: pageRecord,
         });
+
+        const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
+        touched.add(canonicalKey);
       }
     }
+
+    return { touched };
   };
 
   /* MATERIALIZE DOCUMENT START */
-
 
   type MaterializeArgs = {
     document: DocumentNode | CachePlan;
     variables?: Record<string, any>;
   };
 
-  // Tiny LRU for document results
   class LRU<K, V> {
     constructor(private cap = 64) { }
     private m = new Map<K, V>();
@@ -411,7 +384,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     clear() { this.m.clear(); }
   }
 
-  // Stable stringify for variables → cache key
   const stableStringify = (v: any): string => {
     if (v === null || typeof v !== "object") return JSON.stringify(v);
     if (Array.isArray(v)) return "[" + v.map(stableStringify).join(",") + "]";
@@ -419,7 +391,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     return "{" + keys.map(k => JSON.stringify(k) + ":" + stableStringify(v[k])).join(",") + "}";
   };
 
-  // Build a compact stamp for a normalized record
   const stampOfRecord = (rec: any): string => {
     if (!rec || typeof rec !== "object") return String(rec);
     const keys = Object.keys(rec).sort();
@@ -440,10 +411,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     return s;
   };
 
-  type MaterializeResult = { data?: any; status: "FULFILLED" | "MISSING" };
+  type MaterializeResult = { data?: any; status: "FULFILLED" | "MISSING"; deps?: string[] };
   type CacheEntry = { data: any; stamp: string };
 
-  // Per-plan LRU (bound by plan identity, then variables)
   const lruByPlan = new WeakMap<CachePlan, LRU<string, CacheEntry>>();
   const getLRU = (plan: CachePlan) => {
     let lru = lruByPlan.get(plan);
@@ -454,14 +424,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     return lru;
   };
 
-  // ---------- Iterative materializer (no recursion) ----------
-
   type Task =
     | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string }
     | { t: "ENTITY"; id: string; field: PlanField; out: any }
     | { t: "CONNECTION"; parentId: string; field: PlanField; out: any; outKey: string }
-    | { t: "PAGE_INFO"; id: string; field: PlanField; out: any } // field is the pageInfo PlanField
-    | { t: "EDGE"; id: string; field: PlanField; outArr: any[] }; // field is the edges PlanField
+    | { t: "PAGE_INFO"; id: string; field: PlanField; out: any }
+    | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[] };
 
   const materializeDocument = ({
     document,
@@ -477,13 +445,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const deps = new Set<string>();
     const touch = (id?: string | null) => { if (id) deps.add(id); };
 
-    type Task =
-      | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string }
-      | { t: "ENTITY"; id: string; field: PlanField; out: any }
-      | { t: "CONNECTION"; parentId: string; field: PlanField; out: any; outKey: string }
-      | { t: "PAGE_INFO"; id: string; field: PlanField; out: any }
-      | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[] };
-
     const data: Record<string, any> = {};
     let allOk = true;
 
@@ -496,10 +457,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       tasks.push({ t: "ROOT_FIELD", parentId: ROOT_ID, field: f, out: data, outKey: f.responseKey });
     }
 
-    // Planner-driven check only
     const isConnectionField = (f: PlanField): boolean => Boolean((f as any).isConnection);
 
-    // ---- type-conditions (inline fragments) helpers ----
     const isSubtype = (actual?: string, expected?: string): boolean => {
       if (!expected || !actual) return true;
       if (actual === expected) return true;
@@ -514,13 +473,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const fieldAppliesToType = (pf: any, actualType?: string): boolean => {
       const one = pf?.typeCondition ?? pf?.onType ?? pf?.typeName ?? undefined;
       const many = pf?.typeConditions ?? pf?.onTypes ?? pf?.typeNames ?? undefined;
-
       if (!one && !many) return true;
       if (one) return isSubtype(actualType, one);
       if (Array.isArray(many)) return many.some((t: string) => isSubtype(actualType, t));
       return true;
     };
-    // ----------------------------------------------------
 
     while (tasks.length) {
       const task = tasks.pop() as Task;
@@ -548,7 +505,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           continue;
         }
 
-        // scalar at root
         if (field.fieldName === "__typename") {
           out[outKey] = (root as any).__typename;
         } else {
@@ -590,7 +546,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           if (f.selectionSet && f.selectionSet.length) {
             const link = (snap as any)[buildFieldKey(f, variables)];
 
-            // array-of-refs
             if (link && typeof link === "object" && Array.isArray(link.__refs)) {
               const refs: string[] = link.__refs.slice();
               const arrOut: any[] = new Array(refs.length);
@@ -604,7 +559,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
-            // single ref or missing
             if (!link || !link.__ref) {
               out[f.responseKey] = link === null ? null : undefined;
               allOk = false;
@@ -618,7 +572,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             continue;
           }
 
-          // scalar
           if (f.fieldName === "__typename") {
             out[f.responseKey] = (snap as any).__typename;
           } else {
@@ -627,7 +580,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           }
         }
 
-        // Scalar fallback (covers interface-gated scalars)
+        // Scalar fallback
         if (Array.isArray(field.selectionSet) && field.selectionSet.length) {
           for (let i = 0; i < field.selectionSet.length; i++) {
             const pf = field.selectionSet[i];
@@ -690,7 +643,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
-            // Other fields on the page:
+            // Other fields on the page
             if (!pf.selectionSet) {
               if (pf.fieldName === "__typename") {
                 conn[pf.responseKey] = (page as any).__typename;
@@ -701,13 +654,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
-            // selectionSet present → could be container/entity or nested connection
+            // Nested connection under the page
             if (isConnectionField(pf)) {
               tasks.push({ t: "CONNECTION", parentId: pageKey, field: pf, out: conn, outKey: pf.responseKey });
               continue;
             }
 
-            // container/entity under the page (e.g., aggregations)
+            // container/entity under the page (e.g. aggregations)
             const link = (page as any)[buildFieldKey(pf, variables)];
 
             // array-of-refs on page
@@ -806,7 +759,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     }
 
     if (!allOk) {
-      return { status: "MISSING", data: undefined };
+      return { status: "MISSING", data: undefined, deps: Array.from(deps) };
     }
 
     const ids = Array.from(deps).sort();
@@ -818,11 +771,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     const cached = lru.get(vkey);
     if (cached && cached.stamp === stamp) {
-      return { data: cached.data, status: "FULFILLED" };
+      return { data: cached.data, status: "FULFILLED", deps: ids };
     }
 
     lru.set(vkey, { data, stamp });
-    return { data, status: "FULFILLED" };
+    return { data, status: "FULFILLED", deps: ids };
   };
   /* MATERIALIZE DOCUMENT END */
 
