@@ -13,10 +13,11 @@
     "lint:fix": "eslint --fix",
     "prepublishOnly": "pnpm build",
     "test": "vitest --run",
-    "test:benchmark": "vitest bench --run",
-    "test:perf": "vitest bench --run"
+    "test:perf:lifecycle": "vitest bench --run --compare=.perf/lifecycle.json",
+    "test:perf:lifecycle:baseline": "vitest bench --run --outputJson=.perf/lifecycle.json"
   },
   "devDependencies": {
+    "@codspeed/vitest-plugin": "^5.0.1",
     "@lockvoid/eslint-config": "^0.7.0",
     "@nuxt/test-utils": "^3.19.2",
     "@playwright/test": "^1.55.0",
