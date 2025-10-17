@@ -15,6 +15,10 @@ import { relayStylePagination } from "@apollo/client/utilities";
 // ---- shared ----
 import { makeResponse, buildPages, CACHEBAY_QUERY, APOLLO_QUERY } from "./utils";
 
+// sink to force result consumption
+let __sink = 0;
+const sinkObj = (o: any) => { __sink ^= (o?.users?.edges?.length ?? 0) | 0; };
+
 // -----------------------------------------------------------------------------
 // Rigs
 // -----------------------------------------------------------------------------
@@ -51,9 +55,9 @@ function createInstances(seed?: { graph?: ReturnType<typeof createGraph>; planne
   return { graph, planner, documents };
 }
 
-function createApolloCache() {
+function createApolloCache(resultCaching = false) {
   return new InMemoryCache({
-    resultCaching: false,
+    resultCaching,
     typePolicies: {
       Query: {
         fields: {
@@ -100,11 +104,13 @@ describe("materialize – Cachebay vs Apollo(readQuery)", () => {
       `cachebay.materialize:canonical:cold(${label})`,
       () => {
         const { documents } = createInstances({ planner: ctx.planner, graph: ctx.graph });
-        const d = documents.materializeDocument({
+        const res = documents.materializeDocument({
           document: CACHEBAY_QUERY,
           variables: { first: PAGE_SIZE, after: null },
           decisionMode: "canonical",
         });
+        if (res.status !== "FULFILLED") throw new Error("cachebay canonical cold -> MISSING");
+        sinkObj(res.data);
       },
       {
         time: TIME,
@@ -131,11 +137,13 @@ describe("materialize – Cachebay vs Apollo(readQuery)", () => {
       `cachebay.materialize:strict:cold(${label})`,
       () => {
         const { documents } = createInstances({ planner: ctx.planner, graph: ctx.graph });
-        documents.materializeDocument({
+        const res = documents.materializeDocument({
           document: CACHEBAY_QUERY,
           variables: { first: PAGE_SIZE, after: null },
           decisionMode: "strict",
         });
+        if (res.status !== "FULFILLED") throw new Error("cachebay strict cold -> MISSING");
+        sinkObj(res.data);
       },
       {
         time: TIME,
@@ -159,11 +167,13 @@ describe("materialize – Cachebay vs Apollo(readQuery)", () => {
     bench(
       `cachebay.materialize:canonical:hot(${label})`,
       () => {
-        ctx.documents.materializeDocument({
+        const res = ctx.documents.materializeDocument({
           document: CACHEBAY_QUERY,
           variables: { first: PAGE_SIZE, after: null },
           decisionMode: "canonical",
         });
+        if (res.status !== "FULFILLED") throw new Error("cachebay canonical hot -> MISSING");
+        sinkObj(res.data);
       },
       {
         time: TIME,
@@ -193,11 +203,13 @@ describe("materialize – Cachebay vs Apollo(readQuery)", () => {
     bench(
       `cachebay.materialize:strict:hot(${label})`,
       () => {
-        ctx.documents.materializeDocument({
+        const res = ctx.documents.materializeDocument({
           document: CACHEBAY_QUERY,
           variables: { first: PAGE_SIZE, after: null },
           decisionMode: "strict",
         });
+        if (res.status !== "FULFILLED") throw new Error("cachebay strict hot -> MISSING");
+        sinkObj(res.data);
       },
       {
         time: TIME,
@@ -227,17 +239,17 @@ describe("materialize – Cachebay vs Apollo(readQuery)", () => {
     bench(
       `apollo.readQuery:cold(resetResultCache)(${label})`,
       () => {
-        // Clear Apollo's memoized result tree; normalized store stays
         (apollo as any).resetResultCache?.();
-        apollo.readQuery({
+        const r = apollo.readQuery({
           query: APOLLO_QUERY,
           variables: { first: PAGE_SIZE, after: null },
         });
+        sinkObj(r);
       },
       {
         time: TIME,
         setup() {
-          apollo = createApolloCache();
+          apollo = createApolloCache(false);
           for (let i = 0; i < pages.length; i++) {
             apollo.writeQuery({
               query: APOLLO_QUERY,
@@ -256,17 +268,18 @@ describe("materialize – Cachebay vs Apollo(readQuery)", () => {
     bench(
       `apollo.readQuery:cold(newInstance+restore)(${label})`,
       () => {
-        const c = createApolloCache();
+        const c = createApolloCache(false);
         c.restore(snapshot);
-        c.readQuery({
+        const r = c.readQuery({
           query: APOLLO_QUERY,
           variables: { first: PAGE_SIZE, after: null },
         });
+        sinkObj(r);
       },
       {
         time: TIME,
         setup() {
-          const seed = createApolloCache();
+          const seed = createApolloCache(false);
           for (let i = 0; i < pages.length; i++) {
             seed.writeQuery({
               query: APOLLO_QUERY,
@@ -274,27 +287,61 @@ describe("materialize – Cachebay vs Apollo(readQuery)", () => {
               data: pages[i].data,
             });
           }
-          snapshot = seed.extract(true); // normalized dump only
+          snapshot = seed.extract(true);
         },
       }
     );
   }
 
-  // ---------------- Apollo: readQuery:hot (pre-seeded cache) ----------------
+  // ---------------- Apollo: readQuery:hot (resultCaching=false) ----------------
   {
     let apollo: ReturnType<typeof createApolloCache>;
     bench(
       `apollo.readQuery:hot(${label})`,
       () => {
-        apollo.readQuery({
+        const r = apollo.readQuery({
           query: APOLLO_QUERY,
           variables: { first: PAGE_SIZE, after: null },
         });
+        sinkObj(r);
+
       },
       {
         time: TIME,
         setup() {
-          apollo = createApolloCache();
+          apollo = createApolloCache(false);
+          for (let i = 0; i < pages.length; i++) {
+            apollo.writeQuery({
+              query: APOLLO_QUERY,
+              variables: pages[i].vars,
+              data: pages[i].data,
+            });
+          }
+          apollo.readQuery({
+            query: APOLLO_QUERY,
+            variables: { first: PAGE_SIZE, after: null },
+          });
+        },
+      }
+    );
+  }
+
+  // ---------------- Apollo: readQuery:hot (resultCaching=true) ----------------
+  {
+    let apollo: ReturnType<typeof createApolloCache>;
+    bench(
+      `apollo.readQuery:hot(resultCaching)(${label})`,
+      () => {
+        const r = apollo.readQuery({
+          query: APOLLO_QUERY,
+          variables: { first: PAGE_SIZE, after: null },
+        });
+        sinkObj(r);
+      },
+      {
+        time: TIME,
+        setup() {
+          apollo = createApolloCache(true);
           for (let i = 0; i < pages.length; i++) {
             apollo.writeQuery({
               query: APOLLO_QUERY,
@@ -311,3 +358,6 @@ describe("materialize – Cachebay vs Apollo(readQuery)", () => {
     );
   }
 });
+
+// keep the sink visible so V8 can’t fully DCE it
+(globalThis as any).__bench_sink = __sink;

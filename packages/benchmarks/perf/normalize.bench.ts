@@ -15,6 +15,8 @@ import { relayStylePagination } from "@apollo/client/utilities";
 // ---- shared ----
 import { makeResponse, buildPages, CACHEBAY_QUERY, APOLLO_QUERY } from "./utils";
 
+process.env.NODE_ENV = "production";
+
 // -----------------------------------------------------------------------------
 // Rigs
 // -----------------------------------------------------------------------------
