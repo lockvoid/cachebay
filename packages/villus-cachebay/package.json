@@ -12,9 +12,7 @@
     "lint": "eslint",
     "lint:fix": "eslint --fix",
     "prepublishOnly": "pnpm build",
-    "test": "vitest --run",
-    "test:perf:lifecycle": "vitest bench --run --compare=.perf/lifecycle.json",
-    "test:perf:lifecycle:baseline": "vitest bench --run --outputJson=.perf/lifecycle.json"
+    "test": "vitest --run"
   },
   "devDependencies": {
     "@codspeed/vitest-plugin": "^5.0.1",

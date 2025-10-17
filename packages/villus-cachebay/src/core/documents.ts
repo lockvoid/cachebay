@@ -58,15 +58,38 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     data: any;
   }): { touched: Set<string> } => {
     const touched = new Set<string>();
+
+    // --- write batching: accumulate patches per id, flush once at the end ---
+    const pending = new Map<string, Record<string, any>>();
+
     const put = (id: string, patch: Record<string, any>) => {
       touched.add(id);
-      graph.putRecord(id, patch);
+
+      let acc = pending.get(id);
+      if (!acc) {
+        acc = {};
+        pending.set(id, acc);
+      }
+
+      // shallow merge without allocating a new object
+      for (const k in patch) {
+        acc[k] = patch[k];
+      }
     };
 
     const plan = planner.getPlan(document);
     const isQuery = plan.operation === "query";
 
     put(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
+
+    type Frame = {
+      parentId: string;
+      fields?: PlanField[];
+      fieldsMap?: Map<string, PlanField>;
+      insideConnection: boolean;
+      pageKey: string | null;
+      inEdges: boolean;
+    };
 
     const connectionPages: ConnectionPage[] = [];
 
@@ -79,137 +102,215 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       inEdges: false,
     };
 
-    const visit = (
-      _parentNode: any,
-      valueNode: any,
-      responseKey: string | number | null,
-      kind: symbol,
-      frame?: Frame,
-    ) => {
-      if (!frame) return;
-      if (responseKey == null) return frame;
+    // ---- Inlined traversal (specialized hot path; no callback, no symbols) ----
+    const stack: any[] = [null, data, null, initialFrame];
+    const identify = graph.identify; // micro: avoid property lookups in hot path
+
+    while (stack.length > 0) {
+      const frame = stack.pop() as Frame | undefined;
+      const responseKey = stack.pop() as string | number | null;
+      const valueNode = stack.pop() as any;
+       /* const parentNode = */ stack.pop(); // not used; popped for parity
+
+      if (!frame) {
+        continue;
+      }
+      if (responseKey == null && frame !== initialFrame) {
+        continue;
+      }
 
       const parentId = frame.parentId;
       const fieldsMap = frame.fieldsMap as Map<string, PlanField> | undefined;
-      const planField = typeof responseKey === "string" && fieldsMap ? fieldsMap.get(responseKey) : undefined;
+      const planField =
+        typeof responseKey === "string" && fieldsMap ? fieldsMap.get(responseKey) : undefined;
 
-      /* ====== ARRAYS ====== */
-      if (kind === TRAVERSE_ARRAY) {
+      // ---------- ARRAY ----------
+      if (Array.isArray(valueNode)) {
         // Connection edges
         if (frame.insideConnection && responseKey === "edges") {
           const pageKey = frame.pageKey as string;
-          const rawEdges: any[] = Array.isArray(valueNode) ? valueNode : [];
+          const rawEdges: any[] = valueNode;
           const edgeRefs: string[] = new Array(rawEdges.length);
+
           for (let i = 0; i < rawEdges.length; i++) {
             edgeRefs[i] = `${pageKey}.edges.${i}`;
           }
           put(pageKey, { edges: { __refs: edgeRefs } });
 
           const edgesField = fieldsMap?.get("edges");
-          return {
-            parentId: frame.parentId,
-            fields: edgesField?.selectionSet,
-            fieldsMap: edgesField?.selectionMap,
-            insideConnection: true,
-            pageKey,
-            inEdges: true,
-          } as Frame;
+
+          // Push children
+          for (let i = rawEdges.length - 1; i >= 0; i--) {
+            const child = rawEdges[i];
+            if (isObject(child)) {
+              const nextFrame: Frame = {
+                parentId: pageKey,
+                fields: edgesField?.selectionSet,
+                fieldsMap: edgesField?.selectionMap,
+                insideConnection: true,
+                pageKey,
+                inEdges: true,
+              };
+              stack.push(valueNode, child, i, nextFrame);
+            }
+          }
+          continue;
         }
 
-        // Plain array scalar/object values without selection → store raw array
+        // Plain array with NO selection → store raw clone
         if (planField && !planField.selectionSet) {
           const fieldKey = buildFieldKey(planField, variables);
           const arr = valueNode as any[];
           const out = new Array(arr.length);
-          for (let i = 0; i < arr.length; i++) out[i] = arr[i];
+          for (let i = 0; i < arr.length; i++) {
+            out[i] = arr[i];
+          }
           put(parentId, { [fieldKey]: out });
-          return TRAVERSE_SKIP;
+          continue;
         }
 
-        // Arrays of objects WITH a selection
+        // Array of objects WITH selection → store { __refs } and descend
         if (planField && planField.selectionSet) {
           const fieldKey = buildFieldKey(planField, variables);
-          const arr = Array.isArray(valueNode) ? (valueNode as any[]) : [];
+          const arr = valueNode as any[];
           const baseKey = `${parentId}.${fieldKey}`;
 
           const refs: string[] = new Array(arr.length);
           for (let i = 0; i < arr.length; i++) {
             const item = arr[i];
-            const entKey = isObject(item) ? graph.identify(item) : null;
+            const entKey = isObject(item) ? identify(item) : null;
             const itemKey = entKey ?? `${baseKey}.${i}`;
             if (isObject(item)) {
-              if ((item as any).__typename) put(itemKey, { __typename: (item as any).__typename });
-              else put(itemKey, {});
+              if ((item as any).__typename) {
+                put(itemKey, { __typename: (item as any).__typename });
+              } else {
+                put(itemKey, {});
+              }
             }
             refs[i] = itemKey;
           }
 
           put(parentId, { [fieldKey]: { __refs: refs } });
 
-          return {
-            parentId,
-            fields: planField.selectionSet,
-            fieldsMap: planField.selectionMap,
-            insideConnection: false,
-            pageKey: baseKey,
-            inEdges: true,
-          } as Frame;
+          for (let i = arr.length - 1; i >= 0; i--) {
+            const item = arr[i];
+            if (isObject(item)) {
+              const nextFrame: Frame = {
+                parentId,
+                fields: planField.selectionSet,
+                fieldsMap: planField.selectionMap,
+                insideConnection: false,
+                pageKey: baseKey,
+                inEdges: true,
+              };
+              stack.push(arr, item, i, nextFrame);
+            }
+          }
+          continue;
         }
 
-        return frame;
+        // No planField — keep walking
+        for (let i = valueNode.length - 1; i >= 0; i--) {
+          const child = valueNode[i];
+          if (isObject(child)) {
+            stack.push(valueNode, child, i, frame);
+          }
+        }
+        continue;
       }
 
-      /* ====== OBJECTS ====== */
-      if (kind === TRAVERSE_OBJECT) {
-        // Plain object field with no selection
+      // ---------- OBJECT ----------
+      if (isObject(valueNode)) {
+        // Plain object field with no selection → store raw
         if (planField && !planField.selectionSet) {
           const fieldKey = buildFieldKey(planField, variables);
           put(parentId, { [fieldKey]: valueNode });
-          return TRAVERSE_SKIP;
+          continue;
         }
 
-        // Generic array item objects (not connection edges)
+        // Generic array item object (not connection edges)
         if (!frame.insideConnection && frame.inEdges && typeof responseKey === "number") {
           const item = valueNode as any;
-          const entKey = isObject(item) ? graph.identify(item) : null;
+          const entKey = isObject(item) ? identify(item) : null;
           const itemKey = entKey ?? `${frame.pageKey}.${responseKey}`;
 
           if (isObject(item)) {
-            if (item.__typename) put(itemKey, { __typename: item.__typename });
-            else put(itemKey, {});
+            if (item.__typename) {
+              put(itemKey, { __typename: item.__typename });
+            } else {
+              put(itemKey, {});
+            }
           }
 
-          return {
+          const nextFrame: Frame = {
             parentId: itemKey,
             fields: frame.fields,
             fieldsMap: frame.fieldsMap,
             insideConnection: false,
             pageKey: frame.pageKey,
             inEdges: false,
-          } as Frame;
+          };
+
+          const keys = Object.keys(valueNode);
+          for (let i = keys.length - 1; i >= 0; i--) {
+            const k = keys[i];
+            const child = (valueNode as any)[k];
+            if (isObject(child)) {
+              stack.push(valueNode, child, k, nextFrame);
+            } else if (typeof k === "string" && nextFrame.fieldsMap) {
+              const pf = nextFrame.fieldsMap.get(k);
+              if (pf && !pf.selectionSet) {
+                const fk = buildFieldKey(pf, variables);
+                put(nextFrame.parentId, { [fk]: child });
+              }
+            }
+          }
+          continue;
         }
 
         // Connection edges[i]
         if (frame.insideConnection && frame.inEdges && typeof responseKey === "number") {
           const edgeKey = `${frame.pageKey}.edges.${responseKey}`;
+          const edgeObj = valueNode as any;
 
-          if (valueNode && (valueNode as any).__typename) put(edgeKey, { __typename: (valueNode as any).__typename });
-          else put(edgeKey, {});
-
-          const nodeObj = (valueNode as any).node;
-          if (nodeObj) {
-            const nodeKey = graph.identify(nodeObj);
-            if (nodeKey) put(edgeKey, { node: { __ref: nodeKey } });
+          if (edgeObj && edgeObj.__typename) {
+            put(edgeKey, { __typename: edgeObj.__typename });
+          } else {
+            put(edgeKey, {});
           }
 
-          return {
+          const nodeObj = edgeObj.node;
+          if (nodeObj) {
+            const nodeKey = identify(nodeObj);
+            if (nodeKey) {
+              put(edgeKey, { node: { __ref: nodeKey } });
+            }
+          }
+
+          const nextFrame: Frame = {
             parentId: edgeKey,
-            fields: fieldsMap,
-            fieldsMap: fieldsMap,
+            fields: frame.fields,
+            fieldsMap: frame.fieldsMap,
             insideConnection: true,
             pageKey: frame.pageKey,
             inEdges: true,
-          } as Frame;
+          };
+
+          const keys = Object.keys(edgeObj);
+          for (let i = keys.length - 1; i >= 0; i--) {
+            const k = keys[i];
+            const child = edgeObj[k];
+            if (isObject(child)) {
+              stack.push(edgeObj, child, k, nextFrame);
+            } else if (typeof k === "string" && nextFrame.fieldsMap) {
+              const pf = nextFrame.fieldsMap.get(k);
+              if (pf && !pf.selectionSet) {
+                const fk = buildFieldKey(pf, variables);
+                put(nextFrame.parentId, { [fk]: child });
+              }
+            }
+          }
+          continue;
         }
 
         // Connection container
@@ -218,30 +319,31 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           const parentFieldKey = buildFieldKey(planField, variables);
 
           const pageRecord: Record<string, any> = {};
-          if (valueNode && (valueNode as any).__typename) {
+          if ((valueNode as any).__typename) {
             pageRecord.__typename = (valueNode as any).__typename;
           }
 
-          if (valueNode) {
-            const keys = Object.keys(valueNode);
-            for (let i = 0; i < keys.length; i++) {
-              const k = keys[i];
-              if (k === "__typename" || k === "edges" || k === "pageInfo") continue;
-              const v = (valueNode as any)[k];
-              if (v !== undefined && v !== null && typeof v !== "object") {
-                pageRecord[k] = v;
-              } else if (Array.isArray(v) || (v !== null && typeof v === "object" && !(v && (v as any).__typename))) {
-                pageRecord[k] = v;
-              }
+          const kList = Object.keys(valueNode);
+          for (let i = 0; i < kList.length; i++) {
+            const k = kList[i];
+            if (k === "__typename" || k === "edges" || k === "pageInfo") {
+              continue;
+            }
+            const v = (valueNode as any)[k];
+            if (v !== undefined && v !== null && typeof v !== "object") {
+              pageRecord[k] = v;
+            } else if (Array.isArray(v) || (v !== null && typeof v === "object" && !(v && (v as any).__typename))) {
+              pageRecord[k] = v;
             }
           }
 
           put(pageKey, pageRecord);
 
-          if ((valueNode as any)?.pageInfo) {
+          const vPageInfo = (valueNode as any)?.pageInfo;
+          if (vPageInfo) {
             const pageInfoKey = `${pageKey}.pageInfo`;
             put(pageKey, { pageInfo: { __ref: pageInfoKey } });
-            const piTypename = (valueNode as any)?.pageInfo?.__typename;
+            const piTypename = vPageInfo.__typename;
             put(pageInfoKey, piTypename ? { __typename: piTypename } : {});
           }
 
@@ -250,22 +352,41 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             connectionPages.push({ field: planField, parentId, pageKey });
           }
 
-          return {
+          const nextFrame: Frame = {
             parentId: pageKey,
             fields: planField.selectionSet,
             fieldsMap: planField.selectionMap,
             insideConnection: true,
             pageKey,
             inEdges: false,
-          } as Frame;
+          };
+
+          const keys = Object.keys(valueNode);
+          for (let i = keys.length - 1; i >= 0; i--) {
+            const k = keys[i];
+            const child = (valueNode as any)[k];
+            if (isObject(child)) {
+              stack.push(valueNode, child, k, nextFrame);
+            } else if (typeof k === "string" && nextFrame.fieldsMap) {
+              const pf = nextFrame.fieldsMap.get(k);
+              if (pf && !pf.selectionSet) {
+                const fk = buildFieldKey(pf, variables);
+                put(nextFrame.parentId, { [fk]: child });
+              }
+            }
+          }
+          continue;
         }
 
         // Entity object
         {
-          const entityKey = graph.identify(valueNode);
+          const entityKey = identify(valueNode);
           if (entityKey) {
-            if (valueNode && (valueNode as any).__typename) put(entityKey, { __typename: (valueNode as any).__typename });
-            else put(entityKey, {});
+            if ((valueNode as any).__typename) {
+              put(entityKey, { __typename: (valueNode as any).__typename });
+            } else {
+              put(entityKey, {});
+            }
 
             if (isQuery && planField && !(frame.insideConnection && planField.responseKey === "node")) {
               const parentFieldKey = buildFieldKey(planField, variables);
@@ -274,24 +395,43 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
             const fromNode = !!planField && planField.responseKey === "node";
 
-            return {
+            const nextFrame: Frame = {
               parentId: entityKey,
               fields: planField?.selectionSet,
               fieldsMap: planField?.selectionMap,
               insideConnection: fromNode ? false : frame.insideConnection,
               pageKey: fromNode ? null : frame.pageKey,
               inEdges: fromNode ? false : frame.inEdges,
-            } as Frame;
+            };
+
+            const keys = Object.keys(valueNode);
+            for (let i = keys.length - 1; i >= 0; i--) {
+              const k = keys[i];
+              const child = (valueNode as any)[k];
+              if (isObject(child)) {
+                stack.push(valueNode, child, k, nextFrame);
+              } else if (typeof k === "string" && nextFrame.fieldsMap) {
+                const pf = nextFrame.fieldsMap.get(k);
+                if (pf && !pf.selectionSet) {
+                  const fk = buildFieldKey(pf, variables);
+                  put(nextFrame.parentId, { [fk]: child });
+                }
+              }
+            }
+            continue;
           }
         }
 
-        // Inline container
+        // Inline container (no identify)
         if (planField) {
           const containerFieldKey = buildFieldKey(planField, variables);
           const containerKey = `${parentId}.${containerFieldKey}`;
 
-          if (valueNode && (valueNode as any).__typename) put(containerKey, { __typename: (valueNode as any).__typename });
-          else put(containerKey, {});
+          if ((valueNode as any).__typename) {
+            put(containerKey, { __typename: (valueNode as any).__typename });
+          } else {
+            put(containerKey, {});
+          }
 
           if (isQuery) {
             put(parentId, { [containerFieldKey]: { __ref: containerKey } });
@@ -301,37 +441,68 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             put(frame.pageKey, { pageInfo: { __ref: containerKey } });
           }
 
-          return {
+          const nextFrame: Frame = {
             parentId: containerKey,
             fields: planField.selectionSet,
             fieldsMap: planField.selectionMap,
             insideConnection: frame.insideConnection,
             pageKey: frame.pageKey,
             inEdges: false,
-          } as Frame;
-        }
+          };
 
-        return frame;
-      }
-
-      /* ====== SCALARS ====== */
-      if (kind === TRAVERSE_SCALAR) {
-        if (typeof responseKey === "string" && fieldsMap) {
-          const f = fieldsMap.get(responseKey);
-          if (f && !f.selectionSet) {
-            const fieldKey = buildFieldKey(f, variables);
-            put(frame.parentId, { [fieldKey]: valueNode });
+          const keys = Object.keys(valueNode);
+          for (let i = keys.length - 1; i >= 0; i--) {
+            const k = keys[i];
+            const child = (valueNode as any)[k];
+            if (isObject(child)) {
+              stack.push(valueNode, child, k, nextFrame);
+            } else if (typeof k === "string" && nextFrame.fieldsMap) {
+              const pf = nextFrame.fieldsMap.get(k);
+              if (pf && !pf.selectionSet) {
+                const fk = buildFieldKey(pf, variables);
+                put(nextFrame.parentId, { [fk]: child });
+              }
+            }
           }
+          continue;
         }
-        return frame;
+
+        // No planField: descend with same frame
+        {
+          const keys = Object.keys(valueNode);
+          for (let i = keys.length - 1; i >= 0; i--) {
+            const k = keys[i];
+            const child = (valueNode as any)[k];
+            if (isObject(child)) {
+              stack.push(valueNode, child, k, frame);
+            } else if (typeof k === "string" && frame.fieldsMap) {
+              const pf = frame.fieldsMap.get(k);
+              if (pf && !pf.selectionSet) {
+                const fk = buildFieldKey(pf, variables);
+                put(frame.parentId, { [fk]: child });
+              }
+            }
+          }
+          continue;
+        }
       }
 
-      return frame;
-    };
+      // ---------- SCALAR ----------
+      if (typeof responseKey === "string" && fieldsMap) {
+        const f = fieldsMap.get(responseKey);
+        if (f && !f.selectionSet) {
+          const fieldKey = buildFieldKey(f, variables);
+          put(frame.parentId, { [fieldKey]: valueNode });
+        }
+      }
+    }
 
-    traverseFast(data, initialFrame, visit);
+    // --- flush all batched writes exactly once now ---
+    for (const [id, patch] of pending) {
+      graph.putRecord(id, patch);
+    }
 
-    // Update canonical connections (queries only) and mark canonical key as touched
+    // --- canonical updates (queries only) ---
     if (isQuery && connectionPages.length > 0) {
       for (let i = 0; i < connectionPages.length; i++) {
         const { field, parentId, pageKey } = connectionPages[i];

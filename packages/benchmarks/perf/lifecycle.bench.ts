@@ -171,71 +171,71 @@ describe("Lifecycle", () => {
         },
       });
     }
+    /*
+         {
+           let ctx;
 
-    {
-      let ctx;
+           bench(`materialize:canonical:cold(${label})`, () => {
+             const { documents } = createInstances({ planner: ctx.planner, graph: ctx.graph });
 
-      bench(`materialize:canonical:cold(${label})`, () => {
-        const { documents } = createInstances({ planner: ctx.planner, graph: ctx.graph });
+             documents.materializeDocument({ document: QUERY, variables: { first: variant.posts }, decisionMode: "canonical", });
+           }, {
+             time: TIME,
 
-        documents.materializeDocument({ document: QUERY, variables: { first: variant.posts }, decisionMode: "canonical", });
-      }, {
-        time: TIME,
+             setup() {
+               ctx = createInstances();
+               ctx.documents.normalizeDocument({ document: QUERY, variables: { first: variant.posts }, data });
+             },
+           });
+         }
 
-        setup() {
-          ctx = createInstances();
-          ctx.documents.normalizeDocument({ document: QUERY, variables: { first: variant.posts }, data });
-        },
-      });
-    }
+         {
+           let ctx;
 
-    {
-      let ctx;
+           bench(`materialize:strict:cold(${label})`, () => {
+             const { documents } = createInstances({ planner: ctx.planner, graph: ctx.graph });
 
-      bench(`materialize:strict:cold(${label})`, () => {
-        const { documents } = createInstances({ planner: ctx.planner, graph: ctx.graph });
+             documents.materializeDocument({ document: QUERY, variables: { first: variant.posts }, decisionMode: "strict", });
+           }, {
+             time: TIME,
 
-        documents.materializeDocument({ document: QUERY, variables: { first: variant.posts }, decisionMode: "strict", });
-      }, {
-        time: TIME,
+             setup() {
+               ctx = createInstances();
+               ctx.documents.normalizeDocument({ document: QUERY, variables: { first: variant.posts }, data });
+             },
+           });
+         }
 
-        setup() {
-          ctx = createInstances();
-          ctx.documents.normalizeDocument({ document: QUERY, variables: { first: variant.posts }, data });
-        },
-      });
-    }
+         {
+           let ctx;
 
-    {
-      let ctx;
+           bench(`materialize:canonical:hot(${label})`, () => {
+             ctx.documents.materializeDocument({ document: QUERY, variables: { first: variant.posts }, decisionMode: "canonical", });
+           }, {
+             time: TIME,
 
-      bench(`materialize:canonical:hot(${label})`, () => {
-        ctx.documents.materializeDocument({ document: QUERY, variables: { first: variant.posts }, decisionMode: "canonical", });
-      }, {
-        time: TIME,
+             setup() {
+               ctx = createInstances();
+               ctx.documents.normalizeDocument({ document: QUERY, variables: { first: variant.posts }, data });
+               ctx.documents.materializeDocument({ document: QUERY, variables: { first: variant.posts }, decisionMode: "canonical", });
+             },
+           });
+         }
 
-        setup() {
-          ctx = createInstances();
-          ctx.documents.normalizeDocument({ document: QUERY, variables: { first: variant.posts }, data });
-          ctx.documents.materializeDocument({ document: QUERY, variables: { first: variant.posts }, decisionMode: "canonical", });
-        },
-      });
-    }
+         {
+           let ctx;
 
-    {
-      let ctx;
+           bench(`materialize:strict:hot(${label})`, () => {
+             ctx.documents.materializeDocument({ document: QUERY, variables: { first: variant.posts }, decisionMode: "strict", });
+           }, {
+             time: TIME,
 
-      bench(`materialize:strict:hot(${label})`, () => {
-        ctx.documents.materializeDocument({ document: QUERY, variables: { first: variant.posts }, decisionMode: "strict", });
-      }, {
-        time: TIME,
-
-        setup() {
-          ctx = createInstances();
-          ctx.documents.normalizeDocument({ document: QUERY, variables: { first: variant.posts }, data });
-          ctx.documents.materializeDocument({ document: QUERY, variables: { first: variant.posts }, decisionMode: "strict", });
-        },
-      });
-    }
+             setup() {
+               ctx = createInstances();
+               ctx.documents.normalizeDocument({ document: QUERY, variables: { first: variant.posts }, data });
+               ctx.documents.materializeDocument({ document: QUERY, variables: { first: variant.posts }, decisionMode: "strict", });
+             },
+           });
+         }*/
   }
 });
