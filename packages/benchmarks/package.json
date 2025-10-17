@@ -9,9 +9,8 @@
     "relay": "relay-compiler",
     "server:infinite-feed": "NODE_ENV=production tsx scripts/start-server-infinite-feed.ts",
     "server:nested-query": "NODE_ENV=production tsx scripts/start-server-nested-query.ts",
-    "suite:infinite-feed": "NODE_ENV=production tsx scripts/start-server-infinite-feed.ts & sleep 2 && NODE_ENV=production vitest bench --run --mode production suites/infinite-feed.dom.bench.ts kill %1",
-    "suite:nested-query": "NODE_ENV=production tsx scripts/start-server-nested-query.ts & sleep 2 && NODE_ENV=production vitest bench --run --mode production suites/nested-query.dom.bench.ts kill %1",
-    "perf:normalize": "vitest bench --run --compare=.perf/normalize.json perf/normalize.bench.ts",
+    "suite:infinite-feed": "NODE_ENV=production tsx scripts/start-server-infinite-feed.ts & sleep 2 && NODE_ENV=production vitest bench --run --mode production suites/infinite-feed.dom.bench.ts; kill %1",
+    "suite:nested-query": "NODE_ENV=production tsx scripts/start-server-nested-query.ts & sleep 2 && NODE_ENV=production vitest bench --run --mode production suites/nested-query.dom.bench.ts; kill %1",    "perf:normalize": "vitest bench --run --compare=.perf/normalize.json perf/normalize.bench.ts",
     "perf:normalize:baseline": "vitest bench --run --outputJson=.perf/normalize.json perf/normalize.bench.ts",
     "perf:materialize": "vitest bench --run --compare=.perf/normalize.json perf/materialize.bench.ts",
     "perf:materialize:baseline": "vitest bench --run --outputJson=.perf/normalize.json perf/materialize.bench.ts"

@@ -94,9 +94,9 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
 
   const stripCanon = (o?: Record<string, unknown>) => {
     if (!o) return;
-    if ('canonizeResults' in o) { 
-      try { delete (o as any).canonizeResults; } 
-      catch { (o as any).canonizeResults = undefined; } 
+    if ('canonizeResults' in o) {
+      try { delete (o as any).canonizeResults; }
+      catch { (o as any).canonizeResults = undefined; }
     }
   };
   stripCanon(client.defaultOptions?.query);
@@ -144,7 +144,7 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
 
           // Wait for next tick to ensure DOM is updated
           await nextTick();
-          
+
           const renderEnd = performance.now();
           totalRenderTime += renderEnd - renderStart;
 
@@ -152,6 +152,10 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
           console.warn('Apollo execute error (ignored):', error);
         }
       };
+
+      // watch(() => result.value?.users?.edges, () => {
+      //   console.log("SKDCNJKCNDJKN")
+      // });
 
       return {
         result,
