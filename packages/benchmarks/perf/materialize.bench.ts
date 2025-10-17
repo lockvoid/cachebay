@@ -82,24 +82,23 @@ function createApolloCache(resultCaching = false) {
 }
 
 // -----------------------------------------------------------------------------
-// Benches
+// Shared data
 // -----------------------------------------------------------------------------
-
-const TIME = 3000;
 const USERS_TOTAL = 100;
 const PAGE_SIZE = 10;
+const allUsers = Object.freeze(makeResponse({ users: USERS_TOTAL, posts: 5, comments: 3 }));
+const pages = buildPages(allUsers, PAGE_SIZE);
+const label = `${USERS_TOTAL} users (${pages.length} pages of ${PAGE_SIZE})`;
 
-describe("materialize – Cachebay vs Apollo(readQuery)", () => {
-  const allUsers = makeResponse({ users: USERS_TOTAL, posts: 5, comments: 3 });
-  Object.freeze(allUsers);
+// -----------------------------------------------------------------------------
+// Cold paths
+// -----------------------------------------------------------------------------
+describe("materialize – COLD paths", () => {
+  const TIME = 3000;
 
-  const pages = buildPages(allUsers, PAGE_SIZE);
-  const label = `${USERS_TOTAL} users (${pages.length} pages of ${PAGE_SIZE})`;
-
-  // ---------------- Cachebay: canonical:cold (LRU MISS; new instance) ----------------
+  // Cachebay: canonical:cold (LRU MISS; new instance)
   {
     let ctx: ReturnType<typeof createInstances>;
-
     bench(
       `cachebay.materialize:canonical:cold(${label})`,
       () => {
@@ -116,7 +115,6 @@ describe("materialize – Cachebay vs Apollo(readQuery)", () => {
         time: TIME,
         setup() {
           ctx = createInstances();
-          // Normalize all pages
           for (let i = 0; i < pages.length; i++) {
             ctx.documents.normalizeDocument({
               document: CACHEBAY_QUERY,
@@ -129,10 +127,9 @@ describe("materialize – Cachebay vs Apollo(readQuery)", () => {
     );
   }
 
-  // ---------------- Cachebay: strict:cold ----------------
+  // Cachebay: strict:cold
   {
     let ctx: ReturnType<typeof createInstances>;
-
     bench(
       `cachebay.materialize:strict:cold(${label})`,
       () => {
@@ -161,7 +158,74 @@ describe("materialize – Cachebay vs Apollo(readQuery)", () => {
     );
   }
 
-  // ---------------- Cachebay: canonical:hot (LRU HIT) ----------------
+  // Apollo: readQuery:cold (reset result cache)
+  {
+    let apollo: ReturnType<typeof createApolloCache>;
+    bench(
+      `apollo.readQuery:cold(resetResultCache)(${label})`,
+      () => {
+        (apollo as any).resetResultCache?.();
+        const r = apollo.readQuery({
+          query: APOLLO_QUERY,
+          variables: { first: PAGE_SIZE, after: null },
+        });
+        sinkObj(r);
+      },
+      {
+        time: TIME,
+        setup() {
+          apollo = createApolloCache(false);
+          for (let i = 0; i < pages.length; i++) {
+            apollo.writeQuery({
+              query: APOLLO_QUERY,
+              variables: pages[i].vars,
+              data: pages[i].data,
+            });
+          }
+        },
+      }
+    );
+  }
+
+  // Apollo: readQuery:cold (new instance + restore snapshot)
+  {
+    let snapshot: any;
+    bench(
+      `apollo.readQuery:cold(newInstance+restore)(${label})`,
+      () => {
+        const c = createApolloCache(false);
+        c.restore(snapshot);
+        const r = c.readQuery({
+          query: APOLLO_QUERY,
+          variables: { first: PAGE_SIZE, after: null },
+        });
+        sinkObj(r);
+      },
+      {
+        time: TIME,
+        setup() {
+          const seed = createApolloCache(false);
+          for (let i = 0; i < pages.length; i++) {
+            seed.writeQuery({
+              query: APOLLO_QUERY,
+              variables: pages[i].vars,
+              data: pages[i].data,
+            });
+          }
+          snapshot = seed.extract(true);
+        },
+      }
+    );
+  }
+});
+
+// -----------------------------------------------------------------------------
+// Hot paths
+// -----------------------------------------------------------------------------
+describe("materialize – HOT paths", () => {
+  const TIME = 3000;
+
+  // Cachebay: canonical:hot (LRU HIT)
   {
     let ctx: ReturnType<typeof createInstances>;
     bench(
@@ -197,7 +261,7 @@ describe("materialize – Cachebay vs Apollo(readQuery)", () => {
     );
   }
 
-  // ---------------- Cachebay: strict:hot (LRU HIT) ----------------
+  // Cachebay: strict:hot (LRU HIT)
   {
     let ctx: ReturnType<typeof createInstances>;
     bench(
@@ -233,67 +297,7 @@ describe("materialize – Cachebay vs Apollo(readQuery)", () => {
     );
   }
 
-  // ---------------- Apollo: readQuery:cold (reset result cache) ----------------
-  {
-    let apollo: ReturnType<typeof createApolloCache>;
-    bench(
-      `apollo.readQuery:cold(resetResultCache)(${label})`,
-      () => {
-        (apollo as any).resetResultCache?.();
-        const r = apollo.readQuery({
-          query: APOLLO_QUERY,
-          variables: { first: PAGE_SIZE, after: null },
-        });
-        sinkObj(r);
-      },
-      {
-        time: TIME,
-        setup() {
-          apollo = createApolloCache(false);
-          for (let i = 0; i < pages.length; i++) {
-            apollo.writeQuery({
-              query: APOLLO_QUERY,
-              variables: pages[i].vars,
-              data: pages[i].data,
-            });
-          }
-        },
-      }
-    );
-  }
-
-  // ---------------- Apollo: readQuery:cold (new instance + restore snapshot) ----------------
-  {
-    let snapshot: any;
-    bench(
-      `apollo.readQuery:cold(newInstance+restore)(${label})`,
-      () => {
-        const c = createApolloCache(false);
-        c.restore(snapshot);
-        const r = c.readQuery({
-          query: APOLLO_QUERY,
-          variables: { first: PAGE_SIZE, after: null },
-        });
-        sinkObj(r);
-      },
-      {
-        time: TIME,
-        setup() {
-          const seed = createApolloCache(false);
-          for (let i = 0; i < pages.length; i++) {
-            seed.writeQuery({
-              query: APOLLO_QUERY,
-              variables: pages[i].vars,
-              data: pages[i].data,
-            });
-          }
-          snapshot = seed.extract(true);
-        },
-      }
-    );
-  }
-
-  // ---------------- Apollo: readQuery:hot (resultCaching=false) ----------------
+  // Apollo: readQuery:hot (resultCaching=false)
   {
     let apollo: ReturnType<typeof createApolloCache>;
     bench(
@@ -304,7 +308,6 @@ describe("materialize – Cachebay vs Apollo(readQuery)", () => {
           variables: { first: PAGE_SIZE, after: null },
         });
         sinkObj(r);
-
       },
       {
         time: TIME,
@@ -317,6 +320,7 @@ describe("materialize – Cachebay vs Apollo(readQuery)", () => {
               data: pages[i].data,
             });
           }
+          // warm
           apollo.readQuery({
             query: APOLLO_QUERY,
             variables: { first: PAGE_SIZE, after: null },
@@ -326,7 +330,7 @@ describe("materialize – Cachebay vs Apollo(readQuery)", () => {
     );
   }
 
-  // ---------------- Apollo: readQuery:hot (resultCaching=true) ----------------
+  // Apollo: readQuery:hot (resultCaching=true)
   {
     let apollo: ReturnType<typeof createApolloCache>;
     bench(
@@ -349,6 +353,7 @@ describe("materialize – Cachebay vs Apollo(readQuery)", () => {
               data: pages[i].data,
             });
           }
+          // warm
           apollo.readQuery({
             query: APOLLO_QUERY,
             variables: { first: PAGE_SIZE, after: null },
