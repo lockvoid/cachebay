@@ -209,8 +209,7 @@ function createApolloCache() {
 // -----------------------------------------------------------------------------
 const TIME = 1;
 const VARIANTS = [
-  { users: 10, posts: 5, comments: 3 },
-  { users: 100, posts: 5, comments: 3 },
+  { users: 300, posts: 5, comments: 3 },
 ];
 
 describe("normalize – Cachebay vs Apollo", () => {
@@ -225,20 +224,19 @@ describe("normalize – Cachebay vs Apollo", () => {
       `cachebay.normalize:cold(${label})`,
       () => {
         const cb = createCachebay();
-        // warm planner OUTSIDE normalize timing
-        cb.planner.getPlan(CACHEBAY_QUERY);
+
         cb.documents.normalizeDocument({
           document: CACHEBAY_QUERY,
           variables: { first: variant.users, after: null },
           data,
         });
 
-        const result = cb.documents.materializeDocument({
-          document: CACHEBAY_QUERY,
-          variables: { first: variant.users, after: null },
-        });
-
-        console.log(JSON.stringify(cb.graph.keys(), null, 2))
+        // const result = cb.documents.materializeDocument({
+        //   document: CACHEBAY_QUERY,
+        //   variables: { first: variant.users, after: null },
+        // });
+        //
+        // console.log(JSON.stringify(result, null, 2))
         //console.log(result.debug)
       },
       { time: TIME }
