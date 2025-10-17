@@ -11,7 +11,14 @@ export type GraphInstance = ReturnType<typeof createGraph>;
 
 const RECORD_PROXY_VERSION = Symbol("graph:record-proxy-version");
 
-const overlayRecordDiff = (recordProxy: any, currentSnapshot: Record<string, any>, changedFields: string[], typenameChanged: boolean, idChanged: boolean, targetVersion: number) => {
+const overlayRecordDiff = (
+  recordProxy: any,
+  currentSnapshot: Record<string, any>,
+  changedFields: string[],
+  typenameChanged: boolean,
+  idChanged: boolean,
+  targetVersion: number,
+) => {
   if (recordProxy[RECORD_PROXY_VERSION] === targetVersion) return;
 
   if (typenameChanged) {
@@ -33,11 +40,20 @@ const overlayRecordDiff = (recordProxy: any, currentSnapshot: Record<string, any
   if (recordProxy[RECORD_PROXY_VERSION] !== undefined) {
     recordProxy[RECORD_PROXY_VERSION] = targetVersion;
   } else {
-    Object.defineProperty(recordProxy, RECORD_PROXY_VERSION, { value: targetVersion, writable: true, configurable: true, enumerable: false });
+    Object.defineProperty(recordProxy, RECORD_PROXY_VERSION, {
+      value: targetVersion,
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
   }
 };
 
-const overlayRecordFull = (recordProxy: any, currentSnapshot: Record<string, any>, targetVersion: number) => {
+const overlayRecordFull = (
+  recordProxy: any,
+  currentSnapshot: Record<string, any>,
+  targetVersion: number,
+) => {
   if (currentSnapshot[TYPENAME_FIELD]) {
     recordProxy[TYPENAME_FIELD] = currentSnapshot[TYPENAME_FIELD];
   }
@@ -65,11 +81,19 @@ const overlayRecordFull = (recordProxy: any, currentSnapshot: Record<string, any
   if (recordProxy[RECORD_PROXY_VERSION] !== undefined) {
     recordProxy[RECORD_PROXY_VERSION] = targetVersion;
   } else {
-    Object.defineProperty(recordProxy, RECORD_PROXY_VERSION, { value: targetVersion, writable: true, configurable: true, enumerable: false });
+    Object.defineProperty(recordProxy, RECORD_PROXY_VERSION, {
+      value: targetVersion,
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
   }
 };
 
-const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot: Record<string, any>): [string[], boolean, boolean, boolean] => {
+const applyFieldChanges = (
+  currentSnapshot: Record<string, any>,
+  partialSnapshot: Record<string, any>,
+): [string[], boolean, boolean, boolean] => {
   let idChanged = false;
   let typenameChanged = false;
   const changedFields: string[] = [];
@@ -144,9 +168,10 @@ class IdentityManager {
 
   stringifyKey(object: any): string | null {
     if (!isObject(object)) return null;
-    const typename = this.getCanonicalTypename(object[TYPENAME_FIELD]) || object[TYPENAME_FIELD];
-    if (!typename) return null;
-    const id = this.keyers.get(typename)?.(object) ?? object[ID_FIELD];
+    const rawTypename = (object as any)[TYPENAME_FIELD];
+    if (!rawTypename) return null;
+    const typename = this.getCanonicalTypename(rawTypename);
+    const id = this.keyers.get(typename)?.(object) ?? (object as any)[ID_FIELD];
     if (id === undefined || id === null) return null;
     return `${typename}:${id}`;
   }
@@ -157,11 +182,21 @@ class IdentityManager {
 }
 
 export const createGraph = (options?: GraphOptions) => {
-  const identityManager = new IdentityManager({ keys: options?.keys || {}, interfaces: options?.interfaces || {} });
+  const identityManager = new IdentityManager({
+    keys: options?.keys || {},
+    interfaces: options?.interfaces || {},
+  });
 
   const recordStore = new Map<string, Record<string, any>>();
   const recordProxyStore = new Map<string, WeakRef<any>>();
   const recordVersionStore = new Map<string, number>();
+
+  // 🔹 Global epoch clock (monotonic). Bumped on any *real* write/delete/clear.
+  let epochClock = 0;
+
+  const bumpClock = () => {
+    epochClock = (epochClock + 1) | 0; // keep it as a small int
+  };
 
   const identify = (object: any): string | null => {
     return identityManager.stringifyKey(object);
@@ -173,8 +208,12 @@ export const createGraph = (options?: GraphOptions) => {
 
   const putRecord = (recordId: string, partialSnapshot: Record<string, any>): void => {
     const currentSnapshot = recordStore.get(recordId) || {};
-    const changes = applyFieldChanges(currentSnapshot, partialSnapshot);
-    if (!changes[3]) return;
+    const [changedFields, typenameChanged, idChanged, hasChanges] = applyFieldChanges(
+      currentSnapshot,
+      partialSnapshot,
+    );
+
+    if (!hasChanges) return;
 
     const nextVersion = (recordVersionStore.get(recordId) || 0) + 1;
 
@@ -182,15 +221,20 @@ export const createGraph = (options?: GraphOptions) => {
     recordStore.set(recordId, currentSnapshot);
     recordVersionStore.set(recordId, nextVersion);
 
-    // Proxy next version
+    // Proxy next version (apply diff)
     const proxyRef = recordProxyStore.get(recordId);
     const proxy = proxyRef?.deref();
     if (proxy) {
-      overlayRecordDiff(proxy, currentSnapshot, changes[0], changes[1], changes[2], nextVersion);
+      overlayRecordDiff(proxy, currentSnapshot, changedFields, typenameChanged, idChanged, nextVersion);
     }
+
+    // Bump global epoch after a real change
+    bumpClock();
   };
 
   const removeRecord = (recordId: string): void => {
+    const hadRecord = recordStore.has(recordId) || recordProxyStore.has(recordId) || recordVersionStore.has(recordId);
+
     const proxyRef = recordProxyStore.get(recordId);
     if (proxyRef) {
       const proxy = proxyRef.deref();
@@ -200,9 +244,14 @@ export const createGraph = (options?: GraphOptions) => {
         }
       }
     }
+
     recordStore.delete(recordId);
     recordProxyStore.delete(recordId);
     recordVersionStore.delete(recordId);
+
+    if (hadRecord) {
+      bumpClock();
+    }
   };
 
   const materializeRecord = (recordId: string): any => {
@@ -228,6 +277,8 @@ export const createGraph = (options?: GraphOptions) => {
   const keys = () => Array.from(recordStore.keys());
 
   const clear = () => {
+    let hadAnything = recordStore.size > 0 || recordProxyStore.size > 0 || recordVersionStore.size > 0;
+
     for (const [, weakRef] of recordProxyStore) {
       const proxy = weakRef.deref();
       if (proxy) {
@@ -237,6 +288,12 @@ export const createGraph = (options?: GraphOptions) => {
     recordStore.clear();
     recordProxyStore.clear();
     recordVersionStore.clear();
+
+    identityManager.clear();
+
+    if (hadAnything) {
+      bumpClock();
+    }
   };
 
   const inspect = () => {
@@ -250,15 +307,19 @@ export const createGraph = (options?: GraphOptions) => {
         keys: options?.keys || {},
         interfaces: options?.interfaces || {},
       },
+      clock: epochClock,
     };
   };
 
-  // 🔹 NEW: expose versions so documents.ts can compute fast stamps
+  // 🔹 Expose versions so documents.ts can compute stamps
   const getVersion = (recordId: string): number => {
     return recordVersionStore.get(recordId) || 0;
   };
 
-  // 🔹 NEW: expose interface map so documents.ts can do subtype checks without peeking into internals
+  // 🔹 Expose a global epoch for O(1) hot-cache confirmation
+  const getClock = (): number => epochClock;
+
+  // 🔹 Expose interface map for subtype checks
   const interfaces = options?.interfaces || {};
 
   return {
@@ -271,6 +332,7 @@ export const createGraph = (options?: GraphOptions) => {
     clear,
     inspect,
     getVersion,
+    getClock,
     interfaces,
   };
 };

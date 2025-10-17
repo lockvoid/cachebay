@@ -43,15 +43,41 @@ export type DocumentsInstance = ReturnType<typeof createDocuments>;
 export const createDocuments = (deps: DocumentsDependencies) => {
   const { graph, planner, canonical } = deps;
 
-  /**
-    * Normalizes a GraphQL response into the graph store.
-    * Updates canonical connection pages for queries.
-    */
-  /**
-     * Normalizes a GraphQL response into the graph store.
-     * Updates canonical connection pages for queries.
-     * RETURNS the set of touched ids (records/pages) for targeted re-emits.
-     */
+  // -------------------------
+  // Helpers (stable stringify, var masking, selection fingerprint)
+  // -------------------------
+
+  const selectionFingerprint = (pf?: PlanField | null): any => {
+    if (!pf) return null;
+    return {
+      rk: pf.responseKey,
+      fn: pf.fieldName,
+      tc: (pf as any).typeCondition ?? (pf as any).onType ?? undefined,
+      isConn: !!(pf as any).isConnection,
+      sel: pf.selectionSet?.map((c) => selectionFingerprint(c)) ?? null,
+    };
+  };
+
+  const getSelId = (pf: PlanField): string => {
+    // Prefer planner-provided id if exists, else derive a stable fingerprint
+    return (pf as any).selId ?? stableStringify(selectionFingerprint(pf));
+  };
+
+  const maskVarsKey = (mask: string[] | undefined | null, vars: Record<string, any>) => {
+    if (!mask || mask.length === 0) return "";
+    const sub: Record<string, any> = {};
+    const sorted = [...mask].sort();
+    for (let i = 0; i < sorted.length; i++) {
+      const k = sorted[i];
+      if (k in vars) sub[k] = vars[k];
+    }
+    return stableStringify(sub);
+  };
+
+  // -------------------------
+  // normalizeDocument (using traverseFast)
+  // -------------------------
+
   const normalizeDocument = ({
     document,
     variables = {},
@@ -208,8 +234,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
           return {
             parentId: edgeKey,
-            fields: fieldsMap,
-            fieldsMap: fieldsMap,
+            fields: frame.fields,
+            fieldsMap: frame.fieldsMap,
             insideConnection: true,
             pageKey: frame.pageKey,
             inEdges: true,
@@ -217,7 +243,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         }
 
         // Connection container
-        if (planField && planField.isConnection) {
+        if (planField && (planField as any).isConnection) {
           const pageKey = buildConnectionKey(planField, parentId, variables);
           const parentFieldKey = buildFieldKey(planField, variables);
 
@@ -358,21 +384,22 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     return { touched };
   };
 
-  /* MATERIALIZE DOCUMENT START */
-
-  type MaterializeArgs = {
-    document: DocumentNode | CachePlan;
-    variables?: Record<string, any>;
+  /* MATERIALIZE DOCUMENT (with dev logs) */
+  type MaterializeResult = {
+    data?: any;
+    status: "FULFILLED" | "MISSING";
+    deps?: string[];
+    debug?: { misses: Array<Record<string, any>>; vars: Record<string, any> };
   };
 
-  // Use a constant the bundler can fold away
+  type CacheEntry = { data: any; stamp: string; deps: string[]; clock: number };
+
   const __DEV__ = process.env.NODE_ENV !== "production";
 
-  // bump as needed
-  const MATERIALIZE_LRU_CAP = 512;
-
+  // tiny LRU per-plan for top-level results
+  const RESULT_LRU_CAP = 512;
   class LRU<K, V> {
-    constructor(private cap = MATERIALIZE_LRU_CAP) { }
+    constructor(private cap = RESULT_LRU_CAP) { }
     private m = new Map<K, V>();
     get(k: K): V | undefined {
       const v = this.m.get(k);
@@ -390,7 +417,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         this.m.delete(oldest);
       }
     }
-    delete(k: K) { this.m.delete(k); }
     clear() { this.m.clear(); }
   }
 
@@ -401,51 +427,17 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     return "{" + keys.map(k => JSON.stringify(k) + ":" + stableStringify(v[k])).join(",") + "}";
   };
 
-  // If you already declared Task above, remove this block.
-  /*
-  type Task =
-    | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string }
-    | { t: "ENTITY"; id: string; field: PlanField; out: any }
-    | { t: "CONNECTION"; parentId: string; field: PlanField; out: any; outKey: string }
-    | { t: "PAGE_INFO"; id: string; field: PlanField; out: any }
-    | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[] };
-  */
-
-  type MaterializeDebugMiss =
-    | { kind: "root_link_missing"; parentId: string; fieldKey: string }
-    | { kind: "entity_missing"; id: string }
-    | { kind: "canonical_missing"; canonicalKey: string }
-    | { kind: "strict_missing"; strictKey: string }
-    | { kind: "pageinfo_link_missing"; pageKey: string }
-    | { kind: "edge_node_link_missing"; edgeId: string };
-
-  type MaterializeDebug = {
-    misses: MaterializeDebugMiss[];
-    vars: Record<string, any>;
-  };
-
-  type MaterializeResult = {
-    data?: any;
-    status: "FULFILLED" | "MISSING";
-    deps?: string[];
-    /** present only in dev builds */
-    debug?: MaterializeDebug;
-  };
-
-  type CacheEntry = { data: any; stamp: string; deps: string[] };
-
-  const lruByPlan = new WeakMap<CachePlan, LRU<string, CacheEntry>>();
-  const getLRU = (plan: CachePlan) => {
-    let lru = lruByPlan.get(plan);
+  const resultLRUByPlan = new WeakMap<CachePlan, LRU<string, CacheEntry>>();
+  const getResultLRU = (plan: CachePlan) => {
+    let lru = resultLRUByPlan.get(plan);
     if (!lru) {
-      lru = new LRU<string, CacheEntry>(MATERIALIZE_LRU_CAP);
-      lruByPlan.set(plan, lru);
+      lru = new LRU<string, CacheEntry>(RESULT_LRU_CAP);
+      resultLRUByPlan.set(plan, lru);
     }
     return lru;
   };
 
   const makeVersionStamp = (ids: string[]): string => {
-    // graph.getVersion(id) is guaranteed
     let s = "";
     for (let i = 0; i < ids.length; i++) {
       const id = ids[i];
@@ -453,6 +445,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     }
     return s;
   };
+
+  type Task =
+    | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string }
+    | { t: "ENTITY"; id: string; field: PlanField; out: any }
+    | { t: "CONNECTION"; parentId: string; field: PlanField; out: any; outKey: string }
+    | { t: "PAGE_INFO"; id: string; field: PlanField; out: any }
+    | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[] };
 
   const materializeDocument = ({
     document,
@@ -464,33 +463,30 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     decisionMode?: "strict" | "canonical";
   }): MaterializeResult => {
     const plan = planner.getPlan(document);
-    const lru = getLRU(plan);
+    const lru = getResultLRU(plan);
     const vkey = `${decisionMode}|${stableStringify(variables)}`;
 
-    // Dev-only collector (DCE if production)
-    let debug: MaterializeDebug | undefined;
-    if (__DEV__) {
-      debug = { misses: [], vars: variables };
-    }
-    const miss = (m: MaterializeDebugMiss) => {
-      if (__DEV__) debug!.misses.push(m);
-    };
+    const nowClock = graph.getClock?.() ?? 0;
 
-    // ---- O(deps) fast path using versions ----
+    // DEV miss collector
+    const debug = __DEV__ ? { misses: [] as Array<Record<string, any>>, vars: variables } : undefined;
+    const miss = (m: Record<string, any>) => { if (__DEV__) debug!.misses.push(m); };
+
+    // ---- Result-level fast path via global clock ----
     const cached = lru.get(vkey);
-    if (cached) {
-      const currentStamp = makeVersionStamp(cached.deps);
-      if (currentStamp === cached.stamp) {
-        return { data: cached.data, status: "FULFILLED", deps: cached.deps.slice() };
-      }
-      // else fall through to recompute
+    if (cached && cached.clock === nowClock) {
+      if (__DEV__) console.log("[materialize] RESULT HOT", { vkey, clock: nowClock });
+      return { data: cached.data, status: "FULFILLED", deps: cached.deps.slice() };
+    }
+    if (__DEV__ && cached) {
+      console.log("[materialize] RESULT MISS", { vkey, cachedClock: cached.clock, nowClock });
     }
 
     // ---- full traversal to build data + deps ----
     const deps = new Set<string>();
     const touch = (id?: string | null) => { if (id) deps.add(id); };
 
-    const data: Record<string, any> = {};
+    const outData: Record<string, any> = {};
     let allOk = true;
 
     const root = graph.getRecord(ROOT_ID) || {};
@@ -499,7 +495,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const tasks: Task[] = [];
     for (let i = plan.root.length - 1; i >= 0; i--) {
       const f = plan.root[i];
-      tasks.push({ t: "ROOT_FIELD", parentId: ROOT_ID, field: f, out: data, outKey: f.responseKey });
+      tasks.push({ t: "ROOT_FIELD", parentId: ROOT_ID, field: f, out: outData, outKey: f.responseKey });
     }
 
     const isConnectionField = (f: PlanField): boolean => Boolean((f as any).isConnection);
@@ -612,7 +608,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             if (!link || !link.__ref) {
               out[f.responseKey] = link === null ? null : undefined;
               allOk = false;
-              miss({ kind: "root_link_missing", parentId: id, fieldKey: buildFieldKey(f, variables) });
+              miss({ kind: "child_link_missing", parentId: id, fieldKey: buildFieldKey(f, variables) });
               continue;
             }
 
@@ -748,7 +744,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             if (!link || !link.__ref) {
               conn[pf.responseKey] = link === null ? null : undefined;
               allOk = false;
-              miss({ kind: "root_link_missing", parentId: canonicalKey, fieldKey: buildFieldKey(pf, variables) });
+              miss({ kind: "page_child_link_missing", parentId: canonicalKey, fieldKey: buildFieldKey(pf, variables) });
               continue;
             }
 
@@ -830,19 +826,27 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     if (!allOk) {
       const depsArr = Array.from(deps);
+      if (__DEV__) {
+        console.log("[materialize] STATUS=MISSING", { vkey, deps: depsArr.length, misses: debug!.misses });
+      }
       const res: MaterializeResult = { status: "MISSING", data: undefined, deps: depsArr };
       if (__DEV__) (res as any).debug = debug;
       return res;
     }
 
-    // build new stamp using versions (fast) and cache
+    // build new stamp using versions (not used for guard, but handy for debugging)
     const ids = Array.from(deps).sort();
     const stamp = makeVersionStamp(ids);
 
-    lru.set(vkey, { data, stamp, deps: ids });
-    return { data, status: "FULFILLED", deps: ids };
+    // cache result with current global clock
+    lru.set(vkey, { data: outData, stamp, deps: ids, clock: nowClock });
+
+    if (__DEV__) {
+      console.log("[materialize] STATUS=FULFILLED", { vkey, deps: ids.length, clock: nowClock });
+    }
+
+    return { data: outData, status: "FULFILLED", deps: ids, ...(debug ? { debug } : null) };
   };
-  /* MATERIALIZE DOCUMENT END */
 
   return {
     normalizeDocument,
