@@ -44,10 +44,14 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   const { graph, planner, canonical } = deps;
 
   /**
-   * Normalizes a GraphQL response into the graph store.
-   * Updates canonical connection pages for queries.
-   * RETURNS the set of touched ids (records/pages) for targeted re-emits.
-   */
+    * Normalizes a GraphQL response into the graph store.
+    * Updates canonical connection pages for queries.
+    */
+  /**
+     * Normalizes a GraphQL response into the graph store.
+     * Updates canonical connection pages for queries.
+     * RETURNS the set of touched ids (records/pages) for targeted re-emits.
+     */
   const normalizeDocument = ({
     document,
     variables = {},
@@ -58,38 +62,15 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     data: any;
   }): { touched: Set<string> } => {
     const touched = new Set<string>();
-
-    // --- write batching: accumulate patches per id, flush once at the end ---
-    const pending = new Map<string, Record<string, any>>();
-
     const put = (id: string, patch: Record<string, any>) => {
       touched.add(id);
-
-      let acc = pending.get(id);
-      if (!acc) {
-        acc = {};
-        pending.set(id, acc);
-      }
-
-      // shallow merge without allocating a new object
-      for (const k in patch) {
-        acc[k] = patch[k];
-      }
+      graph.putRecord(id, patch);
     };
 
     const plan = planner.getPlan(document);
     const isQuery = plan.operation === "query";
 
     put(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
-
-    type Frame = {
-      parentId: string;
-      fields?: PlanField[];
-      fieldsMap?: Map<string, PlanField>;
-      insideConnection: boolean;
-      pageKey: string | null;
-      inEdges: boolean;
-    };
 
     const connectionPages: ConnectionPage[] = [];
 
@@ -102,215 +83,137 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       inEdges: false,
     };
 
-    // ---- Inlined traversal (specialized hot path; no callback, no symbols) ----
-    const stack: any[] = [null, data, null, initialFrame];
-    const identify = graph.identify; // micro: avoid property lookups in hot path
-
-    while (stack.length > 0) {
-      const frame = stack.pop() as Frame | undefined;
-      const responseKey = stack.pop() as string | number | null;
-      const valueNode = stack.pop() as any;
-       /* const parentNode = */ stack.pop(); // not used; popped for parity
-
-      if (!frame) {
-        continue;
-      }
-      if (responseKey == null && frame !== initialFrame) {
-        continue;
-      }
+    const visit = (
+      _parentNode: any,
+      valueNode: any,
+      responseKey: string | number | null,
+      kind: symbol,
+      frame?: Frame,
+    ) => {
+      if (!frame) return;
+      if (responseKey == null) return frame;
 
       const parentId = frame.parentId;
       const fieldsMap = frame.fieldsMap as Map<string, PlanField> | undefined;
-      const planField =
-        typeof responseKey === "string" && fieldsMap ? fieldsMap.get(responseKey) : undefined;
+      const planField = typeof responseKey === "string" && fieldsMap ? fieldsMap.get(responseKey) : undefined;
 
-      // ---------- ARRAY ----------
-      if (Array.isArray(valueNode)) {
+      /* ====== ARRAYS ====== */
+      if (kind === TRAVERSE_ARRAY) {
         // Connection edges
         if (frame.insideConnection && responseKey === "edges") {
           const pageKey = frame.pageKey as string;
-          const rawEdges: any[] = valueNode;
+          const rawEdges: any[] = Array.isArray(valueNode) ? valueNode : [];
           const edgeRefs: string[] = new Array(rawEdges.length);
-
           for (let i = 0; i < rawEdges.length; i++) {
             edgeRefs[i] = `${pageKey}.edges.${i}`;
           }
           put(pageKey, { edges: { __refs: edgeRefs } });
 
           const edgesField = fieldsMap?.get("edges");
-
-          // Push children
-          for (let i = rawEdges.length - 1; i >= 0; i--) {
-            const child = rawEdges[i];
-            if (isObject(child)) {
-              const nextFrame: Frame = {
-                parentId: pageKey,
-                fields: edgesField?.selectionSet,
-                fieldsMap: edgesField?.selectionMap,
-                insideConnection: true,
-                pageKey,
-                inEdges: true,
-              };
-              stack.push(valueNode, child, i, nextFrame);
-            }
-          }
-          continue;
+          return {
+            parentId: frame.parentId,
+            fields: edgesField?.selectionSet,
+            fieldsMap: edgesField?.selectionMap,
+            insideConnection: true,
+            pageKey,
+            inEdges: true,
+          } as Frame;
         }
 
-        // Plain array with NO selection → store raw clone
+        // Plain array scalar/object values without selection → store raw array
         if (planField && !planField.selectionSet) {
           const fieldKey = buildFieldKey(planField, variables);
           const arr = valueNode as any[];
           const out = new Array(arr.length);
-          for (let i = 0; i < arr.length; i++) {
-            out[i] = arr[i];
-          }
+          for (let i = 0; i < arr.length; i++) out[i] = arr[i];
           put(parentId, { [fieldKey]: out });
-          continue;
+          return TRAVERSE_SKIP;
         }
 
-        // Array of objects WITH selection → store { __refs } and descend
+        // Arrays of objects WITH a selection
         if (planField && planField.selectionSet) {
           const fieldKey = buildFieldKey(planField, variables);
-          const arr = valueNode as any[];
+          const arr = Array.isArray(valueNode) ? (valueNode as any[]) : [];
           const baseKey = `${parentId}.${fieldKey}`;
 
           const refs: string[] = new Array(arr.length);
           for (let i = 0; i < arr.length; i++) {
             const item = arr[i];
-            const entKey = isObject(item) ? identify(item) : null;
+            const entKey = isObject(item) ? graph.identify(item) : null;
             const itemKey = entKey ?? `${baseKey}.${i}`;
             if (isObject(item)) {
-              if ((item as any).__typename) {
-                put(itemKey, { __typename: (item as any).__typename });
-              } else {
-                put(itemKey, {});
-              }
+              if ((item as any).__typename) put(itemKey, { __typename: (item as any).__typename });
+              else put(itemKey, {});
             }
             refs[i] = itemKey;
           }
 
           put(parentId, { [fieldKey]: { __refs: refs } });
 
-          for (let i = arr.length - 1; i >= 0; i--) {
-            const item = arr[i];
-            if (isObject(item)) {
-              const nextFrame: Frame = {
-                parentId,
-                fields: planField.selectionSet,
-                fieldsMap: planField.selectionMap,
-                insideConnection: false,
-                pageKey: baseKey,
-                inEdges: true,
-              };
-              stack.push(arr, item, i, nextFrame);
-            }
-          }
-          continue;
+          return {
+            parentId,
+            fields: planField.selectionSet,
+            fieldsMap: planField.selectionMap,
+            insideConnection: false,
+            pageKey: baseKey,
+            inEdges: true,
+          } as Frame;
         }
 
-        // No planField — keep walking
-        for (let i = valueNode.length - 1; i >= 0; i--) {
-          const child = valueNode[i];
-          if (isObject(child)) {
-            stack.push(valueNode, child, i, frame);
-          }
-        }
-        continue;
+        return frame;
       }
 
-      // ---------- OBJECT ----------
-      if (isObject(valueNode)) {
-        // Plain object field with no selection → store raw
+      /* ====== OBJECTS ====== */
+      if (kind === TRAVERSE_OBJECT) {
+        // Plain object field with no selection
         if (planField && !planField.selectionSet) {
           const fieldKey = buildFieldKey(planField, variables);
           put(parentId, { [fieldKey]: valueNode });
-          continue;
+          return TRAVERSE_SKIP;
         }
 
-        // Generic array item object (not connection edges)
+        // Generic array item objects (not connection edges)
         if (!frame.insideConnection && frame.inEdges && typeof responseKey === "number") {
           const item = valueNode as any;
-          const entKey = isObject(item) ? identify(item) : null;
+          const entKey = isObject(item) ? graph.identify(item) : null;
           const itemKey = entKey ?? `${frame.pageKey}.${responseKey}`;
 
           if (isObject(item)) {
-            if (item.__typename) {
-              put(itemKey, { __typename: item.__typename });
-            } else {
-              put(itemKey, {});
-            }
+            if (item.__typename) put(itemKey, { __typename: item.__typename });
+            else put(itemKey, {});
           }
 
-          const nextFrame: Frame = {
+          return {
             parentId: itemKey,
             fields: frame.fields,
             fieldsMap: frame.fieldsMap,
             insideConnection: false,
             pageKey: frame.pageKey,
             inEdges: false,
-          };
-
-          const keys = Object.keys(valueNode);
-          for (let i = keys.length - 1; i >= 0; i--) {
-            const k = keys[i];
-            const child = (valueNode as any)[k];
-            if (isObject(child)) {
-              stack.push(valueNode, child, k, nextFrame);
-            } else if (typeof k === "string" && nextFrame.fieldsMap) {
-              const pf = nextFrame.fieldsMap.get(k);
-              if (pf && !pf.selectionSet) {
-                const fk = buildFieldKey(pf, variables);
-                put(nextFrame.parentId, { [fk]: child });
-              }
-            }
-          }
-          continue;
+          } as Frame;
         }
 
         // Connection edges[i]
         if (frame.insideConnection && frame.inEdges && typeof responseKey === "number") {
           const edgeKey = `${frame.pageKey}.edges.${responseKey}`;
-          const edgeObj = valueNode as any;
 
-          if (edgeObj && edgeObj.__typename) {
-            put(edgeKey, { __typename: edgeObj.__typename });
-          } else {
-            put(edgeKey, {});
-          }
+          if (valueNode && (valueNode as any).__typename) put(edgeKey, { __typename: (valueNode as any).__typename });
+          else put(edgeKey, {});
 
-          const nodeObj = edgeObj.node;
+          const nodeObj = (valueNode as any).node;
           if (nodeObj) {
-            const nodeKey = identify(nodeObj);
-            if (nodeKey) {
-              put(edgeKey, { node: { __ref: nodeKey } });
-            }
+            const nodeKey = graph.identify(nodeObj);
+            if (nodeKey) put(edgeKey, { node: { __ref: nodeKey } });
           }
 
-          const nextFrame: Frame = {
+          return {
             parentId: edgeKey,
-            fields: frame.fields,
-            fieldsMap: frame.fieldsMap,
+            fields: fieldsMap,
+            fieldsMap: fieldsMap,
             insideConnection: true,
             pageKey: frame.pageKey,
             inEdges: true,
-          };
-
-          const keys = Object.keys(edgeObj);
-          for (let i = keys.length - 1; i >= 0; i--) {
-            const k = keys[i];
-            const child = edgeObj[k];
-            if (isObject(child)) {
-              stack.push(edgeObj, child, k, nextFrame);
-            } else if (typeof k === "string" && nextFrame.fieldsMap) {
-              const pf = nextFrame.fieldsMap.get(k);
-              if (pf && !pf.selectionSet) {
-                const fk = buildFieldKey(pf, variables);
-                put(nextFrame.parentId, { [fk]: child });
-              }
-            }
-          }
-          continue;
+          } as Frame;
         }
 
         // Connection container
@@ -319,31 +222,30 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           const parentFieldKey = buildFieldKey(planField, variables);
 
           const pageRecord: Record<string, any> = {};
-          if ((valueNode as any).__typename) {
+          if (valueNode && (valueNode as any).__typename) {
             pageRecord.__typename = (valueNode as any).__typename;
           }
 
-          const kList = Object.keys(valueNode);
-          for (let i = 0; i < kList.length; i++) {
-            const k = kList[i];
-            if (k === "__typename" || k === "edges" || k === "pageInfo") {
-              continue;
-            }
-            const v = (valueNode as any)[k];
-            if (v !== undefined && v !== null && typeof v !== "object") {
-              pageRecord[k] = v;
-            } else if (Array.isArray(v) || (v !== null && typeof v === "object" && !(v && (v as any).__typename))) {
-              pageRecord[k] = v;
+          if (valueNode) {
+            const keys = Object.keys(valueNode);
+            for (let i = 0; i < keys.length; i++) {
+              const k = keys[i];
+              if (k === "__typename" || k === "edges" || k === "pageInfo") continue;
+              const v = (valueNode as any)[k];
+              if (v !== undefined && v !== null && typeof v !== "object") {
+                pageRecord[k] = v;
+              } else if (Array.isArray(v) || (v !== null && typeof v === "object" && !(v && (v as any).__typename))) {
+                pageRecord[k] = v;
+              }
             }
           }
 
           put(pageKey, pageRecord);
 
-          const vPageInfo = (valueNode as any)?.pageInfo;
-          if (vPageInfo) {
+          if ((valueNode as any)?.pageInfo) {
             const pageInfoKey = `${pageKey}.pageInfo`;
             put(pageKey, { pageInfo: { __ref: pageInfoKey } });
-            const piTypename = vPageInfo.__typename;
+            const piTypename = (valueNode as any)?.pageInfo?.__typename;
             put(pageInfoKey, piTypename ? { __typename: piTypename } : {});
           }
 
@@ -352,41 +254,22 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             connectionPages.push({ field: planField, parentId, pageKey });
           }
 
-          const nextFrame: Frame = {
+          return {
             parentId: pageKey,
             fields: planField.selectionSet,
             fieldsMap: planField.selectionMap,
             insideConnection: true,
             pageKey,
             inEdges: false,
-          };
-
-          const keys = Object.keys(valueNode);
-          for (let i = keys.length - 1; i >= 0; i--) {
-            const k = keys[i];
-            const child = (valueNode as any)[k];
-            if (isObject(child)) {
-              stack.push(valueNode, child, k, nextFrame);
-            } else if (typeof k === "string" && nextFrame.fieldsMap) {
-              const pf = nextFrame.fieldsMap.get(k);
-              if (pf && !pf.selectionSet) {
-                const fk = buildFieldKey(pf, variables);
-                put(nextFrame.parentId, { [fk]: child });
-              }
-            }
-          }
-          continue;
+          } as Frame;
         }
 
         // Entity object
         {
-          const entityKey = identify(valueNode);
+          const entityKey = graph.identify(valueNode);
           if (entityKey) {
-            if ((valueNode as any).__typename) {
-              put(entityKey, { __typename: (valueNode as any).__typename });
-            } else {
-              put(entityKey, {});
-            }
+            if (valueNode && (valueNode as any).__typename) put(entityKey, { __typename: (valueNode as any).__typename });
+            else put(entityKey, {});
 
             if (isQuery && planField && !(frame.insideConnection && planField.responseKey === "node")) {
               const parentFieldKey = buildFieldKey(planField, variables);
@@ -395,43 +278,24 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
             const fromNode = !!planField && planField.responseKey === "node";
 
-            const nextFrame: Frame = {
+            return {
               parentId: entityKey,
               fields: planField?.selectionSet,
               fieldsMap: planField?.selectionMap,
               insideConnection: fromNode ? false : frame.insideConnection,
               pageKey: fromNode ? null : frame.pageKey,
               inEdges: fromNode ? false : frame.inEdges,
-            };
-
-            const keys = Object.keys(valueNode);
-            for (let i = keys.length - 1; i >= 0; i--) {
-              const k = keys[i];
-              const child = (valueNode as any)[k];
-              if (isObject(child)) {
-                stack.push(valueNode, child, k, nextFrame);
-              } else if (typeof k === "string" && nextFrame.fieldsMap) {
-                const pf = nextFrame.fieldsMap.get(k);
-                if (pf && !pf.selectionSet) {
-                  const fk = buildFieldKey(pf, variables);
-                  put(nextFrame.parentId, { [fk]: child });
-                }
-              }
-            }
-            continue;
+            } as Frame;
           }
         }
 
-        // Inline container (no identify)
+        // Inline container
         if (planField) {
           const containerFieldKey = buildFieldKey(planField, variables);
           const containerKey = `${parentId}.${containerFieldKey}`;
 
-          if ((valueNode as any).__typename) {
-            put(containerKey, { __typename: (valueNode as any).__typename });
-          } else {
-            put(containerKey, {});
-          }
+          if (valueNode && (valueNode as any).__typename) put(containerKey, { __typename: (valueNode as any).__typename });
+          else put(containerKey, {});
 
           if (isQuery) {
             put(parentId, { [containerFieldKey]: { __ref: containerKey } });
@@ -441,68 +305,37 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             put(frame.pageKey, { pageInfo: { __ref: containerKey } });
           }
 
-          const nextFrame: Frame = {
+          return {
             parentId: containerKey,
             fields: planField.selectionSet,
             fieldsMap: planField.selectionMap,
             insideConnection: frame.insideConnection,
             pageKey: frame.pageKey,
             inEdges: false,
-          };
-
-          const keys = Object.keys(valueNode);
-          for (let i = keys.length - 1; i >= 0; i--) {
-            const k = keys[i];
-            const child = (valueNode as any)[k];
-            if (isObject(child)) {
-              stack.push(valueNode, child, k, nextFrame);
-            } else if (typeof k === "string" && nextFrame.fieldsMap) {
-              const pf = nextFrame.fieldsMap.get(k);
-              if (pf && !pf.selectionSet) {
-                const fk = buildFieldKey(pf, variables);
-                put(nextFrame.parentId, { [fk]: child });
-              }
-            }
-          }
-          continue;
+          } as Frame;
         }
 
-        // No planField: descend with same frame
-        {
-          const keys = Object.keys(valueNode);
-          for (let i = keys.length - 1; i >= 0; i--) {
-            const k = keys[i];
-            const child = (valueNode as any)[k];
-            if (isObject(child)) {
-              stack.push(valueNode, child, k, frame);
-            } else if (typeof k === "string" && frame.fieldsMap) {
-              const pf = frame.fieldsMap.get(k);
-              if (pf && !pf.selectionSet) {
-                const fk = buildFieldKey(pf, variables);
-                put(frame.parentId, { [fk]: child });
-              }
-            }
-          }
-          continue;
-        }
+        return frame;
       }
 
-      // ---------- SCALAR ----------
-      if (typeof responseKey === "string" && fieldsMap) {
-        const f = fieldsMap.get(responseKey);
-        if (f && !f.selectionSet) {
-          const fieldKey = buildFieldKey(f, variables);
-          put(frame.parentId, { [fieldKey]: valueNode });
+      /* ====== SCALARS ====== */
+      if (kind === TRAVERSE_SCALAR) {
+        if (typeof responseKey === "string" && fieldsMap) {
+          const f = fieldsMap.get(responseKey);
+          if (f && !f.selectionSet) {
+            const fieldKey = buildFieldKey(f, variables);
+            put(frame.parentId, { [fieldKey]: valueNode });
+          }
         }
+        return frame;
       }
-    }
 
-    // --- flush all batched writes exactly once now ---
-    for (const [id, patch] of pending) {
-      graph.putRecord(id, patch);
-    }
+      return frame;
+    };
 
-    // --- canonical updates (queries only) ---
+    traverseFast(data, initialFrame, visit);
+
+    // Update canonical connections (queries only) and mark canonical key as touched
     if (isQuery && connectionPages.length > 0) {
       for (let i = 0; i < connectionPages.length; i++) {
         const { field, parentId, pageKey } = connectionPages[i];
@@ -531,6 +364,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     document: DocumentNode | CachePlan;
     variables?: Record<string, any>;
   };
+
+  // Use a constant the bundler can fold away
+  const __DEV__ = process.env.NODE_ENV !== "production";
 
   // bump as needed
   const MATERIALIZE_LRU_CAP = 512;
@@ -565,32 +401,51 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     return "{" + keys.map(k => JSON.stringify(k) + ":" + stableStringify(v[k])).join(",") + "}";
   };
 
+  // If you already declared Task above, remove this block.
+  /*
   type Task =
     | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string }
     | { t: "ENTITY"; id: string; field: PlanField; out: any }
     | { t: "CONNECTION"; parentId: string; field: PlanField; out: any; outKey: string }
     | { t: "PAGE_INFO"; id: string; field: PlanField; out: any }
     | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[] };
+  */
 
-  // --- inside createDocuments(...) ---
+  type MaterializeDebugMiss =
+    | { kind: "root_link_missing"; parentId: string; fieldKey: string }
+    | { kind: "entity_missing"; id: string }
+    | { kind: "canonical_missing"; canonicalKey: string }
+    | { kind: "strict_missing"; strictKey: string }
+    | { kind: "pageinfo_link_missing"; pageKey: string }
+    | { kind: "edge_node_link_missing"; edgeId: string };
 
-  type MaterializeResult = { data?: any; status: "FULFILLED" | "MISSING"; deps?: string[] };
+  type MaterializeDebug = {
+    misses: MaterializeDebugMiss[];
+    vars: Record<string, any>;
+  };
+
+  type MaterializeResult = {
+    data?: any;
+    status: "FULFILLED" | "MISSING";
+    deps?: string[];
+    /** present only in dev builds */
+    debug?: MaterializeDebug;
+  };
+
   type CacheEntry = { data: any; stamp: string; deps: string[] };
 
   const lruByPlan = new WeakMap<CachePlan, LRU<string, CacheEntry>>();
   const getLRU = (plan: CachePlan) => {
     let lru = lruByPlan.get(plan);
     if (!lru) {
-      // bump capacity a bit; adjust to your workload
-      lru = new LRU<string, CacheEntry>(512);
+      lru = new LRU<string, CacheEntry>(MATERIALIZE_LRU_CAP);
       lruByPlan.set(plan, lru);
     }
     return lru;
   };
 
   const makeVersionStamp = (ids: string[]): string => {
-    // relies on graph.getVersion(id) always being available
-    // order must be stable; keep ids sorted in cache entry
+    // graph.getVersion(id) is guaranteed
     let s = "";
     for (let i = 0; i < ids.length; i++) {
       const id = ids[i];
@@ -612,15 +467,23 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const lru = getLRU(plan);
     const vkey = `${decisionMode}|${stableStringify(variables)}`;
 
+    // Dev-only collector (DCE if production)
+    let debug: MaterializeDebug | undefined;
+    if (__DEV__) {
+      debug = { misses: [], vars: variables };
+    }
+    const miss = (m: MaterializeDebugMiss) => {
+      if (__DEV__) debug!.misses.push(m);
+    };
+
     // ---- O(deps) fast path using versions ----
     const cached = lru.get(vkey);
     if (cached) {
       const currentStamp = makeVersionStamp(cached.deps);
       if (currentStamp === cached.stamp) {
-        // fully hot: no traversal, return cached data immediately
         return { data: cached.data, status: "FULFILLED", deps: cached.deps.slice() };
       }
-      // else fall through to recompute below
+      // else fall through to recompute
     }
 
     // ---- full traversal to build data + deps ----
@@ -633,13 +496,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const root = graph.getRecord(ROOT_ID) || {};
     touch(ROOT_ID);
 
-    type Task =
-      | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string }
-      | { t: "ENTITY"; id: string; field: PlanField; out: any }
-      | { t: "CONNECTION"; parentId: string; field: PlanField; out: any; outKey: string }
-      | { t: "PAGE_INFO"; id: string; field: PlanField; out: any }
-      | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[] };
-
     const tasks: Task[] = [];
     for (let i = plan.root.length - 1; i >= 0; i--) {
       const f = plan.root[i];
@@ -648,6 +504,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     const isConnectionField = (f: PlanField): boolean => Boolean((f as any).isConnection);
 
+    // ---- type-conditions (inline fragments) helpers ----
     const isSubtype = (actual?: string, expected?: string): boolean => {
       if (!expected || !actual) return true;
       if (actual === expected) return true;
@@ -664,6 +521,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       if (Array.isArray(many)) return many.some((t: string) => isSubtype(actualType, t));
       return true;
     };
+    // ----------------------------------------------------
 
     while (tasks.length) {
       const task = tasks.pop() as Task;
@@ -678,10 +536,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
         if (field.selectionSet && field.selectionSet.length) {
           const snap = graph.getRecord(parentId) || {};
-          const link = (snap as any)[buildFieldKey(field, variables)];
+          const fieldKey = buildFieldKey(field, variables);
+          const link = (snap as any)[fieldKey];
           if (!link || !link.__ref) {
             out[outKey] = link === null ? null : undefined;
             allOk = false;
+            miss({ kind: "root_link_missing", parentId, fieldKey });
             continue;
           }
           const childId = link.__ref as string;
@@ -691,6 +551,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           continue;
         }
 
+        // scalar at root
         if (field.fieldName === "__typename") {
           out[outKey] = (root as any).__typename;
         } else {
@@ -707,6 +568,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
         if (!rec) {
           allOk = false;
+          miss({ kind: "entity_missing", id });
         }
 
         const snap = rec || {};
@@ -732,6 +594,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           if (f.selectionSet && f.selectionSet.length) {
             const link = (snap as any)[buildFieldKey(f, variables)];
 
+            // array-of-refs
             if (link && typeof link === "object" && Array.isArray(link.__refs)) {
               const refs: string[] = link.__refs.slice();
               const arrOut: any[] = new Array(refs.length);
@@ -745,9 +608,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
+            // single ref or missing
             if (!link || !link.__ref) {
               out[f.responseKey] = link === null ? null : undefined;
               allOk = false;
+              miss({ kind: "root_link_missing", parentId: id, fieldKey: buildFieldKey(f, variables) });
               continue;
             }
 
@@ -758,6 +623,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             continue;
           }
 
+          // scalar
           if (f.fieldName === "__typename") {
             out[f.responseKey] = (snap as any).__typename;
           } else {
@@ -785,15 +651,21 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       if (task.t === "CONNECTION") {
         const { parentId, field, out, outKey } = task;
 
+        // Always read from CANONICAL page…
         const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
         touch(canonicalKey);
         const pageCanonical = graph.getRecord(canonicalKey);
 
+        // …but strict requires strict page presence too
         let ok = !!pageCanonical;
         if (ok && decisionMode === "strict") {
           const strictKey = buildConnectionKey(field, parentId, variables);
           const pageStrict = graph.getRecord(strictKey);
           ok = !!pageStrict;
+          if (!ok) miss({ kind: "strict_missing", strictKey });
+        }
+        if (!pageCanonical) {
+          miss({ kind: "canonical_missing", canonicalKey });
         }
 
         const conn: any = { edges: [], pageInfo: {} };
@@ -815,6 +687,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
                 tasks.push({ t: "PAGE_INFO", id: piLink.__ref as string, field: pf, out: conn });
               } else {
                 conn.pageInfo = {};
+                allOk = false;
+                miss({ kind: "pageinfo_link_missing", pageKey: canonicalKey });
               }
               continue;
             }
@@ -838,6 +712,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
+            // Other page fields
             if (!pf.selectionSet) {
               if (pf.fieldName === "__typename") {
                 conn[pf.responseKey] = (page as any).__typename;
@@ -848,11 +723,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
+            // nested connection
             if (isConnectionField(pf)) {
               tasks.push({ t: "CONNECTION", parentId: canonicalKey, field: pf, out: conn, outKey: pf.responseKey });
               continue;
             }
 
+            // containers/entities under page
             const link = (page as any)[buildFieldKey(pf, variables)];
 
             if (link && typeof link === "object" && Array.isArray(link.__refs)) {
@@ -871,6 +748,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             if (!link || !link.__ref) {
               conn[pf.responseKey] = link === null ? null : undefined;
               allOk = false;
+              miss({ kind: "root_link_missing", parentId: canonicalKey, fieldKey: buildFieldKey(pf, variables) });
               continue;
             }
 
@@ -929,6 +807,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             if (!nlink || !nlink.__ref) {
               edgeOut.node = nlink === null ? null : undefined;
               allOk = false;
+              miss({ kind: "edge_node_link_missing", edgeId: id });
             } else {
               const nid = nlink.__ref as string;
               const nOut: any = {};
@@ -950,7 +829,10 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     }
 
     if (!allOk) {
-      return { status: "MISSING", data: undefined, deps: Array.from(deps) };
+      const depsArr = Array.from(deps);
+      const res: MaterializeResult = { status: "MISSING", data: undefined, deps: depsArr };
+      if (__DEV__) (res as any).debug = debug;
+      return res;
     }
 
     // build new stamp using versions (fast) and cache
@@ -960,6 +842,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     lru.set(vkey, { data, stamp, deps: ids });
     return { data, status: "FULFILLED", deps: ids };
   };
+  /* MATERIALIZE DOCUMENT END */
 
   return {
     normalizeDocument,
