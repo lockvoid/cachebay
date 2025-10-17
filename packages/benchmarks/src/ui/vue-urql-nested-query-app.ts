@@ -27,28 +27,18 @@ const USERS_QUERY = gql`
                     node {
                       id
                       text
-                      author {
-                        id
-                        name
-                      }
+                      author { id name }
                     }
                   }
-                  pageInfo {
-                    hasNextPage
-                  }
+                  pageInfo { hasNextPage }
                 }
               }
             }
-            pageInfo {
-              hasNextPage
-            }
+            pageInfo { hasNextPage }
           }
         }
       }
-      pageInfo {
-        endCursor
-        hasNextPage
-      }
+      pageInfo { endCursor hasNextPage }
     }
   }
 `;
@@ -57,23 +47,16 @@ export type VueUrqlNestedController = {
   mount(target?: Element): void;
   unmount(): void;
   loadNextPage(): Promise<void>;
-  getCount(): number;
+  getCount(): number;            // counts USERS only (top-level edges)
   getTotalRenderTime(): number;
 };
 
 export function createVueUrqlNestedApp(serverUrl: string): VueUrqlNestedController {
   const cache = graphcache({
     resolvers: {
-      Query: { 
-        users: relayPagination(),
-      },
-      User: {
-        posts: relayPagination(),
-        followers: relayPagination(),
-      },
-      Post: {
-        comments: relayPagination(),
-      },
+      Query: { users: relayPagination() },
+      User:  { posts: relayPagination(), followers: relayPagination() },
+      Post:  { comments: relayPagination() },
     },
   });
 
@@ -99,22 +82,36 @@ export function createVueUrqlNestedApp(serverUrl: string): VueUrqlNestedControll
       const { data, executeQuery } = useQuery({
         query: USERS_QUERY,
         variables,
-        pause: true,
+        pause: true, // manual “infinite” style like your feed example
+      });
+
+      // like InfiniteList: resolve a promise when count increases (paint complete)
+      const edgeCount = computed(() => data.value?.users?.edges?.length || 0);
+      let previousCount = 0;
+
+      watch(edgeCount, (newCount) => {
+        if (newCount > previousCount) {
+          previousCount = newCount;
+          nextTick(() => onRenderComplete?.());
+        }
       });
 
       const loadNextPage = async () => {
         const renderStart = performance.now();
 
+        const renderDone = new Promise<void>((resolve) => { onRenderComplete = resolve; });
+
+        // fetch a page from network; graphcache merges into users.edges
         await executeQuery({ variables, requestPolicy: 'network-only' });
 
+        // bump cursor from the merged result
         const endCursor = data.value?.users?.pageInfo?.endCursor ?? null;
         if (endCursor) variables.after = endCursor;
 
-        // Wait for next tick to ensure DOM is updated
-        await nextTick();
-        
-        const renderEnd = performance.now();
-        totalRenderTime += renderEnd - renderStart;
+        await renderDone;
+        onRenderComplete = null;
+
+        totalRenderTime += performance.now() - renderStart;
       };
 
       return { data, loadNextPage };
@@ -134,56 +131,40 @@ export function createVueUrqlNestedApp(serverUrl: string): VueUrqlNestedControll
           </div>
         </div>
       </div>
-    `
+    `,
   });
 
   return {
     mount(target?: Element) {
       if (app) return;
-
       container = target ?? document.createElement('div');
       if (!target) document.body.appendChild(container);
-
       app = createApp(NestedList);
       app.use(urql, client);
       componentInstance = app.mount(container);
     },
 
     async loadNextPage() {
-      if (componentInstance) {
-        await componentInstance.loadNextPage();
-      }
+      await componentInstance?.loadNextPage?.();
     },
 
     unmount() {
       if (app && container) {
         app.unmount();
-        if (!container.parentElement) {
-          container.remove();
-        }
+        if (container.parentElement) container.remove();
         app = null;
         container = null;
         componentInstance = null;
       }
     },
 
+    // count USERS only (top-level edges)
     getCount() {
-      let count = 0;
-      const users = componentInstance?.data?.users?.edges || [];
-      for (const userEdge of users) {
-        count++;
-        const posts = userEdge.node.posts?.edges || [];
-        for (const postEdge of posts) {
-          count++;
-          const comments = postEdge.node.comments?.edges || [];
-          count += comments.length;
-        }
-      }
-      return count;
+      return componentInstance?.data?.users?.edges?.length || 0;
     },
 
     getTotalRenderTime() {
       return totalRenderTime;
-    }
+    },
   };
 }

@@ -1,7 +1,7 @@
-import { createApp, defineComponent, ref, reactive, nextTick, computed, watch } from 'vue';
+import { createApp, defineComponent, nextTick, watch } from 'vue';
 import { createClient, useQuery, fetch as fetchPlugin } from 'villus';
 import { gql } from 'graphql-tag';
-import { createCache } from 'villus-cachebay';
+import { createCache } from '../../../villus-cachebay/src/core/internals';
 
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {
@@ -68,52 +68,85 @@ export function createVueCachebayNestedApp(serverUrl: string): VueCachebayNested
 
   const client = createClient({
     url: serverUrl,
-    use: [cachebay, fetchPlugin()],
-    cachePolicy: 'network-only'
+    use: [
+      cachebay,
+      fetchPlugin(),
+    ],
+    cachePolicy: 'network-only',
   });
 
   let totalRenderTime = 0;
   let app: any = null;
   let container: Element | null = null;
-  let onRenderComplete: (() => void) | null = null;
 
   const NestedList = defineComponent({
     setup() {
-      const variables = reactive({
+      // 👇 plain object; not reactive
+      const variables: { first: number; after: string | null } = {
         first: 10,
-        after: null as string | null
-      });
+        after: null,
+      };
 
       const { data, execute } = useQuery({
         query: USERS_QUERY,
         paused: true,
       });
+      let prevEdges: any[] | undefined;
+/*
+      watch(
+        () => data.value?.users?.edges,
+        (next) => {
+          const sameEdgesRef = next === prevEdges;
+          const len = next?.length ?? 0;
+
+          const stablePrefix = prevEdges ? Math.min(prevEdges.length, len) : 0;
+          const sameEdgeObjsOnPrefix = prevEdges
+            ? prevEdges.slice(0, stablePrefix).every((e, i) => e === next![i])
+            : true;
+          const sameNodeRefsOnPrefix = prevEdges
+            ? prevEdges.slice(0, stablePrefix).every((e, i) => e?.node === next![i]?.node)
+            : true;
+
+          console.log(
+            "[cachebay] edges watch | edgesRefSame=",
+            sameEdgesRef,
+            "| len=",
+            len,
+            "| sameEdgeObjsOnPrefix=",
+            sameEdgeObjsOnPrefix,
+            "| sameNodeRefsOnPrefix=",
+            sameNodeRefsOnPrefix
+          );
+
+          prevEdges = next;
+        },
+        { flush: "post" }
+        ); */
+
 
       const loadNextPage = async () => {
         try {
           const renderStart = performance.now();
-          
+
           await execute({ variables });
 
-          if (data.value?.users?.pageInfo?.endCursor) {
-            variables.after = data.value.users.pageInfo.endCursor;
+          const endCursor = data.value?.users?.pageInfo?.endCursor;
+          if (endCursor) {
+            variables.after = endCursor; // just mutate the plain object
           }
 
-          // Wait for next tick to ensure DOM is updated
+          // ensure DOM is painted before measuring end
           await nextTick();
-          
+
           const renderEnd = performance.now();
           totalRenderTime += renderEnd - renderStart;
-
         } catch (error) {
+          // swallow errors so the bench keeps going
           console.warn('Cachebay execute error (ignored):', error);
         }
       };
 
-      return {
-        data,
-        loadNextPage
-      };
+      return { data, loadNextPage };
     },
 
     template: `
@@ -130,7 +163,7 @@ export function createVueCachebayNestedApp(serverUrl: string): VueCachebayNested
           </div>
         </div>
       </div>
-    `
+    `,
   });
 
   let componentInstance: any = null;
@@ -166,22 +199,22 @@ export function createVueCachebayNestedApp(serverUrl: string): VueCachebayNested
     },
 
     getCount() {
-      let count = 0;
-      const users = componentInstance?.data?.users?.edges || [];
-      for (const userEdge of users) {
-        count++; // user
-        const posts = userEdge.node.posts?.edges || [];
-        for (const postEdge of posts) {
-          count++; // post
-          const comments = postEdge.node.comments?.edges || [];
-          count += comments.length; // comments
-        }
-      }
-      return count;
+      // let count = 0;
+      // const users = componentInstance?.data?.users?.edges || [];
+      // for (const userEdge of users) {
+      //   count++; // user
+      //   const posts = userEdge.node.posts?.edges || [];
+      //   for (const postEdge of posts) {
+      //     count++; // post
+      //     const comments = postEdge.node.comments?.edges || [];
+      //     count += comments.length; // comments
+      //   }
+      // }
+      return componentInstance?.data?.users?.edges.length;
     },
 
     getTotalRenderTime() {
       return totalRenderTime;
-    }
+    },
   };
 }

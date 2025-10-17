@@ -120,19 +120,19 @@ function UsersList(props: {
 
   const first = useRef(true);
   useEffect(() => {
-    // Count entities
-    let count = 0;
-    for (const userEdge of edges) {
-      count++;
-      const posts = userEdge.node.posts?.edges || [];
-      for (const postEdge of posts) {
-        count++;
-        const comments = postEdge.node.comments?.edges || [];
-        count += comments.length;
-      }
-    }
-    props.onUpdateCount(count);
-    
+   //// Count entities
+   //let count = 0;
+   //for (const userEdge of edges) {
+   //  count++;
+   //  const posts = userEdge.node.posts?.edges || [];
+   //  for (const postEdge of posts) {
+   //    count++;
+   //    const comments = postEdge.node.comments?.edges || [];
+   //    count += comments.length;
+   //  }
+   //}
+    props.onUpdateCount(edges.length);
+
     if (first.current) {
       first.current = false;
     } else {

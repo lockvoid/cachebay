@@ -153,6 +153,28 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
         }
       };
 
+      let prev: any
+      let prevEdges:any[]|undefined;
+      watch(
+        () => result.value?.users?.edges,
+        (next) => {
+          const sameEdgesRef = next === prevEdges;
+          const stablePrefix = !prevEdges ? 0
+            : Math.min(prevEdges.length, next?.length ?? 0);
+
+          const sameNodeRefsOnPrefix = prevEdges
+            ? prevEdges.slice(0, stablePrefix).every((e, i) => e?.node === next[i]?.node)
+            : true;
+
+          console.log('apollo',
+            'edgesRefSame=', sameEdgesRef,
+            'len=', next?.length,
+            'sameNodeRefsOnPrefix=', sameNodeRefsOnPrefix
+          );
+          prevEdges = next;
+        }
+      );
+
       // watch(() => result.value?.users?.edges, () => {
       //   console.log("SKDCNJKCNDJKN")
       // });
@@ -213,18 +235,19 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
     },
 
     getCount() {
-      let count = 0;
-      const users = componentInstance?.result?.users?.edges || [];
-      for (const userEdge of users) {
-        count++;
-        const posts = userEdge.node.posts?.edges || [];
-        for (const postEdge of posts) {
-          count++;
-          const comments = postEdge.node.comments?.edges || [];
-          count += comments.length;
-        }
-      }
-      return count;
+      //let count = 0;
+      //const users = componentInstance?.result?.users?.edges || [];
+      //for (const userEdge of users) {
+      //  count++;
+      //  const posts = userEdge.node.posts?.edges || [];
+      //  for (const postEdge of posts) {
+      //    count++;
+      //    const comments = postEdge.node.comments?.edges || [];
+      //    count += comments.length;
+      //  }
+      //}
+      //
+      return componentInstance?.result?.users?.edges.length;
     },
 
     getTotalRenderTime() {

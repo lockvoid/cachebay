@@ -20,6 +20,7 @@ type CachePolicy = "cache-and-network" | "cache-first" | "network-only" | "cache
 type DecisionMode = "strict" | "canonical";
 
 export type PluginOptions = {
+  /** collapse network→cache duplicate re-emits for this many ms */
   suspensionTimeout?: number;
 };
 
@@ -33,22 +34,23 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     emit: (payload: OperationResult, terminal?: boolean) => void;
     deps: Set<string>;
     mode: DecisionMode;         // how this query wants to be materialized
-    lastData: any | undefined;  // last emitted data reference
+    lastData: any | undefined;  // last emitted data reference (identity guard)
   };
 
   const activeQueries = new Map<number, ActiveEntry>();
   const depIndex = new Map<string, Set<number>>();
   const lastResultAtMs = new Map<number, number>();
 
-  // ---- batched broadcaster to avoid storm of re-materializations ----
+  // ---------- batched broadcaster ----------
   const pendingTouched = new Set<string>();
+  const excludedOpKeysForFlush = new Set<number>();
   let flushScheduled = false;
 
   const addDepsForQuery = (opKey: number, newDeps: Iterable<string>) => {
     const entry = activeQueries.get(opKey);
     if (!entry) return;
 
-    // remove old
+    // remove old deps
     for (const d of entry.deps) {
       const set = depIndex.get(d);
       if (set) {
@@ -57,10 +59,8 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       }
     }
 
-    // set new
+    // add new deps
     entry.deps = new Set(newDeps);
-
-    // index new
     for (const d of entry.deps) {
       let set = depIndex.get(d);
       if (!set) {
@@ -74,24 +74,31 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
   const scheduleFlush = () => {
     if (flushScheduled) return;
     flushScheduled = true;
+
     queueMicrotask(() => {
       flushScheduled = false;
-
       if (pendingTouched.size === 0) return;
+
+      // take snapshots for this flush
+      const touched = Array.from(pendingTouched);
+      pendingTouched.clear();
+      const excluded = new Set(excludedOpKeysForFlush);
+      excludedOpKeysForFlush.clear();
 
       // collect affected queries
       const affected = new Set<number>();
-      for (const id of pendingTouched) {
+      for (const id of touched) {
         const qs = depIndex.get(id);
         if (qs) for (const k of qs) affected.add(k);
       }
-      pendingTouched.clear();
       if (affected.size === 0) return;
 
       const now = performance.now();
 
-      // re-materialize each affected query once
+      // re-materialize each affected query once (skip excluded)
       for (const k of affected) {
+        if (excluded.has(k)) continue;
+
         const entry = activeQueries.get(k);
         if (!entry) continue;
 
@@ -107,7 +114,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         const newDeps = Array.isArray(r.deps) ? r.deps : [];
         addDepsForQuery(k, newDeps);
 
-        // emit only if identity changed
+        // emit only on identity change
         if (r.data !== entry.lastData) {
           entry.lastData = r.data;
           entry.emit({ data: markRaw(r.data), error: null }, false);
@@ -117,9 +124,10 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     });
   };
 
-  const enqueueTouched = (touched?: Set<string>) => {
+  const enqueueTouched = (touched?: Set<string>, excludeOpKey?: number) => {
     if (!touched || touched.size === 0) return;
     for (const id of touched) pendingTouched.add(id);
+    if (excludeOpKey != null) excludedOpKeysForFlush.add(excludeOpKey);
     scheduleFlush();
   };
 
@@ -188,7 +196,6 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
                   const res: any = documents.normalizeDocument({ document, variables, data: frame.data });
                   enqueueTouched(res?.touched);
                 }
-                // pass through original frame; consumers usually expect the live payload
                 observer.next(frame);
               },
               error: (error: any) => observer.error?.(error),
@@ -271,7 +278,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
           downstreamUseResult(frame, true);
           return;
         }
-        downstreamUseResult(frame, false); // allow network to arrive
+        downstreamUseResult(frame, false); // allow network to arrive later
         lastResultAtMs.set(opKey, performance.now());
       }
     }
@@ -296,6 +303,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         return downstreamUseResult(incoming, true);
       }
 
+      // write to cache
       const res: any = documents.normalizeDocument({ document, variables, data: incoming.data });
 
       // terminal emission from CANONICAL view (Apollo/Relay-like)
@@ -316,8 +324,8 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         downstreamUseResult({ data: markRaw(incoming.data), error: null }, true);
       }
 
-      // Notify impacted queries (batched); self won't re-emit unless identity truly changed
-      enqueueTouched(res?.touched);
+      // Batch-notify impacted OTHER queries; skip this op in the same flush
+      enqueueTouched(res?.touched, opKey);
     };
   };
 }
