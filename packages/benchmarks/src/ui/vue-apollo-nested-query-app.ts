@@ -1,8 +1,9 @@
-import { createApp, defineComponent, nextTick, computed, watch } from 'vue';
+import { createApp, defineComponent, nextTick } from 'vue';
 import { ApolloClient, InMemoryCache, HttpLink } from '@apollo/client/core';
 import { relayStylePagination } from '@apollo/client/utilities';
 import { gql } from 'graphql-tag';
 import { DefaultApolloClient, useLazyQuery } from '@vue/apollo-composable';
+import { metrics } from './instrumentation'; // ← shared metrics bucket
 
 try {
   const { loadErrorMessages, loadDevMessages } = require('@apollo/client/dev');
@@ -92,6 +93,7 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
     defaultOptions: { query: { fetchPolicy: 'network-only' } },
   });
 
+  // keep client behavior unchanged
   const stripCanon = (o?: Record<string, unknown>) => {
     if (!o) return;
     if ('canonizeResults' in o) {
@@ -117,7 +119,6 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
   let totalRenderTime = 0;
   let app: ReturnType<typeof createApp> | null = null;
   let container: Element | null = null;
-  let onRenderComplete: (() => void) | null = null;
 
   const NestedList = defineComponent({
     setup() {
@@ -129,55 +130,32 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
 
       const loadNextPage = async () => {
         try {
-          const renderStart = performance.now();
+          const t0 = performance.now();
 
           if (!result.value) {
             await load(USERS_QUERY, { first: 10, after: null });
           } else {
             const endCursor = result.value?.users?.pageInfo?.endCursor;
             if (endCursor) {
-              await fetchMore({
-                variables: { first: 10, after: endCursor },
-              });
+              await fetchMore({ variables: { first: 10, after: endCursor } });
             }
           }
 
-          // Wait for next tick to ensure DOM is updated
+          const t1 = performance.now();
+          metrics.apollo.computeMs += (t1 - t0);
+          metrics.apollo.pages += 1;
+
           await nextTick();
 
-          const renderEnd = performance.now();
-          totalRenderTime += renderEnd - renderStart;
+          const t2 = performance.now();
+          const renderDelta = t2 - t1;
+          totalRenderTime += renderDelta;
+          metrics.apollo.renderMs += renderDelta;
 
         } catch (error) {
           console.warn('Apollo execute error (ignored):', error);
         }
       };
-
-      let prev: any
-      let prevEdges:any[]|undefined;
-      watch(
-        () => result.value?.users?.edges,
-        (next) => {
-          const sameEdgesRef = next === prevEdges;
-          const stablePrefix = !prevEdges ? 0
-            : Math.min(prevEdges.length, next?.length ?? 0);
-
-          const sameNodeRefsOnPrefix = prevEdges
-            ? prevEdges.slice(0, stablePrefix).every((e, i) => e?.node === next[i]?.node)
-            : true;
-
-          console.log('apollo',
-            'edgesRefSame=', sameEdgesRef,
-            'len=', next?.length,
-            'sameNodeRefsOnPrefix=', sameNodeRefsOnPrefix
-          );
-          prevEdges = next;
-        }
-      );
-
-      // watch(() => result.value?.users?.edges, () => {
-      //   console.log("SKDCNJKCNDJKN")
-      // });
 
       return {
         result,
@@ -234,20 +212,9 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
       }
     },
 
+    // Count only top-level user edges (to match other apps)
     getCount() {
-      //let count = 0;
-      //const users = componentInstance?.result?.users?.edges || [];
-      //for (const userEdge of users) {
-      //  count++;
-      //  const posts = userEdge.node.posts?.edges || [];
-      //  for (const postEdge of posts) {
-      //    count++;
-      //    const comments = postEdge.node.comments?.edges || [];
-      //    count += comments.length;
-      //  }
-      //}
-      //
-      return componentInstance?.result?.users?.edges.length;
+      return componentInstance?.result?.users?.edges?.length ?? 0;
     },
 
     getTotalRenderTime() {

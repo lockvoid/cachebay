@@ -9,6 +9,9 @@ import type { DocumentNode } from "graphql";
 import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus";
 import type { App } from "vue";
 
+// bench //metrics (shared singleton in your bench project)
+import { metrics } from "../../../benchmarks/src/ui/instrumentation";
+
 type PluginDependencies = {
   graph: GraphInstance;
   planner: PlannerInstance;
@@ -33,18 +36,28 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     variables: Record<string, any>;
     emit: (payload: OperationResult, terminal?: boolean) => void;
     deps: Set<string>;
-    mode: DecisionMode;         // how this query wants to be materialized
-    lastData: any | undefined;  // last emitted data reference (identity guard)
+    mode: DecisionMode;
+    lastData: any | undefined; // identity guard
   };
 
   const activeQueries = new Map<number, ActiveEntry>();
   const depIndex = new Map<string, Set<number>>();
   const lastResultAtMs = new Map<number, number>();
 
-  // ---------- batched broadcaster ----------
-  const pendingTouched = new Set<string>();
-  const excludedOpKeysForFlush = new Set<number>();
-  let flushScheduled = false;
+  // ---------- helpers ----------
+  const finalizeQuery = (opKey: number) => {
+    const entry = activeQueries.get(opKey);
+    if (!entry) return;
+    // remove from inverted dep index
+    for (const d of entry.deps) {
+      const set = depIndex.get(d);
+      if (set) {
+        set.delete(opKey);
+        if (set.size === 0) depIndex.delete(d);
+      }
+    }
+    activeQueries.delete(opKey);
+  };
 
   const addDepsForQuery = (opKey: number, newDeps: Iterable<string>) => {
     const entry = activeQueries.get(opKey);
@@ -63,72 +76,9 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     entry.deps = new Set(newDeps);
     for (const d of entry.deps) {
       let set = depIndex.get(d);
-      if (!set) {
-        set = new Set();
-        depIndex.set(d, set);
-      }
+      if (!set) depIndex.set(d, (set = new Set()));
       set.add(opKey);
     }
-  };
-
-  const scheduleFlush = () => {
-    if (flushScheduled) return;
-    flushScheduled = true;
-
-    queueMicrotask(() => {
-      flushScheduled = false;
-      if (pendingTouched.size === 0) return;
-
-      // take snapshots for this flush
-      const touched = Array.from(pendingTouched);
-      pendingTouched.clear();
-      const excluded = new Set(excludedOpKeysForFlush);
-      excludedOpKeysForFlush.clear();
-
-      // collect affected queries
-      const affected = new Set<number>();
-      for (const id of touched) {
-        const qs = depIndex.get(id);
-        if (qs) for (const k of qs) affected.add(k);
-      }
-      if (affected.size === 0) return;
-
-      const now = performance.now();
-
-      // re-materialize each affected query once (skip excluded)
-      for (const k of affected) {
-        if (excluded.has(k)) continue;
-
-        const entry = activeQueries.get(k);
-        if (!entry) continue;
-
-        const r = documents.materializeDocument({
-          document: entry.document,
-          variables: entry.variables,
-          decisionMode: entry.mode,
-        }) as any;
-
-        if (!r || r.status !== "FULFILLED") continue;
-
-        // update deps index
-        const newDeps = Array.isArray(r.deps) ? r.deps : [];
-        addDepsForQuery(k, newDeps);
-
-        // emit only on identity change
-        if (r.data !== entry.lastData) {
-          entry.lastData = r.data;
-          entry.emit({ data: markRaw(r.data), error: null }, false);
-          lastResultAtMs.set(k, now);
-        }
-      }
-    });
-  };
-
-  const enqueueTouched = (touched?: Set<string>, excludeOpKey?: number) => {
-    if (!touched || touched.size === 0) return;
-    for (const id of touched) pendingTouched.add(id);
-    if (excludeOpKey != null) excludedOpKeysForFlush.add(excludeOpKey);
-    scheduleFlush();
   };
 
   const firstReadMode = (policy: CachePolicy): DecisionMode => {
@@ -143,12 +93,98 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     }
   };
 
+  // ---------- batched broadcaster ----------
+  const pendingTouched = new Set<string>();
+  const excludedOpKeysForFlush = new Set<number>();
+  let flushScheduled = false;
+
+  const scheduleFlush = () => {
+    if (flushScheduled) return;
+    flushScheduled = true;
+
+    queueMicrotask(() => {
+      flushScheduled = false;
+      if (pendingTouched.size === 0) return;
+
+      const flushStart = performance.now();
+
+      // snapshot state for this flush
+      const touched = Array.from(pendingTouched);
+      pendingTouched.clear();
+      const excluded = new Set(excludedOpKeysForFlush);
+      excludedOpKeysForFlush.clear();
+
+      // collect affected queries
+      const affected = new Set<number>();
+      for (const id of touched) {
+        const qs = depIndex.get(id);
+        if (qs) for (const k of qs) affected.add(k);
+      }
+
+      // //metrics
+      //metrics.cachebay.broadcastRemats += affected.size;
+
+      if (affected.size === 0) {
+        //metrics.cachebay.broadcastFlushTime += performance.now() - flushStart;
+        return;
+      }
+
+      // re-materialize each affected query once (skip excluded + identity guard)
+      for (const k of affected) {
+        if (excluded.has(k)) continue;
+
+        const entry = activeQueries.get(k);
+        if (!entry) continue;
+
+        const t0 = performance.now();
+        const r = documents.materializeDocument({
+          document: entry.document,
+          variables: entry.variables,
+          decisionMode: entry.mode,
+        }) as any;
+        //metrics.cachebay.broadcastMaterializeTime += performance.now() - t0;
+
+        if (!r || r.status !== "FULFILLED") continue;
+
+        // update deps index
+        const newDeps = Array.isArray(r.deps) ? r.deps : [];
+        addDepsForQuery(k, newDeps);
+
+        // emit only on identity change
+        if (r.data !== entry.lastData) {
+          entry.lastData = r.data;
+          entry.emit({ data: markRaw(r.data), error: null }, false);
+          lastResultAtMs.set(k, performance.now());
+        } else {
+          //metrics.cachebay.broadcastIdentitySkips += 1;
+        }
+      }
+
+      //metrics.cachebay.broadcastFlushTime += performance.now() - flushStart;
+    });
+  };
+
+  const enqueueTouched = (touched?: Set<string>, excludeOpKey?: number) => {
+    if (!touched || touched.size === 0) return;
+    for (const id of touched) pendingTouched.add(id);
+    if (excludeOpKey != null) excludedOpKeysForFlush.add(excludeOpKey);
+    scheduleFlush();
+  };
+
+  // ---------- cache reads (instrumented) ----------
   const readCacheFrame = (
     document: DocumentNode,
     variables: Record<string, any>,
     mode: DecisionMode
   ): { frame: OperationResult<any> | null; deps: string[]; dataRef: any | undefined } => {
+    const t0 = performance.now();
     const r = documents.materializeDocument({ document, variables, decisionMode: mode }) as any;
+    const dt = performance.now() - t0;
+
+    //metrics.cachebay.readCacheFrames += 1;
+    //if (mode === "canonical") //metrics.cachebay.readCanonicalTime += dt;
+    //else metrics.cachebay.readStrictTime += dt;
+
     if (!r || r.status !== "FULFILLED") return { frame: null, deps: [], dataRef: undefined };
     return {
       frame: { data: markRaw(r.data), error: null },
@@ -157,6 +193,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     };
   };
 
+  // ---------- plugin ----------
   return (ctx: ClientPluginContext) => {
     const op = ctx.operation;
     const variables: Record<string, any> = op.variables || {};
@@ -175,7 +212,10 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         if (incoming?.error) {
           return downstreamUseResult(incoming, true);
         }
+        const t1 = performance.now();
         const res: any = documents.normalizeDocument({ document, variables, data: incoming.data });
+        //metrics.cachebay.normalizeDocumentTime += performance.now() - t1;
+
         enqueueTouched(res?.touched);
         return downstreamUseResult({ data: markRaw(incoming.data), error: null }, true);
       };
@@ -193,7 +233,9 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
             return incoming.subscribe({
               next: (frame: any) => {
                 if (frame?.data) {
+                  const t1 = performance.now();
                   const res: any = documents.normalizeDocument({ document, variables, data: frame.data });
+                  //metrics.cachebay.normalizeDocumentTime += performance.now() - t1;
                   enqueueTouched(res?.touched);
                 }
                 observer.next(frame);
@@ -229,7 +271,9 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         const entry = activeQueries.get(opKey)!;
         entry.lastData = dataRef;
         addDepsForQuery(opKey, deps);
-        return downstreamUseResult(frame, true);
+        downstreamUseResult(frame, true);
+        finalizeQuery(opKey);
+        return;
       }
     }
 
@@ -243,14 +287,18 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         const entry = activeQueries.get(opKey)!;
         entry.lastData = dataRef;
         addDepsForQuery(opKey, deps);
-        return downstreamUseResult(frame, true);
+        downstreamUseResult(frame, true);
+        finalizeQuery(opKey);
+        return;
       }
       const error = new CombinedError({
         networkError: Object.assign(new Error("CACHE_ONLY_MISS"), { name: "CacheOnlyMiss" }),
         graphqlErrors: [],
         response: undefined,
       });
-      return downstreamUseResult({ error, data: undefined }, true);
+      downstreamUseResult({ error, data: undefined }, true);
+      finalizeQuery(opKey);
+      return;
     }
 
     // CACHE-FIRST
@@ -261,6 +309,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         entry.lastData = dataRef;
         addDepsForQuery(opKey, deps);
         downstreamUseResult(frame, true);
+        finalizeQuery(opKey);
         return;
       }
       lastResultAtMs.set(opKey, performance.now());
@@ -276,6 +325,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
         if (isWithinSuspensionWindow) {
           downstreamUseResult(frame, true);
+          finalizeQuery(opKey);
           return;
         }
         downstreamUseResult(frame, false); // allow network to arrive later
@@ -291,6 +341,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         entry.lastData = dataRef;
         addDepsForQuery(opKey, deps);
         downstreamUseResult(frame, true);
+        finalizeQuery(opKey);
         return;
       }
     }
@@ -300,29 +351,38 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       lastResultAtMs.set(opKey, performance.now());
 
       if (incoming?.error) {
-        return downstreamUseResult(incoming, true);
+        downstreamUseResult(incoming, true);
+        finalizeQuery(opKey);
+        return;
       }
 
-      // write to cache
+      // 1) write to cache
+      const t1 = performance.now();
       const res: any = documents.normalizeDocument({ document, variables, data: incoming.data });
+      //metrics.cachebay.normalizeDocumentTime += performance.now() - t1;
 
-      // terminal emission from CANONICAL view (Apollo/Relay-like)
+      // 2) materialize CANONICAL for terminal emission
+      const t2 = performance.now();
       const r = documents.materializeDocument({
         document,
         variables,
         decisionMode: "canonical",
       }) as any;
+      //metrics.cachebay.materializeDocumentTime += performance.now() - t2;
 
       if (r && r.status === "FULFILLED") {
         const entry = activeQueries.get(opKey)!;
-        entry.mode = "canonical"; // after a network success, keep canonical
+        entry.mode = "canonical"; // keep canonical after a network success
         entry.lastData = r.data;
         addDepsForQuery(opKey, Array.isArray(r.deps) ? r.deps : []);
         downstreamUseResult({ data: markRaw(r.data), error: null }, true);
       } else {
-        // Fallback: still deliver the raw network payload
+        // Fallback: deliver the raw network payload
         downstreamUseResult({ data: markRaw(incoming.data), error: null }, true);
       }
+
+      // Important: the op is done — clean it up so we don't keep N historical watchers alive
+      finalizeQuery(opKey);
 
       // Batch-notify impacted OTHER queries; skip this op in the same flush
       enqueueTouched(res?.touched, opKey);

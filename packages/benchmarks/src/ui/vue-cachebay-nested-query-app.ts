@@ -1,7 +1,8 @@
-import { createApp, defineComponent, nextTick, watch } from 'vue';
+import { createApp, defineComponent, nextTick } from 'vue';
 import { createClient, useQuery, fetch as fetchPlugin } from 'villus';
 import { gql } from 'graphql-tag';
 import { createCache } from '../../../villus-cachebay/src/core/internals';
+import { metrics } from './instrumentation';
 
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {
@@ -31,15 +32,11 @@ const USERS_QUERY = gql`
                       }
                     }
                   }
-                  pageInfo {
-                    hasNextPage
-                  }
+                  pageInfo { hasNextPage }
                 }
               }
             }
-            pageInfo {
-              hasNextPage
-            }
+            pageInfo { hasNextPage }
           }
         }
       }
@@ -60,89 +57,60 @@ export type VueCachebayNestedController = {
 };
 
 export function createVueCachebayNestedApp(serverUrl: string): VueCachebayNestedController {
+  // Reset metrics bucket for this app/run.
+
   const cachebay = createCache({
-    interfaces: {
-      Node: ['User', 'Post', 'Comment'],
-    },
+    interfaces: { Node: ['User', 'Post', 'Comment'] },
   });
 
   const client = createClient({
     url: serverUrl,
-    use: [
-      cachebay,
-      fetchPlugin(),
-    ],
+    use: [cachebay, fetchPlugin()],
     cachePolicy: 'network-only',
   });
 
   let totalRenderTime = 0;
   let app: any = null;
   let container: Element | null = null;
+  let componentInstance: any = null;
 
   const NestedList = defineComponent({
     setup() {
-      // 👇 plain object; not reactive
-      const variables: { first: number; after: string | null } = {
-        first: 10,
-        after: null,
-      };
+      // Plain, non-reactive vars to avoid extra watchers.
+      const variables: { first: number; after: string | null } = { first: 10, after: null };
 
       const { data, execute } = useQuery({
         query: USERS_QUERY,
         paused: true,
       });
-      let prevEdges: any[] | undefined;
-/*
-      watch(
-        () => data.value?.users?.edges,
-        (next) => {
-          const sameEdgesRef = next === prevEdges;
-          const len = next?.length ?? 0;
-
-          const stablePrefix = prevEdges ? Math.min(prevEdges.length, len) : 0;
-          const sameEdgeObjsOnPrefix = prevEdges
-            ? prevEdges.slice(0, stablePrefix).every((e, i) => e === next![i])
-            : true;
-          const sameNodeRefsOnPrefix = prevEdges
-            ? prevEdges.slice(0, stablePrefix).every((e, i) => e?.node === next![i]?.node)
-            : true;
-
-          console.log(
-            "[cachebay] edges watch | edgesRefSame=",
-            sameEdgesRef,
-            "| len=",
-            len,
-            "| sameEdgeObjsOnPrefix=",
-            sameEdgeObjsOnPrefix,
-            "| sameNodeRefsOnPrefix=",
-            sameNodeRefsOnPrefix
-          );
-
-          prevEdges = next;
-        },
-        { flush: "post" }
-        ); */
-
 
       const loadNextPage = async () => {
         try {
-          const renderStart = performance.now();
+          const t0 = performance.now();
 
+          // Includes network + cache work.
           await execute({ variables });
 
-          const endCursor = data.value?.users?.pageInfo?.endCursor;
-          if (endCursor) {
-            variables.after = endCursor; // just mutate the plain object
-          }
+          const t1 = performance.now();
+          metrics.cachebay.computeMs += (t1 - t0);
 
-          // ensure DOM is painted before measuring end
+          const endCursor = data.value?.users?.pageInfo?.endCursor ?? null;
+          if (endCursor) variables.after = endCursor;
+
+          // Ensure DOM paint before measuring render time.
           await nextTick();
 
-          const renderEnd = performance.now();
-          totalRenderTime += renderEnd - renderStart;
-        } catch (error) {
+          const t2 = performance.now();
+          const renderDelta = (t2 - t1);
+
+          metrics.cachebay.renderMs += renderDelta;
+          metrics.cachebay.pages += 1;
+
+          totalRenderTime += (t2 - t0); // legacy aggregate if you still want it
+        } catch (err) {
           // swallow errors so the bench keeps going
-          console.warn('Cachebay execute error (ignored):', error);
+          // eslint-disable-next-line no-console
+          console.warn('Cachebay execute error (ignored):', err);
         }
       };
 
@@ -166,12 +134,9 @@ export function createVueCachebayNestedApp(serverUrl: string): VueCachebayNested
     `,
   });
 
-  let componentInstance: any = null;
-
   return {
     mount(target?: Element) {
       if (app) return;
-
       container = target ?? document.createElement('div');
       if (!target) document.body.appendChild(container);
 
@@ -181,9 +146,7 @@ export function createVueCachebayNestedApp(serverUrl: string): VueCachebayNested
     },
 
     async loadNextPage() {
-      if (componentInstance) {
-        await componentInstance.loadNextPage();
-      }
+      await componentInstance?.loadNextPage?.();
     },
 
     unmount() {
@@ -199,18 +162,7 @@ export function createVueCachebayNestedApp(serverUrl: string): VueCachebayNested
     },
 
     getCount() {
-      // let count = 0;
-      // const users = componentInstance?.data?.users?.edges || [];
-      // for (const userEdge of users) {
-      //   count++; // user
-      //   const posts = userEdge.node.posts?.edges || [];
-      //   for (const postEdge of posts) {
-      //     count++; // post
-      //     const comments = postEdge.node.comments?.edges || [];
-      //     count += comments.length; // comments
-      //   }
-      // }
-      return componentInstance?.data?.users?.edges.length;
+      return componentInstance?.data?.users?.edges?.length ?? 0;
     },
 
     getTotalRenderTime() {

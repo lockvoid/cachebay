@@ -394,7 +394,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
   type CacheEntry = { data: any; stamp: string; deps: string[]; clock: number };
 
-  const __DEV__ = process.env.NODE_ENV !== "production";
+  const __DEV__ = false//process.env.NODE_ENV !== "production";
 
   // tiny LRU per-plan for top-level results
   const RESULT_LRU_CAP = 512;
