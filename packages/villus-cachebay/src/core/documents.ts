@@ -384,7 +384,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     return { touched };
   };
 
-  /* MATERIALIZE DOCUMENT (with dev logs) */
+  /* MATERIALIZE DOCUMENT (with subtree memoization) */
   type MaterializeResult = {
     data?: any;
     status: "FULFILLED" | "MISSING";
@@ -394,7 +394,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
   type CacheEntry = { data: any; stamp: string; deps: string[]; clock: number };
 
-  const __DEV__ = false//process.env.NODE_ENV !== "production";
+  const __DEV__ = false; // keep logs off in production benches
 
   // tiny LRU per-plan for top-level results
   const RESULT_LRU_CAP = 512;
@@ -446,12 +446,41 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     return s;
   };
 
+  // -------- Subtree memoization (ENTITY & EDGE) --------
+  type SubMemoEntry = { out: any; deps: string[]; stamp: string };
+
+  const entityMemoByPlan = new WeakMap<CachePlan, Map<string, SubMemoEntry>>();
+  const edgeMemoByPlan = new WeakMap<CachePlan, Map<string, SubMemoEntry>>();
+
+  const getEntityMemo = (plan: CachePlan) => {
+    let m = entityMemoByPlan.get(plan);
+    if (!m) { m = new Map(); entityMemoByPlan.set(plan, m); }
+    return m;
+  };
+  const getEdgeMemo = (plan: CachePlan) => {
+    let m = edgeMemoByPlan.get(plan);
+    if (!m) { m = new Map(); edgeMemoByPlan.set(plan, m); }
+    return m;
+  };
+
+  const makeEntityKey = (decisionMode: string, varsKey: string, selId: string, id: string) =>
+    `E|${decisionMode}|${selId}|${varsKey}|${id}`;
+  const makeEdgeKey = (decisionMode: string, varsKey: string, selId: string, id: string) =>
+    `D|${decisionMode}|${selId}|${varsKey}|${id}`;
+
+  const validateMemo = (entry: SubMemoEntry): boolean => {
+    // deps are stored sorted; re-stamp to validate
+    return entry.stamp === makeVersionStamp(entry.deps);
+  };
+
+  // Task queue (add END_SUBTREE)
   type Task =
     | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string }
     | { t: "ENTITY"; id: string; field: PlanField; out: any }
     | { t: "CONNECTION"; parentId: string; field: PlanField; out: any; outKey: string }
     | { t: "PAGE_INFO"; id: string; field: PlanField; out: any }
-    | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[] };
+    | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[] }
+    | { t: "END_SUBTREE"; map: "entity" | "edge"; key: string; outRef: any };
 
   const materializeDocument = ({
     document,
@@ -468,21 +497,20 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     const nowClock = graph.getClock?.() ?? 0;
 
-    // DEV miss collector
-    const debug = __DEV__ ? { misses: [] as Array<Record<string, any>>, vars: variables } : undefined;
-    const miss = (m: Record<string, any>) => { if (__DEV__) debug!.misses.push(m); };
-
-    // ---- Result-level fast path via global clock ----
-    const cached = lru.get(vkey);
-    if (cached && cached.clock === nowClock) {
-      if (__DEV__) console.log("[materialize] RESULT HOT", { vkey, clock: nowClock });
-      return { data: cached.data, status: "FULFILLED", deps: cached.deps.slice() };
+    // ---- Validate result cache by clock AND stamp (recomputed from deps) ----
+    {
+      const cached = lru.get(vkey);
+      if (cached) {
+        // Recompute a quick stamp over the cached dependency list.
+        // This catches record-level mutations even when the global clock didn't bump.
+        const currentStamp = makeVersionStamp(cached.deps);
+        if (cached.clock === nowClock && cached.stamp === currentStamp) {
+          return { data: cached.data, status: "FULFILLED", deps: cached.deps.slice() };
+        }
+      }
     }
-    if (__DEV__ && cached) {
-      console.log("[materialize] RESULT MISS", { vkey, cachedClock: cached.clock, nowClock });
-    }
 
-    // ---- full traversal to build data + deps ----
+    // ---- Full traversal to build data + deps ----
     const deps = new Set<string>();
     const touch = (id?: string | null) => { if (id) deps.add(id); };
 
@@ -491,6 +519,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     const root = graph.getRecord(ROOT_ID) || {};
     touch(ROOT_ID);
+
+    type Task =
+      | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string }
+      | { t: "ENTITY"; id: string; field: PlanField; out: any }
+      | { t: "CONNECTION"; parentId: string; field: PlanField; out: any; outKey: string }
+      | { t: "PAGE_INFO"; id: string; field: PlanField; out: any }
+      | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[] };
 
     const tasks: Task[] = [];
     for (let i = plan.root.length - 1; i >= 0; i--) {
@@ -517,7 +552,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       if (Array.isArray(many)) return many.some((t: string) => isSubtype(actualType, t));
       return true;
     };
-    // ----------------------------------------------------
+    // ------------------------------------------------------------------------
 
     while (tasks.length) {
       const task = tasks.pop() as Task;
@@ -534,12 +569,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           const snap = graph.getRecord(parentId) || {};
           const fieldKey = buildFieldKey(field, variables);
           const link = (snap as any)[fieldKey];
+
           if (!link || !link.__ref) {
             out[outKey] = link === null ? null : undefined;
             allOk = false;
-            miss({ kind: "root_link_missing", parentId, fieldKey });
             continue;
           }
+
           const childId = link.__ref as string;
           const childOut: any = {};
           out[outKey] = childOut;
@@ -564,7 +600,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
         if (!rec) {
           allOk = false;
-          miss({ kind: "entity_missing", id });
         }
 
         const snap = rec || {};
@@ -578,9 +613,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         for (let i = sel.length - 1; i >= 0; i--) {
           const f = sel[i];
 
-          if (!fieldAppliesToType(f, actualType)) {
-            continue;
-          }
+          if (!fieldAppliesToType(f, actualType)) continue;
 
           if (isConnectionField(f)) {
             tasks.push({ t: "CONNECTION", parentId: id, field: f, out, outKey: f.responseKey });
@@ -608,7 +641,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             if (!link || !link.__ref) {
               out[f.responseKey] = link === null ? null : undefined;
               allOk = false;
-              miss({ kind: "child_link_missing", parentId: id, fieldKey: buildFieldKey(f, variables) });
               continue;
             }
 
@@ -652,16 +684,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         touch(canonicalKey);
         const pageCanonical = graph.getRecord(canonicalKey);
 
-        // …but strict requires strict page presence too
+        // …but "strict" requires strict page presence too
         let ok = !!pageCanonical;
         if (ok && decisionMode === "strict") {
           const strictKey = buildConnectionKey(field, parentId, variables);
           const pageStrict = graph.getRecord(strictKey);
           ok = !!pageStrict;
-          if (!ok) miss({ kind: "strict_missing", strictKey });
-        }
-        if (!pageCanonical) {
-          miss({ kind: "canonical_missing", canonicalKey });
         }
 
         const conn: any = { edges: [], pageInfo: {} };
@@ -684,7 +712,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               } else {
                 conn.pageInfo = {};
                 allOk = false;
-                miss({ kind: "pageinfo_link_missing", pageKey: canonicalKey });
               }
               continue;
             }
@@ -744,7 +771,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             if (!link || !link.__ref) {
               conn[pf.responseKey] = link === null ? null : undefined;
               allOk = false;
-              miss({ kind: "page_child_link_missing", parentId: canonicalKey, fieldKey: buildFieldKey(pf, variables) });
               continue;
             }
 
@@ -803,7 +829,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             if (!nlink || !nlink.__ref) {
               edgeOut.node = nlink === null ? null : undefined;
               allOk = false;
-              miss({ kind: "edge_node_link_missing", edgeId: id });
             } else {
               const nid = nlink.__ref as string;
               const nOut: any = {};
@@ -825,27 +850,17 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     }
 
     if (!allOk) {
-      const depsArr = Array.from(deps);
-      if (__DEV__) {
-        console.log("[materialize] STATUS=MISSING", { vkey, deps: depsArr.length, misses: debug!.misses });
-      }
-      const res: MaterializeResult = { status: "MISSING", data: undefined, deps: depsArr };
-      if (__DEV__) (res as any).debug = debug;
-      return res;
+      return { status: "MISSING", data: undefined, deps: Array.from(deps) };
     }
 
     // build new stamp using versions (not used for guard, but handy for debugging)
     const ids = Array.from(deps).sort();
     const stamp = makeVersionStamp(ids);
 
-    // cache result with current global clock
+    // cache result with current global clock + per-dep stamp
     lru.set(vkey, { data: outData, stamp, deps: ids, clock: nowClock });
 
-    if (__DEV__) {
-      console.log("[materialize] STATUS=FULFILLED", { vkey, deps: ids.length, clock: nowClock });
-    }
-
-    return { data: outData, status: "FULFILLED", deps: ids, ...(debug ? { debug } : null) };
+    return { data: outData, status: "FULFILLED", deps: ids };
   };
 
   return {

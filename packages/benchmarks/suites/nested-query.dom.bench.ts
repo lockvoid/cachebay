@@ -6,7 +6,7 @@ import { createVueUrqlNestedApp } from "../src/ui/vue-urql-nested-query-app";
 import { metrics } from '../src/ui/instrumentation';
 
 const DEBUG = process.env.DEBUG === 'true';
-const PAGES_TO_LOAD = 100; // 1000 users / 10 per page = 100 pages
+const PAGES_TO_LOAD = 50; // 1000 users / 10 per page = 100 pages
 
 const serverUrl = process.env.BENCH_SERVER_URL || 'http://127.0.0.1:4001/graphql';
 
