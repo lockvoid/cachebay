@@ -11,6 +11,8 @@ import {
 import { lowerSelectionSet } from "./lowering/flatten";
 import { isCachePlan } from "./utils";
 import type { CachePlan, PlanField } from "./types";
+import { fingerprintPlan, hashFingerprint } from "./fingerprint";
+import { collectVarsFromSelectionSet, makeMaskedVarsKeyFn } from "./variables";
 
 /** Build a Map of fragment name -> fragment definition for lowering. */
 const indexFragments = (doc: DocumentNode): Map<string, FragmentDefinitionNode> => {
@@ -40,6 +42,67 @@ const opRootTypename = (op: OperationDefinitionNode): string => {
     case "subscription": return "Subscription";
     default: return "Query";
   }
+};
+
+/**
+ * Compute plan metadata: id, varMask, makeVarsKey, windowArgs.
+ * This walks the lowered plan to collect window args and combines with
+ * variables collected from the original AST.
+ */
+const computePlanMetadata = (
+  root: PlanField[],
+  selectionSet: SelectionSetNode,
+  fragmentsByName: Map<string, FragmentDefinitionNode>,
+): {
+  id: number;
+  varMask: { strict: string[]; canonical: string[] };
+  makeVarsKey: (mode: "strict" | "canonical", vars: Record<string, any>) => string;
+  windowArgs: Set<string>;
+  selectionFingerprint: string;
+} => {
+  // 1. Compute stable fingerprint and hash it to get numeric ID
+  const selectionFingerprint = fingerprintPlan(root);
+  const id = hashFingerprint(selectionFingerprint);
+
+  // 2. Collect all variables from the AST
+  const strictVars = collectVarsFromSelectionSet(selectionSet, fragmentsByName);
+
+  // 3. Collect window args from connection fields
+  const windowArgs = new Set<string>();
+  const walkFields = (fields: PlanField[]): void => {
+    for (const field of fields) {
+      if (field.isConnection && field.pageArgs) {
+        for (const arg of field.pageArgs) {
+          windowArgs.add(arg);
+        }
+      }
+      if (field.selectionSet) {
+        walkFields(field.selectionSet);
+      }
+    }
+  };
+  walkFields(root);
+
+  // 4. Compute canonical vars (strict minus window args)
+  const canonicalVars = new Set<string>();
+  for (const v of strictVars) {
+    if (!windowArgs.has(v)) {
+      canonicalVars.add(v);
+    }
+  }
+
+  // 5. Build masks and precompiled key function
+  const strictMask = Array.from(strictVars);
+  const canonicalMask = Array.from(canonicalVars);
+  const makeVarsKey = makeMaskedVarsKeyFn(strictMask, canonicalMask);
+
+  return {
+    id,
+    varMask: { strict: strictMask, canonical: canonicalMask },
+    makeVarsKey,
+    windowArgs,
+    selectionFingerprint,
+  };
 };
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -131,6 +194,9 @@ export const compilePlan = (
     // Build network-safe doc (strip @connection; add __typename only in nested selections)
     const networkQuery = buildNetworkQuery(document);
 
+    // Compute plan metadata (id, varMask, makeVarsKey, windowArgs)
+    const metadata = computePlanMetadata(root, operation.selectionSet, fragmentsByName);
+
     return {
       kind: "CachePlan",
       operation: operation.operation,   // "query" | "mutation" | "subscription"
@@ -138,6 +204,11 @@ export const compilePlan = (
       root,
       rootSelectionMap,
       networkQuery,
+      id: metadata.id,
+      varMask: metadata.varMask,
+      makeVarsKey: metadata.makeVarsKey,
+      windowArgs: metadata.windowArgs,
+      selectionFingerprint: metadata.selectionFingerprint,
     };
   }
 
@@ -176,6 +247,9 @@ export const compilePlan = (
 
     const networkQuery = buildNetworkQuery(document);
 
+    // Compute plan metadata (id, varMask, makeVarsKey, windowArgs)
+    const metadata = computePlanMetadata(root, frag.selectionSet, fragmentsByName);
+
     return {
       kind: "CachePlan",
       operation: "fragment",
@@ -183,6 +257,11 @@ export const compilePlan = (
       root,
       rootSelectionMap,
       networkQuery,
+      id: metadata.id,
+      varMask: metadata.varMask,
+      makeVarsKey: metadata.makeVarsKey,
+      windowArgs: metadata.windowArgs,
+      selectionFingerprint: metadata.selectionFingerprint,
     };
   }
 

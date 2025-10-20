@@ -8,6 +8,8 @@ import {
   type ValueNode,
 } from "graphql";
 import type { PlanField } from "../types";
+import { fingerprintField } from "../fingerprint";
+import { collectFieldVars } from "../variables";
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /* helpers                                                                   */
@@ -166,6 +168,7 @@ export const lowerSelectionSet = (
       let connectionKey: string | undefined;
       let connectionFilters: string[] | undefined;
       let connectionMode: "infinite" | "page" | undefined;
+      let pageArgs: string[] | undefined;
 
       if (fieldNode.directives?.some(d => d.name.value === "connection")) {
         const meta = parseConnectionDirective(fieldNode);
@@ -173,19 +176,28 @@ export const lowerSelectionSet = (
         connectionKey = meta.key || fieldName;
 
         // If filters not provided: infer from field args excluding pagination args.
+        const paginationArgs = new Set(["first", "last", "after", "before"]);
         if (meta.filters && meta.filters.length > 0) {
           connectionFilters = meta.filters.slice();
         } else {
-          const pagination = new Set(["first", "last", "after", "before"]);
           connectionFilters = (fieldNode.arguments || [])
             .map(a => a.name.value)
-            .filter(n => !pagination.has(n));
+            .filter(n => !paginationArgs.has(n));
         }
 
         connectionMode = meta.mode || "infinite"; // meta already defaults; keep for clarity
+
+        // Collect window/pagination args for this connection
+        pageArgs = (fieldNode.arguments || [])
+          .map(a => a.name.value)
+          .filter(n => paginationArgs.has(n));
       }
 
-      out.push({
+      // Collect arg names and vars for fingerprinting
+      const { argNames } = collectFieldVars(fieldNode);
+
+      // Build the field object first (without selId)
+      const planField: PlanField = {
         responseKey,
         fieldName,
         selectionSet: childPlan,
@@ -196,9 +208,14 @@ export const lowerSelectionSet = (
         connectionKey,
         connectionFilters,
         connectionMode,
-        // 🔑 attach type guard if this field is produced under an inline fragment/spread
-        typeCondition: guardType, // ← NEW
-      } as PlanField);
+        typeCondition: guardType,
+        pageArgs,
+      };
+
+      // Compute stable fingerprint for this field subtree
+      planField.selId = fingerprintField(planField, argNames);
+
+      out.push(planField);
       continue;
     }
 

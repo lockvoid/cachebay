@@ -16,6 +16,7 @@ export type PlanField = {
   fieldName: string;                            // actual field name
   selectionSet: PlanField[] | null;             // children (lowered)
   selectionMap?: Map<string, PlanField>;        // fast lookup by responseKey
+  typeCondition?: string;                       // type guard for inline fragments
 
   // Arguments
   buildArgs: (vars: Record<string, any>) => Record<string, any>;
@@ -26,6 +27,12 @@ export type PlanField = {
   connectionKey?: string;                       // explicit key || fieldName
   connectionFilters?: string[];                 // names used to compute canonical key
   connectionMode?: "infinite" | "page";         // default "infinite"
+
+  /** Stable fingerprint for subtree; useful for memo/subtree caches. */
+  selId?: string;
+
+  /** Window args that this particular connection field uses (subset of plan.windowArgs). */
+  pageArgs?: string[];
 };
 
 export type CachePlan = {
@@ -37,4 +44,27 @@ export type CachePlan = {
 
   /** Network-safe document: __typename added; @connection stripped. */
   networkQuery: DocumentNode;
+
+  /** Stable, selection-shape ID for watcher/caching signatures. */
+  id: number;
+
+  /** Variable masks precomputed for fast watcher keys. */
+  varMask: {
+    /** All variable names that affect the result (full fidelity). */
+    strict: string[];
+    /**
+     * Variables that affect the "canonical" result. Typically strict minus
+     * window/pagination args like first/last/after/before used on connection fields.
+     */
+    canonical: string[];
+  };
+
+  /** Precompiled fast path to derive the masked vars key (no allocations except result). */
+  makeVarsKey: (mode: "strict" | "canonical", vars: Record<string, any>) => string;
+
+  /** Union of arg names recognized as pagination/window args across all connection fields in this plan. */
+  windowArgs: Set<string>;
+
+  /** Optional: stable selection fingerprint for debugging/traceability. */
+  selectionFingerprint?: string;
 };
