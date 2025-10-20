@@ -5,6 +5,7 @@ Fragments are the ergonomic surface for working with **normalized entities**:
 - Compute an entity key (`__typename:id`) with **`identify`**
 - Read a **reactive** entity via **`readFragment`** (materialized proxy that stays in sync)
 - Update fields with **`writeFragment`**
+- Watch for changes with **`watchFragment`** (reactive subscriptions)
 - Pairs cleanly with **Relay connections** and **optimistic updates**
 
 ---
@@ -158,6 +159,64 @@ writeFragment({
   }
 })
 ```
+
+---
+
+## Watch Fragment
+
+Subscribes to changes for a specific entity in the cache. Returns an unsubscribe function. The callback is invoked whenever the entity or its dependencies change through queries, mutations, optimistic updates, or fragment writes.
+
+**Options:**
+- `id` - Entity key in format `"Type:id"`
+- `fragment` - GraphQL fragment string
+- `fragmentName` - Name of the fragment (optional)
+- `variables` - Variables for the fragment (optional)
+- `onData` - Callback invoked with updated entity data
+- `onError` - Callback invoked on errors (optional)
+
+**Imperative**
+```ts
+const { unsubscribe } = cache.watchFragment({
+  id: 'Post:42',
+  fragment: PostFragment,
+  fragmentName: 'PostDetails',
+  onData: (post) => {
+    console.log('Post updated:', post.title)
+  },
+  onError: (error) => {
+    console.error('Fragment error:', error)
+  }
+})
+
+// Later: stop watching
+unsubscribe()
+```
+
+**Composable**
+```ts
+import { useCache } from 'villus-cachebay'
+const { watchFragment } = useCache()
+
+const { unsubscribe } = watchFragment({
+  id: 'User:alice123',
+  fragment: `
+    fragment UserStatus on User {
+      isOnline
+      lastSeen
+      status
+    }
+  `,
+  fragmentName: 'UserStatus',
+  onData: (user) => {
+    console.log(`${user.id} is ${user.isOnline ? 'online' : 'offline'}`)
+  }
+})
+
+// Clean up when done
+onUnmounted(() => unsubscribe())
+```
+
+**Note:** The `useFragment` composable uses `watchFragment` internally and handles cleanup automatically.
 
 ---
 ## Entity keys & interfaces

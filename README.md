@@ -12,12 +12,12 @@
 
 A tiny (11 kB gzipped) cache layer for **Villus**:
 
-- **Small & focused APIs.** Fragments, optimistic edits, and Relay connections — without ceremony.
+- **Small & focused APIs.** Queries, fragments, optimistic edits, and Relay connections — without ceremony.
 - **Fast rendering and excellent performance.** Microtask-batched updates; stable Relay views that don't churn arrays and minimize re-renders.
 - **Relay-style connections** — append/prepend/replace, edge de-duplication by node key, reactive, and **no array churn**.
 - **Optimistic updates that stack** — layered commits/reverts for entities *and* connections (add/remove/update pageInfo) with clean rollback.
 - **SSR that just works** — dehydrate/hydrate; first client mount renders from cache without a duplicate request; clean Suspense behavior.
-- **Fragments API** — `identify`, `readFragment`, `writeFragment` (interfaces supported), plus reactive materialized proxies.
+- **Imperative cache API** — `readQuery`, `writeQuery`, `watchQuery` for direct cache access; `readFragment`, `writeFragment`, `watchFragment` for entities (interfaces supported).
 - **Tiny composables** — `useFragment`, `useFragments`, `useCache`
 - **Suspense** — first-class support.
 - **Compiller mode (alpha)** — boost performance by pre-compiling fragments and queries.
@@ -28,7 +28,8 @@ A tiny (11 kB gzipped) cache layer for **Villus**:
 
 - **[Relay connections](./docs/RELAY_CONNECTIONS.md)** — `@connection` directive, append/prepend/replace, de-dup, policy matrix
 - **[Optimistic updates](./docs/OPTIMISTIC_UPDATES.md)** — layering, rollback, entity ops, connection ops (`addNode` / `removeNode` / `patch`)
-- **[Fragments](./docs/FRAGMENTS.md)** — `identify()`, `readFragment()`, `writeFragment()`
+- **[Queries](./docs/QUERIES.md)** — `readQuery()`, `writeQuery()`, `watchQuery()` for imperative cache access
+- **[Fragments](./docs/FRAGMENTS.md)** — `identify()`, `readFragment()`, `writeFragment()`, `watchFragment()`
 - **[Composables](./docs/COMPOSABLES.md)** — `useCache()`, `useFragment()`
 - **[SSR](./docs/SSR.md)** — dehydrate/hydrate, one-time cache render, Suspense notes
 
@@ -255,15 +256,39 @@ const { data } = await useQuery({
 
 ---
 
-## Fragments
+## Imperative Cache Access
 
-Reactive fragment system for reading and writing normalized entities. Returns Vue proxies that automatically update when underlying data changes, enabling granular cache management and optimistic updates.
+### Queries
 
-Reactive proxies are returned by reads; writes update normalized state immediately.
+Direct cache operations for reading, writing, and watching query results without network requests.
 
 ```js
 import { useCache } from 'villus-cachebay'
-const { identify, readFragment, writeFragment } = useCache()
+const { readQuery, writeQuery, watchQuery } = useCache()
+
+// Read from cache synchronously
+const data = readQuery({ query: POSTS_QUERY, variables: { first: 10 } })
+
+// Write to cache (triggers reactive updates)
+writeQuery({ query: POSTS_QUERY, variables: { first: 10 }, data: { posts: { edges: [...] } } })
+
+// Watch for cache changes (reactive)
+const unsubscribe = watchQuery({
+  query: POSTS_QUERY,
+  variables: { first: 10 },
+  onData: (data) => console.log('Cache updated:', data)
+})
+```
+
+See **[Queries](./docs/QUERIES.md)** for detailed API documentation.
+
+### Fragments
+
+Reactive fragment system for reading and writing normalized entities. Returns Vue proxies that automatically update when underlying data changes, enabling granular cache management and optimistic updates.
+
+```js
+import { useCache } from 'villus-cachebay'
+const { identify, readFragment, writeFragment, watchFragment } = useCache()
 
 identify({ __typename: 'Post', id: 42 }) // → "Post:42"
 
@@ -292,9 +317,16 @@ writeFragment({
     title: 'New title'
   },
 })
+
+// Watch for changes (reactive)
+const unsubscribe = watchFragment({
+  id: 'Post:42',
+  fragment: `fragment PostFields on Post { id title }`,
+  onData: (post) => console.log('Post updated:', post)
+})
 ```
 
-See **[Cache fragments](./docs/FRAGMENTS.md)** for a concise API (`identify`, `readFragment`, `writeFragment`) and simple examples.
+See **[Fragments](./docs/FRAGMENTS.md)** for the complete API (`identify`, `readFragment`, `writeFragment`, `watchFragment`) and examples.
 
 ---
 

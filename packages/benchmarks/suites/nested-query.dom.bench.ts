@@ -114,9 +114,8 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
     return await runScenario("cachebay");
   }, {
     teardown() {
-      // This runs after the last benchmark finishes all its iterations
-      console.log('Metrics');
-      console.log(JSON.stringify(metrics, null, 2));
+      // console.log('Metrics');
+      // console.log(JSON.stringify(metrics, null, 2));
     }
   });
 
@@ -124,8 +123,8 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
     return await runScenario("apollo");
   }, {
     teardown() {
-      console.log('Metrics');
-      console.log(JSON.stringify(metrics, null, 2));
+      // console.log('Metrics');
+      // console.log(JSON.stringify(metrics, null, 2));
     }
   });
 

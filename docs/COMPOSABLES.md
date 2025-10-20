@@ -16,7 +16,7 @@ app.mount('#app')
 
 The key composables are:
 
-- **`useCache()`** – low-level cache API (identify / read / write / optimistic)
+- **`useCache()`** – low-level cache API (queries, fragments, optimistic)
 - **`useFragment()`** – read one entity by key (reactive proxy)
 
 > Fetching still uses Villus’ `useQuery()` / `useMutation()` — Cachebay covers the cache & normalization layer.
@@ -29,14 +29,72 @@ The key composables are:
 import { useCache } from 'villus-cachebay'
 
 const {
+  // Query APIs
+  readQuery,
+  writeQuery,
+  watchQuery,
+  
+  // Fragment APIs
   identify,
   readFragment,
   writeFragment,
+  watchFragment,
+  
+  // Optimistic APIs
   modifyOptimistic,
 } = useCache()
 ```
 
-### Identify
+### Query APIs
+
+**Read from cache**
+```ts
+import { useCache } from 'villus-cachebay'
+
+const { readQuery } = useCache()
+
+const data = readQuery({ 
+  query: POSTS_QUERY, 
+  variables: { first: 10 } 
+})
+```
+
+**Write to cache**
+```ts
+import { useCache } from 'villus-cachebay'
+
+const { writeQuery } = useCache()
+
+writeQuery({ 
+  query: POSTS_QUERY, 
+  variables: { first: 10 },
+  data: { posts: { edges: [...], pageInfo: {...} } }
+})
+```
+
+**Watch for changes**
+```ts
+import { useCache } from 'villus-cachebay'
+
+const { watchQuery } = useCache()
+
+const { unsubscribe } = watchQuery({
+  query: POSTS_QUERY,
+  variables: { first: 10 },
+  onData: (data) => {
+    console.log('Cache updated:', data)
+  }
+})
+
+// Clean up
+onUnmounted(() => unsubscribe())
+```
+
+See **[QUERIES.md](./QUERIES.md)** for detailed documentation.
+
+### Fragment APIs
+
+**Identify**
 
 ```ts
 import { useCache } from 'villus-cachebay'
@@ -46,7 +104,7 @@ const { identify } = useCache()
 identify({ __typename: 'User', id: 'u1' }) // → "User:u1"
 ```
 
-### Read (reactive)
+**Read (reactive)**
 
 ```ts
 import { useCache } from 'villus-cachebay'
@@ -56,7 +114,7 @@ const { readFragment } = useCache()
 const post = readFragment({ id: 'Post:42', fragment: PostFragment }) // Vue proxy that stays in sync
 ```
 
-### Write
+**Write**
 
 ```ts
 import { useCache } from 'villus-cachebay'
@@ -64,6 +122,23 @@ import { useCache } from 'villus-cachebay'
 const { writeFragment } = useCache()
 
 writeFragment({ id: 'Post:42', fragment: PostFragment, data: { title: 'Updated' } })
+```
+
+**Watch**
+
+```ts
+import { useCache } from 'villus-cachebay'
+
+const { watchFragment } = useCache()
+
+const { unsubscribe } = watchFragment({
+  id: 'Post:42',
+  fragment: PostFragment,
+  onData: (post) => console.log('Updated:', post.title)
+})
+
+// Clean up
+onUnmounted(() => unsubscribe())
 ```
 
 ### Optimistic

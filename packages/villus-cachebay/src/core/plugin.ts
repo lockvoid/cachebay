@@ -8,9 +8,6 @@ import type { DocumentNode } from "graphql";
 import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus";
 import type { App } from "vue";
 
-// bench //metrics (shared singleton in your bench project)
-import { metrics } from "../../../benchmarks/src/ui/instrumentation";
-
 type PluginDependencies = {
   planner: PlannerInstance;
   queries: QueriesInstance;
