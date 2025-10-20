@@ -382,11 +382,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     }
 
     // Mark cached queries dirty based on touched dependencies
-    markDirtyByDepIds(touched);
+    markResultsDirtyForTouched(touched);
 
     return { touched };
   };
-  /* MATERIALIZE DOCUMENT (LRU result cache; per-dependency version stamp) */
+
+  /* MATERIALIZE DOCUMENT (per-plan LRU; per-dep inverted index; no clocks) */
   type MaterializeResult = {
     data?: any;
     status: "FULFILLED" | "MISSING";
@@ -394,14 +395,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     debug?: { misses: Array<Record<string, any>>; vars: Record<string, any> };
   };
 
-  type CacheEntry = { data: any; deps: string[]; dirty: boolean };
+  type CacheEntry = { data: any; deps: string[] };
 
-  const __DEV__ = false; // keep logs off in production benches
-
-  // tiny LRU per-plan for top-level results
   const RESULT_LRU_CAP = 512;
+
   class LRU<K, V> {
-    constructor(private cap = RESULT_LRU_CAP) { }
+    constructor(private cap = RESULT_LRU_CAP, private onEvict?: (k: K, v: V) => void) { }
     private m = new Map<K, V>();
     get(k: K): V | undefined {
       const v = this.m.get(k);
@@ -416,10 +415,15 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       this.m.set(k, v);
       if (this.m.size > this.cap) {
         const oldest = this.m.keys().next().value as K;
+        const ov = this.m.get(oldest)!;
         this.m.delete(oldest);
+        this.onEvict?.(oldest, ov);
       }
     }
-    clear() {
+    clear(): void {
+      if (this.onEvict) {
+        for (const [k, v] of this.m) this.onEvict(k, v);
+      }
       this.m.clear();
     }
   }
@@ -431,64 +435,93 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     return "{" + keys.map(k => JSON.stringify(k) + ":" + stableStringify(v[k])).join(",") + "}";
   };
 
-  const resultLRUByPlan = new WeakMap<CachePlan, LRU<string, CacheEntry>>();
+  /** Plan-scoped caches & indices */
+  const lruByPlan = new WeakMap<CachePlan, LRU<string, CacheEntry>>();
+  const depIndexByPlan = new WeakMap<CachePlan, Map<string, Set<string>>>();
+  const dirtyByPlan = new WeakMap<CachePlan, Set<string>>();
+  const allPlans = new Set<CachePlan>();
+
+  const getDepIndex = (plan: CachePlan) => {
+    let idx = depIndexByPlan.get(plan);
+    if (!idx) { idx = new Map(); depIndexByPlan.set(plan, idx); }
+    return idx;
+  };
+  const getDirtySet = (plan: CachePlan) => {
+    let s = dirtyByPlan.get(plan);
+    if (!s) { s = new Set(); dirtyByPlan.set(plan, s); }
+    return s;
+  };
   const getResultLRU = (plan: CachePlan) => {
-    let lru = resultLRUByPlan.get(plan);
+    let lru = lruByPlan.get(plan);
     if (!lru) {
-      lru = new LRU<string, CacheEntry>(RESULT_LRU_CAP);
-      resultLRUByPlan.set(plan, lru);
+      allPlans.add(plan);
+      lru = new LRU<string, CacheEntry>(RESULT_LRU_CAP, (vkey, entry) => {
+        // unlink on eviction
+        unlinkDepsFromVkey(plan, entry.deps, vkey);
+        getDirtySet(plan).delete(vkey);
+      });
+      lruByPlan.set(plan, lru);
     }
     return lru;
   };
 
-  // Inverted index: depId → Set<vkey> to track which queries depend on what
-  const depToVkeysIndex = new Map<string, Set<string>>();
-
-  const linkDepsToVkey = (deps: string[], vkey: string, lru: LRU<string, CacheEntry>) => {
-    // Add vkey to each dep's index
+  const linkDepsToVkey = (plan: CachePlan, deps: string[], vkey: string) => {
+    const idx = getDepIndex(plan);
     for (let i = 0; i < deps.length; i++) {
-      const depId = deps[i];
-      let vkeys = depToVkeysIndex.get(depId);
-      if (!vkeys) {
-        vkeys = new Set();
-        depToVkeysIndex.set(depId, vkeys);
-      }
-      vkeys.add(vkey);
+      const id = deps[i];
+      let set = idx.get(id);
+      if (!set) idx.set(id, (set = new Set()));
+      set.add(vkey);
     }
   };
-
-  const unlinkDepsFromVkey = (deps: string[], vkey: string) => {
-    // Remove vkey from each dep's index
+  const unlinkDepsFromVkey = (plan: CachePlan, deps: string[], vkey: string) => {
+    const idx = getDepIndex(plan);
     for (let i = 0; i < deps.length; i++) {
-      const depId = deps[i];
-      const vkeys = depToVkeysIndex.get(depId);
-      if (vkeys) {
-        vkeys.delete(vkey);
-        if (vkeys.size === 0) {
-          depToVkeysIndex.delete(depId);
-        }
+      const id = deps[i];
+      const set = idx.get(id);
+      if (!set) continue;
+      set.delete(vkey);
+      if (set.size === 0) idx.delete(id);
+    }
+  };
+
+  /** Call this after every normalize/write with the set of touched record ids/keys */
+  const markResultsDirtyForTouched = (touched: Set<string>) => {
+    for (const plan of allPlans) {
+      const idx = depIndexByPlan.get(plan);
+      if (!idx) continue;
+      const dirty = getDirtySet(plan);
+      for (const id of touched) {
+        const keys = idx.get(id);
+        if (!keys) continue;
+        for (const vkey of keys) dirty.add(vkey);
       }
     }
   };
 
-  const markDirtyByDepIds = (touchedIds: Set<string>) => {
-    // Mark all cached queries that depend on any touched id as dirty
-    for (const depId of touchedIds) {
-      const vkeys = depToVkeysIndex.get(depId);
-      if (vkeys) {
-        for (const vkey of vkeys) {
-          // Find which LRU this vkey belongs to (we'll handle this per-plan)
-          // For now, mark in a global dirty set
-          dirtyVkeys.add(vkey);
-        }
-      }
+  /** Optional helper if you want to nuke everything (tests/dev) */
+  const clearAllResultCaches = () => {
+    for (const plan of allPlans) {
+      lruByPlan.get(plan)?.clear();
+      depIndexByPlan.get(plan)?.clear();
+      dirtyByPlan.get(plan)?.clear();
     }
+    allPlans.clear();
+    lruByPlan.clear();
+    depIndexByPlan.clear();
+    dirtyByPlan.clear();
   };
 
-  // Global dirty set (vkeys that need recomputation)
-  const dirtyVkeys = new Set<string>();
+  /* ---------- materializeDocument ---------- */
 
-  // Task queue
+  const planIdByPlan = new WeakMap<CachePlan, number>();
+  let planSeq = 1;
+  const getPlanId = (plan: CachePlan) => {
+    let id = planIdByPlan.get(plan);
+    if (!id) { id = planSeq++; planIdByPlan.set(plan, id); }
+    return id;
+  };
+
   type Task =
     | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string }
     | { t: "ENTITY"; id: string; field: PlanField; out: any }
@@ -507,21 +540,20 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   }): MaterializeResult => {
     const plan = planner.getPlan(document);
     const lru = getResultLRU(plan);
-    const vkey = `${decisionMode}|${stableStringify(variables)}`;
+    const dirty = getDirtySet(plan);
+    const vkey = `${getPlanId(plan)}|${decisionMode}|${stableStringify(variables)}`;
 
-    // O(1) cache validation: if not dirty, return immediately
+    // O(1) hot path: return if present and not dirty
     {
       const cached = lru.get(vkey);
-      if (cached && !cached.dirty && !dirtyVkeys.has(vkey)) {
+      if (cached && !dirty.has(vkey)) {
         return { data: cached.data, status: "FULFILLED", deps: cached.deps.slice() };
       }
     }
 
-    // ---- Full traversal to build data + deps ----
+    // ---- full traversal ----
     const deps = new Set<string>();
-    const touch = (id?: string | null) => {
-      if (id) deps.add(id);
-    };
+    const touch = (id?: string | null) => { if (id) deps.add(id); };
 
     const outData: Record<string, any> = {};
     let allOk = true;
@@ -530,14 +562,14 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     touch(ROOT_ID);
 
     const tasks: Task[] = [];
-    for (let i = plan.root.length - 1; i >= 0; i--) {
-      const f = plan.root[i];
+    const rootSel = planner.getPlan(document).root;
+    for (let i = rootSel.length - 1; i >= 0; i--) {
+      const f = rootSel[i];
       tasks.push({ t: "ROOT_FIELD", parentId: ROOT_ID, field: f, out: outData, outKey: f.responseKey });
     }
 
     const isConnectionField = (f: PlanField): boolean => Boolean((f as any).isConnection);
 
-    // ---- type-conditions (inline fragments) helpers ----
     const isSubtype = (actual?: string, expected?: string): boolean => {
       if (!expected || !actual) return true;
       if (actual === expected) return true;
@@ -545,7 +577,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       const impls: string[] | undefined = intfMap?.[expected];
       return Array.isArray(impls) ? impls.includes(actual) : false;
     };
-
     const fieldAppliesToType = (pf: any, actualType?: string): boolean => {
       const one = pf?.typeCondition ?? pf?.onType ?? pf?.typeName ?? undefined;
       const many = pf?.typeConditions ?? pf?.onTypes ?? pf?.typeNames ?? undefined;
@@ -554,7 +585,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       if (Array.isArray(many)) return many.some((t: string) => isSubtype(actualType, t));
       return true;
     };
-    // ------------------------------------------------------------------------
 
     while (tasks.length) {
       const task = tasks.pop() as Task;
@@ -585,7 +615,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           continue;
         }
 
-        // scalar at root
         if (field.fieldName === "__typename") {
           out[outKey] = (root as any).__typename;
         } else {
@@ -600,9 +629,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const rec = graph.getRecord(id);
         touch(id);
 
-        if (!rec) {
-          allOk = false;
-        }
+        if (!rec) allOk = false;
 
         const snap = rec || {};
 
@@ -662,31 +689,26 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           }
         }
 
-        // Scalar fallback (covers interface-gated scalars present on the record)
+        // scalar fallback for interface-gated scalars present on the record
         if (Array.isArray(field.selectionSet) && field.selectionSet.length) {
           for (let i = 0; i < field.selectionSet.length; i++) {
             const pf = field.selectionSet[i];
             if (pf.selectionSet) continue;
             if (out[pf.responseKey] !== undefined) continue;
             const sk = buildFieldKey(pf, variables);
-            if (sk in (snap as any)) {
-              out[pf.responseKey] = (snap as any)[sk];
-            }
+            if (sk in (snap as any)) out[pf.responseKey] = (snap as any)[sk];
           }
         }
-
         continue;
       }
 
       if (task.t === "CONNECTION") {
         const { parentId, field, out, outKey } = task;
 
-        // read from CANONICAL page
         const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
         touch(canonicalKey);
         const pageCanonical = graph.getRecord(canonicalKey);
 
-        // "strict" additionally requires the strict page to be present
         let ok = !!pageCanonical;
         if (ok && decisionMode === "strict") {
           const strictKey = buildConnectionKey(field, parentId, variables);
@@ -697,10 +719,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const conn: any = { edges: [], pageInfo: {} };
         out[outKey] = conn;
 
-        if (!ok) {
-          allOk = false;
-          continue;
-        }
+        if (!ok) { allOk = false; continue; }
 
         const page = pageCanonical!;
         const selMap = (field as any).selectionMap as Map<string, PlanField> | undefined;
@@ -737,7 +756,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
-            // Other page-level fields
             if (!pf.selectionSet) {
               if (pf.fieldName === "__typename") {
                 conn[pf.responseKey] = (page as any).__typename;
@@ -748,15 +766,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
-            // nested connection under page
             if (isConnectionField(pf)) {
               tasks.push({ t: "CONNECTION", parentId: canonicalKey, field: pf, out: conn, outKey: pf.responseKey });
               continue;
             }
 
-            // containers/entities under page
             const link = (page as any)[buildFieldKey(pf, variables)];
-
             if (link && typeof link === "object" && Array.isArray(link.__refs)) {
               const refs: string[] = link.__refs.slice();
               const arrOut: any[] = new Array(refs.length);
@@ -782,7 +797,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             tasks.push({ t: "ENTITY", id: childId, field: pf, out: childOut });
           }
         }
-
         continue;
       }
 
@@ -792,18 +806,16 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const pi = graph.getRecord(id) || {};
         const piOut: any = {};
         const sel = field.selectionSet || [];
-
         for (let i = 0; i < sel.length; i++) {
           const pf = sel[i];
           if (pf.selectionSet) continue;
           if (pf.fieldName === "__typename") {
             piOut[pf.responseKey] = (pi as any).__typename;
-            continue;
+          } else {
+            const sk = buildFieldKey(pf, variables);
+            piOut[pf.responseKey] = (pi as any)[sk];
           }
-          const sk = buildFieldKey(pf, variables);
-          piOut[pf.responseKey] = (pi as any)[sk];
         }
-
         out.pageInfo = piOut;
         continue;
       }
@@ -840,13 +852,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           } else if (!pf.selectionSet) {
             if (pf.fieldName === "__typename") {
               edgeOut[rk] = (edge as any).__typename;
-              continue;
+            } else {
+              const sk = buildFieldKey(pf, variables);
+              edgeOut[rk] = (edge as any)[sk];
             }
-            const sk = buildFieldKey(pf, variables);
-            edgeOut[rk] = (edge as any)[sk];
           }
         }
-
         continue;
       }
     }
@@ -855,22 +866,18 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       return { status: "MISSING", data: undefined, deps: Array.from(deps) };
     }
 
-    // capture deps and link to inverted index
     const ids = Array.from(deps).sort();
-    
-    // Unlink old deps if entry existed
-    const oldCached = lru.get(vkey);
-    if (oldCached) {
-      unlinkDepsFromVkey(oldCached.deps, vkey);
-    }
-    
-    // Cache result and link new deps
-    const entry: CacheEntry = { data: outData, deps: ids, dirty: false };
+
+    // relink deps and store fresh entry
+    const prev = lru.get(vkey);
+    if (prev) unlinkDepsFromVkey(plan, prev.deps, vkey);
+
+    const entry: CacheEntry = { data: outData, deps: ids };
     lru.set(vkey, entry);
-    linkDepsToVkey(ids, vkey, lru);
-    
-    // Clear dirty flag
-    dirtyVkeys.delete(vkey);
+    linkDepsToVkey(plan, ids, vkey);
+
+    // clear dirty for this key
+    dirty.delete(vkey);
 
     return { data: outData, status: "FULFILLED", deps: ids };
   };
