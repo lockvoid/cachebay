@@ -18,7 +18,9 @@
     "api:readQuery": "vitest bench --run --compare=.results/normalize.json api/readQuery.bench.ts",
     "api:readQuery:baseline": "vitest bench --run --outputJson=.results/normalize.json api/readQuery.bench.ts",
     "api:writeQuery": "vitest bench --run --compare=.results/normalize.json api/writeQuery.bench.ts",
-    "api:writeQuery:baseline": "vitest bench --run --outputJson=.results/normalize.json api/writeQuery.bench.ts"
+    "api:writeQuery:baseline": "vitest bench --run --outputJson=.results/normalize.json api/writeQuery.bench.ts",
+    "api:watchQuery": "vitest bench --run --compare=.results/normalize.json api/watchQuery.bench.ts",
+    "api:watchQuery:baseline": "vitest bench --run --outputJson=.results/normalize.json api/watchQuery.bench.ts"
   },
   "dependencies": {
     "@apollo/client": "^3.8.10",

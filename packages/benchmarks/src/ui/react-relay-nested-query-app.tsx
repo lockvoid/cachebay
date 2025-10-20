@@ -97,7 +97,7 @@ function UsersList(props: {
   const rootData = useLazyLoadQuery(
     UsersRootQuery,
     { count: 10, cursor: null },
-    { fetchPolicy: 'network-only' },
+    { fetchPolicy: 'store-or-network' },
   );
 
   const { data, hasNext, loadNext, isLoadingNext } = usePaginationFragment(

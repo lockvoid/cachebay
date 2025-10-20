@@ -66,7 +66,7 @@ export function createVueCachebayNestedApp(serverUrl: string): VueCachebayNested
   const client = createClient({
     url: serverUrl,
     use: [cachebay, fetchPlugin()],
-    cachePolicy: 'network-only',
+    cachePolicy: 'cache-first',
   });
 
   let totalRenderTime = 0;

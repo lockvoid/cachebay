@@ -50,9 +50,10 @@ export type WatchQueryHandle = {
 export type QueriesInstance = ReturnType<typeof createQueries>;
 
 export const createQueries = (deps: QueriesDependencies) => {
-  const { graph, planner, documents } = deps;
+  const { documents } = deps;
 
-  // Active watchers: opKey -> watcher state
+  // --- Watcher state & indices ---
+
   type WatcherState = {
     query: DocumentNode;
     variables: Record<string, any>;
@@ -67,7 +68,8 @@ export const createQueries = (deps: QueriesDependencies) => {
   const depIndex = new Map<string, Set<number>>();
   let watcherSeq = 1;
 
-  // Pending changes for batched broadcasting
+  // --- Batched broadcasting ---
+
   let pendingTouched = new Set<string>();
   let flushScheduled = false;
 
@@ -79,19 +81,19 @@ export const createQueries = (deps: QueriesDependencies) => {
       flushScheduled = false;
       if (pendingTouched.size === 0) return;
 
+      // Drain once per microtask
       const touched = Array.from(pendingTouched);
       pendingTouched.clear();
 
-      // Collect affected watchers
+      // Find affected watchers
       const affected = new Set<number>();
       for (const id of touched) {
         const ws = depIndex.get(id);
         if (ws) for (const k of ws) affected.add(k);
       }
-
       if (affected.size === 0) return;
 
-      // Re-materialize each affected watcher
+      // Re-materialize and conditionally emit
       for (const k of affected) {
         const watcher = watchers.get(k);
         if (!watcher) continue;
@@ -104,38 +106,20 @@ export const createQueries = (deps: QueriesDependencies) => {
 
         if (!result || result.status !== "FULFILLED") continue;
 
-        // Update deps
+        // Update dep index with delta
         updateWatcherDeps(k, result.deps || []);
 
         // Emit only on identity change
         if (result.data !== watcher.lastData) {
           watcher.lastData = result.data;
-          watcher.onData(markRaw(result.data));
+          try {
+            watcher.onData(markRaw(result.data));
+          } catch (e) {
+            watcher.onError?.(e as Error);
+          }
         }
       }
     });
-  };
-
-  const updateWatcherDeps = (watcherId: number, newDeps: string[]) => {
-    const watcher = watchers.get(watcherId);
-    if (!watcher) return;
-
-    // Remove old deps
-    for (const d of watcher.deps) {
-      const set = depIndex.get(d);
-      if (set) {
-        set.delete(watcherId);
-        if (set.size === 0) depIndex.delete(d);
-      }
-    }
-
-    // Add new deps
-    watcher.deps = new Set(newDeps);
-    for (const d of watcher.deps) {
-      let set = depIndex.get(d);
-      if (!set) depIndex.set(d, (set = new Set()));
-      set.add(watcherId);
-    }
   };
 
   const enqueueTouched = (touched?: Set<string>) => {
@@ -144,9 +128,43 @@ export const createQueries = (deps: QueriesDependencies) => {
     scheduleFlush();
   };
 
-  /**
-   * Read query from cache (sync)
-   */
+  // --- Dep index maintenance (delta-based) ---
+
+  const updateWatcherDeps = (watcherId: number, nextDepsArr: string[]) => {
+    const watcher = watchers.get(watcherId);
+    if (!watcher) return;
+
+    const old = watcher.deps;
+    const next = new Set(nextDepsArr);
+
+    // Fast path: identical sets
+    if (old.size === next.size) {
+      let same = true;
+      for (const d of old) if (!next.has(d)) { same = false; break; }
+      if (same) return;
+    }
+
+    // Remove removed deps
+    for (const d of old) if (!next.has(d)) {
+      const set = depIndex.get(d);
+      if (set) {
+        set.delete(watcherId);
+        if (set.size === 0) depIndex.delete(d);
+      }
+    }
+
+    // Add new deps
+    for (const d of next) if (!old.has(d)) {
+      let set = depIndex.get(d);
+      if (!set) depIndex.set(d, (set = new Set()));
+      set.add(watcherId);
+    }
+
+    watcher.deps = next;
+  };
+
+  // --- Public API ---
+
   const readQuery = <T = any>({
     query,
     variables = {},
@@ -159,21 +177,11 @@ export const createQueries = (deps: QueriesDependencies) => {
     }) as any;
 
     if (result && result.status === "FULFILLED") {
-      return {
-        data: markRaw(result.data) as T,
-        deps: result.deps || [],
-      };
+      return { data: markRaw(result.data) as T, deps: result.deps || [] };
     }
-
-    return {
-      data: undefined,
-      deps: [],
-    };
+    return { data: undefined, deps: [] };
   };
 
-  /**
-   * Write query to cache (sync)
-   */
   const writeQuery = ({
     query,
     variables = {},
@@ -186,16 +194,10 @@ export const createQueries = (deps: QueriesDependencies) => {
     }) as any;
 
     const touched = result?.touched || new Set<string>();
-
-    // Trigger reactive updates for watchers
     enqueueTouched(touched);
-
     return { touched };
   };
 
-  /**
-   * Watch query reactively (returns unsubscribe handle)
-   */
   const watchQuery = ({
     query,
     variables = {},
@@ -206,13 +208,7 @@ export const createQueries = (deps: QueriesDependencies) => {
   }: WatchQueryOptions): WatchQueryHandle => {
     const watcherId = watcherSeq++;
 
-    // Initial read
-    const initialResult = documents.materializeDocument({
-      document: query,
-      variables,
-      decisionMode,
-    }) as any;
-
+    // Create state now (so we can index it after initial read)
     const watcher: WatcherState = {
       query,
       variables,
@@ -222,20 +218,29 @@ export const createQueries = (deps: QueriesDependencies) => {
       deps: new Set(),
       lastData: undefined,
     };
-
     watchers.set(watcherId, watcher);
 
-    if (initialResult && initialResult.status === "FULFILLED") {
-      watcher.lastData = initialResult.data;
-      updateWatcherDeps(watcherId, initialResult.deps || []);
+    // Initial read
+    const initial = documents.materializeDocument({
+      document: query,
+      variables,
+      decisionMode,
+    }) as any;
+
+    if (initial?.status === "FULFILLED") {
+      watcher.lastData = initial.data;
+      updateWatcherDeps(watcherId, initial.deps || []);
       if (!skipInitialEmit) {
-        onData(markRaw(initialResult.data));
+        try {
+          onData(markRaw(initial.data));
+        } catch (e) {
+          onError?.(e as Error);
+        }
       }
     } else if (onError && !skipInitialEmit) {
       onError(new Error("Query returned no data"));
     }
 
-    // Return handle
     return {
       unsubscribe: () => {
         const w = watchers.get(watcherId);
@@ -249,7 +254,6 @@ export const createQueries = (deps: QueriesDependencies) => {
             if (set.size === 0) depIndex.delete(d);
           }
         }
-
         watchers.delete(watcherId);
       },
 
@@ -257,16 +261,22 @@ export const createQueries = (deps: QueriesDependencies) => {
         const w = watchers.get(watcherId);
         if (!w) return;
 
-        const result = documents.materializeDocument({
+        const res = documents.materializeDocument({
           document: w.query,
           variables: w.variables,
           decisionMode: w.decisionMode,
         }) as any;
 
-        if (result && result.status === "FULFILLED") {
-          w.lastData = result.data;
-          updateWatcherDeps(watcherId, result.deps || []);
-          w.onData(markRaw(result.data));
+        if (res?.status === "FULFILLED") {
+          updateWatcherDeps(watcherId, res.deps || []);
+          if (res.data !== w.lastData) {
+            w.lastData = res.data;
+            try {
+              w.onData(markRaw(res.data));
+            } catch (e) {
+              w.onError?.(e as Error);
+            }
+          }
         } else if (w.onError) {
           w.onError(new Error("Refetch returned no data"));
         }
@@ -278,7 +288,7 @@ export const createQueries = (deps: QueriesDependencies) => {
     readQuery,
     writeQuery,
     watchQuery,
-    // Internal: notify watchers of touched dependencies
+    /** Internal utility for integration points that want to notify watchers manually. */
     _notifyTouched: enqueueTouched,
   };
 };

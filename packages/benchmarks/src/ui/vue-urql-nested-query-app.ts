@@ -1,9 +1,9 @@
-import { createApp, defineComponent, reactive, nextTick, computed, watch } from 'vue';
-import urql, { useQuery } from '@urql/vue';
-import { createClient as createUrqlClient, fetchExchange } from '@urql/core';
-import { cacheExchange as graphcache } from '@urql/exchange-graphcache';
-import { relayPagination } from '@urql/exchange-graphcache/extras';
-import { gql } from 'graphql-tag';
+import { createClient as createUrqlClient, fetchExchange } from "@urql/core";
+import { cacheExchange as graphcache } from "@urql/exchange-graphcache";
+import { relayPagination } from "@urql/exchange-graphcache/extras";
+import urql, { useQuery } from "@urql/vue";
+import { gql } from "graphql-tag";
+import { createApp, defineComponent, reactive, nextTick, computed, watch } from "vue";
 
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {
@@ -55,14 +55,14 @@ export function createVueUrqlNestedApp(serverUrl: string): VueUrqlNestedControll
   const cache = graphcache({
     resolvers: {
       Query: { users: relayPagination() },
-      User:  { posts: relayPagination(), followers: relayPagination() },
-      Post:  { comments: relayPagination() },
+      User: { posts: relayPagination(), followers: relayPagination() },
+      Post: { comments: relayPagination() },
     },
   });
 
   const client = createUrqlClient({
     url: serverUrl,
-    requestPolicy: 'network-only',
+    requestPolicy: "cache-first",
     exchanges: [cache, fetchExchange],
   });
 
@@ -102,7 +102,7 @@ export function createVueUrqlNestedApp(serverUrl: string): VueUrqlNestedControll
         const renderDone = new Promise<void>((resolve) => { onRenderComplete = resolve; });
 
         // fetch a page from network; graphcache merges into users.edges
-        await executeQuery({ variables, requestPolicy: 'network-only' });
+        await executeQuery({ variables, requestPolicy: "cache-first" });
 
         // bump cursor from the merged result
         const endCursor = data.value?.users?.pageInfo?.endCursor ?? null;
@@ -137,7 +137,7 @@ export function createVueUrqlNestedApp(serverUrl: string): VueUrqlNestedControll
   return {
     mount(target?: Element) {
       if (app) return;
-      container = target ?? document.createElement('div');
+      container = target ?? document.createElement("div");
       if (!target) document.body.appendChild(container);
       app = createApp(NestedList);
       app.use(urql, client);

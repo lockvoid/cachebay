@@ -1,9 +1,9 @@
-import { createApp, defineComponent, reactive, nextTick, computed, watch } from 'vue';
-import urql, { useQuery } from '@urql/vue';
-import { createClient as createUrqlClient, fetchExchange } from '@urql/core';
-import { cacheExchange as graphcache } from '@urql/exchange-graphcache';
-import { relayPagination } from '@urql/exchange-graphcache/extras';
-import { gql } from 'graphql-tag';
+import { createClient as createUrqlClient, fetchExchange } from "@urql/core";
+import { cacheExchange as graphcache } from "@urql/exchange-graphcache";
+import { relayPagination } from "@urql/exchange-graphcache/extras";
+import urql, { useQuery } from "@urql/vue";
+import { gql } from "graphql-tag";
+import { createApp, defineComponent, reactive, nextTick, computed, watch } from "vue";
 
 const FEED_QUERY = gql`
   query Feed($first: Int!, $after: String) {
@@ -31,7 +31,7 @@ export function createVueUrqlApp(serverUrl: string): VueUrqlController {
 
   const client = createUrqlClient({
     url: serverUrl,
-    requestPolicy: 'network-only',
+    requestPolicy: "cache-first",
     exchanges: [cache, fetchExchange],
   });
 
@@ -68,19 +68,19 @@ export function createVueUrqlApp(serverUrl: string): VueUrqlController {
 
       const loadNextPage = async () => {
         const renderStart = performance.now();
-        
+
         const renderComplete = new Promise<void>(resolve => {
           onRenderComplete = resolve;
         });
 
-        await executeQuery({ variables, requestPolicy: 'network-only' });
+        await executeQuery({ variables, requestPolicy: "cache-first" });
 
         const endCursor = data.value?.feed?.pageInfo?.endCursor ?? null;
         if (endCursor) variables.after = endCursor;
 
         await renderComplete;
         onRenderComplete = null;
-        
+
         const renderEnd = performance.now();
         totalRenderTime += renderEnd - renderStart;
       };
@@ -106,7 +106,7 @@ export function createVueUrqlApp(serverUrl: string): VueUrqlController {
   return {
     mount(target?: Element) {
       if (app) return;
-      container = target ?? document.createElement('div');
+      container = target ?? document.createElement("div");
       if (!target) document.body.appendChild(container);
       app = createApp(InfiniteList);
       app.use(urql, client);

@@ -1,12 +1,12 @@
-import { createApp, defineComponent, nextTick } from 'vue';
-import { ApolloClient, InMemoryCache, HttpLink } from '@apollo/client/core';
-import { relayStylePagination } from '@apollo/client/utilities';
-import { gql } from 'graphql-tag';
-import { DefaultApolloClient, useLazyQuery } from '@vue/apollo-composable';
-import { metrics } from './instrumentation'; // ← shared metrics bucket
+import { ApolloClient, InMemoryCache, HttpLink } from "@apollo/client/core";
+import { relayStylePagination } from "@apollo/client/utilities";
+import { DefaultApolloClient, useLazyQuery } from "@vue/apollo-composable";
+import { gql } from "graphql-tag";
+import { createApp, defineComponent, nextTick } from "vue";
+import { metrics } from "./instrumentation"; // ← shared metrics bucket
 
 try {
-  const { loadErrorMessages, loadDevMessages } = require('@apollo/client/dev');
+  const { loadErrorMessages, loadDevMessages } = require("@apollo/client/dev");
   loadDevMessages?.();
   loadErrorMessages?.();
 } catch { /* ignore */ }
@@ -73,30 +73,30 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
       typePolicies: {
         Query: {
           fields: {
-            users: relayStylePagination(['first']),
+            users: relayStylePagination(["first"]),
           },
         },
         User: {
           fields: {
-            posts: relayStylePagination(['first']),
-            followers: relayStylePagination(['first']),
+            posts: relayStylePagination(["first"]),
+            followers: relayStylePagination(["first"]),
           },
         },
         Post: {
           fields: {
-            comments: relayStylePagination(['first']),
+            comments: relayStylePagination(["first"]),
           },
         },
       },
     }),
     link: new HttpLink({ uri: serverUrl, fetch }),
-    defaultOptions: { query: { fetchPolicy: 'network-only' } },
+    defaultOptions: { query: { fetchPolicy: "cache-first" } },
   });
 
   // keep client behavior unchanged
   const stripCanon = (o?: Record<string, unknown>) => {
     if (!o) return;
-    if ('canonizeResults' in o) {
+    if ("canonizeResults" in o) {
       try { delete (o as any).canonizeResults; }
       catch { (o as any).canonizeResults = undefined; }
     }
@@ -125,7 +125,7 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
       const { result, load, fetchMore } = useLazyQuery(
         USERS_QUERY,
         {},
-        { fetchPolicy: 'network-only', errorPolicy: 'ignore' }
+        { fetchPolicy: "cache-first", errorPolicy: "ignore" },
       );
 
       const loadNextPage = async () => {
@@ -153,13 +153,13 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
           metrics.apollo.renderMs += renderDelta;
 
         } catch (error) {
-          console.warn('Apollo execute error (ignored):', error);
+          console.warn("Apollo execute error (ignored):", error);
         }
       };
 
       return {
         result,
-        loadNextPage
+        loadNextPage,
       };
     },
 
@@ -177,7 +177,7 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
           </div>
         </div>
       </div>
-    `
+    `,
   });
 
   let componentInstance: any = null;
@@ -186,7 +186,7 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
     mount(target?: Element) {
       if (app) return;
 
-      container = target ?? document.createElement('div');
+      container = target ?? document.createElement("div");
       if (!target) document.body.appendChild(container);
 
       app = createApp(NestedList);
@@ -219,6 +219,6 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
 
     getTotalRenderTime() {
       return totalRenderTime;
-    }
+    },
   };
 }

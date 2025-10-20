@@ -1,7 +1,7 @@
 
-import { ApolloClient, InMemoryCache, HttpLink, gql } from '@apollo/client/core';
-import { relayStylePagination } from '@apollo/client/utilities';
-import type { Adapter, FeedResult } from './types';
+import { ApolloClient, InMemoryCache, HttpLink, gql } from "@apollo/client/core";
+import { relayStylePagination } from "@apollo/client/utilities";
+import type { Adapter, FeedResult } from "./types";
 
 const FEED = gql`
   query Feed($first: Int!, $after: String) {
@@ -24,11 +24,11 @@ export function createApolloAdapter(url: string): Adapter {
       },
     }),
     link: new HttpLink({ uri: url, fetch }),
-    defaultOptions: { query: { fetchPolicy: 'network-only' } },
+    defaultOptions: { query: { fetchPolicy: "cache-first" } },
   });
 
   return {
-    name: 'apollo',
+    name: "apollo",
     async setup() {
       return {};
     },

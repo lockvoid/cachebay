@@ -58,7 +58,7 @@ function FeedList(props: {
   const rootData = useLazyLoadQuery(
     FeedRootQuery,
     { count: 50, cursor: null },
-    { fetchPolicy: 'network-only' },
+    { fetchPolicy: 'cache-first' },
   );
 
   const { data, hasNext, loadNext, isLoadingNext } = usePaginationFragment(

@@ -1,14 +1,14 @@
-import { createApp, defineComponent, nextTick, computed, watch } from 'vue';
-import { ApolloClient, InMemoryCache, HttpLink } from '@apollo/client/core';
-import { relayStylePagination } from '@apollo/client/utilities';
-import { gql } from 'graphql-tag';
-import { DefaultApolloClient, useLazyQuery } from '@vue/apollo-composable';
+import { ApolloClient, InMemoryCache, HttpLink } from "@apollo/client/core";
+import { relayStylePagination } from "@apollo/client/utilities";
+import { DefaultApolloClient, useLazyQuery } from "@vue/apollo-composable";
+import { gql } from "graphql-tag";
+import { createApp, defineComponent, nextTick, computed, watch } from "vue";
 
 // Dev/error messages so Apollo stops giving opaque URLs
 try {
   // These are no-ops in prod builds
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { loadErrorMessages, loadDevMessages } = require('@apollo/client/dev');
+
+  const { loadErrorMessages, loadDevMessages } = require("@apollo/client/dev");
   loadDevMessages?.();
   loadErrorMessages?.();
 } catch { /* ignore if not present */ }
@@ -37,20 +37,20 @@ export function createVueApolloApp(serverUrl: string): VueApolloController {
         Query: {
           fields: {
             // keep your original behavior
-            feed: relayStylePagination(['first']),
+            feed: relayStylePagination(["first"]),
           },
         },
       },
     }),
     link: new HttpLink({ uri: serverUrl, fetch }),
-    defaultOptions: { query: { fetchPolicy: 'cache-first' } },
+    defaultOptions: { query: { fetchPolicy: "cache-first" } },
   });
 
   // Strip any 'canonizeResults' that might be set elsewhere (3.14 removed it)
   const stripCanon = (o?: Record<string, unknown>) => {
     if (!o) return;
     // delete + fallback to undefined in case delete is blocked by TS narrowing
-    if ('canonizeResults' in o) { try { delete (o as any).canonizeResults; } catch { (o as any).canonizeResults = undefined; } }
+    if ("canonizeResults" in o) { try { delete (o as any).canonizeResults; } catch { (o as any).canonizeResults = undefined; } }
   };
   stripCanon(client.defaultOptions?.query);
   stripCanon(client.defaultOptions?.watchQuery);
@@ -77,7 +77,7 @@ export function createVueApolloApp(serverUrl: string): VueApolloController {
       const { result, load, fetchMore, loading } = useLazyQuery(
         FEED_QUERY,
         {},
-        { fetchPolicy: 'cache-first', errorPolicy: 'ignore' }
+        { fetchPolicy: "cache-first", errorPolicy: "ignore" },
       );
 
       const edgeCount = computed(() => result.value?.feed?.edges?.length || 0);
@@ -98,7 +98,7 @@ export function createVueApolloApp(serverUrl: string): VueApolloController {
 
         try {
           const renderStart = performance.now();
-          
+
           const renderComplete = new Promise<void>(resolve => {
             onRenderComplete = resolve;
           });
@@ -117,12 +117,12 @@ export function createVueApolloApp(serverUrl: string): VueApolloController {
 
           await renderComplete;
           onRenderComplete = null;
-          
+
           const renderEnd = performance.now();
           totalRenderTime += renderEnd - renderStart;
 
         } catch (error) {
-          console.warn('Apollo load/fetchMore error (ignored):', error);
+          console.warn("Apollo load/fetchMore error (ignored):", error);
         }
       };
 
@@ -154,7 +154,7 @@ export function createVueApolloApp(serverUrl: string): VueApolloController {
     mount(target?: Element) {
       if (app) return;
 
-      container = target ?? document.createElement('div');
+      container = target ?? document.createElement("div");
       if (!target) document.body.appendChild(container);
 
       app = createApp(InfiniteList);

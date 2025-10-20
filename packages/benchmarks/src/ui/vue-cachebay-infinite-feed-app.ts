@@ -1,7 +1,7 @@
-import { createApp, defineComponent, ref, reactive, nextTick, computed, watch } from 'vue';
-import { createClient, useQuery, fetch as fetchPlugin } from 'villus';
-import { gql } from 'graphql-tag';
-import { createCache } from 'villus-cachebay';
+import { gql } from "graphql-tag";
+import { createClient, useQuery, fetch as fetchPlugin } from "villus";
+import { createCache } from '../../../villus-cachebay/src/core/internals';
+import { createApp, defineComponent, ref, reactive, nextTick, computed, watch } from "vue";
 
 const FEED_QUERY = gql`
   query Feed($first: Int!, $after: String) {
@@ -32,7 +32,7 @@ export function createVueCachebayApp(serverUrl: string): VueCachebayController {
   const client = createClient({
     url: serverUrl,
     use: [cachebay, fetchPlugin()],
-    cachePolicy: 'network-only'
+    cachePolicy: "cache-first",
   });
 
   let totalRenderTime = 0;
@@ -44,7 +44,7 @@ export function createVueCachebayApp(serverUrl: string): VueCachebayController {
     setup() {
       const variables = reactive({
         first: 50,
-        after: null as string | null
+        after: null as string | null,
       });
 
       const { data, execute } = useQuery({
@@ -67,7 +67,7 @@ export function createVueCachebayApp(serverUrl: string): VueCachebayController {
       const loadNextPage = async () => {
         try {
           const renderStart = performance.now();
-          
+
           const renderComplete = new Promise<void>(resolve => {
             onRenderComplete = resolve;
           });
@@ -80,12 +80,12 @@ export function createVueCachebayApp(serverUrl: string): VueCachebayController {
 
           await renderComplete;
           onRenderComplete = null;
-          
+
           const renderEnd = performance.now();
           totalRenderTime += renderEnd - renderStart;
 
         } catch (error) {
-          console.warn('Cachebay execute error (ignored):', error);
+          console.warn("Cachebay execute error (ignored):", error);
         }
       };
 
@@ -95,7 +95,7 @@ export function createVueCachebayApp(serverUrl: string): VueCachebayController {
 
       return {
         data,
-        loadNextPage
+        loadNextPage,
       };
     },
 
@@ -107,7 +107,7 @@ export function createVueCachebayApp(serverUrl: string): VueCachebayController {
           </li>
         </ul>
       </div>
-    `
+    `,
   });
 
   let componentInstance: any = null;
@@ -116,7 +116,7 @@ export function createVueCachebayApp(serverUrl: string): VueCachebayController {
     mount(target?: Element) {
       if (app) return;
 
-      container = target ?? document.createElement('div');
+      container = target ?? document.createElement("div");
       if (!target) document.body.appendChild(container);
 
       app = createApp(InfiniteList);
@@ -148,6 +148,6 @@ export function createVueCachebayApp(serverUrl: string): VueCachebayController {
 
     getTotalRenderTime() {
       return totalRenderTime;
-    }
+    },
   };
 }
