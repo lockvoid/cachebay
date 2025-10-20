@@ -10,10 +10,15 @@
     "server:infinite-feed": "NODE_ENV=production tsx scripts/start-server-infinite-feed.ts",
     "server:nested-query": "NODE_ENV=production tsx scripts/start-server-nested-query.ts",
     "suite:infinite-feed": "NODE_ENV=production tsx scripts/start-server-infinite-feed.ts & sleep 2 && NODE_ENV=production vitest bench --run --mode production suites/infinite-feed.dom.bench.ts; kill %1",
-    "suite:nested-query": "NODE_ENV=production tsx scripts/start-server-nested-query.ts & sleep 2 && NODE_ENV=production vitest bench --run --mode production suites/nested-query.dom.bench.ts; kill %1",    "perf:normalize": "vitest bench --run --compare=.perf/normalize.json perf/normalize.bench.ts",
-    "perf:normalize:baseline": "vitest bench --run --outputJson=.perf/normalize.json perf/normalize.bench.ts",
-    "perf:materialize": "vitest bench --run --compare=.perf/normalize.json perf/materialize.bench.ts",
-    "perf:materialize:baseline": "vitest bench --run --outputJson=.perf/normalize.json perf/materialize.bench.ts"
+    "suite:nested-query": "NODE_ENV=production tsx scripts/start-server-nested-query.ts & sleep 2 && NODE_ENV=production vitest bench --run --mode production suites/nested-query.dom.bench.ts; kill %1",
+    "api:normalizeDocument": "vitest bench --run --compare=.results/normalize.json api/normalizeDocument.bench.ts",
+    "api:normalizeDocument:baseline": "vitest bench --run --outputJson=.results/normalize.json api/normalizeDocument.bench.ts",
+    "api:materializeDocument": "vitest bench --run --compare=.results/normalize.json api/materializeDocument.bench.ts",
+    "api:materializeDocument:baseline": "vitest bench --run --outputJson=.results/normalize.json api/materializeDocument.bench.ts",
+    "api:readQuery": "vitest bench --run --compare=.results/normalize.json api/readQuery.bench.ts",
+    "api:readQuery:baseline": "vitest bench --run --outputJson=.results/normalize.json api/readQuery.bench.ts",
+    "api:writeQuery": "vitest bench --run --compare=.results/normalize.json api/writeQuery.bench.ts",
+    "api:writeQuery:baseline": "vitest bench --run --outputJson=.results/normalize.json api/writeQuery.bench.ts"
   },
   "dependencies": {
     "@apollo/client": "^3.8.10",

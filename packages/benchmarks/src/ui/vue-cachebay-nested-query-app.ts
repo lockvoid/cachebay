@@ -1,4 +1,4 @@
-import { createApp, defineComponent, nextTick } from 'vue';
+import { createApp, defineComponent, nextTick, watch } from 'vue';
 import { createClient, useQuery, fetch as fetchPlugin } from 'villus';
 import { gql } from 'graphql-tag';
 import { createCache } from '../../../villus-cachebay/src/core/internals';
@@ -83,6 +83,10 @@ export function createVueCachebayNestedApp(serverUrl: string): VueCachebayNested
         query: USERS_QUERY,
         paused: true,
       });
+
+      // watch(() => data.value.users.edges, () => {
+      //   console.log('data.value.users.edges changed', data.value.users.edges.length);
+      // });
 
       const loadNextPage = async () => {
         try {

@@ -397,7 +397,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
   type CacheEntry = { data: any; deps: string[] };
 
-  const RESULT_LRU_CAP = 512;
+  const RESULT_LRU_CAP = 2048;
 
   class LRU<K, V> {
     constructor(private cap = RESULT_LRU_CAP, private onEvict?: (k: K, v: V) => void) { }

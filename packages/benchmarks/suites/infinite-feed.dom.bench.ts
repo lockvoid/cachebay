@@ -90,12 +90,14 @@ async function runScenario(appType: "cachebay" | "apollo" | "urql" | "relay") {
 }
 
 describe("DOM Infinite feed (happy-dom): Vue apps with useQuery", () => {
-  bench("cachebay(vue)", async () => {
-    return await runScenario("cachebay");
-  });
+
 
   bench("apollo(vue)", async () => {
     return await runScenario("apollo");
+  });
+
+  bench("cachebay(vue)", async () => {
+    return await runScenario("cachebay");
   });
 
   bench("urql(vue)", async () => {
