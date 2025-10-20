@@ -44,6 +44,11 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       canonical,
       // no views!
     });
+
+    // Connect onChange hook for cache invalidation
+    graph.addOnChangeListener((touchedIds) => {
+      documents._markDirty(touchedIds);
+    });
   });
 
   it("FULFILLED for fully-present entity selection (scalars + link)", () => {

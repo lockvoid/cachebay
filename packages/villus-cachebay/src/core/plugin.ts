@@ -32,9 +32,17 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
   // Track last emission time per opKey for suspension window
   const lastEmitMs = new Map<number, number>();
 
+  // Track active watchers for reactive queries
+  const activeWatchers = new Map<number, ReturnType<typeof queries.watchQuery>>();
+
   // ---------- helpers ----------
   const finalizeQuery = (opKey: number) => {
     lastEmitMs.delete(opKey);
+    const watcher = activeWatchers.get(opKey);
+    if (watcher) {
+      watcher.unsubscribe();
+      activeWatchers.delete(opKey);
+    }
   };
 
   const firstReadMode = (policy: CachePolicy): DecisionMode => {
@@ -142,6 +150,20 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       const result = queries.readQuery({ query: document, variables, decisionMode: modeForQuery });
       if (result.data) {
         downstreamUseResult({ data: result.data, error: null }, true);
+        lastEmitMs.set(opKey, performance.now());
+        
+        // Set up watcher for future updates (optimistic, etc.)
+        const watcher = queries.watchQuery({
+          query: document,
+          variables,
+          decisionMode: modeForQuery,
+          skipInitialEmit: true,
+          onData: (data) => {
+            downstreamUseResult({ data, error: null }, false);
+            lastEmitMs.set(opKey, performance.now());
+          },
+        });
+        activeWatchers.set(opKey, watcher);
         return;
       }
     }
@@ -158,6 +180,19 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         // Emit cached data, allow network to arrive later
         downstreamUseResult({ data: result.data, error: null }, false);
         lastEmitMs.set(opKey, performance.now());
+        
+        // Set up watcher for reactive updates (optimistic, etc.)
+        const watcher = queries.watchQuery({
+          query: document,
+          variables,
+          decisionMode: modeForQuery,
+          skipInitialEmit: true, // We already emitted above
+          onData: (data) => {
+            downstreamUseResult({ data, error: null }, false);
+            lastEmitMs.set(opKey, performance.now());
+          },
+        });
+        activeWatchers.set(opKey, watcher);
       }
     }
 
@@ -179,6 +214,13 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         return;
       }
 
+      // Clean up old watcher before writing to avoid triggering it
+      const oldWatcher = activeWatchers.get(opKey);
+      if (oldWatcher) {
+        oldWatcher.unsubscribe();
+        activeWatchers.delete(opKey);
+      }
+
       // Write to cache (triggers reactive updates automatically)
       queries.writeQuery({ query: document, variables, data: incoming.data });
 
@@ -194,6 +236,21 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
       // Track emission time for suspension window
       lastEmitMs.set(opKey, performance.now());
+
+      // Set up watcher for future updates (optimistic, subscriptions, etc.)
+      if (policy === "cache-and-network" || policy === "cache-first") {
+        const watcher = queries.watchQuery({
+          query: document,
+          variables,
+          decisionMode: "canonical",
+          skipInitialEmit: true,
+          onData: (data) => {
+            downstreamUseResult({ data, error: null }, false);
+            lastEmitMs.set(opKey, performance.now());
+          },
+        });
+        activeWatchers.set(opKey, watcher);
+      }
     };
   };
 }

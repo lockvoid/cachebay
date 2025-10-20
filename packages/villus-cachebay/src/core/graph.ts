@@ -229,7 +229,12 @@ export const createGraph = (options?: GraphOptions) => {
   const recordStore = new Map<string, Record<string, any>>();
   const recordProxyStore = new Map<string, WeakRef<any>>();
   const recordVersionStore = new Map<string, number>();
-  let onChange = options?.onChange;
+  
+  // Support multiple onChange subscribers
+  const onChangeListeners: Array<(recordIds: Set<string>) => void> = [];
+  if (options?.onChange) {
+    onChangeListeners.push(options.onChange);
+  }
 
   // Batch onChange notifications in a microtask
   let pendingChanges: Set<string> | null = null;
@@ -243,11 +248,15 @@ export const createGraph = (options?: GraphOptions) => {
     const changes = pendingChanges;
     pendingChanges = null;
     flushScheduled = false;
-    onChange?.(changes);
+    
+    // Notify all listeners
+    for (const listener of onChangeListeners) {
+      listener(changes);
+    }
   };
 
   const notifyChange = (recordId: string) => {
-    if (!onChange) return;
+    if (onChangeListeners.length === 0) return;
     
     if (!pendingChanges) {
       pendingChanges = new Set();
@@ -405,10 +414,10 @@ export const createGraph = (options?: GraphOptions) => {
   };
 
   /**
-   * Set onChange callback (allows late binding from documents layer)
+   * Add onChange listener (supports multiple subscribers)
    */
-  const setOnChange = (callback: (recordIds: Set<string>) => void) => {
-    onChange = callback;
+  const addOnChangeListener = (callback: (recordIds: Set<string>) => void) => {
+    onChangeListeners.push(callback);
   };
 
   /**
@@ -422,7 +431,7 @@ export const createGraph = (options?: GraphOptions) => {
 
   return {
     identify,
-    setOnChange,
+    addOnChangeListener,
     flushPendingChanges,
     putRecord,
     getRecord,

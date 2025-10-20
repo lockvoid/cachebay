@@ -39,6 +39,7 @@ export type WatchQueryOptions = {
   decisionMode?: DecisionMode;
   onData: (data: any) => void;
   onError?: (error: Error) => void;
+  skipInitialEmit?: boolean;
 };
 
 export type WatchQueryHandle = {
@@ -201,6 +202,7 @@ export const createQueries = (deps: QueriesDependencies) => {
     decisionMode = "canonical",
     onData,
     onError,
+    skipInitialEmit = false,
   }: WatchQueryOptions): WatchQueryHandle => {
     const watcherId = watcherSeq++;
 
@@ -226,8 +228,10 @@ export const createQueries = (deps: QueriesDependencies) => {
     if (initialResult && initialResult.status === "FULFILLED") {
       watcher.lastData = initialResult.data;
       updateWatcherDeps(watcherId, initialResult.deps || []);
-      onData(markRaw(initialResult.data));
-    } else if (onError) {
+      if (!skipInitialEmit) {
+        onData(markRaw(initialResult.data));
+      }
+    } else if (onError && !skipInitialEmit) {
       onError(new Error("Query returned no data"));
     }
 
@@ -274,5 +278,7 @@ export const createQueries = (deps: QueriesDependencies) => {
     readQuery,
     writeQuery,
     watchQuery,
+    // Internal: notify watchers of touched dependencies
+    _notifyTouched: enqueueTouched,
   };
 };

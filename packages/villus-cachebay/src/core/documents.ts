@@ -512,11 +512,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     dirtyByPlan.clear();
   };
 
-  // Register onChange hook with graph to catch direct putRecord calls
-  graph.setOnChange((touchedIds) => {
-    markResultsDirtyForTouched(touchedIds);
-  });
-
   /* ---------- materializeDocument ---------- */
 
   const planIdByPlan = new WeakMap<CachePlan, number>();
@@ -892,5 +887,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   return {
     normalizeDocument,
     materializeDocument,
+    // Internal: mark results dirty (called from internals.ts onChange hook)
+    _markDirty: markResultsDirtyForTouched,
   };
 };

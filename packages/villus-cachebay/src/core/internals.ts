@@ -128,6 +128,17 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   const fragments = createFragments({ graph, views, planner });
   const queries = createQueries({ graph, planner, documents });
 
+  // Connect graph onChange to notify both documents and queries
+  graph.addOnChangeListener((touchedIds) => {
+    // Notify documents cache (for materializeDocument LRU invalidation)
+    documents._markDirty(touchedIds);
+  });
+  
+  graph.addOnChangeListener((touchedIds) => {
+    // Notify queries watchers (for reactive updates)
+    queries._notifyTouched(touchedIds);
+  });
+
   // Features
   const inspect = createInspect({ graph, optimistic });
 
