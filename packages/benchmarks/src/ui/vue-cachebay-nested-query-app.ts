@@ -86,8 +86,8 @@ export function createVueCachebayNestedApp(
         paused: true,
       });
 
-      // watch(() => data.value.users.edges, () => {
-      //   console.log('data.value.users.edges changed', data.value.users.edges.length);
+      // watch(() => data.value, () => {
+      //  console.log('data.value.users.edges changed', data.value.users.edges.length);
       // });
 
       const loadNextPage = async () => {

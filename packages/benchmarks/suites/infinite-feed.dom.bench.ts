@@ -93,7 +93,7 @@ async function runScenario(
 }
 
 describe("DOM Infinite feed (happy-dom): Vue apps with useQuery", () => {
-  describe.only("network-only", () => {
+  describe("network-only", () => {
     bench("apollo(vue)", async () => {
       return await runScenario("apollo", "network-only");
     });

@@ -1,3 +1,4 @@
+// plugin.ts
 import { CombinedError } from "villus";
 import { markRaw } from "vue";
 import { CACHEBAY_KEY } from "./constants";
@@ -18,235 +19,232 @@ type CachePolicy = "cache-and-network" | "cache-first" | "network-only" | "cache
 type DecisionMode = "strict" | "canonical";
 
 export type PluginOptions = {
-  /** collapse network→cache duplicate re-emits for this many ms */
+  /** collapse duplicate cache→network re-emits within this window (ms) */
   suspensionTimeout?: number;
 };
 
 export function createPlugin(options: PluginOptions, deps: PluginDependencies): ClientPlugin {
   const { planner, queries, ssr } = deps;
-  const { suspensionTimeout = 1000 } = options ?? {};
+  const { suspensionTimeout = 0 } = options ?? {};
 
-  // Track last emission time per opKey for suspension window
-  const lastEmitMs = new Map<number, number>();
+  // ----------------------------------------------------------------------------
+  // Watcher hub: one shared watchQuery per (plan.id | mode | masked vars)
+  // ----------------------------------------------------------------------------
+  type Listener = (data: any) => void;
+  type HubEntry = {
+    handle: ReturnType<typeof queries.watchQuery>;
+    subs: Set<Listener>;
+    refcount: number;
+  };
+  const hubBySig = new Map<string, HubEntry>();
 
-  // Track active watchers for reactive queries
-  const activeWatchers = new Map<number, ReturnType<typeof queries.watchQuery>>();
+  const acquireHub = (
+    sig: string,
+    args: { query: DocumentNode; variables: Record<string, any>; mode: DecisionMode }
+  ) => {
+    let hub = hubBySig.get(sig);
+    if (!hub) {
+      const handle = queries.watchQuery({
+        query: args.query,
+        variables: args.variables,
+        decisionMode: args.mode,
+        skipInitialEmit: true,
+        onData: (data) => {
+          const h = hubBySig.get(sig);
+          if (!h) return;
+          for (const fn of h.subs) fn(markRaw(data));
+        },
+      });
+      hub = { handle, subs: new Set(), refcount: 0 };
+      hubBySig.set(sig, hub);
+    }
+    hub.refcount++;
+    return hub;
+  };
 
-  // ---------- helpers ----------
-  const finalizeQuery = (opKey: number) => {
-    lastEmitMs.delete(opKey);
-    const watcher = activeWatchers.get(opKey);
-    if (watcher) {
-      watcher.unsubscribe();
-      activeWatchers.delete(opKey);
+  const releaseHub = (sig: string, listener?: Listener) => {
+    const hub = hubBySig.get(sig);
+    if (!hub) return;
+    if (listener) hub.subs.delete(listener);
+    hub.refcount--;
+    if (hub.refcount <= 0) {
+      hub.handle.unsubscribe();
+      hubBySig.delete(sig);
     }
   };
 
-  const firstReadMode = (policy: CachePolicy): DecisionMode => {
-    switch (policy) {
-      case "cache-first":
-      case "cache-only":
-        return "strict";
-      case "cache-and-network":
-      case "network-only":
-      default:
-        return "canonical";
+  // ----------------------------------------------------------------------------
+  // Per-operation bookkeeping
+  // ----------------------------------------------------------------------------
+  type OpState = { sig?: string; listener?: Listener };
+  const ops = new Map<number, OpState>();
+
+  // Last **terminal** emit time per signature (for “within window” checks)
+  const lastEmitBySig = new Map<string, number>();
+
+  // NEW: mark watcher emissions that are echoes of **our own** network write
+  const networkEcho = new Set<string>();
+
+  const firstReadMode = (policy: CachePolicy): DecisionMode =>
+    policy === "cache-first" || policy === "cache-only" ? "strict" : "canonical";
+
+  const isWithinSuspension = (sig: string) => {
+    const last = lastEmitBySig.get(sig);
+    return last != null && performance.now() - last <= suspensionTimeout;
+  };
+
+  const attachToSig = (
+    opKey: number,
+    sig: string,
+    args: { query: DocumentNode; variables: Record<string, any>; mode: DecisionMode },
+    emit: (data: any, terminal: boolean) => void
+  ) => {
+    const prev = ops.get(opKey);
+    if (prev?.sig && prev.sig !== sig && prev.listener) {
+      releaseHub(prev.sig, prev.listener);
+      prev.sig = undefined;
+      prev.listener = undefined;
     }
+
+    const state = ops.get(opKey) ?? ({} as OpState);
+    const hub = acquireHub(sig, args);
+
+    const listener: Listener = (data) => {
+      // Only suppress the echo caused by our own network write.
+      if (networkEcho.has(sig)) return;
+      emit(data, false);
+      // Note: we *don’t* update lastEmitBySig here; the window is only for terminal de-dupe.
+    };
+
+    hub.subs.add(listener);
+    state.sig = sig;
+    state.listener = listener;
+    ops.set(opKey, state);
   };
 
-  // ---------- suspension window tracking ----------
-  const isWithinSuspensionWindow = (opKey: number): boolean => {
-    const last = lastEmitMs.get(opKey);
-    if (last == null) return false;
-    return performance.now() - last <= suspensionTimeout;
-  };
-
-  // ---------- plugin ----------
+  // ----------------------------------------------------------------------------
+  // Plugin
+  // ----------------------------------------------------------------------------
   return (ctx: ClientPluginContext) => {
     const op = ctx.operation;
     const variables: Record<string, any> = op.variables || {};
     const document: DocumentNode = op.query as DocumentNode;
     const plan = planner.getPlan(document);
 
-    // Use compiled network query
+    // Always swap to network-safe query (adds __typename, strips @connection)
     op.query = plan.networkQuery;
 
-    const policy: CachePolicy = ((op as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network") as CachePolicy;
+    const policy: CachePolicy =
+      ((op as any).cachePolicy ?? (ctx as any).cachePolicy ?? "cache-and-network") as CachePolicy;
+
     const downstreamUseResult = ctx.useResult;
-
-    // ---------------- MUTATION ----------------
-    if (plan.operation === "mutation") {
-      ctx.useResult = (incoming: OperationResult) => {
-        if (incoming?.error) {
-          return downstreamUseResult(incoming, true);
-        }
-        // Write to cache (triggers reactive updates automatically)
-        queries.writeQuery({ query: document, variables, data: incoming.data });
-        return downstreamUseResult({ data: markRaw(incoming.data), error: null }, true);
-      };
-      return;
-    }
-
-    // ---------------- SUBSCRIPTION ----------------
-    if (plan.operation === "subscription") {
-      ctx.useResult = (incoming, terminal) => {
-        if (typeof incoming?.subscribe !== "function") {
-          return downstreamUseResult(incoming, terminal);
-        }
-        const interceptor = {
-          subscribe(observer: any) {
-            return incoming.subscribe({
-              next: (frame: any) => {
-                if (frame?.data) {
-                  // Write to cache (triggers reactive updates automatically)
-                  queries.writeQuery({ query: document, variables, data: frame.data });
-                }
-                observer.next(frame);
-              },
-              error: (error: any) => observer.error?.(error),
-              complete: () => observer.complete?.(),
-            });
-          },
-        };
-        return downstreamUseResult(interceptor as any, terminal);
-      };
-      return;
-    }
-
-    // ---------------- QUERY ----------------
     const opKey = op.key as number;
-    const modeForQuery = firstReadMode(policy);
 
-    // SSR hydration: prefer STRICT cache if available
+    const modeForQuery = firstReadMode(policy);
+    const canonicalSig = plan.makeSignature("canonical", variables);
+    const readSig = plan.makeSignature(modeForQuery, variables);
+
+    const emit = (payload: { data?: any; error?: any }, terminal: boolean) => {
+      downstreamUseResult(payload as any, terminal);
+      if (terminal) {
+        lastEmitBySig.set(readSig, performance.now());
+      }
+    };
+
+    // Always attach a canonical watcher (all policies) so optimistic/mutations flow
+    attachToSig(
+      opKey,
+      canonicalSig,
+      { query: document, variables, mode: "canonical" },
+      (data, terminal) => emit({ data }, terminal)
+    );
+
+    // ---------------- SSR hydration quick path (prefer strict cache) -----------
     if (ssr?.isHydrating?.() && policy !== "network-only") {
       const result = queries.readQuery({ query: document, variables, decisionMode: "strict" });
       if (result.data) {
-        downstreamUseResult({ data: result.data, error: null }, true);
+        emit({ data: markRaw(result.data), error: null }, true);
         return;
       }
     }
 
-    // CACHE-ONLY
+    // ---------------- “suspension window” cache serve --------------------------
+    if (isWithinSuspension(readSig)) {
+      const result = queries.readQuery({ query: document, variables, decisionMode: modeForQuery });
+      if (result.data) {
+        if (policy === "network-only") {
+          // terminal to avoid duplicate fetches
+          emit({ data: markRaw(result.data), error: null }, true);
+          return;
+        }
+        if (policy === "cache-and-network") {
+          // non-terminal cached hit; do NOT return — still install network handler
+          emit({ data: markRaw(result.data), error: null }, false);
+        }
+        // cache-first / cache-only fall through to normal handling below
+      }
+    }
+
+    // ---------------- cache-only ----------------
     if (policy === "cache-only") {
       const result = queries.readQuery({ query: document, variables, decisionMode: modeForQuery });
       if (result.data) {
-        downstreamUseResult({ data: result.data, error: null }, true);
-        return;
+        emit({ data: markRaw(result.data), error: null }, true);
+      } else {
+        const error = new CombinedError({
+          networkError: Object.assign(new Error("CacheOnlyMiss"), { name: "CacheOnlyMiss" }),
+          graphqlErrors: [],
+          response: undefined,
+        });
+        emit({ error, data: undefined }, true);
       }
-      const error = new CombinedError({
-        networkError: Object.assign(new Error("CACHE_ONLY_MISS"), { name: "CacheOnlyMiss" }),
-        graphqlErrors: [],
-        response: undefined,
-      });
-      downstreamUseResult({ error, data: undefined }, true);
       return;
     }
 
-    // CACHE-FIRST
+    // ---------------- cache-first ----------------
     if (policy === "cache-first") {
       const result = queries.readQuery({ query: document, variables, decisionMode: modeForQuery });
       if (result.data) {
-        downstreamUseResult({ data: result.data, error: null }, true);
-        lastEmitMs.set(opKey, performance.now());
-        
-        // Set up watcher for future updates (optimistic, etc.)
-        const watcher = queries.watchQuery({
-          query: document,
-          variables,
-          decisionMode: modeForQuery,
-          skipInitialEmit: true,
-          onData: (data) => {
-            downstreamUseResult({ data, error: null }, false);
-            lastEmitMs.set(opKey, performance.now());
-          },
-        });
-        activeWatchers.set(opKey, watcher);
-        return;
+        emit({ data: markRaw(result.data), error: null }, true);
+        return; // no network
       }
+      // miss → proceed to network; watcher will surface optimistic writes
     }
 
-    // CACHE-AND-NETWORK
+    // ---------------- cache-and-network ----------------
     if (policy === "cache-and-network") {
       const result = queries.readQuery({ query: document, variables, decisionMode: modeForQuery });
       if (result.data) {
-        if (isWithinSuspensionWindow(opKey)) {
-          downstreamUseResult({ data: result.data, error: null }, true);
-          lastEmitMs.set(opKey, performance.now());
-          return;
-        }
-        // Emit cached data, allow network to arrive later
-        downstreamUseResult({ data: result.data, error: null }, false);
-        lastEmitMs.set(opKey, performance.now());
-        
-        // Set up watcher for reactive updates (optimistic, etc.)
-        const watcher = queries.watchQuery({
-          query: document,
-          variables,
-          decisionMode: modeForQuery,
-          skipInitialEmit: true, // We already emitted above
-          onData: (data) => {
-            downstreamUseResult({ data, error: null }, false);
-            lastEmitMs.set(opKey, performance.now());
-          },
-        });
-        activeWatchers.set(opKey, watcher);
+        emit({ data: markRaw(result.data), error: null }, false);
+        // continue to network
       }
     }
 
-    // NETWORK-ONLY: short-circuit with recent cached result
-    if (policy === "network-only" && isWithinSuspensionWindow(opKey)) {
-      const result = queries.readQuery({ query: document, variables, decisionMode: "canonical" });
-      if (result.data) {
-        downstreamUseResult({ data: result.data, error: null }, true);
-        finalizeQuery(opKey);
-        return;
-      }
-    }
+    // ---------------- network-only ----------------
+    // No special casing; watcher already attached for optimistic writes
 
-    // Handle network result
+    // Network path (queries)
     ctx.useResult = (incoming: OperationResult) => {
       if (incoming?.error) {
-        downstreamUseResult(incoming, true);
-        finalizeQuery(opKey);
+        emit(incoming as any, true);
         return;
       }
 
-      // Clean up old watcher before writing to avoid triggering it
-      const oldWatcher = activeWatchers.get(opKey);
-      if (oldWatcher) {
-        oldWatcher.unsubscribe();
-        activeWatchers.delete(opKey);
+      // Mark as a network echo so the watcher doesn’t double-emit the same state
+      networkEcho.add(canonicalSig);
+      try {
+        queries.writeQuery({ query: document, variables, data: incoming.data });
+      } finally {
+        // Clear the echo mark on microtask to be safe with nested writes
+        queueMicrotask(() => networkEcho.delete(canonicalSig));
       }
 
-      // Write to cache (triggers reactive updates automatically)
-      queries.writeQuery({ query: document, variables, data: incoming.data });
-
-      // Read back canonical result for terminal emission
+      // Authoritative terminal read (canonical)
       const result = queries.readQuery({ query: document, variables, decisionMode: "canonical" });
-      
       if (result.data) {
-        downstreamUseResult({ data: result.data, error: null }, true);
+        emit({ data: markRaw(result.data), error: null }, true);
       } else {
-        // Fallback: deliver raw network payload
-        downstreamUseResult({ data: markRaw(incoming.data), error: null }, true);
-      }
-
-      // Track emission time for suspension window
-      lastEmitMs.set(opKey, performance.now());
-
-      // Set up watcher for future updates (optimistic, subscriptions, etc.)
-      if (policy === "cache-and-network" || policy === "cache-first") {
-        const watcher = queries.watchQuery({
-          query: document,
-          variables,
-          decisionMode: "canonical",
-          skipInitialEmit: true,
-          onData: (data) => {
-            downstreamUseResult({ data, error: null }, false);
-            lastEmitMs.set(opKey, performance.now());
-          },
-        });
-        activeWatchers.set(opKey, watcher);
+        emit({ data: markRaw(incoming.data), error: null }, true);
       }
     };
   };

@@ -89,24 +89,13 @@ async function runScenario(
 }
 
 describe("DOM Nested query (happy-dom): interfaces, custom keys, nested pagination", () => {
-
-  describe.only("network-only", () => {
-    bench("apollo(vue)", async () => {
-      return await runScenario("apollo", "network-only");
-    }, {
-      teardown() {
-        // console.log('Metrics');
-        // console.log(JSON.stringify(metrics, null, 2));
-      }
-    });
-
+  describe("network-only", () => {
     bench("cachebay(vue)", async () => {
       return await runScenario("cachebay", "network-only");
-    }, {
-      teardown() {
-        // console.log('Metrics');
-        // console.log(JSON.stringify(metrics, null, 2));
-      }
+    });
+
+    bench("apollo(vue)", async () => {
+      return await runScenario("apollo", "network-only");
     });
 
     bench("urql(vue)", async () => {
@@ -119,22 +108,12 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   });
 
   describe("cache-first", () => {
-    bench("apollo(vue)", async () => {
-      return await runScenario("apollo", "cache-first");
-    }, {
-      teardown() {
-        // console.log('Metrics');
-        // console.log(JSON.stringify(metrics, null, 2));
-      }
-    });
-
     bench("cachebay(vue)", async () => {
       return await runScenario("cachebay", "cache-first");
-    }, {
-      teardown() {
-        // console.log('Metrics');
-        // console.log(JSON.stringify(metrics, null, 2));
-      }
+    });
+
+    bench("apollo(vue)", async () => {
+      return await runScenario("apollo", "cache-first");
     });
 
     bench("urql(vue)", async () => {
@@ -147,14 +126,6 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   });
 
   describe("cache-and-network", () => {
-    bench("apollo(vue)", async () => {
-      return await runScenario("apollo", "cache-and-network");
-    }, {
-      teardown() {
-        // console.log('Metrics');
-        // console.log(JSON.stringify(metrics, null, 2));
-      }
-    });
 
     bench("cachebay(vue)", async () => {
       return await runScenario("cachebay", "cache-and-network");
@@ -163,6 +134,10 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
         // console.log('Metrics');
         // console.log(JSON.stringify(metrics, null, 2));
       }
+    });
+
+    bench("apollo(vue)", async () => {
+      return await runScenario("apollo", "cache-and-network");
     });
 
     bench("urql(vue)", async () => {
