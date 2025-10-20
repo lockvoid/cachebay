@@ -3,7 +3,6 @@ import { relayStylePagination } from "@apollo/client/utilities";
 import { DefaultApolloClient, useLazyQuery } from "@vue/apollo-composable";
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick } from "vue";
-import { metrics } from "./instrumentation"; // ← shared metrics bucket
 
 try {
   const { loadErrorMessages, loadDevMessages } = require("@apollo/client/dev");
@@ -144,16 +143,10 @@ export function createVueApolloNestedApp(
             }
           }
 
-          const t1 = performance.now();
-          metrics.apollo.computeMs += (t1 - t0);
-          metrics.apollo.pages += 1;
-
           await nextTick();
 
-          const t2 = performance.now();
-          const renderDelta = t2 - t1;
-          totalRenderTime += renderDelta;
-          metrics.apollo.renderMs += renderDelta;
+          const t1 = performance.now();
+          totalRenderTime += (t1 - t0);
 
         } catch (error) {
           console.warn("Apollo execute error (ignored):", error);

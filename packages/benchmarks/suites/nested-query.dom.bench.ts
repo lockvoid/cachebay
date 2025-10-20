@@ -3,7 +3,6 @@ import { createReactRelayNestedApp } from "../src/ui/react-relay-nested-query-ap
 import { createVueApolloNestedApp } from "../src/ui/vue-apollo-nested-query-app";
 import { createVueCachebayNestedApp } from "../src/ui/vue-cachebay-nested-query-app";
 import { createVueUrqlNestedApp } from "../src/ui/vue-urql-nested-query-app";
-import { metrics } from '../src/ui/instrumentation';
 
 const DEBUG = process.env.DEBUG === 'true';
 const PAGES_TO_LOAD = 50; // 1000 users / 10 per page = 100 pages
@@ -90,28 +89,6 @@ async function runScenario(
 }
 
 describe("DOM Nested query (happy-dom): interfaces, custom keys, nested pagination", () => {
-  metrics.cachebay = {
-    computeMs: 0,
-    renderMs: 0,
-    pages: 0,
-
-    // from plugin
-    executeMs: 0,
-    normalizeDocumentTime: 0,
-    materializeDocumentTime: 0,
-
-    // broadcaster flush instrumentation
-    broadcastFlushTime: 0,
-    broadcastMaterializeTime: 0,
-    broadcastRemats: 0,
-    broadcastIdentitySkips: 0,
-
-    // cache read instrumentation
-    readCacheFrames: 0,
-    readCanonicalTime: 0,
-    readStrictTime: 0,
-  };
-  metrics.apollo = { computeMs: 0, renderMs: 0, pages: 0 };
 
   describe.only("network-only", () => {
     bench("apollo(vue)", async () => {

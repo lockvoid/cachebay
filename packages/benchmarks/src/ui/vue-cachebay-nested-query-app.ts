@@ -2,7 +2,6 @@ import { gql } from "graphql-tag";
 import { createClient, useQuery, fetch as fetchPlugin } from "villus";
 import { createApp, defineComponent, nextTick, watch } from "vue";
 import { createCache } from "../../../villus-cachebay/src/core/internals";
-import { metrics } from "./instrumentation";
 
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {
@@ -98,22 +97,14 @@ export function createVueCachebayNestedApp(
           // Includes network + cache work.
           await execute({ variables });
 
-          const t1 = performance.now();
-          metrics.cachebay.computeMs += (t1 - t0);
-
           const endCursor = data.value?.users?.pageInfo?.endCursor ?? null;
           if (endCursor) variables.after = endCursor;
 
           // Ensure DOM paint before measuring render time.
           await nextTick();
 
-          const t2 = performance.now();
-          const renderDelta = (t2 - t1);
-
-          metrics.cachebay.renderMs += renderDelta;
-          metrics.cachebay.pages += 1;
-
-          totalRenderTime += (t2 - t0); // legacy aggregate if you still want it
+          const t1 = performance.now();
+          totalRenderTime += (t1 - t0);
         } catch (err) {
           // swallow errors so the bench keeps going
 
