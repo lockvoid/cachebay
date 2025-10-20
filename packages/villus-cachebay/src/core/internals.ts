@@ -64,6 +64,11 @@ export type CachebayInstance = ClientPlugin & {
   }) => void;
 
   /**
+   * Watch fragment reactively (returns unsubscribe handle)
+   */
+  watchFragment: ReturnType<typeof createFragments>["watchFragment"];
+
+  /**
    * Read query from cache (sync)
    */
   readQuery: ReturnType<typeof createQueries>["readQuery"];
@@ -125,10 +130,10 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   const planner = createPlanner();
   const canonical = createCanonical({ graph, optimistic });
   const documents = createDocuments({ graph, views, planner, canonical });
-  const fragments = createFragments({ graph, views, planner });
+  const fragments = createFragments({ graph, planner, views });
   const queries = createQueries({ graph, planner, documents });
 
-  // Connect graph onChange to notify both documents and queries
+  // Connect graph onChange to notify documents, queries, and fragments
   graph.addOnChangeListener((touchedIds) => {
     // Notify documents cache (for materializeDocument LRU invalidation)
     documents._markDirty(touchedIds);
@@ -137,6 +142,11 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   graph.addOnChangeListener((touchedIds) => {
     // Notify queries watchers (for reactive updates)
     queries._notifyTouched(touchedIds);
+  });
+
+  graph.addOnChangeListener((touchedIds) => {
+    // Notify fragments watchers (for reactive updates)
+    fragments._notifyTouched(touchedIds);
   });
 
   // Features
@@ -156,6 +166,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Fragments API
   (plugin as any).readFragment = fragments.readFragment;
   (plugin as any).writeFragment = fragments.writeFragment;
+  (plugin as any).watchFragment = fragments.watchFragment;
 
   // Queries API
   (plugin as any).readQuery = queries.readQuery;

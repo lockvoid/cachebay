@@ -1,10 +1,18 @@
 import { mount } from "@vue/test-utils";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { defineComponent, h, ref, nextTick } from "vue";
 import { useFragment } from "@/src/composables/useFragment";
 import { createCache } from "@/src/core/internals";
 import { provideCachebay } from "@/src/core/plugin";
-import { USER_FIELDS_FRAGMENT_COMPILER } from "@/test/helpers";
+import { compilePlan } from "@/src/compiler";
+
+// Create a simple fragment for testing
+const USER_FIELDS_FRAGMENT = compilePlan(/* GraphQL */ `
+  fragment UserFields on User {
+    id
+    email
+  }
+`);
 
 describe("useFragment", () => {
   let cache: ReturnType<typeof createCache>;
@@ -14,7 +22,12 @@ describe("useFragment", () => {
   });
 
   it("returns readonly ref with fragment data from cache", () => {
-    const readFragmentSpy = vi.spyOn(cache as any, "readFragment").mockReturnValue({ id: "u1", email: "test@example.com" });
+    // Mock watchFragment to call onData immediately
+    const mockUnsubscribe = vi.fn();
+    const watchFragmentSpy = vi.spyOn(cache as any, "watchFragment").mockImplementation((opts: any) => {
+      opts.onData({ id: "u1", email: "test@example.com" });
+      return { unsubscribe: mockUnsubscribe };
+    });
 
     let fragmentData: any;
 
@@ -22,7 +35,7 @@ describe("useFragment", () => {
       setup() {
         fragmentData = useFragment({
           id: "User:u1",
-          fragment: USER_FIELDS_FRAGMENT_COMPILER,
+          fragment: USER_FIELDS_FRAGMENT,
           variables: {},
         });
 
@@ -36,16 +49,12 @@ describe("useFragment", () => {
       },
     });
 
-    expect(readFragmentSpy).toHaveBeenCalledWith({
-      id: "User:u1",
-      fragment: USER_FIELDS_FRAGMENT_COMPILER,
-      variables: {},
-    });
+    expect(watchFragmentSpy).toHaveBeenCalled();
     expect(fragmentData.value).toEqual({ id: "u1", email: "test@example.com" });
   });
 
   it("handles empty id by setting data to undefined", () => {
-    const readFragmentSpy = vi.spyOn(cache as any, "readFragment");
+    const watchFragmentSpy = vi.spyOn(cache as any, "watchFragment");
 
     let fragmentData: any;
 
@@ -53,7 +62,7 @@ describe("useFragment", () => {
       setup() {
         fragmentData = useFragment({
           id: "",
-          fragment: USER_FIELDS_FRAGMENT_COMPILER,
+          fragment: USER_FIELDS_FRAGMENT,
         });
 
         return () => h("div");
@@ -66,12 +75,16 @@ describe("useFragment", () => {
       },
     });
 
-    expect(readFragmentSpy).not.toHaveBeenCalled();
+    expect(watchFragmentSpy).not.toHaveBeenCalled();
     expect(fragmentData.value).toBeUndefined();
   });
 
   it("reacts to changes in reactive id parameter", async () => {
-    const readFragmentSpy = vi.spyOn(cache as any, "readFragment").mockReturnValue({ id: "u1", email: "test@example.com" });
+    const mockUnsubscribe = vi.fn();
+    const watchFragmentSpy = vi.spyOn(cache as any, "watchFragment").mockImplementation((opts: any) => {
+      opts.onData({ id: opts.id.split(":")[1], email: "test@example.com" });
+      return { unsubscribe: mockUnsubscribe };
+    });
 
     const userId = ref("User:u1");
 
@@ -81,7 +94,7 @@ describe("useFragment", () => {
       setup() {
         fragmentData = useFragment({
           id: userId,
-          fragment: USER_FIELDS_FRAGMENT_COMPILER,
+          fragment: USER_FIELDS_FRAGMENT,
         });
 
         return () => h("div");
@@ -94,25 +107,26 @@ describe("useFragment", () => {
       },
     });
 
-    expect(readFragmentSpy).toHaveBeenCalledTimes(1);
+    expect(watchFragmentSpy).toHaveBeenCalledTimes(1);
+    expect(mockUnsubscribe).toHaveBeenCalledTimes(0);
 
     // 1. Change the reactive id parameter
     userId.value = "User:u2";
     await nextTick();
 
-    // 2. Verify useFragment reacted to the id change
-    expect(readFragmentSpy).toHaveBeenCalledTimes(2);
-    expect(readFragmentSpy).toHaveBeenLastCalledWith({
-      id: "User:u2",
-      fragment: USER_FIELDS_FRAGMENT_COMPILER,
-      variables: {},
-    });
+    // 2. Verify old watcher was unsubscribed and new one created
+    expect(mockUnsubscribe).toHaveBeenCalledTimes(1);
+    expect(watchFragmentSpy).toHaveBeenCalledTimes(2);
   });
 
   it("reacts to changes in reactive variables parameter", async () => {
-    const cache = createCache();
+    const testCache = createCache();
 
-    const readFragmentSpy = vi.spyOn(cache as any, "readFragment").mockReturnValue({ id: "u1", email: "test@example.com" });
+    const mockUnsubscribe = vi.fn();
+    const watchFragmentSpy = vi.spyOn(testCache as any, "watchFragment").mockImplementation((opts: any) => {
+      opts.onData({ id: "u1", email: "test@example.com" });
+      return { unsubscribe: mockUnsubscribe };
+    });
 
     const variables = ref({ first: 10 });
 
@@ -122,7 +136,7 @@ describe("useFragment", () => {
       setup() {
         fragmentData = useFragment({
           id: "User:u1",
-          fragment: USER_FIELDS_FRAGMENT_COMPILER,
+          fragment: USER_FIELDS_FRAGMENT,
           variables,
         });
 
@@ -132,33 +146,28 @@ describe("useFragment", () => {
 
     mount(App, {
       global: {
-        plugins: [cache],
+        plugins: [testCache],
       },
     });
 
-    expect(readFragmentSpy).toHaveBeenCalledWith({
-      id: "User:u1",
-      fragment: USER_FIELDS_FRAGMENT_COMPILER,
-      variables: { first: 10 },
-    });
+    expect(watchFragmentSpy).toHaveBeenCalledTimes(1);
 
     // 1. Change the reactive variables parameter
     variables.value = { first: 20 };
     await nextTick();
 
-    // 2. Verify useFragment reacted to the variables change
-    expect(readFragmentSpy).toHaveBeenCalledTimes(2);
-    expect(readFragmentSpy).toHaveBeenLastCalledWith({
-      id: "User:u1",
-      fragment: USER_FIELDS_FRAGMENT_COMPILER,
-      variables: { first: 20 },
-    });
+    // 2. Verify old watcher was unsubscribed and new one created
+    expect(mockUnsubscribe).toHaveBeenCalledTimes(1);
+    expect(watchFragmentSpy).toHaveBeenCalledTimes(2);
   });
 
   it("handles undefined variables by defaulting to empty object", () => {
-    const cache = createCache();
+    const testCache = createCache();
 
-    const readFragmentSpy = vi.spyOn(cache as any, "readFragment").mockReturnValue({ id: "u1", email: "test@example.com" });
+    const watchFragmentSpy = vi.spyOn(testCache as any, "watchFragment").mockImplementation((opts: any) => {
+      opts.onData({ id: "u1", email: "test@example.com" });
+      return { unsubscribe: vi.fn() };
+    });
 
     let fragmentData: any;
 
@@ -166,7 +175,7 @@ describe("useFragment", () => {
       setup() {
         fragmentData = useFragment({
           id: "User:u1",
-          fragment: USER_FIELDS_FRAGMENT_COMPILER,
+          fragment: USER_FIELDS_FRAGMENT,
         });
 
         return () => h("div");
@@ -175,18 +184,20 @@ describe("useFragment", () => {
 
     mount(App, {
       global: {
-        plugins: [cache],
+        plugins: [testCache],
       },
     });
 
-    expect(readFragmentSpy).toHaveBeenCalledWith({
-      id: "User:u1",
-      fragment: USER_FIELDS_FRAGMENT_COMPILER,
-      variables: {},
-    });
+    expect(watchFragmentSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "User:u1",
+        fragment: USER_FIELDS_FRAGMENT,
+        variables: {},
+      })
+    );
   });
 
-  it("throws if cache doesn't have readFragment method", () => {
+  it("throws if cache doesn't have watchFragment method", () => {
     const invalidCache = {
       identify: vi.fn(),
 
@@ -201,7 +212,7 @@ describe("useFragment", () => {
       setup() {
         useFragment({
           id: "User:u1",
-          fragment: USER_FIELDS_FRAGMENT_COMPILER,
+          fragment: USER_FIELDS_FRAGMENT,
         });
       },
       render: () => h("div"),
@@ -213,6 +224,6 @@ describe("useFragment", () => {
           plugins: [invalidCache],
         },
       }),
-    ).toThrowError("[useFragment] cache must expose readFragment()");
+    ).toThrowError("[useFragment] cache must expose watchFragment()");
   });
 });

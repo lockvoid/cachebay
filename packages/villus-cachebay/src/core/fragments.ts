@@ -10,6 +10,7 @@ import type { PlannerInstance } from "./planner";
 import type { ViewsInstance } from "./views";
 import type { PlanField } from "../compiler";
 import type { DocumentNode } from "graphql";
+import { markRaw } from "vue";
 
 /**
  * Dependencies for fragments layer
@@ -33,8 +34,26 @@ export type ReadFragmentArgs<TData = unknown> = {
   fragmentName?: string;
   /** GraphQL variables */
   variables?: Record<string, unknown>;
-  /** Whether to read canonical connection state */
-  canonical?: boolean;
+};
+
+/**
+ * Arguments for watching a fragment reactively
+ */
+export type WatchFragmentOptions = {
+  id: string;
+  fragment: DocumentNode | CachePlan;
+  fragmentName?: string;
+  variables?: Record<string, unknown>;
+  onData: (data: any) => void;
+  onError?: (error: Error) => void;
+  skipInitialEmit?: boolean;
+};
+
+/**
+ * Handle returned by watchFragment for cleanup
+ */
+export type WatchFragmentHandle = {
+  unsubscribe: () => void;
 };
 
 /**
@@ -57,9 +76,103 @@ export type WriteFragmentArgs<TData = unknown> = {
 /**
  * Create fragments layer for reading/writing fragment data
  * @param deps - Required dependencies (graph, planner, views)
- * @returns Fragments API with readFragment and writeFragment methods
+ * @returns Fragments API with readFragment, writeFragment, and watchFragment methods
  */
 export const createFragments = ({ graph, planner, views }: FragmentsDependencies) => {
+  // Active watchers: watcherId -> watcher state
+  type WatcherState = {
+    id: string;
+    fragment: DocumentNode | CachePlan;
+    fragmentName?: string;
+    variables: Record<string, unknown>;
+    onData: (data: any) => void;
+    onError?: (error: Error) => void;
+    deps: Set<string>;
+    lastData: any | undefined;
+  };
+
+  const watchers = new Map<number, WatcherState>();
+  const depIndex = new Map<string, Set<number>>();
+  let watcherSeq = 1;
+
+  // Pending changes for batched broadcasting
+  let pendingTouched = new Set<string>();
+  let flushScheduled = false;
+
+  const scheduleFlush = () => {
+    if (flushScheduled) return;
+    flushScheduled = true;
+
+    queueMicrotask(() => {
+      flushScheduled = false;
+      if (pendingTouched.size === 0) return;
+
+      const touched = Array.from(pendingTouched);
+      pendingTouched.clear();
+
+      // Find affected watchers
+      const affectedWatchers = new Set<number>();
+      for (const dep of touched) {
+        const watcherIds = depIndex.get(dep);
+        if (watcherIds) {
+          for (const wid of watcherIds) affectedWatchers.add(wid);
+        }
+      }
+
+      // Re-materialize and emit for each affected watcher
+      for (const watcherId of affectedWatchers) {
+        const w = watchers.get(watcherId);
+        if (!w) continue;
+
+        const result = readFragment({
+          id: w.id,
+          fragment: w.fragment,
+          fragmentName: w.fragmentName,
+          variables: w.variables,
+        });
+
+        if (result !== undefined) {
+          w.lastData = result;
+          w.onData(result); // Don't markRaw - views already return reactive proxies
+        } else if (w.onError) {
+          w.onError(new Error("Fragment returned no data"));
+        }
+      }
+    });
+  };
+
+  const enqueueTouched = (touched: Set<string> | string[]) => {
+    const arr = Array.isArray(touched) ? touched : Array.from(touched);
+    for (const id of arr) pendingTouched.add(id);
+    scheduleFlush();
+  };
+
+  const updateWatcherDeps = (watcherId: number, newDeps: string[]) => {
+    const w = watchers.get(watcherId);
+    if (!w) return;
+
+    // Remove old deps
+    for (const oldDep of w.deps) {
+      const set = depIndex.get(oldDep);
+      if (set) {
+        set.delete(watcherId);
+        if (set.size === 0) depIndex.delete(oldDep);
+      }
+    }
+
+    // Add new deps
+    w.deps.clear();
+    for (const dep of newDeps) {
+      w.deps.add(dep);
+      let set = depIndex.get(dep);
+      if (!set) {
+        set = new Set();
+        depIndex.set(dep, set);
+      }
+      set.add(watcherId);
+    }
+  };
+
   /**
    * Build a synthetic "root" PlanField from the plan.root array so the views
    * layer sees the root selection and can detect connection fields.
@@ -69,17 +182,12 @@ export const createFragments = ({ graph, planner, views }: FragmentsDependencies
     for (const f of plan.root) {
       selectionMap.set(f.responseKey, f);
     }
-    // The views layer only needs selectionMap (+ optional isConnection on children),
-    // so a minimal object is enough.
     return { selectionMap } as unknown as PlanField;
   };
 
   /**
    * Reads a fragment selection over an entity reactively.
-   * Returns a view proxy. Entity/container views are not Vue-reactive themselves;
-   * only arrays like connection edges are shallowReactive, and pageInfo containers
-   * are reactive via __ref indirection.
-   *
+   * Returns a view proxy with connections properly handled.
    * Missing entities return an empty view (placeholder), not undefined.
    */
   const readFragment = <T = any>({
@@ -87,17 +195,15 @@ export const createFragments = ({ graph, planner, views }: FragmentsDependencies
     fragment,
     fragmentName,
     variables = {},
-    canonical = false,
   }: ReadFragmentArgs): T | undefined => {
     const plan = planner.getPlan(fragment, { fragmentName });
-
-    const proxy = graph.materializeRecord(id); // {} placeholder if missing
+    const proxy = graph.materializeRecord(id);
 
     return views.getView({
       source: proxy,
       field: makeRootField(plan),
       variables,
-      canonical,
+      canonical: false,
     }) as T;
   };
 
@@ -230,5 +336,75 @@ export const createFragments = ({ graph, planner, views }: FragmentsDependencies
     }
   };
 
-  return { readFragment, writeFragment };
+  /**
+   * Watch a fragment reactively - emits updates when dependencies change
+   */
+  const watchFragment = ({
+    id,
+    fragment,
+    fragmentName,
+    variables = {},
+    onData,
+    onError,
+    skipInitialEmit = false,
+  }: WatchFragmentOptions): WatchFragmentHandle => {
+    const watcherId = watcherSeq++;
+
+    // Initial read
+    const initialResult = readFragment({
+      id,
+      fragment,
+      fragmentName,
+      variables,
+    });
+
+    const watcher: WatcherState = {
+      id,
+      fragment,
+      fragmentName,
+      variables,
+      onData,
+      onError,
+      deps: new Set(),
+      lastData: undefined,
+    };
+
+    watchers.set(watcherId, watcher);
+
+    if (initialResult !== undefined) {
+      watcher.lastData = initialResult;
+      // Track the entity ID as a dependency
+      updateWatcherDeps(watcherId, [id]);
+      if (!skipInitialEmit) {
+        onData(initialResult); // Don't markRaw - views already return reactive proxies
+      }
+    } else if (onError && !skipInitialEmit) {
+      onError(new Error("Fragment returned no data"));
+    }
+
+    return {
+      unsubscribe: () => {
+        // Clean up deps
+        const w = watchers.get(watcherId);
+        if (w) {
+          for (const dep of w.deps) {
+            const set = depIndex.get(dep);
+            if (set) {
+              set.delete(watcherId);
+              if (set.size === 0) depIndex.delete(dep);
+            }
+          }
+        }
+        watchers.delete(watcherId);
+      },
+    };
+  };
+
+  return {
+    readFragment,
+    writeFragment,
+    watchFragment,
+    // Internal: notify watchers of touched dependencies
+    _notifyTouched: enqueueTouched,
+  };
 };

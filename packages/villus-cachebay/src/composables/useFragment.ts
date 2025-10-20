@@ -1,4 +1,4 @@
-import { unref, watchEffect, readonly, type Ref, shallowRef } from "vue";
+import { unref, watch, readonly, type Ref, shallowRef, onScopeDispose } from "vue";
 import { useCache } from "./useCache";
 
 /**
@@ -22,32 +22,58 @@ export type UseFragmentOptions<TData = unknown> = {
  * @template TData - Expected fragment data type
  * @param options - Fragment configuration
  * @returns Readonly reactive ref to fragment data
- * @throws Error if cache doesn't expose readFragment method
+ * @throws Error if cache doesn't expose watchFragment method
  */
 export function useFragment<TData = unknown>(options: UseFragmentOptions<TData>): Readonly<Ref<TData | undefined>> {
   const cache = useCache();
 
-  if (typeof cache.readFragment !== "function") {
-    throw new Error("[useFragment] cache must expose readFragment()");
+  if (typeof cache.watchFragment !== "function") {
+    throw new Error("[useFragment] cache must expose watchFragment()");
   }
 
   const data = shallowRef<TData | undefined>(undefined);
+  let unsubscribe: (() => void) | null = null;
 
-  watchEffect(() => {
-    const id = unref(options.id);
-    const vars = unref(options.variables) || {};
-    if (!id) {
-      data.value = undefined;
-      return;
+  // Watch for changes to id and variables
+  watch(
+    () => ({ id: unref(options.id), variables: unref(options.variables) || {} }),
+    ({ id, variables }) => {
+      // Clean up previous watcher
+      if (unsubscribe) {
+        unsubscribe();
+        unsubscribe = null;
+      }
+
+      if (!id) {
+        data.value = undefined;
+        return;
+      }
+
+      // Set up new watcher
+      const handle = cache.watchFragment({
+        id,
+        fragment: options.fragment,
+        fragmentName: options.fragmentName,
+        variables,
+        onData: (newData: TData) => {
+          data.value = newData;
+        },
+        onError: () => {
+          data.value = undefined;
+        },
+      });
+
+      unsubscribe = handle.unsubscribe;
+    },
+    { immediate: true }
+  );
+
+  // Clean up on component unmount
+  onScopeDispose(() => {
+    if (unsubscribe) {
+      unsubscribe();
+      unsubscribe = null;
     }
-
-    const view = cache.readFragment<TData>({
-      id,
-      fragment: options.fragment,
-      fragmentName: options.fragmentName,
-      variables: vars,
-    });
-    data.value = view;
   });
 
   return readonly(data);
