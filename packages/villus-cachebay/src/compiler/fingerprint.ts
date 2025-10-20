@@ -38,8 +38,13 @@ export const fingerprintField = (field: PlanField, argNames: string[]): string =
   }
 
   if (field.selectionSet && field.selectionSet.length > 0) {
-    const childFingerprints = field.selectionSet.map(child => child.selId || "");
-    parts.push(`{${childFingerprints.join(",")}}`);
+    // Sort children by responseKey, then fieldName for order-insensitive fingerprints
+    const sortedChildren = field.selectionSet.slice().sort((a, b) => {
+      const cmp = a.responseKey.localeCompare(b.responseKey);
+      return cmp !== 0 ? cmp : a.fieldName.localeCompare(b.fieldName);
+    });
+    const childFingerprints = sortedChildren.map(child => child.selId || "");
+    parts.push(`{${childFingerprints.join(",")}}`)
   }
 
   return parts.join(":");
@@ -48,10 +53,20 @@ export const fingerprintField = (field: PlanField, argNames: string[]): string =
 /**
  * Build a stable fingerprint for the entire plan root.
  * This is the basis for plan.id.
+ * Includes operation and rootTypename to prevent collisions between different roots.
  */
-export const fingerprintPlan = (root: PlanField[]): string => {
-  const rootFingerprints = root.map(field => field.selId || "");
-  return `[${rootFingerprints.join(",")}]`;
+export const fingerprintPlan = (
+  root: PlanField[],
+  operation: string,
+  rootTypename: string,
+): string => {
+  // Sort root fields by responseKey, then fieldName for order-insensitive fingerprints
+  const sortedRoot = root.slice().sort((a, b) => {
+    const cmp = a.responseKey.localeCompare(b.responseKey);
+    return cmp !== 0 ? cmp : a.fieldName.localeCompare(b.fieldName);
+  });
+  const rootFingerprints = sortedRoot.map(field => field.selId || "");
+  return `${operation}:${rootTypename}:[${rootFingerprints.join(",")}]`;
 };
 
 /**

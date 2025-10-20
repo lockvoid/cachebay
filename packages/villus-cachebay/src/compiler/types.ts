@@ -62,6 +62,12 @@ export type CachePlan = {
   /** Precompiled fast path to derive the masked vars key (no allocations except result). */
   makeVarsKey: (mode: "strict" | "canonical", vars: Record<string, any>) => string;
 
+  /**
+   * Convenience helper to build a complete signature string for watcher/cache keys.
+   * Returns: `${plan.id}|${mode}|${plan.makeVarsKey(mode, vars)}`
+   */
+  makeSignature: (mode: "strict" | "canonical", vars: Record<string, any>) => string;
+
   /** Union of arg names recognized as pagination/window args across all connection fields in this plan. */
   windowArgs: Set<string>;
 

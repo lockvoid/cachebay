@@ -249,4 +249,172 @@ describe("Compiler metadata", () => {
     const uniqueSelIds = new Set(selIds);
     expect(uniqueSelIds.size).toBe(3);
   });
+
+  it("produces same plan.id for queries differing only by field order", () => {
+    const query1 = `
+      query GetUser($id: ID!) {
+        user(id: $id) {
+          id
+          name
+          email
+        }
+      }
+    `;
+
+    const query2 = `
+      query GetUser($id: ID!) {
+        user(id: $id) {
+          email
+          id
+          name
+        }
+      }
+    `;
+
+    const plan1 = compilePlan(query1);
+    const plan2 = compilePlan(query2);
+
+    // Same selection, different field order -> same ID
+    expect(plan1.id).toBe(plan2.id);
+    expect(plan1.selectionFingerprint).toBe(plan2.selectionFingerprint);
+  });
+
+  it("produces different plan.id for different operations with same fields", () => {
+    const query = `
+      query GetUser($id: ID!) {
+        user(id: $id) {
+          id
+          email
+        }
+      }
+    `;
+
+    const mutation = `
+      mutation UpdateUser($id: ID!) {
+        user(id: $id) {
+          id
+          email
+        }
+      }
+    `;
+
+    const plan1 = compilePlan(query);
+    const plan2 = compilePlan(mutation);
+
+    // Different operation -> different ID (even with same fields)
+    expect(plan1.id).not.toBe(plan2.id);
+  });
+
+  it("makeSignature convenience helper works correctly", () => {
+    const plan = compilePlan(POSTS_QUERY);
+
+    const vars = { category: "tech", sort: "hot", first: 10, after: "c1" };
+
+    const strictSig = plan.makeSignature("strict", vars);
+    const canonicalSig = plan.makeSignature("canonical", vars);
+
+    // Should match manual construction
+    expect(strictSig).toBe(`${plan.id}|strict|${plan.makeVarsKey("strict", vars)}`);
+    expect(canonicalSig).toBe(`${plan.id}|canonical|${plan.makeVarsKey("canonical", vars)}`);
+
+    // Strict and canonical should differ (pagination args included vs excluded)
+    expect(strictSig).not.toBe(canonicalSig);
+  });
+
+  it("canonical key is same for first/after vs last/before with same filters", () => {
+    const plan = compilePlan(POSTS_QUERY);
+
+    const vars1 = { category: "tech", sort: "hot", first: 10, after: "c1" };
+    const vars2 = { category: "tech", sort: "hot", last: 10, before: "c2" };
+    const vars3 = { category: "news", sort: "hot", first: 10, after: "c1" };
+
+    const key1 = plan.makeVarsKey("canonical", vars1);
+    const key2 = plan.makeVarsKey("canonical", vars2);
+    const key3 = plan.makeVarsKey("canonical", vars3);
+
+    // Same filters, different window direction -> same canonical key
+    expect(key1).toBe(key2);
+    // Different filters -> different key
+    expect(key1).not.toBe(key3);
+  });
+
+  it("varMask.canonical equals varMask.strict when windowArgs is empty", () => {
+    const plan = compilePlan(POSTS_WITHOUT_CONNECTION_QUERY);
+
+    expect(plan.windowArgs.size).toBe(0);
+    expect(plan.varMask.canonical).toEqual(plan.varMask.strict);
+  });
+
+  it("selId includes typeCondition for inline fragments", () => {
+    const query = `
+      query GetPosts($first: Int!) {
+        posts(first: $first) @connection {
+          edges {
+            node {
+              id
+              title
+              ... on VideoPost {
+                video {
+                  url
+                }
+              }
+              ... on AudioPost {
+                audio {
+                  url
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const plan = compilePlan(query);
+
+    const postsField = plan.root.find(f => f.fieldName === "posts");
+    const edgesField = postsField?.selectionSet?.find(f => f.fieldName === "edges");
+    const nodeField = edgesField?.selectionSet?.find(f => f.fieldName === "node");
+
+    // Find inline fragments
+    const videoFragment = nodeField?.selectionSet?.find(f => f.typeCondition === "VideoPost");
+    const audioFragment = nodeField?.selectionSet?.find(f => f.typeCondition === "AudioPost");
+
+    expect(videoFragment?.typeCondition).toBe("VideoPost");
+    expect(audioFragment?.typeCondition).toBe("AudioPost");
+
+    // Different type conditions should produce different selIds
+    expect(videoFragment?.selId).toBeDefined();
+    expect(audioFragment?.selId).toBeDefined();
+    expect(videoFragment?.selId).not.toBe(audioFragment?.selId);
+  });
+
+  it("pageArgs includes all window args for connection field", () => {
+    const query = `
+      query GetPosts($first: Int, $after: String, $last: Int, $before: String) {
+        posts(first: $first, after: $after, last: $last, before: $before) @connection {
+          edges {
+            node {
+              id
+            }
+          }
+        }
+      }
+    `;
+
+    const plan = compilePlan(query);
+
+    const postsField = plan.root.find(f => f.fieldName === "posts");
+
+    expect(postsField?.isConnection).toBe(true);
+    expect(postsField?.pageArgs).toBeDefined();
+    expect(postsField?.pageArgs).toContain("first");
+    expect(postsField?.pageArgs).toContain("after");
+    expect(postsField?.pageArgs).toContain("last");
+    expect(postsField?.pageArgs).toContain("before");
+
+    // All pageArgs should be in plan.windowArgs
+    for (const arg of postsField?.pageArgs || []) {
+      expect(plan.windowArgs.has(arg)).toBe(true);
+    }
+  });
 });

@@ -53,15 +53,18 @@ const computePlanMetadata = (
   root: PlanField[],
   selectionSet: SelectionSetNode,
   fragmentsByName: Map<string, FragmentDefinitionNode>,
+  operation: string,
+  rootTypename: string,
 ): {
   id: number;
   varMask: { strict: string[]; canonical: string[] };
   makeVarsKey: (mode: "strict" | "canonical", vars: Record<string, any>) => string;
+  makeSignature: (mode: "strict" | "canonical", vars: Record<string, any>) => string;
   windowArgs: Set<string>;
   selectionFingerprint: string;
 } => {
   // 1. Compute stable fingerprint and hash it to get numeric ID
-  const selectionFingerprint = fingerprintPlan(root);
+  const selectionFingerprint = fingerprintPlan(root, operation, rootTypename);
   const id = hashFingerprint(selectionFingerprint);
 
   // 2. Collect all variables from the AST
@@ -96,10 +99,16 @@ const computePlanMetadata = (
   const canonicalMask = Array.from(canonicalVars);
   const makeVarsKey = makeMaskedVarsKeyFn(strictMask, canonicalMask);
 
+  // 6. Build convenience signature helper
+  const makeSignature = (mode: "strict" | "canonical", vars: Record<string, any>): string => {
+    return `${id}|${mode}|${makeVarsKey(mode, vars)}`;
+  };
+
   return {
     id,
     varMask: { strict: strictMask, canonical: canonicalMask },
     makeVarsKey,
+    makeSignature,
     windowArgs,
     selectionFingerprint,
   };
@@ -195,7 +204,13 @@ export const compilePlan = (
     const networkQuery = buildNetworkQuery(document);
 
     // Compute plan metadata (id, varMask, makeVarsKey, windowArgs)
-    const metadata = computePlanMetadata(root, operation.selectionSet, fragmentsByName);
+    const metadata = computePlanMetadata(
+      root,
+      operation.selectionSet,
+      fragmentsByName,
+      operation.operation,
+      rootTypename,
+    );
 
     return {
       kind: "CachePlan",
@@ -207,6 +222,7 @@ export const compilePlan = (
       id: metadata.id,
       varMask: metadata.varMask,
       makeVarsKey: metadata.makeVarsKey,
+      makeSignature: metadata.makeSignature,
       windowArgs: metadata.windowArgs,
       selectionFingerprint: metadata.selectionFingerprint,
     };
@@ -248,7 +264,13 @@ export const compilePlan = (
     const networkQuery = buildNetworkQuery(document);
 
     // Compute plan metadata (id, varMask, makeVarsKey, windowArgs)
-    const metadata = computePlanMetadata(root, frag.selectionSet, fragmentsByName);
+    const metadata = computePlanMetadata(
+      root,
+      frag.selectionSet,
+      fragmentsByName,
+      "fragment",
+      parentTypename,
+    );
 
     return {
       kind: "CachePlan",
@@ -260,6 +282,7 @@ export const compilePlan = (
       id: metadata.id,
       varMask: metadata.varMask,
       makeVarsKey: metadata.makeVarsKey,
+      makeSignature: metadata.makeSignature,
       windowArgs: metadata.windowArgs,
       selectionFingerprint: metadata.selectionFingerprint,
     };
