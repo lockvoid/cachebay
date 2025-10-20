@@ -43,7 +43,7 @@ export function createVueApolloApp(serverUrl: string): VueApolloController {
       },
     }),
     link: new HttpLink({ uri: serverUrl, fetch }),
-    defaultOptions: { query: { fetchPolicy: "cache-first" } },
+    defaultOptions: { query: { fetchPolicy: "network-only" } },
   });
 
   // Strip any 'canonizeResults' that might be set elsewhere (3.14 removed it)
@@ -77,7 +77,7 @@ export function createVueApolloApp(serverUrl: string): VueApolloController {
       const { result, load, fetchMore, loading } = useLazyQuery(
         FEED_QUERY,
         {},
-        { fetchPolicy: "cache-first", errorPolicy: "ignore" },
+        { fetchPolicy: "network-only", errorPolicy: "ignore" },
       );
 
       const edgeCount = computed(() => result.value?.feed?.edges?.length || 0);

@@ -31,7 +31,7 @@ export function createVueUrqlApp(serverUrl: string): VueUrqlController {
 
   const client = createUrqlClient({
     url: serverUrl,
-    requestPolicy: "cache-first",
+    requestPolicy: "network-only",
     exchanges: [cache, fetchExchange],
   });
 
@@ -73,7 +73,7 @@ export function createVueUrqlApp(serverUrl: string): VueUrqlController {
           onRenderComplete = resolve;
         });
 
-        await executeQuery({ variables, requestPolicy: "cache-first" });
+        await executeQuery({ variables, requestPolicy: "network-only" });
 
         const endCursor = data.value?.feed?.pageInfo?.endCursor ?? null;
         if (endCursor) variables.after = endCursor;

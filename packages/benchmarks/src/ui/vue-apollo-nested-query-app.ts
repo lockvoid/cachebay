@@ -90,7 +90,7 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
       },
     }),
     link: new HttpLink({ uri: serverUrl, fetch }),
-    defaultOptions: { query: { fetchPolicy: "cache-first" } },
+    defaultOptions: { query: { fetchPolicy: "network-only" } },
   });
 
   // keep client behavior unchanged
@@ -125,7 +125,7 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
       const { result, load, fetchMore } = useLazyQuery(
         USERS_QUERY,
         {},
-        { fetchPolicy: "cache-first", errorPolicy: "ignore" },
+        { fetchPolicy: "network-only", errorPolicy: "ignore" },
       );
 
       const loadNextPage = async () => {

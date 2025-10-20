@@ -62,7 +62,7 @@ export function createVueUrqlNestedApp(serverUrl: string): VueUrqlNestedControll
 
   const client = createUrqlClient({
     url: serverUrl,
-    requestPolicy: "cache-first",
+    requestPolicy: "network-only",
     exchanges: [cache, fetchExchange],
   });
 
@@ -102,7 +102,7 @@ export function createVueUrqlNestedApp(serverUrl: string): VueUrqlNestedControll
         const renderDone = new Promise<void>((resolve) => { onRenderComplete = resolve; });
 
         // fetch a page from network; graphcache merges into users.edges
-        await executeQuery({ variables, requestPolicy: "cache-first" });
+        await executeQuery({ variables, requestPolicy: "network-only" });
 
         // bump cursor from the merged result
         const endCursor = data.value?.users?.pageInfo?.endCursor ?? null;

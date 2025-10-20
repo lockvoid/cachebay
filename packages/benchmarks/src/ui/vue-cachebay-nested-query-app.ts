@@ -1,8 +1,8 @@
-import { createApp, defineComponent, nextTick, watch } from 'vue';
-import { createClient, useQuery, fetch as fetchPlugin } from 'villus';
-import { gql } from 'graphql-tag';
-import { createCache } from '../../../villus-cachebay/src/core/internals';
-import { metrics } from './instrumentation';
+import { gql } from "graphql-tag";
+import { createClient, useQuery, fetch as fetchPlugin } from "villus";
+import { createApp, defineComponent, nextTick, watch } from "vue";
+import { createCache } from "../../../villus-cachebay/src/core/internals";
+import { metrics } from "./instrumentation";
 
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {
@@ -60,13 +60,13 @@ export function createVueCachebayNestedApp(serverUrl: string): VueCachebayNested
   // Reset metrics bucket for this app/run.
 
   const cachebay = createCache({
-    interfaces: { Node: ['User', 'Post', 'Comment'] },
+    interfaces: { Node: ["User", "Post", "Comment"] },
   });
 
   const client = createClient({
     url: serverUrl,
     use: [cachebay, fetchPlugin()],
-    cachePolicy: 'cache-first',
+    cachePolicy: "network-only",
   });
 
   let totalRenderTime = 0;
@@ -113,8 +113,8 @@ export function createVueCachebayNestedApp(serverUrl: string): VueCachebayNested
           totalRenderTime += (t2 - t0); // legacy aggregate if you still want it
         } catch (err) {
           // swallow errors so the bench keeps going
-          // eslint-disable-next-line no-console
-          console.warn('Cachebay execute error (ignored):', err);
+
+          console.warn("Cachebay execute error (ignored):", err);
         }
       };
 
@@ -141,7 +141,7 @@ export function createVueCachebayNestedApp(serverUrl: string): VueCachebayNested
   return {
     mount(target?: Element) {
       if (app) return;
-      container = target ?? document.createElement('div');
+      container = target ?? document.createElement("div");
       if (!target) document.body.appendChild(container);
 
       app = createApp(NestedList);
