@@ -512,6 +512,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     dirtyByPlan.clear();
   };
 
+  // Register onChange hook with graph to catch direct putRecord calls
+  graph.setOnChange((touchedIds) => {
+    markResultsDirtyForTouched(touchedIds);
+  });
+
   /* ---------- materializeDocument ---------- */
 
   const planIdByPlan = new WeakMap<CachePlan, number>();
@@ -538,6 +543,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     variables?: Record<string, any>;
     decisionMode?: "strict" | "canonical";
   }): MaterializeResult => {
+    // Flush any pending graph changes before reading
+    graph.flushPendingChanges();
+
     const plan = planner.getPlan(document);
     const lru = getResultLRU(plan);
     const dirty = getDirtySet(plan);

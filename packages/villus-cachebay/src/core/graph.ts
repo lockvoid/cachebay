@@ -10,6 +10,8 @@ export type GraphOptions = {
   keys?: Record<string, (obj: Record<string, unknown>) => string | null>;
   /** Interface to implementation mappings */
   interfaces?: Record<string, string[]>;
+  /** Callback fired when records change (for cache invalidation) */
+  onChange?: (recordIds: Set<string>) => void;
 };
 
 /**
@@ -227,6 +229,36 @@ export const createGraph = (options?: GraphOptions) => {
   const recordStore = new Map<string, Record<string, any>>();
   const recordProxyStore = new Map<string, WeakRef<any>>();
   const recordVersionStore = new Map<string, number>();
+  let onChange = options?.onChange;
+
+  // Batch onChange notifications in a microtask
+  let pendingChanges: Set<string> | null = null;
+  let flushScheduled = false;
+
+  const flushChanges = () => {
+    if (!pendingChanges || pendingChanges.size === 0) {
+      flushScheduled = false;
+      return;
+    }
+    const changes = pendingChanges;
+    pendingChanges = null;
+    flushScheduled = false;
+    onChange?.(changes);
+  };
+
+  const notifyChange = (recordId: string) => {
+    if (!onChange) return;
+    
+    if (!pendingChanges) {
+      pendingChanges = new Set();
+    }
+    pendingChanges.add(recordId);
+
+    if (!flushScheduled) {
+      flushScheduled = true;
+      queueMicrotask(flushChanges);
+    }
+  };
 
   /**
    * Get stable key for object using configured resolvers
@@ -269,6 +301,9 @@ export const createGraph = (options?: GraphOptions) => {
     if (proxy) {
       overlayRecordDiff(proxy, currentSnapshot, changes[0], changes[1], changes[2], nextVersion);
     }
+
+    // Notify subscribers of change (batched in microtask)
+    notifyChange(recordId);
   };
 
   /**
@@ -369,8 +404,26 @@ export const createGraph = (options?: GraphOptions) => {
     };
   };
 
+  /**
+   * Set onChange callback (allows late binding from documents layer)
+   */
+  const setOnChange = (callback: (recordIds: Set<string>) => void) => {
+    onChange = callback;
+  };
+
+  /**
+   * Flush pending onChange notifications immediately (for sync reads after writes)
+   */
+  const flushPendingChanges = () => {
+    if (flushScheduled) {
+      flushChanges();
+    }
+  };
+
   return {
     identify,
+    setOnChange,
+    flushPendingChanges,
     putRecord,
     getRecord,
     removeRecord,
