@@ -14,22 +14,25 @@ if (DEBUG) {
   console.log(`Using server at: ${serverUrl}`);
 }
 
-async function runScenario(appType: "cachebay" | "apollo" | "urql" | "relay") {
+async function runScenario(
+  appType: "cachebay" | "apollo" | "urql" | "relay",
+  cachePolicy?: "network-only" | "cache-first" | "cache-and-network"
+) {
   try {
     let app;
 
     switch (appType) {
       case "cachebay":
-        app = createVueCachebayNestedApp(serverUrl);
+        app = createVueCachebayNestedApp(serverUrl, cachePolicy || "network-only");
         break;
       case "apollo":
-        app = createVueApolloNestedApp(serverUrl);
+        app = createVueApolloNestedApp(serverUrl, cachePolicy || "network-only");
         break;
       case "urql":
-        app = createVueUrqlNestedApp(serverUrl);
+        app = createVueUrqlNestedApp(serverUrl, cachePolicy || "network-only");
         break;
       case "relay":
-        app = createReactRelayNestedApp(serverUrl);
+        app = createReactRelayNestedApp(serverUrl, cachePolicy || "network-only");
         break;
       default:
         throw new Error(`Unknown app type: ${appType}`);
@@ -110,29 +113,87 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   };
   metrics.apollo = { computeMs: 0, renderMs: 0, pages: 0 };
 
-  bench("cachebay(vue)", async () => {
-    return await runScenario("cachebay");
-  }, {
-    teardown() {
-      // console.log('Metrics');
-      // console.log(JSON.stringify(metrics, null, 2));
-    }
+  describe.only("network-only", () => {
+    bench("apollo(vue)", async () => {
+      return await runScenario("apollo", "network-only");
+    }, {
+      teardown() {
+        // console.log('Metrics');
+        // console.log(JSON.stringify(metrics, null, 2));
+      }
+    });
+
+    bench("cachebay(vue)", async () => {
+      return await runScenario("cachebay", "network-only");
+    }, {
+      teardown() {
+        // console.log('Metrics');
+        // console.log(JSON.stringify(metrics, null, 2));
+      }
+    });
+
+    bench("urql(vue)", async () => {
+      return await runScenario("urql", "network-only");
+    });
+
+    bench("relay(react)", async () => {
+      return await runScenario("relay", "network-only");
+    });
   });
 
-  bench("apollo(vue)", async () => {
-    return await runScenario("apollo");
-  }, {
-    teardown() {
-      // console.log('Metrics');
-      // console.log(JSON.stringify(metrics, null, 2));
-    }
+  describe("cache-first", () => {
+    bench("apollo(vue)", async () => {
+      return await runScenario("apollo", "cache-first");
+    }, {
+      teardown() {
+        // console.log('Metrics');
+        // console.log(JSON.stringify(metrics, null, 2));
+      }
+    });
+
+    bench("cachebay(vue)", async () => {
+      return await runScenario("cachebay", "cache-first");
+    }, {
+      teardown() {
+        // console.log('Metrics');
+        // console.log(JSON.stringify(metrics, null, 2));
+      }
+    });
+
+    bench("urql(vue)", async () => {
+      return await runScenario("urql", "cache-first");
+    });
+
+    bench("relay(react)", async () => {
+      return await runScenario("relay", "cache-first");
+    });
   });
 
-  bench("urql(vue)", async () => {
-    return await runScenario("urql");
-  });
+  describe("cache-and-network", () => {
+    bench("apollo(vue)", async () => {
+      return await runScenario("apollo", "cache-and-network");
+    }, {
+      teardown() {
+        // console.log('Metrics');
+        // console.log(JSON.stringify(metrics, null, 2));
+      }
+    });
 
-  bench("relay(react)", async () => {
-    return await runScenario("relay");
+    bench("cachebay(vue)", async () => {
+      return await runScenario("cachebay", "cache-and-network");
+    }, {
+      teardown() {
+        // console.log('Metrics');
+        // console.log(JSON.stringify(metrics, null, 2));
+      }
+    });
+
+    bench("urql(vue)", async () => {
+      return await runScenario("urql", "cache-and-network");
+    });
+
+    bench("relay(react)", async () => {
+      return await runScenario("relay", "cache-and-network");
+    });
   });
 });

@@ -67,7 +67,10 @@ export type VueApolloNestedController = {
   getTotalRenderTime(): number;
 };
 
-export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedController {
+export function createVueApolloNestedApp(
+  serverUrl: string,
+  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only"
+): VueApolloNestedController {
   const client = new ApolloClient({
     cache: new InMemoryCache({
       typePolicies: {
@@ -90,7 +93,7 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
       },
     }),
     link: new HttpLink({ uri: serverUrl, fetch }),
-    defaultOptions: { query: { fetchPolicy: "network-only" } },
+    defaultOptions: { query: { fetchPolicy: cachePolicy } },
   });
 
   // keep client behavior unchanged
@@ -125,7 +128,7 @@ export function createVueApolloNestedApp(serverUrl: string): VueApolloNestedCont
       const { result, load, fetchMore } = useLazyQuery(
         USERS_QUERY,
         {},
-        { fetchPolicy: "network-only", errorPolicy: "ignore" },
+        { fetchPolicy: cachePolicy, errorPolicy: "ignore" },
       );
 
       const loadNextPage = async () => {

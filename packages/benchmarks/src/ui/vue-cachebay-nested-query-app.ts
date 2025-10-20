@@ -56,7 +56,10 @@ export type VueCachebayNestedController = {
   getTotalRenderTime(): number;
 };
 
-export function createVueCachebayNestedApp(serverUrl: string): VueCachebayNestedController {
+export function createVueCachebayNestedApp(
+  serverUrl: string,
+  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only"
+): VueCachebayNestedController {
   // Reset metrics bucket for this app/run.
 
   const cachebay = createCache({
@@ -66,7 +69,7 @@ export function createVueCachebayNestedApp(serverUrl: string): VueCachebayNested
   const client = createClient({
     url: serverUrl,
     use: [cachebay, fetchPlugin()],
-    cachePolicy: "network-only",
+    cachePolicy,
   });
 
   let totalRenderTime = 0;

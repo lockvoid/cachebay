@@ -16,6 +16,14 @@ export type ReactRelayNestedController = {
   getTotalRenderTime(): number;
 };
 
+type RelayFetchPolicy = "network-only" | "store-or-network" | "store-and-network";
+
+function mapCachePolicyToRelay(policy: "network-only" | "cache-first" | "cache-and-network"): RelayFetchPolicy {
+  if (policy === "cache-first") return "store-or-network";
+  if (policy === "cache-and-network") return "store-and-network";
+  return "network-only";
+}
+
 function createRelayEnvironment(serverUrl: string) {
   const network = Network.create(async (operation, variables) => {
     const res = await fetch(serverUrl, {
@@ -93,11 +101,12 @@ function UsersList(props: {
   onAfterRender: () => void;
   onUpdateCount: (n: number) => void;
   setLoadNext: (fn: () => Promise<void>) => void;
+  fetchPolicy: RelayFetchPolicy;
 }) {
   const rootData = useLazyLoadQuery(
     UsersRootQuery,
     { count: 10, cursor: null },
-    { fetchPolicy: 'store-or-network' },
+    { fetchPolicy: props.fetchPolicy },
   );
 
   const { data, hasNext, loadNext, isLoadingNext } = usePaginationFragment(
@@ -163,8 +172,12 @@ function UsersList(props: {
   );
 }
 
-export function createReactRelayNestedApp(serverUrl: string): ReactRelayNestedController {
+export function createReactRelayNestedApp(
+  serverUrl: string,
+  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only"
+): ReactRelayNestedController {
   const environment = createRelayEnvironment(serverUrl);
+  const fetchPolicy = mapCachePolicyToRelay(cachePolicy);
 
   let totalRenderTime = 0;
   let root: Root | null = null;
@@ -196,6 +209,7 @@ export function createReactRelayNestedApp(serverUrl: string): ReactRelayNestedCo
             onAfterRender={onAfterRender}
             onUpdateCount={onUpdateCount}
             setLoadNext={setLoadNext}
+            fetchPolicy={fetchPolicy}
           />
         </RelayEnvironmentProvider>
       );

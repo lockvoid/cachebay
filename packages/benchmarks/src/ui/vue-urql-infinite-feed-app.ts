@@ -22,7 +22,14 @@ export type VueUrqlController = {
   getTotalRenderTime(): number;
 };
 
-export function createVueUrqlApp(serverUrl: string): VueUrqlController {
+function mapCachePolicyToUrql(policy: "network-only" | "cache-first" | "cache-and-network"): "network-only" | "cache-first" | "cache-and-network" {
+  return policy;
+}
+
+export function createVueUrqlApp(
+  serverUrl: string,
+  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only"
+): VueUrqlController {
   const cache = graphcache({
     resolvers: {
       Query: { feed: relayPagination() },
@@ -31,7 +38,7 @@ export function createVueUrqlApp(serverUrl: string): VueUrqlController {
 
   const client = createUrqlClient({
     url: serverUrl,
-    requestPolicy: "network-only",
+    requestPolicy: mapCachePolicyToUrql(cachePolicy),
     exchanges: [cache, fetchExchange],
   });
 
@@ -73,7 +80,7 @@ export function createVueUrqlApp(serverUrl: string): VueUrqlController {
           onRenderComplete = resolve;
         });
 
-        await executeQuery({ variables, requestPolicy: "network-only" });
+        await executeQuery({ variables, requestPolicy: mapCachePolicyToUrql(cachePolicy) });
 
         const endCursor = data.value?.feed?.pageInfo?.endCursor ?? null;
         if (endCursor) variables.after = endCursor;

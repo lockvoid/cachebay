@@ -51,7 +51,14 @@ export type VueUrqlNestedController = {
   getTotalRenderTime(): number;
 };
 
-export function createVueUrqlNestedApp(serverUrl: string): VueUrqlNestedController {
+function mapCachePolicyToUrql(policy: "network-only" | "cache-first" | "cache-and-network"): "network-only" | "cache-first" | "cache-and-network" {
+  return policy;
+}
+
+export function createVueUrqlNestedApp(
+  serverUrl: string,
+  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only"
+): VueUrqlNestedController {
   const cache = graphcache({
     resolvers: {
       Query: { users: relayPagination() },
@@ -62,7 +69,7 @@ export function createVueUrqlNestedApp(serverUrl: string): VueUrqlNestedControll
 
   const client = createUrqlClient({
     url: serverUrl,
-    requestPolicy: "network-only",
+    requestPolicy: mapCachePolicyToUrql(cachePolicy),
     exchanges: [cache, fetchExchange],
   });
 
@@ -102,7 +109,7 @@ export function createVueUrqlNestedApp(serverUrl: string): VueUrqlNestedControll
         const renderDone = new Promise<void>((resolve) => { onRenderComplete = resolve; });
 
         // fetch a page from network; graphcache merges into users.edges
-        await executeQuery({ variables, requestPolicy: "network-only" });
+        await executeQuery({ variables, requestPolicy: mapCachePolicyToUrql(cachePolicy) });
 
         // bump cursor from the merged result
         const endCursor = data.value?.users?.pageInfo?.endCursor ?? null;

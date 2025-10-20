@@ -26,13 +26,16 @@ export type VueCachebayController = {
   getTotalRenderTime(): number;
 };
 
-export function createVueCachebayApp(serverUrl: string): VueCachebayController {
+export function createVueCachebayApp(
+  serverUrl: string,
+  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only"
+): VueCachebayController {
   const cachebay = createCache({});
 
   const client = createClient({
     url: serverUrl,
     use: [cachebay, fetchPlugin()],
-    cachePolicy: "network-only",
+    cachePolicy,
   });
 
   let totalRenderTime = 0;

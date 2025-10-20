@@ -30,7 +30,10 @@ export type VueApolloController = {
   getTotalRenderTime(): number;
 };
 
-export function createVueApolloApp(serverUrl: string): VueApolloController {
+export function createVueApolloApp(
+  serverUrl: string,
+  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only"
+): VueApolloController {
   const client = new ApolloClient({
     cache: new InMemoryCache({
       typePolicies: {
@@ -43,7 +46,7 @@ export function createVueApolloApp(serverUrl: string): VueApolloController {
       },
     }),
     link: new HttpLink({ uri: serverUrl, fetch }),
-    defaultOptions: { query: { fetchPolicy: "network-only" } },
+    defaultOptions: { query: { fetchPolicy: cachePolicy } },
   });
 
   // Strip any 'canonizeResults' that might be set elsewhere (3.14 removed it)
@@ -77,7 +80,7 @@ export function createVueApolloApp(serverUrl: string): VueApolloController {
       const { result, load, fetchMore, loading } = useLazyQuery(
         FEED_QUERY,
         {},
-        { fetchPolicy: "network-only", errorPolicy: "ignore" },
+        { fetchPolicy: cachePolicy, errorPolicy: "ignore" },
       );
 
       const edgeCount = computed(() => result.value?.feed?.edges?.length || 0);

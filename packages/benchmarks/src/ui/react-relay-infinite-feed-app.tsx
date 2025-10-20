@@ -16,6 +16,14 @@ export type ReactRelayController = {
   getTotalRenderTime(): number;
 };
 
+type RelayFetchPolicy = "network-only" | "store-or-network" | "store-and-network";
+
+function mapCachePolicyToRelay(policy: "network-only" | "cache-first" | "cache-and-network"): RelayFetchPolicy {
+  if (policy === "cache-first") return "store-or-network";
+  if (policy === "cache-and-network") return "store-and-network";
+  return "network-only";
+}
+
 function createRelayEnvironment(serverUrl: string) {
   const network = Network.create(async (operation, variables) => {
     const res = await fetch(serverUrl, {
@@ -54,11 +62,12 @@ function FeedList(props: {
   onAfterRender: () => void;
   onUpdateCount: (n: number) => void;
   setLoadNext: (fn: () => Promise<void>) => void;
+  fetchPolicy: RelayFetchPolicy;
 }) {
   const rootData = useLazyLoadQuery(
     FeedRootQuery,
     { count: 50, cursor: null },
-    { fetchPolicy: 'network-only' },
+    { fetchPolicy: props.fetchPolicy },
   );
 
   const { data, hasNext, loadNext, isLoadingNext } = usePaginationFragment(
@@ -100,8 +109,12 @@ function FeedList(props: {
   );
 }
 
-export function createReactRelayApp(serverUrl: string): ReactRelayController {
+export function createReactRelayApp(
+  serverUrl: string,
+  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only"
+): ReactRelayController {
   const environment = createRelayEnvironment(serverUrl);
+  const fetchPolicy = mapCachePolicyToRelay(cachePolicy);
 
   // render-only total (post-data -> DOM commit)
   let totalRenderTime = 0;
@@ -133,6 +146,7 @@ export function createReactRelayApp(serverUrl: string): ReactRelayController {
             onAfterRender={onAfterRender}
             onUpdateCount={onUpdateCount}
             setLoadNext={setLoadNext}
+            fetchPolicy={fetchPolicy}
           />
         </RelayEnvironmentProvider>
       );

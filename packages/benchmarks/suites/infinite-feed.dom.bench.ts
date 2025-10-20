@@ -14,22 +14,25 @@ if (DEBUG) {
   console.log(`Using server at: ${serverUrl}`);
 }
 
-async function runScenario(appType: "cachebay" | "apollo" | "urql" | "relay") {
+async function runScenario(
+  appType: "cachebay" | "apollo" | "urql" | "relay",
+  cachePolicy?: "network-only" | "cache-first" | "cache-and-network"
+) {
   try {
     let app;
 
     switch (appType) {
       case "cachebay":
-        app = createVueCachebayApp(serverUrl);
+        app = createVueCachebayApp(serverUrl, cachePolicy || "network-only");
         break;
       case "apollo":
-        app = createVueApolloApp(serverUrl);
+        app = createVueApolloApp(serverUrl, cachePolicy || "network-only");
         break;
       case "urql":
-        app = createVueUrqlApp(serverUrl);
+        app = createVueUrqlApp(serverUrl, cachePolicy || "network-only");
         break;
       case "relay":
-        app = createReactRelayApp(serverUrl);
+        app = createReactRelayApp(serverUrl, cachePolicy || "network-only");
         break;
       default:
         throw new Error(`Unknown app type: ${appType}`);
@@ -90,21 +93,57 @@ async function runScenario(appType: "cachebay" | "apollo" | "urql" | "relay") {
 }
 
 describe("DOM Infinite feed (happy-dom): Vue apps with useQuery", () => {
+  describe.only("network-only", () => {
+    bench("apollo(vue)", async () => {
+      return await runScenario("apollo", "network-only");
+    });
 
+    bench("cachebay(vue)", async () => {
+      return await runScenario("cachebay", "network-only");
+    });
 
-  bench("apollo(vue)", async () => {
-    return await runScenario("apollo");
+    bench("urql(vue)", async () => {
+      return await runScenario("urql", "network-only");
+    });
+
+    bench("relay(react)", async () => {
+      return await runScenario("relay", "network-only");
+    });
   });
 
-  bench("cachebay(vue)", async () => {
-    return await runScenario("cachebay");
+  describe("cache-first", () => {
+    bench("apollo(vue)", async () => {
+      return await runScenario("apollo", "cache-first");
+    });
+
+    bench("cachebay(vue)", async () => {
+      return await runScenario("cachebay", "cache-first");
+    });
+
+    bench("urql(vue)", async () => {
+      return await runScenario("urql", "cache-first");
+    });
+
+    bench("relay(react)", async () => {
+      return await runScenario("relay", "cache-first");
+    });
   });
 
-  bench("urql(vue)", async () => {
-    return await runScenario("urql");
-  });
+  describe("cache-and-network", () => {
+    bench("apollo(vue)", async () => {
+      return await runScenario("apollo", "cache-and-network");
+    });
 
-  bench("relay(react)", async () => {
-    return await runScenario("relay");
+    bench("cachebay(vue)", async () => {
+      return await runScenario("cachebay", "cache-and-network");
+    });
+
+    bench("urql(vue)", async () => {
+      return await runScenario("urql", "cache-and-network");
+    });
+
+    bench("relay(react)", async () => {
+      return await runScenario("relay", "cache-and-network");
+    });
   });
 });
