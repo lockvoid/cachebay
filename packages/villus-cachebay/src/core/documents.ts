@@ -381,10 +381,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
     }
 
+    // Mark cached queries dirty based on touched dependencies
+    markDirtyByDepIds(touched);
+
     return { touched };
   };
-
-  /* MATERIALIZE DOCUMENT (with subtree memoization) */
+  /* MATERIALIZE DOCUMENT (LRU result cache; per-dependency version stamp) */
   type MaterializeResult = {
     data?: any;
     status: "FULFILLED" | "MISSING";
@@ -392,7 +394,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     debug?: { misses: Array<Record<string, any>>; vars: Record<string, any> };
   };
 
-  type CacheEntry = { data: any; stamp: string; deps: string[]; clock: number };
+  type CacheEntry = { data: any; deps: string[]; dirty: boolean };
 
   const __DEV__ = false; // keep logs off in production benches
 
@@ -417,7 +419,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         this.m.delete(oldest);
       }
     }
-    clear() { this.m.clear(); }
+    clear() {
+      this.m.clear();
+    }
   }
 
   const stableStringify = (v: any): string => {
@@ -437,50 +441,60 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     return lru;
   };
 
-  const makeVersionStamp = (ids: string[]): string => {
-    let s = "";
-    for (let i = 0; i < ids.length; i++) {
-      const id = ids[i];
-      s += id + ":" + graph.getVersion(id) + ";";
+  // Inverted index: depId → Set<vkey> to track which queries depend on what
+  const depToVkeysIndex = new Map<string, Set<string>>();
+
+  const linkDepsToVkey = (deps: string[], vkey: string, lru: LRU<string, CacheEntry>) => {
+    // Add vkey to each dep's index
+    for (let i = 0; i < deps.length; i++) {
+      const depId = deps[i];
+      let vkeys = depToVkeysIndex.get(depId);
+      if (!vkeys) {
+        vkeys = new Set();
+        depToVkeysIndex.set(depId, vkeys);
+      }
+      vkeys.add(vkey);
     }
-    return s;
   };
 
-  // -------- Subtree memoization (ENTITY & EDGE) --------
-  type SubMemoEntry = { out: any; deps: string[]; stamp: string };
-
-  const entityMemoByPlan = new WeakMap<CachePlan, Map<string, SubMemoEntry>>();
-  const edgeMemoByPlan = new WeakMap<CachePlan, Map<string, SubMemoEntry>>();
-
-  const getEntityMemo = (plan: CachePlan) => {
-    let m = entityMemoByPlan.get(plan);
-    if (!m) { m = new Map(); entityMemoByPlan.set(plan, m); }
-    return m;
-  };
-  const getEdgeMemo = (plan: CachePlan) => {
-    let m = edgeMemoByPlan.get(plan);
-    if (!m) { m = new Map(); edgeMemoByPlan.set(plan, m); }
-    return m;
+  const unlinkDepsFromVkey = (deps: string[], vkey: string) => {
+    // Remove vkey from each dep's index
+    for (let i = 0; i < deps.length; i++) {
+      const depId = deps[i];
+      const vkeys = depToVkeysIndex.get(depId);
+      if (vkeys) {
+        vkeys.delete(vkey);
+        if (vkeys.size === 0) {
+          depToVkeysIndex.delete(depId);
+        }
+      }
+    }
   };
 
-  const makeEntityKey = (decisionMode: string, varsKey: string, selId: string, id: string) =>
-    `E|${decisionMode}|${selId}|${varsKey}|${id}`;
-  const makeEdgeKey = (decisionMode: string, varsKey: string, selId: string, id: string) =>
-    `D|${decisionMode}|${selId}|${varsKey}|${id}`;
-
-  const validateMemo = (entry: SubMemoEntry): boolean => {
-    // deps are stored sorted; re-stamp to validate
-    return entry.stamp === makeVersionStamp(entry.deps);
+  const markDirtyByDepIds = (touchedIds: Set<string>) => {
+    // Mark all cached queries that depend on any touched id as dirty
+    for (const depId of touchedIds) {
+      const vkeys = depToVkeysIndex.get(depId);
+      if (vkeys) {
+        for (const vkey of vkeys) {
+          // Find which LRU this vkey belongs to (we'll handle this per-plan)
+          // For now, mark in a global dirty set
+          dirtyVkeys.add(vkey);
+        }
+      }
+    }
   };
 
-  // Task queue (add END_SUBTREE)
+  // Global dirty set (vkeys that need recomputation)
+  const dirtyVkeys = new Set<string>();
+
+  // Task queue
   type Task =
     | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string }
     | { t: "ENTITY"; id: string; field: PlanField; out: any }
     | { t: "CONNECTION"; parentId: string; field: PlanField; out: any; outKey: string }
     | { t: "PAGE_INFO"; id: string; field: PlanField; out: any }
-    | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[] }
-    | { t: "END_SUBTREE"; map: "entity" | "edge"; key: string; outRef: any };
+    | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[] };
 
   const materializeDocument = ({
     document,
@@ -495,37 +509,25 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const lru = getResultLRU(plan);
     const vkey = `${decisionMode}|${stableStringify(variables)}`;
 
-    const nowClock = graph.getClock?.() ?? 0;
-
-    // ---- Validate result cache by clock AND stamp (recomputed from deps) ----
+    // O(1) cache validation: if not dirty, return immediately
     {
       const cached = lru.get(vkey);
-      if (cached) {
-        // Recompute a quick stamp over the cached dependency list.
-        // This catches record-level mutations even when the global clock didn't bump.
-        const currentStamp = makeVersionStamp(cached.deps);
-        if (cached.clock === nowClock && cached.stamp === currentStamp) {
-          return { data: cached.data, status: "FULFILLED", deps: cached.deps.slice() };
-        }
+      if (cached && !cached.dirty && !dirtyVkeys.has(vkey)) {
+        return { data: cached.data, status: "FULFILLED", deps: cached.deps.slice() };
       }
     }
 
     // ---- Full traversal to build data + deps ----
     const deps = new Set<string>();
-    const touch = (id?: string | null) => { if (id) deps.add(id); };
+    const touch = (id?: string | null) => {
+      if (id) deps.add(id);
+    };
 
     const outData: Record<string, any> = {};
     let allOk = true;
 
     const root = graph.getRecord(ROOT_ID) || {};
     touch(ROOT_ID);
-
-    type Task =
-      | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string }
-      | { t: "ENTITY"; id: string; field: PlanField; out: any }
-      | { t: "CONNECTION"; parentId: string; field: PlanField; out: any; outKey: string }
-      | { t: "PAGE_INFO"; id: string; field: PlanField; out: any }
-      | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[] };
 
     const tasks: Task[] = [];
     for (let i = plan.root.length - 1; i >= 0; i--) {
@@ -660,7 +662,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           }
         }
 
-        // Scalar fallback (covers interface-gated scalars)
+        // Scalar fallback (covers interface-gated scalars present on the record)
         if (Array.isArray(field.selectionSet) && field.selectionSet.length) {
           for (let i = 0; i < field.selectionSet.length; i++) {
             const pf = field.selectionSet[i];
@@ -679,12 +681,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       if (task.t === "CONNECTION") {
         const { parentId, field, out, outKey } = task;
 
-        // Always read from CANONICAL page…
+        // read from CANONICAL page
         const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
         touch(canonicalKey);
         const pageCanonical = graph.getRecord(canonicalKey);
 
-        // …but "strict" requires strict page presence too
+        // "strict" additionally requires the strict page to be present
         let ok = !!pageCanonical;
         if (ok && decisionMode === "strict") {
           const strictKey = buildConnectionKey(field, parentId, variables);
@@ -735,7 +737,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
-            // Other page fields
+            // Other page-level fields
             if (!pf.selectionSet) {
               if (pf.fieldName === "__typename") {
                 conn[pf.responseKey] = (page as any).__typename;
@@ -746,7 +748,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               continue;
             }
 
-            // nested connection
+            // nested connection under page
             if (isConnectionField(pf)) {
               tasks.push({ t: "CONNECTION", parentId: canonicalKey, field: pf, out: conn, outKey: pf.responseKey });
               continue;
@@ -853,16 +855,25 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       return { status: "MISSING", data: undefined, deps: Array.from(deps) };
     }
 
-    // build new stamp using versions (not used for guard, but handy for debugging)
+    // capture deps and link to inverted index
     const ids = Array.from(deps).sort();
-    const stamp = makeVersionStamp(ids);
-
-    // cache result with current global clock + per-dep stamp
-    lru.set(vkey, { data: outData, stamp, deps: ids, clock: nowClock });
+    
+    // Unlink old deps if entry existed
+    const oldCached = lru.get(vkey);
+    if (oldCached) {
+      unlinkDepsFromVkey(oldCached.deps, vkey);
+    }
+    
+    // Cache result and link new deps
+    const entry: CacheEntry = { data: outData, deps: ids, dirty: false };
+    lru.set(vkey, entry);
+    linkDepsToVkey(ids, vkey, lru);
+    
+    // Clear dirty flag
+    dirtyVkeys.delete(vkey);
 
     return { data: outData, status: "FULFILLED", deps: ids };
   };
-
   return {
     normalizeDocument,
     materializeDocument,
