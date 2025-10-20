@@ -7,6 +7,7 @@ import { createGraph } from "./graph";
 import { createOptimistic } from "./optimistic";
 import { createPlanner } from "./planner";
 import { createPlugin, provideCachebay } from "./plugin";
+import { createQueries } from "./queries";
 import { createViews } from "./views";
 import type { CachebayOptions } from "./types";
 import type { ClientPlugin } from "villus";
@@ -63,6 +64,21 @@ export type CachebayInstance = ClientPlugin & {
   }) => void;
 
   /**
+   * Read query from cache (sync)
+   */
+  readQuery: ReturnType<typeof createQueries>["readQuery"];
+
+  /**
+   * Write query to cache (sync, triggers reactive updates)
+   */
+  writeQuery: ReturnType<typeof createQueries>["writeQuery"];
+
+  /**
+   * Watch query reactively (returns unsubscribe handle)
+   */
+  watchQuery: ReturnType<typeof createQueries>["watchQuery"];
+
+  /**
    * Apply optimistic updates with transaction support
    */
   modifyOptimistic: ReturnType<typeof createOptimistic>["modifyOptimistic"];
@@ -89,6 +105,7 @@ export type CachebayInstance = ClientPlugin & {
     canonical: ReturnType<typeof createCanonical>;
     documents: ReturnType<typeof createDocuments>;
     fragments: ReturnType<typeof createFragments>;
+    queries: ReturnType<typeof createQueries>;
     ssr: ReturnType<typeof createSSR>;
     inspect: ReturnType<typeof createInspect>;
   };
@@ -109,12 +126,13 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   const canonical = createCanonical({ graph, optimistic });
   const documents = createDocuments({ graph, views, planner, canonical });
   const fragments = createFragments({ graph, views, planner });
+  const queries = createQueries({ graph, planner, documents });
 
   // Features
   const inspect = createInspect({ graph, optimistic });
 
   // Villus plugin (ClientPlugin)
-  const plugin = createPlugin({ suspensionTimeout: options.suspensionTimeout }, { graph, planner, documents, ssr });
+  const plugin = createPlugin({ suspensionTimeout: options.suspensionTimeout }, { planner, queries, ssr });
 
   // Vue install
   (plugin as any).install = (app: App) => {
@@ -127,6 +145,11 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Fragments API
   (plugin as any).readFragment = fragments.readFragment;
   (plugin as any).writeFragment = fragments.writeFragment;
+
+  // Queries API
+  (plugin as any).readQuery = queries.readQuery;
+  (plugin as any).writeQuery = queries.writeQuery;
+  (plugin as any).watchQuery = queries.watchQuery;
 
   // Optimistic API
   (plugin as any).modifyOptimistic = optimistic.modifyOptimistic;
@@ -147,6 +170,7 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     canonical,
     documents,
     fragments,
+    queries,
     ssr,
     inspect,
   };

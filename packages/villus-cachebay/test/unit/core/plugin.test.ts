@@ -5,6 +5,7 @@ import { createGraph } from "@/src/core/graph";
 import { createOptimistic } from "@/src/core/optimistic";
 import { createPlanner } from "@/src/core/planner";
 import { createPlugin } from "@/src/core/plugin";
+import { createQueries } from "@/src/core/queries";
 import { buildConnectionKey } from "@/src/core/utils";
 import { createViews } from "@/src/core/views";
 import { createSSR } from "@/src/features/ssr";
@@ -19,6 +20,7 @@ describe("Plugin", () => {
   let canonical: ReturnType<typeof createCanonical>;
   let views: ReturnType<typeof createViews>;
   let documents: ReturnType<typeof createDocuments>;
+  let queries: ReturnType<typeof createQueries>;
   let plugin: ReturnType<typeof createPlugin>;
 
   const edgesLen = (rec: any) =>
@@ -65,7 +67,8 @@ describe("Plugin", () => {
     canonical = createCanonical({ graph, optimistic });
     views = createViews({ graph });
     documents = createDocuments({ graph, planner, canonical, views });
-    plugin = createPlugin({ suspensionTimeout: 0 }, { graph, planner, documents, ssr });
+    queries = createQueries({ graph, planner, documents });
+    plugin = createPlugin({ suspensionTimeout: 0 }, { planner, queries, ssr });
   });
 
   describe("cache-only", () => {
@@ -568,7 +571,7 @@ describe("Plugin", () => {
           hasPreviousPage: false,
         }, [`${pageKey}.edges.0`, `${pageKey}.edges.1`]);
 
-        plugin = createPlugin({ suspensionTimeout: 1000 }, { graph, planner, documents, ssr });
+        plugin = createPlugin({ suspensionTimeout: 1000 }, { planner, queries, ssr });
 
         const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
 
@@ -650,7 +653,7 @@ describe("Plugin", () => {
           hasPreviousPage: false,
         }, [`${pageKey}.edges.0`, `${pageKey}.edges.1`]);
 
-        plugin = createPlugin({ suspensionTimeout: 5 }, { graph, planner, documents, ssr });
+        plugin = createPlugin({ suspensionTimeout: 5 }, { planner, queries, ssr });
 
         const emissions: Array<{ data?: any; error?: any; terminal: boolean; tag?: string }> = [];
 
@@ -724,7 +727,7 @@ describe("Plugin", () => {
 
   describe("network-only", () => {
     it("serves cached response within suspension window to avoid duplicate network requests", async () => {
-      plugin = createPlugin({ suspensionTimeout: 1000 }, { graph, planner, documents, ssr });
+      plugin = createPlugin({ suspensionTimeout: 1000 }, { planner, queries, ssr });
 
       const emissions: Array<{ data?: any; error?: any; terminal: boolean }> = [];
       const variables = { id: "u42" };
