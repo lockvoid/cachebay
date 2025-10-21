@@ -223,6 +223,8 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
       entityId: id,
     }) as any;
 
+    console.log(initial);
+
     if (initial && initial.source !== "none") {
       watcher.lastData = initial.data;
       updateWatcherDeps(watcherId, initial.deps || []);

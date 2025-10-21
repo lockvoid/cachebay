@@ -139,6 +139,12 @@ export const POST_COMMENTS_FRAGMENT = `
 
         node {
           id
+          text
+
+          author {
+            id
+            name
+          }
         }
       }
     }

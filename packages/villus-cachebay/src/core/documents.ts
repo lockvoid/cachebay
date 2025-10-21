@@ -630,6 +630,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const dirty = getDirtySet(plan);
     const vkey = `${getPlanId(plan)}|${canonical ? 'c' : 's'}|${entityId ? `ent:${entityId}|` : ''}${stableStringify(variables)}`;
 
+    console.log(plan)
     // O(1) hot path: return if present and not dirty
     {
       const cached = lru.get(vkey);
@@ -813,13 +814,21 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       if (task.t === "CONNECTION") {
         const { parentId, field, out, outKey } = task;
 
+        // compute both keys
         const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
-        touch(canonicalKey);
-        const pageCanonical = graph.getRecord(canonicalKey);
-
         const strictKey = buildConnectionKey(field, parentId, variables);
+
+        // Only touch the dependency for the requested mode
+        if (canonical) {
+          touch(canonicalKey);
+        } else {
+          touch(strictKey);
+        }
+
+        const pageCanonical = graph.getRecord(canonicalKey);
         const pageStrict = graph.getRecord(strictKey);
 
+        // Track overall satisfiability
         canonicalOK &&= !!pageCanonical;
         strictOK &&= !!pageStrict;
 
@@ -828,22 +837,25 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const conn: any = { edges: [], pageInfo: {} };
         out[outKey] = conn;
 
+        // Don't fall back; strict means strict, canonical means canonical
         if (!requestedOK) {
           continue;
         }
 
-        const page = (canonical ? pageCanonical : pageStrict)!;
-        const selMap = (field as any).selectionMap as Map<string, PlanField> | undefined;
+        // Choose the page for the requested mode (also used to build edge IDs)
+        const baseIsCanonical = !!canonical;
+        const page = (baseIsCanonical ? pageCanonical : pageStrict)!;
+        const baseKey = baseIsCanonical ? canonicalKey : strictKey;
 
+        const selMap = (field as any).selectionMap as Map<string, PlanField> | undefined;
         if (selMap && selMap.size) {
           for (const [rk, pf] of selMap) {
             if (rk === "pageInfo") {
               const piLink = (page as any).pageInfo;
-              if (piLink && piLink.__ref) {
+              if (piLink?.__ref) {
                 tasks.push({ t: "PAGE_INFO", id: piLink.__ref as string, field: pf, out: conn });
               } else {
                 conn.pageInfo = {};
-                // pageInfo missing → both modes are "not fully OK"
                 strictOK = false;
                 canonicalOK = false;
               }
@@ -856,7 +868,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               if (edgesRaw && typeof edgesRaw === "object" && Array.isArray(edgesRaw.__refs)) {
                 refs = edgesRaw.__refs.slice();
               } else if (Array.isArray(edgesRaw)) {
-                const baseKey = canonical ? canonicalKey : strictKey;
+                // derive edge record ids based on the *requested* mode's baseKey
                 refs = edgesRaw.map((_: any, i: number) => `${baseKey}.edges.${i}`);
               }
 
@@ -864,8 +876,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               conn.edges = arr;
 
               for (let i = refs.length - 1; i >= 0; i--) {
-                const eid = refs[i];
-                tasks.push({ t: "EDGE", id: eid, idx: i, field: pf, outArr: arr });
+                tasks.push({ t: "EDGE", id: refs[i], idx: i, field: pf, outArr: arr });
               }
               continue;
             }
@@ -883,7 +894,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             if (isConnectionField(pf)) {
               tasks.push({
                 t: "CONNECTION",
-                parentId: canonical ? canonicalKey : strictKey,
+                parentId: baseIsCanonical ? canonicalKey : strictKey,
                 field: pf,
                 out: conn,
                 outKey: pf.responseKey,
