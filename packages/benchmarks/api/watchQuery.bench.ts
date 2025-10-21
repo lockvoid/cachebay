@@ -1,5 +1,5 @@
 // api/watchQuery.bench.ts
-import { bench, describe } from "vitest";
+import { bench, group, run, summary } from "mitata";
 
 // ---- cachebay ----
 import { createCache } from "../../villus-cachebay/src/core/client";
@@ -7,6 +7,11 @@ import { createCache } from "../../villus-cachebay/src/core/client";
 // ---- apollo ----
 import { InMemoryCache } from "@apollo/client/cache";
 import { relayStylePagination } from "@apollo/client/utilities";
+
+// ---- relay ----
+import { Environment, Network, RecordSource, Store, createOperationDescriptor } from "relay-runtime";
+import type { ConcreteRequest } from "relay-runtime";
+import RelayWriteQuery from "../src/__generated__/relayWriteQueryDefRelayWriteQuery.graphql";
 
 // ---- shared (same helpers you already use) ----
 import { makeResponse, buildPages, CACHEBAY_QUERY, APOLLO_QUERY } from "./utils";
@@ -16,8 +21,8 @@ import { parse } from "graphql";
 
 // We update a single user entity so both caches re-emit the connection view.
 const CACHEBAY_USER_QUERY = parse(/* GraphQL */ `
-  query UserEmail($id: ID!) {
-    user(id: $id) { __typename id email }
+  query UserName($id: ID!) {
+    user(id: $id) { __typename id name }
   }
 `);
 const APOLLO_USER_QUERY = CACHEBAY_USER_QUERY;
@@ -41,9 +46,10 @@ function createCachebay() {
   });
 }
 
-function createApolloCache(resultCaching = false) {
+function createApolloCache() {
   return new InMemoryCache({
-    resultCaching,
+    // parity with normalize benches (disables apollo's result memo)
+    resultCaching: false,
     typePolicies: {
       Query: {
         fields: {
@@ -67,10 +73,17 @@ function createApolloCache(resultCaching = false) {
   });
 }
 
+function createRelayEnvironment() {
+  return new Environment({
+    network: Network.create(() => Promise.resolve({ data: {} })),
+    store: new Store(new RecordSource()),
+  });
+}
+
 // -----------------------------------------------------------------------------
 // Shared data
 // -----------------------------------------------------------------------------
-const USERS_TOTAL = 100;
+const USERS_TOTAL = 1000;
 const PAGE_SIZE = 10;
 const allUsers = Object.freeze(makeResponse({ users: USERS_TOTAL, posts: 5, comments: 3 }));
 const pages = buildPages(allUsers, PAGE_SIZE);
@@ -95,123 +108,173 @@ function seedApolloAllPages(cache: InMemoryCache) {
     });
   }
 }
+function seedRelayAllPages(env: Environment) {
+  for (let i = 0; i < pages.length; i++) {
+    const operation = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, pages[i].vars);
+    env.commitPayload(operation, pages[i].data);
+  }
+}
 
 // -----------------------------------------------------------------------------
-/** Initial subscription (subscribe + initial emit) */
+/** Initial subscription (subscribe + initial emit) - COLD */
 // -----------------------------------------------------------------------------
-describe("watchQuery – INITIAL subscription", () => {
-  const TIME = 3000;
+summary(() => {
+  group("watchQuery – INITIAL subscription (COLD)", () => {
 
-  // Cachebay: initial:cold (new instance + hydrate)
-  {
-    let snapshot: any;
-    bench(
-      `cachebay.watchQuery:initial:cold(${label})`,
-      () => {
-        const cache = createCachebay();
-        cache.hydrate(snapshot);
-        const sub = cache.watchQuery({
-          query: CACHEBAY_QUERY,
-          variables: { first: PAGE_SIZE, after: null },
-          decisionMode: "canonical",
-          onData: (d) => sinkObj(d),
-        });
-        sub.unsubscribe();
-      },
-      {
-        time: TIME,
-        setup() {
-          const seed = createCachebay();
-          seedCachebayAllPages(seed);
-          snapshot = seed.dehydrate();
+    // Cachebay: initial:cold (new instance, subscribe, write pages, unsubscribe)
+    bench(`cachebay.watchQuery:initial:cold(${label})`, function* () {
+      yield {
+        [0]() {
+          const cache = createCachebay();
+          // Warm the planner
+          cache.__internals.planner.getPlan(CACHEBAY_QUERY);
+          return cache;
         },
-      }
-    );
-  }
-
-  // Apollo: initial:cold (new instance + restore snapshot)
-  {
-    let snapshot: any;
-    bench(
-      `apollo.watch:initial:cold(newInstance+restore)(${label})`,
-      () => {
-        const c = createApolloCache(false);
-        c.restore(snapshot);
-        const unwatch = c.watch({
-          query: APOLLO_QUERY,
-          variables: { first: PAGE_SIZE, after: null },
-          optimistic: false,
-          immediate: true, // fire initial diff synchronously
-          callback: (diff) => sinkObj(diff.result),
-        });
-        unwatch();
-      },
-      {
-        time: TIME,
-        setup() {
-          const seed = createApolloCache(false);
-          seedApolloAllPages(seed);
-          snapshot = seed.extract(true);
-        },
-      }
-    );
-  }
-
-  // Cachebay: initial:hot (reuse instance)
-  {
-    let cache: ReturnType<typeof createCachebay>;
-    bench(
-      `cachebay.watchQuery:initial:hot(${label})`,
-      () => {
-        const sub = cache.watchQuery({
-          query: CACHEBAY_QUERY,
-          variables: { first: PAGE_SIZE, after: null },
-          decisionMode: "canonical",
-          onData: (d) => sinkObj(d),
-        });
-        sub.unsubscribe();
-      },
-      {
-        time: TIME,
-        setup() {
-          cache = createCachebay();
-          seedCachebayAllPages(cache);
-          // warm one materialization (not strictly needed)
-          cache.readQuery({
+        async bench(cache) {
+          // 1. Subscribe first
+          const sub = cache.watchQuery({
             query: CACHEBAY_QUERY,
             variables: { first: PAGE_SIZE, after: null },
-            decisionMode: "canonical",
+            canonical: true,
+            onData: (d) => sinkObj(d),
           });
-        },
-      }
-    );
-  }
 
-  // Apollo: initial:hot (reuse instance)
-  {
-    let apollo: InMemoryCache;
-    bench(
-      `apollo.watch:initial:hot(${label})`,
-      () => {
-        const unwatch = apollo.watch({
-          query: APOLLO_QUERY,
-          variables: { first: PAGE_SIZE, after: null },
-          optimistic: false,
-          immediate: true,
-          callback: (diff) => sinkObj(diff.result),
-        });
-        unwatch();
-      },
-      {
-        time: TIME,
-        setup() {
-          apollo = createApolloCache(false);
-          seedApolloAllPages(apollo);
-          apollo.readQuery({ query: APOLLO_QUERY, variables: { first: PAGE_SIZE, after: null } });
+          // 2. Write all pages (triggers reactive updates)
+          for (let i = 0; i < pages.length; i++) {
+            cache.writeQuery({
+              query: CACHEBAY_QUERY,
+              variables: pages[i].vars,
+              data: pages[i].data,
+            });
+            // Flush microtask queue so watchers can react
+            await Promise.resolve();
+          }
+
+          // 3. Unsubscribe
+          sub.unsubscribe();
         },
-      }
-    );
-  }
+      };
+    });
+
+    // // Apollo: initial:cold (new instance, subscribe, write pages, unsubscribe)
+    // bench(`apollo.watch:initial:cold(${label})`, function* () {
+    //   yield {
+    //     [0]() {
+    //       return createApolloCache();
+    //     },
+    //     async bench(apollo) {
+    //       // 1. Subscribe first
+    //       const unwatch = apollo.watch({
+    //         query: APOLLO_QUERY,
+    //         variables: { first: PAGE_SIZE, after: null },
+    //         optimistic: false,
+    //         immediate: true,
+    //         callback: (diff) => sinkObj(diff.result),
+    //       });
+    //
+    //       // 2. Write all pages (triggers reactive updates)
+    //       for (let i = 0; i < pages.length; i++) {
+    //         apollo.writeQuery({
+    //           broadcast: true, // Enable broadcast to trigger watchers
+    //           query: APOLLO_QUERY,
+    //           variables: pages[i].vars,
+    //           data: pages[i].data,
+    //         });
+    //         // Flush microtask queue (Apollo broadcasts synchronously, but keep consistent)
+    //         await Promise.resolve();
+    //       }
+    //
+    //       // 3. Unsubscribe
+    //       unwatch();
+    //     },
+    //   };
+    // });
+
+    // Relay: initial:cold (new environment, subscribe, write pages, unsubscribe)
+    bench(`relay.subscribe:initial:cold(${label})`, function* () {
+      yield {
+        [0]() {
+          return createRelayEnvironment();
+        },
+        async bench(relay) {
+          // 1. Subscribe first
+          const operation = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, { first: PAGE_SIZE, after: null });
+          const snap = relay.lookup(operation.fragment);
+          const disposable = relay.subscribe(snap, (newSnapshot) => {
+            sinkObj(newSnapshot.data);
+          });
+
+          // 2. Write all pages (triggers reactive updates)
+          for (let i = 0; i < pages.length; i++) {
+            const op = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, pages[i].vars);
+            relay.commitPayload(op, pages[i].data);
+            // Flush microtask queue (Relay broadcasts synchronously, but keep consistent)
+            await Promise.resolve();
+          }
+
+          // 3. Unsubscribe
+          disposable.dispose();
+        },
+      };
+    });
+  });
+});
+
+// -----------------------------------------------------------------------------
+/** Initial subscription (subscribe + initial emit) - HOT */
+// -----------------------------------------------------------------------------
+summary(() => {
+  group("watchQuery – INITIAL subscription (HOT)", () => {
+
+    // Cachebay: initial:hot (reuse instance)
+    const cache1 = createCachebay();
+    seedCachebayAllPages(cache1);
+    cache1.readQuery({
+      query: CACHEBAY_QUERY,
+      variables: { first: PAGE_SIZE, after: null },
+      canonical: true,
+    });
+
+    bench(`cachebay.watchQuery:initial:hot(${label})`, () => {
+      const sub = cache1.watchQuery({
+        query: CACHEBAY_QUERY,
+        variables: { first: PAGE_SIZE, after: null },
+        canonical: true,
+        onData: (d) => sinkObj(d),
+      });
+      sub.unsubscribe();
+    });
+
+    //// Apollo: initial:hot (reuse instance)
+    //const apollo1 = createApolloCache();
+    //seedApolloAllPages(apollo1);
+    //apollo1.readQuery({ query: APOLLO_QUERY, variables: { first: PAGE_SIZE, after: null } });
+    //
+    //bench(`apollo.watch:initial:hot(${label})`, () => {
+    //  const unwatch = apollo1.watch({
+    //    query: APOLLO_QUERY,
+    //    variables: { first: PAGE_SIZE, after: null },
+    //    optimistic: false,
+    //    immediate: true,
+    //    callback: (diff) => sinkObj(diff.result),
+    //  });
+    //  unwatch();
+    //});
+
+    // Relay: initial:hot (reuse environment)
+    const relay1 = createRelayEnvironment();
+    seedRelayAllPages(relay1);
+    const operation1 = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, { first: PAGE_SIZE, after: null });
+    relay1.lookup(operation1.fragment);
+
+    bench(`relay.subscribe:initial:hot(${label})`, () => {
+      const snapshot = relay1.lookup(operation1.fragment);
+      const disposable = relay1.subscribe(snapshot, (newSnapshot) => {
+        sinkObj(newSnapshot.data);
+      });
+      disposable.dispose();
+    });
+  });
 });
 
 // -----------------------------------------------------------------------------
@@ -219,85 +282,86 @@ describe("watchQuery – INITIAL subscription", () => {
  *  We update User "u1" email back-and-forth so deps fire without growing data.
  */
 // -----------------------------------------------------------------------------
-describe("watchQuery – REACTIVE updates", () => {
-  const TIME = 3000;
+summary(() => {
+  group("watchQuery – REACTIVE updates", () => {
 
-  // Cachebay reactive
-  {
-    let cache: ReturnType<typeof createCachebay>;
-    let toggle = false;
+    // Cachebay reactive
+    const cache2 = createCachebay();
+    seedCachebayAllPages(cache2);
+    cache2.watchQuery({
+      query: CACHEBAY_QUERY,
+      variables: { first: PAGE_SIZE, after: null },
+      canonical: true,
+      skipInitialEmit: true,
+      onData: (d) => sinkObj(d),
+    });
+    let toggle1 = false;
 
-    bench(
-      `cachebay.watchQuery:reactive(${label})`,
-      async () => {
-        toggle = !toggle;
-        const email = toggle ? "u1+updated@example.com" : "u1@example.com";
+    bench(`cachebay.watchQuery:reactive(${label})`, async () => {
+      toggle1 = !toggle1;
+      const name = toggle1 ? "User 1 (updated)" : "User 1";
 
-        cache.writeQuery({
-          query: CACHEBAY_USER_QUERY,
-          variables: { id: "u1" },
-          data: { user: { __typename: "User", id: "u1", email } },
-        });
+      cache2.writeQuery({
+        query: CACHEBAY_USER_QUERY,
+        variables: { id: "u1" },
+        data: { user: { __typename: "User", id: "u1", name } },
+      });
 
-        // watchQuery broadcasts via queueMicrotask; flush it
-        await Promise.resolve();
-      },
-      {
-        time: TIME,
-        setup() {
-          cache = createCachebay();
-          seedCachebayAllPages(cache);
+      // watchQuery broadcasts via queueMicrotask; flush it
+      await Promise.resolve();
+    });
 
-          // One watcher on the connection; skip initial emit to avoid bias
-          cache.watchQuery({
-            query: CACHEBAY_QUERY,
-            variables: { first: PAGE_SIZE, after: null },
-            decisionMode: "canonical",
-            skipInitialEmit: true,
-            onData: (d) => sinkObj(d),
-          });
-        },
-      }
-    );
-  }
+    // Apollo reactive
+    const apollo2 = createApolloCache();
+    seedApolloAllPages(apollo2);
+    apollo2.watch({
+      query: APOLLO_QUERY,
+      variables: { first: PAGE_SIZE, after: null },
+      optimistic: false,
+      immediate: false,
+      callback: (diff) => sinkObj(diff.result),
+    });
+    let toggle2 = false;
 
-  // Apollo reactive
-  {
-    let apollo: InMemoryCache;
-    let toggle = false;
+    bench(`apollo.watch:reactive(${label})`, () => {
+      toggle2 = !toggle2;
+      const name = toggle2 ? "User 1 (updated)" : "User 1";
 
-    bench(
-      `apollo.watch:reactive(${label})`,
-      () => {
-        toggle = !toggle;
-        const email = toggle ? "u1+updated@example.com" : "u1@example.com";
+      apollo2.writeQuery({
+        query: APOLLO_USER_QUERY,
+        variables: { id: "u1" },
+        data: { user: { __typename: "User", id: "u1", name } },
+      });
+      // apollo watchers broadcast synchronously
+    });
 
-        apollo.writeQuery({
-          query: APOLLO_USER_QUERY,
-          variables: { id: "u1" },
-          data: { user: { __typename: "User", id: "u1", email } },
-        });
-        // apollo watchers broadcast synchronously
-      },
-      {
-        time: TIME,
-        setup() {
-          apollo = createApolloCache(false);
-          seedApolloAllPages(apollo);
+    // Relay reactive
+    const relay2 = createRelayEnvironment();
+    seedRelayAllPages(relay2);
+    const operation2 = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, { first: PAGE_SIZE, after: null });
+    const snapshot2 = relay2.lookup(operation2.fragment);
+    relay2.subscribe(snapshot2, (newSnapshot) => {
+      sinkObj(newSnapshot.data);
+    });
+    let toggle3 = false;
 
-          // One watcher on the connection; immediate false to avoid first diff here
-          apollo.watch({
-            query: APOLLO_QUERY,
-            variables: { first: PAGE_SIZE, after: null },
-            optimistic: false,
-            immediate: false,
-            callback: (diff) => sinkObj(diff.result),
-          });
-        },
-      }
-    );
-  }
+    bench(`relay.subscribe:reactive(${label})`, () => {
+      toggle3 = !toggle3;
+      const name = toggle3 ? "User 1 (updated)" : "User 1";
+
+      // Use store updater to directly modify the user record
+      relay2.commitUpdate((store) => {
+        const user = store.get("u1");
+        if (user) {
+          user.setValue(name, "name");
+        }
+      });
+      // relay subscribers broadcast synchronously
+    });
+  });
 });
 
 // keep the sink visible so V8 can't fully DCE it
 (globalThis as any).__bench_sink = __sink;
+
+run();

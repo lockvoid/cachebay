@@ -95,7 +95,14 @@ summary(() => {
               variables: pages[i].vars,
               data: pages[i].data,
             });
+
+            cache.readQuery({
+              query: CACHEBAY_QUERY,
+              variables: pages[i].vars,
+              canonical: true,
+            });
           }
+
           return cache;
         },
         // Benchmark: only measure the read (timed)
@@ -103,7 +110,7 @@ summary(() => {
           const res = cache.readQuery({
             query: CACHEBAY_QUERY,
             variables: { first: PAGE_SIZE, after: null },
-            decisionMode: "canonical",
+            canonical: true,
           });
           sinkObj(res.data);
         },
@@ -205,14 +212,14 @@ summary(() => {
     cache1.readQuery({
       query: CACHEBAY_QUERY,
       variables: { first: PAGE_SIZE, after: null },
-      decisionMode: "canonical",
+      canonical: true,
     });
 
     bench(`cachebay.readQuery:canonical:hot(${label})`, () => {
       const res = cache1.readQuery({
         query: CACHEBAY_QUERY,
         variables: { first: PAGE_SIZE, after: null },
-        decisionMode: "canonical",
+        canonical: true,
       });
       sinkObj(res.data);
     });
