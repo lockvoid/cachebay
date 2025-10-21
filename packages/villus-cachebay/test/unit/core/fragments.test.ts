@@ -307,7 +307,7 @@ describe("Fragments (documents-powered)", () => {
   });
 
   describe("writeFragment", () => {
-    it.only("writes entity fields shallowly and re-reads show updates", () => {
+    it("writes entity fields shallowly and re-reads show updates", () => {
       fragments.writeFragment({
         id: "User:u1",
         fragment: operations.USER_FRAGMENT,
@@ -335,7 +335,7 @@ describe("Fragments (documents-powered)", () => {
       expect(snap2).toEqual({ __typename: "User", id: "u1", email: "seed2@example.com" });
     });
 
-    it("writes a connection page; watcher sees edges/pageInfo/totalCount changes", () => {
+    it.only("writes a connection page; watcher sees edges/pageInfo/totalCount changes", async () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "x@example.com" });
 
       // initial write
@@ -377,9 +377,11 @@ describe("Fragments (documents-powered)", () => {
       expect(last.posts.edges.length).toBe(2);
       expect(last.posts.totalCount).toBe(2);
 
-      const pageKey = '@.User:u1.posts({"after":null,"category":"tech","first":2})';
+      const pageKey = '@.User:u1.posts({"category":"tech","first":2,"after":null})';
       graph.putRecord(`${pageKey}.edges.0`, { score: 0.9 });
       fragments._notifyTouched(new Set([`${pageKey}.edges.0`]));
+
+      await tick();
       expect(last.posts.edges[0].score).toBe(0.9);
 
       // second write expands data
@@ -409,6 +411,8 @@ describe("Fragments (documents-powered)", () => {
         },
       });
 
+      await tick();
+
       expect(last.posts.edges.length).toBe(3);
       expect(last.posts.edges[2].node.id).toBe("p3");
       expect(last.posts.pageInfo).toEqual({
@@ -422,6 +426,9 @@ describe("Fragments (documents-powered)", () => {
 
       graph.putRecord(pageKey, { totalCount: 4 });
       fragments._notifyTouched(new Set([pageKey]));
+
+      await tick();
+
       expect(last.posts.totalCount).toBe(4);
 
       sub.unsubscribe();

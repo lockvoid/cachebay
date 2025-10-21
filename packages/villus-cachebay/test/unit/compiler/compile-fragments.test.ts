@@ -19,6 +19,29 @@ describe("Compiler x Fragments", () => {
     expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
 
+  it("includes __typename in fragment root selection (plan.root) for cache reads", () => {
+    // Fragment without explicit __typename in source
+    const FRAGMENT = gql`
+      fragment UserFields on User {
+        id
+        email
+      }
+    `;
+
+    const plan = compilePlan(FRAGMENT);
+
+    // Check that __typename is in plan.root (used for cache materialization)
+    const typenameField = plan.root.find(f => f.fieldName === "__typename");
+    expect(typenameField).toBeDefined();
+    expect(typenameField?.responseKey).toBe("__typename");
+
+    // Also verify it's in the selection map
+    expect(plan.rootSelectionMap!.has("__typename")).toBe(true);
+
+    // And in the network query
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
+  });
+
   it("compiles a fragment with a connection using @connection; builds selectionMap on nested sets", () => {
     const plan = compilePlan(operations.USER_POSTS_FRAGMENT, { fragmentName: "UserPosts" });
 

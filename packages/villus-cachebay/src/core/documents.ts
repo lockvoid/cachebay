@@ -630,7 +630,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const dirty = getDirtySet(plan);
     const vkey = `${getPlanId(plan)}|${canonical ? 'c' : 's'}|${entityId ? `ent:${entityId}|` : ''}${stableStringify(variables)}`;
 
-    console.log(plan)
     // O(1) hot path: return if present and not dirty
     {
       const cached = lru.get(vkey);

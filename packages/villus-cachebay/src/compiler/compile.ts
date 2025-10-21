@@ -258,7 +258,9 @@ export const compilePlan = (
 
     const parentTypename = frag.typeCondition.name.value;
 
-    const root = lowerSelectionSet(frag.selectionSet, parentTypename, fragmentsByName);
+    // For fragments, ensure __typename is in the selection (unlike operations where we skip root __typename)
+    const fragSelectionWithTypename = ensureTypename(frag.selectionSet);
+    const root = lowerSelectionSet(fragSelectionWithTypename, parentTypename, fragmentsByName);
     const rootSelectionMap = indexByResponseKey(root);
 
     const networkQuery = buildNetworkQuery(document);
