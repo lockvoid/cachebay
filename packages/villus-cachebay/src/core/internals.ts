@@ -8,7 +8,6 @@ import { createOptimistic } from "./optimistic";
 import { createPlanner } from "./planner";
 import { createPlugin, provideCachebay } from "./plugin";
 import { createQueries } from "./queries";
-import { createViews } from "./views";
 import type { CachebayOptions } from "./types";
 import type { ClientPlugin } from "villus";
 import type { App } from "vue";
@@ -105,7 +104,6 @@ export type CachebayInstance = ClientPlugin & {
    */
   __internals: {
     graph: ReturnType<typeof createGraph>;
-    views: ReturnType<typeof createViews>;
     planner: ReturnType<typeof createPlanner>;
     canonical: ReturnType<typeof createCanonical>;
     documents: ReturnType<typeof createDocuments>;
@@ -144,10 +142,9 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   // Now create subsystems with graph
   const optimistic = createOptimistic({ graph });
   const ssr = createSSR({ hydrationTimeout: options.hydrationTimeout }, { graph });
-  const views = createViews({ graph });
   const canonical = createCanonical({ graph, optimistic });
-  documents = createDocuments({ graph, views, planner, canonical });
-  fragments = createFragments({ graph, planner, views });
+  documents = createDocuments({ graph, planner, canonical });
+  fragments = createFragments({ graph, planner, documents });
   queries = createQueries({ graph, planner, documents });
 
   // Features
@@ -188,7 +185,6 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   (plugin as any).__internals = {
     graph,
     optimistic,
-    views,
     planner,
     canonical,
     documents,

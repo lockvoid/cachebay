@@ -47,10 +47,16 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     document,
     variables = {},
     data,
+    rootId,
+    linkFromParent,
   }: {
     document: DocumentNode | CachePlan;
     variables?: Record<string, any>;
     data: any;
+    /** Override root parent id (for fragments) */
+    rootId?: string;
+    /** Whether to link the parent -> page/ref (default: plan.operation==='query') */
+    linkFromParent?: boolean;
   }): { touched: Set<string> } => {
     const touched = new Set<string>();
     const put = (id: string, patch: Record<string, any>) => {
@@ -72,14 +78,17 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     };
 
     const plan = planner.getPlan(document);
-    const isQuery = plan.operation === "query";
+    const shouldLink = linkFromParent ?? (plan.operation === "query");
 
-    put(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
+    const startId = rootId ?? ROOT_ID;
+    if (startId === ROOT_ID) {
+      put(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
+    }
 
     const connectionPages: ConnectionPage[] = [];
 
     const initialFrame: Frame = {
-      parentId: ROOT_ID,
+      parentId: startId,
       fields: plan.root,
       fieldsMap: plan.rootSelectionMap ?? new Map<string, PlanField>(),
       insideConnection: false,
@@ -339,7 +348,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             put(pageInfoKey, piTypename ? { __typename: piTypename } : {});
           }
 
-          if (isQuery) {
+          if (shouldLink) {
             put(parentId, { [parentFieldKey]: { __ref: pageKey } });
             connectionPages.push({ field: planField, parentId, pageKey });
           }
@@ -378,7 +387,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             if (valueNode && (valueNode as any).__typename) put(entityKey, { __typename: (valueNode as any).__typename });
             else put(entityKey, {});
 
-            if (isQuery && planField && !(frame.insideConnection && planField.responseKey === "node")) {
+            if (shouldLink && planField && !(frame.insideConnection && planField.responseKey === "node")) {
               const parentFieldKey = buildFieldKey(planField, variables);
               put(parentId, { [parentFieldKey]: { __ref: entityKey } });
             }
@@ -421,7 +430,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           if (valueNode && (valueNode as any).__typename) put(containerKey, { __typename: (valueNode as any).__typename });
           else put(containerKey, {});
 
-          if (isQuery) {
+          if (shouldLink) {
             put(parentId, { [containerFieldKey]: { __ref: containerKey } });
           }
 
@@ -471,7 +480,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     }
 
     // Update canonical connections (queries only) and mark canonical key as touched
-    if (isQuery && connectionPages.length > 0) {
+    if (connectionPages.length > 0) {
       for (let i = 0; i < connectionPages.length; i++) {
         const { field, parentId, pageKey } = connectionPages[i];
         const pageRecord = graph.getRecord(pageKey);
@@ -607,10 +616,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     document,
     variables = {},
     canonical = true,
+    entityId,
   }: {
     document: DocumentNode | CachePlan;
     variables?: Record<string, any>;
     canonical?: boolean;
+    /** When provided, read the plan.root selection over this entity id instead of ROOT */
+    entityId?: string;
   }): MaterializeResult => {
     // Flush any pending graph changes before reading
     graph.flush();
@@ -618,7 +630,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const plan = planner.getPlan(document);
     const lru = getResultLRU(plan);
     const dirty = getDirtySet(plan);
-    const vkey = `${getPlanId(plan)}|${canonical ? 'c' : 's'}|${stableStringify(variables)}`;
+    const vkey = `${getPlanId(plan)}|${canonical ? 'c' : 's'}|${entityId ? `ent:${entityId}|` : ''}${stableStringify(variables)}`;
 
     // O(1) hot path: return if present and not dirty
     {
@@ -642,14 +654,19 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     let allOk = true;
     let foundCanonical = false; // Track if we found canonical connection data
 
-    const root = graph.getRecord(ROOT_ID) || {};
-    // Don't track ROOT_ID - we'll track field-level deps instead
-
     const tasks: Task[] = [];
-    const rootSel = planner.getPlan(document).root;
-    for (let i = rootSel.length - 1; i >= 0; i--) {
-      const f = rootSel[i];
-      tasks.push({ t: "ROOT_FIELD", parentId: ROOT_ID, field: f, out: outData, outKey: f.responseKey });
+    const rootSel = plan.root;
+    if (entityId) {
+      // Synthetic "ENTITY" root: apply fragment selection to the entity directly
+      const syntheticField = { selectionSet: rootSel, selectionMap: plan.rootSelectionMap } as unknown as PlanField;
+      tasks.push({ t: "ENTITY", id: entityId, field: syntheticField, out: outData });
+    } else {
+      const root = graph.getRecord(ROOT_ID) || {};
+      // Don't track ROOT_ID as a dep; we instead track root field keys
+      for (let i = rootSel.length - 1; i >= 0; i--) {
+        const f = rootSel[i];
+        tasks.push({ t: "ROOT_FIELD", parentId: ROOT_ID, field: f, out: outData, outKey: f.responseKey });
+      }
     }
 
     const isConnectionField = (f: PlanField): boolean => Boolean((f as any).isConnection);

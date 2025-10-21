@@ -177,15 +177,15 @@ export const createQueries = (deps: QueriesDependencies) => {
     }) as any;
 
     if (result && result.status === "FULFILLED") {
-      return { 
-        data: markRaw(result.data) as T, 
+      return {
+        data: markRaw(result.data) as T,
         deps: result.deps || [],
         status: result.status,
         hasCanonical: result.hasCanonical,
       };
     }
-    return { 
-      data: undefined, 
+    return {
+      data: undefined,
       deps: [],
       status: result?.status || "MISSING",
       hasCanonical: result?.hasCanonical,
@@ -278,7 +278,7 @@ export const createQueries = (deps: QueriesDependencies) => {
         const res = documents.materializeDocument({
           document: w.query,
           variables: w.variables,
-          decisionMode: w.decisionMode,
+          canonical: w.canonical,
         }) as any;
 
         if (res?.status === "FULFILLED") {
