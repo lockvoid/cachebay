@@ -25,7 +25,7 @@ export type PluginOptions = {
 
 export function createPlugin(options: PluginOptions, deps: PluginDependencies): ClientPlugin {
   const { planner, queries, ssr } = deps;
-  const { suspensionTimeout = 0 } = options ?? {};
+  const { suspensionTimeout = 1000 } = options ?? {};
 
   // ----------------------------------------------------------------------------
   // Watcher hub: one shared watchQuery per (plan.id | mode | masked vars)
@@ -212,10 +212,14 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     if (isWithinSuspension(readSig)) {
       const result = queries.readQuery({ query: document, variables, decisionMode: modeForQuery });
       if (result.data) {
-        if (policy === "network-only" || policy === "cache-and-network") {
-          // terminal to avoid duplicate fetches within suspension window
+        if (policy === "network-only") {
+          // terminal to avoid duplicate fetches
           emit({ data: markRaw(result.data), error: null }, true);
           return;
+        }
+        if (policy === "cache-and-network") {
+          // non-terminal cached hit; do NOT return — still install network handler
+          emit({ data: markRaw(result.data), error: null }, false);
         }
         // cache-first / cache-only fall through to normal handling below
       }
