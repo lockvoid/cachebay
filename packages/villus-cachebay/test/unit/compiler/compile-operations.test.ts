@@ -25,6 +25,9 @@ describe("Compiler x Operations", () => {
     const userArgs = userField.buildArgs({ id: "u1" });
     expect(userArgs).toEqual({ id: "u1" });
 
+    // Check expectedArgNames is populated
+    expect(userField.expectedArgNames).toEqual(["id"]);
+
     const id = findField(userField.selectionSet!, "id");
     const email = findField(userField.selectionSet!, "email");
     expect(id).toBeTruthy();
@@ -45,6 +48,9 @@ describe("Compiler x Operations", () => {
 
     const usersArgs = users.buildArgs({ role: "admin", first: 2, after: undefined });
     expect(usersArgs).toEqual({ role: "admin", first: 2 });
+
+    // Check expectedArgNames includes all args in order
+    expect(users.expectedArgNames).toEqual(["role", "first", "after", "last", "before"]);
 
     const edges = findField(users.selectionSet!, "edges");
     const pageInfo = findField(users.selectionSet!, "pageInfo");
@@ -68,8 +74,14 @@ describe("Compiler x Operations", () => {
     const userArgs = user.buildArgs({ id: "u1" });
     expect(userArgs).toEqual({ id: "u1" });
 
+    // Check expectedArgNames for user field
+    expect(user.expectedArgNames).toEqual(["id"]);
+
     const postsArgs = posts.buildArgs({ postsCategory: "tech", postsFirst: 2, postsAfter: null });
     expect(postsArgs).toEqual({ category: "tech", first: 2, after: null });
+
+    // Check expectedArgNames for posts connection
+    expect(posts.expectedArgNames).toEqual(["category", "sort", "first", "after", "last", "before"]);
 
     const edges = findField(posts.selectionSet!, "edges")!;
     const node = findField(edges.selectionSet!, "node")!;
@@ -254,5 +266,22 @@ describe("Compiler x Operations", () => {
     // Children inherit guard
     expect(video.selectionMap!.get("key")!.typeCondition).toBe("VideoPost");
     expect(audio.selectionMap!.get("key")!.typeCondition).toBe("AudioPost");
+  });
+
+  it("stringifyArgs produces stable keys using expectedArgNames order", () => {
+    const plan = compilePlan(operations.USERS_QUERY);
+    const users = findField(plan.root, "users")!;
+
+    // Same args, different order in input object
+    const key1 = users.stringifyArgs({ role: "admin", first: 10, after: "cursor1" });
+    const key2 = users.stringifyArgs({ after: "cursor1", role: "admin", first: 10 });
+    const key3 = users.stringifyArgs({ first: 10, after: "cursor1", role: "admin" });
+
+    // All should produce identical keys because we use expectedArgNames order
+    expect(key1).toBe(key2);
+    expect(key2).toBe(key3);
+
+    // Key should follow expectedArgNames order: ["role", "first", "after"]
+    expect(key1).toBe('("role":"admin","first":10,"after":"cursor1")');
   });
 });

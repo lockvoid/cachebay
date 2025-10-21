@@ -61,9 +61,14 @@ const valueToJS = (node: ValueNode, vars?: Record<string, any>): any => {
 };
 
 /** compile argument resolver from field arguments */
-const compileArgBuilder = (args: readonly any[] | undefined) => {
+const compileArgBuilder = (args: readonly any[] | undefined): {
+  buildArgs: (vars: Record<string, any>) => Record<string, any>;
+  expectedArgNames: string[];
+} => {
   const entries = (args || []).map(a => [a.name.value, a.value as ValueNode]) as Array<[string, ValueNode]>;
-  return (vars: Record<string, any>) => {
+  const expectedArgNames = entries.map(([k]) => k);
+  
+  const buildArgs = (vars: Record<string, any>) => {
     if (!entries.length) return {};
     const out: Record<string, any> = {};
     for (let i = 0; i < entries.length; i++) {
@@ -73,14 +78,39 @@ const compileArgBuilder = (args: readonly any[] | undefined) => {
     }
     return out;
   };
+  
+  return { buildArgs, expectedArgNames };
 };
 
-/** stable stringify (keys sorted, deep) */
-const stableStringify = (v: any): string => {
-  if (v == null || typeof v !== "object") return JSON.stringify(v);
-  if (Array.isArray(v)) return "[" + v.map(stableStringify).join(",") + "]";
-  const keys = Object.keys(v).sort();
-  return "{" + keys.map(k => JSON.stringify(k) + ":" + stableStringify(v[k])).join(",") + "}";
+/**
+ * Compile a fast stringifyArgs function using precomputed arg order.
+ * This avoids the need for stableStringify by iterating args in a fixed order.
+ */
+const compileStringifyArgs = (
+  buildArgs: (vars: Record<string, any>) => Record<string, any>,
+  expectedArgNames: string[],
+): (vars: Record<string, any>) => string => {
+  if (expectedArgNames.length === 0) {
+    return () => "";
+  }
+  
+  return (vars: Record<string, any>) => {
+    const args = buildArgs(vars);
+    let result = "(";
+    let first = true;
+    
+    for (let i = 0; i < expectedArgNames.length; i++) {
+      const argName = expectedArgNames[i];
+      if (args[argName] !== undefined) {
+        if (!first) result += ",";
+        result += `"${argName}":${JSON.stringify(args[argName])}`;
+        first = false;
+      }
+    }
+    
+    result += ")";
+    return result;
+  };
 };
 
 /** read @connection(key, filters, mode) on a field */
@@ -160,8 +190,8 @@ export const lowerSelectionSet = (
       }
 
       // args
-      const buildArgs = compileArgBuilder(fieldNode.arguments || []);
-      const stringifyArgs = (vars: Record<string, any>) => stableStringify(buildArgs(vars));
+      const { buildArgs, expectedArgNames } = compileArgBuilder(fieldNode.arguments || []);
+      const stringifyArgs = compileStringifyArgs(buildArgs, expectedArgNames);
 
       // connection directive (+ defaults)
       let isConnection = false;
@@ -204,6 +234,7 @@ export const lowerSelectionSet = (
         selectionMap: childMap,
         buildArgs,
         stringifyArgs,
+        expectedArgNames,
         isConnection,
         connectionKey,
         connectionFilters,

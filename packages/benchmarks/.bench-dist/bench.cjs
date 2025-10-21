@@ -37173,7 +37173,9 @@ const label = `${USERS_TOTAL} users (${pages.length} pages of ${PAGE_SIZE})`;
         (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`cachebay.writeQuery:cold(${label})`, function*() {
             yield {
                 [0] () {
-                    return createCachebay();
+                    const cachebay = createCachebay();
+                    cachebay.__internals.planner.getPlan(_utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY);
+                    return cachebay;
                 },
                 bench (cache) {
                     for(let i = 0; i < pages.length; i++){
@@ -37304,7 +37306,9 @@ const singlePage = Object.freeze((0,_utils__WEBPACK_IMPORTED_MODULE_4__.makeResp
         (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`cachebay.writeQuery:single-page:cold(${USERS_PER_PAGE} users)`, function*() {
             yield {
                 [0] () {
-                    return createCachebay();
+                    const cachebay = createCachebay();
+                    cachebay.__internals.planner.getPlan(_utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY);
+                    return cachebay;
                 },
                 bench (cache) {
                     cache.writeQuery({
@@ -38243,7 +38247,8 @@ __webpack_require__.d(__webpack_exports__, {
             a.name.value,
             a.value
         ]);
-    return (vars)=>{
+    const expectedArgNames = entries.map(([k])=>k);
+    const buildArgs = (vars)=>{
         if (!entries.length) return {};
         const out = {};
         for(let i = 0; i < entries.length; i++){
@@ -38253,12 +38258,33 @@ __webpack_require__.d(__webpack_exports__, {
         }
         return out;
     };
+    return {
+        buildArgs,
+        expectedArgNames
+    };
 };
-/** stable stringify (keys sorted, deep) */ const stableStringify = (v)=>{
-    if (v == null || typeof v !== "object") return JSON.stringify(v);
-    if (Array.isArray(v)) return "[" + v.map(stableStringify).join(",") + "]";
-    const keys = Object.keys(v).sort();
-    return "{" + keys.map((k)=>JSON.stringify(k) + ":" + stableStringify(v[k])).join(",") + "}";
+/**
+ * Compile a fast stringifyArgs function using precomputed arg order.
+ * This avoids the need for stableStringify by iterating args in a fixed order.
+ */ const compileStringifyArgs = (buildArgs, expectedArgNames)=>{
+    if (expectedArgNames.length === 0) {
+        return ()=>"";
+    }
+    return (vars)=>{
+        const args = buildArgs(vars);
+        let result = "(";
+        let first = true;
+        for(let i = 0; i < expectedArgNames.length; i++){
+            const argName = expectedArgNames[i];
+            if (args[argName] !== undefined) {
+                if (!first) result += ",";
+                result += `"${argName}":${JSON.stringify(args[argName])}`;
+                first = false;
+            }
+        }
+        result += ")";
+        return result;
+    };
 };
 /** read @connection(key, filters, mode) on a field */ const parseConnectionDirective = (field)=>{
     if (!field.directives) return {
@@ -38318,8 +38344,8 @@ __webpack_require__.d(__webpack_exports__, {
                 childMap = indexByResponseKey(childPlan);
             }
             // args
-            const buildArgs = compileArgBuilder(fieldNode.arguments || []);
-            const stringifyArgs = (vars)=>stableStringify(buildArgs(vars));
+            const { buildArgs, expectedArgNames } = compileArgBuilder(fieldNode.arguments || []);
+            const stringifyArgs = compileStringifyArgs(buildArgs, expectedArgNames);
             // connection directive (+ defaults)
             let isConnection = false;
             let connectionKey;
@@ -38356,6 +38382,7 @@ __webpack_require__.d(__webpack_exports__, {
                 selectionMap: childMap,
                 buildArgs,
                 stringifyArgs,
+                expectedArgNames,
                 isConnection,
                 connectionKey,
                 connectionFilters,

@@ -21,6 +21,7 @@ export type PlanField = {
   // Arguments
   buildArgs: (vars: Record<string, any>) => Record<string, any>;
   stringifyArgs: (vars: Record<string, any>) => string;
+  expectedArgNames: string[];                   // precomputed arg order for stable keys
 
   // Connections (when @connection is present)
   isConnection: boolean;

@@ -17,7 +17,7 @@ describe("Compiler x Connections", () => {
     expect(node.fieldName).toBe("node");
 
     const postsArgs = posts.stringifyArgs({ category: "tech", first: 10, after: null });
-    expect(postsArgs).toBe('{"after":null,"category":"tech","first":10}');
+    expect(postsArgs).toBe('("category":"tech","first":10,"after":null)');
 
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
     expect(hasTypenames(plan.networkQuery)).toBe(true);

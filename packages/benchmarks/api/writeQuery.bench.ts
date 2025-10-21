@@ -87,7 +87,11 @@ summary(() => {
     bench(`cachebay.writeQuery:cold(${label})`, function* () {
       yield {
         [0]() {
-          return createCachebay();
+          const cachebay = createCachebay();
+
+          cachebay.__internals.planner.getPlan(CACHEBAY_QUERY)
+
+          return cachebay;
         },
         bench(cache) {
           for (let i = 0; i < pages.length; i++) {
@@ -225,7 +229,11 @@ summary(() => {
     bench(`cachebay.writeQuery:single-page:cold(${USERS_PER_PAGE} users)`, function* () {
       yield {
         [0]() {
-          return createCachebay();
+          const cachebay = createCachebay();
+
+          cachebay.__internals.planner.getPlan(CACHEBAY_QUERY)
+
+          return cachebay;
         },
         bench(cache) {
           cache.writeQuery({
