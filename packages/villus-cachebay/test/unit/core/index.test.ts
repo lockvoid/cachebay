@@ -1,5 +1,5 @@
 import { CACHEBAY_KEY } from "@/src/core/constants";
-import { createCache } from "@/src/core";
+import { createCache } from "@/src/core/client";
 
 describe("createCache", () => {
   it("exposes public apis", () => {

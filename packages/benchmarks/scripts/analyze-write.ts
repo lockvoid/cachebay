@@ -2,7 +2,7 @@
 import { performance } from 'node:perf_hooks';
 
 // ---- cachebay ----
-import { createCache } from "villus-cachebay/src/core";
+import { createCache } from "../../villus-cachebay/src/core/client";
 
 // ---- relay ----
 import { Environment, Network, RecordSource, Store, createOperationDescriptor } from "relay-runtime";

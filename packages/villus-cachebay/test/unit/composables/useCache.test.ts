@@ -2,7 +2,7 @@ import { mount } from "@vue/test-utils";
 import { describe, it, expect } from "vitest";
 import { defineComponent, h } from "vue";
 import { useCache } from "@/src/composables/useCache";
-import { createCache } from "@/src/core";
+import { createCache } from "@/src/core/client";
 import { provideCachebay } from "@/src/core/plugin";
 
 describe("useCache", () => {

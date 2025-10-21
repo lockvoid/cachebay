@@ -1,6 +1,6 @@
 import { inject } from "vue";
 import { CACHEBAY_KEY } from "../core/constants";
-import type { CachebayInstance } from "../core";
+import type { CachebayInstance } from "../core/client";
 
 /**
  * Get the Cachebay instance from Vue context
