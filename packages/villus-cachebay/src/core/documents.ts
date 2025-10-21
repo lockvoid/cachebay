@@ -89,7 +89,17 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   }): { touched: Set<string> } => {
     const touched = new Set<string>();
     const put = (id: string, patch: Record<string, any>) => {
-      touched.add(id);
+      // Don't track ROOT_ID itself - it's too broad
+      if (id !== ROOT_ID) {
+        touched.add(id);
+      } else {
+        // But DO track field-level changes on root (e.g., @.user({"id":"1"}))
+        for (const key of Object.keys(patch)) {
+          if (key !== 'id' && key !== '__typename') {
+            touched.add(`${id}.${key}`);
+          }
+        }
+      }
       graph.putRecord(id, patch);
     };
 
@@ -562,7 +572,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     let allOk = true;
 
     const root = graph.getRecord(ROOT_ID) || {};
-    touch(ROOT_ID);
+    // Don't track ROOT_ID - we'll track field-level deps instead
 
     const tasks: Task[] = [];
     const rootSel = planner.getPlan(document).root;
@@ -603,6 +613,10 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         if (field.selectionSet && field.selectionSet.length) {
           const snap = graph.getRecord(parentId) || {};
           const fieldKey = buildFieldKey(field, variables);
+          // Track field-level dependency for root fields
+          if (parentId === ROOT_ID) {
+            touch(`${parentId}.${fieldKey}`);
+          }
           const link = (snap as any)[fieldKey];
 
           if (!link || !link.__ref) {

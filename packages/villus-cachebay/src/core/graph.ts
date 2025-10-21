@@ -1,5 +1,5 @@
 import { shallowReactive } from "vue";
-import { ID_FIELD, TYPENAME_FIELD, IDENTITY_FIELDS } from "./constants";
+import { ID_FIELD, TYPENAME_FIELD, IDENTITY_FIELDS, ROOT_ID } from "./constants";
 import { isObject } from "./utils";
 
 /**
@@ -312,7 +312,17 @@ export const createGraph = (options?: GraphOptions) => {
     }
 
     // Notify subscribers of change (batched in microtask)
-    notifyChange(recordId);
+    // For ROOT_ID, also notify field-level changes for granular dependency tracking
+    if (recordId === ROOT_ID) {
+      for (const key of Object.keys(partialSnapshot)) {
+        const value = partialSnapshot[key];
+        // Skip metadata fields (id/typename that equal ROOT_ID) but track actual query fields
+        if (value === ROOT_ID) continue;
+        notifyChange(`${recordId}.${key}`);
+      }
+    } else {
+      notifyChange(recordId);
+    }
   };
 
   /**

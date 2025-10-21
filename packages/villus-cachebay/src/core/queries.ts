@@ -237,8 +237,12 @@ export const createQueries = (deps: QueriesDependencies) => {
           onError?.(e as Error);
         }
       }
-    } else if (onError && !skipInitialEmit) {
-      onError(new Error("Query returned no data"));
+    } else {
+      // IMPORTANT: Register deps even for MISSING queries so watcher triggers when data arrives
+      updateWatcherDeps(watcherId, initial?.deps || []);
+      if (onError && !skipInitialEmit) {
+        onError(new Error("Query returned no data"));
+      }
     }
 
     return {
