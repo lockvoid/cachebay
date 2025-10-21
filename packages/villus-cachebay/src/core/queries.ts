@@ -10,12 +10,10 @@ export type QueriesDependencies = {
   documents: DocumentsInstance;
 };
 
-export type DecisionMode = "strict" | "canonical";
-
 export type ReadQueryOptions = {
   query: DocumentNode;
   variables?: Record<string, any>;
-  decisionMode?: DecisionMode;
+  canonical?: boolean;
 };
 
 export type ReadQueryResult<T = any> = {
@@ -36,7 +34,7 @@ export type WriteQueryResult = {
 export type WatchQueryOptions = {
   query: DocumentNode;
   variables?: Record<string, any>;
-  decisionMode?: DecisionMode;
+  canonical?: boolean;
   onData: (data: any) => void;
   onError?: (error: Error) => void;
   skipInitialEmit?: boolean;
@@ -57,7 +55,7 @@ export const createQueries = (deps: QueriesDependencies) => {
   type WatcherState = {
     query: DocumentNode;
     variables: Record<string, any>;
-    decisionMode: DecisionMode;
+    canonical: boolean;
     onData: (data: any) => void;
     onError?: (error: Error) => void;
     deps: Set<string>;
@@ -101,7 +99,7 @@ export const createQueries = (deps: QueriesDependencies) => {
         const result = documents.materializeDocument({
           document: watcher.query,
           variables: watcher.variables,
-          decisionMode: watcher.decisionMode,
+          canonical: watcher.canonical,
         }) as any;
 
         if (!result || result.status !== "FULFILLED") continue;
@@ -168,12 +166,12 @@ export const createQueries = (deps: QueriesDependencies) => {
   const readQuery = <T = any>({
     query,
     variables = {},
-    decisionMode = "canonical",
+    canonical = true,
   }: ReadQueryOptions): ReadQueryResult<T> => {
     const result = documents.materializeDocument({
       document: query,
       variables,
-      decisionMode,
+      canonical,
     }) as any;
 
     if (result && result.status === "FULFILLED") {
@@ -201,7 +199,7 @@ export const createQueries = (deps: QueriesDependencies) => {
   const watchQuery = ({
     query,
     variables = {},
-    decisionMode = "canonical",
+    canonical = true,
     onData,
     onError,
     skipInitialEmit = false,
@@ -212,7 +210,7 @@ export const createQueries = (deps: QueriesDependencies) => {
     const watcher: WatcherState = {
       query,
       variables,
-      decisionMode,
+      canonical,
       onData,
       onError,
       deps: new Set(),
@@ -224,7 +222,7 @@ export const createQueries = (deps: QueriesDependencies) => {
     const initial = documents.materializeDocument({
       document: query,
       variables,
-      decisionMode,
+      canonical,
     }) as any;
 
     if (initial?.status === "FULFILLED") {

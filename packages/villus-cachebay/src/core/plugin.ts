@@ -16,7 +16,6 @@ type PluginDependencies = {
 };
 
 type CachePolicy = "cache-and-network" | "cache-first" | "network-only" | "cache-only";
-type DecisionMode = "strict" | "canonical";
 
 export type PluginOptions = {
   /** collapse duplicate cache→network re-emits within this window (ms) */
@@ -25,7 +24,7 @@ export type PluginOptions = {
 
 export function createPlugin(options: PluginOptions, deps: PluginDependencies): ClientPlugin {
   const { planner, queries, ssr } = deps;
-  const { suspensionTimeout = 1000 } = options ?? {};
+  const { suspensionTimeout = 0 } = options ?? {};
 
   // ----------------------------------------------------------------------------
   // Watcher hub: one shared watchQuery per (plan.id | mode | masked vars)
@@ -40,14 +39,14 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
   const acquireHub = (
     sig: string,
-    args: { query: DocumentNode; variables: Record<string, any>; mode: DecisionMode }
+    args: { query: DocumentNode; variables: Record<string, any>; canonical: boolean }
   ) => {
     let hub = hubBySig.get(sig);
     if (!hub) {
       const handle = queries.watchQuery({
         query: args.query,
         variables: args.variables,
-        decisionMode: args.mode,
+        canonical: args.canonical,
         skipInitialEmit: true,
         onData: (data) => {
           const h = hubBySig.get(sig);
@@ -85,8 +84,8 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
   // NEW: mark watcher emissions that are echoes of **our own** network write
   const networkEcho = new Set<string>();
 
-  const firstReadMode = (policy: CachePolicy): DecisionMode =>
-    policy === "cache-first" || policy === "cache-only" ? "strict" : "canonical";
+  const useCanonical = (policy: CachePolicy): boolean =>
+    !(policy === "cache-first" || policy === "cache-only");
 
   const isWithinSuspension = (sig: string) => {
     const last = lastEmitBySig.get(sig);
@@ -96,7 +95,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
   const attachToSig = (
     opKey: number,
     sig: string,
-    args: { query: DocumentNode; variables: Record<string, any>; mode: DecisionMode },
+    args: { query: DocumentNode; variables: Record<string, any>; canonical: boolean },
     emit: (data: any, terminal: boolean) => void
   ) => {
     const prev = ops.get(opKey);
@@ -140,9 +139,9 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     const downstreamUseResult = ctx.useResult;
     const opKey = op.key as number;
 
-    const modeForQuery = firstReadMode(policy);
+    const canonical = useCanonical(policy);
     const canonicalSig = plan.makeSignature("canonical", variables);
-    const readSig = plan.makeSignature(modeForQuery, variables);
+    const readSig = plan.makeSignature(canonical ? "canonical" : "strict", variables);
 
     // ---------------- MUTATION ----------------
     if (plan.operation === "mutation") {
@@ -195,13 +194,13 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     attachToSig(
       opKey,
       canonicalSig,
-      { query: document, variables, mode: "canonical" },
+      { query: document, variables, canonical: true },
       (data, terminal) => emit({ data }, terminal)
     );
 
     // ---------------- SSR hydration quick path (prefer strict cache) -----------
     if (ssr?.isHydrating?.() && policy !== "network-only") {
-      const result = queries.readQuery({ query: document, variables, decisionMode: "strict" });
+      const result = queries.readQuery({ query: document, variables, canonical: false });
       if (result.data) {
         emit({ data: markRaw(result.data), error: null }, true);
         return;
@@ -210,7 +209,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
     // ---------------- “suspension window” cache serve --------------------------
     if (isWithinSuspension(readSig)) {
-      const result = queries.readQuery({ query: document, variables, decisionMode: modeForQuery });
+      const result = queries.readQuery({ query: document, variables, canonical });
       if (result.data) {
         if (policy === "network-only") {
           // terminal to avoid duplicate fetches
@@ -227,7 +226,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
     // ---------------- cache-only ----------------
     if (policy === "cache-only") {
-      const result = queries.readQuery({ query: document, variables, decisionMode: modeForQuery });
+      const result = queries.readQuery({ query: document, variables, canonical });
       if (result.data) {
         emit({ data: markRaw(result.data), error: null }, true);
       } else {
@@ -243,7 +242,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
     // ---------------- cache-first ----------------
     if (policy === "cache-first") {
-      const result = queries.readQuery({ query: document, variables, decisionMode: modeForQuery });
+      const result = queries.readQuery({ query: document, variables, canonical });
       if (result.data) {
         emit({ data: markRaw(result.data), error: null }, true);
         return; // no network
@@ -253,7 +252,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
 
     // ---------------- cache-and-network ----------------
     if (policy === "cache-and-network") {
-      const result = queries.readQuery({ query: document, variables, decisionMode: modeForQuery });
+      const result = queries.readQuery({ query: document, variables, canonical });
       if (result.data) {
         emit({ data: markRaw(result.data), error: null }, false);
         // continue to network
@@ -280,7 +279,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
       }
 
       // Authoritative terminal read (canonical)
-      const result = queries.readQuery({ query: document, variables, decisionMode: "canonical" });
+      const result = queries.readQuery({ query: document, variables, canonical: true });
       if (result.data) {
         emit({ data: markRaw(result.data), error: null }, true);
       } else {

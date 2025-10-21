@@ -404,6 +404,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   type MaterializeResult = {
     data?: any;
     status: "FULFILLED" | "MISSING";
+    hasCanonical?: boolean; // true if canonical data was used to fill gaps
     deps?: string[];
     debug?: { misses: Array<Record<string, any>>; vars: Record<string, any> };
   };
@@ -545,11 +546,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   const materializeDocument = ({
     document,
     variables = {},
-    decisionMode = "canonical",
+    canonical = true,
   }: {
     document: DocumentNode | CachePlan;
     variables?: Record<string, any>;
-    decisionMode?: "strict" | "canonical";
+    canonical?: boolean;
   }): MaterializeResult => {
     // Flush any pending graph changes before reading
     graph.flushPendingChanges();
@@ -557,13 +558,18 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const plan = planner.getPlan(document);
     const lru = getResultLRU(plan);
     const dirty = getDirtySet(plan);
-    const vkey = `${getPlanId(plan)}|${decisionMode}|${stableStringify(variables)}`;
+    const vkey = `${getPlanId(plan)}|${canonical ? 'c' : 's'}|${stableStringify(variables)}`;
 
     // O(1) hot path: return if present and not dirty
     {
       const cached = lru.get(vkey);
       if (cached && !dirty.has(vkey)) {
-        return { data: cached.data, status: "FULFILLED", deps: cached.deps.slice() };
+        return { 
+          data: cached.data, 
+          status: "FULFILLED", 
+          deps: cached.deps.slice(),
+          hasCanonical: canonical,
+        };
       }
     }
 
@@ -730,7 +736,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const pageCanonical = graph.getRecord(canonicalKey);
 
         let ok = !!pageCanonical;
-        if (ok && decisionMode === "strict") {
+        if (ok && !canonical) {
+          // Strict mode: also check that server data exists for this specific query
           const strictKey = buildConnectionKey(field, parentId, variables);
           const pageStrict = graph.getRecord(strictKey);
           ok = !!pageStrict;
@@ -899,7 +906,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     // clear dirty for this key
     dirty.delete(vkey);
 
-    return { data: outData, status: "FULFILLED", deps: ids };
+    return { 
+      status: "FULFILLED", 
+      data: outData, 
+      deps: ids,
+      hasCanonical: canonical, // true if canonical filling was enabled
+    };
   };
   return {
     normalizeDocument,

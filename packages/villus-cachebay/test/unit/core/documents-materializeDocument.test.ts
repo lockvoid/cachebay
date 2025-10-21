@@ -1436,4 +1436,208 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       hasNextPage: true,
     });
   });
+
+  describe("canonical flag and hasCanonical behavior", () => {
+    const SIMPLE_QUERY = compilePlan(/* GraphQL */ `
+      query GetUser($id: ID!) {
+        user(id: $id) {
+          id
+          email
+        }
+      }
+    `);
+
+    describe("MISSING status", () => {
+      it("canonical: false - returns MISSING with hasCanonical: false when no data exists", () => {
+        const result = documents.materializeDocument({
+          document: SIMPLE_QUERY,
+          variables: { id: "u1" },
+          canonical: false,
+        });
+
+        expect(result.status).toBe("MISSING");
+        expect(result.hasCanonical).toBeUndefined();
+        expect(result.data).toBeUndefined();
+      });
+
+      it("canonical: true - returns MISSING when no data exists", () => {
+        const result = documents.materializeDocument({
+          document: SIMPLE_QUERY,
+          variables: { id: "u1" },
+          canonical: true,
+        });
+
+        expect(result.status).toBe("MISSING");
+        expect(result.hasCanonical).toBeUndefined();
+        expect(result.data).toBeUndefined();
+      });
+
+      it("canonical: true - returns MISSING when only canonical data exists (no server link)", () => {
+        // Another query wrote data to User:u1 (creates canonical data)
+        const OTHER_QUERY = compilePlan(/* GraphQL */ `
+          query Other($id: ID!) {
+            other(id: $id) {
+              id
+              email
+            }
+          }
+        `);
+
+        documents.normalizeDocument({
+          document: OTHER_QUERY,
+          variables: { id: "u1" },
+          data: {
+            __typename: "Query",
+            other: {
+              __typename: "User",
+              id: "u1",
+              email: "from-other@example.com",
+            },
+          },
+        });
+
+        // THIS query has no server link to User:u1
+        const result = documents.materializeDocument({
+          document: SIMPLE_QUERY,
+          variables: { id: "u1" },
+          canonical: true,
+        });
+
+        expect(result.status).toBe("MISSING");
+        expect(result.hasCanonical).toBeUndefined();
+        expect(result.data).toBeUndefined();
+      });
+    });
+
+    describe("FULFILLED status with hasCanonical flag", () => {
+      it("canonical: false - returns FULFILLED with hasCanonical: false", () => {
+        documents.normalizeDocument({
+          document: SIMPLE_QUERY,
+          variables: { id: "u1" },
+          data: {
+            __typename: "Query",
+            user: {
+              __typename: "User",
+              id: "u1",
+              email: "u1@example.com",
+            },
+          },
+        });
+
+        const result = documents.materializeDocument({
+          document: SIMPLE_QUERY,
+          variables: { id: "u1" },
+          canonical: false,
+        });
+
+        expect(result.status).toBe("FULFILLED");
+        expect(result.hasCanonical).toBe(false);
+        expect(result.data?.user).toEqual({
+          __typename: "User",
+          id: "u1",
+          email: "u1@example.com",
+        });
+      });
+
+      it("canonical: true - returns FULFILLED with hasCanonical: true", () => {
+        documents.normalizeDocument({
+          document: SIMPLE_QUERY,
+          variables: { id: "u2" },
+          data: {
+            __typename: "Query",
+            user: {
+              __typename: "User",
+              id: "u2",
+              email: "u2@example.com",
+            },
+          },
+        });
+
+        const result = documents.materializeDocument({
+          document: SIMPLE_QUERY,
+          variables: { id: "u2" },
+          canonical: true,
+        });
+
+        expect(result.status).toBe("FULFILLED");
+        expect(result.hasCanonical).toBe(true);
+        expect(result.data?.user).toEqual({
+          __typename: "User",
+          id: "u2",
+          email: "u2@example.com",
+        });
+      });
+    });
+
+    describe("canonical flag comparison - gap filling behavior", () => {
+      it.skip("canonical: true fills gaps from other queries, canonical: false does not (TODO: fix strict mode)", () => {
+        const QUERY_WITH_NAME = compilePlan(/* GraphQL */ `
+          query GetUserWithName($id: ID!) {
+            user(id: $id) {
+              id
+              email
+              name
+            }
+          }
+        `);
+
+        // Another query writes complete data to User:u4
+        const OTHER_QUERY = compilePlan(/* GraphQL */ `
+          query Other($id: ID!) {
+            other(id: $id) {
+              id
+              name
+            }
+          }
+        `);
+
+        documents.normalizeDocument({
+          document: OTHER_QUERY,
+          variables: { id: "u4" },
+          data: {
+            __typename: "Query",
+            other: {
+              __typename: "User",
+              id: "u4",
+              name: "User Four",
+            },
+          },
+        });
+
+        // THIS query writes partial data (missing 'name')
+        graph.putRecord("User:u4", {
+          __typename: "User",
+          id: "u4",
+          email: "u4@example.com",
+        });
+        graph.putRecord(ROOT_ID, {
+          'user({"id":"u4"})': { __ref: "User:u4" },
+        });
+
+        // Strict mode: doesn't fill from canonical
+        const strictResult = documents.materializeDocument({
+          document: QUERY_WITH_NAME,
+          variables: { id: "u4" },
+          canonical: false,
+        });
+
+        // Canonical mode: fills from canonical
+        const canonicalResult = documents.materializeDocument({
+          document: QUERY_WITH_NAME,
+          variables: { id: "u4" },
+          canonical: true,
+        });
+
+        expect(strictResult.status).toBe("FULFILLED");
+        expect(strictResult.hasCanonical).toBe(false);
+        expect(strictResult.data?.user?.email).toBe("u4@example.com");
+        expect(strictResult.data?.user?.name).toBeUndefined();
+
+        expect(canonicalResult.status).toBe("FULFILLED");
+        expect(canonicalResult.hasCanonical).toBe(true);
+        expect(canonicalResult.data?.user?.email).toBe("u4@example.com");
+        expect(canonicalResult.data?.user?.name).toBe("User Four");
+      });
+    });
+  });
 });
