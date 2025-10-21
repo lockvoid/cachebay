@@ -4,7 +4,7 @@ import { markRaw } from "vue";
 import { CACHEBAY_KEY } from "./constants";
 import type { QueriesInstance } from "./queries";
 import type { PlannerInstance } from "./planner";
-import type { SSRInstance } from "../features/ssr";
+import type { SSRInstance } from "./ssr";
 import type { DocumentNode } from "graphql";
 import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus";
 import type { App } from "vue";

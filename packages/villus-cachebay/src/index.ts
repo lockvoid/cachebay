@@ -2,8 +2,8 @@
 // Perf: AST/doc caching, Relay view syncing, weak caches, microtask batching.
 
 // Public entry for consumers.
-export { createCache } from "./core/internals";
-export type { CachebayInstance } from "./core/internals";
+export { createCache } from "./core";
+export type { CachebayInstance } from "./core";
 
 // Vue composables
 export { useCache } from "./composables/useCache";

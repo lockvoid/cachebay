@@ -3,7 +3,7 @@ import { Session } from 'node:inspector';
 import { writeFileSync } from 'node:fs';
 
 // ---- cachebay ----
-import { createCache } from "../../villus-cachebay/src/core/internals";
+import { createCache } from "villus-cachebay/src/core";
 
 // ---- apollo ----
 import { InMemoryCache } from "@apollo/client/cache";
@@ -87,7 +87,7 @@ function stopProfile(name: string) {
         resolve();
         return;
       }
-      
+
       const filename = `profile-${name}.cpuprofile`;
       writeFileSync(filename, JSON.stringify(profile));
       console.log(`✅ Profile saved: ${filename}`);
@@ -99,9 +99,9 @@ function stopProfile(name: string) {
 
 async function profileCachebay() {
   startProfile('cachebay-write');
-  
+
   const cache = createCachebay();
-  
+
   // Warm up
   for (let i = 0; i < 10; i++) {
     const p = pages[i];
@@ -111,7 +111,7 @@ async function profileCachebay() {
       data: p.data,
     });
   }
-  
+
   // Profile the full write
   for (let i = 0; i < pages.length; i++) {
     const p = pages[i];
@@ -121,37 +121,37 @@ async function profileCachebay() {
       data: p.data,
     });
   }
-  
+
   await stopProfile('cachebay-write');
 }
 
 async function profileRelay() {
   startProfile('relay-write');
-  
+
   const relay = createRelayEnvironment();
-  
+
   // Warm up
   for (let i = 0; i < 10; i++) {
     const p = pages[i];
     const operation = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, p.vars);
     relay.commitPayload(operation, p.data);
   }
-  
+
   // Profile the full write
   for (let i = 0; i < pages.length; i++) {
     const p = pages[i];
     const operation = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, p.vars);
     relay.commitPayload(operation, p.data);
   }
-  
+
   await stopProfile('relay-write');
 }
 
 async function profileApollo() {
   startProfile('apollo-write');
-  
+
   const apollo = createApolloCache();
-  
+
   // Warm up
   for (let i = 0; i < 10; i++) {
     const p = pages[i];
@@ -162,7 +162,7 @@ async function profileApollo() {
       data: p.data,
     });
   }
-  
+
   // Profile the full write
   for (let i = 0; i < pages.length; i++) {
     const p = pages[i];
@@ -173,7 +173,7 @@ async function profileApollo() {
       data: p.data,
     });
   }
-  
+
   await stopProfile('apollo-write');
 }
 
@@ -181,12 +181,12 @@ async function profileApollo() {
 async function main() {
   await profileCachebay();
   await new Promise(resolve => setTimeout(resolve, 100));
-  
+
   await profileRelay();
   await new Promise(resolve => setTimeout(resolve, 100));
-  
+
   await profileApollo();
-  
+
   session.disconnect();
   console.log('\n✨ All profiles complete!');
   console.log('Load .cpuprofile files in Chrome DevTools to analyze');

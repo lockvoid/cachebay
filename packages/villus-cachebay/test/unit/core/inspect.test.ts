@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createGraph } from "@/src/core/graph";
-import { createInspect } from "@/src/features/inspect";
+import { createInspect } from "@/src/core/inspect";
 import { writeConnectionPage } from "@/test/helpers/unit";
 
 describe("Inspect", () => {

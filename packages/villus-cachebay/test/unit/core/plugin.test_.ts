@@ -8,7 +8,7 @@ import { createPlugin } from "@/src/core/plugin";
 import { createQueries } from "@/src/core/queries";
 import { buildConnectionKey } from "@/src/core/utils";
 import { createViews } from "@/src/core/views";
-import { createSSR } from "@/src/features/ssr";
+import { createSSR } from "@/src/core/ssr";
 import { operations, writeConnectionPage } from "@/test/helpers";
 import type { OperationResult } from "villus";
 

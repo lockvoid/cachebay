@@ -1,7 +1,7 @@
 import { gql } from "graphql-tag";
 import { createClient, useQuery, fetch as fetchPlugin } from "villus";
 import { createApp, defineComponent, nextTick, watch } from "vue";
-import { createCache } from "../../../villus-cachebay/src/core/internals";
+import { createCache } from "villus-cachebay/src/core";
 
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {

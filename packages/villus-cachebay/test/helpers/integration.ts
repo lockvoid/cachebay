@@ -1,7 +1,7 @@
 import { createClient } from "villus";
 import { fetch as villusFetch } from "villus";
 import { defineComponent, h, computed, watch, Suspense } from "vue";
-import { createCache } from "@/src/core/internals";
+import { createCache } from "@/src/core";
 import { tick, delay } from "./concurrency";
 
 export async function seedCache(cache, { query, variables, data }) {

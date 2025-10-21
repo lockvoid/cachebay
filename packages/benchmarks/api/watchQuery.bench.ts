@@ -2,7 +2,7 @@
 import { bench, describe } from "vitest";
 
 // ---- cachebay ----
-import { createCache } from "../../villus-cachebay/src/core/internals";
+import { createCache } from "villus-cachebay/src/core";
 
 // ---- apollo ----
 import { InMemoryCache } from "@apollo/client/cache";

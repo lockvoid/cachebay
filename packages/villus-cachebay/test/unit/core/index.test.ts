@@ -1,5 +1,5 @@
 import { CACHEBAY_KEY } from "@/src/core/constants";
-import { createCache } from "@/src/core/internals";
+import { createCache } from "@/src/core";
 
 describe("createCache", () => {
   it("exposes public apis", () => {
@@ -15,7 +15,6 @@ describe("createCache", () => {
 
     expect(cache.__internals.graph).toBeTruthy();
     expect(cache.__internals.optimistic).toBeTruthy();
-    expect(cache.__internals.views).toBeTruthy();
     expect(cache.__internals.planner).toBeTruthy();
     expect(cache.__internals.canonical).toBeTruthy();
     expect(cache.__internals.documents).toBeTruthy();

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createGraph } from "@/src/core/graph";
-import { createSSR } from "@/src/features/ssr";
+import { createSSR } from "@/src/core/ssr";
 import { delay } from "@/test/helpers";
 import { writeConnectionPage } from "@/test/helpers/unit";
 

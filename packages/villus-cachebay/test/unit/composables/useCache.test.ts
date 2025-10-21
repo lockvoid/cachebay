@@ -2,7 +2,7 @@ import { mount } from "@vue/test-utils";
 import { describe, it, expect } from "vitest";
 import { defineComponent, h } from "vue";
 import { useCache } from "@/src/composables/useCache";
-import { createCache } from "@/src/core/internals";
+import { createCache } from "@/src/core";
 import { provideCachebay } from "@/src/core/plugin";
 
 describe("useCache", () => {
@@ -24,7 +24,7 @@ describe("useCache", () => {
     const cache = createCache();
 
     let cacheApi: any;
-    
+
     const App = defineComponent({
       setup() {
         cacheApi = useCache();
@@ -43,7 +43,7 @@ describe("useCache", () => {
         ],
       },
     });
-    
+
     expect(cacheApi).toBe(cache);
     expect(cacheApi.identify).toBe(cache.identify);
     expect(cacheApi.readFragment).toBe(cache.readFragment);

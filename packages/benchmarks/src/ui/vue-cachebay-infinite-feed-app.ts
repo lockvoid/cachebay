@@ -1,7 +1,7 @@
 import { gql } from "graphql-tag";
 import { createClient, useQuery, fetch as fetchPlugin } from "villus";
 import { createApp, defineComponent, ref, reactive, nextTick, computed, watch } from "vue";
-import { createCache } from "../../../villus-cachebay/src/core/internals";
+import { createCache } from "villus-cachebay/src/core";
 
 const FEED_QUERY = gql`
   query Feed($first: Int!, $after: String) {

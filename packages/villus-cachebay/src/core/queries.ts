@@ -1,4 +1,4 @@
-import { markRaw } from "vue";
+// src/core/queries.ts
 import type { DocumentsInstance } from "./documents";
 import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
@@ -13,14 +13,16 @@ export type QueriesDependencies = {
 export type ReadQueryOptions = {
   query: DocumentNode;
   variables?: Record<string, any>;
+  /** use canonical fill (default: true) */
   canonical?: boolean;
 };
 
 export type ReadQueryResult<T = any> = {
   data: T | undefined;
   deps: string[];
-  status?: "FULFILLED" | "MISSING";
-  hasCanonical?: boolean;
+  /** 'strict' | 'canonical' | 'none' */
+  source: "strict" | "canonical" | "none";
+  ok: { strict: boolean; canonical: boolean };
 };
 
 export type WriteQueryOptions = {
@@ -49,11 +51,8 @@ export type WatchQueryHandle = {
 
 export type QueriesInstance = ReturnType<typeof createQueries>;
 
-export const createQueries = (deps: QueriesDependencies) => {
-  const { documents } = deps;
-
+export const createQueries = ({ documents }: QueriesDependencies) => {
   // --- Watcher state & indices ---
-
   type WatcherState = {
     query: DocumentNode;
     variables: Record<string, any>;
@@ -69,7 +68,6 @@ export const createQueries = (deps: QueriesDependencies) => {
   let watcherSeq = 1;
 
   // --- Batched broadcasting ---
-
   let pendingTouched = new Set<string>();
   let flushScheduled = false;
 
@@ -81,11 +79,9 @@ export const createQueries = (deps: QueriesDependencies) => {
       flushScheduled = false;
       if (pendingTouched.size === 0) return;
 
-      // Drain once per microtask
       const touched = Array.from(pendingTouched);
       pendingTouched.clear();
 
-      // Find affected watchers
       const affected = new Set<number>();
       for (const id of touched) {
         const ws = depIndex.get(id);
@@ -93,43 +89,41 @@ export const createQueries = (deps: QueriesDependencies) => {
       }
       if (affected.size === 0) return;
 
-      // Re-materialize and conditionally emit
       for (const k of affected) {
-        const watcher = watchers.get(k);
-        if (!watcher) continue;
+        const w = watchers.get(k);
+        if (!w) continue;
 
         const result = documents.materializeDocument({
-          document: watcher.query,
-          variables: watcher.variables,
-          canonical: watcher.canonical,
+          document: w.query,
+          variables: w.variables,
+          canonical: w.canonical,
         }) as any;
 
-        if (!result || result.status !== "FULFILLED") continue;
+        // Always refresh deps so missing -> fulfilled transitions trigger
+        updateWatcherDeps(k, result?.deps || []);
 
-        // Update dep index with delta
-        updateWatcherDeps(k, result.deps || []);
+        if (!result || result.source === "none") continue;
 
-        // Emit only on identity change
-        if (result.data !== watcher.lastData) {
-          watcher.lastData = result.data;
+        if (result.data !== w.lastData) {
+          w.lastData = result.data;
           try {
-            watcher.onData(markRaw(result.data));
+            w.onData(result.data);
           } catch (e) {
-            watcher.onError?.(e as Error);
+            w.onError?.(e as Error);
           }
         }
       }
     });
   };
 
-  const enqueueTouched = (touched?: Set<string>) => {
-    if (!touched || touched.size === 0) return;
-    for (const id of touched) pendingTouched.add(id);
+  const enqueueTouched = (touched?: Set<string> | string[]) => {
+    if (!touched) return;
+    const arr = Array.isArray(touched) ? touched : Array.from(touched);
+    for (const id of arr) pendingTouched.add(id);
     scheduleFlush();
   };
 
-  // --- Dep index maintenance (delta-based) ---
-
+  // --- Dep index maintenance ---
   const updateWatcherDeps = (watcherId: number, nextDepsArr: string[]) => {
     const watcher = watchers.get(watcherId);
     if (!watcher) return;
@@ -137,27 +131,31 @@ export const createQueries = (deps: QueriesDependencies) => {
     const old = watcher.deps;
     const next = new Set(nextDepsArr);
 
-    // Fast path: identical sets
+    // fast path
     if (old.size === next.size) {
       let same = true;
       for (const d of old) if (!next.has(d)) { same = false; break; }
       if (same) return;
     }
 
-    // Remove removed deps
-    for (const d of old) if (!next.has(d)) {
-      const set = depIndex.get(d);
-      if (set) {
-        set.delete(watcherId);
-        if (set.size === 0) depIndex.delete(d);
+    // remove old
+    for (const d of old) {
+      if (!next.has(d)) {
+        const set = depIndex.get(d);
+        if (set) {
+          set.delete(watcherId);
+          if (set.size === 0) depIndex.delete(d);
+        }
       }
     }
 
-    // Add new deps
-    for (const d of next) if (!old.has(d)) {
-      let set = depIndex.get(d);
-      if (!set) depIndex.set(d, (set = new Set()));
-      set.add(watcherId);
+    // add new
+    for (const d of next) {
+      if (!old.has(d)) {
+        let set = depIndex.get(d);
+        if (!set) depIndex.set(d, (set = new Set()));
+        set.add(watcherId);
+      }
     }
 
     watcher.deps = next;
@@ -176,19 +174,20 @@ export const createQueries = (deps: QueriesDependencies) => {
       canonical,
     }) as any;
 
-    if (result && result.status === "FULFILLED") {
+    if (result && result.source !== "none") {
       return {
-        data: markRaw(result.data) as T,
+        data: result.data as T,
         deps: result.deps || [],
-        status: result.status,
-        hasCanonical: result.hasCanonical,
+        source: result.source,
+        ok: result.ok ?? { strict: true, canonical: true },
       };
     }
+
     return {
       data: undefined,
-      deps: [],
-      status: result?.status || "MISSING",
-      hasCanonical: result?.hasCanonical,
+      deps: result?.deps || [],
+      source: "none",
+      ok: result?.ok ?? { strict: false, canonical: false },
     };
   };
 
@@ -197,13 +196,13 @@ export const createQueries = (deps: QueriesDependencies) => {
     variables = {},
     data,
   }: WriteQueryOptions): WriteQueryResult => {
-    const result = documents.normalizeDocument({
+    const res = documents.normalizeDocument({
       document: query,
       variables,
       data,
     }) as any;
 
-    const touched = result?.touched || new Set<string>();
+    const touched: Set<string> = res?.touched || new Set<string>();
     enqueueTouched(touched);
     return { touched };
   };
@@ -218,7 +217,6 @@ export const createQueries = (deps: QueriesDependencies) => {
   }: WatchQueryOptions): WatchQueryHandle => {
     const watcherId = watcherSeq++;
 
-    // Create state now (so we can index it after initial read)
     const watcher: WatcherState = {
       query,
       variables,
@@ -230,37 +228,32 @@ export const createQueries = (deps: QueriesDependencies) => {
     };
     watchers.set(watcherId, watcher);
 
-    // Initial read
     const initial = documents.materializeDocument({
       document: query,
       variables,
       canonical,
     }) as any;
 
-    if (initial?.status === "FULFILLED") {
+    // Track deps even if initial data is missing
+    updateWatcherDeps(watcherId, initial?.deps || []);
+
+    if (initial && initial.source !== "none") {
       watcher.lastData = initial.data;
-      updateWatcherDeps(watcherId, initial.deps || []);
       if (!skipInitialEmit) {
         try {
-          onData(markRaw(initial.data));
+          onData(initial.data);
         } catch (e) {
           onError?.(e as Error);
         }
       }
-    } else {
-      // IMPORTANT: Register deps even for MISSING queries so watcher triggers when data arrives
-      updateWatcherDeps(watcherId, initial?.deps || []);
-      if (onError && !skipInitialEmit) {
-        onError(new Error("Query returned no data"));
-      }
+    } else if (onError && !skipInitialEmit) {
+      onError(new Error("Query returned no data"));
     }
 
     return {
       unsubscribe: () => {
         const w = watchers.get(watcherId);
         if (!w) return;
-
-        // Remove from dep index
         for (const d of w.deps) {
           const set = depIndex.get(d);
           if (set) {
@@ -281,12 +274,13 @@ export const createQueries = (deps: QueriesDependencies) => {
           canonical: w.canonical,
         }) as any;
 
-        if (res?.status === "FULFILLED") {
-          updateWatcherDeps(watcherId, res.deps || []);
+        updateWatcherDeps(watcherId, res?.deps || []);
+
+        if (res && res.source !== "none") {
           if (res.data !== w.lastData) {
             w.lastData = res.data;
             try {
-              w.onData(markRaw(res.data));
+              w.onData(res.data);
             } catch (e) {
               w.onError?.(e as Error);
             }

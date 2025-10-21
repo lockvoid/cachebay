@@ -127,6 +127,26 @@ function ensureTypename(ss: SelectionSetNode): SelectionSetNode {
   return { ...ss, selections: [...ss.selections, typenameField] };
 }
 
+/** Recursively add __typename to all selection sets (for fragments) */
+function ensureTypenameRecursive(ss: SelectionSetNode): SelectionSetNode {
+  // First add __typename to this level
+  const withTypename = ensureTypename(ss);
+  
+  // Then recursively process all field selections
+  const selections = withTypename.selections.map(sel => {
+    if (sel.kind === Kind.FIELD && sel.selectionSet) {
+      return { ...sel, selectionSet: ensureTypenameRecursive(sel.selectionSet) };
+    }
+    if (sel.kind === Kind.INLINE_FRAGMENT && sel.selectionSet) {
+      return { ...sel, selectionSet: ensureTypenameRecursive(sel.selectionSet) };
+    }
+    // FragmentSpreads are handled separately
+    return sel;
+  });
+  
+  return { ...withTypename, selections };
+}
+
 /** Create a network-safe copy: add __typename to nested selections; strip @connection. */
 function buildNetworkQuery(doc: DocumentNode): DocumentNode {
   return visit(doc, {
@@ -258,8 +278,8 @@ export const compilePlan = (
 
     const parentTypename = frag.typeCondition.name.value;
 
-    // For fragments, ensure __typename is in the selection (unlike operations where we skip root __typename)
-    const fragSelectionWithTypename = ensureTypename(frag.selectionSet);
+    // For fragments, ensure __typename is in ALL selections recursively (unlike operations where we skip root __typename)
+    const fragSelectionWithTypename = ensureTypenameRecursive(frag.selectionSet);
     const root = lowerSelectionSet(fragSelectionWithTypename, parentTypename, fragmentsByName);
     const rootSelectionMap = indexByResponseKey(root);
 

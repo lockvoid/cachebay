@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createCache } from "@/src/core/internals";
+import { createCache } from "@/src/core";
 import { gql } from "graphql-tag";
+
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
 describe("queries API", () => {
   let cache: ReturnType<typeof createCache>;
@@ -10,6 +12,7 @@ describe("queries API", () => {
       keys: {
         User: (u: any) => u.id,
         Post: (p: any) => p.id,
+        Profile: (p: any) => p.id,
       },
     });
   });
@@ -42,7 +45,7 @@ describe("queries API", () => {
 
       expect(writeResult.touched.size).toBeGreaterThan(0);
 
-      // Read it back
+      // Read it back (default = canonical true)
       const readResult = cache.readQuery({
         query: QUERY,
         variables: { id: "1" },
@@ -57,9 +60,10 @@ describe("queries API", () => {
         },
       });
       expect(readResult.deps.length).toBeGreaterThan(0);
+      expect(readResult.source === "canonical" || readResult.source === "strict").toBe(true);
     });
 
-    it("returns undefined for missing data", () => {
+    it("returns no data but provides deps for missing data", () => {
       const QUERY = gql`
         query GetUser($id: ID!) {
           user(id: $id) {
@@ -75,10 +79,13 @@ describe("queries API", () => {
       });
 
       expect(result.data).toBeUndefined();
-      expect(result.deps).toEqual([]);
+      // With new materialization, deps should be present so watchers can subscribe.
+      expect(result.deps.length).toBeGreaterThan(0);
+      expect(result.source).toBe("none");
+      expect(result.ok).toBeDefined();
     });
 
-    it("supports decisionMode", () => {
+    it("supports canonical flag (strict vs canonical)", () => {
       const QUERY = gql`
         query GetUser($id: ID!) {
           user(id: $id) {
@@ -96,23 +103,23 @@ describe("queries API", () => {
         },
       });
 
-      // Strict mode
+      // Strict mode (canonical: false)
       const strictResult = cache.readQuery({
         query: QUERY,
         variables: { id: "1" },
-        decisionMode: "strict",
+        canonical: false,
       });
-
       expect(strictResult.data).toBeDefined();
+      expect(strictResult.source === "strict" || strictResult.source === "canonical").toBe(true);
 
-      // Canonical mode
+      // Canonical mode (canonical: true)
       const canonicalResult = cache.readQuery({
         query: QUERY,
         variables: { id: "1" },
-        decisionMode: "canonical",
+        canonical: true,
       });
-
       expect(canonicalResult.data).toBeDefined();
+      expect(canonicalResult.source === "canonical" || canonicalResult.source === "strict").toBe(true);
     });
   });
 
@@ -147,7 +154,7 @@ describe("queries API", () => {
         },
       });
 
-      // Initial emission
+      // Initial emission (watchers emit immediately on fulfilled data)
       expect(emissions).toHaveLength(1);
       expect(emissions[0].user.name).toBe("Alice");
 
@@ -160,8 +167,8 @@ describe("queries API", () => {
         },
       });
 
-      // Wait for microtask to flush
-      await new Promise((resolve) => queueMicrotask(resolve));
+      // Wait for microtask to flush batched notifications
+      await tick();
 
       // Should have emitted again
       expect(emissions).toHaveLength(2);
@@ -204,7 +211,7 @@ describe("queries API", () => {
       // Update data directly (not via writeQuery)
       cache.__internals.graph.putRecord("User:1", { name: "Bob" });
 
-      // Manually refetch
+      // Manually refetch (should emit synchronously with current snapshot)
       handle.refetch();
 
       expect(emissions).toHaveLength(2);
@@ -255,7 +262,7 @@ describe("queries API", () => {
         },
       });
 
-      await new Promise((resolve) => queueMicrotask(resolve));
+      await tick();
 
       // Should NOT have emitted again
       expect(emissions).toHaveLength(1);
@@ -330,7 +337,7 @@ describe("queries API", () => {
       });
 
       // Wait for microtask
-      await new Promise((resolve) => queueMicrotask(resolve));
+      await tick();
 
       // User query should have triggered because Profile:p1 is in its deps
       expect(emissions).toHaveLength(2);
@@ -406,7 +413,7 @@ describe("queries API", () => {
       });
 
       // Wait for microtask
-      await new Promise((resolve) => queueMicrotask(resolve));
+      await tick();
 
       // Query should have triggered because User:1 was updated
       expect(emissions).toHaveLength(2);

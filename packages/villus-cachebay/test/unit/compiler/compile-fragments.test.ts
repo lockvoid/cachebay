@@ -42,6 +42,61 @@ describe("Compiler x Fragments", () => {
     expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
 
+  it("includes __typename in pageInfo and edges for connection fields", () => {
+    // Fragment with connection but no explicit __typename in pageInfo
+    const FRAGMENT = gql`
+      fragment UserPosts on User {
+        posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(filters: ["category"]) {
+          totalCount
+          pageInfo {
+            startCursor
+            endCursor
+            hasNextPage
+            hasPreviousPage
+          }
+          edges {
+            cursor
+            node {
+              id
+              title
+            }
+          }
+        }
+      }
+    `;
+
+    const plan = compilePlan(FRAGMENT, { fragmentName: "UserPosts" });
+
+    // Check root has __typename
+    expect(plan.root.find(f => f.fieldName === "__typename")).toBeDefined();
+
+    // Check posts connection field
+    const posts = plan.rootSelectionMap!.get("posts")!;
+    expect(posts.isConnection).toBe(true);
+
+    // Check pageInfo has __typename in its selection
+    const pageInfo = posts.selectionMap!.get("pageInfo")!;
+    expect(pageInfo).toBeDefined();
+    const pageInfoTypename = pageInfo.selectionSet?.find(f => f.fieldName === "__typename");
+    expect(pageInfoTypename).toBeDefined();
+    expect(pageInfoTypename?.responseKey).toBe("__typename");
+
+    // Check edges has __typename
+    const edges = posts.selectionMap!.get("edges")!;
+    expect(edges).toBeDefined();
+    const edgesTypename = edges.selectionSet?.find(f => f.fieldName === "__typename");
+    expect(edgesTypename).toBeDefined();
+
+    // Check node has __typename
+    const node = edges.selectionMap!.get("node")!;
+    expect(node).toBeDefined();
+    const nodeTypename = node.selectionSet?.find(f => f.fieldName === "__typename");
+    expect(nodeTypename).toBeDefined();
+
+    // Verify network query has typenames everywhere
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
+  });
+
   it("compiles a fragment with a connection using @connection; builds selectionMap on nested sets", () => {
     const plan = compilePlan(operations.USER_POSTS_FRAGMENT, { fragmentName: "UserPosts" });
 
