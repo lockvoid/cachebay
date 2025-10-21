@@ -761,7 +761,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
             // array-of-refs
             if (link && typeof link === "object" && Array.isArray(link.__refs)) {
-              const refs: string[] = link.__refs.slice();
+              const refs: string[] = link.__refs;
               const arrOut: any[] = new Array(refs.length);
               out[f.responseKey] = arrOut;
 
@@ -865,7 +865,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               const edgesRaw = (page as any).edges;
               let refs: string[] = [];
               if (edgesRaw && typeof edgesRaw === "object" && Array.isArray(edgesRaw.__refs)) {
-                refs = edgesRaw.__refs.slice();
+                refs = edgesRaw.__refs;
               } else if (Array.isArray(edgesRaw)) {
                 // derive edge record ids based on the *requested* mode's baseKey
                 refs = edgesRaw.map((_: any, i: number) => `${baseKey}.edges.${i}`);
@@ -903,7 +903,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
             const link = (page as any)[buildFieldKey(pf, variables)];
             if (link && typeof link === "object" && Array.isArray(link.__refs)) {
-              const refs: string[] = link.__refs.slice();
+              const refs: string[] = link.__refs;
               const arrOut: any[] = new Array(refs.length);
               conn[pf.responseKey] = arrOut;
 

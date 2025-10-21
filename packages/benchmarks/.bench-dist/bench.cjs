@@ -36872,6 +36872,372 @@ if (false) {} else {
 
 
 }),
+"./api/readQuery.bench.ts": (function (module, __webpack_exports__, __webpack_require__) {
+"use strict";
+__webpack_require__.a(module, async function (__webpack_handle_async_dependencies__, __webpack_async_result__) { try {
+__webpack_require__.r(__webpack_exports__);
+/* ESM import */var mitata__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__("mitata");
+/* ESM import */var mitata__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(mitata__WEBPACK_IMPORTED_MODULE_0__);
+/* ESM import */var _villus_cachebay_src_core_client__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__("../villus-cachebay/src/core/client.ts");
+/* ESM import */var _apollo_client_cache__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__("../../node_modules/.pnpm/@apollo+client@3.14.0_@types+react@19.2.2_graphql@16.11.0_react-dom@18.3.1_react@18.3.1__react@18.3.1/node_modules/@apollo/client/cache/inmemory/inMemoryCache.js");
+/* ESM import */var _apollo_client_utilities__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__("../../node_modules/.pnpm/@apollo+client@3.14.0_@types+react@19.2.2_graphql@16.11.0_react-dom@18.3.1_react@18.3.1__react@18.3.1/node_modules/@apollo/client/utilities/policies/pagination.js");
+/* ESM import */var relay_runtime__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__("../../node_modules/.pnpm/relay-runtime@16.2.0_encoding@0.1.13/node_modules/relay-runtime/index.js");
+/* ESM import */var relay_runtime__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(relay_runtime__WEBPACK_IMPORTED_MODULE_2__);
+/* ESM import */var _src_generated_relayWriteQueryDefRelayWriteQuery_graphql__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__("./src/__generated__/relayWriteQueryDefRelayWriteQuery.graphql.ts");
+/* ESM import */var _utils__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__("./api/utils.ts");
+// perf/readQuery-vs-apollo.bench.ts
+
+// ---- cachebay ----
+
+// ---- apollo ----
+
+
+// ---- relay ----
+
+
+// ---- shared ----
+
+// sink to force result consumption
+let __sink = 0;
+const sinkObj = (o)=>{
+    var _o_users_edges, _o_users;
+    __sink ^= ((o === null || o === void 0 ? void 0 : (_o_users = o.users) === null || _o_users === void 0 ? void 0 : (_o_users_edges = _o_users.edges) === null || _o_users_edges === void 0 ? void 0 : _o_users_edges.length) ?? 0) | 0;
+};
+// -----------------------------------------------------------------------------
+// Rigs
+// -----------------------------------------------------------------------------
+function createCachebay() {
+    return (0,_villus_cachebay_src_core_client__WEBPACK_IMPORTED_MODULE_1__.createCache)({
+        keys: {
+            Query: ()=>"Query",
+            User: (o)=>o.id ?? null,
+            Post: (o)=>o.id ?? null,
+            Comment: (o)=>o.id ?? null
+        }
+    });
+}
+function createApolloCache(resultCaching = false) {
+    return new _apollo_client_cache__WEBPACK_IMPORTED_MODULE_5__.InMemoryCache({
+        resultCaching,
+        typePolicies: {
+            Query: {
+                fields: {
+                    users: (0,_apollo_client_utilities__WEBPACK_IMPORTED_MODULE_6__.relayStylePagination)()
+                }
+            },
+            User: {
+                keyFields: [
+                    "id"
+                ],
+                fields: {
+                    posts: (0,_apollo_client_utilities__WEBPACK_IMPORTED_MODULE_6__.relayStylePagination)()
+                }
+            },
+            Post: {
+                keyFields: [
+                    "id"
+                ],
+                fields: {
+                    comments: (0,_apollo_client_utilities__WEBPACK_IMPORTED_MODULE_6__.relayStylePagination)()
+                }
+            },
+            Comment: {
+                keyFields: [
+                    "id"
+                ]
+            }
+        }
+    });
+}
+function createRelayEnvironment() {
+    return new relay_runtime__WEBPACK_IMPORTED_MODULE_2__.Environment({
+        network: relay_runtime__WEBPACK_IMPORTED_MODULE_2__.Network.create(()=>Promise.resolve({
+                data: {}
+            })),
+        store: new relay_runtime__WEBPACK_IMPORTED_MODULE_2__.Store(new relay_runtime__WEBPACK_IMPORTED_MODULE_2__.RecordSource())
+    });
+}
+// -----------------------------------------------------------------------------
+// Shared data
+// -----------------------------------------------------------------------------
+const USERS_TOTAL = 100;
+const PAGE_SIZE = 10;
+const allUsers = Object.freeze((0,_utils__WEBPACK_IMPORTED_MODULE_4__.makeResponse)({
+    users: USERS_TOTAL,
+    posts: 5,
+    comments: 3
+}));
+const pages = (0,_utils__WEBPACK_IMPORTED_MODULE_4__.buildPages)(allUsers, PAGE_SIZE);
+const label = `${USERS_TOTAL} users (${pages.length} pages of ${PAGE_SIZE})`;
+// -----------------------------------------------------------------------------
+// Cold paths
+// -----------------------------------------------------------------------------
+(0,mitata__WEBPACK_IMPORTED_MODULE_0__.summary)(()=>{
+    (0,mitata__WEBPACK_IMPORTED_MODULE_0__.group)("readQuery – COLD paths", ()=>{
+        // Cachebay: readQuery:canonical:cold (new instance per iteration)
+        (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`cachebay.readQuery:canonical:cold(${label})`, function*() {
+            yield {
+                // Computed parameter: create fresh instance before each iteration (not timed)
+                [0] () {
+                    const cache = createCachebay();
+                    for(let i = 0; i < pages.length; i++){
+                        cache.writeQuery({
+                            query: _utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY,
+                            variables: pages[i].vars,
+                            data: pages[i].data
+                        });
+                        cache.readQuery({
+                            query: _utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY,
+                            variables: pages[i].vars,
+                            canonical: true
+                        });
+                    }
+                    return cache;
+                },
+                // Benchmark: only measure the read (timed)
+                bench (cache) {
+                    const res = cache.readQuery({
+                        query: _utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY,
+                        variables: {
+                            first: PAGE_SIZE,
+                            after: null
+                        },
+                        canonical: true
+                    });
+                    sinkObj(res.data);
+                }
+            };
+        });
+        // Cachebay: readQuery:strict:cold (new instance per iteration)
+        (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`cachebay.readQuery:strict:cold(${label})`, function*() {
+            yield {
+                // Computed parameter: create fresh instance before each iteration (not timed)
+                [0] () {
+                    const cache = createCachebay();
+                    for(let i = 0; i < pages.length; i++){
+                        cache.writeQuery({
+                            query: _utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY,
+                            variables: pages[i].vars,
+                            data: pages[i].data
+                        });
+                    }
+                    return cache;
+                },
+                // Benchmark: only measure the read (timed)
+                bench (cache) {
+                    const res = cache.readQuery({
+                        query: _utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY,
+                        variables: {
+                            first: PAGE_SIZE,
+                            after: null
+                        },
+                        decisionMode: "strict"
+                    });
+                    sinkObj(res.data);
+                }
+            };
+        });
+        // Apollo: readQuery:cold (new instance per iteration)
+        (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`apollo.readQuery:cold(${label})`, function*() {
+            yield {
+                // Computed parameter: create fresh instance before each iteration (not timed)
+                [0] () {
+                    const cache = createApolloCache(false);
+                    for(let i = 0; i < pages.length; i++){
+                        cache.writeQuery({
+                            query: _utils__WEBPACK_IMPORTED_MODULE_4__.APOLLO_QUERY,
+                            variables: pages[i].vars,
+                            data: pages[i].data
+                        });
+                    }
+                    return cache;
+                },
+                // Benchmark: only measure the read (timed)
+                bench (cache) {
+                    const r = cache.readQuery({
+                        query: _utils__WEBPACK_IMPORTED_MODULE_4__.APOLLO_QUERY,
+                        variables: {
+                            first: PAGE_SIZE,
+                            after: null
+                        }
+                    });
+                    sinkObj(r);
+                }
+            };
+        });
+        // Relay: lookup:cold (new environment per iteration)
+        (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`relay.lookup:cold(${label})`, function*() {
+            yield {
+                // Computed parameter: create fresh environment before each iteration (not timed)
+                [0] () {
+                    const env = createRelayEnvironment();
+                    for(let i = 0; i < pages.length; i++){
+                        const op = (0,relay_runtime__WEBPACK_IMPORTED_MODULE_2__.createOperationDescriptor)(_src_generated_relayWriteQueryDefRelayWriteQuery_graphql__WEBPACK_IMPORTED_MODULE_3__["default"], pages[i].vars);
+                        env.commitPayload(op, pages[i].data);
+                    }
+                    return env;
+                },
+                // Benchmark: only measure the read (timed)
+                bench (env) {
+                    const operation = (0,relay_runtime__WEBPACK_IMPORTED_MODULE_2__.createOperationDescriptor)(_src_generated_relayWriteQueryDefRelayWriteQuery_graphql__WEBPACK_IMPORTED_MODULE_3__["default"], {
+                        first: PAGE_SIZE,
+                        after: null
+                    });
+                    const r = env.lookup(operation.fragment);
+                    sinkObj(r.data);
+                }
+            };
+        });
+    });
+});
+// -----------------------------------------------------------------------------
+// Hot paths
+// -----------------------------------------------------------------------------
+(0,mitata__WEBPACK_IMPORTED_MODULE_0__.summary)(()=>{
+    (0,mitata__WEBPACK_IMPORTED_MODULE_0__.group)("readQuery – HOT paths", ()=>{
+        // Cachebay: readQuery:canonical:hot
+        const cache1 = createCachebay();
+        for(let i = 0; i < pages.length; i++){
+            cache1.writeQuery({
+                query: _utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY,
+                variables: pages[i].vars,
+                data: pages[i].data
+            });
+        }
+        // warm
+        cache1.readQuery({
+            query: _utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY,
+            variables: {
+                first: PAGE_SIZE,
+                after: null
+            },
+            canonical: true
+        });
+        (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`cachebay.readQuery:canonical:hot(${label})`, ()=>{
+            const res = cache1.readQuery({
+                query: _utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY,
+                variables: {
+                    first: PAGE_SIZE,
+                    after: null
+                },
+                canonical: true
+            });
+            sinkObj(res.data);
+        });
+        // Cachebay: readQuery:strict:hot
+        const cache2 = createCachebay();
+        for(let i = 0; i < pages.length; i++){
+            cache2.writeQuery({
+                query: _utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY,
+                variables: pages[i].vars,
+                data: pages[i].data
+            });
+        }
+        // warm
+        cache2.readQuery({
+            query: _utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY,
+            variables: {
+                first: PAGE_SIZE,
+                after: null
+            },
+            decisionMode: "strict"
+        });
+        (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`cachebay.readQuery:strict:hot(${label})`, ()=>{
+            const res = cache2.readQuery({
+                query: _utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY,
+                variables: {
+                    first: PAGE_SIZE,
+                    after: null
+                },
+                decisionMode: "strict"
+            });
+            sinkObj(res.data);
+        });
+        // Apollo: readQuery:hot (resultCaching=false)
+        const apollo1 = createApolloCache(false);
+        for(let i = 0; i < pages.length; i++){
+            apollo1.writeQuery({
+                query: _utils__WEBPACK_IMPORTED_MODULE_4__.APOLLO_QUERY,
+                variables: pages[i].vars,
+                data: pages[i].data
+            });
+        }
+        // warm
+        apollo1.readQuery({
+            query: _utils__WEBPACK_IMPORTED_MODULE_4__.APOLLO_QUERY,
+            variables: {
+                first: PAGE_SIZE,
+                after: null
+            }
+        });
+        (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`apollo.readQuery:hot(${label})`, ()=>{
+            const r = apollo1.readQuery({
+                query: _utils__WEBPACK_IMPORTED_MODULE_4__.APOLLO_QUERY,
+                variables: {
+                    first: PAGE_SIZE,
+                    after: null
+                }
+            });
+            sinkObj(r);
+        });
+        // Apollo: readQuery:hot (resultCaching=true)
+        const apollo2 = createApolloCache(true);
+        for(let i = 0; i < pages.length; i++){
+            apollo2.writeQuery({
+                query: _utils__WEBPACK_IMPORTED_MODULE_4__.APOLLO_QUERY,
+                variables: pages[i].vars,
+                data: pages[i].data
+            });
+        }
+        // warm
+        apollo2.readQuery({
+            query: _utils__WEBPACK_IMPORTED_MODULE_4__.APOLLO_QUERY,
+            variables: {
+                first: PAGE_SIZE,
+                after: null
+            }
+        });
+        (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`apollo.readQuery:hot(resultCaching)(${label})`, ()=>{
+            const r = apollo2.readQuery({
+                query: _utils__WEBPACK_IMPORTED_MODULE_4__.APOLLO_QUERY,
+                variables: {
+                    first: PAGE_SIZE,
+                    after: null
+                }
+            });
+            sinkObj(r);
+        });
+        // Relay: lookup:hot
+        const relayEnv = createRelayEnvironment();
+        for(let i = 0; i < pages.length; i++){
+            const op = (0,relay_runtime__WEBPACK_IMPORTED_MODULE_2__.createOperationDescriptor)(_src_generated_relayWriteQueryDefRelayWriteQuery_graphql__WEBPACK_IMPORTED_MODULE_3__["default"], pages[i].vars);
+            relayEnv.commitPayload(op, pages[i].data);
+        }
+        // warm
+        const warmOp = (0,relay_runtime__WEBPACK_IMPORTED_MODULE_2__.createOperationDescriptor)(_src_generated_relayWriteQueryDefRelayWriteQuery_graphql__WEBPACK_IMPORTED_MODULE_3__["default"], {
+            first: PAGE_SIZE,
+            after: null
+        });
+        relayEnv.lookup(warmOp.fragment);
+        (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`relay.lookup:hot(${label})`, ()=>{
+            const operation = (0,relay_runtime__WEBPACK_IMPORTED_MODULE_2__.createOperationDescriptor)(_src_generated_relayWriteQueryDefRelayWriteQuery_graphql__WEBPACK_IMPORTED_MODULE_3__["default"], {
+                first: PAGE_SIZE,
+                after: null
+            });
+            const r = relayEnv.lookup(operation.fragment);
+            sinkObj(r.data);
+        });
+    });
+});
+// keep the sink visible so V8 can't fully DCE it
+globalThis.__bench_sink = __sink;
+// Run benchmarks
+await (0,mitata__WEBPACK_IMPORTED_MODULE_0__.run)();
+
+__webpack_async_result__();
+} catch(e) { __webpack_async_result__(e); } }, 1);
+
+}),
 "./api/utils.ts": (function (__unused_webpack_module, __webpack_exports__, __webpack_require__) {
 "use strict";
 __webpack_require__.r(__webpack_exports__);
@@ -39337,7 +39703,7 @@ const createDocuments = (deps)=>{
             if (cached && !dirty.has(vkey)) {
                 return {
                     data: cached.data,
-                    deps: cached.deps.slice(),
+                    deps: cached.deps,
                     source: canonical ? "canonical" : "strict",
                     ok: {
                         strict: true,
@@ -39476,7 +39842,7 @@ const createDocuments = (deps)=>{
                         const link = snap[(0,_utils__WEBPACK_IMPORTED_MODULE_1__.buildFieldKey)(f, variables)];
                         // array-of-refs
                         if (link && typeof link === "object" && Array.isArray(link.__refs)) {
-                            const refs = link.__refs.slice();
+                            const refs = link.__refs;
                             const arrOut = new Array(refs.length);
                             out[f.responseKey] = arrOut;
                             for(let j = refs.length - 1; j >= 0; j--){
@@ -39582,7 +39948,7 @@ const createDocuments = (deps)=>{
                             const edgesRaw = page.edges;
                             let refs = [];
                             if (edgesRaw && typeof edgesRaw === "object" && Array.isArray(edgesRaw.__refs)) {
-                                refs = edgesRaw.__refs.slice();
+                                refs = edgesRaw.__refs;
                             } else if (Array.isArray(edgesRaw)) {
                                 // derive edge record ids based on the *requested* mode's baseKey
                                 refs = edgesRaw.map((_, i)=>`${baseKey}.edges.${i}`);
@@ -39621,7 +39987,7 @@ const createDocuments = (deps)=>{
                         }
                         const link = page[(0,_utils__WEBPACK_IMPORTED_MODULE_1__.buildFieldKey)(pf, variables)];
                         if (link && typeof link === "object" && Array.isArray(link.__refs)) {
-                            const refs = link.__refs.slice();
+                            const refs = link.__refs;
                             const arrOut = new Array(refs.length);
                             conn[pf.responseKey] = arrOut;
                             for(let j = refs.length - 1; j >= 0; j--){
@@ -70843,6 +71209,85 @@ return module.exports;
 }
 
 /************************************************************************/
+// webpack/runtime/async_module
+(() => {
+var webpackQueues =
+	typeof Symbol === "function"
+		? Symbol("webpack queues")
+		: "__webpack_queues__";
+var webpackExports =
+	typeof Symbol === "function"
+		? Symbol("webpack exports")
+		: "__webpack_exports__";
+var webpackError =
+	typeof Symbol === "function" ? Symbol("webpack error") : "__webpack_error__";
+var resolveQueue = (queue) => {
+  if (queue && queue.d < 1) {
+    queue.d = 1;
+    queue.forEach((fn) => (fn.r--));
+		queue.forEach((fn) => (fn.r-- ? fn.r++ : fn()));
+	}
+}
+var wrapDeps = (deps) => {
+	return deps.map((dep) => {
+		if (dep !== null && typeof dep === "object") {
+			if (dep[webpackQueues]) return dep;
+			if (dep.then) {
+				var queue = [];
+				queue.d = 0;
+				dep.then((r) => {
+					obj[webpackExports] = r;
+					resolveQueue(queue);
+				},(e) => {
+					obj[webpackError] = e;
+					resolveQueue(queue);
+				});
+				var obj = {};
+				obj[webpackQueues] = (fn) => (fn(queue));
+				return obj;
+			}
+		}
+		var ret = {};
+		ret[webpackQueues] = function() {};
+		ret[webpackExports] = dep;
+		return ret;
+	});
+};
+__webpack_require__.a = (module, body, hasAwait) => {
+	var queue;
+	hasAwait && ((queue = []).d = -1);
+	var depQueues = new Set();
+	var exports = module.exports;
+	var currentDeps;
+	var outerResolve;
+	var reject;
+	var promise = new Promise((resolve, rej) => {
+		reject = rej;
+		outerResolve = resolve;
+	});
+	promise[webpackExports] = exports;
+	promise[webpackQueues] = (fn) => { queue && fn(queue), depQueues.forEach(fn), promise["catch"](function() {}); };
+	module.exports = promise;
+	body((deps) => {
+		currentDeps = wrapDeps(deps);
+		var fn;
+		var getResult = () => {
+			return currentDeps.map((d) => {
+				if (d[webpackError]) throw d[webpackError];
+				return d[webpackExports];
+			});
+		}
+		var promise = new Promise((resolve) => {
+			fn = () => (resolve(getResult));
+			fn.r = 0;
+			var fnQueue = (q) => (q !== queue && !depQueues.has(q) && (depQueues.add(q), q && !q.d && (fn.r++, q.push(fn))));
+			currentDeps.map((dep) => (dep[webpackQueues](fnQueue)));
+		});
+		return fn.r ? promise : getResult();
+	}, (err) => ((err ? reject(promise[webpackError] = err) : outerResolve(exports)), resolveQueue(queue)));
+	queue && queue.d < 0 && (queue.d = 0);
+};
+})();
 // webpack/runtime/compat_get_default_export
 (() => {
 // getDefaultExport function for compatibility with non-ESM modules
@@ -70880,404 +71325,10 @@ __webpack_require__.r = (exports) => {
 };
 })();
 /************************************************************************/
-var __webpack_exports__ = {};
-// This entry needs to be wrapped in an IIFE because it needs to be in strict mode.
-(() => {
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* ESM import */var mitata__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__("mitata");
-/* ESM import */var mitata__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(mitata__WEBPACK_IMPORTED_MODULE_0__);
-/* ESM import */var _villus_cachebay_src_core_client__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__("../villus-cachebay/src/core/client.ts");
-/* ESM import */var _apollo_client_cache__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__("../../node_modules/.pnpm/@apollo+client@3.14.0_@types+react@19.2.2_graphql@16.11.0_react-dom@18.3.1_react@18.3.1__react@18.3.1/node_modules/@apollo/client/cache/inmemory/inMemoryCache.js");
-/* ESM import */var _apollo_client_utilities__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__("../../node_modules/.pnpm/@apollo+client@3.14.0_@types+react@19.2.2_graphql@16.11.0_react-dom@18.3.1_react@18.3.1__react@18.3.1/node_modules/@apollo/client/utilities/policies/pagination.js");
-/* ESM import */var relay_runtime__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__("../../node_modules/.pnpm/relay-runtime@16.2.0_encoding@0.1.13/node_modules/relay-runtime/index.js");
-/* ESM import */var relay_runtime__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(relay_runtime__WEBPACK_IMPORTED_MODULE_2__);
-/* ESM import */var _src_generated_relayWriteQueryDefRelayWriteQuery_graphql__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__("./src/__generated__/relayWriteQueryDefRelayWriteQuery.graphql.ts");
-/* ESM import */var _utils__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__("./api/utils.ts");
-/* ESM import */var graphql__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__("../../node_modules/.pnpm/graphql@16.11.0/node_modules/graphql/language/parser.mjs");
-// api/watchQuery.bench.ts
-
-// ---- cachebay ----
-
-// ---- apollo ----
-
-
-// ---- relay ----
-
-
-// ---- shared (same helpers you already use) ----
-
-// ---- gql helpers just for the tiny "user by id" update ----
-
-// We update a single user entity so both caches re-emit the connection view.
-const CACHEBAY_USER_QUERY = (0,graphql__WEBPACK_IMPORTED_MODULE_5__.parse)(/* GraphQL */ `
-  query UserName($id: ID!) {
-    user(id: $id) { __typename id name }
-  }
-`);
-const APOLLO_USER_QUERY = CACHEBAY_USER_QUERY;
-// sink to force result consumption
-let __sink = 0;
-const sinkObj = (o)=>{
-    var _o_users_edges, _o_users;
-    __sink ^= ((o === null || o === void 0 ? void 0 : (_o_users = o.users) === null || _o_users === void 0 ? void 0 : (_o_users_edges = _o_users.edges) === null || _o_users_edges === void 0 ? void 0 : _o_users_edges.length) ?? 0) | 0;
-};
-// -----------------------------------------------------------------------------
-// Rigs
-// -----------------------------------------------------------------------------
-function createCachebay() {
-    return (0,_villus_cachebay_src_core_client__WEBPACK_IMPORTED_MODULE_1__.createCache)({
-        keys: {
-            Query: ()=>"Query",
-            User: (o)=>o.id ?? null,
-            Post: (o)=>o.id ?? null,
-            Comment: (o)=>o.id ?? null
-        }
-    });
-}
-function createApolloCache() {
-    return new _apollo_client_cache__WEBPACK_IMPORTED_MODULE_6__.InMemoryCache({
-        // parity with normalize benches (disables apollo's result memo)
-        resultCaching: false,
-        typePolicies: {
-            Query: {
-                fields: {
-                    users: (0,_apollo_client_utilities__WEBPACK_IMPORTED_MODULE_7__.relayStylePagination)()
-                }
-            },
-            User: {
-                keyFields: [
-                    "id"
-                ],
-                fields: {
-                    posts: (0,_apollo_client_utilities__WEBPACK_IMPORTED_MODULE_7__.relayStylePagination)()
-                }
-            },
-            Post: {
-                keyFields: [
-                    "id"
-                ],
-                fields: {
-                    comments: (0,_apollo_client_utilities__WEBPACK_IMPORTED_MODULE_7__.relayStylePagination)()
-                }
-            },
-            Comment: {
-                keyFields: [
-                    "id"
-                ]
-            }
-        }
-    });
-}
-function createRelayEnvironment() {
-    return new relay_runtime__WEBPACK_IMPORTED_MODULE_2__.Environment({
-        network: relay_runtime__WEBPACK_IMPORTED_MODULE_2__.Network.create(()=>Promise.resolve({
-                data: {}
-            })),
-        store: new relay_runtime__WEBPACK_IMPORTED_MODULE_2__.Store(new relay_runtime__WEBPACK_IMPORTED_MODULE_2__.RecordSource())
-    });
-}
-// -----------------------------------------------------------------------------
-// Shared data
-// -----------------------------------------------------------------------------
-const USERS_TOTAL = 1000;
-const PAGE_SIZE = 10;
-const allUsers = Object.freeze((0,_utils__WEBPACK_IMPORTED_MODULE_4__.makeResponse)({
-    users: USERS_TOTAL,
-    posts: 5,
-    comments: 3
-}));
-const pages = (0,_utils__WEBPACK_IMPORTED_MODULE_4__.buildPages)(allUsers, PAGE_SIZE);
-const label = `${USERS_TOTAL} users (${pages.length} pages of ${PAGE_SIZE})`;
-// small helper to seed caches with all pages
-function seedCachebayAllPages(cache) {
-    for(let i = 0; i < pages.length; i++){
-        cache.writeQuery({
-            query: _utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY,
-            variables: pages[i].vars,
-            data: pages[i].data
-        });
-    }
-}
-function seedApolloAllPages(cache) {
-    for(let i = 0; i < pages.length; i++){
-        cache.writeQuery({
-            query: _utils__WEBPACK_IMPORTED_MODULE_4__.APOLLO_QUERY,
-            variables: pages[i].vars,
-            data: pages[i].data
-        });
-    }
-}
-function seedRelayAllPages(env) {
-    for(let i = 0; i < pages.length; i++){
-        const operation = (0,relay_runtime__WEBPACK_IMPORTED_MODULE_2__.createOperationDescriptor)(_src_generated_relayWriteQueryDefRelayWriteQuery_graphql__WEBPACK_IMPORTED_MODULE_3__["default"], pages[i].vars);
-        env.commitPayload(operation, pages[i].data);
-    }
-}
-// -----------------------------------------------------------------------------
-/** Initial subscription (subscribe + initial emit) - COLD */ // -----------------------------------------------------------------------------
-(0,mitata__WEBPACK_IMPORTED_MODULE_0__.summary)(()=>{
-    (0,mitata__WEBPACK_IMPORTED_MODULE_0__.group)("watchQuery – INITIAL subscription (COLD)", ()=>{
-        // Cachebay: initial:cold (new instance, subscribe, write pages, unsubscribe)
-        (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`cachebay.watchQuery:initial:cold(${label})`, function*() {
-            yield {
-                [0] () {
-                    const cache = createCachebay();
-                    // Warm the planner
-                    cache.__internals.planner.getPlan(_utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY);
-                    return cache;
-                },
-                async bench (cache) {
-                    // 1. Subscribe first
-                    const sub = cache.watchQuery({
-                        query: _utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY,
-                        variables: {
-                            first: PAGE_SIZE,
-                            after: null
-                        },
-                        canonical: true,
-                        onData: (d)=>sinkObj(d)
-                    });
-                    // 2. Write all pages (triggers reactive updates)
-                    for(let i = 0; i < pages.length; i++){
-                        cache.writeQuery({
-                            query: _utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY,
-                            variables: pages[i].vars,
-                            data: pages[i].data
-                        });
-                        // Flush microtask queue so watchers can react
-                        await Promise.resolve();
-                    }
-                    // 3. Unsubscribe
-                    sub.unsubscribe();
-                }
-            };
-        });
-        // // Apollo: initial:cold (new instance, subscribe, write pages, unsubscribe)
-        // bench(`apollo.watch:initial:cold(${label})`, function* () {
-        //   yield {
-        //     [0]() {
-        //       return createApolloCache();
-        //     },
-        //     async bench(apollo) {
-        //       // 1. Subscribe first
-        //       const unwatch = apollo.watch({
-        //         query: APOLLO_QUERY,
-        //         variables: { first: PAGE_SIZE, after: null },
-        //         optimistic: false,
-        //         immediate: true,
-        //         callback: (diff) => sinkObj(diff.result),
-        //       });
-        //
-        //       // 2. Write all pages (triggers reactive updates)
-        //       for (let i = 0; i < pages.length; i++) {
-        //         apollo.writeQuery({
-        //           broadcast: true, // Enable broadcast to trigger watchers
-        //           query: APOLLO_QUERY,
-        //           variables: pages[i].vars,
-        //           data: pages[i].data,
-        //         });
-        //         // Flush microtask queue (Apollo broadcasts synchronously, but keep consistent)
-        //         await Promise.resolve();
-        //       }
-        //
-        //       // 3. Unsubscribe
-        //       unwatch();
-        //     },
-        //   };
-        // });
-        // Relay: initial:cold (new environment, subscribe, write pages, unsubscribe)
-        (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`relay.subscribe:initial:cold(${label})`, function*() {
-            yield {
-                [0] () {
-                    return createRelayEnvironment();
-                },
-                async bench (relay) {
-                    // 1. Subscribe first
-                    const operation = (0,relay_runtime__WEBPACK_IMPORTED_MODULE_2__.createOperationDescriptor)(_src_generated_relayWriteQueryDefRelayWriteQuery_graphql__WEBPACK_IMPORTED_MODULE_3__["default"], {
-                        first: PAGE_SIZE,
-                        after: null
-                    });
-                    const snap = relay.lookup(operation.fragment);
-                    const disposable = relay.subscribe(snap, (newSnapshot)=>{
-                        sinkObj(newSnapshot.data);
-                    });
-                    // 2. Write all pages (triggers reactive updates)
-                    for(let i = 0; i < pages.length; i++){
-                        const op = (0,relay_runtime__WEBPACK_IMPORTED_MODULE_2__.createOperationDescriptor)(_src_generated_relayWriteQueryDefRelayWriteQuery_graphql__WEBPACK_IMPORTED_MODULE_3__["default"], pages[i].vars);
-                        relay.commitPayload(op, pages[i].data);
-                        // Flush microtask queue (Relay broadcasts synchronously, but keep consistent)
-                        await Promise.resolve();
-                    }
-                    // 3. Unsubscribe
-                    disposable.dispose();
-                }
-            };
-        });
-    });
-});
-// -----------------------------------------------------------------------------
-/** Initial subscription (subscribe + initial emit) - HOT */ // -----------------------------------------------------------------------------
-(0,mitata__WEBPACK_IMPORTED_MODULE_0__.summary)(()=>{
-    (0,mitata__WEBPACK_IMPORTED_MODULE_0__.group)("watchQuery – INITIAL subscription (HOT)", ()=>{
-        // Cachebay: initial:hot (reuse instance)
-        const cache1 = createCachebay();
-        seedCachebayAllPages(cache1);
-        cache1.readQuery({
-            query: _utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY,
-            variables: {
-                first: PAGE_SIZE,
-                after: null
-            },
-            canonical: true
-        });
-        (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`cachebay.watchQuery:initial:hot(${label})`, ()=>{
-            const sub = cache1.watchQuery({
-                query: _utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY,
-                variables: {
-                    first: PAGE_SIZE,
-                    after: null
-                },
-                canonical: true,
-                onData: (d)=>sinkObj(d)
-            });
-            sub.unsubscribe();
-        });
-        //// Apollo: initial:hot (reuse instance)
-        //const apollo1 = createApolloCache();
-        //seedApolloAllPages(apollo1);
-        //apollo1.readQuery({ query: APOLLO_QUERY, variables: { first: PAGE_SIZE, after: null } });
-        //
-        //bench(`apollo.watch:initial:hot(${label})`, () => {
-        //  const unwatch = apollo1.watch({
-        //    query: APOLLO_QUERY,
-        //    variables: { first: PAGE_SIZE, after: null },
-        //    optimistic: false,
-        //    immediate: true,
-        //    callback: (diff) => sinkObj(diff.result),
-        //  });
-        //  unwatch();
-        //});
-        // Relay: initial:hot (reuse environment)
-        const relay1 = createRelayEnvironment();
-        seedRelayAllPages(relay1);
-        const operation1 = (0,relay_runtime__WEBPACK_IMPORTED_MODULE_2__.createOperationDescriptor)(_src_generated_relayWriteQueryDefRelayWriteQuery_graphql__WEBPACK_IMPORTED_MODULE_3__["default"], {
-            first: PAGE_SIZE,
-            after: null
-        });
-        relay1.lookup(operation1.fragment);
-        (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`relay.subscribe:initial:hot(${label})`, ()=>{
-            const snapshot = relay1.lookup(operation1.fragment);
-            const disposable = relay1.subscribe(snapshot, (newSnapshot)=>{
-                sinkObj(newSnapshot.data);
-            });
-            disposable.dispose();
-        });
-    });
-});
-// -----------------------------------------------------------------------------
-/** Reactive updates (write → broadcast → re-materialize → emit)
- *  We update User "u1" email back-and-forth so deps fire without growing data.
- */ // -----------------------------------------------------------------------------
-(0,mitata__WEBPACK_IMPORTED_MODULE_0__.summary)(()=>{
-    (0,mitata__WEBPACK_IMPORTED_MODULE_0__.group)("watchQuery – REACTIVE updates", ()=>{
-        // Cachebay reactive
-        const cache2 = createCachebay();
-        seedCachebayAllPages(cache2);
-        cache2.watchQuery({
-            query: _utils__WEBPACK_IMPORTED_MODULE_4__.CACHEBAY_QUERY,
-            variables: {
-                first: PAGE_SIZE,
-                after: null
-            },
-            canonical: true,
-            skipInitialEmit: true,
-            onData: (d)=>sinkObj(d)
-        });
-        let toggle1 = false;
-        (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`cachebay.watchQuery:reactive(${label})`, async ()=>{
-            toggle1 = !toggle1;
-            const name = toggle1 ? "User 1 (updated)" : "User 1";
-            cache2.writeQuery({
-                query: CACHEBAY_USER_QUERY,
-                variables: {
-                    id: "u1"
-                },
-                data: {
-                    user: {
-                        __typename: "User",
-                        id: "u1",
-                        name
-                    }
-                }
-            });
-            // watchQuery broadcasts via queueMicrotask; flush it
-            await Promise.resolve();
-        });
-        // Apollo reactive
-        const apollo2 = createApolloCache();
-        seedApolloAllPages(apollo2);
-        apollo2.watch({
-            query: _utils__WEBPACK_IMPORTED_MODULE_4__.APOLLO_QUERY,
-            variables: {
-                first: PAGE_SIZE,
-                after: null
-            },
-            optimistic: false,
-            immediate: false,
-            callback: (diff)=>sinkObj(diff.result)
-        });
-        let toggle2 = false;
-        (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`apollo.watch:reactive(${label})`, ()=>{
-            toggle2 = !toggle2;
-            const name = toggle2 ? "User 1 (updated)" : "User 1";
-            apollo2.writeQuery({
-                query: APOLLO_USER_QUERY,
-                variables: {
-                    id: "u1"
-                },
-                data: {
-                    user: {
-                        __typename: "User",
-                        id: "u1",
-                        name
-                    }
-                }
-            });
-        // apollo watchers broadcast synchronously
-        });
-        // Relay reactive
-        const relay2 = createRelayEnvironment();
-        seedRelayAllPages(relay2);
-        const operation2 = (0,relay_runtime__WEBPACK_IMPORTED_MODULE_2__.createOperationDescriptor)(_src_generated_relayWriteQueryDefRelayWriteQuery_graphql__WEBPACK_IMPORTED_MODULE_3__["default"], {
-            first: PAGE_SIZE,
-            after: null
-        });
-        const snapshot2 = relay2.lookup(operation2.fragment);
-        relay2.subscribe(snapshot2, (newSnapshot)=>{
-            sinkObj(newSnapshot.data);
-        });
-        let toggle3 = false;
-        (0,mitata__WEBPACK_IMPORTED_MODULE_0__.bench)(`relay.subscribe:reactive(${label})`, ()=>{
-            toggle3 = !toggle3;
-            const name = toggle3 ? "User 1 (updated)" : "User 1";
-            // Use store updater to directly modify the user record
-            relay2.commitUpdate((store)=>{
-                const user = store.get("u1");
-                if (user) {
-                    user.setValue(name, "name");
-                }
-            });
-        // relay subscribers broadcast synchronously
-        });
-    });
-});
-// keep the sink visible so V8 can't fully DCE it
-globalThis.__bench_sink = __sink;
-(0,mitata__WEBPACK_IMPORTED_MODULE_0__.run)();
-
-})();
-
+// startup
+// Load entry module and return exports
+// This entry module used 'module' so it can't be inlined
+var __webpack_exports__ = __webpack_require__("./api/readQuery.bench.ts");
 module.exports = __webpack_exports__;
 })()
 ;
