@@ -39043,17 +39043,61 @@ const createDocuments = (deps)=>{
             pageKey: null,
             inEdges: false
         };
-        const visit = (_parentNode, valueNode, responseKey, kind, frame)=>{
-            if (!frame) return;
-            if (responseKey == null) return frame;
+        // Inline traversal (eliminates visit callback overhead)
+        const stack = [
+            null,
+            data,
+            null,
+            initialFrame
+        ];
+        while(stack.length > 0){
+            const frame = stack.pop();
+            const responseKey = stack.pop();
+            const valueNode = stack.pop();
+            const _parentNode = stack.pop();
+            if (!frame) continue;
+            // Handle root-level traversal
+            if (responseKey == null) {
+                if (Array.isArray(valueNode)) {
+                    for(let i = valueNode.length - 1; i >= 0; i--){
+                        const childValue = valueNode[i];
+                        if ((0,_utils__WEBPACK_IMPORTED_MODULE_1__.isObject)(childValue)) {
+                            stack.push(valueNode, childValue, i, frame);
+                        }
+                    }
+                    continue;
+                } else if ((0,_utils__WEBPACK_IMPORTED_MODULE_1__.isObject)(valueNode)) {
+                    for(let i = 0, fieldKeys = Object.keys(valueNode); i < fieldKeys.length; i++){
+                        const key = fieldKeys[i];
+                        const childValue = valueNode[key];
+                        if ((0,_utils__WEBPACK_IMPORTED_MODULE_1__.isObject)(childValue)) {
+                            stack.push(valueNode, childValue, key, frame);
+                        } else {
+                            // Scalar at root
+                            const fieldsMap = frame.fieldsMap;
+                            if (fieldsMap) {
+                                const f = fieldsMap.get(key);
+                                if (f && !f.selectionSet) {
+                                    const fieldKey = (0,_utils__WEBPACK_IMPORTED_MODULE_1__.buildFieldKey)(f, variables);
+                                    put(frame.parentId, {
+                                        [fieldKey]: childValue
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
+                continue;
+            }
             const parentId = frame.parentId;
             const fieldsMap = frame.fieldsMap;
             const planField = typeof responseKey === "string" && fieldsMap ? fieldsMap.get(responseKey) : undefined;
-            /* ====== ARRAYS ====== */ if (kind === _utils__WEBPACK_IMPORTED_MODULE_1__.TRAVERSE_ARRAY) {
+            /* ====== ARRAYS ====== */ if (Array.isArray(valueNode)) {
                 // Connection edges
                 if (frame.insideConnection && responseKey === "edges") {
                     const pageKey = frame.pageKey;
-                    const rawEdges = Array.isArray(valueNode) ? valueNode : [];
+                    const rawEdges = valueNode;
                     const edgeRefs = new Array(rawEdges.length);
                     for(let i = 0; i < rawEdges.length; i++){
                         edgeRefs[i] = `${pageKey}.edges.${i}`;
@@ -39064,7 +39108,7 @@ const createDocuments = (deps)=>{
                         }
                     });
                     const edgesField = fieldsMap === null || fieldsMap === void 0 ? void 0 : fieldsMap.get("edges");
-                    return {
+                    const nextFrame = {
                         parentId: frame.parentId,
                         fields: edgesField === null || edgesField === void 0 ? void 0 : edgesField.selectionSet,
                         fieldsMap: edgesField === null || edgesField === void 0 ? void 0 : edgesField.selectionMap,
@@ -39072,6 +39116,14 @@ const createDocuments = (deps)=>{
                         pageKey,
                         inEdges: true
                     };
+                    // Push children onto stack
+                    for(let i = rawEdges.length - 1; i >= 0; i--){
+                        const childValue = rawEdges[i];
+                        if ((0,_utils__WEBPACK_IMPORTED_MODULE_1__.isObject)(childValue)) {
+                            stack.push(valueNode, childValue, i, nextFrame);
+                        }
+                    }
+                    continue;
                 }
                 // Plain array scalar/object values without selection → store raw array
                 if (planField && !planField.selectionSet) {
@@ -39082,12 +39134,12 @@ const createDocuments = (deps)=>{
                     put(parentId, {
                         [fieldKey]: out
                     });
-                    return _utils__WEBPACK_IMPORTED_MODULE_1__.TRAVERSE_SKIP;
+                    continue; // SKIP
                 }
                 // Arrays of objects WITH a selection
                 if (planField && planField.selectionSet) {
                     const fieldKey = (0,_utils__WEBPACK_IMPORTED_MODULE_1__.buildFieldKey)(planField, variables);
-                    const arr = Array.isArray(valueNode) ? valueNode : [];
+                    const arr = valueNode;
                     const baseKey = `${parentId}.${fieldKey}`;
                     const refs = new Array(arr.length);
                     for(let i = 0; i < arr.length; i++){
@@ -39107,7 +39159,7 @@ const createDocuments = (deps)=>{
                             __refs: refs
                         }
                     });
-                    return {
+                    const nextFrame = {
                         parentId,
                         fields: planField.selectionSet,
                         fieldsMap: planField.selectionMap,
@@ -39115,17 +39167,25 @@ const createDocuments = (deps)=>{
                         pageKey: baseKey,
                         inEdges: true
                     };
+                    // Push children onto stack
+                    for(let i = arr.length - 1; i >= 0; i--){
+                        const childValue = arr[i];
+                        if ((0,_utils__WEBPACK_IMPORTED_MODULE_1__.isObject)(childValue)) {
+                            stack.push(valueNode, childValue, i, nextFrame);
+                        }
+                    }
+                    continue;
                 }
-                return frame;
+                continue;
             }
-            /* ====== OBJECTS ====== */ if (kind === _utils__WEBPACK_IMPORTED_MODULE_1__.TRAVERSE_OBJECT) {
+            /* ====== OBJECTS ====== */ if ((0,_utils__WEBPACK_IMPORTED_MODULE_1__.isObject)(valueNode)) {
                 // Plain object field with no selection
                 if (planField && !planField.selectionSet) {
                     const fieldKey = (0,_utils__WEBPACK_IMPORTED_MODULE_1__.buildFieldKey)(planField, variables);
                     put(parentId, {
                         [fieldKey]: valueNode
                     });
-                    return _utils__WEBPACK_IMPORTED_MODULE_1__.TRAVERSE_SKIP;
+                    continue; // SKIP
                 }
                 // Generic array item objects (not connection edges)
                 if (!frame.insideConnection && frame.inEdges && typeof responseKey === "number") {
@@ -39138,7 +39198,7 @@ const createDocuments = (deps)=>{
                         });
                         else put(itemKey, {});
                     }
-                    return {
+                    const nextFrame = {
                         parentId: itemKey,
                         fields: frame.fields,
                         fieldsMap: frame.fieldsMap,
@@ -39146,6 +39206,25 @@ const createDocuments = (deps)=>{
                         pageKey: frame.pageKey,
                         inEdges: false
                     };
+                    // Push children onto stack
+                    for(let i = 0, fieldKeys = Object.keys(valueNode); i < fieldKeys.length; i++){
+                        const key = fieldKeys[i];
+                        const childValue = valueNode[key];
+                        if ((0,_utils__WEBPACK_IMPORTED_MODULE_1__.isObject)(childValue)) {
+                            stack.push(valueNode, childValue, key, nextFrame);
+                        } else {
+                            var _nextFrame_fieldsMap;
+                            // Scalar
+                            const f = (_nextFrame_fieldsMap = nextFrame.fieldsMap) === null || _nextFrame_fieldsMap === void 0 ? void 0 : _nextFrame_fieldsMap.get(key);
+                            if (f && !f.selectionSet) {
+                                const fieldKey = (0,_utils__WEBPACK_IMPORTED_MODULE_1__.buildFieldKey)(f, variables);
+                                put(nextFrame.parentId, {
+                                    [fieldKey]: childValue
+                                });
+                            }
+                        }
+                    }
+                    continue;
                 }
                 // Connection edges[i]
                 if (frame.insideConnection && frame.inEdges && typeof responseKey === "number") {
@@ -39163,7 +39242,7 @@ const createDocuments = (deps)=>{
                             }
                         });
                     }
-                    return {
+                    const nextFrame = {
                         parentId: edgeKey,
                         fields: frame.fields,
                         fieldsMap: frame.fieldsMap,
@@ -39171,6 +39250,25 @@ const createDocuments = (deps)=>{
                         pageKey: frame.pageKey,
                         inEdges: true
                     };
+                    // Push children onto stack
+                    for(let i = 0, fieldKeys = Object.keys(valueNode); i < fieldKeys.length; i++){
+                        const key = fieldKeys[i];
+                        const childValue = valueNode[key];
+                        if ((0,_utils__WEBPACK_IMPORTED_MODULE_1__.isObject)(childValue)) {
+                            stack.push(valueNode, childValue, key, nextFrame);
+                        } else {
+                            var _nextFrame_fieldsMap1;
+                            // Scalar
+                            const f = (_nextFrame_fieldsMap1 = nextFrame.fieldsMap) === null || _nextFrame_fieldsMap1 === void 0 ? void 0 : _nextFrame_fieldsMap1.get(key);
+                            if (f && !f.selectionSet) {
+                                const fieldKey = (0,_utils__WEBPACK_IMPORTED_MODULE_1__.buildFieldKey)(f, variables);
+                                put(nextFrame.parentId, {
+                                    [fieldKey]: childValue
+                                });
+                            }
+                        }
+                    }
+                    continue;
                 }
                 // Connection container
                 if (planField && planField.isConnection) {
@@ -39219,7 +39317,7 @@ const createDocuments = (deps)=>{
                             pageKey
                         });
                     }
-                    return {
+                    const nextFrame = {
                         parentId: pageKey,
                         fields: planField.selectionSet,
                         fieldsMap: planField.selectionMap,
@@ -39227,6 +39325,25 @@ const createDocuments = (deps)=>{
                         pageKey,
                         inEdges: false
                     };
+                    // Push children onto stack
+                    for(let i = 0, fieldKeys = Object.keys(valueNode); i < fieldKeys.length; i++){
+                        const key = fieldKeys[i];
+                        const childValue = valueNode[key];
+                        if ((0,_utils__WEBPACK_IMPORTED_MODULE_1__.isObject)(childValue)) {
+                            stack.push(valueNode, childValue, key, nextFrame);
+                        } else {
+                            var _nextFrame_fieldsMap2;
+                            // Scalar
+                            const f = (_nextFrame_fieldsMap2 = nextFrame.fieldsMap) === null || _nextFrame_fieldsMap2 === void 0 ? void 0 : _nextFrame_fieldsMap2.get(key);
+                            if (f && !f.selectionSet) {
+                                const fieldKey = (0,_utils__WEBPACK_IMPORTED_MODULE_1__.buildFieldKey)(f, variables);
+                                put(nextFrame.parentId, {
+                                    [fieldKey]: childValue
+                                });
+                            }
+                        }
+                    }
+                    continue;
                 }
                 // Entity object
                 {
@@ -39245,7 +39362,7 @@ const createDocuments = (deps)=>{
                             });
                         }
                         const fromNode = !!planField && planField.responseKey === "node";
-                        return {
+                        const nextFrame = {
                             parentId: entityKey,
                             fields: planField === null || planField === void 0 ? void 0 : planField.selectionSet,
                             fieldsMap: planField === null || planField === void 0 ? void 0 : planField.selectionMap,
@@ -39253,6 +39370,25 @@ const createDocuments = (deps)=>{
                             pageKey: fromNode ? null : frame.pageKey,
                             inEdges: fromNode ? false : frame.inEdges
                         };
+                        // Push children onto stack
+                        for(let i = 0, fieldKeys = Object.keys(valueNode); i < fieldKeys.length; i++){
+                            const key = fieldKeys[i];
+                            const childValue = valueNode[key];
+                            if ((0,_utils__WEBPACK_IMPORTED_MODULE_1__.isObject)(childValue)) {
+                                stack.push(valueNode, childValue, key, nextFrame);
+                            } else {
+                                var _nextFrame_fieldsMap3;
+                                // Scalar
+                                const f = (_nextFrame_fieldsMap3 = nextFrame.fieldsMap) === null || _nextFrame_fieldsMap3 === void 0 ? void 0 : _nextFrame_fieldsMap3.get(key);
+                                if (f && !f.selectionSet) {
+                                    const fieldKey = (0,_utils__WEBPACK_IMPORTED_MODULE_1__.buildFieldKey)(f, variables);
+                                    put(nextFrame.parentId, {
+                                        [fieldKey]: childValue
+                                    });
+                                }
+                            }
+                        }
+                        continue;
                     }
                 }
                 // Inline container
@@ -39277,7 +39413,7 @@ const createDocuments = (deps)=>{
                             }
                         });
                     }
-                    return {
+                    const nextFrame = {
                         parentId: containerKey,
                         fields: planField.selectionSet,
                         fieldsMap: planField.selectionMap,
@@ -39285,24 +39421,39 @@ const createDocuments = (deps)=>{
                         pageKey: frame.pageKey,
                         inEdges: false
                     };
-                }
-                return frame;
-            }
-            /* ====== SCALARS ====== */ if (kind === _utils__WEBPACK_IMPORTED_MODULE_1__.TRAVERSE_SCALAR) {
-                if (typeof responseKey === "string" && fieldsMap) {
-                    const f = fieldsMap.get(responseKey);
-                    if (f && !f.selectionSet) {
-                        const fieldKey = (0,_utils__WEBPACK_IMPORTED_MODULE_1__.buildFieldKey)(f, variables);
-                        put(frame.parentId, {
-                            [fieldKey]: valueNode
-                        });
+                    // Push children onto stack
+                    for(let i = 0, fieldKeys = Object.keys(valueNode); i < fieldKeys.length; i++){
+                        const key = fieldKeys[i];
+                        const childValue = valueNode[key];
+                        if ((0,_utils__WEBPACK_IMPORTED_MODULE_1__.isObject)(childValue)) {
+                            stack.push(valueNode, childValue, key, nextFrame);
+                        } else {
+                            var _nextFrame_fieldsMap4;
+                            // Scalar
+                            const f = (_nextFrame_fieldsMap4 = nextFrame.fieldsMap) === null || _nextFrame_fieldsMap4 === void 0 ? void 0 : _nextFrame_fieldsMap4.get(key);
+                            if (f && !f.selectionSet) {
+                                const fieldKey = (0,_utils__WEBPACK_IMPORTED_MODULE_1__.buildFieldKey)(f, variables);
+                                put(nextFrame.parentId, {
+                                    [fieldKey]: childValue
+                                });
+                            }
+                        }
                     }
+                    continue;
                 }
-                return frame;
+                continue;
             }
-            return frame;
-        };
-        (0,_utils__WEBPACK_IMPORTED_MODULE_1__.traverseFast)(data, initialFrame, visit);
+            /* ====== SCALARS ====== */ // Handle scalars that were pushed onto the stack
+            if (typeof responseKey === "string" && fieldsMap) {
+                const f = fieldsMap.get(responseKey);
+                if (f && !f.selectionSet) {
+                    const fieldKey = (0,_utils__WEBPACK_IMPORTED_MODULE_1__.buildFieldKey)(f, variables);
+                    put(frame.parentId, {
+                        [fieldKey]: valueNode
+                    });
+                }
+            }
+        }
         // Update canonical connections (queries only) and mark canonical key as touched
         if (isQuery && connectionPages.length > 0) {
             for(let i = 0; i < connectionPages.length; i++){

@@ -122,26 +122,60 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       inEdges: false,
     };
 
-    const visit = (
-      _parentNode: any,
-      valueNode: any,
-      responseKey: string | number | null,
-      kind: symbol,
-      frame?: Frame,
-    ) => {
-      if (!frame) return;
-      if (responseKey == null) return frame;
+    // Inline traversal (eliminates visit callback overhead)
+    const stack = [null, data, null, initialFrame];
+
+    while (stack.length > 0) {
+      const frame = stack.pop() as Frame | undefined;
+      const responseKey = stack.pop() as string | number | null;
+      const valueNode = stack.pop();
+      const _parentNode = stack.pop();
+
+      if (!frame) continue;
+
+      // Handle root-level traversal
+      if (responseKey == null) {
+        if (Array.isArray(valueNode)) {
+          for (let i = valueNode.length - 1; i >= 0; i--) {
+            const childValue = valueNode[i];
+            if (isObject(childValue)) {
+              stack.push(valueNode, childValue, i, frame);
+            }
+          }
+          continue;
+        } else if (isObject(valueNode)) {
+          for (let i = 0, fieldKeys = Object.keys(valueNode); i < fieldKeys.length; i++) {
+            const key = fieldKeys[i];
+            const childValue = valueNode[key];
+            if (isObject(childValue)) {
+              stack.push(valueNode, childValue, key, frame);
+            } else {
+              // Scalar at root
+              const fieldsMap = frame.fieldsMap as Map<string, PlanField> | undefined;
+              if (fieldsMap) {
+                const f = fieldsMap.get(key);
+                if (f && !f.selectionSet) {
+                  const fieldKey = buildFieldKey(f, variables);
+                  put(frame.parentId, { [fieldKey]: childValue });
+                }
+              }
+            }
+          }
+          continue;
+        }
+        continue;
+      }
 
       const parentId = frame.parentId;
       const fieldsMap = frame.fieldsMap as Map<string, PlanField> | undefined;
       const planField = typeof responseKey === "string" && fieldsMap ? fieldsMap.get(responseKey) : undefined;
 
       /* ====== ARRAYS ====== */
-      if (kind === TRAVERSE_ARRAY) {
+      if (Array.isArray(valueNode)) {
         // Connection edges
         if (frame.insideConnection && responseKey === "edges") {
           const pageKey = frame.pageKey as string;
-          const rawEdges: any[] = Array.isArray(valueNode) ? valueNode : [];
+          const rawEdges: any[] = valueNode;
           const edgeRefs: string[] = new Array(rawEdges.length);
           for (let i = 0; i < rawEdges.length; i++) {
             edgeRefs[i] = `${pageKey}.edges.${i}`;
@@ -149,14 +183,23 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           put(pageKey, { edges: { __refs: edgeRefs } });
 
           const edgesField = fieldsMap?.get("edges");
-          return {
+          const nextFrame: Frame = {
             parentId: frame.parentId,
             fields: edgesField?.selectionSet,
             fieldsMap: edgesField?.selectionMap,
             insideConnection: true,
             pageKey,
             inEdges: true,
-          } as Frame;
+          };
+
+          // Push children onto stack
+          for (let i = rawEdges.length - 1; i >= 0; i--) {
+            const childValue = rawEdges[i];
+            if (isObject(childValue)) {
+              stack.push(valueNode, childValue, i, nextFrame);
+            }
+          }
+          continue;
         }
 
         // Plain array scalar/object values without selection → store raw array
@@ -166,13 +209,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           const out = new Array(arr.length);
           for (let i = 0; i < arr.length; i++) out[i] = arr[i];
           put(parentId, { [fieldKey]: out });
-          return TRAVERSE_SKIP;
+          continue; // SKIP
         }
 
         // Arrays of objects WITH a selection
         if (planField && planField.selectionSet) {
           const fieldKey = buildFieldKey(planField, variables);
-          const arr = Array.isArray(valueNode) ? (valueNode as any[]) : [];
+          const arr = valueNode as any[];
           const baseKey = `${parentId}.${fieldKey}`;
 
           const refs: string[] = new Array(arr.length);
@@ -189,26 +232,35 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
           put(parentId, { [fieldKey]: { __refs: refs } });
 
-          return {
+          const nextFrame: Frame = {
             parentId,
             fields: planField.selectionSet,
             fieldsMap: planField.selectionMap,
             insideConnection: false,
             pageKey: baseKey,
             inEdges: true,
-          } as Frame;
+          };
+
+          // Push children onto stack
+          for (let i = arr.length - 1; i >= 0; i--) {
+            const childValue = arr[i];
+            if (isObject(childValue)) {
+              stack.push(valueNode, childValue, i, nextFrame);
+            }
+          }
+          continue;
         }
 
-        return frame;
+        continue;
       }
 
       /* ====== OBJECTS ====== */
-      if (kind === TRAVERSE_OBJECT) {
+      if (isObject(valueNode)) {
         // Plain object field with no selection
         if (planField && !planField.selectionSet) {
           const fieldKey = buildFieldKey(planField, variables);
           put(parentId, { [fieldKey]: valueNode });
-          return TRAVERSE_SKIP;
+          continue; // SKIP
         }
 
         // Generic array item objects (not connection edges)
@@ -222,14 +274,31 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             else put(itemKey, {});
           }
 
-          return {
+          const nextFrame: Frame = {
             parentId: itemKey,
             fields: frame.fields,
             fieldsMap: frame.fieldsMap,
             insideConnection: false,
             pageKey: frame.pageKey,
             inEdges: false,
-          } as Frame;
+          };
+
+          // Push children onto stack
+          for (let i = 0, fieldKeys = Object.keys(valueNode); i < fieldKeys.length; i++) {
+            const key = fieldKeys[i];
+            const childValue = valueNode[key];
+            if (isObject(childValue)) {
+              stack.push(valueNode, childValue, key, nextFrame);
+            } else {
+              // Scalar
+              const f = nextFrame.fieldsMap?.get(key);
+              if (f && !f.selectionSet) {
+                const fieldKey = buildFieldKey(f, variables);
+                put(nextFrame.parentId, { [fieldKey]: childValue });
+              }
+            }
+          }
+          continue;
         }
 
         // Connection edges[i]
@@ -245,14 +314,31 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             if (nodeKey) put(edgeKey, { node: { __ref: nodeKey } });
           }
 
-          return {
+          const nextFrame: Frame = {
             parentId: edgeKey,
             fields: frame.fields,
             fieldsMap: frame.fieldsMap,
             insideConnection: true,
             pageKey: frame.pageKey,
             inEdges: true,
-          } as Frame;
+          };
+
+          // Push children onto stack
+          for (let i = 0, fieldKeys = Object.keys(valueNode); i < fieldKeys.length; i++) {
+            const key = fieldKeys[i];
+            const childValue = valueNode[key];
+            if (isObject(childValue)) {
+              stack.push(valueNode, childValue, key, nextFrame);
+            } else {
+              // Scalar
+              const f = nextFrame.fieldsMap?.get(key);
+              if (f && !f.selectionSet) {
+                const fieldKey = buildFieldKey(f, variables);
+                put(nextFrame.parentId, { [fieldKey]: childValue });
+              }
+            }
+          }
+          continue;
         }
 
         // Connection container
@@ -293,14 +379,31 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             connectionPages.push({ field: planField, parentId, pageKey });
           }
 
-          return {
+          const nextFrame: Frame = {
             parentId: pageKey,
             fields: planField.selectionSet,
             fieldsMap: planField.selectionMap,
             insideConnection: true,
             pageKey,
             inEdges: false,
-          } as Frame;
+          };
+
+          // Push children onto stack
+          for (let i = 0, fieldKeys = Object.keys(valueNode); i < fieldKeys.length; i++) {
+            const key = fieldKeys[i];
+            const childValue = valueNode[key];
+            if (isObject(childValue)) {
+              stack.push(valueNode, childValue, key, nextFrame);
+            } else {
+              // Scalar
+              const f = nextFrame.fieldsMap?.get(key);
+              if (f && !f.selectionSet) {
+                const fieldKey = buildFieldKey(f, variables);
+                put(nextFrame.parentId, { [fieldKey]: childValue });
+              }
+            }
+          }
+          continue;
         }
 
         // Entity object
@@ -317,14 +420,31 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
             const fromNode = !!planField && planField.responseKey === "node";
 
-            return {
+            const nextFrame: Frame = {
               parentId: entityKey,
               fields: planField?.selectionSet,
               fieldsMap: planField?.selectionMap,
               insideConnection: fromNode ? false : frame.insideConnection,
               pageKey: fromNode ? null : frame.pageKey,
               inEdges: fromNode ? false : frame.inEdges,
-            } as Frame;
+            };
+
+            // Push children onto stack
+            for (let i = 0, fieldKeys = Object.keys(valueNode); i < fieldKeys.length; i++) {
+              const key = fieldKeys[i];
+              const childValue = valueNode[key];
+              if (isObject(childValue)) {
+                stack.push(valueNode, childValue, key, nextFrame);
+              } else {
+                // Scalar
+                const f = nextFrame.fieldsMap?.get(key);
+                if (f && !f.selectionSet) {
+                  const fieldKey = buildFieldKey(f, variables);
+                  put(nextFrame.parentId, { [fieldKey]: childValue });
+                }
+              }
+            }
+            continue;
           }
         }
 
@@ -344,35 +464,46 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             put(frame.pageKey, { pageInfo: { __ref: containerKey } });
           }
 
-          return {
+          const nextFrame: Frame = {
             parentId: containerKey,
             fields: planField.selectionSet,
             fieldsMap: planField.selectionMap,
             insideConnection: frame.insideConnection,
             pageKey: frame.pageKey,
             inEdges: false,
-          } as Frame;
+          };
+
+          // Push children onto stack
+          for (let i = 0, fieldKeys = Object.keys(valueNode); i < fieldKeys.length; i++) {
+            const key = fieldKeys[i];
+            const childValue = valueNode[key];
+            if (isObject(childValue)) {
+              stack.push(valueNode, childValue, key, nextFrame);
+            } else {
+              // Scalar
+              const f = nextFrame.fieldsMap?.get(key);
+              if (f && !f.selectionSet) {
+                const fieldKey = buildFieldKey(f, variables);
+                put(nextFrame.parentId, { [fieldKey]: childValue });
+              }
+            }
+          }
+          continue;
         }
 
-        return frame;
+        continue;
       }
 
       /* ====== SCALARS ====== */
-      if (kind === TRAVERSE_SCALAR) {
-        if (typeof responseKey === "string" && fieldsMap) {
-          const f = fieldsMap.get(responseKey);
-          if (f && !f.selectionSet) {
-            const fieldKey = buildFieldKey(f, variables);
-            put(frame.parentId, { [fieldKey]: valueNode });
-          }
+      // Handle scalars that were pushed onto the stack
+      if (typeof responseKey === "string" && fieldsMap) {
+        const f = fieldsMap.get(responseKey);
+        if (f && !f.selectionSet) {
+          const fieldKey = buildFieldKey(f, variables);
+          put(frame.parentId, { [fieldKey]: valueNode });
         }
-        return frame;
       }
-
-      return frame;
-    };
-
-    traverseFast(data, initialFrame, visit);
+    }
 
     // Update canonical connections (queries only) and mark canonical key as touched
     if (isQuery && connectionPages.length > 0) {
