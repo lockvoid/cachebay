@@ -159,7 +159,7 @@ describe("Error Handling", () => {
     await fx.restore();
   });
 
-  it.skip("handles transport reordering with later responses overwriting earlier ones", async () => {
+  it("handles transport reordering with later responses overwriting earlier ones", async () => {
     const routes = [
       {
         when: ({ variables }) => {

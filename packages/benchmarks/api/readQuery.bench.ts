@@ -8,6 +8,11 @@ import { createCache } from "../../villus-cachebay/src/core/internals";
 import { InMemoryCache } from "@apollo/client/cache";
 import { relayStylePagination } from "@apollo/client/utilities";
 
+// ---- relay ----
+import { Environment, Network, RecordSource, Store } from "relay-runtime";
+import { createOperationDescriptor, getRequest } from "relay-runtime";
+import { RelayWriteQuery } from "../src/relayWriteQueryDef";
+
 // ---- shared ----
 import { makeResponse, buildPages, CACHEBAY_QUERY, APOLLO_QUERY } from "./utils";
 
@@ -53,6 +58,13 @@ function createApolloCache(resultCaching = false) {
       },
       Comment: { keyFields: ["id"] },
     },
+  });
+}
+
+function createRelayEnvironment() {
+  return new Environment({
+    network: Network.create(() => Promise.resolve({ data: {} })),
+    store: new Store(new RecordSource()),
   });
 }
 
@@ -161,6 +173,39 @@ describe("readQuery – COLD paths", () => {
             });
           }
           snapshot = seed.extract(true);
+        },
+      }
+    );
+  }
+
+  // Relay: lookup:cold (new environment + restore from RecordSource)
+  {
+    let recordSource: RecordSource;
+    let request: ReturnType<typeof getRequest>;
+    bench(
+      `relay.lookup:cold(newInstance+restore)(${label})`,
+      () => {
+        const env = new Environment({
+          network: Network.create(() => Promise.resolve({ data: {} })),
+          store: new Store(recordSource),
+        });
+        const operation = createOperationDescriptor(request, { first: PAGE_SIZE, after: null });
+        const r = env.lookup(operation.fragment);
+
+        sinkObj(r.data);
+      },
+      {
+        time: TIME,
+        setup() {
+          const seed = createRelayEnvironment();
+          request = getRequest(RelayWriteQuery);
+          for (let i = 0; i < pages.length; i++) {
+            const op = createOperationDescriptor(request, pages[i].vars);
+            seed.commitPayload(op, pages[i].data);
+          }
+          // Clone the record source for cold restores
+          const snapshot = seed.getStore().getSource().toJSON();
+          recordSource = new RecordSource(snapshot);
         },
       }
     );
@@ -304,6 +349,34 @@ describe("readQuery – HOT paths", () => {
             query: APOLLO_QUERY,
             variables: { first: PAGE_SIZE, after: null },
           });
+        },
+      }
+    );
+  }
+
+  // Relay: lookup:hot
+  {
+    let env: ReturnType<typeof createRelayEnvironment>;
+    let request: ReturnType<typeof getRequest>;
+    bench(
+      `relay.lookup:hot(${label})`,
+      () => {
+        const operation = createOperationDescriptor(request, { first: PAGE_SIZE, after: null });
+        const r = env.lookup(operation.fragment);
+        sinkObj(r.data);
+      },
+      {
+        time: TIME,
+        setup() {
+          env = createRelayEnvironment();
+          request = getRequest(RelayWriteQuery);
+          for (let i = 0; i < pages.length; i++) {
+            const op = createOperationDescriptor(request, pages[i].vars);
+            env.commitPayload(op, pages[i].data);
+          }
+          // warm
+          const operation = createOperationDescriptor(request, { first: PAGE_SIZE, after: null });
+          env.lookup(operation.fragment);
         },
       }
     );

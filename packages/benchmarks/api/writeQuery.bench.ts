@@ -8,6 +8,11 @@ import { createCache } from "../../villus-cachebay/src/core/internals";
 import { InMemoryCache } from "@apollo/client/cache";
 import { relayStylePagination } from "@apollo/client/utilities";
 
+// ---- relay ----
+import { Environment, Network, RecordSource, Store } from "relay-runtime";
+import { createOperationDescriptor, getRequest } from "relay-runtime";
+import { RelayWriteQuery } from "../src/relayWriteQueryDef";
+
 // ---- shared ----
 import { makeResponse, buildPages, CACHEBAY_QUERY, APOLLO_QUERY } from "./utils";
 
@@ -51,6 +56,13 @@ function createApolloCache() {
       },
       Comment: { keyFields: ["id"] },
     },
+  });
+}
+
+function createRelayEnvironment() {
+  return new Environment({
+    network: Network.create(() => Promise.resolve({ data: {} })),
+    store: new Store(new RecordSource()),
   });
 }
 
@@ -170,6 +182,51 @@ describe("writeQuery – Cachebay vs Apollo (paginated)", () => {
       }
     );
   }
+
+  // Relay: COLD — new environment per iteration, write ALL pages
+  bench(
+    `relay.commitPayload:cold(${label})`,
+    () => {
+      const relay = createRelayEnvironment();
+      const request = getRequest(RelayWriteQuery);
+
+      for (let i = 0; i < pages.length; i++) {
+        const p = pages[i];
+        const operation = createOperationDescriptor(request, p.vars);
+        relay.commitPayload(operation, p.data);
+      }
+    },
+    { time: TIME }
+  );
+
+  // Relay: HOT — pre-seeded once in setup, then write ALL pages again
+  {
+    let relay: ReturnType<typeof createRelayEnvironment>;
+    let request: ReturnType<typeof getRequest>;
+    bench(
+      `relay.commitPayload:hot(${label})`,
+      () => {
+        for (let i = 0; i < pages.length; i++) {
+          const p = pages[i];
+          const operation = createOperationDescriptor(request, p.vars);
+          relay.commitPayload(operation, p.data);
+        }
+      },
+      {
+        time: TIME,
+        setup() {
+          relay = createRelayEnvironment();
+          request = getRequest(RelayWriteQuery);
+          // pre-seed with all pages
+          for (let i = 0; i < pages.length; i++) {
+            const p = pages[i];
+            const operation = createOperationDescriptor(request, p.vars);
+            relay.commitPayload(operation, p.data);
+          }
+        },
+      }
+    );
+  }
 });
 
 // -----------------------------------------------------------------------------
@@ -261,6 +318,41 @@ describe("writeQuery – Single page writes", () => {
             variables: { first: USERS_PER_PAGE, after: null },
             data: singlePage,
           });
+        },
+      }
+    );
+  }
+
+  // Relay: write single page (cold)
+  bench(
+    `relay.commitPayload:single-page:cold(${USERS_PER_PAGE} users)`,
+    () => {
+      const relay = createRelayEnvironment();
+      const request = getRequest(RelayWriteQuery);
+      const operation = createOperationDescriptor(request, { first: USERS_PER_PAGE, after: null });
+      relay.commitPayload(operation, singlePage);
+    },
+    { time: TIME }
+  );
+
+  // Relay: write single page (hot)
+  {
+    let relay: ReturnType<typeof createRelayEnvironment>;
+    let request: ReturnType<typeof getRequest>;
+    bench(
+      `relay.commitPayload:single-page:hot(${USERS_PER_PAGE} users)`,
+      () => {
+        const operation = createOperationDescriptor(request, { first: USERS_PER_PAGE, after: null });
+        relay.commitPayload(operation, singlePage);
+      },
+      {
+        time: TIME,
+        setup() {
+          relay = createRelayEnvironment();
+          request = getRequest(RelayWriteQuery);
+          // warm
+          const operation = createOperationDescriptor(request, { first: USERS_PER_PAGE, after: null });
+          relay.commitPayload(operation, singlePage);
         },
       }
     );
