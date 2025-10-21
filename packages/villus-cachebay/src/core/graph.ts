@@ -134,8 +134,8 @@ class IdentityManager {
  * @param options - Configuration for keys and interfaces
  * @returns Graph store instance with CRUD and read methods
  */
-export const createGraph = (options: GraphOptions) => {
-  const { onChange } = options;
+export const createGraph = (options: GraphOptions = {}) => {
+  const { onChange = () => {} } = options;
 
   const identityManager = new IdentityManager({ keys: options.keys || {}, interfaces: options.interfaces || {} });
   const recordStore = new Map<string, Record<string, any>>();
