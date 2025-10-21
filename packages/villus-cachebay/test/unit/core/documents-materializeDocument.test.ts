@@ -9,9 +9,20 @@ import { createOptimistic } from "@/src/core/optimistic";
 import { createPlanner } from "@/src/core/planner";
 import { writeConnectionPage } from "@/test/helpers";
 import { users, posts, comments, tags, medias } from "@/test/helpers/fixtures";
-import { USER_QUERY, USERS_QUERY, USER_POSTS_QUERY, USERS_POSTS_QUERY, USERS_POSTS_COMMENTS_QUERY, POSTS_QUERY, POSTS_WITH_AGGREGATIONS_QUERY, POST_COMMENTS_QUERY, USER_POSTS_COMMENTS_QUERY, MULTIPLE_USERS_QUERY } from "@/test/helpers/operations";
+import {
+  USER_QUERY,
+  USERS_QUERY,
+  USER_POSTS_QUERY,
+  USERS_POSTS_QUERY,
+  USERS_POSTS_COMMENTS_QUERY,
+  POSTS_QUERY,
+  POSTS_WITH_AGGREGATIONS_QUERY,
+  POST_COMMENTS_QUERY,
+  USER_POSTS_COMMENTS_QUERY,
+  MULTIPLE_USERS_QUERY,
+} from "@/test/helpers/operations";
 
-describe("documents.materializeDocument (plain materialization + status)", () => {
+describe("documents.materializeDocument (plain materialization + source/ok)", () => {
   let graph: ReturnType<typeof createGraph>;
   let optimistic: ReturnType<typeof createOptimistic>;
   let planner: ReturnType<typeof createPlanner>;
@@ -20,7 +31,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
 
   beforeEach(() => {
     planner = createPlanner();
-    
+
     // Create documents first (will be assigned after graph creation)
     let documentsRef: ReturnType<typeof createDocuments>;
 
@@ -50,13 +61,12 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       graph,
       planner,
       canonical,
-      // no views!
     });
-    
+
     documentsRef = documents;
   });
 
-  it("FULFILLED for fully-present entity selection (scalars + link)", () => {
+  it("FULFILLED (source !== 'none') for fully-present entity selection (scalars + link)", () => {
     const QUERY = compilePlan(/* GraphQL */ `
       query UserById($id: ID!) {
         user(id: $id) {
@@ -76,7 +86,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
     });
 
     const res = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } }) as any;
-    expect(res.status).toBe("FULFILLED");
+    expect(res.source).not.toBe("none");
     expect(res.data).toEqual({
       user: { __typename: "User", id: "u1", email: "u1@example.com" },
     });
@@ -98,9 +108,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
     });
 
     const res = documents.materializeDocument({ document: QUERY, variables: { id: "u2" } }) as any;
-    expect(res.status).not.toBe("FULFILLED");
-    // You can assert exact string if your impl uses "MISSING" or "MISSED"
-    expect(["MISSING", "MISSED"]).toContain(res.status);
+    expect(res.source).toBe("none");
     expect(res.data).toBeUndefined();
   });
 
@@ -129,7 +137,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
     });
 
     const res = documents.materializeDocument({ document: QUERY, variables: {} }) as any;
-    expect(res.status).toBe("FULFILLED");
+    expect(res.source).not.toBe("none");
     expect(res.data).toEqual({
       media: {
         __typename: "Media",
@@ -167,7 +175,8 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       variables: { role: "admin", first: 2, after: null },
     }) as any;
 
-    expect(res.status).toBe("FULFILLED");
+    expect(res.source).toBe("canonical");
+    expect(res.ok.canonical).toBe(true);
     expect(res.data.users.pageInfo.startCursor).toBe("u1");
     expect(res.data.users.pageInfo.endCursor).toBe("u2");
     expect(res.data.users.edges).toHaveLength(2);
@@ -205,7 +214,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       variables: { id: "u1", first: 1, after: null, category: "tech" },
     }) as any;
 
-    expect(res.status).toBe("FULFILLED");
+    expect(res.source).toBe("canonical");
     expect(res.data.user.posts.edges[0].node).toEqual({ __typename: "Post", id: "p1", title: "Post 1" });
   });
 
@@ -225,8 +234,8 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
     const a = documents.materializeDocument({ document: QUERY, variables: {} }) as any;
     const b = documents.materializeDocument({ document: QUERY, variables: {} }) as any;
 
-    expect(a.status).toBe("FULFILLED");
-    expect(b.status).toBe("FULFILLED");
+    expect(a.source).not.toBe("none");
+    expect(b.source).not.toBe("none");
     // identity stable if cache hits
     expect(b.data).toBe(a.data);
 
@@ -234,7 +243,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
     graph.putRecord("User:u1", { email: "v2@example.com" });
 
     const c = documents.materializeDocument({ document: QUERY, variables: {} }) as any;
-    expect(c.status).toBe("FULFILLED");
+    expect(c.source).not.toBe("none");
     expect(c.data).not.toBe(a.data);
     expect(c.data).toEqual({ user: { __typename: "User", id: "u1", email: "v2@example.com" } });
   });
@@ -256,7 +265,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
         data: { entity: { __typename: "Entity", id: "e1", data: "string" } },
       });
       const c = documents.materializeDocument({ document: QUERY, variables: { id: "e1" } }) as any;
-      expect(c.status).toBe("FULFILLED");
+      expect(c.source).not.toBe("none");
       expect(c.data).toEqual({ entity: { __typename: "Entity", id: "e1", data: "string" } });
     });
 
@@ -276,7 +285,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
         data: { entity: { __typename: "Entity", id: "e1", data: 123 } },
       });
       const c = documents.materializeDocument({ document: QUERY, variables: { id: "e1" } }) as any;
-      expect(c.status).toBe("FULFILLED");
+      expect(c.source).not.toBe("none");
       expect(c.data).toEqual({ entity: { __typename: "Entity", id: "e1", data: 123 } });
     });
 
@@ -296,7 +305,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
         data: { entity: { __typename: "Entity", id: "e1", data: true } },
       });
       const c = documents.materializeDocument({ document: QUERY, variables: { id: "e1" } }) as any;
-      expect(c.status).toBe("FULFILLED");
+      expect(c.source).not.toBe("none");
       expect(c.data).toEqual({ entity: { __typename: "Entity", id: "e1", data: true } });
     });
 
@@ -316,7 +325,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
         data: { entity: { __typename: "Entity", id: "e1", data: null } },
       });
       const c = documents.materializeDocument({ document: QUERY, variables: { id: "e1" } }) as any;
-      expect(c.status).toBe("FULFILLED");
+      expect(c.source).not.toBe("none");
       expect(c.data).toEqual({ entity: { __typename: "Entity", id: "e1", data: null } });
     });
 
@@ -336,7 +345,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
         data: { entity: { __typename: "Entity", id: "e1", data: { foo: { bar: "baz" } } } },
       });
       const c = documents.materializeDocument({ document: QUERY, variables: { id: "e1" } }) as any;
-      expect(c.status).toBe("FULFILLED");
+      expect(c.source).not.toBe("none");
       expect(c.data).toEqual({ entity: { __typename: "Entity", id: "e1", data: { foo: { bar: "baz" } } } });
     });
   });
@@ -366,7 +375,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
         },
       });
       const c = documents.materializeDocument({ document: QUERY, variables: { id: "e1" } }) as any;
-      expect(c.status).toBe("FULFILLED");
+      expect(c.source).not.toBe("none");
       expect(c.data).toEqual({
         entity: {
           __typename: "Entity",
@@ -403,7 +412,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       });
 
       const c1 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } }) as any;
-      expect(c1.status).toBe("FULFILLED");
+      expect(c1.source).not.toBe("none");
       expect(c1.data.user).toEqual({
         __typename: "User",
         id: "u1",
@@ -424,7 +433,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       });
 
       const c2 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } }) as any;
-      expect(c2.status).toBe("FULFILLED");
+      expect(c2.source).not.toBe("none");
       expect(c2.data.user).toEqual({
         __typename: "User",
         id: "u1",
@@ -451,7 +460,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
             },
           ]),
         },
-      }
+      };
 
       documents.normalizeDocument({
         document: USER_POSTS_QUERY,
@@ -464,7 +473,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
         variables: { id: "u1", postsCategory: "tech", postsFirst: 10 },
       }) as any;
 
-      expect(c1.status).toBe("FULFILLED");
+      expect(c1.source).not.toBe("none");
       expect(c1.data.user.posts.edges[0].node).toEqual({
         __typename: "Post",
         id: "p1",
@@ -507,7 +516,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
         variables: { id: "u1", postsCategory: "tech", postsFirst: 10 },
       }) as any;
 
-      expect(c2.status).toBe("FULFILLED");
+      expect(c2.source).not.toBe("none");
       expect(c2.data.user.posts.edges[0].node).toEqual({
         __typename: "Post",
         id: "p1",
@@ -517,7 +526,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
           __typename: "User",
           id: "u1",
           email: "u1+updated@example.com",
-        }
+        },
       });
       expect(c2.data.user.posts.edges[1].node).toEqual({
         __typename: "Post",
@@ -528,7 +537,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
           __typename: "User",
           id: "u1",
           email: "u1+updated@example.com",
-        }
+        },
       });
     });
 
@@ -578,7 +587,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       });
 
       const c1 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" } }) as any;
-      expect(c1.status).toBe("FULFILLED");
+      expect(c1.source).not.toBe("none");
       expect(c1.data.post.nested1.nested2.nested3.author).toEqual({
         __typename: "User",
         id: "u1",
@@ -599,7 +608,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       });
 
       const c2 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" } }) as any;
-      expect(c2.status).toBe("FULFILLED");
+      expect(c2.source).not.toBe("none");
       expect(c2.data.post.nested1.nested2.nested3.author).toEqual({
         __typename: "User",
         id: "u1",
@@ -642,7 +651,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       });
 
       const c = documents.materializeDocument({ document: QUERY, variables: { id: "p1" } }) as any;
-      expect(c.status).toBe("FULFILLED");
+      expect(c.source).not.toBe("none");
       expect(c.data.post.tags).toHaveLength(2);
       expect(c.data.post.tags[0]).toEqual({
         __typename: "Tag",
@@ -656,7 +665,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       });
     });
 
-    it("returns MISSING when field is explicitly null", () => {
+    it("returns MISSING (source === 'none') when field is explicitly null", () => {
       const QUERY = `
         query Query($id: ID!) {
           post(id: $id) {
@@ -684,7 +693,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       });
 
       const c = documents.materializeDocument({ document: QUERY, variables: { id: "p1" } }) as any;
-      expect(c.status).toBe("MISSING");
+      expect(c.source).toBe("none");
     });
 
     it("hydrates in place when record appears after initial null", async () => {
@@ -716,7 +725,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       });
 
       const c1 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" } }) as any;
-      expect(c1.status).toBe("MISSING");
+      expect(c1.source).toBe("none");
 
       // Now normalize with author present
       documents.normalizeDocument({
@@ -732,7 +741,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       });
 
       const c2 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" } }) as any;
-      expect(c2.status).toBe("FULFILLED");
+      expect(c2.source).not.toBe("none");
       expect(c2.data.post.author).toEqual({
         __typename: "User",
         id: "u1",
@@ -752,8 +761,8 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       const c1 = documents.materializeDocument({ document: USER_QUERY, variables: { id: "u1" } }) as any;
       const c2 = documents.materializeDocument({ document: USER_QUERY, variables: { id: "u1" } }) as any;
 
-      expect(c1.status).toBe("FULFILLED");
-      expect(c2.status).toBe("FULFILLED");
+      expect(c1.source).not.toBe("none");
+      expect(c2.source).not.toBe("none");
       expect(c1.data).toEqual(c2.data);
     });
   });
@@ -775,7 +784,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
 
       const d = documents.materializeDocument({ document: POSTS_QUERY, variables: { id: "u1" } }) as any;
 
-      expect(d.status).toBe("FULFILLED");
+      expect(d.source).not.toBe("none");
 
       expect(d.data.posts.pageInfo).toEqual({
         startCursor: "p1",
@@ -809,9 +818,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
     );
 
     const commentsDataP2 = comments.buildConnection(
-      [
-        { uuid: "c3", text: "Comment 3", author: users.buildNode({ id: "u2", email: "u2@example.com" }) },
-      ],
+      [{ uuid: "c3", text: "Comment 3", author: users.buildNode({ id: "u2", email: "u2@example.com" }) }],
       { startCursor: "c3", endCursor: "c3", hasNextPage: false, hasPreviousPage: false },
     );
 
@@ -863,8 +870,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       },
     }) as any;
 
-    expect(d.status).toBe("FULFILLED");
-    expect(d.status).toBe("FULFILLED");
+    expect(d.source).not.toBe("none");
     expect(d.data.user).toMatchObject({
       __typename: "User",
       id: "u1",
@@ -952,9 +958,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       { startCursor: "c1", endCursor: "c2", hasNextPage: false, hasPreviousPage: false },
     );
     const commentsDataU1P2 = comments.buildConnection(
-      [
-        { uuid: "c3", text: "Comment 3" },
-      ],
+      [{ uuid: "c3", text: "Comment 3" }],
       { startCursor: "c3", endCursor: "c3", hasNextPage: false, hasPreviousPage: false },
     );
     const postsDataU1 = posts.buildConnection(
@@ -975,9 +979,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
 
     // User 2 data
     const commentsDataU2P1 = comments.buildConnection(
-      [
-        { uuid: "c4", text: "Comment 4" },
-      ],
+      [{ uuid: "c4", text: "Comment 4" }],
       { startCursor: "c4", endCursor: "c4", hasNextPage: false, hasPreviousPage: false },
     );
     const postsDataU2 = posts.buildConnection(
@@ -1038,7 +1040,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       },
     }) as any;
 
-    expect(d.status).toBe("FULFILLED");
+    expect(d.source).not.toBe("none");
     expect(d.data.users.pageInfo).toMatchObject({
       startCursor: "u1",
       endCursor: "u2",
@@ -1178,7 +1180,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       },
     }) as any;
 
-    expect(d.status).toBe("FULFILLED");
+    expect(d.source).not.toBe("none");
 
     // Single user query
     expect(d.data.user).toMatchObject({
@@ -1234,16 +1236,12 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
     );
 
     const moderationTagsP2 = tags.buildConnection(
-      [
-        { id: "mt3", name: "Flagged" },
-      ],
+      [{ id: "mt3", name: "Flagged" }],
       { startCursor: "mt3", endCursor: "mt3", hasNextPage: false, hasPreviousPage: false },
     );
 
     const userTagsP2 = tags.buildConnection(
-      [
-        { id: "ut3", name: "News" },
-      ],
+      [{ id: "ut3", name: "News" }],
       { startCursor: "ut3", endCursor: "ut3", hasNextPage: false, hasPreviousPage: false },
     );
 
@@ -1314,7 +1312,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       },
     }) as any;
 
-    expect(d.status).toBe("FULFILLED");
+    expect(d.source).not.toBe("none");
     expect(d.data.posts.totalCount).toBe(2);
     expect(d.data.posts.pageInfo).toMatchObject({
       startCursor: "p1",
@@ -1442,7 +1440,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
     });
   });
 
-  describe("canonical flag and hasCanonical behavior", () => {
+  describe("canonical flag & ok/source behavior", () => {
     describe("1-level nested (USER_QUERY)", () => {
       it("MISSING: no data exists", () => {
         const result = documents.materializeDocument({
@@ -1451,12 +1449,13 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
           canonical: false,
         });
 
-        expect(result.status).toBe("MISSING");
-        expect(result.hasCanonical).toBeUndefined();
+        expect(result.source).toBe("none");
+        expect(result.ok.strict).toBe(false);
+        expect(result.ok.canonical).toBe(false);
         expect(result.data).toBeUndefined();
       });
 
-      it("FULFILLED with hasCanonical: false when canonical: false", () => {
+      it("FULFILLED strict read when canonical: false", () => {
         documents.normalizeDocument({
           document: USER_QUERY,
           variables: { id: "u1" },
@@ -1466,9 +1465,7 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
               __typename: "User",
               id: "u1",
               email: "u1@example.com",
-              posts: [
-                { __typename: "Post", id: "p1", title: "Post 1" },
-              ],
+              posts: [{ __typename: "Post", id: "p1", title: "Post 1" }],
             },
           },
         });
@@ -1479,12 +1476,12 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
           canonical: false,
         });
 
-        expect(result.status).toBe("FULFILLED");
-        expect(result.hasCanonical).toBe(false);
+        expect(result.source).toBe("strict");
+        expect(result.ok.strict).toBe(true);
         expect(result.data?.user?.email).toBe("u1@example.com");
       });
 
-      it("FULFILLED with hasCanonical: true when has server data", () => {
+      it("FULFILLED canonical read when server data exists", () => {
         documents.normalizeDocument({
           document: USER_QUERY,
           variables: { id: "u2" },
@@ -1504,12 +1501,13 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
           canonical: true,
         });
 
-        expect(result.status).toBe("FULFILLED");
-        expect(result.hasCanonical).toBe(true);
+        expect(result.source).toBe("canonical");
+        expect(result.ok.strict).toBe(true);
+        expect(result.ok.canonical).toBe(true);
         expect(result.data?.user?.email).toBe("u2@example.com");
       });
 
-      it("FULFILLED with hasCanonical: true for connection with canonical data", () => {
+      it("FULFILLED canonical read for connection with only canonical data", () => {
         // Seed canonical connection data
         const canonicalKey = '@connection.posts({})';
         const connectionData = posts.buildConnection(
@@ -1517,19 +1515,20 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
             { id: "p1", title: "Post 1" },
             { id: "p2", title: "Post 2" },
           ],
-          { startCursor: "p1", endCursor: "p2", hasNextPage: false, hasPreviousPage: false }
+          { startCursor: "p1", endCursor: "p2", hasNextPage: false, hasPreviousPage: false },
         );
         writeConnectionPage(graph, canonicalKey, connectionData);
 
-        // Materialize with canonical: true should find the canonical connection
+        // canonical: true should find the canonical connection
         const result = documents.materializeDocument({
           document: POSTS_QUERY,
           variables: {},
           canonical: true,
         });
 
-        expect(result.status).toBe("FULFILLED");
-        expect(result.hasCanonical).toBe(true);
+        expect(result.source).toBe("canonical");
+        expect(result.ok.canonical).toBe(true);
+        expect(result.ok.strict).toBe(false);
         expect(result.data?.posts?.edges).toHaveLength(2);
       });
 
@@ -1537,25 +1536,23 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
         // Seed canonical connection data (no strict/server data for this specific query)
         const canonicalKey = '@connection.posts({})';
         const connectionData = posts.buildConnection(
-          [
-            { id: "p3", title: "Post 3" },
-          ],
-          { startCursor: "p3", endCursor: "p3", hasNextPage: false, hasPreviousPage: false }
+          [{ id: "p3", title: "Post 3" }],
+          { startCursor: "p3", endCursor: "p3", hasNextPage: false, hasPreviousPage: false },
         );
         writeConnectionPage(graph, canonicalKey, connectionData);
 
-        // Materialize with canonical: false should return MISSING (no strict data)
+        // canonical: false should return MISSING (no strict data)
         const result = documents.materializeDocument({
           document: POSTS_QUERY,
           variables: {},
           canonical: false,
         });
 
-        expect(result.status).toBe("MISSING");
-        expect(result.hasCanonical).toBeUndefined();
+        expect(result.source).toBe("none");
+        expect(result.ok.strict).toBe(false);
+        expect(result.ok.canonical).toBe(true);
         expect(result.data).toBeUndefined();
       });
     });
-
   });
 });

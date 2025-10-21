@@ -1,5 +1,5 @@
-import { createInspect } from "../features/inspect";
-import { createSSR } from "../features/ssr";
+import { createInspect } from "./inspect";
+import { createSSR } from "./ssr";
 import { createCanonical } from "./canonical";
 import { createDocuments } from "./documents";
 import { createFragments } from "./fragments";

@@ -36,6 +36,14 @@ type ConnectionPage = {
 
 export type DocumentsInstance = ReturnType<typeof createDocuments>;
 
+export type MaterializeResult<T = any> = {
+  data?: T;                                 // only when source !== "none"
+  deps: string[];                           // dependency ids/keys
+  source: "strict" | "canonical" | "none";  // which path produced data
+  ok: { strict: boolean; canonical: boolean }; // what is possible from cache
+};
+
+
 export const createDocuments = (deps: DocumentsDependencies) => {
   const { graph, planner, canonical } = deps;
 
@@ -48,15 +56,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     variables = {},
     data,
     rootId,
-    linkFromParent,
   }: {
     document: DocumentNode | CachePlan;
     variables?: Record<string, any>;
     data: any;
-    /** Override root parent id (for fragments) */
+    /** When provided, treat this entity id as the "root" parent (used by fragments) */
     rootId?: string;
-    /** Whether to link the parent -> page/ref (default: plan.operation==='query') */
-    linkFromParent?: boolean;
   }): { touched: Set<string> } => {
     const touched = new Set<string>();
     const put = (id: string, patch: Record<string, any>) => {
@@ -78,9 +83,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     };
 
     const plan = planner.getPlan(document);
-    const shouldLink = linkFromParent ?? (plan.operation === "query");
-
     const startId = rootId ?? ROOT_ID;
+    const shouldLink = (startId !== ROOT_ID) || (plan.operation === "query");
+
     if (startId === ROOT_ID) {
       put(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
     }
@@ -506,13 +511,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   };
 
   /* MATERIALIZE DOCUMENT (per-plan LRU; per-dep inverted index; no clocks) */
-  type MaterializeResult = {
-    data?: any;
-    status: "FULFILLED" | "MISSING";
-    hasCanonical?: boolean; // true if canonical data was used to fill gaps
-    deps?: string[];
-    debug?: { misses: Array<Record<string, any>>; vars: Record<string, any> };
-  };
 
   type CacheEntry = { data: any; deps: string[] };
 
@@ -620,7 +618,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   }: {
     document: DocumentNode | CachePlan;
     variables?: Record<string, any>;
-    canonical?: boolean;
+    canonical?: boolean;          // requested mode
     /** When provided, read the plan.root selection over this entity id instead of ROOT */
     entityId?: string;
   }): MaterializeResult => {
@@ -638,10 +636,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       if (cached && !dirty.has(vkey)) {
         return {
           data: cached.data,
-          status: "FULFILLED",
           deps: cached.deps.slice(),
-          // For cached results, if canonical mode was used, assume it may have canonical data
-          hasCanonical: canonical ? true : false,
+          source: canonical ? "canonical" : "strict",
+          ok: { strict: true, canonical: true }, // cached implies satisfiable in the requested mode
         };
       }
     }
@@ -651,18 +648,19 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const touch = (id?: string | null) => { if (id) deps.add(id); };
 
     const outData: Record<string, any> = {};
-    let allOk = true;
-    let foundCanonical = false; // Track if we found canonical connection data
+    let strictOK = true;
+    let canonicalOK = true;
 
     const tasks: Task[] = [];
     const rootSel = plan.root;
+
+    let root: any = undefined;
     if (entityId) {
       // Synthetic "ENTITY" root: apply fragment selection to the entity directly
       const syntheticField = { selectionSet: rootSel, selectionMap: plan.rootSelectionMap } as unknown as PlanField;
       tasks.push({ t: "ENTITY", id: entityId, field: syntheticField, out: outData });
     } else {
-      const root = graph.getRecord(ROOT_ID) || {};
-      // Don't track ROOT_ID as a dep; we instead track root field keys
+      root = graph.getRecord(ROOT_ID) || {};
       for (let i = rootSel.length - 1; i >= 0; i--) {
         const f = rootSel[i];
         tasks.push({ t: "ROOT_FIELD", parentId: ROOT_ID, field: f, out: outData, outKey: f.responseKey });
@@ -709,7 +707,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
           if (!link || !link.__ref) {
             out[outKey] = link === null ? null : undefined;
-            allOk = false;
+            strictOK = false;
+            canonicalOK = false;
             continue;
           }
 
@@ -734,7 +733,10 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const rec = graph.getRecord(id);
         touch(id);
 
-        if (!rec) allOk = false;
+        if (!rec) {
+          strictOK = false;
+          canonicalOK = false;
+        }
 
         const snap = rec || {};
 
@@ -774,7 +776,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             // single ref or missing
             if (!link || !link.__ref) {
               out[f.responseKey] = link === null ? null : undefined;
-              allOk = false;
+              strictOK = false;
+              canonicalOK = false;
               continue;
             }
 
@@ -814,24 +817,22 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         touch(canonicalKey);
         const pageCanonical = graph.getRecord(canonicalKey);
 
-        let ok = !!pageCanonical;
-        if (ok && canonical) {
-          // Track that we found canonical connection data
-          foundCanonical = true;
-        }
-        if (ok && !canonical) {
-          // Strict mode: also check that server data exists for this specific query
-          const strictKey = buildConnectionKey(field, parentId, variables);
-          const pageStrict = graph.getRecord(strictKey);
-          ok = !!pageStrict;
-        }
+        const strictKey = buildConnectionKey(field, parentId, variables);
+        const pageStrict = graph.getRecord(strictKey);
+
+        canonicalOK &&= !!pageCanonical;
+        strictOK &&= !!pageStrict;
+
+        const requestedOK = canonical ? !!pageCanonical : !!pageStrict;
 
         const conn: any = { edges: [], pageInfo: {} };
         out[outKey] = conn;
 
-        if (!ok) { allOk = false; continue; }
+        if (!requestedOK) {
+          continue;
+        }
 
-        const page = pageCanonical!;
+        const page = (canonical ? pageCanonical : pageStrict)!;
         const selMap = (field as any).selectionMap as Map<string, PlanField> | undefined;
 
         if (selMap && selMap.size) {
@@ -842,7 +843,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
                 tasks.push({ t: "PAGE_INFO", id: piLink.__ref as string, field: pf, out: conn });
               } else {
                 conn.pageInfo = {};
-                allOk = false;
+                // pageInfo missing → both modes are "not fully OK"
+                strictOK = false;
+                canonicalOK = false;
               }
               continue;
             }
@@ -853,7 +856,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               if (edgesRaw && typeof edgesRaw === "object" && Array.isArray(edgesRaw.__refs)) {
                 refs = edgesRaw.__refs.slice();
               } else if (Array.isArray(edgesRaw)) {
-                refs = edgesRaw.map((_: any, i: number) => `${canonicalKey}.edges.${i}`);
+                const baseKey = canonical ? canonicalKey : strictKey;
+                refs = edgesRaw.map((_: any, i: number) => `${baseKey}.edges.${i}`);
               }
 
               const arr: any[] = new Array(refs.length);
@@ -877,7 +881,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             }
 
             if (isConnectionField(pf)) {
-              tasks.push({ t: "CONNECTION", parentId: canonicalKey, field: pf, out: conn, outKey: pf.responseKey });
+              tasks.push({
+                t: "CONNECTION",
+                parentId: canonical ? canonicalKey : strictKey,
+                field: pf,
+                out: conn,
+                outKey: pf.responseKey,
+              });
               continue;
             }
 
@@ -897,7 +907,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
             if (!link || !link.__ref) {
               conn[pf.responseKey] = link === null ? null : undefined;
-              allOk = false;
+              strictOK = false;
+              canonicalOK = false;
               continue;
             }
 
@@ -952,7 +963,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             const nlink = (edge as any).node;
             if (!nlink || !nlink.__ref) {
               edgeOut.node = nlink === null ? null : undefined;
-              allOk = false;
+              strictOK = false;
+              canonicalOK = false;
             } else {
               const nid = nlink.__ref as string;
               const nOut: any = {};
@@ -972,11 +984,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
     }
 
-    if (!allOk) {
-      return { status: "MISSING", data: undefined, deps: Array.from(deps) };
-    }
-
     const ids = Array.from(deps).sort();
+    const requestedOK = canonical ? canonicalOK : strictOK;
+
+    if (!requestedOK) {
+      // return deps so watchers can subscribe to future hydration
+      return { data: undefined, deps: ids, source: "none", ok: { strict: strictOK, canonical: canonicalOK } };
+    }
 
     // relink deps and store fresh entry
     const prev = lru.get(vkey);
@@ -990,17 +1004,19 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     dirty.delete(vkey);
 
     return {
-      status: "FULFILLED",
       data: outData,
       deps: ids,
-      // hasCanonical: true if canonical mode enabled (may include canonical entity data or connections)
-      hasCanonical: canonical ? true : false,
+      source: canonical ? "canonical" : "strict",
+      ok: { strict: strictOK, canonical: canonicalOK },
     };
   };
+
   return {
     normalizeDocument,
     materializeDocument,
     // Internal: mark results dirty (called from internals.ts onChange hook)
     _markDirty: markResultsDirtyForTouched,
+    // Optional: test/dev helper
+    _clearAllResultCaches: clearAllResultCaches,
   };
 };
