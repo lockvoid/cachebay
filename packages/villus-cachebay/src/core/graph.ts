@@ -314,7 +314,9 @@ export const createGraph = (options?: GraphOptions) => {
     // Notify subscribers of change (batched in microtask)
     // For ROOT_ID, also notify field-level changes for granular dependency tracking
     if (recordId === ROOT_ID) {
-      for (const key of Object.keys(partialSnapshot)) {
+      const keys = Object.keys(partialSnapshot);
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
         const value = partialSnapshot[key];
         // Skip metadata fields (id/typename that equal ROOT_ID) but track actual query fields
         if (value === ROOT_ID) continue;

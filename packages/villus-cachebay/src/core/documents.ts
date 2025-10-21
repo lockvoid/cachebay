@@ -94,10 +94,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         touched.add(id);
       } else {
         // But DO track field-level changes on root (e.g., @.user({"id":"1"}))
-        for (const key of Object.keys(patch)) {
-          if (key !== 'id' && key !== '__typename') {
-            touched.add(`${id}.${key}`);
-          }
+        const keys = Object.keys(patch);
+        for (let i = 0; i < keys.length; i++) {
+          const key = keys[i];
+          const value = patch[key];
+          // Skip metadata fields (id/typename that equal ROOT_ID) but track actual query fields
+          if (value === ROOT_ID) continue;
+          touched.add(`${id}.${key}`);
         }
       }
       graph.putRecord(id, patch);
