@@ -243,19 +243,25 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     // ---------------- cache-first ----------------
     if (policy === "cache-first") {
       const result = queries.readQuery({ query: document, variables, canonical });
-      if (result.data) {
-        emit({ data: markRaw(result.data), error: null }, true);
-        return; // no network
+      if (result.hasCanonical && result.data) {
+        // Has canonical data - emit it
+        const terminal = result.status === "FULFILLED";
+        emit({ data: markRaw(result.data), error: null }, terminal);
+        if (terminal) {
+          return; // FULFILLED - no network needed
+        }
+        // MISSING but has canonical - emit and continue to network
       }
-      // miss → proceed to network; watcher will surface optimistic writes
+      // No data at all → proceed to network; watcher will surface optimistic writes
     }
 
     // ---------------- cache-and-network ----------------
     if (policy === "cache-and-network") {
       const result = queries.readQuery({ query: document, variables, canonical });
-      if (result.data) {
+      if (result.hasCanonical && result.data) {
+        // Has canonical data - emit immediately (non-terminal)
         emit({ data: markRaw(result.data), error: null }, false);
-        // continue to network
+        // always continue to network
       }
     }
 

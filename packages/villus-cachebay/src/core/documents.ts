@@ -568,7 +568,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           data: cached.data, 
           status: "FULFILLED", 
           deps: cached.deps.slice(),
-          hasCanonical: canonical,
+          // For cached results, if canonical mode was used, assume it may have canonical data
+          hasCanonical: canonical ? true : false,
         };
       }
     }
@@ -579,6 +580,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     const outData: Record<string, any> = {};
     let allOk = true;
+    let foundCanonical = false; // Track if we found canonical connection data
 
     const root = graph.getRecord(ROOT_ID) || {};
     // Don't track ROOT_ID - we'll track field-level deps instead
@@ -736,6 +738,10 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const pageCanonical = graph.getRecord(canonicalKey);
 
         let ok = !!pageCanonical;
+        if (ok && canonical) {
+          // Track that we found canonical connection data
+          foundCanonical = true;
+        }
         if (ok && !canonical) {
           // Strict mode: also check that server data exists for this specific query
           const strictKey = buildConnectionKey(field, parentId, variables);
@@ -910,7 +916,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       status: "FULFILLED", 
       data: outData, 
       deps: ids,
-      hasCanonical: canonical, // true if canonical filling was enabled
+      // hasCanonical: true if canonical mode enabled (may include canonical entity data or connections)
+      hasCanonical: canonical ? true : false,
     };
   };
   return {

@@ -1,4 +1,3 @@
-import { shallowReactive } from "vue";
 import { ID_FIELD, TYPENAME_FIELD, IDENTITY_FIELDS, ROOT_ID } from "./constants";
 import { isObject } from "./utils";
 
@@ -10,8 +9,8 @@ export type GraphOptions = {
   keys?: Record<string, (obj: Record<string, unknown>) => string | null>;
   /** Interface to implementation mappings */
   interfaces?: Record<string, string[]>;
-  /** Callback fired when records change (for cache invalidation) */
-  onChange?: (recordIds: Set<string>) => void;
+  /** Callback fired when records change (required for reactivity) */
+  onChange: (recordIds: Set<string>) => void;
 };
 
 /**
@@ -19,81 +18,8 @@ export type GraphOptions = {
  */
 export type GraphInstance = ReturnType<typeof createGraph>;
 
-const RECORD_PROXY_VERSION = Symbol("graph:record-proxy-version");
-
-/**
- * Update proxy with only changed fields for optimal performance
- * @private
- */
-const overlayRecordDiff = (recordProxy: any, currentSnapshot: Record<string, any>, changedFields: string[], typenameChanged: boolean, idChanged: boolean, targetVersion: number) => {
-  if (recordProxy[RECORD_PROXY_VERSION] === targetVersion) {
-    return;
-  }
-
-  if (typenameChanged) {
-    recordProxy[TYPENAME_FIELD] = currentSnapshot[TYPENAME_FIELD];
-  }
-
-  if (idChanged) {
-    if (ID_FIELD in currentSnapshot) {
-      recordProxy[ID_FIELD] = currentSnapshot[ID_FIELD];
-    } else {
-      delete recordProxy[ID_FIELD];
-    }
-  }
-
-  for (let i = 0; i < changedFields.length; i++) {
-    const field = changedFields[i];
-
-    if (!IDENTITY_FIELDS.has(field)) {
-      recordProxy[field] = currentSnapshot[field];
-    }
-  }
-
-  if (recordProxy[RECORD_PROXY_VERSION] !== undefined) {
-    recordProxy[RECORD_PROXY_VERSION] = targetVersion;
-  } else {
-    Object.defineProperty(recordProxy, RECORD_PROXY_VERSION, { value: targetVersion, writable: true, configurable: true, enumerable: false });
-  }
-};
-
-/**
- * Full proxy overlay for initialization or version drift recovery
- * @private
- */
-const overlayRecordFull = (recordProxy: any, currentSnapshot: Record<string, any>, targetVersion: number) => {
-  if (currentSnapshot[TYPENAME_FIELD]) {
-    recordProxy[TYPENAME_FIELD] = currentSnapshot[TYPENAME_FIELD];
-  }
-
-  if (ID_FIELD in currentSnapshot) {
-    recordProxy[ID_FIELD] = currentSnapshot[ID_FIELD];
-  } else {
-    delete recordProxy[ID_FIELD];
-  }
-
-  for (let i = 0, fields = Object.keys(recordProxy); i < fields.length; i++) {
-    const field = fields[i];
-
-    if (!(field in currentSnapshot)) {
-      delete recordProxy[field];
-    }
-  }
-
-  for (let i = 0, fields = Object.keys(currentSnapshot); i < fields.length; i++) {
-    const field = fields[i];
-
-    if (!IDENTITY_FIELDS.has(field)) {
-      recordProxy[field] = currentSnapshot[field];
-    }
-  }
-
-  if (recordProxy[RECORD_PROXY_VERSION] !== undefined) {
-    recordProxy[RECORD_PROXY_VERSION] = targetVersion;
-  } else {
-    Object.defineProperty(recordProxy, RECORD_PROXY_VERSION, { value: targetVersion, writable: true, configurable: true, enumerable: false });
-  }
-};
+// Removed: proxy-related code (RECORD_PROXY_VERSION, overlayRecordDiff, overlayRecordFull)
+// Graph now returns plain objects, not reactive proxies
 
 /**
  * Diff field changes and track what changed
@@ -220,52 +146,25 @@ class IdentityManager {
 }
 
 /**
- * Create a normalized graph store with reactive proxies
+ * Create a normalized graph store
  * @param options - Configuration for keys and interfaces
- * @returns Graph store instance with CRUD and materialization methods
+ * @returns Graph store instance with CRUD and read methods
  */
-export const createGraph = (options?: GraphOptions) => {
-  const identityManager = new IdentityManager({ keys: options?.keys || {}, interfaces: options?.interfaces || {} });
-  const recordStore = new Map<string, Record<string, any>>();
-  const recordProxyStore = new Map<string, WeakRef<any>>();
-  const recordVersionStore = new Map<string, number>();
+export const createGraph = (options: GraphOptions) => {
+  const { onChange } = options;
   
-  // Support multiple onChange subscribers
-  const onChangeListeners: Array<(recordIds: Set<string>) => void> = [];
-  if (options?.onChange) {
-    onChangeListeners.push(options.onChange);
-  }
-
-  // Batch onChange notifications in a microtask
-  let pendingChanges: Set<string> | null = null;
-  let flushScheduled = false;
-
-  const flushChanges = () => {
-    if (!pendingChanges || pendingChanges.size === 0) {
-      flushScheduled = false;
-      return;
-    }
-    const changes = pendingChanges;
-    pendingChanges = null;
-    flushScheduled = false;
-    
-    // Notify all listeners
-    for (const listener of onChangeListeners) {
-      listener(changes);
-    }
-  };
+  const identityManager = new IdentityManager({ keys: options.keys || {}, interfaces: options.interfaces || {} });
+  const recordStore = new Map<string, Record<string, any>>();
+  const recordVersionStore = new Map<string, number>();
+  const pendingChanges = new Set<string>();
 
   const notifyChange = (recordId: string) => {
-    if (onChangeListeners.length === 0) return;
+    const shouldSchedule = pendingChanges.size === 0;
     
-    if (!pendingChanges) {
-      pendingChanges = new Set();
-    }
     pendingChanges.add(recordId);
 
-    if (!flushScheduled) {
-      flushScheduled = true;
-      queueMicrotask(flushChanges);
+    if (shouldSchedule) {
+      queueMicrotask(flush);
     }
   };
 
@@ -297,19 +196,8 @@ export const createGraph = (options?: GraphOptions) => {
 
     const nextVersion = (recordVersionStore.get(recordId) || 0) + 1;
 
-    // Store next version
-
     recordStore.set(recordId, currentSnapshot);
     recordVersionStore.set(recordId, nextVersion);
-
-    // Proxy next version
-
-    const proxyRef = recordProxyStore.get(recordId);
-    const proxy = proxyRef?.deref();
-
-    if (proxy) {
-      overlayRecordDiff(proxy, currentSnapshot, changes[0], changes[1], changes[2], nextVersion);
-    }
 
     // Notify subscribers of change (batched in microtask)
     // For ROOT_ID, also notify field-level changes for granular dependency tracking
@@ -322,54 +210,18 @@ export const createGraph = (options?: GraphOptions) => {
         if (value === ROOT_ID) continue;
         notifyChange(`${recordId}.${key}`);
       }
-    } else {
-      notifyChange(recordId);
     }
+    notifyChange(recordId);
   };
 
   /**
-   * Delete record and clear its proxy
+   * Delete record from store
    */
   const removeRecord = (recordId: string): void => {
-    const proxyRef = recordProxyStore.get(recordId);
-
-    if (proxyRef) {
-      const proxy = proxyRef.deref();
-
-      if (proxy) {
-        for (let i = 0, keys = Object.keys(proxy); i < keys.length; i++) {
-          delete proxy[keys[i]];
-        }
-      }
-    }
-
     recordStore.delete(recordId);
-    recordProxyStore.delete(recordId);
     recordVersionStore.delete(recordId);
-  };
 
-  /**
-   * Get or create reactive proxy for record
-   */
-  const materializeRecord = (recordId: string): any => {
-    const currentSnapshot = recordStore.get(recordId) || {};
-    const currentVersion = recordVersionStore.get(recordId) || 0;
-    const proxyRef = recordProxyStore.get(recordId);
-    const proxy = proxyRef?.deref();
-
-    if (proxy && proxy[RECORD_PROXY_VERSION] === currentVersion) {
-      return proxy;
-    }
-
-    const targetProxy = proxy || shallowReactive({} as any);
-
-    overlayRecordFull(targetProxy, currentSnapshot, currentVersion);
-
-    if (!proxy) {
-      recordProxyStore.set(recordId, new WeakRef(targetProxy));
-    }
-
-    return targetProxy;
+    notifyChange(recordId);
   };
 
   /**
@@ -380,6 +232,19 @@ export const createGraph = (options?: GraphOptions) => {
   };
 
   /**
+   * Flush pending onChange notifications immediately (for sync reads after writes)
+   */
+  const flush = () => {
+    if (pendingChanges.size === 0) {
+      return;
+    }
+
+    onChange(pendingChanges);
+
+    pendingChanges.clear();
+  };
+
+  /**
    * Get all record IDs
    */
   const keys = () => {
@@ -387,21 +252,10 @@ export const createGraph = (options?: GraphOptions) => {
   };
 
   /**
-   * Clear all data and proxies
+   * Clear all data
    */
   const clear = () => {
-    for (const [, weakRef] of recordProxyStore) {
-      const proxy = weakRef.deref();
-
-      if (proxy) {
-        for (let i = 0, keys = Object.keys(proxy); i < keys.length; i++) {
-          delete proxy[keys[i]];
-        }
-      }
-    }
-
     recordStore.clear();
-    recordProxyStore.clear();
     recordVersionStore.clear();
   };
 
@@ -419,37 +273,19 @@ export const createGraph = (options?: GraphOptions) => {
       records,
 
       options: {
-        keys: options?.keys || {},
-        interfaces: options?.interfaces || {},
+        keys: options.keys || {},
+        interfaces: options.interfaces || {},
       },
     };
   };
 
-  /**
-   * Add onChange listener (supports multiple subscribers)
-   */
-  const addOnChangeListener = (callback: (recordIds: Set<string>) => void) => {
-    onChangeListeners.push(callback);
-  };
-
-  /**
-   * Flush pending onChange notifications immediately (for sync reads after writes)
-   */
-  const flushPendingChanges = () => {
-    if (flushScheduled) {
-      flushChanges();
-    }
-  };
-
   return {
     identify,
-    addOnChangeListener,
-    flushPendingChanges,
     putRecord,
     getRecord,
     removeRecord,
-    materializeRecord,
     getVersion,
+    flush,
     keys,
     clear,
     inspect,

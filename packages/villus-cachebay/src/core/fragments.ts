@@ -197,7 +197,7 @@ export const createFragments = ({ graph, planner, views }: FragmentsDependencies
     variables = {},
   }: ReadFragmentArgs): T | undefined => {
     const plan = planner.getPlan(fragment, { fragmentName });
-    const proxy = graph.materializeRecord(id);
+    const proxy = graph.getRecord(id);
 
     return views.getView({
       source: proxy,

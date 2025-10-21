@@ -73,7 +73,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
         pageInfo: { __ref: pageInfoKey },
       });
     }
-    return graph.materializeRecord(pageKeyStr);
+    return graph.getRecord(pageKeyStr) || {};
   };
 
   const getStableRefsArray = (
@@ -109,7 +109,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
       getView({ source: src, field: field ?? null, variables, canonical });
 
     if (!stable) {
-      const arr: any[] = shallowReactive(refs.map(ref => viewOf(graph.materializeRecord(ref), plan)));
+      const arr: any[] = shallowReactive(refs.map(ref => viewOf(graph.getRecord(ref) || {}, plan)));
       stable = { refs: refs.slice(), array: arr, sourceArray: refs };
       byCanonical.set(canonical, stable);
       return arr;
@@ -132,7 +132,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     }
 
     if (identityChanged || contentChanged) {
-      const next = refs.map(ref => viewOf(graph.materializeRecord(ref), plan));
+      const next = refs.map(ref => viewOf(graph.getRecord(ref), plan));
       stable.array = shallowReactive(next);
       stable.refs = refs.slice();
       stable.sourceArray = refs;
@@ -154,7 +154,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
     }
 
     if ((obj as any).__ref) {
-      const child = graph.materializeRecord((obj as any).__ref);
+      const child = graph.getRecord((obj as any).__ref);
       return getView({ source: child, field: plan ?? null, variables, canonical });
     }
 
@@ -164,7 +164,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
         return getStableRefsArray(holder, prop, refs, plan ?? null, variables, canonical);
       }
       return refs.map(ref =>
-        getView({ source: graph.materializeRecord(ref), field: plan ?? null, variables, canonical }),
+        getView({ source: graph.getRecord(ref), field: plan ?? null, variables, canonical }),
       );
     }
 
@@ -293,7 +293,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
           if (!state.edgeCache) {
             const arr: any[] = shallowReactive([]);
             for (let i = 0; i < refs.length; i++) {
-              const edgeProxy = graph.materializeRecord(refs[i]);
+              const edgeProxy = graph.getRecord(refs[i]);
               arr.push(getView({ source: edgeProxy, field: edgesFieldPlan ?? null, variables, canonical }));
             }
             state.edgeCache = { refs: refs.slice(), array: arr, sourceArray: refs };
@@ -318,7 +318,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
 
           if (identityChanged || contentChanged) {
             const next = refs.map(ref =>
-              getView({ source: graph.materializeRecord(ref), field: edgesFieldPlan ?? null, variables, canonical }),
+              getView({ source: graph.getRecord(ref), field: edgesFieldPlan ?? null, variables, canonical }),
             );
             state.edgeCache.array = shallowReactive(next);
             state.edgeCache.refs = refs.slice();
@@ -336,7 +336,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
           }
 
           const refKey = (raw as any).__ref as string;
-          const rec = graph.materializeRecord(refKey) || {};
+          const rec = graph.getRecord(refKey) || {};
           let stamp = "";
           const keys = Reflect.ownKeys(rec) as (string | symbol)[];
           for (let i = 0; i < keys.length; i++) {
@@ -475,7 +475,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
             ? buildConnectionCanonicalKey(planField, parentId, variables)
             : buildConnectionKey(planField, parentId, variables);
 
-          const pageProxy = graph.materializeRecord(pageKeyStr);
+          const pageProxy = graph.getRecord(pageKeyStr);
 
           if (!pageProxy || (isObject(pageProxy) && Object.keys(pageProxy).length === 0)) {
             const typename = planField.fieldName ? `${planField.fieldName.charAt(0).toUpperCase()}${planField.fieldName.slice(1)}Connection` : "Connection";
@@ -509,7 +509,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
         const raw = Reflect.get(target, p, receiver);
 
         if (isObject(raw) && (raw as any).__ref) {
-          const child = graph.materializeRecord((raw as any).__ref);
+          const child = graph.getRecord((raw as any).__ref);
           const subPlan = typeof p === "string" ? selectionMap.get(p) : undefined;
           return getView({ source: child, field: subPlan ?? null, variables, canonical });
         }
@@ -581,7 +581,7 @@ export const createViews = ({ graph }: ViewsDependencies) => {
       return source;
     }
 
-    const proxy = typeof source === "string" ? graph.materializeRecord(source) : source;
+    const proxy = typeof source === "string" ? graph.getRecord(source) : source;
 
     if (!isObject(proxy)) {
       return proxy;

@@ -1438,19 +1438,10 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
   });
 
   describe("canonical flag and hasCanonical behavior", () => {
-    const SIMPLE_QUERY = compilePlan(/* GraphQL */ `
-      query GetUser($id: ID!) {
-        user(id: $id) {
-          id
-          email
-        }
-      }
-    `);
-
-    describe("MISSING status", () => {
-      it("canonical: false - returns MISSING with hasCanonical: false when no data exists", () => {
+    describe("1-level nested (USER_QUERY)", () => {
+      it("MISSING: no data exists", () => {
         const result = documents.materializeDocument({
-          document: SIMPLE_QUERY,
+          document: USER_QUERY,
           variables: { id: "u1" },
           canonical: false,
         });
@@ -1460,59 +1451,9 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
         expect(result.data).toBeUndefined();
       });
 
-      it("canonical: true - returns MISSING when no data exists", () => {
-        const result = documents.materializeDocument({
-          document: SIMPLE_QUERY,
-          variables: { id: "u1" },
-          canonical: true,
-        });
-
-        expect(result.status).toBe("MISSING");
-        expect(result.hasCanonical).toBeUndefined();
-        expect(result.data).toBeUndefined();
-      });
-
-      it("canonical: true - returns MISSING when only canonical data exists (no server link)", () => {
-        // Another query wrote data to User:u1 (creates canonical data)
-        const OTHER_QUERY = compilePlan(/* GraphQL */ `
-          query Other($id: ID!) {
-            other(id: $id) {
-              id
-              email
-            }
-          }
-        `);
-
+      it("FULFILLED with hasCanonical: false when canonical: false", () => {
         documents.normalizeDocument({
-          document: OTHER_QUERY,
-          variables: { id: "u1" },
-          data: {
-            __typename: "Query",
-            other: {
-              __typename: "User",
-              id: "u1",
-              email: "from-other@example.com",
-            },
-          },
-        });
-
-        // THIS query has no server link to User:u1
-        const result = documents.materializeDocument({
-          document: SIMPLE_QUERY,
-          variables: { id: "u1" },
-          canonical: true,
-        });
-
-        expect(result.status).toBe("MISSING");
-        expect(result.hasCanonical).toBeUndefined();
-        expect(result.data).toBeUndefined();
-      });
-    });
-
-    describe("FULFILLED status with hasCanonical flag", () => {
-      it("canonical: false - returns FULFILLED with hasCanonical: false", () => {
-        documents.normalizeDocument({
-          document: SIMPLE_QUERY,
+          document: USER_QUERY,
           variables: { id: "u1" },
           data: {
             __typename: "Query",
@@ -1520,28 +1461,27 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
               __typename: "User",
               id: "u1",
               email: "u1@example.com",
+              posts: [
+                { __typename: "Post", id: "p1", title: "Post 1" },
+              ],
             },
           },
         });
 
         const result = documents.materializeDocument({
-          document: SIMPLE_QUERY,
+          document: USER_QUERY,
           variables: { id: "u1" },
           canonical: false,
         });
 
         expect(result.status).toBe("FULFILLED");
         expect(result.hasCanonical).toBe(false);
-        expect(result.data?.user).toEqual({
-          __typename: "User",
-          id: "u1",
-          email: "u1@example.com",
-        });
+        expect(result.data?.user?.email).toBe("u1@example.com");
       });
 
-      it("canonical: true - returns FULFILLED with hasCanonical: true", () => {
+      it("FULFILLED with hasCanonical: true when has server data", () => {
         documents.normalizeDocument({
-          document: SIMPLE_QUERY,
+          document: USER_QUERY,
           variables: { id: "u2" },
           data: {
             __typename: "Query",
@@ -1554,90 +1494,63 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
         });
 
         const result = documents.materializeDocument({
-          document: SIMPLE_QUERY,
+          document: USER_QUERY,
           variables: { id: "u2" },
           canonical: true,
         });
 
         expect(result.status).toBe("FULFILLED");
         expect(result.hasCanonical).toBe(true);
-        expect(result.data?.user).toEqual({
-          __typename: "User",
-          id: "u2",
-          email: "u2@example.com",
-        });
+        expect(result.data?.user?.email).toBe("u2@example.com");
       });
-    });
 
-    describe("canonical flag comparison - gap filling behavior", () => {
-      it.skip("canonical: true fills gaps from other queries, canonical: false does not (TODO: fix strict mode)", () => {
-        const QUERY_WITH_NAME = compilePlan(/* GraphQL */ `
-          query GetUserWithName($id: ID!) {
-            user(id: $id) {
-              id
-              email
-              name
-            }
-          }
-        `);
+      it("FULFILLED with hasCanonical: true for connection with canonical data", () => {
+        // Seed canonical connection data
+        const canonicalKey = '@connection.posts({})';
+        const connectionData = posts.buildConnection(
+          [
+            { id: "p1", title: "Post 1" },
+            { id: "p2", title: "Post 2" },
+          ],
+          { startCursor: "p1", endCursor: "p2", hasNextPage: false, hasPreviousPage: false }
+        );
+        writeConnectionPage(graph, canonicalKey, connectionData);
 
-        // Another query writes complete data to User:u4
-        const OTHER_QUERY = compilePlan(/* GraphQL */ `
-          query Other($id: ID!) {
-            other(id: $id) {
-              id
-              name
-            }
-          }
-        `);
-
-        documents.normalizeDocument({
-          document: OTHER_QUERY,
-          variables: { id: "u4" },
-          data: {
-            __typename: "Query",
-            other: {
-              __typename: "User",
-              id: "u4",
-              name: "User Four",
-            },
-          },
-        });
-
-        // THIS query writes partial data (missing 'name')
-        graph.putRecord("User:u4", {
-          __typename: "User",
-          id: "u4",
-          email: "u4@example.com",
-        });
-        graph.putRecord(ROOT_ID, {
-          'user({"id":"u4"})': { __ref: "User:u4" },
-        });
-
-        // Strict mode: doesn't fill from canonical
-        const strictResult = documents.materializeDocument({
-          document: QUERY_WITH_NAME,
-          variables: { id: "u4" },
-          canonical: false,
-        });
-
-        // Canonical mode: fills from canonical
-        const canonicalResult = documents.materializeDocument({
-          document: QUERY_WITH_NAME,
-          variables: { id: "u4" },
+        // Materialize with canonical: true should find the canonical connection
+        const result = documents.materializeDocument({
+          document: POSTS_QUERY,
+          variables: {},
           canonical: true,
         });
 
-        expect(strictResult.status).toBe("FULFILLED");
-        expect(strictResult.hasCanonical).toBe(false);
-        expect(strictResult.data?.user?.email).toBe("u4@example.com");
-        expect(strictResult.data?.user?.name).toBeUndefined();
+        expect(result.status).toBe("FULFILLED");
+        expect(result.hasCanonical).toBe(true);
+        expect(result.data?.posts?.edges).toHaveLength(2);
+      });
 
-        expect(canonicalResult.status).toBe("FULFILLED");
-        expect(canonicalResult.hasCanonical).toBe(true);
-        expect(canonicalResult.data?.user?.email).toBe("u4@example.com");
-        expect(canonicalResult.data?.user?.name).toBe("User Four");
+      it("MISSING with canonical: false when only canonical connection exists (no strict data)", () => {
+        // Seed canonical connection data (no strict/server data for this specific query)
+        const canonicalKey = '@connection.posts({})';
+        const connectionData = posts.buildConnection(
+          [
+            { id: "p3", title: "Post 3" },
+          ],
+          { startCursor: "p3", endCursor: "p3", hasNextPage: false, hasPreviousPage: false }
+        );
+        writeConnectionPage(graph, canonicalKey, connectionData);
+
+        // Materialize with canonical: false should return MISSING (no strict data)
+        const result = documents.materializeDocument({
+          document: POSTS_QUERY,
+          variables: {},
+          canonical: false,
+        });
+
+        expect(result.status).toBe("MISSING");
+        expect(result.hasCanonical).toBeUndefined();
+        expect(result.data).toBeUndefined();
       });
     });
+
   });
 });

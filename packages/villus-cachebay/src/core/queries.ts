@@ -19,6 +19,8 @@ export type ReadQueryOptions = {
 export type ReadQueryResult<T = any> = {
   data: T | undefined;
   deps: string[];
+  status?: "FULFILLED" | "MISSING";
+  hasCanonical?: boolean;
 };
 
 export type WriteQueryOptions = {
@@ -175,9 +177,19 @@ export const createQueries = (deps: QueriesDependencies) => {
     }) as any;
 
     if (result && result.status === "FULFILLED") {
-      return { data: markRaw(result.data) as T, deps: result.deps || [] };
+      return { 
+        data: markRaw(result.data) as T, 
+        deps: result.deps || [],
+        status: result.status,
+        hasCanonical: result.hasCanonical,
+      };
     }
-    return { data: undefined, deps: [] };
+    return { 
+      data: undefined, 
+      deps: [],
+      status: result?.status || "MISSING",
+      hasCanonical: result?.hasCanonical,
+    };
   };
 
   const writeQuery = ({
