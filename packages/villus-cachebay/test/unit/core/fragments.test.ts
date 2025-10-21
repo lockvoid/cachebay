@@ -5,6 +5,7 @@ import { createGraph } from "@/src/core/graph";
 import { createPlanner } from "@/src/core/planner";
 import { createDocuments } from "@/src/core/documents";
 import { createCanonical } from "@/src/core/canonical";
+import { createOptimistic } from "@/src/core/optimistic";
 import { operations, writeConnectionPage } from "@/test/helpers";
 
 describe("Fragments (documents-powered)", () => {
@@ -15,9 +16,16 @@ describe("Fragments (documents-powered)", () => {
   let fragments: ReturnType<typeof createFragments>;
 
   beforeEach(() => {
-    graph = createGraph({ interfaces: { Post: ["AudioPost", "VideoPost"] } });
+    graph = createGraph({
+      interfaces: { Post: ["AudioPost", "VideoPost"] },
+      onChange: (touchedIds) => {
+        documents._markDirty(touchedIds);
+        fragments._notifyTouched(touchedIds);
+      },
+    });
     planner = createPlanner();
-    canonical = createCanonical({ graph });
+    const optimistic = createOptimistic({ graph });
+    canonical = createCanonical({ graph, optimistic });
     documents = createDocuments({ graph, planner, canonical });
     fragments = createFragments({ graph, planner, documents });
   });
@@ -64,7 +72,7 @@ describe("Fragments (documents-powered)", () => {
   });
 
   describe("watchFragment (reactive)", () => {
-    it("posts connection: edges/pageInfo/totalCount update through watcher", () => {
+    it.only("posts connection: edges/pageInfo/totalCount update through watcher", () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "x@example.com" });
       graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1", flags: [] });
       graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "P2", flags: [] });
@@ -86,12 +94,20 @@ describe("Fragments (documents-powered)", () => {
         ],
       });
 
+      // Link User entity to connection page (merge with existing record)
+      const existingUser = graph.getRecord("User:u1") || {};
+      graph.putRecord("User:u1", {
+        ...existingUser,
+        'posts({"after":null,"category":"tech","first":2})': { __ref: pageKey },
+      });
+
       let last: any;
       const sub = fragments.watchFragment({
         id: "User:u1",
         fragment: operations.USER_POSTS_FRAGMENT,
         fragmentName: "UserPosts",
         variables: { postsCategory: "tech", postsFirst: 2, postsAfter: null },
+        canonical: false, // strict read: we only seeded a page record
         onData: (d) => (last = d),
       });
 
@@ -133,6 +149,76 @@ describe("Fragments (documents-powered)", () => {
       sub.unsubscribe();
     });
 
+    it.only("posts connection (canonical): edges/pageInfo/totalCount update through watcher", () => {
+      graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "x@example.com" });
+      graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1", flags: [] });
+      graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "P2", flags: [] });
+
+      // Seed the CANONICAL container for this parent & filter
+      const canonicalKey = '@connection.User:u1.posts({"category":"tech"})';
+      writeConnectionPage(graph, canonicalKey, {
+        __typename: "PostConnection",
+        totalCount: 2,
+        pageInfo: {
+          startCursor: "p1",
+          endCursor: "p2",
+          hasNextPage: true,
+          hasPreviousPage: false,
+        },
+        edges: [
+          { __typename: "PostEdge", cursor: "p1", score: 0.5, node: { __typename: "Post", id: "p1", title: "P1", flags: [] } },
+          { __typename: "PostEdge", cursor: "p2", score: 0.7, node: { __typename: "Post", id: "p2", title: "P2", flags: [] } },
+        ],
+      });
+
+      // Note: no strict link from User.posts(...) needed for canonical reads.
+
+      let last: any;
+      const sub = fragments.watchFragment({
+        id: "User:u1",
+        fragment: operations.USER_POSTS_FRAGMENT,
+        fragmentName: "UserPosts",
+        variables: { postsCategory: "tech", postsFirst: 2, postsAfter: null },
+        canonical: true, // canonical read: uses the canonical container we seeded above
+        onData: (d) => (last = d),
+      });
+
+      expect(last.posts.totalCount).toBe(2);
+      expect(last.posts.pageInfo).toEqual({
+        startCursor: "p1",
+        endCursor: "p2",
+        hasNextPage: true,
+        hasPreviousPage: false,
+      });
+
+      // Update a node → notify touched entity
+      graph.putRecord("Post:p1", { title: "P1 (Updated)" });
+      fragments._notifyTouched(new Set(["Post:p1"]));
+      expect(last.posts.edges[0].node.title).toBe("P1 (Updated)");
+
+      // Update an edge record in the CANONICAL container
+      graph.putRecord(`${canonicalKey}.edges.0`, { score: 0.9 });
+      fragments._notifyTouched(new Set([`${canonicalKey}.edges.0`]));
+      expect(last.posts.edges[0].score).toBe(0.9);
+
+      // Update canonical pageInfo
+      graph.putRecord(`${canonicalKey}.pageInfo`, { endCursor: "p3", hasNextPage: false });
+      fragments._notifyTouched(new Set([`${canonicalKey}.pageInfo`]));
+      expect(last.posts.pageInfo).toEqual({
+        startCursor: "p1",
+        endCursor: "p3",
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+
+      // Update container-level field (e.g. totalCount)
+      graph.putRecord(canonicalKey, { totalCount: 3 });
+      fragments._notifyTouched(new Set([canonicalKey]));
+      expect(last.posts.totalCount).toBe(3);
+
+      sub.unsubscribe();
+    });
+
     it("nested comments connection reacts to node changes", () => {
       graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1", flags: [] });
       graph.putRecord("Comment:c1", { __typename: "Comment", id: "c1", text: "Comment 1", author: { __ref: "User:u2" } });
@@ -150,12 +236,20 @@ describe("Fragments (documents-powered)", () => {
         ],
       });
 
+      // Link Post entity to connection page (merge with existing record)
+      const existingPost = graph.getRecord("Post:p1") || {};
+      graph.putRecord("Post:p1", {
+        ...existingPost,
+        'comments({"after":null,"first":2})': { __ref: pageKey },
+      });
+
       let last: any;
       const sub = fragments.watchFragment({
         id: "Post:p1",
         fragment: operations.POST_COMMENTS_FRAGMENT,
         fragmentName: "PostComments",
         variables: { commentsFirst: 2, commentsAfter: null },
+        canonical: false, // strict read: page-only seeded
         onData: (d) => (last = d),
       });
 
@@ -251,6 +345,7 @@ describe("Fragments (documents-powered)", () => {
         fragment: operations.USER_POSTS_FRAGMENT,
         fragmentName: "UserPosts",
         variables: { postsCategory: "tech", postsFirst: 2, postsAfter: null },
+        canonical: false, // strict read to match page written by fragment
         onData: (d) => (last = d),
       });
 

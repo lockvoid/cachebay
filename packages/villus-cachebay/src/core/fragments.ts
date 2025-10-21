@@ -1,5 +1,4 @@
 // src/core/fragments.ts
-import { markRaw } from "vue";
 import type { CachePlan } from "@/src/compiler";
 import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
@@ -93,7 +92,9 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
           entityId: w.id,
         }) as any;
 
-        if (!result || result.status !== "FULFILLED") {
+        // New materialize shape:
+        // { data?: any, deps?: string[], source: 'strict'|'canonical'|'none', ok: { strict:boolean, canonical:boolean } }
+        if (!result || result.source === "none") {
           if (w.onError) w.onError(new Error("Fragment returned no data"));
           continue;
         }
@@ -102,7 +103,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
         if (result.data !== w.lastData) {
           w.lastData = result.data;
           try {
-            w.onData(markRaw(result.data));
+            w.onData(result.data);
           } catch (e) {
             w.onError?.(e as Error);
           }
@@ -165,8 +166,8 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
       entityId: id,
     }) as any;
 
-    if (result?.status === "FULFILLED") {
-      return markRaw(result.data) as T;
+    if (result && result.source !== "none") {
+      return result.data as T;
     }
     return undefined;
   };
@@ -183,9 +184,8 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
       document: plan,
       variables: variables as Record<string, any>,
       data,
-      // write "under" this entity (no ROOT_ID link)
+      // write "under" this entity and create links to connection pages
       rootId: id,
-      linkFromParent: false,
     }) as any;
 
     enqueueTouched(res?.touched);
@@ -223,12 +223,12 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
       entityId: id,
     }) as any;
 
-    if (initial?.status === "FULFILLED") {
+    if (initial && initial.source !== "none") {
       watcher.lastData = initial.data;
       updateWatcherDeps(watcherId, initial.deps || []);
       if (!skipInitialEmit) {
         try {
-          onData(markRaw(initial.data));
+          onData(initial.data);
         } catch (e) {
           onError?.(e as Error);
         }
