@@ -26,17 +26,12 @@ export type GraphInstance = ReturnType<typeof createGraph>;
  * @private
  */
 const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot: Record<string, any>): [string[], boolean, boolean, boolean] => {
-  let idChanged = false;
-  let typenameChanged = false;
-
-  const changedFields: string[] = [];
+  let hasChanges = false;
 
   for (let i = 0, fields = Object.keys(partialSnapshot); i < fields.length; i++) {
     const fieldName = fields[i];
     const incomingValue = partialSnapshot[fieldName];
 
-    // IMPORTANT: Ignore undefined patches (do NOT delete existing fields).
-    // Normalization may include keys with `undefined` when the server omits them.
     if (incomingValue === undefined) {
       continue;
     }
@@ -44,33 +39,22 @@ const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot
     if (fieldName === ID_FIELD) {
       const normalizedId = incomingValue ? String(incomingValue) : null;
 
-      if (currentSnapshot[ID_FIELD] !== normalizedId) {
-        currentSnapshot[ID_FIELD] = normalizedId;
-        idChanged = true;
+      if (currentSnapshot[ID_FIELD] === normalizedId) {
+        continue;
       }
 
-      continue;
+      currentSnapshot[ID_FIELD] = normalizedId;
+      hasChanges = true;
     }
 
-    if (fieldName === TYPENAME_FIELD) {
-      if (currentSnapshot[TYPENAME_FIELD] !== incomingValue) {
-        currentSnapshot[TYPENAME_FIELD] = incomingValue;
-        typenameChanged = true;
-      }
-
-      continue;
-    }
-
-    // Store all values including null (null is a valid GraphQL value)
     if (currentSnapshot[fieldName] !== incomingValue) {
       currentSnapshot[fieldName] = incomingValue;
-      changedFields.push(fieldName);
+      hasChanges = true;
     }
   }
 
-  const hasChanges = idChanged || typenameChanged || changedFields.length > 0;
 
-  return [changedFields, typenameChanged, idChanged, hasChanges];
+  return hasChanges;
 };
 
 /**
@@ -152,7 +136,7 @@ class IdentityManager {
  */
 export const createGraph = (options: GraphOptions) => {
   const { onChange } = options;
-  
+
   const identityManager = new IdentityManager({ keys: options.keys || {}, interfaces: options.interfaces || {} });
   const recordStore = new Map<string, Record<string, any>>();
   const recordVersionStore = new Map<string, number>();
@@ -160,7 +144,7 @@ export const createGraph = (options: GraphOptions) => {
 
   const notifyChange = (recordId: string) => {
     const shouldSchedule = pendingChanges.size === 0;
-    
+
     pendingChanges.add(recordId);
 
     if (shouldSchedule) {
@@ -188,9 +172,9 @@ export const createGraph = (options: GraphOptions) => {
   const putRecord = (recordId: string, partialSnapshot: Record<string, any>): void => {
     const currentSnapshot = recordStore.get(recordId) || {};
 
-    const changes = applyFieldChanges(currentSnapshot, partialSnapshot); // NOTE: Don't destructure for performance
+    const hasChanges = applyFieldChanges(currentSnapshot, partialSnapshot); // NOTE: Don't destructure for performance
 
-    if (!changes[3]) {
+    if (!hasChanges) {
       return;
     }
 
@@ -211,6 +195,7 @@ export const createGraph = (options: GraphOptions) => {
         notifyChange(`${recordId}.${key}`);
       }
     }
+
     notifyChange(recordId);
   };
 

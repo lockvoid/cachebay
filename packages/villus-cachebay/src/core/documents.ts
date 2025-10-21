@@ -38,37 +38,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   const { graph, planner, canonical } = deps;
 
   // -------------------------
-  // Helpers (stable stringify, var masking, selection fingerprint)
-  // -------------------------
-
-  const selectionFingerprint = (pf?: PlanField | null): any => {
-    if (!pf) return null;
-    return {
-      rk: pf.responseKey,
-      fn: pf.fieldName,
-      tc: (pf as any).typeCondition ?? (pf as any).onType ?? undefined,
-      isConn: !!(pf as any).isConnection,
-      sel: pf.selectionSet?.map((c) => selectionFingerprint(c)) ?? null,
-    };
-  };
-
-  const getSelId = (pf: PlanField): string => {
-    // Prefer planner-provided id if exists, else derive a stable fingerprint
-    return (pf as any).selId ?? stableStringify(selectionFingerprint(pf));
-  };
-
-  const maskVarsKey = (mask: string[] | undefined | null, vars: Record<string, any>) => {
-    if (!mask || mask.length === 0) return "";
-    const sub: Record<string, any> = {};
-    const sorted = [...mask].sort();
-    for (let i = 0; i < sorted.length; i++) {
-      const k = sorted[i];
-      if (k in vars) sub[k] = vars[k];
-    }
-    return stableStringify(sub);
-  };
-
-  // -------------------------
   // normalizeDocument (using traverseFast)
   // -------------------------
 
