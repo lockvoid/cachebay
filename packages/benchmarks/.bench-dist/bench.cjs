@@ -38263,6 +38263,12 @@ __webpack_require__.d(__webpack_exports__, {
         expectedArgNames
     };
 };
+/** stable stringify (keys sorted, deep) - kept for backward compatibility */ const stableStringify = (v)=>{
+    if (v == null || typeof v !== "object") return JSON.stringify(v);
+    if (Array.isArray(v)) return "[" + v.map(stableStringify).join(",") + "]";
+    const keys = Object.keys(v).sort();
+    return "{" + keys.map((k)=>JSON.stringify(k) + ":" + stableStringify(v[k])).join(",") + "}";
+};
 /**
  * Compile a fast stringifyArgs function using precomputed arg order.
  * This avoids the need for stableStringify by iterating args in a fixed order.
@@ -38272,17 +38278,17 @@ __webpack_require__.d(__webpack_exports__, {
     }
     return (vars)=>{
         const args = buildArgs(vars);
-        let result = "(";
+        let result = "{";
         let first = true;
         for(let i = 0; i < expectedArgNames.length; i++){
             const argName = expectedArgNames[i];
             if (args[argName] !== undefined) {
                 if (!first) result += ",";
-                result += `"${argName}":${JSON.stringify(args[argName])}`;
+                result += JSON.stringify(argName) + ":" + JSON.stringify(args[argName]);
                 first = false;
             }
         }
-        result += ")";
+        result += "}";
         return result;
     };
 };
@@ -41981,7 +41987,7 @@ const traverseFast = (root, context, visit)=>{
  * `buildArgs` to map variable names → field-arg names and drops undefined.
  */ const buildFieldKey = (field, variables)=>{
     const args = field.stringifyArgs(variables);
-    return args === "{}" ? field.fieldName : `${field.fieldName}(${args})`;
+    return args === "" ? field.fieldName : `${field.fieldName}(${args})`;
 };
 const buildConnectionKey = (field, parentId, variables)=>{
     // parentId can be "@", "Type:id", "Type:id.container", or already absolute like "@.X.Y"
