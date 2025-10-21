@@ -4,6 +4,8 @@ import {
   buildFieldKey,
   buildConnectionKey,
   buildConnectionCanonicalKey,
+  LRU,
+  stableStringify,
 } from "./utils";
 import type { CachePlan, PlanField } from "../compiler";
 import type { CanonicalInstance } from "./canonical";
@@ -506,42 +508,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   type CacheEntry = { data: any; deps: string[] };
 
   const RESULT_LRU_CAP = 2048;
-
-  class LRU<K, V> {
-    constructor(private cap = RESULT_LRU_CAP, private onEvict?: (k: K, v: V) => void) { }
-    private m = new Map<K, V>();
-    get(k: K): V | undefined {
-      const v = this.m.get(k);
-      if (v !== undefined) {
-        this.m.delete(k);
-        this.m.set(k, v);
-      }
-      return v;
-    }
-    set(k: K, v: V): void {
-      if (this.m.has(k)) this.m.delete(k);
-      this.m.set(k, v);
-      if (this.m.size > this.cap) {
-        const oldest = this.m.keys().next().value as K;
-        const ov = this.m.get(oldest)!;
-        this.m.delete(oldest);
-        this.onEvict?.(oldest, ov);
-      }
-    }
-    clear(): void {
-      if (this.onEvict) {
-        for (const [k, v] of this.m) this.onEvict(k, v);
-      }
-      this.m.clear();
-    }
-  }
-
-  const stableStringify = (v: any): string => {
-    if (v === null || typeof v !== "object") return JSON.stringify(v);
-    if (Array.isArray(v)) return "[" + v.map(stableStringify).join(",") + "]";
-    const keys = Object.keys(v).sort();
-    return "{" + keys.map(k => JSON.stringify(k) + ":" + stableStringify(v[k])).join(",") + "}";
-  };
 
   /** Plan-scoped caches & indices */
   const lruByPlan = new WeakMap<CachePlan, LRU<string, CacheEntry>>();

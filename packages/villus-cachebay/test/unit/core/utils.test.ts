@@ -1,8 +1,107 @@
 import { ROOT_ID } from "@/src/core/constants";
-import { traverseFast, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, TRAVERSE_SKIP, TRAVERSE_SCALAR, TRAVERSE_ARRAY, TRAVERSE_OBJECT, isObject } from "@/src/core/utils";
+import { LRU, traverseFast, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, TRAVERSE_SKIP, TRAVERSE_SCALAR, TRAVERSE_ARRAY, TRAVERSE_OBJECT, isObject } from "@/src/core/utils";
 import { operations, createTestPlan } from "@/test/helpers";
 
 describe("Utils", () => {
+  describe("LRU", () => {
+    it("stores and retrieves values", () => {
+      const lru = new LRU<string, number>(3);
+      
+      lru.set("a", 1);
+      lru.set("b", 2);
+      lru.set("c", 3);
+      
+      expect(lru.get("a")).toBe(1);
+      expect(lru.get("b")).toBe(2);
+      expect(lru.get("c")).toBe(3);
+      expect(lru.size).toBe(3);
+    });
+
+    it("evicts oldest item when capacity exceeded", () => {
+      const evicted: Array<[string, number]> = [];
+      const lru = new LRU<string, number>(3, (k, v) => evicted.push([k, v]));
+      
+      lru.set("a", 1);
+      lru.set("b", 2);
+      lru.set("c", 3);
+      lru.set("d", 4); // Should evict "a"
+      
+      expect(lru.get("a")).toBeUndefined();
+      expect(lru.get("b")).toBe(2);
+      expect(lru.get("c")).toBe(3);
+      expect(lru.get("d")).toBe(4);
+      expect(lru.size).toBe(3);
+      expect(evicted).toEqual([["a", 1]]);
+    });
+
+    it("moves accessed items to end (most recent)", () => {
+      const evicted: Array<[string, number]> = [];
+      const lru = new LRU<string, number>(3, (k, v) => evicted.push([k, v]));
+      
+      lru.set("a", 1);
+      lru.set("b", 2);
+      lru.set("c", 3);
+      
+      // Access "a" to make it most recent
+      lru.get("a");
+      
+      // Add "d" - should evict "b" (oldest), not "a"
+      lru.set("d", 4);
+      
+      expect(lru.get("a")).toBe(1);
+      expect(lru.get("b")).toBeUndefined();
+      expect(lru.get("c")).toBe(3);
+      expect(lru.get("d")).toBe(4);
+      expect(evicted).toEqual([["b", 2]]);
+    });
+
+    it("updates existing keys without eviction", () => {
+      const evicted: Array<[string, number]> = [];
+      const lru = new LRU<string, number>(3, (k, v) => evicted.push([k, v]));
+      
+      lru.set("a", 1);
+      lru.set("b", 2);
+      lru.set("c", 3);
+      lru.set("a", 10); // Update "a"
+      
+      expect(lru.get("a")).toBe(10);
+      expect(lru.size).toBe(3);
+      expect(evicted).toEqual([]);
+    });
+
+    it("clears all items and calls onEvict for each", () => {
+      const evicted: Array<[string, number]> = [];
+      const lru = new LRU<string, number>(3, (k, v) => evicted.push([k, v]));
+      
+      lru.set("a", 1);
+      lru.set("b", 2);
+      lru.set("c", 3);
+      
+      lru.clear();
+      
+      expect(lru.size).toBe(0);
+      expect(lru.get("a")).toBeUndefined();
+      expect(evicted).toHaveLength(3);
+      expect(evicted).toContainEqual(["a", 1]);
+      expect(evicted).toContainEqual(["b", 2]);
+      expect(evicted).toContainEqual(["c", 3]);
+    });
+
+    it("handles capacity of 1", () => {
+      const evicted: Array<[string, number]> = [];
+      const lru = new LRU<string, number>(1, (k, v) => evicted.push([k, v]));
+      
+      lru.set("a", 1);
+      expect(lru.size).toBe(1);
+      
+      lru.set("b", 2);
+      expect(lru.size).toBe(1);
+      expect(lru.get("a")).toBeUndefined();
+      expect(lru.get("b")).toBe(2);
+      expect(evicted).toEqual([["a", 1]]);
+    });
+  });
+
   describe("traverseFast", () => {
     let visitedNodes: Array<{ parentNode: any; valueNode: any; fieldKey: string | number | null; kind: any; frameContext: any }>;
     let visitMock: ReturnType<typeof vi.fn>;
@@ -311,7 +410,8 @@ describe("Utils", () => {
       const posts = plan.rootSelectionMap!.get("posts")!;
 
       const key = buildFieldKey(posts, { category: "tech", first: 2, after: null });
-      expect(key).toBe("posts({\"after\":null,\"category\":\"tech\",\"first\":2})");
+      // Order is from plan's expectedArgNames, not alphabetical
+      expect(key).toBe("posts({\"category\":\"tech\",\"first\":2,\"after\":null})");
     });
 
     it("returns bare field name when the field has no args (e.g., author)", () => {
@@ -356,7 +456,8 @@ describe("Utils", () => {
       const posts = plan.rootSelectionMap!.get("posts")!;
 
       const postsKey = buildConnectionKey(posts, ROOT_ID, { category: "tech", first: 2, after: null });
-      expect(postsKey).toBe("@.posts({\"after\":null,\"category\":\"tech\",\"first\":2})");
+      // Order is from plan's expectedArgNames
+      expect(postsKey).toBe("@.posts({\"category\":\"tech\",\"first\":2,\"after\":null})");
     });
 
     it("builds concrete page key for nested parent", () => {
@@ -365,7 +466,8 @@ describe("Utils", () => {
       const posts = user.selectionMap!.get("posts")!;
 
       const userPostsKey = buildConnectionKey(posts, "User:u1", { id: "u1", postsFirst: 1, postsAfter: "p2" });
-      expect(userPostsKey).toBe("@.User:u1.posts({\"after\":\"p2\",\"first\":1})");
+      // Order is from plan's expectedArgNames
+      expect(userPostsKey).toBe("@.User:u1.posts({\"first\":1,\"after\":\"p2\"})");
     });
   });
 

@@ -39,6 +39,58 @@ export const stableStringify = (object: any): string => {
   }
 };
 
+/**
+ * Simple LRU cache using Map's insertion order
+ * Most recently used items are moved to the end
+ */
+export class LRU<K, V> {
+  private m = new Map<K, V>();
+
+  constructor(
+    private cap: number,
+    private onEvict?: (k: K, v: V) => void
+  ) {}
+
+  get(k: K): V | undefined {
+    const v = this.m.get(k);
+    if (v !== undefined) {
+      // Move to end (most recent)
+      this.m.delete(k);
+      this.m.set(k, v);
+    }
+    return v;
+  }
+
+  set(k: K, v: V): void {
+    // Remove if exists to update position
+    if (this.m.has(k)) {
+      this.m.delete(k);
+    }
+    this.m.set(k, v);
+
+    // Evict oldest if over capacity
+    if (this.m.size > this.cap) {
+      const oldest = this.m.keys().next().value as K;
+      const ov = this.m.get(oldest)!;
+      this.m.delete(oldest);
+      this.onEvict?.(oldest, ov);
+    }
+  }
+
+  clear(): void {
+    if (this.onEvict) {
+      for (const [k, v] of this.m) {
+        this.onEvict(k, v);
+      }
+    }
+    this.m.clear();
+  }
+
+  get size(): number {
+    return this.m.size;
+  }
+}
+
 export const TRAVERSE_SKIP = Symbol("traverse:skip");
 export const TRAVERSE_OBJECT = Symbol("traverse:object");
 export const TRAVERSE_ARRAY = Symbol("traverse:array");
@@ -107,7 +159,7 @@ export const traverseFast = (
 export const buildFieldKey = (field: PlanField, variables: Record<string, any>): string => {
   const args = field.stringifyArgs(variables);
 
-  return args === "" ? field.fieldName : `${field.fieldName}(${args})`;
+  return args === "" || args === "{}" ? field.fieldName : `${field.fieldName}(${args})`;
 };
 
 export const buildConnectionKey = (
