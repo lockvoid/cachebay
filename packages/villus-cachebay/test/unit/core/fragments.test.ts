@@ -6,7 +6,7 @@ import { createPlanner } from "@/src/core/planner";
 import { createDocuments } from "@/src/core/documents";
 import { createCanonical } from "@/src/core/canonical";
 import { createOptimistic } from "@/src/core/optimistic";
-import { operations, writeConnectionPage } from "@/test/helpers";
+import { operations, writeConnectionPage, tick } from "@/test/helpers";
 
 describe("Fragments (documents-powered)", () => {
   let graph: ReturnType<typeof createGraph>;
@@ -149,7 +149,7 @@ describe("Fragments (documents-powered)", () => {
       sub.unsubscribe();
     });
 
-    it.only("posts connection (canonical): edges/pageInfo/totalCount update through watcher", () => {
+    it("posts connection (canonical): edges/pageInfo/totalCount update through watcher", async () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "x@example.com" });
       graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "P1", flags: [] });
       graph.putRecord("Post:p2", { __typename: "Post", id: "p2", title: "P2", flags: [] });
@@ -194,16 +194,19 @@ describe("Fragments (documents-powered)", () => {
       // Update a node → notify touched entity
       graph.putRecord("Post:p1", { title: "P1 (Updated)" });
       fragments._notifyTouched(new Set(["Post:p1"]));
+      await tick();
       expect(last.posts.edges[0].node.title).toBe("P1 (Updated)");
 
       // Update an edge record in the CANONICAL container
       graph.putRecord(`${canonicalKey}.edges.0`, { score: 0.9 });
       fragments._notifyTouched(new Set([`${canonicalKey}.edges.0`]));
+      await tick();
       expect(last.posts.edges[0].score).toBe(0.9);
 
       // Update canonical pageInfo
       graph.putRecord(`${canonicalKey}.pageInfo`, { endCursor: "p3", hasNextPage: false });
       fragments._notifyTouched(new Set([`${canonicalKey}.pageInfo`]));
+      await tick();
       expect(last.posts.pageInfo).toEqual({
         startCursor: "p1",
         endCursor: "p3",
@@ -214,6 +217,7 @@ describe("Fragments (documents-powered)", () => {
       // Update container-level field (e.g. totalCount)
       graph.putRecord(canonicalKey, { totalCount: 3 });
       fragments._notifyTouched(new Set([canonicalKey]));
+      await tick();
       expect(last.posts.totalCount).toBe(3);
 
       sub.unsubscribe();
