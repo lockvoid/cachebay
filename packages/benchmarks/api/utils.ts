@@ -1,7 +1,7 @@
 import { gql } from "graphql-tag";
 
 // For fair perf (strip dev-only code in your lib if you gate by NODE_ENV)
-process.env.NODE_ENV = "production";
+// process.env.NODE_ENV = "production"; // Set via environment variable instead
 
 // -----------------------------------------------------------------------------
 // Deterministic fixtures

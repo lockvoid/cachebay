@@ -122,32 +122,33 @@ export type CachebayInstance = ClientPlugin & {
  * @returns Configured cache instance with Villus plugin interface
  */
 export function createCache(options: CachebayOptions = {}): CachebayInstance {
-  // Core
-  const graph = createGraph({ keys: options.keys || {}, interfaces: options.interfaces || {} });
+  // Create planner first (no dependencies)
+  const planner = createPlanner();
+
+  // Create graph with onChange that will notify subsystems
+  let documents: ReturnType<typeof createDocuments>;
+  let queries: ReturnType<typeof createQueries>;
+  let fragments: ReturnType<typeof createFragments>;
+
+  const graph = createGraph({
+    keys: options.keys || {},
+    interfaces: options.interfaces || {},
+    onChange: (touchedIds) => {
+      // Notify all subsystems of changes
+      documents._markDirty(touchedIds);
+      queries._notifyTouched(touchedIds);
+      fragments._notifyTouched(touchedIds);
+    },
+  });
+
+  // Now create subsystems with graph
   const optimistic = createOptimistic({ graph });
   const ssr = createSSR({ hydrationTimeout: options.hydrationTimeout }, { graph });
   const views = createViews({ graph });
-  const planner = createPlanner();
   const canonical = createCanonical({ graph, optimistic });
-  const documents = createDocuments({ graph, views, planner, canonical });
-  const fragments = createFragments({ graph, planner, views });
-  const queries = createQueries({ graph, planner, documents });
-
-  // Connect graph onChange to notify documents, queries, and fragments
-  graph.addOnChangeListener((touchedIds) => {
-    // Notify documents cache (for materializeDocument LRU invalidation)
-    documents._markDirty(touchedIds);
-  });
-  
-  graph.addOnChangeListener((touchedIds) => {
-    // Notify queries watchers (for reactive updates)
-    queries._notifyTouched(touchedIds);
-  });
-
-  graph.addOnChangeListener((touchedIds) => {
-    // Notify fragments watchers (for reactive updates)
-    fragments._notifyTouched(touchedIds);
-  });
+  documents = createDocuments({ graph, views, planner, canonical });
+  fragments = createFragments({ graph, planner, views });
+  queries = createQueries({ graph, planner, documents });
 
   // Features
   const inspect = createInspect({ graph, optimistic });

@@ -26,6 +26,9 @@ describe("documents.normalizeDocument", () => {
       interfaces: {
         Post: ["AudioPost", "VideoPost"],
       },
+      onChange: () => {
+        // No-op for these tests
+      },
     });
 
     optimistic = createOptimistic({ graph });

@@ -553,7 +553,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     canonical?: boolean;
   }): MaterializeResult => {
     // Flush any pending graph changes before reading
-    graph.flushPendingChanges();
+    graph.flush();
 
     const plan = planner.getPlan(document);
     const lru = getResultLRU(plan);

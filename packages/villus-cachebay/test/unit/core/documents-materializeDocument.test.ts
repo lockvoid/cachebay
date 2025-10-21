@@ -19,6 +19,11 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
   let documents: ReturnType<typeof createDocuments>;
 
   beforeEach(() => {
+    planner = createPlanner();
+    
+    // Create documents first (will be assigned after graph creation)
+    let documentsRef: ReturnType<typeof createDocuments>;
+
     graph = createGraph({
       keys: {
         Profile: (p) => p.slug,
@@ -29,10 +34,13 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
         Post: (p) => p.id,
       },
       interfaces: { Post: ["AudioPost", "VideoPost"] },
+      onChange: (touchedIds) => {
+        // Notify documents for cache invalidation
+        documentsRef._markDirty(touchedIds);
+      },
     });
 
     optimistic = createOptimistic({ graph });
-    planner = createPlanner();
     canonical = createCanonical({ graph, optimistic });
 
     // Root record is always present
@@ -44,11 +52,8 @@ describe("documents.materializeDocument (plain materialization + status)", () =>
       canonical,
       // no views!
     });
-
-    // Connect onChange hook for cache invalidation
-    graph.addOnChangeListener((touchedIds) => {
-      documents._markDirty(touchedIds);
-    });
+    
+    documentsRef = documents;
   });
 
   it("FULFILLED for fully-present entity selection (scalars + link)", () => {
