@@ -144,6 +144,46 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
     const canonicalSig = plan.makeSignature("canonical", variables);
     const readSig = plan.makeSignature(modeForQuery, variables);
 
+    // ---------------- MUTATION ----------------
+    if (plan.operation === "mutation") {
+      ctx.useResult = (incoming: OperationResult) => {
+        if (incoming?.error) {
+          return downstreamUseResult(incoming, true);
+        }
+
+        queries.writeQuery({ query: document, variables, data: incoming.data });
+
+        return downstreamUseResult({ data: markRaw(incoming.data), error: null }, true);
+      };
+
+      return;
+    }
+
+    if (plan.operation === "subscription") {
+      ctx.useResult = (incoming, terminal) => {
+        if (typeof incoming?.subscribe !== "function") {
+          return downstreamUseResult(incoming, terminal);
+        }
+        const interceptor = {
+          subscribe(observer: any) {
+            return incoming.subscribe({
+              next: (frame: any) => {
+                if (frame?.data) {
+                  // Write to cache (triggers reactive updates automatically)
+                  queries.writeQuery({ query: document, variables, data: frame.data });
+                }
+                observer.next(frame);
+              },
+              error: (error: any) => observer.error?.(error),
+              complete: () => observer.complete?.(),
+            });
+          },
+        };
+        return downstreamUseResult(interceptor as any, terminal);
+      };
+      return;
+    }
+
     const emit = (payload: { data?: any; error?: any }, terminal: boolean) => {
       downstreamUseResult(payload as any, terminal);
       if (terminal) {

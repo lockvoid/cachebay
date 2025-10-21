@@ -260,5 +260,160 @@ describe("queries API", () => {
       // Should NOT have emitted again
       expect(emissions).toHaveLength(1);
     });
+
+    it("triggers when nested entity (User->Profile) is updated", async () => {
+      const USER_QUERY = gql`
+        query GetUserWithProfile($id: ID!) {
+          user(id: $id) {
+            id
+            name
+            profile {
+              id
+              bio
+              avatar
+            }
+          }
+        }
+      `;
+
+      // Write initial data with nested profile
+      cache.writeQuery({
+        query: USER_QUERY,
+        variables: { id: "1" },
+        data: {
+          user: {
+            __typename: "User",
+            id: "1",
+            name: "Alice",
+            profile: {
+              __typename: "Profile",
+              id: "p1",
+              bio: "Original bio",
+              avatar: "avatar1.jpg",
+            },
+          },
+        },
+      });
+
+      const emissions: any[] = [];
+
+      // Watch the user query
+      const handle = cache.watchQuery({
+        query: USER_QUERY,
+        variables: { id: "1" },
+        onData: (data) => {
+          emissions.push(data);
+        },
+      });
+
+      expect(emissions).toHaveLength(1);
+      expect(emissions[0].user.profile.bio).toBe("Original bio");
+
+      // Update ONLY the profile entity (not the user)
+      const PROFILE_FRAGMENT = gql`
+        fragment ProfileFields on Profile {
+          id
+          bio
+          avatar
+        }
+      `;
+
+      cache.writeFragment({
+        id: "Profile:p1",
+        fragment: PROFILE_FRAGMENT,
+        data: {
+          __typename: "Profile",
+          id: "p1",
+          bio: "Updated bio",
+          avatar: "avatar2.jpg",
+        },
+      });
+
+      // Wait for microtask
+      await new Promise((resolve) => queueMicrotask(resolve));
+
+      // User query should have triggered because Profile:p1 is in its deps
+      expect(emissions).toHaveLength(2);
+      expect(emissions[1].user.profile.bio).toBe("Updated bio");
+      expect(emissions[1].user.profile.avatar).toBe("avatar2.jpg");
+      expect(emissions[1].user.name).toBe("Alice"); // User data unchanged
+
+      handle.unsubscribe();
+    });
+
+    it("triggers when mutation updates entity", async () => {
+      const USER_QUERY = gql`
+        query GetUser($id: ID!) {
+          user(id: $id) {
+            id
+            name
+            email
+          }
+        }
+      `;
+
+      const UPDATE_USER_MUTATION = gql`
+        mutation UpdateUser($id: ID!, $name: String!, $email: String!) {
+          updateUser(id: $id, name: $name, email: $email) {
+            id
+            name
+            email
+          }
+        }
+      `;
+
+      // Write initial user data
+      cache.writeQuery({
+        query: USER_QUERY,
+        variables: { id: "1" },
+        data: {
+          user: {
+            __typename: "User",
+            id: "1",
+            name: "Alice",
+            email: "alice@example.com",
+          },
+        },
+      });
+
+      const emissions: any[] = [];
+
+      // Watch the user query
+      const handle = cache.watchQuery({
+        query: USER_QUERY,
+        variables: { id: "1" },
+        onData: (data) => {
+          emissions.push(data);
+        },
+      });
+
+      expect(emissions).toHaveLength(1);
+      expect(emissions[0].user.name).toBe("Alice");
+      expect(emissions[0].user.email).toBe("alice@example.com");
+
+      // Execute mutation (write mutation result to cache)
+      cache.writeQuery({
+        query: UPDATE_USER_MUTATION,
+        variables: { id: "1", name: "Alice Updated", email: "alice.updated@example.com" },
+        data: {
+          updateUser: {
+            __typename: "User",
+            id: "1",
+            name: "Alice Updated",
+            email: "alice.updated@example.com",
+          },
+        },
+      });
+
+      // Wait for microtask
+      await new Promise((resolve) => queueMicrotask(resolve));
+
+      // Query should have triggered because User:1 was updated
+      expect(emissions).toHaveLength(2);
+      expect(emissions[1].user.name).toBe("Alice Updated");
+      expect(emissions[1].user.email).toBe("alice.updated@example.com");
+
+      handle.unsubscribe();
+    });
   });
 });
