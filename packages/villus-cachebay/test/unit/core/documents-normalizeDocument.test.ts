@@ -192,7 +192,7 @@ describe("documents.normalizeDocument", () => {
           entity: {
             __typename: "Entity",
             id: "e1",
-            dataUrl: "1",
+            dataUrl: "1", 
             previewUrl: "2",
           }
         },

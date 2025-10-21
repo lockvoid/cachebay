@@ -1,15 +1,9 @@
 import { ROOT_ID } from "./constants";
 import {
   isObject,
-  hasTypename,
-  traverseFast,
   buildFieldKey,
   buildConnectionKey,
   buildConnectionCanonicalKey,
-  TRAVERSE_SKIP,
-  TRAVERSE_OBJECT,
-  TRAVERSE_ARRAY,
-  TRAVERSE_SCALAR,
 } from "./utils";
 import type { CachePlan, PlanField } from "../compiler";
 import type { CanonicalInstance } from "./canonical";
@@ -695,9 +689,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     {
       const cached = lru.get(vkey);
       if (cached && !dirty.has(vkey)) {
-        return { 
-          data: cached.data, 
-          status: "FULFILLED", 
+        return {
+          data: cached.data,
+          status: "FULFILLED",
           deps: cached.deps.slice(),
           // For cached results, if canonical mode was used, assume it may have canonical data
           hasCanonical: canonical ? true : false,
@@ -1043,9 +1037,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     // clear dirty for this key
     dirty.delete(vkey);
 
-    return { 
-      status: "FULFILLED", 
-      data: outData, 
+    return {
+      status: "FULFILLED",
+      data: outData,
       deps: ids,
       // hasCanonical: true if canonical mode enabled (may include canonical entity data or connections)
       hasCanonical: canonical ? true : false,
