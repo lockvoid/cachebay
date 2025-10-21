@@ -282,6 +282,6 @@ describe("Compiler x Operations", () => {
     expect(key2).toBe(key3);
 
     // Key should follow expectedArgNames order: ["role", "first", "after"]
-    expect(key1).toBe('("role":"admin","first":10,"after":"cursor1")');
+    expect(key1).toBe('{"role":"admin","first":10,"after":"cursor1"}');
   });
 });

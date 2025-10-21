@@ -67,7 +67,7 @@ const compileArgBuilder = (args: readonly any[] | undefined): {
 } => {
   const entries = (args || []).map(a => [a.name.value, a.value as ValueNode]) as Array<[string, ValueNode]>;
   const expectedArgNames = entries.map(([k]) => k);
-  
+
   const buildArgs = (vars: Record<string, any>) => {
     if (!entries.length) return {};
     const out: Record<string, any> = {};
@@ -78,8 +78,16 @@ const compileArgBuilder = (args: readonly any[] | undefined): {
     }
     return out;
   };
-  
+
   return { buildArgs, expectedArgNames };
+};
+
+/** stable stringify (keys sorted, deep) - kept for backward compatibility */
+const stableStringify = (v: any): string => {
+  if (v == null || typeof v !== "object") return JSON.stringify(v);
+  if (Array.isArray(v)) return "[" + v.map(stableStringify).join(",") + "]";
+  const keys = Object.keys(v).sort();
+  return "{" + keys.map(k => JSON.stringify(k) + ":" + stableStringify(v[k])).join(",") + "}";
 };
 
 /**
@@ -93,22 +101,22 @@ const compileStringifyArgs = (
   if (expectedArgNames.length === 0) {
     return () => "";
   }
-  
+
   return (vars: Record<string, any>) => {
     const args = buildArgs(vars);
-    let result = "(";
+    let result = "{";
     let first = true;
-    
+
     for (let i = 0; i < expectedArgNames.length; i++) {
       const argName = expectedArgNames[i];
       if (args[argName] !== undefined) {
         if (!first) result += ",";
-        result += `"${argName}":${JSON.stringify(args[argName])}`;
+        result += JSON.stringify(argName) + ":" + JSON.stringify(args[argName]);
         first = false;
       }
     }
-    
-    result += ")";
+
+    result += "}";
     return result;
   };
 };

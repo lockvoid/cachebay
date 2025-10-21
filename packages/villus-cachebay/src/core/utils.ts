@@ -107,7 +107,7 @@ export const traverseFast = (
 export const buildFieldKey = (field: PlanField, variables: Record<string, any>): string => {
   const args = field.stringifyArgs(variables);
 
-  return args === "{}" ? field.fieldName : `${field.fieldName}(${args})`;
+  return args === "" ? field.fieldName : `${field.fieldName}(${args})`;
 };
 
 export const buildConnectionKey = (

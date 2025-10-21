@@ -35,8 +35,8 @@ describe("Compiler x Fragments", () => {
     const node = edges.selectionMap!.get("node")!;
     expect(node.fieldName).toBe("node");
 
-    const postsKey = `${posts.fieldName}${posts.stringifyArgs({ postsCategory: "tech", postsFirst: 2, postsAfter: null })}`;
-    expect(postsKey).toBe('posts("category":"tech","first":2,"after":null)');
+    const postsKey = `${posts.fieldName}(${posts.stringifyArgs({ postsCategory: "tech", postsFirst: 2, postsAfter: null })})`;
+    expect(postsKey).toBe('posts({"category":"tech","first":2,"after":null})');
 
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
     expect(hasTypenames(plan.networkQuery)).toBe(true);
