@@ -21,10 +21,7 @@
     "api:writeQuery:baseline": "vitest bench --run --outputJson=.results/normalize.json api/writeQuery.bench.ts",
     "api:watchQuery": "vitest bench --run --compare=.results/normalize.json api/watchQuery.bench.ts",
     "api:watchQuery:baseline": "vitest bench --run --outputJson=.results/normalize.json api/watchQuery.bench.ts",
-    "bench:build": "pnpm relay && rsbuild build",
-    "bench:run": "NODE_ENV=production node .bench-dist/bench.cjs",
-    "bench": "pnpm bench:build && pnpm bench:run",
-    "bench:readQuery": "pnpm bench api/readQuery.bench.ts"
+    "bench": "bash scripts/bench.sh"
   },
   "dependencies": {
     "@apollo/client": "^3.8.10",

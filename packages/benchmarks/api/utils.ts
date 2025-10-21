@@ -111,11 +111,19 @@ export function makeResponse({
                       },
                     },
                   })),
-                  pageInfo: { __typename: "PageInfo", hasNextPage: false },
+                  pageInfo: { 
+                    __typename: "PageInfo", 
+                    endCursor: comments > 0 ? "c" + comments : null,
+                    hasNextPage: false 
+                  },
                 },
               },
             })),
-            pageInfo: { __typename: "PageInfo", hasNextPage: false },
+            pageInfo: { 
+              __typename: "PageInfo", 
+              endCursor: posts > 0 ? "p" + posts : null,
+              hasNextPage: false 
+            },
           },
         },
       })),

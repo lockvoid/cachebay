@@ -37299,6 +37299,7 @@ function makeResponse({ users = 10, posts = 5, comments = 3 }) {
                                                 })),
                                             pageInfo: {
                                                 __typename: "PageInfo",
+                                                endCursor: comments > 0 ? "c" + comments : null,
                                                 hasNextPage: false
                                             }
                                         }
@@ -37306,6 +37307,7 @@ function makeResponse({ users = 10, posts = 5, comments = 3 }) {
                                 })),
                             pageInfo: {
                                 __typename: "PageInfo",
+                                endCursor: posts > 0 ? "p" + posts : null,
                                 hasNextPage: false
                             }
                         }
