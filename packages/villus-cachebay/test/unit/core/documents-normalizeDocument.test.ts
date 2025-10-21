@@ -3,7 +3,6 @@ import { createDocuments } from "@/src/core/documents";
 import { createGraph } from "@/src/core/graph";
 import { createOptimistic } from "@/src/core/optimistic";
 import { createPlanner } from "@/src/core/planner";
-import { createViews } from "@/src/core/views";
 import { operations } from "@/test/helpers";
 import { users, posts, comments, tags, medias } from "@/test/helpers/fixtures";
 
@@ -32,10 +31,9 @@ describe("documents.normalizeDocument", () => {
     });
 
     optimistic = createOptimistic({ graph });
-    views = createViews({ graph });
     planner = createPlanner();
     canonical = createCanonical({ graph, optimistic });
-    documents = createDocuments({ graph, views, canonical, planner });
+    documents = createDocuments({ graph, canonical, planner });
   });
 
   describe('primitives', () => {
@@ -192,7 +190,7 @@ describe("documents.normalizeDocument", () => {
           entity: {
             __typename: "Entity",
             id: "e1",
-            dataUrl: "1", 
+            dataUrl: "1",
             previewUrl: "2",
           }
         },
