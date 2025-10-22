@@ -31,9 +31,6 @@ export type WriteQueryOptions = {
   data: any;
 };
 
-export type WriteQueryResult = {
-  touched: Set<string>;
-};
 
 export type WatchQueryOptions = {
   query: DocumentNode;
@@ -195,16 +192,12 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
     query,
     variables = {},
     data,
-  }: WriteQueryOptions): WriteQueryResult => {
-    const res = documents.normalizeDocument({
+  }: WriteQueryOptions): void => {
+    documents.normalizeDocument({
       document: query,
       variables,
       data,
-    }) as any;
-
-    const touched: Set<string> = res?.touched || new Set<string>();
-    enqueueTouched(touched);
-    return { touched };
+    });
   };
 
   const watchQuery = ({

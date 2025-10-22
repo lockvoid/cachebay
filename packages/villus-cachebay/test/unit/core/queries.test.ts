@@ -52,7 +52,7 @@ describe("queries API", () => {
       `;
 
       // Write data
-      const writeResult = queries.writeQuery({
+      queries.writeQuery({
         query: QUERY,
         variables: { id: "1" },
         data: {
@@ -64,8 +64,6 @@ describe("queries API", () => {
           },
         },
       });
-
-      expect(writeResult.touched.size).toBeGreaterThan(0);
 
       // Read it back (default = canonical true)
       const readResult = queries.readQuery({

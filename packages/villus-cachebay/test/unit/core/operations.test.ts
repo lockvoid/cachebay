@@ -25,9 +25,12 @@ describe("operations", () => {
     };
 
     // Mock queries
+    let cachedData: any = null;
     mockQueries = {
-      writeQuery: vi.fn(),
-      readQuery: vi.fn().mockReturnValue({ data: null }),
+      writeQuery: vi.fn((args) => {
+        cachedData = args.data;
+      }),
+      readQuery: vi.fn(() => ({ data: cachedData })),
     };
 
     // Mock SSR

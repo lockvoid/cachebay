@@ -62,22 +62,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     data: any;
     /** When provided, treat this entity id as the "root" parent (used by fragments) */
     rootId?: string;
-  }): { touched: Set<string> } => {
-    const touched = new Set<string>();
+  }): void => {
     const put = (id: string, patch: Record<string, any>) => {
-      if (id !== ROOT_ID) {
-        touched.add(id);
-      } else {
-        // But DO track field-level changes on root (e.g., @.user({"id":"1"}))
-        const keys = Object.keys(patch);
-        for (let i = 0; i < keys.length; i++) {
-          const key = keys[i];
-          const value = patch[key];
-          // Skip metadata fields (id/typename that equal ROOT_ID) but track actual query fields
-          if (value === ROOT_ID) continue;
-          touched.add(`${id}.${key}`);
-        }
-      }
       graph.putRecord(id, patch);
     };
 
@@ -497,9 +483,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           pageKey,
           normalizedPage: pageRecord,
         });
-
-        const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
-        touched.add(canonicalKey);
       }
     }
 
@@ -507,8 +490,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     // The graph's onChange callback (set up in client.ts) will call
     // documents._markDirty with only the records that actually changed.
     // This prevents false cache invalidation when data is identical.
-
-    return { touched };
   };
 
   /* MATERIALIZE DOCUMENT (per-plan LRU; per-dep inverted index; no clocks) */

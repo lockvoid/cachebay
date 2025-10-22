@@ -180,15 +180,13 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     variables = {},
   }: WriteFragmentArgs): void => {
     const plan = planner.getPlan(fragment, { fragmentName });
-    const res = documents.normalizeDocument({
+    documents.normalizeDocument({
       document: plan,
       variables: variables as Record<string, any>,
       data,
       // write "under" this entity and create links to connection pages
       rootId: id,
-    }) as any;
-
-    enqueueTouched(res?.touched);
+    });
   };
 
   const watchFragment = ({
