@@ -215,6 +215,22 @@ export const createOperations = (
           variables: vars,
           data: result.data,
         });
+        
+        // Read back from cache to get normalized/materialized data
+        // This ensures the same reference as watchQuery would emit
+        const cached = queries.readQuery({
+          query,
+          variables: vars,
+          canonical: true,
+        });
+        
+        // Mark as emitted for suspension tracking
+        markEmitted(sig);
+        
+        return {
+          data: cached.data as TData,
+          error: null,
+        };
       }
 
       // Mark as emitted for suspension tracking

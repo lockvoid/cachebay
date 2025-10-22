@@ -65,7 +65,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   }): { touched: Set<string> } => {
     const touched = new Set<string>();
     const put = (id: string, patch: Record<string, any>) => {
-      // Don't track ROOT_ID itself - it's too broad
       if (id !== ROOT_ID) {
         touched.add(id);
       } else {
@@ -504,8 +503,10 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
     }
 
-    // Mark cached queries dirty based on touched dependencies
-    markResultsDirtyForTouched(touched);
+    // Note: We don't call markResultsDirtyForTouched here anymore.
+    // The graph's onChange callback (set up in client.ts) will call
+    // documents._markDirty with only the records that actually changed.
+    // This prevents false cache invalidation when data is identical.
 
     return { touched };
   };

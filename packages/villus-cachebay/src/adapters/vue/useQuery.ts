@@ -172,10 +172,6 @@ export function useQuery<TData = any, TVars = any>(
       variables: vars,
       canonical,
       onData: (newData) => {
-        console.log('[useQuery.watchQuery.onData] called');
-        console.log('[useQuery.watchQuery.onData] old data:', data.value);
-        console.log('[useQuery.watchQuery.onData] new data:', newData);
-        console.log('[useQuery.watchQuery.onData] same reference?', data.value === newData);
         data.value = newData as TData;
         error.value = null;
       },
