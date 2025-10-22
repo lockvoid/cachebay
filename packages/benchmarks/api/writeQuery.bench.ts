@@ -2,7 +2,7 @@
 import { bench, group, run, summary } from "mitata";
 
 // ---- cachebay ----
-import { createCachebay } from "../../villus-cachebay/src/core/client";
+import { createCachebay as createCachebayClient } from "../../villus-cachebay/src/core/client";
 
 // ---- apollo ----
 import { InMemoryCache } from "@apollo/client/cache";
@@ -24,7 +24,10 @@ const sinkWrite = () => { __sink ^= 1; };
 // Rigs
 // -----------------------------------------------------------------------------
 function createCachebay() {
-  return createCachebay({
+  return createCachebayClient({
+    transport: {
+      http: async () => ({ data: {} }), // dummy transport for benchmarks
+    },
     keys: {
       Query: () => "Query",
       User: (o: any) => o.id ?? null,
@@ -230,9 +233,8 @@ summary(() => {
       yield {
         [0]() {
           const cachebay = createCachebay();
-
-          cachebay.__internals.planner.getPlan(CACHEBAY_QUERY)
-
+          // Warm up: compile the plan
+          cachebay.__internals.planner.getPlan(CACHEBAY_QUERY);
           return cachebay;
         },
         bench(cache) {
