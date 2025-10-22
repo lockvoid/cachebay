@@ -3,7 +3,7 @@ import { createTestClient, createConnectionComponent, createDetailComponent, see
 
 describe("Cache Policies Behavior", () => {
   describe("network-only policy", () => {
-    it("ignores cache and always fetches from network", async () => {
+    it.only("ignores cache and always fetches from network", async () => {
       const routes = [
         {
           when: ({ variables }) => {
@@ -222,7 +222,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it.only("returns cached data immediately without network request", async () => {
+    it("returns cached data immediately without network request", async () => {
       const { client, cache, fx } = createTestClient();
 
       await seedCache(cache, {

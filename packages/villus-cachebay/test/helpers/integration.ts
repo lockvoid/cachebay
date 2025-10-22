@@ -195,6 +195,7 @@ export const createConnectionComponent = (
       });
 
       watch(data, (value) => {
+        console.log("RENDER", value, isFetching.value)
         if (!value) {
           return;
         }
