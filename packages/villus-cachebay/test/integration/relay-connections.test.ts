@@ -1,5 +1,4 @@
 import { mount } from "@vue/test-utils";
-import { isReactive } from "vue";
 import { createTestClient, createConnectionComponent, seedCache, getPageInfo, getEdges, fixtures, operations, delay, tick } from "@/test/helpers";
 
 describe("Relay connections", () => {
@@ -268,7 +267,7 @@ describe("Relay connections", () => {
     expect(getPageInfo(wrapper)).toEqual({ startCursor: "p3", endCursor: "p4", hasNextPage: false, hasPreviousPage: false });
   });
 
-  it("maintains stable reactive edges while keeping pageInfo non-reactive across views", async () => {
+  it("maintains stable artifacts unless changed", async () => {
     const routes = [
       {
         when: ({ variables }) => {
@@ -278,7 +277,6 @@ describe("Relay connections", () => {
         respond: () => {
           return {
             data: {
-              __typename: "Query",
               posts: fixtures.posts.buildConnection([{ id: "p1", title: "A1" }, { id: "p2", title: "A2" }], { hasNextPage: true }),
             },
           };
@@ -293,7 +291,6 @@ describe("Relay connections", () => {
         respond: () => {
           return {
             data: {
-              __typename: "Query",
               posts: fixtures.posts.buildConnection([{ id: "p3", title: "A3" }, { id: "p4", title: "A4" }]),
             },
           };
@@ -301,28 +298,22 @@ describe("Relay connections", () => {
       },
     ];
 
-    const { client, cache } = createTestClient({ routes });
+    const { cache } = createTestClient({ routes });
 
-    const response1 = await client.execute({ query: operations.POSTS_QUERY, variables: { category: "A", first: 2 } });
+    const response1 = await cache.executeQuery({ query: operations.POSTS_QUERY, variables: { category: "A", first: 2 } });
     const connection1 = response1.data.posts;
     const edgesRef1 = connection1.edges;
 
-    expect(isReactive(connection1.pageInfo)).toBe(true);
-    expect(isReactive(connection1.edges)).toBe(true);
-    expect(isReactive(connection1.edges[0])).toBe(true);
-    expect(isReactive(connection1.edges[1])).toBe(true);
-
-    const response2 = await client.execute({ query: operations.POSTS_QUERY, variables: { category: "A", first: 2, after: "p2" } });
+    const response2 = await cache.executeQuery({ query: operations.POSTS_QUERY, variables: { category: "A", first: 2, after: "p2" } });
     const connection2 = response2.data.posts;
     const edgesRef2 = connection2.edges;
 
-    expect(edgesRef2).toBe(edgesRef1);
+    expect(edgesRef2).not.toBe(edgesRef1);
 
-    const post1 = connection2.edges[0].node;
-    const postFragment1 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
-
-    expect(isReactive(post1)).toBe(true);
-    expect(postFragment1).toEqual(post1);
+    expect(connection1.edges[0]).toBe(connection2.edges[0]);
+    expect(connection1.edges[1]).toBe(connection2.edges[1]);
+    expect(connection1.edges[0].node).toBe(connection2.edges[0].node);
+    expect(connection1.edges[1].node).toBe(connection2.edges[1].node);
   });
 
   it("handles complex infinite (append) pagination flow with caching, filtering, and network revalidation", async () => {
