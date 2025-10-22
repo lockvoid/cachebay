@@ -32,7 +32,7 @@ When a component renders **right after** `hydrate()`:
 | **cache-and-network** | 0 requests (render cached, terminal)         | cached (non-terminal) + network revalidate |
 | **cache-first**       | 0 requests (render cached, terminal)         | if not cached → 1 request                   |
 | **network-only**      | 1 request                                     | 1 request                                   |
-| **cache-only**        | 0 requests (cached or `CacheOnlyMiss`)        | 0 requests                                  |
+| **cache-only**        | 0 requests (cached or `CacheMiss`)        | 0 requests                                  |
 
 The **hydration window** is short and internal; it suppresses CN’s initial revalidate so the UI shows hydrated data without a “double fetch”.
 

@@ -875,7 +875,7 @@ describe("Cache Policies Behavior", () => {
       });
 
       await tick();
-      expect(wrapper.text()).toContain("CacheOnlyMiss");
+      expect(wrapper.text()).toContain("CacheMiss");
       expect(fx.calls.length).toBe(0);
 
       await fx.restore();

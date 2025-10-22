@@ -231,7 +231,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         emit({ data: markRaw(result.data), error: null }, true);
       } else {
         const error = new CombinedError({
-          networkError: Object.assign(new Error("CacheOnlyMiss"), { name: "CacheOnlyMiss" }),
+          networkError: Object.assign(new Error("CacheMiss"), { name: "CacheMiss" }),
           graphqlErrors: [],
           response: undefined,
         });

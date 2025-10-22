@@ -79,7 +79,7 @@ Cache policies determine when and how connection data is fetched and rendered. C
 - `cache-first` - Render cached data if available, skip network request
 - `cache-and-network` - Render cached data immediately, then revalidate with network
 - `network-only` - Always fetch from network, ignore cache
-- `cache-only` - Only use cached data, throw `CacheOnlyMiss` if not available
+- `cache-only` - Only use cached data, throw `CacheMiss` if not available
 
 Use any policy with either `mode`.
 

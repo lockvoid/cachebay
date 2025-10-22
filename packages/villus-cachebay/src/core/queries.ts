@@ -247,7 +247,7 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
         }
       }
     } else if (onError && !skipInitialEmit) {
-      onError(new Error("Query returned no data"));
+      onError(new Error("CacheMiss"));
     }
 
     return {

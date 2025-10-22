@@ -75,7 +75,7 @@ This avoids fragile diffing; final state is **correct and deterministic**.
 ## 5) Villus plugin: policies, SSR, Suspense windows
 
 - **Policies**
-  - `cache-only`: serve cache or `CacheOnlyMiss`.
+  - `cache-only`: serve cache or `CacheMiss`.
   - `cache-first`: cached terminal else one network.
   - `cache-and-network`: cached immediately **and** revalidate.
   - `network-only`: always network.

@@ -72,7 +72,7 @@ describe("Plugin", () => {
   });
 
   describe("cache-only", () => {
-    it("returns cached data on hit and CacheOnlyMiss error on miss", () => {
+    it("returns cached data on hit and CacheMiss error on miss", () => {
       // hit
       graph.putRecord(ROOT_ID, {
         id: ROOT_ID,
@@ -106,7 +106,7 @@ describe("Plugin", () => {
 
       expect(emissions.length).toBe(2);
       expect(emissions[1].error).toBeTruthy();
-      expect(emissions[1].error.networkError?.name).toBe("CacheOnlyMiss");
+      expect(emissions[1].error.networkError?.name).toBe("CacheMiss");
       expect(emissions[1].terminal).toBe(true);
     });
   });

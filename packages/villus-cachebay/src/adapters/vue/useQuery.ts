@@ -52,60 +52,60 @@ export function useQuery<TData = any, TVars = any>(
   options: UseQueryOptions<TData, TVars>
 ): UseQueryReturn<TData> {
   const client = useClient();
-  
+
   const data = ref<TData | null>(null) as Ref<TData | null>;
   const error = ref<Error | null>(null);
   const isFetching = ref(true);
-  
+
   let watchHandle: { unsubscribe: () => void; refetch: () => void } | null = null;
   let initialExecutionPromise: Promise<void> | null = null;
-  
+
   const policy = options.cachePolicy || "cache-first";
   const canonical = options.canonical ?? true;
-  
+
   /**
    * Setup watchQuery which handles both initial fetch and reactive updates
    */
   const setupWatch = async () => {
     const vars = toValue(options.variables) || ({} as TVars);
     const isPaused = toValue(options.pause);
-    
+
     // Cleanup previous watch
     if (watchHandle) {
       watchHandle.unsubscribe();
       watchHandle = null;
     }
-    
+
     if (isPaused) {
       isFetching.value = false;
       return;
     }
-    
+
     isFetching.value = true;
     error.value = null;
-    
+
     // Determine if we should fetch from network based on policy
     let shouldFetchFromNetwork = false;
-    
+
     // Check cache first for cache-first and cache-and-network policies
     const cached = (policy === "cache-first" || policy === "cache-and-network" || policy === "cache-only")
       ? client.readQuery({
-          query: options.query,
-          variables: vars,
-          canonical,
-        })
+        query: options.query,
+        variables: vars,
+        canonical,
+      })
       : null;
-    
+
     // Handle cache-only policy (never fetches from network)
     if (policy === "cache-only") {
       const cacheOk = canonical ? cached?.ok?.canonical : cached?.ok?.strict;
       if (cacheOk && cached?.data !== undefined) {
         data.value = cached.data as TData;
       } else {
-        error.value = new Error("CacheOnlyMiss: No cached data available");
+        error.value = new Error("CacheMiss");
       }
       isFetching.value = false;
-      
+
       // Setup watch for reactive updates
       watchHandle = client.watchQuery({
         query: options.query,
@@ -121,11 +121,11 @@ export function useQuery<TData = any, TVars = any>(
       });
       return;
     }
-    
+
     // Determine network fetch based on policy and cache state
     // For cache-first: check if we have a valid cache hit (strict ok)
     const cacheOk = cached?.ok?.strict;
-    
+
     if (policy === "network-only") {
       // Always fetch from network
       shouldFetchFromNetwork = true;
@@ -146,7 +146,7 @@ export function useQuery<TData = any, TVars = any>(
         shouldFetchFromNetwork = true;
       }
     }
-    
+
     // Fetch from network if needed
     if (shouldFetchFromNetwork) {
       try {
@@ -154,7 +154,7 @@ export function useQuery<TData = any, TVars = any>(
           query: options.query,
           variables: vars,
         });
-        
+
         if (result.error) {
           error.value = result.error;
         } else {
@@ -166,7 +166,7 @@ export function useQuery<TData = any, TVars = any>(
         isFetching.value = false;
       }
     }
-    
+
     // Setup watch for reactive updates
     watchHandle = client.watchQuery({
       query: options.query,
@@ -182,7 +182,7 @@ export function useQuery<TData = any, TVars = any>(
       skipInitialEmit: true, // We already handled initial data
     });
   };
-  
+
   /**
    * Refetch the query
    */
@@ -191,7 +191,7 @@ export function useQuery<TData = any, TVars = any>(
       watchHandle.refetch();
     }
   };
-  
+
   // Watch for variable and pause changes
   watch(
     () => [toValue(options.variables), toValue(options.pause)],
@@ -204,7 +204,7 @@ export function useQuery<TData = any, TVars = any>(
     },
     { immediate: true, deep: true }
   );
-  
+
   // Cleanup on unmount
   onBeforeUnmount(() => {
     if (watchHandle) {
@@ -212,14 +212,14 @@ export function useQuery<TData = any, TVars = any>(
       watchHandle = null;
     }
   });
-  
+
   const api: BaseUseQueryReturn<TData> = {
     data,
     error,
     isFetching,
     refetch,
   };
-  
+
   return {
     ...api,
     /**
@@ -233,7 +233,7 @@ export function useQuery<TData = any, TVars = any>(
       if (initialExecutionPromise) {
         await initialExecutionPromise;
       }
-      
+
       return onFulfilled(api);
     },
   };
