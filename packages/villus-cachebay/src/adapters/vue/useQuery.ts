@@ -15,6 +15,8 @@ export interface UseQueryOptions<TData = any, TVars = any> {
   cachePolicy?: CachePolicy;
   /** Pause query execution if true (can be reactive) */
   pause?: MaybeRefOrGetter<boolean>;
+  /** Use canonical mode for cache reads (default: true) */
+  canonical?: boolean;
 }
 
 /**
@@ -59,6 +61,7 @@ export function useQuery<TData = any, TVars = any>(
   let initialExecutionPromise: Promise<void> | null = null;
   
   const policy = options.cachePolicy || "cache-first";
+  const canonical = options.canonical ?? true;
   
   /**
    * Setup watchQuery which handles both initial fetch and reactive updates
@@ -89,13 +92,14 @@ export function useQuery<TData = any, TVars = any>(
       ? client.readQuery({
           query: options.query,
           variables: vars,
-          canonical: true,
+          canonical,
         })
       : null;
     
     // Handle cache-only policy (never fetches from network)
     if (policy === "cache-only") {
-      if (cached && cached.data !== undefined) {
+      const cacheOk = canonical ? cached?.ok?.canonical : cached?.ok?.strict;
+      if (cacheOk && cached?.data !== undefined) {
         data.value = cached.data as TData;
       } else {
         error.value = new Error("CacheOnlyMiss: No cached data available");
@@ -106,7 +110,7 @@ export function useQuery<TData = any, TVars = any>(
       watchHandle = client.watchQuery({
         query: options.query,
         variables: vars,
-        canonical: true,
+        canonical,
         onData: (newData) => {
           data.value = newData as TData;
           error.value = null;
@@ -119,19 +123,22 @@ export function useQuery<TData = any, TVars = any>(
     }
     
     // Determine network fetch based on policy and cache state
+    // For cache-first: check if we have a valid cache hit (strict ok)
+    const cacheOk = cached?.ok?.strict;
+    
     if (policy === "network-only") {
       // Always fetch from network
       shouldFetchFromNetwork = true;
     } else if (policy === "cache-and-network") {
       // Return cached data immediately if available, but always fetch
-      if (cached && cached.data !== undefined) {
+      if (cacheOk && cached?.data !== undefined) {
         data.value = cached.data as TData;
         isFetching.value = false;
       }
       shouldFetchFromNetwork = true;
     } else if (policy === "cache-first") {
-      // Only fetch if cache miss
-      if (cached && cached.data !== undefined) {
+      // Only fetch if cache miss (strict mode check)
+      if (cacheOk && cached?.data !== undefined) {
         data.value = cached.data as TData;
         isFetching.value = false;
         shouldFetchFromNetwork = false;
@@ -164,7 +171,7 @@ export function useQuery<TData = any, TVars = any>(
     watchHandle = client.watchQuery({
       query: options.query,
       variables: vars,
-      canonical: true,
+      canonical,
       onData: (newData) => {
         data.value = newData as TData;
         error.value = null;

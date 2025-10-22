@@ -5,8 +5,7 @@ import { useQuery } from "@/src/adapters/vue/useQuery";
 import { createCachebay } from "@/src/core/client";
 import { provideCachebay } from "@/src/adapters/vue/plugin";
 import type { Transport, OperationResult } from "@/src/core/operations";
-
-const QUERY = `query GetUser { user { id name } }`;
+import { USER_QUERY } from "@/test/helpers/operations";
 
 describe("useQuery", () => {
   let mockTransport: Transport;
@@ -15,7 +14,7 @@ describe("useQuery", () => {
   beforeEach(() => {
     mockTransport = {
       http: vi.fn().mockResolvedValue({
-        data: { user: { id: "1", name: "Alice" } },
+        data: { user: { id: "1", email: "alice@example.com" } },
         error: null,
       }),
     };
@@ -28,7 +27,7 @@ describe("useQuery", () => {
     const App = defineComponent({
       setup() {
         queryResult = useQuery({
-          query: QUERY,
+          query: USER_QUERY,
           variables: { id: "1" },
         });
         return () => h("div");
@@ -51,7 +50,7 @@ describe("useQuery", () => {
     await nextTick();
     await new Promise((resolve) => setTimeout(resolve, 10));
 
-    expect(queryResult.data.value).toEqual({ user: { id: "1", name: "Alice" } });
+    expect(queryResult.data.value).toEqual({ user: { id: "1", email: "alice@example.com" } });
     expect(queryResult.isFetching.value).toBe(false);
     expect(queryResult.error.value).toBeNull();
   });
@@ -62,7 +61,8 @@ describe("useQuery", () => {
     const App = defineComponent({
       setup() {
         queryResult = useQuery({
-          query: QUERY,
+          query: USER_QUERY,
+          variables: { id: "1" },
         });
         return () => h("div");
       },
@@ -98,7 +98,8 @@ describe("useQuery", () => {
     const App = defineComponent({
       setup() {
         queryResult = useQuery({
-          query: QUERY,
+          query: USER_QUERY,
+          variables: { id: "1" },
         });
         return () => h("div");
       },
@@ -130,7 +131,8 @@ describe("useQuery", () => {
     const App = defineComponent({
       setup() {
         queryResult = useQuery({
-          query: QUERY,
+          query: USER_QUERY,
+          variables: { id: "1" },
           pause: true,
         });
         return () => h("div");
@@ -163,7 +165,8 @@ describe("useQuery", () => {
     const App = defineComponent({
       setup() {
         queryResult = useQuery({
-          query: QUERY,
+          query: USER_QUERY,
+          variables: { id: "1" },
           pause: isPaused,
         });
         return () => h("div");
@@ -201,7 +204,7 @@ describe("useQuery", () => {
     const App = defineComponent({
       setup() {
         queryResult = useQuery({
-          query: QUERY,
+          query: USER_QUERY,
           variables: () => ({ id: userId.value }),
         });
         return () => h("div");
@@ -242,7 +245,8 @@ describe("useQuery", () => {
     const App = defineComponent({
       setup() {
         queryResult = useQuery({
-          query: QUERY,
+          query: USER_QUERY,
+          variables: { id: "1" },
         });
         return () => h("div");
       },
@@ -276,7 +280,8 @@ describe("useQuery", () => {
     const App = defineComponent({
       async setup() {
         queryResult = await useQuery({
-          query: QUERY,
+          query: USER_QUERY,
+          variables: { id: "1" },
         }).then((result) => {
           thenCalled = true;
           return result;
@@ -307,9 +312,9 @@ describe("useQuery", () => {
   it("handles cache-only policy", async () => {
     // Pre-populate cache
     cache.writeQuery({
-      query: QUERY,
-      variables: {},
-      data: { user: { id: "cached", name: "Cached User" } },
+      query: USER_QUERY,
+      variables: { id: "cached" },
+      data: { user: { id: "cached", email: "cached@example.com" } },
     });
 
     let queryResult: any;
@@ -317,7 +322,8 @@ describe("useQuery", () => {
     const App = defineComponent({
       setup() {
         queryResult = useQuery({
-          query: QUERY,
+          query: USER_QUERY,
+          variables: { id: "cached" },
           cachePolicy: "cache-only",
         });
         return () => h("div");
@@ -340,7 +346,7 @@ describe("useQuery", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(mockTransport.http).not.toHaveBeenCalled();
-    expect(queryResult.data.value).toEqual({ user: { id: "cached", name: "Cached User" } });
+    expect(queryResult.data.value).toEqual({ user: { id: "cached", email: "cached@example.com" } });
   });
 
   describe("Suspension timeout", () => {
@@ -352,21 +358,21 @@ describe("useQuery", () => {
 
       // First query - hits network
       const result1 = await cache.executeQuery({
-        query: QUERY,
+        query: USER_QUERY,
         variables: { id: "1" },
       });
 
       expect(mockTransport.http).toHaveBeenCalledTimes(1);
-      expect(result1.data).toEqual({ user: { id: "1", name: "Alice" } });
+      expect(result1.data).toEqual({ user: { id: "1", email: "alice@example.com" } });
 
       // Second query within suspension window - serves from cache without network
       const result2 = await cache.executeQuery({
-        query: QUERY,
+        query: USER_QUERY,
         variables: { id: "1" },
       });
 
       expect(mockTransport.http).toHaveBeenCalledTimes(1); // Still 1, no second network call
-      expect(result2.data).toEqual({ user: { id: "1", name: "Alice" } });
+      expect(result2.data).toEqual({ user: { id: "1", email: "alice@example.com" } });
     });
 
     it("hits network again after suspension window expires", async () => {
@@ -377,7 +383,7 @@ describe("useQuery", () => {
 
       // First query
       await cache.executeQuery({
-        query: QUERY,
+        query: USER_QUERY,
         variables: { id: "1" },
       });
 
@@ -388,7 +394,7 @@ describe("useQuery", () => {
 
       // Second query after window - hits network again
       await cache.executeQuery({
-        query: QUERY,
+        query: USER_QUERY,
         variables: { id: "1" },
       });
 
@@ -409,19 +415,19 @@ describe("useQuery", () => {
       
       // Then write to strict cache (after hydrate which clears cache)
       cache.writeQuery({
-        query: QUERY,
+        query: USER_QUERY,
         variables: { id: "1" },
-        data: { user: { id: "1", name: "SSR User" } },
+        data: { user: { id: "1", email: "ssr@example.com" } },
       });
 
       // Query during hydration - should serve from strict cache
       const result = await cache.executeQuery({
-        query: QUERY,
+        query: USER_QUERY,
         variables: { id: "1" },
       });
 
       expect(mockTransport.http).not.toHaveBeenCalled();
-      expect(result.data).toEqual({ user: { id: "1", name: "SSR User" } });
+      expect(result.data).toEqual({ user: { id: "1", email: "ssr@example.com" } });
     });
 
     it("does not hit network during hydration window", async () => {
@@ -434,19 +440,19 @@ describe("useQuery", () => {
       (cache as any).__internals.ssr.hydrate({ records: [] });
       
       cache.writeQuery({
-        query: QUERY,
+        query: USER_QUERY,
         variables: { id: "1" },
-        data: { user: { id: "1", name: "SSR User" } },
+        data: { user: { id: "1", email: "ssr@example.com" } },
       });
 
       // Query DURING hydration window - should NOT hit network
       const result = await cache.executeQuery({
-        query: QUERY,
+        query: USER_QUERY,
         variables: { id: "1" },
       });
 
       expect(mockTransport.http).not.toHaveBeenCalled();
-      expect(result.data).toEqual({ user: { id: "1", name: "SSR User" } }); // Cached data
+      expect(result.data).toEqual({ user: { id: "1", email: "ssr@example.com" } }); // Cached data
     });
 
     it("network-only still uses cache during hydration to avoid network", async () => {
@@ -458,20 +464,20 @@ describe("useQuery", () => {
       (cache as any).__internals.ssr.hydrate({ records: [] });
       
       cache.writeQuery({
-        query: QUERY,
+        query: USER_QUERY,
         variables: { id: "1" },
-        data: { user: { id: "1", name: "SSR User" } },
+        data: { user: { id: "1", email: "ssr@example.com" } },
       });
 
       // network-only during hydration should still use cache to avoid network
       const result = await cache.executeQuery({
-        query: QUERY,
+        query: USER_QUERY,
         variables: { id: "1" },
         cachePolicy: "network-only",
       });
 
       expect(mockTransport.http).not.toHaveBeenCalled();
-      expect(result.data).toEqual({ user: { id: "1", name: "SSR User" } });
+      expect(result.data).toEqual({ user: { id: "1", email: "ssr@example.com" } });
     });
   });
 });
