@@ -195,11 +195,11 @@ export const createConnectionComponent = (
       });
 
       watch(data, (value) => {
-        console.log("RENDER", value, isFetching.value)
-        if (!value) {
-          return;
+        if (value) {
+          renders.push(connectionFn(value));
+        } else {
+          renders.push(`${value}`);
         }
-        renders.push(connectionFn(value));
       }, { immediate: true });
 
       watch(error, (value) => {
@@ -287,10 +287,17 @@ export const createConnectionComponentSuspense = (
       });
 
       watch(data, (value) => {
-        if (!value) {
-          return;
+        if (value) {
+          renders.push(connectionFn(value));
+        } else {
+          renders.push(`${value}`);
         }
-        renders.push(connectionFn(value));
+      }, { immediate: true });
+
+      watch(error, (value) => {
+        if (value) {
+          errors.push(value);
+        }
       }, { immediate: true });
 
       return () => {
@@ -375,11 +382,11 @@ export const createDetailComponent = (
       });
 
       watch(data, (value) => {
-        if (!value) {
-          return;
+        if (value) {
+          renders.push(detailFn(value));
+        } else {
+          renders.push(`${value}`);
         }
-
-        renders.push(detailFn(value));
       }, { immediate: true });
 
       watch(error, (value) => {
@@ -453,15 +460,19 @@ export const createDetailComponentSuspense = (
         return detailFn(data.value);
       });
 
-      if (renders) {
-        watch(data, (value) => {
-          if (!value) {
-            return;
-          }
-
+      watch(data, (value) => {
+        if (value) {
           renders.push(detailFn(value));
-        }, { immediate: true });
-      }
+        } else {
+          renders.push(`${value}`);
+        }
+      }, { immediate: true });
+
+      watch(error, (value) => {
+        if (value) {
+          errors.push(value);
+        }
+      }, { immediate: true });
 
       return () => {
         return h("ul", { class: "edges" }, [

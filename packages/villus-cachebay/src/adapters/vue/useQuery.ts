@@ -23,8 +23,8 @@ export interface UseQueryOptions<TData = any, TVars = any> {
  * Base useQuery return value
  */
 export interface BaseUseQueryReturn<TData = any> {
-  /** Query data (reactive) */
-  data: Ref<TData | null>;
+  /** Query data (reactive) - undefined when not loaded, null when explicitly null, TData when loaded */
+  data: Ref<TData | null | undefined>;
   /** Error if query failed */
   error: Ref<Error | null>;
   /** Fetching state */
@@ -53,7 +53,7 @@ export function useQuery<TData = any, TVars = any>(
 ): UseQueryReturn<TData> {
   const client = useClient();
 
-  const data = ref<TData | null>(null) as Ref<TData | null>;
+  const data = ref<TData | null | undefined>() as Ref<TData | null | undefined>;
   const error = ref<Error | null>(null);
   const isFetching = ref(false);
 

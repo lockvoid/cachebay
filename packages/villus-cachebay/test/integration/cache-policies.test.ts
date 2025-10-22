@@ -3,7 +3,7 @@ import { createTestClient, createConnectionComponent, createDetailComponent, see
 
 describe("Cache Policies Behavior", () => {
   describe("network-only policy", () => {
-    it.only("ignores cache and always fetches from network", async () => {
+    it("ignores cache and always fetches from network", async () => {
       const routes = [
         {
           when: ({ variables }) => {
@@ -40,11 +40,11 @@ describe("Cache Policies Behavior", () => {
       await delay(5);
       expect(getEdges(wrapper, "email").length).toBe(0);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(0);
+      expect(Cmp.renders.length).toBe(1);
 
       await delay(15);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
-      expect(Cmp.renders.length).toBe(1);
+      expect(Cmp.renders.length).toBe(2);
 
       await fx.restore();
     });
@@ -84,12 +84,12 @@ describe("Cache Policies Behavior", () => {
       await delay(5);
       expect(getEdges(wrapper, "email")).toEqual([]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(0);
+      expect(Cmp.renders.length).toBe(1);
 
       await delay(10);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(1);
+      expect(Cmp.renders.length).toBe(2);
 
       await fx.restore();
     });
@@ -162,12 +162,12 @@ describe("Cache Policies Behavior", () => {
       await delay(5);
       expect(getEdges(wrapper, "text")).toEqual([]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(0);
+      expect(Cmp.renders.length).toBe(1);
 
       await delay(15);
       expect(getEdges(wrapper, "text")).toEqual(["Comment 3", "Comment 4"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(1);
+      expect(Cmp.renders.length).toBe(2);
 
       await fx.restore();
     });
@@ -212,12 +212,12 @@ describe("Cache Policies Behavior", () => {
       await delay(5);
       expect(getEdges(wrapper, "email").length).toBe(0);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(0);
+      expect(Cmp.renders.length).toBe(1);
 
       await delay(15);
       expect(getEdges(wrapper, "email")).toEqual(["tech.user@example.com"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(1);
+      expect(Cmp.renders.length).toBe(2);
 
       await fx.restore();
     });
@@ -262,7 +262,7 @@ describe("Cache Policies Behavior", () => {
       await delay(5);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(0);
-      expect(Cmp.renders.length).toBe(0);
+      expect(Cmp.renders.length).toBe(1);
 
       await fx.restore();
     });
@@ -306,9 +306,12 @@ describe("Cache Policies Behavior", () => {
       await tick();
       expect(getEdges(wrapper, "email").join("")).toBe("");
       expect(fx.calls.length).toBe(1);
+      expect(Cmp.renders.length).toBe(1);
 
       await delay(20);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
+      expect(fx.calls.length).toBe(1);
+      expect(Cmp.renders.length).toBe(2);
 
       await fx.restore();
     });
@@ -350,6 +353,7 @@ describe("Cache Policies Behavior", () => {
       await delay(10);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(0);
+      expect(Cmp.renders.length).toBe(1);
 
       await fx.restore();
     });
@@ -408,17 +412,19 @@ describe("Cache Policies Behavior", () => {
       });
 
       await delay(10);
-      expect(fx.calls.length).toBe(1);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
+      expect(fx.calls.length).toBe(1);
+      expect(Cmp.renders.length).toBe(1);
 
       await delay(20);
-      expect(fx.calls.length).toBe(1);
       expect(getEdges(wrapper, "email")).toEqual(["u1+updated@example.com"]);
+      expect(fx.calls.length).toBe(1);
+      expect(Cmp.renders.length).toBe(2);
 
       await fx.restore();
     });
 
-    it("renders twice when network data matches cache", async () => {
+    it.only("renders once when network data matches cache", async () => {
       const { cache } = createTestClient();
 
       await seedCache(cache, {
@@ -471,12 +477,12 @@ describe("Cache Policies Behavior", () => {
       await delay(5);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(1); // Should render once with cached data
+      expect(Cmp.renders.length).toBe(1);
 
       await delay(15);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(2); // isFetching changed
+      expect(Cmp.renders.length).toBe(1);
 
       await fx.restore();
     });

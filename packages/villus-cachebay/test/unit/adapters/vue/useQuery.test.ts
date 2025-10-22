@@ -81,7 +81,7 @@ describe("useQuery", () => {
     });
 
     expect(queryResult.isFetching.value).toBe(true);
-    expect(queryResult.data.value).toBeNull();
+    expect(queryResult.data.value).toBe(undefined);
   });
 
   it("handles query errors", async () => {
@@ -121,7 +121,7 @@ describe("useQuery", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(queryResult.error.value).toBeInstanceOf(Error);
-    expect(queryResult.data.value).toBeNull();
+    expect(queryResult.data.value).toBe(undefined);
     expect(queryResult.isFetching.value).toBe(false);
   });
 
@@ -268,7 +268,7 @@ describe("useQuery", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(typeof queryResult.refetch).toBe("function");
-    
+
     // Refetch should be callable without errors
     await expect(queryResult.refetch()).resolves.not.toThrow();
   });
@@ -351,7 +351,7 @@ describe("useQuery", () => {
 
   describe("Suspension timeout", () => {
     it("serves cached response within suspension window to avoid duplicate network requests", async () => {
-      const cache = createCachebay({ 
+      const cache = createCachebay({
         transport: mockTransport,
         suspensionTimeout: 1000 // 1 second window
       });
@@ -376,7 +376,7 @@ describe("useQuery", () => {
     });
 
     it("hits network again after suspension window expires", async () => {
-      const cache = createCachebay({ 
+      const cache = createCachebay({
         transport: mockTransport,
         suspensionTimeout: 50 // 50ms window
       });
@@ -405,14 +405,14 @@ describe("useQuery", () => {
 
   describe("SSR hydration", () => {
     it("serves from strict cache during hydration", async () => {
-      const cache = createCachebay({ 
+      const cache = createCachebay({
         transport: mockTransport,
         hydrationTimeout: 100
       });
 
       // Mark as hydrating first
       (cache as any).__internals.ssr.hydrate({ records: [] });
-      
+
       // Then write to strict cache (after hydrate which clears cache)
       cache.writeQuery({
         query: USER_QUERY,
@@ -431,14 +431,14 @@ describe("useQuery", () => {
     });
 
     it("does not hit network during hydration window", async () => {
-      const cache = createCachebay({ 
+      const cache = createCachebay({
         transport: mockTransport,
         hydrationTimeout: 100 // 100ms window
       });
 
       // Simulate SSR
       (cache as any).__internals.ssr.hydrate({ records: [] });
-      
+
       cache.writeQuery({
         query: USER_QUERY,
         variables: { id: "1" },
@@ -456,13 +456,13 @@ describe("useQuery", () => {
     });
 
     it("network-only still uses cache during hydration to avoid network", async () => {
-      const cache = createCachebay({ 
+      const cache = createCachebay({
         transport: mockTransport,
         hydrationTimeout: 100
       });
 
       (cache as any).__internals.ssr.hydrate({ records: [] });
-      
+
       cache.writeQuery({
         query: USER_QUERY,
         variables: { id: "1" },
