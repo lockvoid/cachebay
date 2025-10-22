@@ -47,7 +47,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         query: args.query,
         variables: args.variables,
         canonical: args.canonical,
-        skipInitialEmit: true,
+        immediate: false,
         onData: (data) => {
           const h = hubBySig.get(sig);
           if (!h) return;

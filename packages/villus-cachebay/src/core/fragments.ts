@@ -28,7 +28,8 @@ export type WatchFragmentOptions = {
   canonical?: boolean;
   onData: (data: any) => void;
   onError?: (error: Error) => void;
-  skipInitialEmit?: boolean;
+  /** Emit initial data immediately (default: true) */
+  immediate?: boolean;
 };
 
 export type WatchFragmentHandle = {
@@ -197,7 +198,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     canonical = true,
     onData,
     onError,
-    skipInitialEmit = false,
+    immediate = true,
   }: WatchFragmentOptions): WatchFragmentHandle => {
     const watcherId = watcherSeq++;
 
@@ -224,7 +225,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     if (initial && initial.source !== "none") {
       watcher.lastData = initial.data;
       updateWatcherDeps(watcherId, initial.deps || []);
-      if (!skipInitialEmit) {
+      if (immediate) {
         try {
           onData(initial.data);
         } catch (e) {
@@ -233,7 +234,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
       }
     } else {
       updateWatcherDeps(watcherId, initial?.deps || []);
-      if (onError && !skipInitialEmit) {
+      if (onError && immediate) {
         onError(new Error("Fragment returned no data"));
       }
     }

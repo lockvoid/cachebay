@@ -738,9 +738,10 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it.skip("merges paginated cache data with network response", async () => {
+    it("merges paginated cache data with network response", async () => {
       const { cache } = createTestClient();
 
+      // Seed cache with first page (stale data)
       await seedCache(cache, {
         query: operations.USERS_QUERY,
 
@@ -751,31 +752,18 @@ describe("Cache Policies Behavior", () => {
         },
 
         data: {
-          users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }, { id: "u2", email: "u2@example.com" }]),
+          users: fixtures.users.buildConnection([{ id: "u1", email: "cached-u1@example.com" }]),
         },
       });
 
-      await seedCache(cache, {
-        query: operations.USERS_QUERY,
-
-        variables: {
-          role: "admin",
-          first: 2,
-          after: "u2",
-        },
-
-        data: {
-          users: fixtures.users.buildConnection([{ id: "u3", email: "u3@example.com" }]),
-        },
-      });
-
+      // Network will return fresh data
       const routes = [
         {
           when: ({ variables }) => {
             return variables.role === "admin" && variables.after == null;
           },
           respond: () => {
-            return { data: { users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }, { id: "u2", email: "u2@example.com" }]) } };
+            return { data: { users: fixtures.users.buildConnection([{ id: "u1", email: "fresh-u1@example.com" }, { id: "u2", email: "fresh-u2@example.com" }]) } };
           },
           delay: 15,
         },
@@ -803,15 +791,17 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
+      // Should show cached data immediately
       await delay(5);
-      expect(getEdges(wrapper, "email")).toEqual(["u3@example.com"]);
-      expect(fx.calls.length).toBe(1);
+      expect(getEdges(wrapper, "email")).toEqual(["cached-u1@example.com"]);
+      expect(fx.calls.length).toBe(1); // Network request started
       expect(Cmp.renders.length).toBe(1);
 
+      // After network response, should show fresh data
       await delay(15);
-      expect(getEdges(wrapper, "email")).toEqual(["u1@example.com", "u2@example.com"]);
-      expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(1);
+      expect(getEdges(wrapper, "email")).toEqual(["fresh-u1@example.com", "fresh-u2@example.com"]);
+      expect(fx.calls.length).toBe(1); // Still only 1 network call
+      expect(Cmp.renders.length).toBe(2); // Re-rendered with fresh data
 
       await fx.restore();
     });

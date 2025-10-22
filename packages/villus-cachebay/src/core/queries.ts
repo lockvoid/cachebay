@@ -38,7 +38,8 @@ export type WatchQueryOptions = {
   canonical?: boolean;
   onData: (data: any) => void;
   onError?: (error: Error) => void;
-  skipInitialEmit?: boolean;
+  /** Emit initial data immediately (default: true) */
+  immediate?: boolean;
 };
 
 export type WatchQueryHandle = {
@@ -217,7 +218,7 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
     canonical = true,
     onData,
     onError,
-    skipInitialEmit = false,
+    immediate = true,
   }: WatchQueryOptions): WatchQueryHandle => {
     const watcherId = watcherSeq++;
 
@@ -243,14 +244,14 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
 
     if (initial && initial.source !== "none") {
       watcher.lastData = initial.data;
-      if (!skipInitialEmit) {
+      if (immediate) {
         try {
           onData(initial.data);
         } catch (e) {
           onError?.(e as Error);
         }
       }
-    } else if (onError && !skipInitialEmit) {
+    } else if (onError && immediate) {
       onError(new Error("CacheMiss"));
     }
 

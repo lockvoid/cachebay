@@ -295,7 +295,7 @@ summary(() => {
       query: CACHEBAY_QUERY,
       variables: { first: PAGE_SIZE, after: null },
       canonical: true,
-      skipInitialEmit: true,
+      immediate: false,
       onData: (d) => sinkObj(d),
     });
     let toggle1 = false;

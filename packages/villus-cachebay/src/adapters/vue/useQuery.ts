@@ -65,8 +65,9 @@ export function useQuery<TData = any, TVars = any>(
 
   /**
    * Setup watchQuery which handles both initial fetch and reactive updates
+   * Returns a promise that resolves when initial data is available (for Suspense)
    */
-  const setupWatch = async () => {
+  const setupWatch = async (): Promise<void> => {
     const vars = toValue(options.variables) || ({} as TVars);
     const isPaused = toValue(options.pause);
 
@@ -83,73 +84,40 @@ export function useQuery<TData = any, TVars = any>(
 
     error.value = null;
 
+    // Check cache first
+    const cached = client.readQuery({
+      query: options.query,
+      variables: vars,
+      canonical,
+    });
+
+    const cacheOk = canonical ? cached?.ok?.canonical : cached?.ok?.strict;
+    const hasCachedData = cacheOk && cached?.data !== undefined;
+
     // Determine if we should fetch from network based on policy
     let shouldFetchFromNetwork = false;
 
-    // Check cache first for cache-first and cache-and-network policies
-    const cached = (policy === "cache-first" || policy === "cache-and-network" || policy === "cache-only")
-      ? client.readQuery({
-        query: options.query,
-        variables: vars,
-        canonical,
-      })
-      : null;
-
-    // Handle cache-only policy (never fetches from network)
-    if (policy === "cache-only") {
-      const cacheOk = canonical ? cached?.ok?.canonical : cached?.ok?.strict;
-      if (cacheOk && cached?.data !== undefined) {
-        data.value = cached.data as TData;
-      } else {
-        error.value = new Error("CacheMiss");
-      }
-
-      // Setup watch for reactive updates
-      watchHandle = client.watchQuery({
-        query: options.query,
-        variables: vars,
-        canonical,
-        onData: (newData) => {
-          data.value = newData as TData;
-          error.value = null;
-        },
-        onError: (err) => {
-          error.value = err;
-        },
-      });
-      return;
-    }
-
-    // Determine network fetch based on policy and cache state
-    // For cache-first: check if we have a valid cache hit (strict ok)
-    const cacheOk = cached?.ok?.strict;
-
     if (policy === "network-only") {
-      // Always fetch from network
       shouldFetchFromNetwork = true;
     } else if (policy === "cache-and-network") {
-      // Return cached data immediately if available, but always fetch
-      if (cacheOk && cached?.data !== undefined) {
-        data.value = cached.data as TData;
-      }
       shouldFetchFromNetwork = true;
     } else if (policy === "cache-first") {
-      // Only fetch if cache miss (strict mode check)
-      if (cacheOk && cached?.data !== undefined) {
-        data.value = cached.data as TData;
-
-        shouldFetchFromNetwork = false;
-      } else {
-        shouldFetchFromNetwork = true;
-      }
+      shouldFetchFromNetwork = !hasCachedData;
+    } else if (policy === "cache-only") {
+      shouldFetchFromNetwork = false;
     }
 
-    // Fetch from network if needed
-    if (shouldFetchFromNetwork) {
-      isFetching.value = true;
+    // Set initial data from cache if available
+    if (hasCachedData) {
+      data.value = cached.data as TData;
+    } else if (policy === "cache-only") {
+      error.value = new Error("CacheMiss");
+    }
 
+    // Setup single watcher for all reactive updates
+    return new Promise<void>((resolve) => {
+      let settled = false;
 
-      // Setup watch for reactive updates
       watchHandle = client.watchQuery({
         query: options.query,
         variables: vars,
@@ -157,31 +125,61 @@ export function useQuery<TData = any, TVars = any>(
         onData: (newData) => {
           data.value = newData as TData;
           error.value = null;
+          isFetching.value = false;
+          if (!settled) {
+            settled = true;
+            resolve();
+          }
         },
         onError: (err) => {
           error.value = err;
+          isFetching.value = false;
+          if (!settled) {
+            settled = true;
+            resolve();
+          }
         },
-        skipInitialEmit: true, // We already handled initial data
+        immediate: false, // We already handled initial cache data above
       });
 
-      try {
-        const result = await client.executeQuery<TData, TVars>({
+      // If we already have data and don't need network, resolve immediately
+      if (hasCachedData && !shouldFetchFromNetwork) {
+        settled = true;
+        resolve();
+        return;
+      }
+
+      // Fetch from network if needed
+      if (shouldFetchFromNetwork) {
+        isFetching.value = true;
+
+        client.executeQuery<TData, TVars>({
           query: options.query,
           variables: vars,
+        }).then((result) => {
+          // If executeQuery returns an error (not thrown), handle it
+          if (result.error && !settled) {
+            error.value = result.error;
+            isFetching.value = false;
+            settled = true;
+            resolve();
+          }
+          // Otherwise watcher will handle the success case
+        }).catch((err) => {
+          // executeQuery threw an exception
+          if (!settled) {
+            error.value = err as Error;
+            isFetching.value = false;
+            settled = true;
+            resolve();
+          }
         });
-
-        if (result.error) {
-          error.value = result.error;
-        } else {
-          data.value = result.data;
-        }
-      } catch (err) {
-        error.value = err as Error;
-      } finally {
-        isFetching.value = false;
+      } else if (!hasCachedData) {
+        // cache-only with no data - resolve immediately with error
+        settled = true;
+        resolve();
       }
-    }
-
+    });
   };
 
   /**
