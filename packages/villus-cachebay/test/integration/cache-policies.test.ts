@@ -393,12 +393,12 @@ describe("Cache Policies Behavior", () => {
       });
 
       await delay(10);
-      expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(0);
+      expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
 
       await delay(20);
-      expect(getEdges(wrapper, "email")).toEqual(["u1+updated@example.com"]);
       expect(fx.calls.length).toBe(1);
+      expect(getEdges(wrapper, "email")).toEqual(["u1+updated@example.com"]);
 
       await fx.restore();
     });

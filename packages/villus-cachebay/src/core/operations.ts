@@ -14,8 +14,6 @@ export type CachePolicy = "cache-and-network" | "network-only" | "cache-first" |
 export interface Operation<TData = any, TVars = QueryVariables> {
   query: string | DocumentNode;
   variables?: TVars;
-  /** Cache policy for this operation */
-  cachePolicy?: CachePolicy;
 }
 
 /**
@@ -149,14 +147,13 @@ export const createOperations = (
   const markEmitted = (sig: string): void => {
     lastEmitBySig.set(sig, performance.now());
   };
-  
+
   /**
    * Execute a GraphQL query with suspension and hydration support
    */
   const executeQuery = async <TData = any, TVars = QueryVariables>({
     query,
     variables,
-    cachePolicy = "cache-first",
     ...restOptions
   }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
     const vars = variables || ({} as TVars);
@@ -210,7 +207,7 @@ export const createOperations = (
 
     try {
       const result = await transport.http(context);
-      
+
       // Write successful result to cache
       if (result.data && !result.error) {
         queries.writeQuery({
@@ -219,10 +216,10 @@ export const createOperations = (
           data: result.data,
         });
       }
-      
+
       // Mark as emitted for suspension tracking
       markEmitted(sig);
-      
+
       return result as OperationResult<TData>;
     } catch (err) {
       return {
@@ -254,7 +251,7 @@ export const createOperations = (
 
     try {
       const result = await transport.http(context);
-      
+
       // Write successful mutation result to cache
       if (result.data && !result.error) {
         queries.writeQuery({
@@ -263,7 +260,7 @@ export const createOperations = (
           data: result.data,
         });
       }
-      
+
       return result as OperationResult<TData>;
     } catch (err) {
       return {
@@ -302,7 +299,7 @@ export const createOperations = (
 
     try {
       const observable = await transport.ws(context);
-      
+
       // Wrap observable to write incoming data to cache
       return {
         subscribe(observer: Partial<ObserverLike<OperationResult<TData>>>) {
@@ -316,7 +313,7 @@ export const createOperations = (
                   data: result.data,
                 });
               }
-              
+
               // Forward to observer
               if (observer.next) {
                 observer.next(result);
@@ -344,7 +341,7 @@ export const createOperations = (
           if (observer.error) {
             observer.error(err);
           }
-          return { unsubscribe: () => {} };
+          return { unsubscribe: () => { } };
         },
       };
     }

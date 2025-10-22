@@ -12,28 +12,61 @@ export async function seedCache(cache, { query, variables, data }) {
 }
 
 export function createTestClient({ routes, cache, cacheOptions }: { routes?: Route[], cache?: any, cacheOptions?: any } = {}) {
+  console.log("Creating test client", routes);
   const fx = createTransportMock(routes);
 
-  const finalCache = cache ?? createCachebay({
-    suspensionTimeout: 0,
-    transport: fx.transport,
+  let finalCache;
 
-    ...(cacheOptions || {}),
+  // If cache is provided, dehydrate it and create a fresh one with new transport
+  if (cache) {
+    const state = cache.dehydrate();
 
-    keys: {
-      Comment: (comment: any) => {
-        return String(comment.uuid);
+    finalCache = createCachebay({
+      suspensionTimeout: 0,
+      transport: fx.transport,
+
+      ...(cacheOptions || {}),
+
+      keys: {
+        Comment: (comment: any) => {
+          return String(comment.uuid);
+        },
+
+        ...(cacheOptions?.keys || {}),
       },
 
-      ...(cacheOptions?.keys || {}),
-    },
+      interfaces: {
+        Post: ["AudioPost", "VideoPost"],
 
-    interfaces: {
-      Post: ["AudioPost", "VideoPost"],
+        ...(cacheOptions?.interfaces || {}),
+      },
+    });
 
-      ...(cacheOptions?.interfaces || {}),
-    },
-  });
+    // Hydrate the state into the new cache
+    finalCache.hydrate(state);
+  } else {
+    // Create new cache with the transport
+    finalCache = createCachebay({
+      suspensionTimeout: 0,
+      transport: fx.transport,
+
+      ...(cacheOptions || {}),
+
+      keys: {
+        Comment: (comment: any) => {
+          return String(comment.uuid);
+        },
+
+        ...(cacheOptions?.keys || {}),
+      },
+
+      interfaces: {
+        Post: ["AudioPost", "VideoPost"],
+
+        ...(cacheOptions?.interfaces || {}),
+      },
+    });
+  }
 
   // Create Vue plugin that provides the cache
   const client = {
@@ -63,8 +96,14 @@ export function createTransportMock(routes: Route[] = []) {
       const queryStr = typeof query === "string" ? query : query.loc?.source.body || "";
       const op = { body: queryStr, variables, context };
 
-      const route = routes.find(r => r.when(op));
+      console.log('routes', routes)
+      const route = routes.find(r => {
+        const found = r.when(op);
+        console.log('FOUND ROUTE', found, op)
+        return found;
+      });
       if (!route) {
+        console.log('NO ROUTE', op)
         // unmatched: return benign payload; do not count as "call"
         return { data: null, error: null };
       }
@@ -73,6 +112,7 @@ export function createTransportMock(routes: Route[] = []) {
       pending++;
 
       try {
+        console.log('DELAY', route.delay)
         if (route.delay && route.delay > 0) {
           await delay(route.delay);
         }
@@ -162,6 +202,7 @@ export const createConnectionComponent = (
       });
 
       watch(data, (value) => {
+        console.log('[Component]', Date.now(), 'WATCH FIRED: data.value =', JSON.stringify(value, null, 2));
         if (!value) {
           return;
         }
