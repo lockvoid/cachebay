@@ -2,7 +2,7 @@
 import { bench, group, run, summary } from "mitata";
 
 // ---- cachebay ----
-import { createCachebay } from "../../villus-cachebay/src/core/client";
+import { createCachebay as createCachebayClient } from "../../villus-cachebay/src/core/client";
 
 // ---- apollo ----
 import { InMemoryCache } from "@apollo/client/cache";
@@ -25,7 +25,10 @@ const sinkObj = (o: any) => { __sink ^= (o?.users?.edges?.length ?? 0) | 0; };
 // -----------------------------------------------------------------------------
 
 function createCachebay() {
-  return createCachebay({
+  return createCachebayClient({
+    transport: {
+      http: async () => ({ data: {} }), // dummy transport for benchmarks
+    },
     keys: {
       Query: () => "Query",
       User: (o: any) => o.id ?? null,
@@ -71,7 +74,7 @@ function createRelayEnvironment() {
 // -----------------------------------------------------------------------------
 // Shared data
 // -----------------------------------------------------------------------------
-const USERS_TOTAL = 100;
+const USERS_TOTAL = 500;
 const PAGE_SIZE = 10;
 const allUsers = Object.freeze(makeResponse({ users: USERS_TOTAL, posts: 5, comments: 3 }));
 const pages = buildPages(allUsers, PAGE_SIZE);
