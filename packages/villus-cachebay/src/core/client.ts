@@ -185,8 +185,8 @@ export function createCache(options: CachebayOptions): CachebayInstance {
 
   // Operations (always created since transport is required)
   const operations = createOperations(
-    { transport: options.transport },
-    { planner, queries }
+    { transport: options.transport, suspensionTimeout: options.suspensionTimeout },
+    { planner, queries, ssr }
   );
 
   // Features

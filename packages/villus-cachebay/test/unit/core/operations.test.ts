@@ -6,6 +6,7 @@ describe("operations", () => {
   let mockTransport: Transport;
   let mockPlanner: any;
   let mockQueries: any;
+  let mockSsr: any;
   let operations: ReturnType<typeof createOperations>;
 
   beforeEach(() => {
@@ -17,18 +18,27 @@ describe("operations", () => {
 
     // Mock planner
     mockPlanner = {
-      getPlan: vi.fn().mockReturnValue({ compiled: true }),
+      getPlan: vi.fn().mockReturnValue({
+        compiled: true,
+        makeSignature: vi.fn().mockReturnValue("query-sig-123"),
+      }),
     };
 
     // Mock queries
     mockQueries = {
       writeQuery: vi.fn(),
+      readQuery: vi.fn().mockReturnValue({ data: null }),
+    };
+
+    // Mock SSR
+    mockSsr = {
+      isHydrating: vi.fn().mockReturnValue(false),
     };
 
     // Create operations instance
     operations = createOperations(
-      { transport: mockTransport },
-      { planner: mockPlanner, queries: mockQueries }
+      { transport: mockTransport, suspensionTimeout: 1000 },
+      { planner: mockPlanner, queries: mockQueries, ssr: mockSsr }
     );
   });
 
@@ -86,12 +96,14 @@ describe("operations", () => {
 
       expect(result).toEqual(mockResult);
       expect(mockPlanner.getPlan).toHaveBeenCalledWith(query);
-      expect(mockTransport.http).toHaveBeenCalledWith({
-        query,
-        variables,
-        operationType: "query",
-        compiledQuery: { compiled: true },
-      });
+      expect(mockTransport.http).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query,
+          variables,
+          operationType: "query",
+          compiledQuery: expect.objectContaining({ compiled: true }),
+        })
+      );
       expect(mockQueries.writeQuery).toHaveBeenCalledWith({
         query,
         variables,
@@ -161,12 +173,14 @@ describe("operations", () => {
 
       expect(result).toEqual(mockResult);
       expect(mockPlanner.getPlan).toHaveBeenCalledWith(mutation);
-      expect(mockTransport.http).toHaveBeenCalledWith({
-        query: mutation,
-        variables,
-        operationType: "mutation",
-        compiledQuery: { compiled: true },
-      });
+      expect(mockTransport.http).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: mutation,
+          variables,
+          operationType: "mutation",
+          compiledQuery: expect.objectContaining({ compiled: true }),
+        })
+      );
       expect(mockQueries.writeQuery).toHaveBeenCalledWith({
         query: mutation,
         variables,
@@ -228,12 +242,14 @@ describe("operations", () => {
       const observable = await operations.executeSubscription({ query: subscription, variables });
 
       expect(mockPlanner.getPlan).toHaveBeenCalledWith(subscription);
-      expect(mockTransport.ws).toHaveBeenCalledWith({
-        query: subscription,
-        variables,
-        operationType: "subscription",
-        compiledQuery: { compiled: true },
-      });
+      expect(mockTransport.ws).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: subscription,
+          variables,
+          operationType: "subscription",
+          compiledQuery: expect.objectContaining({ compiled: true }),
+        })
+      );
       expect(observable).toBeDefined();
       expect(typeof observable.subscribe).toBe("function");
     });

@@ -1,6 +1,7 @@
 import type { DocumentNode, GraphQLError } from "graphql";
 import type { PlannerInstance } from "./planner";
 import type { QueriesInstance } from "./queries";
+import type { SSRInstance } from "./ssr";
 
 /**
  * Types
@@ -13,6 +14,8 @@ export type CachePolicy = "cache-and-network" | "network-only" | "cache-first" |
 export interface Operation<TData = any, TVars = QueryVariables> {
   query: string | DocumentNode;
   variables?: TVars;
+  /** Cache policy for this operation */
+  cachePolicy?: CachePolicy;
 }
 
 /**
@@ -116,31 +119,93 @@ export interface WsContext {
 
 export interface OperationsOptions {
   transport: Transport;
+  suspensionTimeout?: number;
 }
 
 export interface OperationsDependencies {
   planner: PlannerInstance;
   queries: QueriesInstance;
+  ssr: SSRInstance;
 }
 
-export const createOperations = ({ transport }: OperationsOptions, { planner, queries }: OperationsDependencies) => {
+export const createOperations = (
+  { transport, suspensionTimeout = 1000 }: OperationsOptions,
+  { planner, queries, ssr }: OperationsDependencies
+) => {
+  // Suspension tracking: last terminal emit time per query signature
+  const lastEmitBySig = new Map<string, number>();
+
+  /**
+   * Check if we're within the suspension window for a query signature
+   */
+  const isWithinSuspension = (sig: string): boolean => {
+    const last = lastEmitBySig.get(sig);
+    return last != null && performance.now() - last <= suspensionTimeout;
+  };
+
+  /**
+   * Mark a query signature as having emitted (for suspension tracking)
+   */
+  const markEmitted = (sig: string): void => {
+    lastEmitBySig.set(sig, performance.now());
+  };
   
   /**
-   * Execute a GraphQL query - always hits network and writes result to cache
+   * Execute a GraphQL query with suspension and hydration support
    */
   const executeQuery = async <TData = any, TVars = QueryVariables>({
     query,
     variables,
+    cachePolicy = "cache-first",
     ...restOptions
   }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
     const vars = variables || ({} as TVars);
-    const compiledQuery = planner.getPlan(query);
+    const plan = planner.getPlan(query);
+    const sig = plan.makeSignature("canonical", vars);
 
+    // SSR hydration quick path (prefer strict cache during hydration)
+    // During hydration, ALL policies use cache to avoid network requests
+    if (ssr.isHydrating()) {
+      const cached = queries.readQuery({
+        query,
+        variables: vars,
+        canonical: false, // strict cache for hydration
+      });
+
+      if (cached && cached.data !== undefined) {
+        markEmitted(sig);
+        return {
+          data: cached.data as TData,
+          error: null,
+        };
+      }
+    }
+
+    // Suspension window check - serve cached response to avoid duplicate network requests
+    if (isWithinSuspension(sig)) {
+      const cached = queries.readQuery({
+        query,
+        variables: vars,
+        canonical: true,
+      });
+
+      if (cached && cached.data !== undefined) {
+        // For network-only or cache-and-network within suspension window,
+        // serve cached to avoid duplicate fetch
+        markEmitted(sig);
+        return {
+          data: cached.data as TData,
+          error: null,
+        };
+      }
+    }
+
+    // Network fetch
     const context: HttpContext = {
       query,
       variables: vars,
       operationType: "query",
-      compiledQuery,
+      compiledQuery: plan,
     };
 
     try {
@@ -154,6 +219,9 @@ export const createOperations = ({ transport }: OperationsOptions, { planner, qu
           data: result.data,
         });
       }
+      
+      // Mark as emitted for suspension tracking
+      markEmitted(sig);
       
       return result as OperationResult<TData>;
     } catch (err) {

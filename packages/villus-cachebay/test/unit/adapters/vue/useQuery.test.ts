@@ -225,6 +225,9 @@ describe("useQuery", () => {
 
     expect(mockTransport.http).toHaveBeenCalledTimes(1);
 
+    // Wait for suspension window to expire (default 1000ms)
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+
     // Change variables
     userId.value = "2";
     await nextTick();
@@ -338,5 +341,137 @@ describe("useQuery", () => {
 
     expect(mockTransport.http).not.toHaveBeenCalled();
     expect(queryResult.data.value).toEqual({ user: { id: "cached", name: "Cached User" } });
+  });
+
+  describe("Suspension timeout", () => {
+    it("serves cached response within suspension window to avoid duplicate network requests", async () => {
+      const cache = createCache({ 
+        transport: mockTransport,
+        suspensionTimeout: 1000 // 1 second window
+      });
+
+      // First query - hits network
+      const result1 = await cache.executeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+      });
+
+      expect(mockTransport.http).toHaveBeenCalledTimes(1);
+      expect(result1.data).toEqual({ user: { id: "1", name: "Alice" } });
+
+      // Second query within suspension window - serves from cache without network
+      const result2 = await cache.executeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+      });
+
+      expect(mockTransport.http).toHaveBeenCalledTimes(1); // Still 1, no second network call
+      expect(result2.data).toEqual({ user: { id: "1", name: "Alice" } });
+    });
+
+    it("hits network again after suspension window expires", async () => {
+      const cache = createCache({ 
+        transport: mockTransport,
+        suspensionTimeout: 50 // 50ms window
+      });
+
+      // First query
+      await cache.executeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+      });
+
+      expect(mockTransport.http).toHaveBeenCalledTimes(1);
+
+      // Wait for suspension window to expire
+      await new Promise((resolve) => setTimeout(resolve, 60));
+
+      // Second query after window - hits network again
+      await cache.executeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+      });
+
+      expect(mockTransport.http).toHaveBeenCalledTimes(2);
+    });
+
+  });
+
+  describe("SSR hydration", () => {
+    it("serves from strict cache during hydration", async () => {
+      const cache = createCache({ 
+        transport: mockTransport,
+        hydrationTimeout: 100
+      });
+
+      // Mark as hydrating first
+      (cache as any).__internals.ssr.hydrate({ records: [] });
+      
+      // Then write to strict cache (after hydrate which clears cache)
+      cache.writeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        data: { user: { id: "1", name: "SSR User" } },
+      });
+
+      // Query during hydration - should serve from strict cache
+      const result = await cache.executeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+      });
+
+      expect(mockTransport.http).not.toHaveBeenCalled();
+      expect(result.data).toEqual({ user: { id: "1", name: "SSR User" } });
+    });
+
+    it("does not hit network during hydration window", async () => {
+      const cache = createCache({ 
+        transport: mockTransport,
+        hydrationTimeout: 100 // 100ms window
+      });
+
+      // Simulate SSR
+      (cache as any).__internals.ssr.hydrate({ records: [] });
+      
+      cache.writeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        data: { user: { id: "1", name: "SSR User" } },
+      });
+
+      // Query DURING hydration window - should NOT hit network
+      const result = await cache.executeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+      });
+
+      expect(mockTransport.http).not.toHaveBeenCalled();
+      expect(result.data).toEqual({ user: { id: "1", name: "SSR User" } }); // Cached data
+    });
+
+    it("network-only still uses cache during hydration to avoid network", async () => {
+      const cache = createCache({ 
+        transport: mockTransport,
+        hydrationTimeout: 100
+      });
+
+      (cache as any).__internals.ssr.hydrate({ records: [] });
+      
+      cache.writeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        data: { user: { id: "1", name: "SSR User" } },
+      });
+
+      // network-only during hydration should still use cache to avoid network
+      const result = await cache.executeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        cachePolicy: "network-only",
+      });
+
+      expect(mockTransport.http).not.toHaveBeenCalled();
+      expect(result.data).toEqual({ user: { id: "1", name: "SSR User" } });
+    });
   });
 });
