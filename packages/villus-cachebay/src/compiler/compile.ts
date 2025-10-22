@@ -123,8 +123,15 @@ function ensureTypename(ss: SelectionSetNode): SelectionSetNode {
     s => s.kind === Kind.FIELD && s.name.value === "__typename",
   );
   if (has) return ss;
+  
   const typenameField: FieldNode = { kind: Kind.FIELD, name: { kind: Kind.NAME, value: "__typename" } };
-  return { ...ss, selections: [...ss.selections, typenameField] };
+  const newSelections = new Array(ss.selections.length + 1);
+  for (let i = 0; i < ss.selections.length; i++) {
+    newSelections[i] = ss.selections[i];
+  }
+  newSelections[ss.selections.length] = typenameField;
+  
+  return { kind: ss.kind, selections: newSelections };
 }
 
 /** Recursively add __typename to all selection sets (for fragments) */
@@ -133,46 +140,96 @@ function ensureTypenameRecursive(ss: SelectionSetNode): SelectionSetNode {
   const withTypename = ensureTypename(ss);
   
   // Then recursively process all field selections
-  const selections = withTypename.selections.map(sel => {
+  let hasChanges = false;
+  const selections = new Array(withTypename.selections.length);
+  for (let i = 0; i < withTypename.selections.length; i++) {
+    const sel = withTypename.selections[i];
     if (sel.kind === Kind.FIELD && sel.selectionSet) {
-      return { ...sel, selectionSet: ensureTypenameRecursive(sel.selectionSet) };
+      const newSelectionSet = ensureTypenameRecursive(sel.selectionSet);
+      if (newSelectionSet !== sel.selectionSet) {
+        selections[i] = { kind: sel.kind, name: sel.name, alias: sel.alias, arguments: sel.arguments, directives: sel.directives, selectionSet: newSelectionSet };
+        hasChanges = true;
+      } else {
+        selections[i] = sel;
+      }
+    } else if (sel.kind === Kind.INLINE_FRAGMENT && sel.selectionSet) {
+      const newSelectionSet = ensureTypenameRecursive(sel.selectionSet);
+      if (newSelectionSet !== sel.selectionSet) {
+        selections[i] = { kind: sel.kind, typeCondition: sel.typeCondition, directives: sel.directives, selectionSet: newSelectionSet };
+        hasChanges = true;
+      } else {
+        selections[i] = sel;
+      }
+    } else {
+      selections[i] = sel;
     }
-    if (sel.kind === Kind.INLINE_FRAGMENT && sel.selectionSet) {
-      return { ...sel, selectionSet: ensureTypenameRecursive(sel.selectionSet) };
-    }
-    // FragmentSpreads are handled separately
-    return sel;
-  });
+  }
   
-  return { ...withTypename, selections };
+  if (!hasChanges && selections === withTypename.selections) {
+    return withTypename;
+  }
+  
+  return { kind: withTypename.kind, selections };
 }
 
-/** Create a network-safe copy: add __typename to nested selections; strip @connection. */
+/** Add __typename to nested selections but NOT at root level (for operations) */
+function ensureTypenameNested(ss: SelectionSetNode): SelectionSetNode {
+  // Don't add __typename at this level (root), only to nested selections
+  let hasChanges = false;
+  const selections = new Array(ss.selections.length);
+  for (let i = 0; i < ss.selections.length; i++) {
+    const sel = ss.selections[i];
+    if (sel.kind === Kind.FIELD && sel.selectionSet) {
+      const newSelectionSet = ensureTypenameRecursive(sel.selectionSet);
+      if (newSelectionSet !== sel.selectionSet) {
+        selections[i] = { kind: sel.kind, name: sel.name, alias: sel.alias, arguments: sel.arguments, directives: sel.directives, selectionSet: newSelectionSet };
+        hasChanges = true;
+      } else {
+        selections[i] = sel;
+      }
+    } else if (sel.kind === Kind.INLINE_FRAGMENT && sel.selectionSet) {
+      const newSelectionSet = ensureTypenameRecursive(sel.selectionSet);
+      if (newSelectionSet !== sel.selectionSet) {
+        selections[i] = { kind: sel.kind, typeCondition: sel.typeCondition, directives: sel.directives, selectionSet: newSelectionSet };
+        hasChanges = true;
+      } else {
+        selections[i] = sel;
+      }
+    } else {
+      selections[i] = sel;
+    }
+  }
+  
+  if (!hasChanges) {
+    return ss;
+  }
+  
+  return { kind: ss.kind, selections };
+}
+
+/** Create a network-safe copy: strip @connection directives. __typename is already added during compilation. */
 function buildNetworkQuery(doc: DocumentNode): DocumentNode {
   return visit(doc, {
-    // IMPORTANT: do NOT add __typename at the operation ROOT.
-    // Subscriptions must select exactly one top-level field and
-    // must not include an introspection field there.
-    OperationDefinition: {
-      enter(node) {
-        // Leave the root selection set as-is (no ensureTypename here).
-        return node;
-      },
-    },
-    FragmentDefinition: {
-      enter(node) {
-        return { ...node, selectionSet: ensureTypename(node.selectionSet) };
-      },
-    },
     Field: {
       enter(node) {
-        const directives = (node.directives || []).filter(d => d.name.value !== "connection");
-        let selectionSet = node.selectionSet;
-        if (selectionSet) selectionSet = ensureTypename(selectionSet);
-        if (directives.length !== (node.directives?.length || 0) || selectionSet !== node.selectionSet) {
-          return { ...node, directives, selectionSet };
+        if (!node.directives || node.directives.length === 0) {
+          return node;
         }
-        return node;
+        
+        const directives = (node.directives || []).filter(d => d.name.value !== "connection");
+        if (directives.length === node.directives.length) {
+          return node; // No @connection found, return as-is
+        }
+        
+        // Avoid spread operator - create new object directly
+        return {
+          kind: node.kind,
+          name: node.name,
+          alias: node.alias,
+          arguments: node.arguments,
+          directives: directives.length > 0 ? directives : undefined,
+          selectionSet: node.selectionSet,
+        };
       },
     },
   });
@@ -216,12 +273,52 @@ export const compilePlan = (
   if (operation) {
     const rootTypename = opRootTypename(operation);
 
-    // Lower the ORIGINAL doc (it still has @connection) so we retain metadata
-    const root = lowerSelectionSet(operation.selectionSet, rootTypename, fragmentsByName);
+    // Add __typename to nested selections (not root) once
+    // This ensures both the plan and networkQuery have matching __typename fields
+    const selectionWithTypename = ensureTypenameNested(operation.selectionSet);
+    
+    // Lower the selection set (it still has @connection) so we retain metadata
+    const root = lowerSelectionSet(selectionWithTypename, rootTypename, fragmentsByName);
     const rootSelectionMap = indexByResponseKey(root);
 
-    // Build network-safe doc (strip @connection; add __typename only in nested selections)
-    const networkQuery = buildNetworkQuery(document);
+    // Build network-safe doc with __typename added to operation and all fragments
+    // Just need to strip @connection directives
+    // Avoid spread operators for performance
+    const operationWithTypename: OperationDefinitionNode = {
+      kind: operation.kind,
+      operation: operation.operation,
+      name: operation.name,
+      variableDefinitions: operation.variableDefinitions,
+      directives: operation.directives,
+      selectionSet: selectionWithTypename,
+    };
+    
+    const newDefinitions = new Array(document.definitions.length);
+    for (let i = 0; i < document.definitions.length; i++) {
+      const d = document.definitions[i];
+      if (d.kind === Kind.OPERATION_DEFINITION) {
+        newDefinitions[i] = operationWithTypename;
+      } else if (d.kind === Kind.FRAGMENT_DEFINITION) {
+        // Add __typename to all fragments in the document
+        const fragWithTypename = ensureTypenameRecursive(d.selectionSet);
+        newDefinitions[i] = {
+          kind: d.kind,
+          name: d.name,
+          typeCondition: d.typeCondition,
+          directives: d.directives,
+          selectionSet: fragWithTypename,
+        };
+      } else {
+        newDefinitions[i] = d;
+      }
+    }
+    
+    const docWithTypename: DocumentNode = {
+      kind: document.kind,
+      definitions: newDefinitions,
+    };
+    
+    const networkQuery = buildNetworkQuery(docWithTypename);
 
     // Compute plan metadata (id, varMask, makeVarsKey, windowArgs)
     const metadata = computePlanMetadata(
@@ -283,7 +380,32 @@ export const compilePlan = (
     const root = lowerSelectionSet(fragSelectionWithTypename, parentTypename, fragmentsByName);
     const rootSelectionMap = indexByResponseKey(root);
 
-    const networkQuery = buildNetworkQuery(document);
+    // Build network-safe doc with __typename added to ALL fragments
+    // Just need to strip @connection directives
+    const newDefinitions = new Array(document.definitions.length);
+    for (let i = 0; i < document.definitions.length; i++) {
+      const d = document.definitions[i];
+      if (d.kind === Kind.FRAGMENT_DEFINITION) {
+        // Add __typename to all fragments, not just the target one
+        const fragWithTypename = ensureTypenameRecursive(d.selectionSet);
+        newDefinitions[i] = {
+          kind: d.kind,
+          name: d.name,
+          typeCondition: d.typeCondition,
+          directives: d.directives,
+          selectionSet: fragWithTypename,
+        };
+      } else {
+        newDefinitions[i] = d;
+      }
+    }
+    
+    const docWithTypename: DocumentNode = {
+      kind: document.kind,
+      definitions: newDefinitions,
+    };
+    
+    const networkQuery = buildNetworkQuery(docWithTypename);
 
     // Compute plan metadata (id, varMask, makeVarsKey, windowArgs)
     const metadata = computePlanMetadata(

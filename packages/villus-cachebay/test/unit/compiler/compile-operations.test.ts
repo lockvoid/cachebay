@@ -191,10 +191,12 @@ describe("Compiler x Operations", () => {
 
     expect(plan.kind).toBe("CachePlan");
     expect(plan.operation).toBe("query");
-    expect(hasTypenames(plan.networkQuery)).toBe(false);
+    expect(hasTypenames(plan.networkQuery)).toBe(true); // networkQuery should have __typename
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]); // stripped
 
+    // Verify plan includes __typename in selection sets
     const posts = plan.rootSelectionMap!.get("posts")!;
+    expect(posts.selectionMap!.has("__typename")).toBe(true); // connection should have __typename
     const edges = posts.selectionMap!.get("edges")!;
     const node = edges.selectionMap!.get("node")!;
     expect(node.fieldName).toBe("node");
@@ -266,6 +268,43 @@ describe("Compiler x Operations", () => {
     // Children inherit guard
     expect(video.selectionMap!.get("key")!.typeCondition).toBe("VideoPost");
     expect(audio.selectionMap!.get("key")!.typeCondition).toBe("AudioPost");
+  });
+
+  it("includes __typename in pageInfo when using fragment spreads", () => {
+    const DOC = `
+      fragment PageInfoFields on PageInfo {
+        startCursor
+        endCursor
+        hasNextPage
+        hasPreviousPage
+      }
+      
+      query Posts($first: Int) {
+        posts(first: $first) @connection {
+          pageInfo {
+            ...PageInfoFields
+          }
+          edges {
+            cursor
+            node { id title }
+          }
+        }
+      }
+    `;
+
+    const plan = compilePlan(DOC);
+    
+    const posts = plan.rootSelectionMap!.get("posts")!;
+    expect(posts.isConnection).toBe(true);
+    
+    const pageInfo = posts.selectionMap!.get("pageInfo")!;
+    expect(pageInfo).toBeDefined();
+    
+    // CRITICAL: pageInfo selection should include __typename even when using fragment spread
+    expect(pageInfo.selectionMap!.has("__typename")).toBe(true);
+    
+    // Verify network query has typenames everywhere
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
 
   it("stringifyArgs produces stable keys using expectedArgNames order", () => {

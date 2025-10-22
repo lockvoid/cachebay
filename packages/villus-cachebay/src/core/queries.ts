@@ -264,6 +264,32 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
         watchers.delete(watcherId);
       },
 
+      emitChange: () => {
+        const w = watchers.get(watcherId);
+        if (!w) return;
+
+        const res = documents.materializeDocument({
+          document: w.query,
+          variables: w.variables,
+          canonical: w.canonical,
+        }) as any;
+
+        updateWatcherDeps(watcherId, res?.deps || []);
+
+        if (res && res.source !== "none") {
+          if (res.data !== w.lastData) {
+            w.lastData = res.data;
+            try {
+              w.onData(res.data);
+            } catch (e) {
+              w.onError?.(e as Error);
+            }
+          }
+        } else if (w.onError) {
+          w.onError(new Error("Refetch returned no data"));
+        }
+      },
+
       refetch: () => {
         const w = watchers.get(watcherId);
         if (!w) return;

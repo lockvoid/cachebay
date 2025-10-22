@@ -1284,6 +1284,7 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
           typename: "VideoPost",
           video: medias.buildNode({ key: "video1", mediaUrl: "https://example.com/video1.mp4" }),
           aggregations: {
+            __typename: "Aggregations",
             moderationTags: moderationTagsP1,
             userTags: userTagsP1,
           },
@@ -1294,6 +1295,7 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
           typename: "AudioPost",
           audio: medias.buildNode({ key: "audio1", mediaUrl: "https://example.com/audio1.mp3" }),
           aggregations: {
+            __typename: "Aggregations",
             moderationTags: moderationTagsP2,
             userTags: userTagsP2,
           },
@@ -1357,7 +1359,9 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
       mediaUrl: "https://example.com/video1.mp4",
     });
 
-    expect(d.data.posts.edges[0].node.aggregations.__typename).toBe(undefined); // !important
+    expect(d.data.posts.edges[0].node.aggregations).toMatchObject({
+      __typename: "Aggregations",
+    })
 
     expect(d.data.posts.edges[0].node.aggregations.moderationTags.pageInfo).toEqual({
       __typename: "PageInfo",

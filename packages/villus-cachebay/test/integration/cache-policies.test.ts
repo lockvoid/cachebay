@@ -475,6 +475,9 @@ describe("Cache Policies Behavior", () => {
       });
 
       await delay(5);
+      const plan = (cache as any).__internals.planner.getPlan(operations.USERS_QUERY);
+      const { print } = await import('graphql');
+      console.log('[TEST] networkQuery printed:', print(plan.networkQuery));
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.renders.length).toBe(1);
@@ -482,6 +485,7 @@ describe("Cache Policies Behavior", () => {
       await delay(15);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
+      console.log('[TEST] Cmp.renders:', JSON.stringify(Cmp.renders, null, 2));
       expect(Cmp.renders.length).toBe(1);
 
       await fx.restore();

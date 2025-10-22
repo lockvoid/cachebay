@@ -42,6 +42,44 @@ describe("Compiler x Fragments", () => {
     expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
 
+  it("includes __typename in pageInfo selection for connections", () => {
+    // Fragment with connection using fragment spread for pageInfo
+    const FRAGMENT = gql`
+      fragment PageInfoFields on PageInfo {
+        startCursor
+        endCursor
+        hasNextPage
+        hasPreviousPage
+      }
+      
+      fragment UserPosts on User {
+        posts(first: $first) @connection {
+          pageInfo {
+            ...PageInfoFields
+          }
+          edges {
+            cursor
+            node { id }
+          }
+        }
+      }
+    `;
+
+    const plan = compilePlan(FRAGMENT, { fragmentName: "UserPosts" });
+    
+    const posts = plan.rootSelectionMap!.get("posts")!;
+    expect(posts.isConnection).toBe(true);
+    
+    const pageInfo = posts.selectionMap!.get("pageInfo")!;
+    expect(pageInfo).toBeDefined();
+    
+    // CRITICAL: pageInfo selection should include __typename
+    expect(pageInfo.selectionMap!.has("__typename")).toBe(true);
+    
+    // Verify it's in the network query too
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
+  });
+
   it("includes __typename in pageInfo and edges for connection fields", () => {
     // Fragment with connection but no explicit __typename in pageInfo
     const FRAGMENT = gql`
