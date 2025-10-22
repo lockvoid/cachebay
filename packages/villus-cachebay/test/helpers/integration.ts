@@ -12,7 +12,6 @@ export async function seedCache(cache, { query, variables, data }) {
 }
 
 export function createTestClient({ routes, cache, cacheOptions }: { routes?: Route[], cache?: any, cacheOptions?: any } = {}) {
-  console.log("Creating test client", routes);
   const fx = createTransportMock(routes);
 
   let finalCache;
@@ -97,14 +96,8 @@ export function createTransportMock(routes: Route[] = []) {
       const queryStr = typeof query === "string" ? query : query.loc?.source.body || "";
       const op = { body: queryStr, variables, context };
 
-      console.log('routes', routes)
-      const route = routes.find(r => {
-        const found = r.when(op);
-        console.log('FOUND ROUTE', found, op)
-        return found;
-      });
+      const route = routes.find(r => r.when(op));
       if (!route) {
-        console.log('NO ROUTE', op)
         // unmatched: return benign payload; do not count as "call"
         return { data: null, error: null };
       }
@@ -113,7 +106,6 @@ export function createTransportMock(routes: Route[] = []) {
       pending++;
 
       try {
-        console.log('DELAY', route.delay)
         if (route.delay && route.delay > 0) {
           await delay(route.delay);
         }
@@ -203,7 +195,6 @@ export const createConnectionComponent = (
       });
 
       watch(data, (value) => {
-        console.log('[Component]', Date.now(), 'WATCH FIRED: data.value =', JSON.stringify(value, null, 2));
         if (!value) {
           return;
         }

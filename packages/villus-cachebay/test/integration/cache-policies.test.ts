@@ -341,7 +341,7 @@ describe("Cache Policies Behavior", () => {
   });
 
   describe("cache-and-network policy", () => {
-    it.only("renders cached data first then updates with network response", async () => {
+    it("renders cached data first then updates with network response", async () => {
       const { cache } = createTestClient();
 
       await seedCache(cache, {
