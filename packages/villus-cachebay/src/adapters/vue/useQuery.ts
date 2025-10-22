@@ -81,32 +81,20 @@ export function useQuery<TData = any, TVars = any>(
     isFetching.value = true;
     error.value = null;
     
-    let cacheHit = false;
+    // Determine if we should fetch from network based on policy
+    let shouldFetchFromNetwork = false;
     
-    // Handle cache policies
-    if (policy === "cache-first" || policy === "cache-and-network") {
-      // Try to get cached data first
-      const cached = client.readQuery({
-        query: options.query,
-        variables: vars,
-        canonical: true,
-      });
-      
-      if (cached && cached.data !== undefined) {
-        data.value = cached.data as TData;
-        isFetching.value = false;
-        cacheHit = true;
-      }
-    }
+    // Check cache first for cache-first and cache-and-network policies
+    const cached = (policy === "cache-first" || policy === "cache-and-network" || policy === "cache-only")
+      ? client.readQuery({
+          query: options.query,
+          variables: vars,
+          canonical: true,
+        })
+      : null;
     
+    // Handle cache-only policy (never fetches from network)
     if (policy === "cache-only") {
-      // Only use cache, don't fetch
-      const cached = client.readQuery({
-        query: options.query,
-        variables: vars,
-        canonical: true,
-      });
-      
       if (cached && cached.data !== undefined) {
         data.value = cached.data as TData;
       } else {
@@ -130,11 +118,29 @@ export function useQuery<TData = any, TVars = any>(
       return;
     }
     
-    // For network-only, cache-first (miss), and cache-and-network: fetch from network
-    // Skip network only for cache-first if we had a cache hit
-    const shouldFetchFromNetwork = policy !== "cache-only" && 
-                                   (policy !== "cache-first" || !cacheHit);
+    // Determine network fetch based on policy and cache state
+    if (policy === "network-only") {
+      // Always fetch from network
+      shouldFetchFromNetwork = true;
+    } else if (policy === "cache-and-network") {
+      // Return cached data immediately if available, but always fetch
+      if (cached && cached.data !== undefined) {
+        data.value = cached.data as TData;
+        isFetching.value = false;
+      }
+      shouldFetchFromNetwork = true;
+    } else if (policy === "cache-first") {
+      // Only fetch if cache miss
+      if (cached && cached.data !== undefined) {
+        data.value = cached.data as TData;
+        isFetching.value = false;
+        shouldFetchFromNetwork = false;
+      } else {
+        shouldFetchFromNetwork = true;
+      }
+    }
     
+    // Fetch from network if needed
     if (shouldFetchFromNetwork) {
       try {
         const result = await client.executeQuery<TData, TVars>({
