@@ -1,20 +1,42 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createCache } from "@/src/core/client";
+import { createQueries } from "@/src/core/queries";
+import { createGraph } from "@/src/core/graph";
+import { createPlanner } from "@/src/core/planner";
+import { createDocuments } from "@/src/core/documents";
+import { createCanonical } from "@/src/core/canonical";
+import { createOptimistic } from "@/src/core/optimistic";
+import { createFragments } from "@/src/core/fragments";
 import { gql } from "graphql-tag";
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
 describe("queries API", () => {
-  let cache: ReturnType<typeof createCache>;
+  let graph: ReturnType<typeof createGraph>;
+  let planner: ReturnType<typeof createPlanner>;
+  let canonical: ReturnType<typeof createCanonical>;
+  let documents: ReturnType<typeof createDocuments>;
+  let fragments: ReturnType<typeof createFragments>;
+  let queries: ReturnType<typeof createQueries>;
 
   beforeEach(() => {
-    cache = createCache({
+    graph = createGraph({
       keys: {
         User: (u: any) => u.id,
         Post: (p: any) => p.id,
         Profile: (p: any) => p.id,
       },
+      onChange: (touchedIds) => {
+        documents._markDirty(touchedIds);
+        queries._notifyTouched(touchedIds);
+        fragments._notifyTouched(touchedIds);
+      },
     });
+    planner = createPlanner();
+    const optimistic = createOptimistic({ graph });
+    canonical = createCanonical({ graph, optimistic });
+    documents = createDocuments({ graph, planner, canonical });
+    fragments = createFragments({ graph, planner, documents });
+    queries = createQueries({ graph, planner, documents });
   });
 
   describe("readQuery / writeQuery", () => {
@@ -30,7 +52,7 @@ describe("queries API", () => {
       `;
 
       // Write data
-      const writeResult = cache.writeQuery({
+      const writeResult = queries.writeQuery({
         query: QUERY,
         variables: { id: "1" },
         data: {
@@ -46,7 +68,7 @@ describe("queries API", () => {
       expect(writeResult.touched.size).toBeGreaterThan(0);
 
       // Read it back (default = canonical true)
-      const readResult = cache.readQuery({
+      const readResult = queries.readQuery({
         query: QUERY,
         variables: { id: "1" },
       });
@@ -73,7 +95,7 @@ describe("queries API", () => {
         }
       `;
 
-      const result = cache.readQuery({
+      const result = queries.readQuery({
         query: QUERY,
         variables: { id: "999" },
       });
@@ -95,7 +117,7 @@ describe("queries API", () => {
         }
       `;
 
-      cache.writeQuery({
+      queries.writeQuery({
         query: QUERY,
         variables: { id: "1" },
         data: {
@@ -104,7 +126,7 @@ describe("queries API", () => {
       });
 
       // Strict mode (canonical: false)
-      const strictResult = cache.readQuery({
+      const strictResult = queries.readQuery({
         query: QUERY,
         variables: { id: "1" },
         canonical: false,
@@ -113,7 +135,7 @@ describe("queries API", () => {
       expect(strictResult.source === "strict" || strictResult.source === "canonical").toBe(true);
 
       // Canonical mode (canonical: true)
-      const canonicalResult = cache.readQuery({
+      const canonicalResult = queries.readQuery({
         query: QUERY,
         variables: { id: "1" },
         canonical: true,
@@ -135,7 +157,7 @@ describe("queries API", () => {
       `;
 
       // Write initial data
-      cache.writeQuery({
+      queries.writeQuery({
         query: QUERY,
         variables: { id: "1" },
         data: {
@@ -146,7 +168,7 @@ describe("queries API", () => {
       const emissions: any[] = [];
 
       // Watch the query
-      const handle = cache.watchQuery({
+      const handle = queries.watchQuery({
         query: QUERY,
         variables: { id: "1" },
         onData: (data) => {
@@ -159,7 +181,7 @@ describe("queries API", () => {
       expect(emissions[0].user.name).toBe("Alice");
 
       // Update the data
-      cache.writeQuery({
+      queries.writeQuery({
         query: QUERY,
         variables: { id: "1" },
         data: {
@@ -188,7 +210,7 @@ describe("queries API", () => {
         }
       `;
 
-      cache.writeQuery({
+      queries.writeQuery({
         query: QUERY,
         variables: { id: "1" },
         data: {
@@ -198,7 +220,7 @@ describe("queries API", () => {
 
       const emissions: any[] = [];
 
-      const handle = cache.watchQuery({
+      const handle = queries.watchQuery({
         query: QUERY,
         variables: { id: "1" },
         onData: (data) => {
@@ -209,7 +231,7 @@ describe("queries API", () => {
       expect(emissions).toHaveLength(1);
 
       // Update data directly (not via writeQuery)
-      cache.__internals.graph.putRecord("User:1", { name: "Bob" });
+      graph.putRecord("User:1", { name: "Bob" });
 
       // Manually refetch (should emit synchronously with current snapshot)
       handle.refetch();
@@ -230,7 +252,7 @@ describe("queries API", () => {
         }
       `;
 
-      cache.writeQuery({
+      queries.writeQuery({
         query: QUERY,
         variables: { id: "1" },
         data: {
@@ -240,7 +262,7 @@ describe("queries API", () => {
 
       const emissions: any[] = [];
 
-      const handle = cache.watchQuery({
+      const handle = queries.watchQuery({
         query: QUERY,
         variables: { id: "1" },
         onData: (data) => {
@@ -254,7 +276,7 @@ describe("queries API", () => {
       handle.unsubscribe();
 
       // Update data
-      cache.writeQuery({
+      queries.writeQuery({
         query: QUERY,
         variables: { id: "1" },
         data: {
@@ -284,7 +306,7 @@ describe("queries API", () => {
       `;
 
       // Write initial data with nested profile
-      cache.writeQuery({
+      queries.writeQuery({
         query: USER_QUERY,
         variables: { id: "1" },
         data: {
@@ -305,7 +327,7 @@ describe("queries API", () => {
       const emissions: any[] = [];
 
       // Watch the user query
-      const handle = cache.watchQuery({
+      const handle = queries.watchQuery({
         query: USER_QUERY,
         variables: { id: "1" },
         onData: (data) => {
@@ -325,7 +347,7 @@ describe("queries API", () => {
         }
       `;
 
-      cache.writeFragment({
+      fragments.writeFragment({
         id: "Profile:p1",
         fragment: PROFILE_FRAGMENT,
         data: {
@@ -370,7 +392,7 @@ describe("queries API", () => {
       `;
 
       // Write initial user data
-      cache.writeQuery({
+      queries.writeQuery({
         query: USER_QUERY,
         variables: { id: "1" },
         data: {
@@ -386,7 +408,7 @@ describe("queries API", () => {
       const emissions: any[] = [];
 
       // Watch the user query
-      const handle = cache.watchQuery({
+      const handle = queries.watchQuery({
         query: USER_QUERY,
         variables: { id: "1" },
         onData: (data) => {
@@ -399,7 +421,7 @@ describe("queries API", () => {
       expect(emissions[0].user.email).toBe("alice@example.com");
 
       // Execute mutation (write mutation result to cache)
-      cache.writeQuery({
+      queries.writeQuery({
         query: UPDATE_USER_MUTATION,
         variables: { id: "1", name: "Alice Updated", email: "alice.updated@example.com" },
         data: {

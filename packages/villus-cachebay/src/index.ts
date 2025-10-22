@@ -7,7 +7,7 @@ export type { CachebayInstance } from "./core/client";
 
 // Cache operations types
 export type { ReadFragmentArgs, WriteFragmentArgs } from "./core/fragments";
-export type { ReadQueryArgs, WriteQueryArgs } from "./core/queries";
+export type { ReadQueryOptions, WriteQueryOptions } from "./core/queries";
 
 // Operations types (for transport implementation)
 export type { 

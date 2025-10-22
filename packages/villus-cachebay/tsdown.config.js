@@ -9,4 +9,9 @@ export default defineConfig({
   dts: true,
   sourcemap: true,
   outDir: "dist",
+  external: [
+    "vue",
+    "graphql",
+    "graphql-tag",
+  ],
 });

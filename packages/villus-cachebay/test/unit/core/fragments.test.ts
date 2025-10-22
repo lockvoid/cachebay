@@ -129,6 +129,7 @@ describe("Fragments (documents-powered)", () => {
       // Now we should have data
       expect(last.posts.totalCount).toBe(2);
       expect(last.posts.pageInfo).toEqual({
+        __typename: "PageInfo",
         startCursor: "p1",
         endCursor: "p2",
         hasNextPage: true,
@@ -152,6 +153,7 @@ describe("Fragments (documents-powered)", () => {
       fragments._notifyTouched(new Set([`${pageKey}.pageInfo`]));
       await tick();
       expect(last.posts.pageInfo).toEqual({
+        __typename: "PageInfo",
         startCursor: "p1",
         endCursor: "p3",
         hasNextPage: false,
@@ -203,6 +205,7 @@ describe("Fragments (documents-powered)", () => {
 
       expect(last.posts.totalCount).toBe(2);
       expect(last.posts.pageInfo).toEqual({
+        __typename: "PageInfo",
         startCursor: "p1",
         endCursor: "p2",
         hasNextPage: true,
@@ -226,6 +229,7 @@ describe("Fragments (documents-powered)", () => {
       fragments._notifyTouched(new Set([`${canonicalKey}.pageInfo`]));
       await tick();
       expect(last.posts.pageInfo).toEqual({
+        __typename: "PageInfo",
         startCursor: "p1",
         endCursor: "p3",
         hasNextPage: false,
@@ -279,6 +283,7 @@ describe("Fragments (documents-powered)", () => {
       await tick();
 
       expect(last.comments.pageInfo).toEqual({
+        __typename: "PageInfo",
         startCursor: "c1",
         endCursor: "c2",
         hasNextPage: false,
@@ -335,7 +340,7 @@ describe("Fragments (documents-powered)", () => {
       expect(snap2).toEqual({ __typename: "User", id: "u1", email: "seed2@example.com" });
     });
 
-    it.only("writes a connection page; watcher sees edges/pageInfo/totalCount changes", async () => {
+    it("writes a connection page; watcher sees edges/pageInfo/totalCount changes", async () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "x@example.com" });
 
       // initial write
