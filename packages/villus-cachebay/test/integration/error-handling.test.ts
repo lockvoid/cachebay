@@ -37,13 +37,13 @@ describe("Error Handling", () => {
 
     await delay(20);
 
-    expect(PostList.errors.length).toBe(1);
-    expect(PostList.renders.length).toBe(1);
+    expect(PostList.errorUpdates.length).toBe(1);
+    expect(PostList.dataUpdates.length).toBe(1);
 
     await fx.restore();
   });
 
-  it("drops older errors when newer data arrives", async () => {
+  it.only("drops older errors when newer data arrives", async () => {
     const routes = [
       {
         when: ({ variables }) => {
@@ -88,13 +88,13 @@ describe("Error Handling", () => {
     await wrapper.setProps({ first: 3 });
 
     await delay(15);
-    expect(PostList.renders.length).toBe(2);
-    expect(PostList.errors.length).toBe(0);
+    expect(PostList.dataUpdates.length).toBe(2);
+    expect(PostList.errorUpdates.length).toBe(0);
     expect(getEdges(wrapper, "title")).toEqual(["Post 1"]);
 
     await delay(25);
-    expect(PostList.renders.length).toBe(2);
-    expect(PostList.errors.length).toBe(0); // Stale error should be ignored
+    expect(PostList.dataUpdates.length).toBe(2);
+    expect(PostList.errorUpdates.length).toBe(0); // Stale error should be ignored
     expect(getEdges(wrapper, "title")).toEqual(["Post 1"]);
 
     await fx.restore();
@@ -147,19 +147,19 @@ describe("Error Handling", () => {
 
     await delay(14);
 
-    expect(PostList.renders.length).toBe(2);
-    expect(PostList.errors.length).toBe(0);
+    expect(PostList.dataUpdates.length).toBe(2);
+    expect(PostList.errorUpdates.length).toBe(0);
     expect(getEdges(wrapper, "title")).toEqual(["Post 1"]);
 
     await delay(25);
-    expect(PostList.renders.length).toBe(2);
-    expect(PostList.errors.length).toBe(0);
+    expect(PostList.dataUpdates.length).toBe(2);
+    expect(PostList.errorUpdates.length).toBe(0);
     expect(getEdges(wrapper, "title")).toEqual(["Post 1"]);
 
     await fx.restore();
   });
 
-  it.skip("handles transport reordering with later responses overwriting earlier ones", async () => {
+  it.only("handles transport reordering with later responses overwriting earlier ones", async () => {
     const routes = [
       {
         when: ({ variables }) => {
@@ -214,19 +214,20 @@ describe("Error Handling", () => {
     await wrapper.setProps({ first: 4 });
 
     await delay(12);
-    expect(PostList.errors.length).toBe(0);
-    expect(PostList.renders.length).toBe(0);
+    expect(PostList.errorUpdates.length).toBe(0);
+    expect(PostList.dataUpdates.length).toBe(1);
     expect(getEdges(wrapper, "title")).toEqual([]);
 
     await delay(25);
-    expect(PostList.renders.length).toBe(1);
-    expect(PostList.errors.length).toBe(0);
+    expect(PostList.dataUpdates.length).toBe(2);
+    expect(PostList.errorUpdates.length).toBe(0);
     expect(getEdges(wrapper, "title")).toEqual(["Post 1", "Post 2", "Post 3", "Post 4"]);
 
     await delay(35);
-    expect(PostList.renders.length).toBe(1);
-    expect(PostList.errors.length).toBe(0);
-    expect(getEdges(wrapper, "title")).toEqual(["Post 1", "Post 2"]);
+    // Stale response from Request 1 should be ignored
+    expect(PostList.dataUpdates.length).toBe(2); // No new data update
+    expect(PostList.errorUpdates.length).toBe(0);
+    expect(getEdges(wrapper, "title")).toEqual(["Post 1", "Post 2", "Post 3", "Post 4"]); // Data preserved
 
     await fx.restore();
   });

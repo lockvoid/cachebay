@@ -171,8 +171,9 @@ export const createConnectionComponent = (
 ) => {
   const { cachePolicy, connectionFn } = options;
 
-  const renders: any[] = [];
-  const errors: any[] = [];
+  const dataUpdates: any[] = [];
+  const errorUpdates: any[] = [];
+  const renders = { count: 0 };
 
   const component = defineComponent({
     name: "ListComponent",
@@ -196,19 +197,21 @@ export const createConnectionComponent = (
 
       watch(data, (value) => {
         if (value) {
-          renders.push(connectionFn(value));
+          dataUpdates.push(connectionFn(value));
         } else {
-          renders.push(`${value}`);
+          dataUpdates.push(`${value}`);
         }
       }, { immediate: true });
 
       watch(error, (value) => {
         if (value) {
-          errors.push(value);
+          errorUpdates.push(value);
         }
       }, { immediate: true });
 
       return () => {
+        renders.count++;
+        
         if (!connection.value && isFetching.value) {
           return h("div", { class: "loading" }, "Loading...");
         }
@@ -241,8 +244,9 @@ export const createConnectionComponent = (
     },
   });
 
+  (component as any).dataUpdates = dataUpdates;
+  (component as any).errorUpdates = errorUpdates;
   (component as any).renders = renders;
-  (component as any).errors = errors;
 
   return component;
 };
@@ -257,8 +261,9 @@ export const createConnectionComponentSuspense = (
 ) => {
   const { cachePolicy, connectionFn } = options;
 
-  const renders: any[][] = [];
-  const errors: any[] = [];
+  const dataUpdates: any[] = [];
+  const errorUpdates: any[] = [];
+  const renders = { count: 0 };
 
   const ConnectionComponent = defineComponent({
     name: "ListComponentSuspense",
@@ -288,19 +293,20 @@ export const createConnectionComponentSuspense = (
 
       watch(data, (value) => {
         if (value) {
-          renders.push(connectionFn(value));
+          dataUpdates.push(connectionFn(value));
         } else {
-          renders.push(`${value}`);
+          dataUpdates.push(`${value}`);
         }
       }, { immediate: true });
 
       watch(error, (value) => {
         if (value) {
-          errors.push(value);
+          errorUpdates.push(value);
         }
       }, { immediate: true });
 
       return () => {
+        renders.count++;
         return h("div", {}, [
           h("div", { class: "pageInfo" }, [
             h("div", { class: "startCursor" }, String(connection.value?.pageInfo?.startCursor ?? "")),
@@ -342,8 +348,9 @@ export const createConnectionComponentSuspense = (
     },
   });
 
+  (component as any).dataUpdates = dataUpdates;
+  (component as any).errorUpdates = errorUpdates;
   (component as any).renders = renders;
-  (component as any).errors = errors;
 
   return component;
 };
@@ -358,8 +365,9 @@ export const createDetailComponent = (
 ) => {
   const { cachePolicy, detailFn } = options;
 
-  const renders: any[][] = [];
-  const errors: any[] = [];
+  const dataUpdates: any[] = [];
+  const errorUpdates: any[] = [];
+  const renders = { count: 0 };
 
   const component = defineComponent({
     name: "DetailComponent",
@@ -383,19 +391,20 @@ export const createDetailComponent = (
 
       watch(data, (value) => {
         if (value) {
-          renders.push(detailFn(value));
+          dataUpdates.push(detailFn(value));
         } else {
-          renders.push(`${value}`);
+          dataUpdates.push(`${value}`);
         }
       }, { immediate: true });
 
       watch(error, (value) => {
         if (value) {
-          errors.push(value);
+          errorUpdates.push(value);
         }
       }, { immediate: true });
 
       return () => {
+        renders.count++;
         if (!detail.value && isFetching.value) {
           return h("div", { class: "loading" }, "Loading...");
         }
@@ -415,8 +424,9 @@ export const createDetailComponent = (
     },
   });
 
+  (component as any).dataUpdates = dataUpdates;
+  (component as any).errorUpdates = errorUpdates;
   (component as any).renders = renders;
-  (component as any).errors = errors;
 
   return component;
 };
@@ -431,8 +441,9 @@ export const createDetailComponentSuspense = (
 ) => {
   const { cachePolicy, detailFn } = options;
 
-  const renders: any[][] = [];
-  const errors: any[] = [];
+  const dataUpdates: any[] = [];
+  const errorUpdates: any[] = [];
+  const renders = { count: 0 };
 
   const DetailComponent = defineComponent({
     name: "DetailComponentSuspense",
@@ -447,7 +458,7 @@ export const createDetailComponentSuspense = (
       const { data, error } = await useQuery({ query, variables, cachePolicy });
 
       if (error.value) {
-        errors.push(error.value);
+        errorUpdates.push(error.value);
 
         throw error.value;
       }
@@ -462,19 +473,20 @@ export const createDetailComponentSuspense = (
 
       watch(data, (value) => {
         if (value) {
-          renders.push(detailFn(value));
+          dataUpdates.push(detailFn(value));
         } else {
-          renders.push(`${value}`);
+          dataUpdates.push(`${value}`);
         }
       }, { immediate: true });
 
       watch(error, (value) => {
         if (value) {
-          errors.push(value);
+          errorUpdates.push(value);
         }
       }, { immediate: true });
 
       return () => {
+        renders.count++;
         return h("ul", { class: "edges" }, [
           h("li", { class: "edge" },
             Object.keys(detail.value ?? {}).map(fieldName =>
@@ -501,8 +513,9 @@ export const createDetailComponentSuspense = (
     },
   });
 
+  (component as any).dataUpdates = dataUpdates;
+  (component as any).errorUpdates = errorUpdates;
   (component as any).renders = renders;
-  (component as any).errors = errors;
 
   return component;
 };

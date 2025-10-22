@@ -40,13 +40,14 @@ describe("Cache Policies Behavior", () => {
       await delay(5);
       expect(getEdges(wrapper, "email").length).toBe(0);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(1);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(1);
+      expect(Cmp.errorUpdates.length).toBe(0);
 
       await delay(15);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
-      expect(Cmp.renders.length).toBe(2);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(2);
+      expect(Cmp.errorUpdates.length).toBe(0);
+      expect(Cmp.renders.count).toBe(2);
 
       await fx.restore();
     });
@@ -86,14 +87,15 @@ describe("Cache Policies Behavior", () => {
       await delay(5);
       expect(getEdges(wrapper, "email")).toEqual([]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(1);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(1);
+      expect(Cmp.errorUpdates.length).toBe(0);
 
       await delay(10);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(2);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(2);
+      expect(Cmp.errorUpdates.length).toBe(0);
+      expect(Cmp.renders.count).toBe(2);
 
       await fx.restore();
     });
@@ -178,14 +180,15 @@ describe("Cache Policies Behavior", () => {
       await delay(5);
       expect(getEdges(wrapper, "text")).toEqual([]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(1);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(1);
+      expect(Cmp.errorUpdates.length).toBe(0);
 
       await delay(15);
       expect(getEdges(wrapper, "text")).toEqual(["Comment 3", "Comment 4"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(2);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(2);
+      expect(Cmp.errorUpdates.length).toBe(0);
+      expect(Cmp.renders.count).toBe(2);
 
       await fx.restore();
     });
@@ -230,14 +233,15 @@ describe("Cache Policies Behavior", () => {
       await delay(5);
       expect(getEdges(wrapper, "email").length).toBe(0);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(1);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(1);
+      expect(Cmp.errorUpdates.length).toBe(0);
 
       await delay(15);
       expect(getEdges(wrapper, "email")).toEqual(["tech.user@example.com"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(2);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(2);
+      expect(Cmp.errorUpdates.length).toBe(0);
+      expect(Cmp.renders.count).toBe(2);
 
       await fx.restore();
     });
@@ -282,8 +286,9 @@ describe("Cache Policies Behavior", () => {
       await delay(5);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(0);
-      expect(Cmp.renders.length).toBe(1);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(1);
+      expect(Cmp.errorUpdates.length).toBe(0);
+      expect(Cmp.renders.count).toBe(1);
 
       await fx.restore();
     });
@@ -327,14 +332,15 @@ describe("Cache Policies Behavior", () => {
       await tick();
       expect(getEdges(wrapper, "email").join("")).toBe("");
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(1);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(1);
+      expect(Cmp.errorUpdates.length).toBe(0);
 
       await delay(20);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(2);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(2);
+      expect(Cmp.errorUpdates.length).toBe(0);
+      expect(Cmp.renders.count).toBe(2);
 
       await fx.restore();
     });
@@ -376,7 +382,8 @@ describe("Cache Policies Behavior", () => {
       await delay(10);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(0);
-      expect(Cmp.renders.length).toBe(1);
+      expect(Cmp.dataUpdates.length).toBe(1);
+      expect(Cmp.renders.count).toBe(1);
 
       await fx.restore();
     });
@@ -437,14 +444,15 @@ describe("Cache Policies Behavior", () => {
       await delay(10);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(1);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(1);
+      expect(Cmp.errorUpdates.length).toBe(0);
 
       await delay(20);
       expect(getEdges(wrapper, "email")).toEqual(["u1+updated@example.com"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(2);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(2);
+      expect(Cmp.errorUpdates.length).toBe(0);
+      expect(Cmp.renders.count).toBe(2);
 
       await fx.restore();
     });
@@ -502,14 +510,15 @@ describe("Cache Policies Behavior", () => {
       await delay(5);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(1);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(1);
+      expect(Cmp.errorUpdates.length).toBe(0);
 
       await delay(15);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(1);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(1);
+      expect(Cmp.errorUpdates.length).toBe(0);
+      expect(Cmp.renders.count).toBe(1);
 
       await fx.restore();
     });
@@ -567,14 +576,15 @@ describe("Cache Policies Behavior", () => {
       await delay(5);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(1);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(1);
+      expect(Cmp.errorUpdates.length).toBe(0);
 
       await delay(15);
       expect(getEdges(wrapper, "email")).toEqual(["u1+updated@example.com"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(2);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(2);
+      expect(Cmp.errorUpdates.length).toBe(0);
+      expect(Cmp.renders.count).toBe(2);
 
       await fx.restore();
     });
@@ -616,14 +626,15 @@ describe("Cache Policies Behavior", () => {
       await delay(5);
       expect(getEdges(wrapper, "email")).toEqual([]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(1);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(1);
+      expect(Cmp.errorUpdates.length).toBe(0);
 
       await delay(15);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(2);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(2);
+      expect(Cmp.errorUpdates.length).toBe(0);
+      expect(Cmp.renders.count).toBe(2);
 
       await fx.restore();
     });
@@ -747,14 +758,15 @@ describe("Cache Policies Behavior", () => {
       await tick();
       expect(getEdges(wrapper, "text")).toEqual(["Comment 1", "Comment 2"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(1);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(1);
+      expect(Cmp.errorUpdates.length).toBe(0);
 
       await delay(15);
       expect(getEdges(wrapper, "text")).toEqual(["Comment 1", "Comment 2", "Comment 3"]);
       expect(fx.calls.length).toBe(1);
-      expect(Cmp.renders.length).toBe(2);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(2);
+      expect(Cmp.errorUpdates.length).toBe(0);
+      expect(Cmp.renders.count).toBe(2);
 
       await fx.restore();
     });
@@ -816,15 +828,16 @@ describe("Cache Policies Behavior", () => {
       await delay(5);
       expect(getEdges(wrapper, "email")).toEqual(["cached-u1@example.com"]);
       expect(fx.calls.length).toBe(1); // Network request started
-      expect(Cmp.renders.length).toBe(1);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(1);
+      expect(Cmp.errorUpdates.length).toBe(0);
 
       // After network response, should show fresh data
       await delay(15);
       expect(getEdges(wrapper, "email")).toEqual(["fresh-u1@example.com", "fresh-u2@example.com"]);
       expect(fx.calls.length).toBe(1); // Still only 1 network call
-      expect(Cmp.renders.length).toBe(2); // Re-rendered with fresh data
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(2); // Re-rendered with fresh data
+      expect(Cmp.errorUpdates.length).toBe(0);
+      expect(Cmp.renders.count).toBe(2);
 
       await fx.restore();
     });
@@ -873,8 +886,9 @@ describe("Cache Policies Behavior", () => {
       await delay(10);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(0);
-      expect(Cmp.renders.length).toBe(1);
-      expect(Cmp.errors.length).toBe(0);
+      expect(Cmp.dataUpdates.length).toBe(1);
+      expect(Cmp.errorUpdates.length).toBe(0);
+      expect(Cmp.renders.count).toBe(1);
 
       await fx.restore();
     });
@@ -905,8 +919,9 @@ describe("Cache Policies Behavior", () => {
       await tick();
       expect(getEdges(wrapper, "email").length).toBe(0);
       expect(fx.calls.length).toBe(0);
-      expect(Cmp.renders.length).toBe(1);
-      expect(Cmp.errors.length).toBe(1); // CacheMiss error emitted
+      expect(Cmp.dataUpdates.length).toBe(1);
+      expect(Cmp.errorUpdates.length).toBe(1); // CacheMiss error emitted
+      expect(Cmp.renders.count).toBe(1);
 
       await fx.restore();
     });
@@ -937,8 +952,9 @@ describe("Cache Policies Behavior", () => {
       await tick();
       expect(wrapper.text()).toContain("CacheMiss");
       expect(fx.calls.length).toBe(0);
-      expect(Cmp.renders.length).toBe(1);
-      expect(Cmp.errors.length).toBe(1); // Should have 1 error (CacheMiss)
+      expect(Cmp.dataUpdates.length).toBe(1);
+      expect(Cmp.errorUpdates.length).toBe(1); // Should have 1 error (CacheMiss)
+      expect(Cmp.renders.count).toBe(1);
 
       await fx.restore();
     });
