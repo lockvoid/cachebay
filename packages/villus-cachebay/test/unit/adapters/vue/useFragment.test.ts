@@ -3,8 +3,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { defineComponent, h, ref, nextTick } from "vue";
 import { useFragment } from "@/src/adapters/vue/useFragment";
 import { createCache } from "@/src/core/client";
-import { provideCachebay } from "@/src/core/plugin";
+import { provideCachebay } from "@/src/adapters/vue/plugin";
 import { compilePlan } from "@/src/compiler";
+import type { Transport } from "@/src/core/operations";
 
 // Create a simple fragment for testing
 const USER_FIELDS_FRAGMENT = compilePlan(/* GraphQL */ `
@@ -16,9 +17,13 @@ const USER_FIELDS_FRAGMENT = compilePlan(/* GraphQL */ `
 
 describe("useFragment", () => {
   let cache: ReturnType<typeof createCache>;
+  let mockTransport: Transport;
 
   beforeEach(() => {
-    cache = createCache();
+    mockTransport = {
+      http: vi.fn().mockResolvedValue({ data: null, error: null }),
+    };
+    cache = createCache({ transport: mockTransport });
   });
 
   it("returns readonly ref with fragment data from cache", () => {
@@ -45,7 +50,13 @@ describe("useFragment", () => {
 
     mount(App, {
       global: {
-        plugins: [cache],
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, cache);
+            },
+          },
+        ],
       },
     });
 
@@ -71,7 +82,13 @@ describe("useFragment", () => {
 
     mount(App, {
       global: {
-        plugins: [cache],
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, cache);
+            },
+          },
+        ],
       },
     });
 
@@ -103,7 +120,13 @@ describe("useFragment", () => {
 
     mount(App, {
       global: {
-        plugins: [cache],
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, cache);
+            },
+          },
+        ],
       },
     });
 
@@ -120,7 +143,7 @@ describe("useFragment", () => {
   });
 
   it("reacts to changes in reactive variables parameter", async () => {
-    const testCache = createCache();
+    const testCache = createCache({ transport: mockTransport });
 
     const mockUnsubscribe = vi.fn();
     const watchFragmentSpy = vi.spyOn(testCache as any, "watchFragment").mockImplementation((opts: any) => {
@@ -146,7 +169,13 @@ describe("useFragment", () => {
 
     mount(App, {
       global: {
-        plugins: [testCache],
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, testCache);
+            },
+          },
+        ],
       },
     });
 
@@ -162,7 +191,7 @@ describe("useFragment", () => {
   });
 
   it("handles undefined variables by defaulting to empty object", () => {
-    const testCache = createCache();
+    const testCache = createCache({ transport: mockTransport });
 
     const watchFragmentSpy = vi.spyOn(testCache as any, "watchFragment").mockImplementation((opts: any) => {
       opts.onData({ id: "u1", email: "test@example.com" });
@@ -184,7 +213,13 @@ describe("useFragment", () => {
 
     mount(App, {
       global: {
-        plugins: [testCache],
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, testCache);
+            },
+          },
+        ],
       },
     });
 

@@ -1,5 +1,5 @@
 import { unref, watch, readonly, type Ref, shallowRef, onScopeDispose } from "vue";
-import { useCache } from "./useClient";
+import { useClient } from "./useClient";
 
 /**
  * Options for useFragment composable
@@ -25,7 +25,7 @@ export type UseFragmentOptions<TData = unknown> = {
  * @throws Error if cache doesn't expose watchFragment method
  */
 export function useFragment<TData = unknown>(options: UseFragmentOptions<TData>): Readonly<Ref<TData | undefined>> {
-  const cache = useCache();
+  const cache = useClient();
 
   if (typeof cache.watchFragment !== "function") {
     throw new Error("[useFragment] cache must expose watchFragment()");

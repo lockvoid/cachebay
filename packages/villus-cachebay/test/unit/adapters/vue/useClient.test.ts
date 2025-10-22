@@ -1,38 +1,43 @@
 import { mount } from "@vue/test-utils";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { defineComponent, h } from "vue";
-import { useCache } from "@/src/adapters/vue/useClient";
+import { useClient } from "@/src/adapters/vue/useClient";
 import { createCache } from "@/src/core/client";
-import { provideCachebay } from "@/src/core/plugin";
+import { provideCachebay } from "@/src/adapters/vue/plugin";
+import type { Transport } from "@/src/core/operations";
 
-describe("useCache", () => {
+describe("useClient", () => {
+  const mockTransport: Transport = {
+    http: vi.fn().mockResolvedValue({ data: null, error: null }),
+  };
+
   it("throws if used without provider", () => {
     const App = defineComponent({
       setup() {
-        useCache();
+        useClient();
       },
 
       render: () => h("div"),
     });
 
     expect(() => mount(App)).toThrowError(
-      "[cachebay] useCache() called before provideCachebay()",
+      "[cachebay] useClient() called before cache setup",
     );
   });
 
   it("returns the cache instance directly by reference", () => {
-    const cache = createCache();
+    const cache = createCache({ transport: mockTransport });
 
     let cacheApi: any;
 
     const App = defineComponent({
       setup() {
-        cacheApi = useCache();
+        cacheApi = useClient();
         return () => h("div");
       },
     });
 
-    const wrapper = mount(App, {
+    mount(App, {
       global: {
         plugins: [
           {
@@ -48,5 +53,7 @@ describe("useCache", () => {
     expect(cacheApi.identify).toBe(cache.identify);
     expect(cacheApi.readFragment).toBe(cache.readFragment);
     expect(cacheApi.writeFragment).toBe(cache.writeFragment);
+    expect(cacheApi.executeQuery).toBe(cache.executeQuery);
+    expect(cacheApi.executeMutation).toBe(cache.executeMutation);
   });
 });
