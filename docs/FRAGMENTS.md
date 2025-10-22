@@ -24,7 +24,7 @@ const key = cache.identify({ __typename: 'Post', id: '42' }) // → "Post:42" | 
 
 **Composable**
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 const { identify } = useCache()
 identify({ __typename: 'User', id: 'alice123' }) // → "User:alice123"
 identify({ __typename: 'Comment', uuid: 'comment-xyz' }) // → "Comment:comment-xyz" (if uuid is configured as key)
@@ -50,7 +50,7 @@ const post = cache.readFragment('Post:42', PostFragment, 'PostDetails', { locale
 
 **Composable**
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 const { readFragment } = useCache()
 const post = readFragment('Post:42')
 const userProfile = readFragment('User:alice123', `
@@ -65,7 +65,7 @@ const userProfile = readFragment('User:alice123', `
 
 **Composable (useFragment)**
 ```ts
-import { useFragment } from 'villus-cachebay'
+import { useFragment } from 'cachebay'
 const post = useFragment({
   id: 'Post:42',
   fragment: `
@@ -115,7 +115,7 @@ cache.writeFragment({
 **Composable**
 
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 const { writeFragment } = useCache()
 writeFragment({
   id: 'User:alice123',
@@ -138,7 +138,7 @@ writeFragment({
 **Composable (useFragment)**
 
 ```ts
-import { useFragment } from 'villus-cachebay'
+import { useFragment } from 'cachebay'
 const { writeFragment } = useFragment()
 writeFragment({
   id: 'Post:42',
@@ -194,7 +194,7 @@ unsubscribe()
 
 **Composable**
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 const { watchFragment } = useCache()
 
 const { unsubscribe } = watchFragment({
@@ -224,7 +224,7 @@ onUnmounted(() => unsubscribe())
 Customize identity and enable interface-style addressing at **cache creation**:
 
 ```ts
-import { createCachebay } from 'villus-cachebay'
+import { createCachebay } from 'cachebay'
 
 const cache = createCachebay({
 

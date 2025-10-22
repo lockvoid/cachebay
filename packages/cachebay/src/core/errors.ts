@@ -1,5 +1,5 @@
 /**
- * Custom error types for villus-cachebay
+ * Custom error types for cachebay
  */
 
 /**

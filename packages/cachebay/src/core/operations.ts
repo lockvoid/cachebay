@@ -217,10 +217,10 @@ export const createOperations = (
 
     try {
       const result = await transport.http(context);
-      
+
       // Check if this response is stale (a newer request was made)
       const isStale = queryEpochs.get(sig) !== currentEpoch;
-      
+
       // If stale, return null data with StaleResponseError wrapped in CombinedError
       if (isStale) {
         return {
@@ -239,7 +239,7 @@ export const createOperations = (
           variables: vars,
           data: result.data,
         });
-        
+
         // Read back from cache to get normalized/materialized data
         // This ensures the same reference as watchQuery would emit
         const cached = queries.readQuery({
@@ -247,12 +247,12 @@ export const createOperations = (
           variables: vars,
           canonical: true,
         });
-        
+
         // Validate that we can materialize the data we just wrote
         if (cached.source === "none") {
           if (__DEV__ && cached.ok.miss) {
             console.error(
-              '[villus-cachebay] Failed to materialize query after network response.\n' +
+              '[cachebay] Failed to materialize query after network response.\n' +
               'This usually means the response is missing required fields.\n' +
               'Missing data:',
               cached.ok.miss
@@ -268,10 +268,10 @@ export const createOperations = (
             }),
           };
         }
-        
+
         // Mark as emitted for suspension tracking
         markEmitted(sig);
-        
+
         // Return data with error if present (partial data scenario)
         return {
           data: cached.data as TData,

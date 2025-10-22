@@ -13,7 +13,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: packages/villus-cachebay
+        working-directory: packages/cachebay
 
     steps:
       - name: Checkout Repository

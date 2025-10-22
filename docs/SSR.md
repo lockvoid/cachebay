@@ -55,7 +55,7 @@ Some Suspense setups re-run the same query immediately after a result lands. Cac
 
 ```ts
 // server.ts
-import { createCachebay } from 'villus-cachebay'
+import { createCachebay } from 'cachebay'
 
 // New Cache Per SSR Request
 const cache = createCachebay()
@@ -74,7 +74,7 @@ const snapshot = cache.dehydrate()
 // client.ts
 import { createClient } from 'villus'
 import { fetch as fetchPlugin } from 'villus'
-import { createCachebay } from 'villus-cachebay'
+import { createCachebay } from 'cachebay'
 
 // Optional Runtime Tuning
 const cache = createCachebay({
@@ -108,7 +108,7 @@ export const client = createClient({
 ```ts
 // plugins/villus.ts
 import { createClient } from 'villus'
-import { createCachebay } from 'villus-cachebay'
+import { createCachebay } from 'cachebay'
 import { fetch as fetchPlugin, dedup as dedupPlugin } from 'villus'
 
 export default defineNuxtPlugin((nuxtApp) => {
@@ -156,7 +156,7 @@ export default defineNuxtPlugin((nuxtApp) => {
 You can tune SSR/Suspense timeouts when creating the cache:
 
 ```ts
-import { createCachebay } from 'villus-cachebay'
+import { createCachebay } from 'cachebay'
 
 const cache = createCachebay({
   /** Suppress the first CN revalidate right after hydrate (ms) */

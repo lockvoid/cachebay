@@ -1,5 +1,5 @@
 import { useMutation } from "villus";
-import { useCache } from "villus-cachebay";
+import { useCache } from "cachebay";
 import { useSettings } from "../stores/settings";
 import { SPELL_FIELDS } from "./useSpellQuery";
 

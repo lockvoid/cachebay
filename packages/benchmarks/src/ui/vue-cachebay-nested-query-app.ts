@@ -1,7 +1,7 @@
 import { gql } from "graphql-tag";
-import { createClient, useQuery, fetch as fetchPlugin } from "villus";
-import { createApp, defineComponent, nextTick, watch } from "vue";
-import { createCachebay } from "../../villus-cachebay/src/core/client";
+import { createApp, defineComponent, nextTick } from "vue";
+import { createCachebay } from "../../../cachebay/src/core/client";
+import { createCachebayPlugin, useQuery } from "../../../cachebay/src/adapters/vue";
 
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {
@@ -61,15 +61,31 @@ export function createVueCachebayNestedApp(
 ): VueCachebayNestedController {
   // Reset metrics bucket for this app/run.
 
+  // Create transport using real fetch (like Relay's network)
+  const transport = {
+    http: async (context: any) => {
+      const response = await fetch(serverUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: context.body,
+          variables: context.variables,
+        }),
+      });
+      const result = await response.json();
+      return {
+        data: result.data || null,
+        error: result.errors?.[0] || null
+      };
+    },
+  };
+
   const cachebay = createCachebay({
     interfaces: { Node: ["User", "Post", "Comment"] },
+    transport,
   });
 
-  const client = createClient({
-    url: serverUrl,
-    use: [cachebay, fetchPlugin()],
-    cachePolicy,
-  });
+  const plugin = createCachebayPlugin(cachebay);
 
   let totalRenderTime = 0;
   let app: any = null;
@@ -81,9 +97,11 @@ export function createVueCachebayNestedApp(
       // Plain, non-reactive vars to avoid extra watchers.
       const variables: { first: number; after: string | null } = { first: 10, after: null };
 
-      const { data, execute } = useQuery({
+      const { data, refetch } = useQuery({
         query: USERS_QUERY,
-        paused: true,
+        variables: () => variables,
+        pause: true,
+        cachePolicy,
       });
 
       // watch(() => data.value, () => {
@@ -95,7 +113,7 @@ export function createVueCachebayNestedApp(
           const t0 = performance.now();
 
           // Includes network + cache work.
-          await execute({ variables });
+          await refetch();
 
           const endCursor = data.value?.users?.pageInfo?.endCursor ?? null;
           if (endCursor) variables.after = endCursor;
@@ -139,7 +157,7 @@ export function createVueCachebayNestedApp(
       if (!target) document.body.appendChild(container);
 
       app = createApp(NestedList);
-      app.use(client);
+      app.use(plugin);
       componentInstance = app.mount(container);
     },
 

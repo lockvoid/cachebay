@@ -32,7 +32,7 @@ if (data) {
 
 **Composable**
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 const { readQuery } = useCache()
 
 const data = readQuery({
@@ -97,7 +97,7 @@ cache.writeQuery({
 
 **Composable**
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 const { writeQuery } = useCache()
 
 // After a mutation, update the cache manually
@@ -116,7 +116,7 @@ const handleCreatePost = async (newPost) => {
       }
     }
   })
-  
+
   // Then make the actual mutation
   await createPost(newPost)
 }
@@ -157,7 +157,7 @@ unsubscribe()
 
 **Composable**
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 import { onUnmounted } from 'vue'
 
 const { watchQuery } = useCache()
@@ -234,7 +234,7 @@ const data = readQuery({
 ### Optimistic UI with writeQuery
 
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 import { useMutation } from 'villus'
 
 const { writeQuery, readQuery } = useCache()
@@ -242,7 +242,7 @@ const { execute: createPost } = useMutation(CREATE_POST_MUTATION)
 
 const handleCreate = async (title: string) => {
   const tempId = `temp:${Date.now()}`
-  
+
   // 1. Optimistically update cache
   const existing = readQuery({ query: POSTS_QUERY, variables: { first: 10 } })
   writeQuery({
@@ -258,10 +258,10 @@ const handleCreate = async (title: string) => {
       }
     }
   })
-  
+
   // 2. Make the actual mutation
   const { data } = await createPost({ title })
-  
+
   // 3. Update with real ID (optional - network response will update cache)
   if (data) {
     writeQuery({
@@ -284,7 +284,7 @@ const handleCreate = async (title: string) => {
 ### Cache Synchronization with watchQuery
 
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 import { ref, onUnmounted } from 'vue'
 
 const { watchQuery } = useCache()

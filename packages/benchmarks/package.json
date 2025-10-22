@@ -42,8 +42,7 @@
     "relay-runtime": "^16.2.0",
     "tinybench": "^5.0.1",
     "urql": "^4.1.0",
-    "villus": "^3.5.2",
-    "villus-cachebay": "workspace:*",
+    "cachebay": "workspace:*",
     "vue": "^3.5.18",
     "vue-router": "^4.5.1"
   },

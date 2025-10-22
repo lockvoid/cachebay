@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { useFragment } from "villus-cachebay" ;
+  import { useFragment } from "cachebay" ;
   import { HOGWARTS_TIME_FIELDS } from "~/composables/useHogwartsTime";
 
   useHogwartsTime();

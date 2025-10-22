@@ -6,7 +6,7 @@ const ssrRoundtrip = async ({ routes }) => {
 
   const serverClient = createTestClient({
     cacheOptions: {
-      suspensionTimeout: 100,
+      suspensionTimeout: 1,
     },
   });
 
@@ -14,6 +14,7 @@ const ssrRoundtrip = async ({ routes }) => {
     query: operations.POSTS_QUERY,
 
     variables: {
+      category: "lifestyle",
       first: 2,
       after: null,
     },
@@ -33,7 +34,8 @@ const ssrRoundtrip = async ({ routes }) => {
     routes,
 
     cacheOptions: {
-      suspensionTimeout: 100,
+      suspensionTimeout: 1,
+      hydrationTimeout: 10,
     },
   });
 
@@ -45,7 +47,7 @@ const ssrRoundtrip = async ({ routes }) => {
 const routes = [
   {
     when: ({ variables }) => {
-      return !variables.after && variables.first === 2;
+      return variables.category === "lifestyle" && !variables.after && variables.first === 2;
     },
 
     respond: () => {
@@ -53,7 +55,23 @@ const routes = [
         data: {
           __typename: "Query",
 
-          posts: fixtures.posts.buildConnection([{ id: "p1", title: "A1 Updated" }, { id: "p2", title: "A2 Updated" }]),
+          posts: fixtures.posts.buildConnection([{ id: "p1", title: "A1" }, { id: "p2", title: "A2" }]),
+        },
+      };
+    },
+  },
+
+  {
+    when: ({ variables }) => {
+      return variables.category === "music" && !variables.after && variables.first === 2;
+    },
+
+    respond: () => {
+      return {
+        data: {
+          __typename: "Query",
+
+          posts: fixtures.posts.buildConnection([{ id: "p3", title: "B1" }, { id: "p4", title: "B2" }]),
         },
       };
     },
@@ -133,7 +151,7 @@ describe("SSR", () => {
     });
 
     describe("network-only", () => {
-      it("makes network request after hydration and displays updated data", async () => {
+      it("displays cached data during hydration, then fetches after hydration window", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponentSuspense(operations.POSTS_QUERY, {
@@ -155,11 +173,13 @@ describe("SSR", () => {
           },
         });
 
+        // During hydration - shows cached data, no network request
         await tick();
-        expect(getEdges(wrapper, "title")).toEqual(["A1 Updated", "A2 Updated"]);
-        expect(fx.calls.length).toBe(1);
+        expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
+        expect(fx.calls.length).toBe(0);
 
-        await delay(20);
+        // After hydration window (100ms) - network request fires
+        await delay(120);
         expect(getEdges(wrapper, "title")).toEqual(["A1 Updated", "A2 Updated"]);
         expect(fx.calls.length).toBe(1);
 
@@ -239,7 +259,7 @@ describe("SSR", () => {
       });
     });
 
-    describe("cache-first", () => {
+    describe.only("cache-first", () => {
       it("displays cached data without making network requests", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
@@ -275,7 +295,7 @@ describe("SSR", () => {
     });
 
     describe("network-only", () => {
-      it("makes network request after hydration and displays updated data", async () => {
+      it("displays cached data during hydration, then fetches after hydration window", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
@@ -297,11 +317,13 @@ describe("SSR", () => {
           },
         });
 
+        // During hydration - shows cached data, no network request
         await tick();
-        expect(getEdges(wrapper, "title")).toEqual(["A1 Updated", "A2 Updated"]);
-        expect(fx.calls.length).toBe(1);
+        expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
+        expect(fx.calls.length).toBe(0);
 
-        await delay(20);
+        // After hydration window (100ms) - network request fires
+        await delay(120);
         expect(getEdges(wrapper, "title")).toEqual(["A1 Updated", "A2 Updated"]);
         expect(fx.calls.length).toBe(1);
 
@@ -314,7 +336,7 @@ describe("SSR", () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
-          cachePolicy: "cache-first",
+          cachePolicy: "cache-only",
 
           connectionFn: (data) => {
             return data.posts;

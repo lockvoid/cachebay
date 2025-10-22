@@ -2,7 +2,7 @@
 import { bench, group, run, summary } from "mitata";
 
 // ---- cachebay ----
-import { createCachebay as createCachebayClient } from "../../villus-cachebay/src/core/client";
+import { createCachebay as createCachebayClient } from "../../cachebay/src/core/client";
 
 // ---- apollo ----
 import { InMemoryCache } from "@apollo/client/cache";

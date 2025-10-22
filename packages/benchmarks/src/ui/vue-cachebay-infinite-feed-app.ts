@@ -1,7 +1,7 @@
 import { gql } from "graphql-tag";
-import { createClient, useQuery, fetch as fetchPlugin } from "villus";
-import { createApp, defineComponent, ref, reactive, nextTick, computed, watch } from "vue";
-import { createCachebay } from "../../villus-cachebay/src/core/client";
+import { createApp, defineComponent, nextTick, computed, watch } from "vue";
+import { createCachebay } from "../../../cachebay/src/core/client";
+import { createCachebayPlugin, useQuery } from "../../../cachebay/src/adapters/vue";
 
 const FEED_QUERY = gql`
   query Feed($first: Int!, $after: String) {

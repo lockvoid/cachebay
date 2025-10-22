@@ -1,6 +1,6 @@
 # Benchmarks
 
-Performance benchmarks for villus-cachebay comparing against Apollo Client and Relay.
+Performance benchmarks for cachebay comparing against Apollo Client and Relay.
 
 ## Running Benchmarks
 

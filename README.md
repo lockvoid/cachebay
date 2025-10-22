@@ -1,9 +1,9 @@
 # Cachebay for Villus
 
-[![CI](https://github.com/lockvoid/villus-cachebay/actions/workflows/test.yml/badge.svg)](https://github.com/lockvoid/villus-cachebay/actions/workflows/test.yml)
-[![npm](https://img.shields.io/npm/v/villus-cachebay.svg)](https://www.npmjs.com/package/villus-cachebay)
-[![Coverage](https://codecov.io/gh/lockvoid/villus-cachebay/branch/main/graph/badge.svg)](https://codecov.io/gh/lockvoid/villus-cachebay)
-[![Bundlephobia](https://img.shields.io/bundlephobia/minzip/villus-cachebay)](https://bundlephobia.com/package/villus-cachebay)
+[![CI](https://github.com/lockvoid/cachebay/actions/workflows/test.yml/badge.svg)](https://github.com/lockvoid/cachebay/actions/workflows/test.yml)
+[![npm](https://img.shields.io/npm/v/cachebay.svg)](https://www.npmjs.com/package/cachebay)
+[![Coverage](https://codecov.io/gh/lockvoid/cachebay/branch/main/graph/badge.svg)](https://codecov.io/gh/lockvoid/cachebay)
+[![Bundlephobia](https://img.shields.io/bundlephobia/minzip/cachebay)](https://bundlephobia.com/package/cachebay)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 <img width="100" height="100" alt="Cachebay" src="https://pub-464e6b9480014239a02034726cf0073c.r2.dev/cachebay.png">
@@ -54,9 +54,9 @@ or try live [https://harrypotter.exp.lockvoid.com/](https://harrypotter.exp.lock
 Package installation using npm or pnpm to add Villus and Cachebay dependencies to your project.
 
 ```bash
-npm i villus villus-cachebay
+npm i villus cachebay
 # or
-pnpm add villus villus-cachebay
+pnpm add villus cachebay
 ```
 
 ---
@@ -68,7 +68,7 @@ Basic setup for creating a Cachebay-enabled Villus client with normalized cachin
 ```ts
 // client.ts
 import { createClient } from 'villus'
-import { createCachebay } from 'villus-cachebay'
+import { createCachebay } from 'cachebay'
 import { fetch as fetchPlugin } from 'villus'
 
 export const cache = createCachebay({
@@ -92,7 +92,7 @@ export const client = createClient({
 Configuration options for customizing Cachebay behavior including entity identification, interface mapping, and SSR/Suspense timeouts.
 
 ```ts
-import { createCachebay } from 'villus-cachebay'
+import { createCachebay } from 'cachebay'
 
 const cache = createCachebay({
   keys: {
@@ -172,7 +172,7 @@ Integration pattern for Nuxt 4 using plugins to manage cache lifecycle, state sy
 ```ts
 // plugins/villus.ts
 import { createClient } from 'villus'
-import { createCachebay } from 'villus-cachebay'
+import { createCachebay } from 'cachebay'
 import { fetch as fetchPlugin, dedup as dedupPlugin } from 'villus'
 
 export default defineNuxtPlugin((nuxtApp) => {
@@ -263,7 +263,7 @@ const { data } = await useQuery({
 Direct cache operations for reading, writing, and watching query results without network requests.
 
 ```js
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 const { readQuery, writeQuery, watchQuery } = useCache()
 
 // Read from cache synchronously
@@ -287,7 +287,7 @@ See **[Queries](./docs/QUERIES.md)** for detailed API documentation.
 Reactive fragment system for reading and writing normalized entities. Returns Vue proxies that automatically update when underlying data changes, enabling granular cache management and optimistic updates.
 
 ```js
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 const { identify, readFragment, writeFragment, watchFragment } = useCache()
 
 identify({ __typename: 'Post', id: 42 }) // → "Post:42"

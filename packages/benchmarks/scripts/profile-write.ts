@@ -3,7 +3,7 @@ import { Session } from 'node:inspector';
 import { writeFileSync } from 'node:fs';
 
 // ---- cachebay ----
-import { createCachebay } from "../../villus-cachebay/src/core/client";
+import { createCachebay } from "../../../cachebay/src/core/client";
 
 // ---- apollo ----
 import { InMemoryCache } from "@apollo/client/cache";

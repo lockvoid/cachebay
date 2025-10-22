@@ -1,5 +1,5 @@
 import { createClient, handleSubscriptions, fetch as fetchPlugin, dedup as dedupPlugin } from "villus";
-import { createCachebay } from "villus-cachebay";
+import { createCachebay } from "cachebay";
 import * as sse from 'graphql-sse';
 
 const createSubscriptions = (url: string) => {

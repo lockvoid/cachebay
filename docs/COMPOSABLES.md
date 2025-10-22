@@ -4,7 +4,7 @@ Cachebay ships a small set of Vue composables that sit on top of the normalized 
 
 ```ts
 import { createApp } from 'vue'
-import { createCachebay } from 'villus-cachebay'
+import { createCachebay } from 'cachebay'
 
 const app = createApp(App)
 
@@ -26,7 +26,7 @@ The key composables are:
 ## `useCache()`
 
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 
 const {
   // Query APIs
@@ -49,7 +49,7 @@ const {
 
 **Read from cache**
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 
 const { readQuery } = useCache()
 
@@ -61,7 +61,7 @@ const data = readQuery({
 
 **Write to cache**
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 
 const { writeQuery } = useCache()
 
@@ -74,7 +74,7 @@ writeQuery({
 
 **Watch for changes**
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 
 const { watchQuery } = useCache()
 
@@ -97,7 +97,7 @@ See **[QUERIES.md](./QUERIES.md)** for detailed documentation.
 **Identify**
 
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 
 const { identify } = useCache()
 
@@ -107,7 +107,7 @@ identify({ __typename: 'User', id: 'u1' }) // → "User:u1"
 **Read (reactive)**
 
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 
 const { readFragment } = useCache()
 
@@ -117,7 +117,7 @@ const post = readFragment({ id: 'Post:42', fragment: PostFragment }) // Vue prox
 **Write**
 
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 
 const { writeFragment } = useCache()
 
@@ -127,7 +127,7 @@ writeFragment({ id: 'Post:42', fragment: PostFragment, data: { title: 'Updated' 
 **Watch**
 
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 
 const { watchFragment } = useCache()
 
@@ -144,7 +144,7 @@ onUnmounted(() => unsubscribe())
 ### Optimistic
 
 ```ts
-import { useCache } from 'villus-cachebay'
+import { useCache } from 'cachebay'
 
 const { modifyOptimistic } = useCache()
 
@@ -178,7 +178,7 @@ Read a single entity by key (string or reactive key). Returns the **entity proxy
 **Static key**
 
 ```ts
-import { useFragment } from 'villus-cachebay'
+import { useFragment } from 'cachebay'
 
 const post = useFragment({ id: 'Post:42', fragment: PostFragment }) // proxy; post.title stays in sync
 ```
@@ -186,7 +186,7 @@ const post = useFragment({ id: 'Post:42', fragment: PostFragment }) // proxy; po
 **Dynamic key (ref/computed)**
 
 ```ts
-import { useFragment } from 'villus-cachebay'
+import { useFragment } from 'cachebay'
 
 const options = ref<string | null>({ id: 'Post:42', fragment: PostFragment })
 
@@ -203,7 +203,7 @@ With the plugin pattern from your Nuxt setup (installing Cachebay and Villus in 
 
 ```vue
 <script setup lang="ts">
-import { useFragment, useCache } from 'villus-cachebay'
+import { useFragment, useCache } from 'cachebay'
 
 const post = useFragment({ id: 'Post:42', fragment: PostFragment })
 

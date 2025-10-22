@@ -1,7 +1,7 @@
 {
   "files": [
     {
-      "filepath": "/Users/kochnev/Projects/Ferment/villus-cachebay/packages/benchmarks/api/watchQuery.bench.ts",
+      "filepath": "/Users/kochnev/Projects/Ferment/cachebay/packages/benchmarks/api/watchQuery.bench.ts",
       "groups": [
         {
           "fullName": "api/watchQuery.bench.ts > watchQuery – INITIAL subscription",

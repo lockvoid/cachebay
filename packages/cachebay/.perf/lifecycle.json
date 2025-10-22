@@ -1,7 +1,7 @@
 {
   "files": [
     {
-      "filepath": "/Users/kochnev/Projects/Ferment/villus-cachebay/packages/villus-cachebay/test/perf/lifecycle.bench.ts",
+      "filepath": "/Users/kochnev/Projects/Ferment/cachebay/packages/cachebay/test/perf/lifecycle.bench.ts",
       "groups": [
         {
           "fullName": "test/perf/lifecycle.bench.ts > Lifecycle",
@@ -61,7 +61,7 @@
       ]
     },
     {
-      "filepath": "/Users/kochnev/Projects/Ferment/villus-cachebay/packages/villus-cachebay/test/perf/core/utils.bench.ts",
+      "filepath": "/Users/kochnev/Projects/Ferment/cachebay/packages/cachebay/test/perf/core/utils.bench.ts",
       "groups": [
         {
           "fullName": "test/perf/core/utils.bench.ts > Utils",

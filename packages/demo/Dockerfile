@@ -10,8 +10,8 @@ WORKDIR /workspace
 # Copy workspace configuration (build from workspace root)
 COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* ./
 
-# Copy villus-cachebay package
-COPY packages/villus-cachebay ./packages/villus-cachebay/
+# Copy cachebay package
+COPY packages/cachebay ./packages/cachebay/
 
 # Copy demo package
 COPY packages/demo ./packages/demo/
