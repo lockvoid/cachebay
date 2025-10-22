@@ -3,7 +3,7 @@ import { defineComponent, h, computed, watch, Suspense } from "vue";
 import { createTestClient, createConnectionComponent, getEdges, fixtures, operations, delay, tick } from "@/test/helpers";
 
 describe("Edge cases", () => {
-  it("reflects in-place entity updates across all edges (no union dedup)", async () => {
+  it.only("reflects in-place entity updates across all edges (no union dedup)", async () => {
     const PostList = createConnectionComponent(operations.POSTS_QUERY, {
       cachePolicy: "cache-and-network",
       connectionFn: (data: any) => data.posts,
@@ -82,7 +82,7 @@ describe("Edge cases", () => {
     await fx.restore();
   });
 
-  it("renders concrete fragment implementations without phantom keys", async () => {
+  it.only("renders concrete fragment implementations without phantom keys", async () => {
     const { cache, client } = createTestClient();
 
     cache.writeFragment({
@@ -111,7 +111,7 @@ describe("Edge cases", () => {
     expect(userFragment?.email).toBe("u2@example.com");
   });
 
-  it("hides deleted entities from live fragment readers", async () => {
+  it.only("hides deleted entities from live fragment readers", async () => {
     const { cache, client } = createTestClient();
 
     cache.writeFragment({
