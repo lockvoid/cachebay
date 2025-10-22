@@ -2,6 +2,7 @@ import type { DocumentNode, GraphQLError } from "graphql";
 import type { PlannerInstance } from "./planner";
 import type { QueriesInstance } from "./queries";
 import type { SSRInstance } from "./ssr";
+import { __DEV__ } from "./instrumentation";
 
 /**
  * Types
@@ -223,6 +224,27 @@ export const createOperations = (
           variables: vars,
           canonical: true,
         });
+        
+        // Validate that we can materialize the data we just wrote
+        if (cached.source === "none") {
+          if (__DEV__ && cached.ok.miss) {
+            console.error(
+              '[villus-cachebay] Failed to materialize query after network response.\n' +
+              'This usually means the response is missing required fields.\n' +
+              'Missing data:',
+              cached.ok.miss
+            );
+          }
+          return {
+            data: null,
+            error: new CombinedError({
+              networkError: new Error(
+                'Failed to materialize query after write. ' +
+                'The response may be missing required fields like __typename or id.'
+              ),
+            }),
+          };
+        }
         
         // Mark as emitted for suspension tracking
         markEmitted(sig);

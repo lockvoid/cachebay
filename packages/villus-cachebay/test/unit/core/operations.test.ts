@@ -158,6 +158,37 @@ describe("operations", () => {
         })
       );
     });
+
+    it("returns error when materialization fails after write", async () => {
+      const mockResult: OperationResult = {
+        data: { user: { id: "1", name: "Alice" } },
+        error: null,
+      };
+
+      vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+      // Mock readQuery to return source: "none" (materialization failure)
+      mockQueries.readQuery.mockReturnValue({
+        data: undefined,
+        source: "none",
+        ok: {
+          strict: false,
+          canonical: false,
+          miss: [
+            { kind: "entity-missing", at: "@.user", id: "User:1" },
+            { kind: "field-link-missing", at: "@.user", parentId: "@", fieldKey: "user({\"id\":\"1\"})" },
+          ],
+        },
+      });
+
+      const result = await operations.executeQuery({ query, variables });
+
+      expect(result.data).toBeNull();
+      expect(result.error).toBeInstanceOf(CombinedError);
+      expect(result.error?.message).toContain("Failed to materialize query after write");
+      expect(result.error?.networkError?.message).toContain("missing required fields");
+      expect(mockQueries.writeQuery).toHaveBeenCalled();
+    });
   });
 
   describe("executeMutation", () => {

@@ -69,12 +69,16 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
   let flushScheduled = false;
 
   const scheduleFlush = () => {
-    if (flushScheduled) return;
+    if (flushScheduled) {
+      return;
+    }
     flushScheduled = true;
 
     queueMicrotask(() => {
       flushScheduled = false;
-      if (pendingTouched.size === 0) return;
+      if (pendingTouched.size === 0) {
+        return;
+      }
 
       const touched = Array.from(pendingTouched);
       pendingTouched.clear();
@@ -82,9 +86,14 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
       const affected = new Set<number>();
       for (const id of touched) {
         const ws = depIndex.get(id);
-        if (ws) for (const k of ws) affected.add(k);
+        if (ws) {
+          for (const k of ws) affected.add(k);
+        }
       }
-      if (affected.size === 0) return;
+
+      if (affected.size === 0) {
+        return;
+      }
 
       for (const k of affected) {
         const w = watchers.get(k);
@@ -99,7 +108,9 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
         // Always refresh deps so missing -> fulfilled transitions trigger
         updateWatcherDeps(k, result?.deps || []);
 
-        if (!result || result.source === "none") continue;
+        if (!result || result.source === "none") {
+          continue;
+        }
 
         if (result.data !== w.lastData) {
           w.lastData = result.data;

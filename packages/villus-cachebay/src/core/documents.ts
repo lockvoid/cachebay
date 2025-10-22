@@ -7,6 +7,7 @@ import {
   LRU,
   stableStringify,
 } from "./utils";
+import { __DEV__ } from "./instrumentation";
 import type { CachePlan, PlanField } from "../compiler";
 import type { CanonicalInstance } from "./canonical";
 import type { GraphInstance } from "./graph";
@@ -607,10 +608,27 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     // Flush any pending graph changes before reading
     graph.flush();
 
+    // --- dev-mode diagnostics ---------------------------------------------------
+    type Miss =
+      | { kind: "entity-missing"; at: string; id: string }
+      | { kind: "root-link-missing"; at: string; fieldKey: string }
+      | { kind: "field-link-missing"; at: string; parentId: string; fieldKey: string }
+      | { kind: "connection-missing"; at: string; mode: "strict" | "canonical"; parentId: string; canonicalKey: string; strictKey: string; hasCanonical: boolean; hasStrict: boolean }
+      | { kind: "pageinfo-missing"; at: string; pageId: string }
+      | { kind: "edge-node-missing"; at: string; edgeId: string }
+      | { kind: "scalar-missing"; at: string; parentId: string; fieldKey: string };
+
+    const misses: Miss[] = [];
+    const miss = (m: Miss) => { if (__DEV__) misses.push(m); };
+
+    // Small helper to build “paths” for diagnostics (only executes in DEV)
+    const addPath = (base: string, seg: string) => __DEV__ ? (base ? base + "." + seg : seg) : "";
+
+    // --- plan-scoped caches / indices ------------------------------------------
     const plan = planner.getPlan(document);
     const lru = getResultLRU(plan);
     const dirty = getDirtySet(plan);
-    const vkey = `${getPlanId(plan)}|${canonical ? 'c' : 's'}|${entityId ? `ent:${entityId}|` : ''}${stableStringify(variables)}`;
+    const vkey = `${getPlanId(plan)}|${canonical ? "c" : "s"}|${entityId ? `ent:${entityId}|` : ""}${stableStringify(variables)}`;
 
     // O(1) hot path: return if present and not dirty
     {
@@ -618,9 +636,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       if (cached && !dirty.has(vkey)) {
         return {
           data: cached.data,
-          deps: cached.deps.slice(),
+          deps: cached.deps, // no copy; callers must not mutate
           source: canonical ? "canonical" : "strict",
-          ok: { strict: true, canonical: true }, // cached implies satisfiable in the requested mode
+          ok: { strict: true, canonical: true, miss: __DEV__ ? [] : undefined },
         };
       }
     }
@@ -633,6 +651,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     let strictOK = true;
     let canonicalOK = true;
 
+    type Task =
+      | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string; path: string }
+      | { t: "ENTITY"; id: string; field: PlanField; out: any; path: string }
+      | { t: "CONNECTION"; parentId: string; field: PlanField; out: any; outKey: string; path: string }
+      | { t: "PAGE_INFO"; id: string; field: PlanField; out: any; path: string }
+      | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[]; path: string };
+
     const tasks: Task[] = [];
     const rootSel = plan.root;
 
@@ -640,12 +665,19 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     if (entityId) {
       // Synthetic "ENTITY" root: apply fragment selection to the entity directly
       const syntheticField = { selectionSet: rootSel, selectionMap: plan.rootSelectionMap } as unknown as PlanField;
-      tasks.push({ t: "ENTITY", id: entityId, field: syntheticField, out: outData });
+      tasks.push({ t: "ENTITY", id: entityId, field: syntheticField, out: outData, path: entityId });
     } else {
       root = graph.getRecord(ROOT_ID) || {};
       for (let i = rootSel.length - 1; i >= 0; i--) {
         const f = rootSel[i];
-        tasks.push({ t: "ROOT_FIELD", parentId: ROOT_ID, field: f, out: outData, outKey: f.responseKey });
+        tasks.push({
+          t: "ROOT_FIELD",
+          parentId: ROOT_ID,
+          field: f,
+          out: outData,
+          outKey: f.responseKey,
+          path: addPath(ROOT_ID, f.responseKey),
+        });
       }
     }
 
@@ -671,33 +703,31 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       const task = tasks.pop() as Task;
 
       if (task.t === "ROOT_FIELD") {
-        const { parentId, field, out, outKey } = task;
+        const { parentId, field, out, outKey, path } = task;
 
         if (isConnectionField(field)) {
-          tasks.push({ t: "CONNECTION", parentId, field, out, outKey });
+          tasks.push({ t: "CONNECTION", parentId, field, out, outKey, path });
           continue;
         }
 
         if (field.selectionSet && field.selectionSet.length) {
           const snap = graph.getRecord(parentId) || {};
           const fieldKey = buildFieldKey(field, variables);
-          // Track field-level dependency for root fields
-          if (parentId === ROOT_ID) {
-            touch(`${parentId}.${fieldKey}`);
-          }
+          if (parentId === ROOT_ID) touch(`${parentId}.${fieldKey}`);
           const link = (snap as any)[fieldKey];
 
           if (!link || !link.__ref) {
             out[outKey] = link === null ? null : undefined;
             strictOK = false;
             canonicalOK = false;
+            miss({ kind: "root-link-missing", at: path, fieldKey });
             continue;
           }
 
           const childId = link.__ref as string;
           const childOut: any = {};
           out[outKey] = childOut;
-          tasks.push({ t: "ENTITY", id: childId, field, out: childOut });
+          tasks.push({ t: "ENTITY", id: childId, field, out: childOut, path: addPath(path, childId) });
           continue;
         }
 
@@ -711,13 +741,14 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
 
       if (task.t === "ENTITY") {
-        const { id, field, out } = task;
+        const { id, field, out, path } = task;
         const rec = graph.getRecord(id);
         touch(id);
 
         if (!rec) {
           strictOK = false;
           canonicalOK = false;
+          miss({ kind: "entity-missing", at: path, id });
         }
 
         const snap = rec || {};
@@ -734,23 +765,24 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           if (!fieldAppliesToType(f, actualType)) continue;
 
           if (isConnectionField(f)) {
-            tasks.push({ t: "CONNECTION", parentId: id, field: f, out, outKey: f.responseKey });
+            tasks.push({ t: "CONNECTION", parentId: id, field: f, out, outKey: f.responseKey, path: addPath(path, f.responseKey) });
             continue;
           }
 
           if (f.selectionSet && f.selectionSet.length) {
-            const link = (snap as any)[buildFieldKey(f, variables)];
+            const fKey = buildFieldKey(f, variables);
+            const link = (snap as any)[fKey];
 
             // array-of-refs
             if (link && typeof link === "object" && Array.isArray(link.__refs)) {
-              const refs: string[] = link.__refs;
+              const refs: string[] = link.__refs; // no copy
               const arrOut: any[] = new Array(refs.length);
               out[f.responseKey] = arrOut;
 
               for (let j = refs.length - 1; j >= 0; j--) {
                 const childOut: any = {};
                 arrOut[j] = childOut;
-                tasks.push({ t: "ENTITY", id: refs[j], field: f, out: childOut });
+                tasks.push({ t: "ENTITY", id: refs[j], field: f, out: childOut, path: addPath(path, `${f.responseKey}[${j}]`) });
               }
               continue;
             }
@@ -760,13 +792,14 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               out[f.responseKey] = link === null ? null : undefined;
               strictOK = false;
               canonicalOK = false;
+              miss({ kind: "field-link-missing", at: addPath(path, f.responseKey), parentId: id, fieldKey: fKey });
               continue;
             }
 
             const childId = link.__ref as string;
             const childOut: any = {};
             out[f.responseKey] = childOut;
-            tasks.push({ t: "ENTITY", id: childId, field: f, out: childOut });
+            tasks.push({ t: "ENTITY", id: childId, field: f, out: childOut, path: addPath(path, f.responseKey) });
             continue;
           }
 
@@ -775,7 +808,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             out[f.responseKey] = (snap as any).__typename;
           } else {
             const sk = buildFieldKey(f, variables);
-            out[f.responseKey] = (snap as any)[sk];
+            const val = (snap as any)[sk];
+            if (val === undefined && __DEV__) {
+              miss({ kind: "scalar-missing", at: addPath(path, f.responseKey), parentId: id, fieldKey: sk });
+            }
+            out[f.responseKey] = val;
           }
         }
 
@@ -793,7 +830,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
 
       if (task.t === "CONNECTION") {
-        const { parentId, field, out, outKey } = task;
+        const { parentId, field, out, outKey, path } = task;
 
         // compute both keys
         const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
@@ -818,8 +855,17 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const conn: any = { edges: [], pageInfo: {} };
         out[outKey] = conn;
 
-        // Don't fall back; strict means strict, canonical means canonical
         if (!requestedOK) {
+          miss({
+            kind: "connection-missing",
+            at: path,
+            mode: canonical ? "canonical" : "strict",
+            parentId,
+            canonicalKey,
+            strictKey,
+            hasCanonical: !!pageCanonical,
+            hasStrict: !!pageStrict,
+          });
           continue;
         }
 
@@ -834,11 +880,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             if (rk === "pageInfo") {
               const piLink = (page as any).pageInfo;
               if (piLink?.__ref) {
-                tasks.push({ t: "PAGE_INFO", id: piLink.__ref as string, field: pf, out: conn });
+                tasks.push({ t: "PAGE_INFO", id: piLink.__ref as string, field: pf, out: conn, path: addPath(path, "pageInfo") });
               } else {
                 conn.pageInfo = {};
                 strictOK = false;
                 canonicalOK = false;
+                miss({ kind: "pageinfo-missing", at: addPath(path, "pageInfo"), pageId: `${baseKey}.pageInfo` });
               }
               continue;
             }
@@ -847,7 +894,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               const edgesRaw = (page as any).edges;
               let refs: string[] = [];
               if (edgesRaw && typeof edgesRaw === "object" && Array.isArray(edgesRaw.__refs)) {
-                refs = edgesRaw.__refs;
+                refs = edgesRaw.__refs; // no copy
               } else if (Array.isArray(edgesRaw)) {
                 // derive edge record ids based on the *requested* mode's baseKey
                 refs = edgesRaw.map((_: any, i: number) => `${baseKey}.edges.${i}`);
@@ -857,7 +904,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               conn.edges = arr;
 
               for (let i = refs.length - 1; i >= 0; i--) {
-                tasks.push({ t: "EDGE", id: refs[i], idx: i, field: pf, outArr: arr });
+                tasks.push({ t: "EDGE", id: refs[i], idx: i, field: pf, outArr: arr, path: addPath(path, `edges[${i}]`) });
               }
               continue;
             }
@@ -879,20 +926,21 @@ export const createDocuments = (deps: DocumentsDependencies) => {
                 field: pf,
                 out: conn,
                 outKey: pf.responseKey,
+                path: addPath(path, pf.responseKey),
               });
               continue;
             }
 
             const link = (page as any)[buildFieldKey(pf, variables)];
             if (link && typeof link === "object" && Array.isArray(link.__refs)) {
-              const refs: string[] = link.__refs;
+              const refs: string[] = link.__refs; // no copy
               const arrOut: any[] = new Array(refs.length);
               conn[pf.responseKey] = arrOut;
 
               for (let j = refs.length - 1; j >= 0; j--) {
                 const childOut: any = {};
                 arrOut[j] = childOut;
-                tasks.push({ t: "ENTITY", id: refs[j], field: pf, out: childOut });
+                tasks.push({ t: "ENTITY", id: refs[j], field: pf, out: childOut, path: addPath(path, `${pf.responseKey}[${j}]`) });
               }
               continue;
             }
@@ -901,20 +949,21 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               conn[pf.responseKey] = link === null ? null : undefined;
               strictOK = false;
               canonicalOK = false;
+              miss({ kind: "field-link-missing", at: addPath(path, pf.responseKey), parentId: baseKey, fieldKey: buildFieldKey(pf, variables) });
               continue;
             }
 
             const childId = link.__ref as string;
             const childOut: any = {};
             conn[pf.responseKey] = childOut;
-            tasks.push({ t: "ENTITY", id: childId, field: pf, out: childOut });
+            tasks.push({ t: "ENTITY", id: childId, field: pf, out: childOut, path: addPath(path, pf.responseKey) });
           }
         }
         continue;
       }
 
       if (task.t === "PAGE_INFO") {
-        const { id, field, out } = task;
+        const { id, field, out, path } = task;
         touch(id);
         const pi = graph.getRecord(id) || {};
         const piOut: any = {};
@@ -934,7 +983,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
 
       if (task.t === "EDGE") {
-        const { id, idx, field, outArr } = task;
+        const { id, idx, field, outArr, path } = task;
         touch(id);
         const edge = graph.getRecord(id) || {};
         const edgeOut: any = {};
@@ -957,18 +1006,23 @@ export const createDocuments = (deps: DocumentsDependencies) => {
               edgeOut.node = nlink === null ? null : undefined;
               strictOK = false;
               canonicalOK = false;
+              miss({ kind: "edge-node-missing", at: addPath(path, "node"), edgeId: id });
             } else {
               const nid = nlink.__ref as string;
               const nOut: any = {};
               edgeOut.node = nOut;
-              tasks.push({ t: "ENTITY", id: nid, field: nodePlan as PlanField, out: nOut });
+              tasks.push({ t: "ENTITY", id: nid, field: nodePlan as PlanField, out: nOut, path: addPath(path, "node") });
             }
           } else if (!pf.selectionSet) {
             if (pf.fieldName === "__typename") {
               edgeOut[rk] = (edge as any).__typename;
             } else {
               const sk = buildFieldKey(pf, variables);
-              edgeOut[rk] = (edge as any)[sk];
+              const val = (edge as any)[sk];
+              if (val === undefined && __DEV__) {
+                miss({ kind: "scalar-missing", at: addPath(path, rk), parentId: id, fieldKey: sk });
+              }
+              edgeOut[rk] = val;
             }
           }
         }
@@ -981,7 +1035,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     if (!requestedOK) {
       // return deps so watchers can subscribe to future hydration
-      return { data: undefined, deps: ids, source: "none", ok: { strict: strictOK, canonical: canonicalOK } };
+      return {
+        data: undefined,
+        deps: ids,
+        source: "none",
+        ok: { strict: strictOK, canonical: canonicalOK, miss: __DEV__ ? misses : undefined },
+      };
     }
 
     // relink deps and store fresh entry
@@ -999,7 +1058,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       data: outData,
       deps: ids,
       source: canonical ? "canonical" : "strict",
-      ok: { strict: strictOK, canonical: canonicalOK },
+      ok: { strict: strictOK, canonical: canonicalOK, miss: __DEV__ ? misses : undefined },
     };
   };
 

@@ -94,7 +94,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it.only("handles paginated comments with cursor-based navigation", async () => {
+    it("handles paginated comments with cursor-based navigation", async () => {
       const data1 = {
         __typename: "Query",
 
@@ -111,10 +111,22 @@ describe("Cache Policies Behavior", () => {
                 {
                   uuid: "c3",
                   text: "Comment 3",
+
+                  author: {
+                    __typename: "User",
+                    id: "u2",
+                    name: "User 2",
+                  },
                 },
                 {
                   uuid: "c4",
                   text: "Comment 4",
+
+                  author: {
+                    __typename: "User",
+                    id: "u2",
+                    name: "User 2",
+                  },
                 },
               ]),
             },
@@ -138,8 +150,6 @@ describe("Cache Policies Behavior", () => {
         cachePolicy: "network-only",
 
         connectionFn: (data) => {
-          console.log("data", data);
-
           return data.user?.posts?.edges?.[0]?.node?.comments;
         },
       });

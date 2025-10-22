@@ -233,14 +233,22 @@ export const createGraph = (options: GraphOptions = {}) => {
   /**
    * Flush pending onChange notifications immediately (for sync reads after writes)
    */
+  let isFlushing = false;
   const flush = () => {
+    if (isFlushing) {
+      return;
+    }
     if (pendingChanges.size === 0) {
       return;
     }
 
-    onChange(pendingChanges);
-
-    pendingChanges.clear();
+    isFlushing = true;
+    try {
+      onChange(pendingChanges);
+      pendingChanges.clear();
+    } finally {
+      isFlushing = false;
+    }
   };
 
   /**

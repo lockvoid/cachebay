@@ -148,6 +148,22 @@ export function useQuery<TData = any, TVars = any>(
     if (shouldFetchFromNetwork) {
       isFetching.value = true;
 
+
+      // Setup watch for reactive updates
+      watchHandle = client.watchQuery({
+        query: options.query,
+        variables: vars,
+        canonical,
+        onData: (newData) => {
+          data.value = newData as TData;
+          error.value = null;
+        },
+        onError: (err) => {
+          error.value = err;
+        },
+        skipInitialEmit: true, // We already handled initial data
+      });
+
       try {
         const result = await client.executeQuery<TData, TVars>({
           query: options.query,
@@ -166,20 +182,6 @@ export function useQuery<TData = any, TVars = any>(
       }
     }
 
-    // Setup watch for reactive updates
-    watchHandle = client.watchQuery({
-      query: options.query,
-      variables: vars,
-      canonical,
-      onData: (newData) => {
-        data.value = newData as TData;
-        error.value = null;
-      },
-      onError: (err) => {
-        error.value = err;
-      },
-      skipInitialEmit: true, // We already handled initial data
-    });
   };
 
   /**
