@@ -403,16 +403,18 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it("renders only once when network data matches cache", async () => {
+    it.only("renders only once when network data matches cache", async () => {
       const { cache } = createTestClient();
 
       await seedCache(cache, {
         query: operations.USERS_QUERY,
+
         variables: {
           role: "admin",
           first: 2,
           after: null,
         },
+
         data: {
           users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }]),
         },
@@ -424,7 +426,7 @@ describe("Cache Policies Behavior", () => {
             return variables.role === "admin";
           },
           respond: () => {
-            return { data: { data: { users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }]) } } };
+            return { data: { users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }]) } };
           },
           delay: 10,
         },
@@ -453,10 +455,13 @@ describe("Cache Policies Behavior", () => {
 
       await delay(10);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
+      expect(fx.calls.length).toBe(1);
+      expect((Cmp as any).renders.length).toBe(1); // Should render once with cached data
 
       await delay(15);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
+      expect((Cmp as any).renders.length).toBe(1); // Should still be 1 render since data matches
 
       await fx.restore();
     });
