@@ -55,7 +55,7 @@ export function useQuery<TData = any, TVars = any>(
 
   const data = ref<TData | null>(null) as Ref<TData | null>;
   const error = ref<Error | null>(null);
-  const isFetching = ref(true);
+  const isFetching = ref(false);
 
   let watchHandle: { unsubscribe: () => void; refetch: () => void } | null = null;
   let initialExecutionPromise: Promise<void> | null = null;
@@ -81,7 +81,6 @@ export function useQuery<TData = any, TVars = any>(
       return;
     }
 
-    isFetching.value = true;
     error.value = null;
 
     // Determine if we should fetch from network based on policy
@@ -104,7 +103,6 @@ export function useQuery<TData = any, TVars = any>(
       } else {
         error.value = new Error("CacheMiss");
       }
-      isFetching.value = false;
 
       // Setup watch for reactive updates
       watchHandle = client.watchQuery({
@@ -133,14 +131,13 @@ export function useQuery<TData = any, TVars = any>(
       // Return cached data immediately if available, but always fetch
       if (cacheOk && cached?.data !== undefined) {
         data.value = cached.data as TData;
-        isFetching.value = false; // < I think it should be true since networj request still on going
       }
       shouldFetchFromNetwork = true;
     } else if (policy === "cache-first") {
       // Only fetch if cache miss (strict mode check)
       if (cacheOk && cached?.data !== undefined) {
         data.value = cached.data as TData;
-        isFetching.value = false;
+
         shouldFetchFromNetwork = false;
       } else {
         shouldFetchFromNetwork = true;
@@ -149,6 +146,8 @@ export function useQuery<TData = any, TVars = any>(
 
     // Fetch from network if needed
     if (shouldFetchFromNetwork) {
+      isFetching.value = true;
+
       try {
         const result = await client.executeQuery<TData, TVars>({
           query: options.query,

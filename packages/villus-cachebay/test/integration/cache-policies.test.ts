@@ -12,7 +12,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: { users: fixtures.users.buildConnection([{ email: "u1@example.com" }]) } };
           },
-          delay: 20,
+          delay: 10,
         },
       ];
 
@@ -37,12 +37,14 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await tick();
+      await delay(5);
       expect(getEdges(wrapper, "email").length).toBe(0);
       expect(fx.calls.length).toBe(1);
+      expect(Cmp.renders.length).toBe(0);
 
-      await delay(25);
+      await delay(15);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
+      expect(Cmp.renders.length).toBe(1);
 
       await fx.restore();
     });
@@ -56,7 +58,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: { user: fixtures.user({ id: "u1", email: "u1@example.com" }) } };
           },
-          delay: 15,
+          delay: 10,
         },
       ];
 
@@ -79,12 +81,15 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await tick();
+      await delay(5);
       expect(getEdges(wrapper, "email")).toEqual([]);
       expect(fx.calls.length).toBe(1);
+      expect(Cmp.renders.length).toBe(0);
 
-      await delay(20);
+      await delay(10);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
+      expect(fx.calls.length).toBe(1);
+      expect(Cmp.renders.length).toBe(1);
 
       await fx.restore();
     });
@@ -154,9 +159,15 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await delay(12);
+      await delay(5);
+      expect(getEdges(wrapper, "text")).toEqual([]);
+      expect(fx.calls.length).toBe(1);
+      expect(Cmp.renders.length).toBe(0);
 
+      await delay(15);
       expect(getEdges(wrapper, "text")).toEqual(["Comment 3", "Comment 4"]);
+      expect(fx.calls.length).toBe(1);
+      expect(Cmp.renders.length).toBe(1);
 
       await fx.restore();
     });
@@ -172,7 +183,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: { users: fixtures.users.buildConnection([{ email: "tech.user@example.com" }]) } };
           },
-          delay: 30,
+          delay: 10,
         },
       ];
 
@@ -198,17 +209,20 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await tick();
+      await delay(5);
       expect(getEdges(wrapper, "email").length).toBe(0);
       expect(fx.calls.length).toBe(1);
+      expect(Cmp.renders.length).toBe(0);
 
-      await delay(40);
+      await delay(15);
       expect(getEdges(wrapper, "email")).toEqual(["tech.user@example.com"]);
+      expect(fx.calls.length).toBe(1);
+      expect(Cmp.renders.length).toBe(1);
 
       await fx.restore();
     });
 
-    it("returns cached data immediately without network request", async () => {
+    it.only("returns cached data immediately without network request", async () => {
       const { client, cache, fx } = createTestClient();
 
       await seedCache(cache, {
@@ -245,9 +259,10 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await delay(50);
+      await delay(5);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(0);
+      expect(Cmp.renders.length).toBe(0);
 
       await fx.restore();
     });
@@ -403,7 +418,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it.only("renders only once when network data matches cache", async () => {
+    it("renders twice when network data matches cache", async () => {
       const { cache } = createTestClient();
 
       await seedCache(cache, {
@@ -453,15 +468,15 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await delay(10);
+      await delay(5);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
-      expect((Cmp as any).renders.length).toBe(1); // Should render once with cached data
+      expect(Cmp.renders.length).toBe(1); // Should render once with cached data
 
       await delay(15);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
-      expect((Cmp as any).renders.length).toBe(1); // Should still be 1 render since data matches
+      expect(Cmp.renders.length).toBe(2); // isFetching changed
 
       await fx.restore();
     });
