@@ -81,6 +81,8 @@ export function useQuery<TData = any, TVars = any>(
     isFetching.value = true;
     error.value = null;
     
+    let cacheHit = false;
+    
     // Handle cache policies
     if (policy === "cache-first" || policy === "cache-and-network") {
       // Try to get cached data first
@@ -93,6 +95,7 @@ export function useQuery<TData = any, TVars = any>(
       if (cached && cached.data !== undefined) {
         data.value = cached.data as TData;
         isFetching.value = false;
+        cacheHit = true;
       }
     }
     
@@ -107,7 +110,7 @@ export function useQuery<TData = any, TVars = any>(
       if (cached && cached.data !== undefined) {
         data.value = cached.data as TData;
       } else {
-        error.value = new Error("No cached data available");
+        error.value = new Error("CacheOnlyMiss: No cached data available");
       }
       isFetching.value = false;
       
@@ -128,7 +131,11 @@ export function useQuery<TData = any, TVars = any>(
     }
     
     // For network-only, cache-first (miss), and cache-and-network: fetch from network
-    if (policy !== "cache-only") {
+    // Skip network only for cache-first if we had a cache hit
+    const shouldFetchFromNetwork = policy !== "cache-only" && 
+                                   (policy !== "cache-first" || !cacheHit);
+    
+    if (shouldFetchFromNetwork) {
       try {
         const result = await client.executeQuery<TData, TVars>({
           query: options.query,

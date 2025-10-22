@@ -209,23 +209,21 @@ describe("Cache Policies Behavior", () => {
     });
 
     it.only("returns cached data immediately without network request", async () => {
-      const { cache } = createTestClient();
+      const { client, cache, fx } = createTestClient();
 
       await seedCache(cache, {
         query: operations.USERS_QUERY,
 
         variables: {
-          usersRole: "cached",
-          usersFirst: 2,
-          usersAfter: null,
+          role: "cached",
+          first: 2,
+          after: null,
         },
 
         data: {
-          users: fixtures.users.buildConnection([{ email: "u1@example.com" }]),
+          users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }]),
         },
       });
-
-      const { client, fx } = createTestClient({ cache });
 
       const Cmp = createConnectionComponent(operations.USERS_QUERY, {
         cachePolicy: "cache-first",
@@ -237,9 +235,9 @@ describe("Cache Policies Behavior", () => {
 
       const wrapper = mount(Cmp, {
         props: {
-          usersRole: "cached",
-          usersFirst: 2,
-          usersAfter: null,
+          role: "cached",
+          first: 2,
+          after: null,
         },
 
         global: {
@@ -247,8 +245,7 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      console.log(cache.inspect.entityKeys());
-      await delay(10);
+      await delay(50);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(0);
 
