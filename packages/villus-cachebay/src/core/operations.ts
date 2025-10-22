@@ -3,6 +3,7 @@ import type { PlannerInstance } from "./planner";
 import type { QueriesInstance } from "./queries";
 import type { SSRInstance } from "./ssr";
 import { __DEV__ } from "./instrumentation";
+import { StaleResponseError } from "./errors";
 
 /**
  * Types
@@ -131,6 +132,10 @@ export const createOperations = (
   { transport, suspensionTimeout = 1000 }: OperationsOptions,
   { planner, queries, ssr }: OperationsDependencies
 ) => {
+  // Track query epochs to prevent stale responses from notifying watchers
+  // Key: query signature, Value: current epoch number
+  const queryEpochs = new Map<string, number>();
+
   // Suspension tracking: last terminal emit time per query signature
   const lastEmitBySig = new Map<string, number>();
 
@@ -198,6 +203,10 @@ export const createOperations = (
       }
     }
 
+    // Increment epoch for this query to track staleness
+    const currentEpoch = (queryEpochs.get(sig) || 0) + 1;
+    queryEpochs.set(sig, currentEpoch);
+
     // Network fetch
     const context: HttpContext = {
       query,
@@ -208,9 +217,23 @@ export const createOperations = (
 
     try {
       const result = await transport.http(context);
+      
+      // Check if this response is stale (a newer request was made)
+      const isStale = queryEpochs.get(sig) !== currentEpoch;
+      
+      // If stale, return null data with StaleResponseError wrapped in CombinedError
+      if (isStale) {
+        return {
+          data: null,
+          error: new CombinedError({
+            networkError: new StaleResponseError(),
+          }),
+        };
+      }
 
-      // Write successful result to cache
-      if (result.data && !result.error) {
+      // Write result to cache if we have data (even with partial errors)
+      // This matches Relay/Apollo behavior: partial data is still useful
+      if (result.data) {
         queries.writeQuery({
           query,
           variables: vars,
@@ -249,9 +272,10 @@ export const createOperations = (
         // Mark as emitted for suspension tracking
         markEmitted(sig);
         
+        // Return data with error if present (partial data scenario)
         return {
           data: cached.data as TData,
-          error: null,
+          error: result.error || null,
         };
       }
 

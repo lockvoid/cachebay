@@ -2,6 +2,7 @@
 import type { DocumentsInstance } from "./documents";
 import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
+import { CacheMissError } from "./errors";
 import type { DocumentNode } from "graphql";
 
 export type QueriesDependencies = {
@@ -252,7 +253,7 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
         }
       }
     } else if (onError && immediate) {
-      onError(new Error("CacheMiss"));
+      onError(new CacheMissError());
     }
 
     return {

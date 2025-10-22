@@ -950,10 +950,10 @@ describe("Cache Policies Behavior", () => {
       });
 
       await tick();
-      expect(wrapper.text()).toContain("CacheMiss");
+      expect(wrapper.text()).toContain("Cache miss");
       expect(fx.calls.length).toBe(0);
       expect(Cmp.dataUpdates.length).toBe(1);
-      expect(Cmp.errorUpdates.length).toBe(1); // Should have 1 error (CacheMiss)
+      expect(Cmp.errorUpdates.length).toBe(1); // Should have 1 error (CacheMissError)
       expect(Cmp.renders.count).toBe(1);
 
       await fx.restore();

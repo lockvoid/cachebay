@@ -8,6 +8,7 @@ import type { SSRInstance } from "./ssr";
 import type { DocumentNode } from "graphql";
 import type { ClientPlugin, ClientPluginContext, OperationResult } from "villus";
 import type { App } from "vue";
+import { CacheMissError } from "./errors";
 
 type PluginDependencies = {
   planner: PlannerInstance;
@@ -231,7 +232,7 @@ export function createPlugin(options: PluginOptions, deps: PluginDependencies): 
         emit({ data: markRaw(result.data), error: null }, true);
       } else {
         const error = new CombinedError({
-          networkError: Object.assign(new Error("CacheMiss"), { name: "CacheMiss" }),
+          networkError: new CacheMissError(),
           graphqlErrors: [],
           response: undefined,
         });

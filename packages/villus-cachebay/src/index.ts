@@ -25,3 +25,6 @@ export type {
 
 // Public types
 export type { CachebayOptions } from "./core/types";
+
+// Error classes
+export { CacheMissError, StaleResponseError } from "./core/errors";

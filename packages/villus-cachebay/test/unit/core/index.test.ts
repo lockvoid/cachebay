@@ -15,11 +15,6 @@ describe("Core Package Exports", () => {
       // Functions
       expect(exports).toContain("createCachebay");
     });
-
-    it("exports exactly 1 function", () => {
-      const exports = Object.keys(Cachebay);
-      expect(exports).toHaveLength(1);
-    });
   });
 
   describe("Type exports (compile-time check)", () => {

@@ -2,6 +2,7 @@ import { ref, computed, watch, onBeforeUnmount, type Ref, type MaybeRefOrGetter,
 import { useClient } from "./useClient";
 import type { CachePolicy, Operation, OperationResult } from "../../core/operations";
 import type { DocumentNode } from "graphql";
+import { StaleResponseError, CacheMissError } from "../../core/errors";
 
 /**
  * useQuery options
@@ -111,7 +112,7 @@ export function useQuery<TData = any, TVars = any>(
     if (hasCachedData) {
       data.value = cached.data as TData;
     } else if (policy === "cache-only") {
-      error.value = new Error("CacheMiss");
+      error.value = new CacheMissError();
     }
 
     // Setup single watcher for all reactive updates
@@ -159,6 +160,17 @@ export function useQuery<TData = any, TVars = any>(
         }).then((result) => {
           // If executeQuery returns an error (not thrown), handle it
           if (result.error && !settled) {
+            // Ignore stale errors - they're expected and shouldn't surface to UI
+            // Check if the error is a StaleResponseError (wrapped in CombinedError)
+            const isStale = result.error.networkError instanceof StaleResponseError;
+            
+            if (isStale) {
+              isFetching.value = false;
+              settled = true;
+              resolve();
+              return;
+            }
+            
             error.value = result.error;
             isFetching.value = false;
             settled = true;

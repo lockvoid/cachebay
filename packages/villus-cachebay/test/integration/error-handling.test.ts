@@ -48,7 +48,7 @@ describe("Error Handling (epoch & pagination semantics)", () => {
     await fx.restore();
   });
 
-  it.only("drops older errors when newer data arrives (latest-variables win)", async () => {
+  it("drops older errors when newer data arrives (latest-variables win)", async () => {
     const routes = [
       // A: slow error for first=2
       {
