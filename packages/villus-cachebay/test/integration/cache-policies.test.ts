@@ -3,7 +3,7 @@ import { createTestClient, createConnectionComponent, createDetailComponent, see
 
 describe("Cache Policies Behavior", () => {
   describe("network-only policy", () => {
-    it.only("ignores cache and always fetches from network", async () => {
+    it("ignores cache and always fetches from network", async () => {
       const routes = [
         {
           when: ({ variables }) => {
@@ -208,7 +208,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it("returns cached data immediately without network request", async () => {
+    it.only("returns cached data immediately without network request", async () => {
       const { cache } = createTestClient();
 
       await seedCache(cache, {
@@ -221,7 +221,6 @@ describe("Cache Policies Behavior", () => {
         },
 
         data: {
-          __typename: "Query",
           users: fixtures.users.buildConnection([{ email: "u1@example.com" }]),
         },
       });
@@ -248,6 +247,7 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
+      console.log(cache.inspect.entityKeys());
       await delay(10);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(0);

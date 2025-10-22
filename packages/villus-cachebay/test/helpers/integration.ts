@@ -6,15 +6,7 @@ import type { Transport } from "@/src/core/operations";
 import { tick, delay } from "./concurrency";
 
 export async function seedCache(cache, { query, variables, data }) {
-  const internals = cache.__internals;
-
-  if (!internals) {
-    throw new Error("[seedCache] cache.__internals is missing");
-  }
-
-  const { documents } = internals;
-
-  documents.normalizeDocument({ document: query, variables, data });
+  cache.writeQuery({ query, variables, data });
 
   await tick();
 }
