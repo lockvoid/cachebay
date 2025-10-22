@@ -11,8 +11,8 @@ export interface UseMutationReturn<TData = any, TVars = any> {
   data: Ref<TData | null>;
   /** Error if mutation failed */
   error: Ref<Error | null>;
-  /** Loading state */
-  loading: Ref<boolean>;
+  /** Fetching state */
+  isFetching: Ref<boolean>;
   /** Execute the mutation */
   execute: (variables?: TVars) => Promise<OperationResult<TData>>;
 }
@@ -29,13 +29,13 @@ export function useMutation<TData = any, TVars = any>(
   
   const data = ref<TData | null>(null) as Ref<TData | null>;
   const error = ref<Error | null>(null);
-  const loading = ref(false);
+  const isFetching = ref(false);
   
   /**
    * Execute the mutation
    */
   const execute = async (variables?: TVars): Promise<OperationResult<TData>> => {
-    loading.value = true;
+    isFetching.value = true;
     error.value = null;
     
     try {
@@ -59,14 +59,14 @@ export function useMutation<TData = any, TVars = any>(
       error.value = err as Error;
       return errorResult;
     } finally {
-      loading.value = false;
+      isFetching.value = false;
     }
   };
   
   return {
     data,
     error,
-    loading,
+    isFetching,
     execute,
   };
 }

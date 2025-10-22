@@ -45,7 +45,7 @@ describe("useMutation", () => {
     });
 
     expect(typeof mutationResult.execute).toBe("function");
-    expect(mutationResult.loading.value).toBe(false);
+    expect(mutationResult.isFetching.value).toBe(false);
     expect(mutationResult.data.value).toBeNull();
     expect(mutationResult.error.value).toBeNull();
   });
@@ -91,7 +91,7 @@ describe("useMutation", () => {
 
     mockTransport.http = vi.fn().mockImplementation(async () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
-      loadingDuringExecution = mutationResult.loading.value;
+      loadingDuringExecution = mutationResult.isFetching.value;
       return {
         data: { createUser: { id: "1", name: "Alice" } },
         error: null,
@@ -117,17 +117,17 @@ describe("useMutation", () => {
       },
     });
 
-    expect(mutationResult.loading.value).toBe(false);
+    expect(mutationResult.isFetching.value).toBe(false);
 
     const promise = mutationResult.execute({ name: "Alice" });
     await nextTick();
 
-    expect(mutationResult.loading.value).toBe(true);
+    expect(mutationResult.isFetching.value).toBe(true);
 
     await promise;
 
     expect(loadingDuringExecution).toBe(true);
-    expect(mutationResult.loading.value).toBe(false);
+    expect(mutationResult.isFetching.value).toBe(false);
   });
 
   it("handles mutation errors", async () => {

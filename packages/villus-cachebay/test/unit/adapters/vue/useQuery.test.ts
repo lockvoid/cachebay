@@ -52,7 +52,7 @@ describe("useQuery", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(queryResult.data.value).toEqual({ user: { id: "1", name: "Alice" } });
-    expect(queryResult.loading.value).toBe(false);
+    expect(queryResult.isFetching.value).toBe(false);
     expect(queryResult.error.value).toBeNull();
   });
 
@@ -80,7 +80,7 @@ describe("useQuery", () => {
       },
     });
 
-    expect(queryResult.loading.value).toBe(true);
+    expect(queryResult.isFetching.value).toBe(true);
     expect(queryResult.data.value).toBeNull();
   });
 
@@ -119,9 +119,9 @@ describe("useQuery", () => {
     await nextTick();
     await new Promise((resolve) => setTimeout(resolve, 10));
 
-    expect(queryResult.error.value).toBeTruthy();
+    expect(queryResult.error.value).toBeInstanceOf(Error);
     expect(queryResult.data.value).toBeNull();
-    expect(queryResult.loading.value).toBe(false);
+    expect(queryResult.isFetching.value).toBe(false);
   });
 
   it("pauses query when pause is true", async () => {
@@ -153,7 +153,7 @@ describe("useQuery", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(mockTransport.http).not.toHaveBeenCalled();
-    expect(queryResult.loading.value).toBe(false);
+    expect(queryResult.isFetching.value).toBe(false);
   });
 
   it("reacts to reactive pause changes", async () => {

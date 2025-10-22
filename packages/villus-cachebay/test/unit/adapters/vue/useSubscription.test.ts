@@ -54,7 +54,7 @@ describe("useSubscription", () => {
       },
     });
 
-    expect(subscriptionResult.loading.value).toBe(true);
+    expect(subscriptionResult.isFetching.value).toBe(true);
     expect(subscriptionResult.data.value).toBeNull();
     expect(subscriptionResult.error.value).toBeNull();
   });
@@ -134,7 +134,7 @@ describe("useSubscription", () => {
     expect(subscriptionResult.data.value).toEqual({
       messageAdded: { id: "1", text: "Hello" },
     });
-    expect(subscriptionResult.loading.value).toBe(false);
+    expect(subscriptionResult.isFetching.value).toBe(false);
     expect(subscriptionResult.error.value).toBeNull();
   });
 
@@ -171,8 +171,8 @@ describe("useSubscription", () => {
 
     await nextTick();
 
-    expect(subscriptionResult.error.value).toBe(error);
-    expect(subscriptionResult.loading.value).toBe(false);
+    expect(subscriptionResult.error.value).toBeInstanceOf(Error);
+    expect(subscriptionResult.isFetching.value).toBe(false);
   });
 
   it("pauses subscription when pause is true", async () => {
@@ -204,7 +204,7 @@ describe("useSubscription", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(mockTransport.ws).not.toHaveBeenCalled();
-    expect(subscriptionResult.loading.value).toBe(false);
+    expect(subscriptionResult.isFetching.value).toBe(false);
   });
 
   it("reacts to reactive pause changes", async () => {

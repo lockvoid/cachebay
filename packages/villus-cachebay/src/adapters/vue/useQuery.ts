@@ -25,8 +25,8 @@ export interface BaseUseQueryReturn<TData = any> {
   data: Ref<TData | null>;
   /** Error if query failed */
   error: Ref<Error | null>;
-  /** Loading state */
-  loading: Ref<boolean>;
+  /** Fetching state */
+  isFetching: Ref<boolean>;
   /** Refetch the query */
   refetch: () => Promise<void>;
 }
@@ -53,7 +53,7 @@ export function useQuery<TData = any, TVars = any>(
   
   const data = ref<TData | null>(null) as Ref<TData | null>;
   const error = ref<Error | null>(null);
-  const loading = ref(true);
+  const isFetching = ref(true);
   
   let watchHandle: { unsubscribe: () => void; refetch: () => void } | null = null;
   let initialExecutionPromise: Promise<void> | null = null;
@@ -74,11 +74,11 @@ export function useQuery<TData = any, TVars = any>(
     }
     
     if (isPaused) {
-      loading.value = false;
+      isFetching.value = false;
       return;
     }
     
-    loading.value = true;
+    isFetching.value = true;
     error.value = null;
     
     // Handle cache policies
@@ -92,7 +92,7 @@ export function useQuery<TData = any, TVars = any>(
       
       if (cached && cached.data !== undefined) {
         data.value = cached.data as TData;
-        loading.value = false;
+        isFetching.value = false;
       }
     }
     
@@ -109,7 +109,7 @@ export function useQuery<TData = any, TVars = any>(
       } else {
         error.value = new Error("No cached data available");
       }
-      loading.value = false;
+      isFetching.value = false;
       
       // Setup watch for reactive updates
       watchHandle = client.watchQuery({
@@ -143,7 +143,7 @@ export function useQuery<TData = any, TVars = any>(
       } catch (err) {
         error.value = err as Error;
       } finally {
-        loading.value = false;
+        isFetching.value = false;
       }
     }
     
@@ -196,7 +196,7 @@ export function useQuery<TData = any, TVars = any>(
   const api: BaseUseQueryReturn<TData> = {
     data,
     error,
-    loading,
+    isFetching,
     refetch,
   };
   

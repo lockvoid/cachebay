@@ -23,8 +23,8 @@ export interface UseSubscriptionReturn<TData = any> {
   data: Ref<TData | null>;
   /** Error if subscription failed */
   error: Ref<Error | null>;
-  /** Loading state (waiting for first data) */
-  loading: Ref<boolean>;
+  /** Fetching state (waiting for first data) */
+  isFetching: Ref<boolean>;
 }
 
 /**
@@ -39,7 +39,7 @@ export function useSubscription<TData = any, TVars = any>(
   
   const data = ref<TData | null>(null) as Ref<TData | null>;
   const error = ref<Error | null>(null);
-  const loading = ref(true);
+  const isFetching = ref(true);
   
   let unsubscribe: (() => void) | null = null;
   
@@ -57,11 +57,11 @@ export function useSubscription<TData = any, TVars = any>(
     }
     
     if (isPaused) {
-      loading.value = false;
+      isFetching.value = false;
       return;
     }
     
-    loading.value = true;
+    isFetching.value = true;
     error.value = null;
     
     try {
@@ -78,21 +78,21 @@ export function useSubscription<TData = any, TVars = any>(
             data.value = result.data;
             error.value = null;
           }
-          loading.value = false;
+          isFetching.value = false;
         },
         error: (err) => {
           error.value = err;
-          loading.value = false;
+          isFetching.value = false;
         },
         complete: () => {
-          loading.value = false;
+          isFetching.value = false;
         },
       });
       
       unsubscribe = () => subscription.unsubscribe();
     } catch (err) {
       error.value = err as Error;
-      loading.value = false;
+      isFetching.value = false;
     }
   };
   
@@ -116,6 +116,6 @@ export function useSubscription<TData = any, TVars = any>(
   return {
     data,
     error,
-    loading,
+    isFetching,
   };
 }

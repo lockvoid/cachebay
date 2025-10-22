@@ -159,7 +159,7 @@ export const createConnectionComponent = (
         return attrs;
       });
 
-      const { data, error, loading } = useQuery({ query, variables, cachePolicy });
+      const { data, error, isFetching } = useQuery({ query, variables, cachePolicy });
 
       const connection = computed(() => {
         if (!data.value) {
@@ -183,7 +183,7 @@ export const createConnectionComponent = (
       }, { immediate: true });
 
       return () => {
-        if (!connection.value && loading.value) {
+        if (!connection.value && isFetching.value) {
           return h("div", { class: "loading" }, "Loading...");
         }
 
@@ -338,7 +338,7 @@ export const createDetailComponent = (
         return attrs;
       });
 
-      const { data, loading, error } = useQuery({ query, variables, cachePolicy });
+      const { data, isFetching, error } = useQuery({ query, variables, cachePolicy });
 
       const detail = computed(() => {
         if (!data.value) {
@@ -363,7 +363,7 @@ export const createDetailComponent = (
       }, { immediate: true });
 
       return () => {
-        if (!detail.value && loading.value) {
+        if (!detail.value && isFetching.value) {
           return h("div", { class: "loading" }, "Loading...");
         }
 
