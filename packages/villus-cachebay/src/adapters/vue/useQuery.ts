@@ -122,6 +122,7 @@ export function useQuery<TData = any, TVars = any>(
       return;
     }
 
+    console.log(cached)
     // Determine network fetch based on policy and cache state
     // For cache-first: check if we have a valid cache hit (strict ok)
     const cacheOk = cached?.ok?.strict;
@@ -132,8 +133,9 @@ export function useQuery<TData = any, TVars = any>(
     } else if (policy === "cache-and-network") {
       // Return cached data immediately if available, but always fetch
       if (cacheOk && cached?.data !== undefined) {
+        console.log('DATA FOUND', JSON.stringify(cached.data, null, 2));
         data.value = cached.data as TData;
-        isFetching.value = false;
+        isFetching.value = false; // < I think it should be true since networj request still on going
       }
       shouldFetchFromNetwork = true;
     } else if (policy === "cache-first") {

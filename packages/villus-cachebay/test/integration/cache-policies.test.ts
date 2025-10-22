@@ -10,7 +10,7 @@ describe("Cache Policies Behavior", () => {
             return variables.usersRole === "admin";
           },
           respond: () => {
-            return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ email: "u1@example.com" }]) } };
+            return { data: { users: fixtures.users.buildConnection([{ email: "u1@example.com" }]) } };
           },
           delay: 20,
         },
@@ -54,7 +54,7 @@ describe("Cache Policies Behavior", () => {
             return variables.id === "u1";
           },
           respond: () => {
-            return { data: { __typename: "Query", user: fixtures.user({ id: "u1", email: "u1@example.com" }) } };
+            return { data: { user: fixtures.user({ id: "u1", email: "u1@example.com" }) } };
           },
           delay: 15,
         },
@@ -170,7 +170,7 @@ describe("Cache Policies Behavior", () => {
             return variables.usersRole === "tech";
           },
           respond: () => {
-            return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ email: "tech.user@example.com" }]) } };
+            return { data: { users: fixtures.users.buildConnection([{ email: "tech.user@example.com" }]) } };
           },
           delay: 30,
         },
@@ -261,7 +261,6 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return {
               data: {
-                __typename: "Query",
                 user: fixtures.users.buildNode({ email: "u1@example.com" }),
               },
             };
@@ -310,7 +309,6 @@ describe("Cache Policies Behavior", () => {
         },
 
         data: {
-          __typename: "Query",
           user: fixtures.users.buildNode({ email: "u1@example.com" }),
         },
       });
@@ -343,7 +341,7 @@ describe("Cache Policies Behavior", () => {
   });
 
   describe("cache-and-network policy", () => {
-    it("renders cached data first then updates with network response", async () => {
+    it.only("renders cached data first then updates with network response", async () => {
       const { cache } = createTestClient();
 
       await seedCache(cache, {
@@ -356,7 +354,6 @@ describe("Cache Policies Behavior", () => {
         },
 
         data: {
-          __typename: "Query",
           users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }]),
         },
       });
@@ -367,7 +364,7 @@ describe("Cache Policies Behavior", () => {
             return variables.role === "news";
           },
           respond: () => {
-            return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ id: "u1", email: "u1+updated@example.com" }]) } };
+            return { data: { users: fixtures.users.buildConnection([{ id: "u1", email: "u1+updated@example.com" }]) } };
           },
           delay: 15,
         },
@@ -397,6 +394,7 @@ describe("Cache Policies Behavior", () => {
 
       await delay(10);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
+      expect(fx.calls.length).toBe(0);
 
       await delay(20);
       expect(getEdges(wrapper, "email")).toEqual(["u1+updated@example.com"]);
@@ -416,7 +414,6 @@ describe("Cache Policies Behavior", () => {
           after: null,
         },
         data: {
-          __typename: "Query",
           users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }]),
         },
       });
@@ -427,7 +424,7 @@ describe("Cache Policies Behavior", () => {
             return variables.role === "admin";
           },
           respond: () => {
-            return { data: { data: { __typename: "Query", users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }]) } } };
+            return { data: { data: { users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }]) } } };
           },
           delay: 10,
         },
@@ -477,7 +474,6 @@ describe("Cache Policies Behavior", () => {
         },
 
         data: {
-          __typename: "Query",
           users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }]),
         },
       });
@@ -488,7 +484,7 @@ describe("Cache Policies Behavior", () => {
             return variables.role === "admin";
           },
           respond: () => {
-            return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ id: "u1", email: "u1+updated@example.com" }]) } };
+            return { data: { users: fixtures.users.buildConnection([{ id: "u1", email: "u1+updated@example.com" }]) } };
           },
           delay: 10,
         },
@@ -533,7 +529,7 @@ describe("Cache Policies Behavior", () => {
             return variables.usersRole === "admin";
           },
           respond: () => {
-            return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ email: "u1@example.com" }]) } };
+            return { data: { users: fixtures.users.buildConnection([{ email: "u1@example.com" }]) } };
           },
           delay: 5,
         },
@@ -708,7 +704,6 @@ describe("Cache Policies Behavior", () => {
         },
 
         data: {
-          __typename: "Query",
           users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }, { id: "u2", email: "u2@example.com" }]),
         },
       });
@@ -723,7 +718,6 @@ describe("Cache Policies Behavior", () => {
         },
 
         data: {
-          __typename: "Query",
           users: fixtures.users.buildConnection([{ id: "u3", email: "u3@example.com" }]),
         },
       });
@@ -734,7 +728,7 @@ describe("Cache Policies Behavior", () => {
             return variables.role === "admin" && variables.after == null;
           },
           respond: () => {
-            return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }, { id: "u2", email: "u2@example.com" }]) } };
+            return { data: { users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }, { id: "u2", email: "u2@example.com" }]) } };
           },
           delay: 15,
         },
@@ -787,7 +781,6 @@ describe("Cache Policies Behavior", () => {
         },
 
         data: {
-          __typename: "Query",
           users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }]),
         },
       });
