@@ -1,17 +1,27 @@
-// Cachebay for Villus — compact, human-friendly cache with Relay support.
-// Perf: AST/doc caching, Relay view syncing, weak caches, microtask batching.
+// Cachebay — Framework-agnostic GraphQL cache with Relay support
+// Perf: AST/doc caching, Relay view syncing, weak caches, microtask batching
 
-// Public entry for consumers.
+// Core cache client (framework-agnostic)
 export { createCache } from "./core/client";
 export type { CachebayInstance } from "./core/client";
 
-// Vue composables
-export { useCache } from "./composables/useCache";
-export { useFragment } from "./composables/useFragment";
-export type { UseFragmentOptions } from "./composables/useFragment";
-
-// Fragment operations
+// Cache operations types
 export type { ReadFragmentArgs, WriteFragmentArgs } from "./core/fragments";
+export type { ReadQueryArgs, WriteQueryArgs } from "./core/queries";
 
-// Public types + helpers for user-land
-export * from "./core/types";
+// Operations types (for transport implementation)
+export type { 
+  Operation,
+  OperationResult,
+  CachePolicy,
+  Transport,
+  HttpTransport,
+  WsTransport,
+  HttpContext,
+  WsContext,
+  ObservableLike,
+  ObserverLike,
+} from "./core/operations";
+
+// Public types
+export type { CachebayOptions } from "./core/types";

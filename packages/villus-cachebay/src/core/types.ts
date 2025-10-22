@@ -113,4 +113,6 @@ export type CachebayOptions = {
   hydrationTimeout?: number;
   /** Timeout in ms for Suspense result caching (default: 1000) */
   suspensionTimeout?: number;
+  /** Transport layer for network operations (http and ws) - REQUIRED */
+  transport: import("./operations").Transport;
 };

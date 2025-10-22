@@ -6,17 +6,15 @@ import { createFragments } from "./fragments";
 import { createGraph } from "./graph";
 import { createOptimistic } from "./optimistic";
 import { createPlanner } from "./planner";
-import { createPlugin, provideCachebay } from "./plugin";
 import { createQueries } from "./queries";
+import { createOperations } from "./operations";
 import type { CachebayOptions } from "./types";
-import type { ClientPlugin } from "villus";
-import type { App } from "vue";
 
 /**
  * Main Cachebay instance type
- * Extends Villus ClientPlugin with cache-specific methods
+ * Framework-agnostic cache client
  */
-export type CachebayInstance = ClientPlugin & {
+export type CachebayInstance = {
   /**
    * Serialize cache state for SSR
    * @returns Serializable snapshot of the cache
@@ -88,15 +86,24 @@ export type CachebayInstance = ClientPlugin & {
   modifyOptimistic: ReturnType<typeof createOptimistic>["modifyOptimistic"];
 
   /**
+   * Execute a GraphQL query (always hits network, writes to cache)
+   */
+  executeQuery: ReturnType<typeof createOperations>["executeQuery"];
+
+  /**
+   * Execute a GraphQL mutation (always hits network, writes to cache)
+   */
+  executeMutation: ReturnType<typeof createOperations>["executeMutation"];
+
+  /**
+   * Execute a GraphQL subscription (returns observable, writes to cache)
+   */
+  executeSubscription: ReturnType<typeof createOperations>["executeSubscription"];
+
+  /**
    * Debug inspection API for cache internals
    */
   inspect: ReturnType<typeof createInspect>;
-
-  /**
-   * Vue plugin install method
-   * @param app - Vue application instance
-   */
-  install: (app: App) => void;
 
   /**
    * Internal APIs for testing and debugging
@@ -109,6 +116,7 @@ export type CachebayInstance = ClientPlugin & {
     documents: ReturnType<typeof createDocuments>;
     fragments: ReturnType<typeof createFragments>;
     queries: ReturnType<typeof createQueries>;
+    operations: ReturnType<typeof createOperations>;
     ssr: ReturnType<typeof createSSR>;
     inspect: ReturnType<typeof createInspect>;
   };
@@ -119,7 +127,35 @@ export type CachebayInstance = ClientPlugin & {
  * @param options - Configuration options for the cache
  * @returns Configured cache instance with Villus plugin interface
  */
-export function createCache(options: CachebayOptions = {}): CachebayInstance {
+export function createCache(options: CachebayOptions): CachebayInstance {
+  // Validate transport configuration
+  if (!options.transport) {
+    throw new Error(
+      "Cachebay: 'transport' is required. Please provide a transport object with 'http' function.\n" +
+      "Example:\n" +
+      "  createCache({\n" +
+      "    transport: {\n" +
+      "      http: async (context) => { /* HTTP implementation */ },\n" +
+      "      ws: async (context) => { /* WebSocket implementation (optional) */ }\n" +
+      "    }\n" +
+      "  })"
+    );
+  }
+
+  if (typeof options.transport.http !== "function") {
+    throw new Error(
+      "Cachebay: 'transport.http' must be a function.\n" +
+      "Expected: async (context: HttpContext) => Promise<OperationResult>"
+    );
+  }
+
+  if (options.transport.ws && typeof options.transport.ws !== "function") {
+    throw new Error(
+      "Cachebay: 'transport.ws' must be a function if provided.\n" +
+      "Expected: async (context: WsContext) => Promise<ObservableLike<OperationResult>>"
+    );
+  }
+
   // Create planner first (no dependencies)
   const planner = createPlanner();
 
@@ -147,42 +183,48 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
   fragments = createFragments({ graph, planner, documents });
   queries = createQueries({ graph, planner, documents });
 
+  // Operations (always created since transport is required)
+  const operations = createOperations(
+    { transport: options.transport },
+    { planner, queries }
+  );
+
   // Features
   const inspect = createInspect({ graph, optimistic });
 
-  // Villus plugin (ClientPlugin)
-  const plugin = createPlugin({ suspensionTimeout: options.suspensionTimeout }, { planner, queries, ssr });
-
-  // Vue install
-  (plugin as any).install = (app: App) => {
-    provideCachebay(app, plugin);
-  };
+  // Create cache instance
+  const cache = {} as CachebayInstance;
 
   // Public identity
-  (plugin as any).identify = graph.identify;
+  cache.identify = graph.identify;
 
   // Fragments API
-  (plugin as any).readFragment = fragments.readFragment;
-  (plugin as any).writeFragment = fragments.writeFragment;
-  (plugin as any).watchFragment = fragments.watchFragment;
+  cache.readFragment = fragments.readFragment;
+  cache.writeFragment = fragments.writeFragment;
+  cache.watchFragment = fragments.watchFragment;
 
   // Queries API
-  (plugin as any).readQuery = queries.readQuery;
-  (plugin as any).writeQuery = queries.writeQuery;
-  (plugin as any).watchQuery = queries.watchQuery;
+  cache.readQuery = queries.readQuery;
+  cache.writeQuery = queries.writeQuery;
+  cache.watchQuery = queries.watchQuery;
 
   // Optimistic API
-  (plugin as any).modifyOptimistic = optimistic.modifyOptimistic;
+  cache.modifyOptimistic = optimistic.modifyOptimistic;
+
+  // Operations API
+  cache.executeQuery = operations.executeQuery;
+  cache.executeMutation = operations.executeMutation;
+  cache.executeSubscription = operations.executeSubscription;
 
   // Inspect (debug)
-  (plugin as any).inspect = inspect;
+  cache.inspect = inspect;
 
   // SSR API
-  (plugin as any).dehydrate = ssr.dehydrate;
-  (plugin as any).hydrate = ssr.hydrate;
+  cache.dehydrate = ssr.dehydrate;
+  cache.hydrate = ssr.hydrate;
 
   // Internals for tests
-  (plugin as any).__internals = {
+  cache.__internals = {
     graph,
     optimistic,
     planner,
@@ -190,9 +232,10 @@ export function createCache(options: CachebayOptions = {}): CachebayInstance {
     documents,
     fragments,
     queries,
+    operations,
     ssr,
     inspect,
   };
 
-  return plugin as CachebayInstance;
+  return cache;
 }

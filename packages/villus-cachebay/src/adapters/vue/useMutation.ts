@@ -1,0 +1,72 @@
+import { ref, type Ref } from "vue";
+import { useClient } from "./useClient";
+import type { Operation, OperationResult } from "../../core/operations";
+import type { DocumentNode } from "graphql";
+
+/**
+ * useMutation return value
+ */
+export interface UseMutationReturn<TData = any, TVars = any> {
+  /** Mutation data (reactive) */
+  data: Ref<TData | null>;
+  /** Error if mutation failed */
+  error: Ref<Error | null>;
+  /** Loading state */
+  loading: Ref<boolean>;
+  /** Execute the mutation */
+  execute: (variables?: TVars) => Promise<OperationResult<TData>>;
+}
+
+/**
+ * Reactive GraphQL mutation hook
+ * @param mutation - GraphQL mutation document
+ * @returns Mutation state and execute function
+ */
+export function useMutation<TData = any, TVars = any>(
+  mutation: DocumentNode | string
+): UseMutationReturn<TData, TVars> {
+  const client = useClient();
+  
+  const data = ref<TData | null>(null) as Ref<TData | null>;
+  const error = ref<Error | null>(null);
+  const loading = ref(false);
+  
+  /**
+   * Execute the mutation
+   */
+  const execute = async (variables?: TVars): Promise<OperationResult<TData>> => {
+    loading.value = true;
+    error.value = null;
+    
+    try {
+      const result = await client.executeMutation<TData, TVars>({
+        query: mutation,
+        variables: variables || ({} as TVars),
+      });
+      
+      if (result.error) {
+        error.value = result.error;
+      } else {
+        data.value = result.data;
+      }
+      
+      return result;
+    } catch (err) {
+      const errorResult = {
+        data: null,
+        error: err as Error,
+      };
+      error.value = err as Error;
+      return errorResult;
+    } finally {
+      loading.value = false;
+    }
+  };
+  
+  return {
+    data,
+    error,
+    loading,
+    execute,
+  };
+}

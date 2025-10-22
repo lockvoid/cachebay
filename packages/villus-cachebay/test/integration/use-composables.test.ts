@@ -1,7 +1,7 @@
 import { mount } from "@vue/test-utils";
 import { defineComponent, h } from "vue";
-import { useCache } from "@/src/composables/useCache";
-import { useFragment } from "@/src/composables/useFragment";
+import { useCache } from "@/src/adapters/vue/useClient";
+import { useFragment } from "@/src/adapters/vue/useFragment";
 import { createTestClient, operations, tick, fixtures, getEdges } from "@/test/helpers";
 
 describe("Composables", () => {

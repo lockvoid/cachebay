@@ -1,5 +1,5 @@
 import { unref, watch, readonly, type Ref, shallowRef, onScopeDispose } from "vue";
-import { useCache } from "./useCache";
+import { useCache } from "./useClient";
 
 /**
  * Options for useFragment composable

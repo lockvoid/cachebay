@@ -1,7 +1,7 @@
 import { mount } from "@vue/test-utils";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { defineComponent, h, ref, nextTick } from "vue";
-import { useFragment } from "@/src/composables/useFragment";
+import { useFragment } from "@/src/adapters/vue/useFragment";
 import { createCache } from "@/src/core/client";
 import { provideCachebay } from "@/src/core/plugin";
 import { compilePlan } from "@/src/compiler";
