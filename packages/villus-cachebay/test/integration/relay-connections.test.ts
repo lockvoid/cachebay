@@ -4,11 +4,12 @@ import { createTestClient, createConnectionComponent, seedCache, getPageInfo, ge
 
 describe("Relay connections", () => {
   describe("cache-first", () => {
-    it.only("appends new pages at end and updates pageInfo from tail cursor (cache-first)", async () => {
+    it("appends new pages at end and updates pageInfo from tail cursor (cache-first)", async () => {
       const routes = [
         {
           when: ({ variables }) => {
-            return !variables.after && variables.first === 2;
+            const match = !variables.after && variables.first === 2;
+            return match;
           },
 
           respond: () => {
@@ -23,7 +24,8 @@ describe("Relay connections", () => {
 
         {
           when: ({ variables }) => {
-            return variables.after === "p2" && variables.first === 2;
+            const match = variables.after === "p2" && variables.first === 2;
+            return match;
           },
 
           respond: () => {

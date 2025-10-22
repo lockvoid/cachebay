@@ -92,24 +92,41 @@ export function useQuery<TData = any, TVars = any>(
       canonical,
     });
 
-    const cacheOk = canonical ? cached?.ok?.canonical : cached?.ok?.strict;
-    const hasCachedData = cacheOk && cached?.data !== undefined;
+    const isCanonical = cached?.ok?.canonical ?? false;
+    const isStrict = cached?.ok?.strict ?? false;
 
     // Determine if we should fetch from network based on policy
     let shouldFetchFromNetwork = false;
+    let shouldShowCachedData = false;
 
     if (policy === "network-only") {
       shouldFetchFromNetwork = true;
+      shouldShowCachedData = false;
     } else if (policy === "cache-and-network") {
       shouldFetchFromNetwork = true;
+      shouldShowCachedData = isCanonical;
     } else if (policy === "cache-first") {
-      shouldFetchFromNetwork = !hasCachedData;
+      // cache-first logic:
+      // 1. canonical: true + strict: true → show data, don't send request
+      // 2. canonical: true + strict: false → show data, send request (partial, need completion)
+      // 3. canonical: false + strict: false → don't show data, send request
+      if (isCanonical && isStrict) {
+        shouldShowCachedData = true;
+        shouldFetchFromNetwork = false;
+      } else if (isCanonical && !isStrict) {
+        shouldShowCachedData = true;
+        shouldFetchFromNetwork = true;
+      } else {
+        shouldShowCachedData = false;
+        shouldFetchFromNetwork = true;
+      }
     } else if (policy === "cache-only") {
       shouldFetchFromNetwork = false;
+      shouldShowCachedData = isCanonical;
     }
 
-    // Set initial data from cache if available
-    if (hasCachedData) {
+    // Set initial data from cache if we should show it
+    if (shouldShowCachedData) {
       data.value = cached.data as TData;
     } else if (policy === "cache-only") {
       error.value = new CacheMissError();
@@ -143,8 +160,8 @@ export function useQuery<TData = any, TVars = any>(
         immediate: false, // We already handled initial cache data above
       });
 
-      // If we already have data and don't need network, resolve immediately
-      if (hasCachedData && !shouldFetchFromNetwork) {
+      // If we're showing cached data and don't need network, resolve immediately
+      if (shouldShowCachedData && !shouldFetchFromNetwork) {
         settled = true;
         resolve();
         return;
@@ -186,8 +203,8 @@ export function useQuery<TData = any, TVars = any>(
             resolve();
           }
         });
-      } else if (!hasCachedData) {
-        // cache-only with no data - resolve immediately with error
+      } else if (!shouldShowCachedData) {
+        // No cached data to show and not fetching - resolve immediately
         settled = true;
         resolve();
       }
