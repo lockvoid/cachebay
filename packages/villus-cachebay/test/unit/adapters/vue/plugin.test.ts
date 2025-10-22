@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { createApp } from "vue";
 import { createCache } from "@/src/core/client";
 import { createCachebayPlugin, provideCachebay } from "@/src/adapters/vue/plugin";
-import { CACHEBAY_KEY } from "@/src/core/constants";
+import { CACHEBAY_KEY } from "@/src/adapters/vue/constants";
 import type { Transport } from "@/src/core/operations";
 
 describe("Vue Plugin", () => {

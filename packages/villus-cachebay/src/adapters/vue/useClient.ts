@@ -1,5 +1,5 @@
 import { inject } from "vue";
-import { CACHEBAY_KEY } from "../../core/constants";
+import { CACHEBAY_KEY } from "./constants";
 import type { CachebayInstance } from "../../core/client";
 
 /**

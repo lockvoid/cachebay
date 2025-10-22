@@ -13,3 +13,5 @@ export { useMutation } from './useMutation';
 export type { UseMutationReturn } from './useMutation';
 export { useSubscription } from './useSubscription';
 export type { UseSubscriptionOptions, UseSubscriptionReturn } from './useSubscription';
+export { useFragment } from './useFragment';
+export type { UseFragmentOptions } from './useFragment';

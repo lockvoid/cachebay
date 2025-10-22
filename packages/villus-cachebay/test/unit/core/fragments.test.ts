@@ -279,7 +279,6 @@ describe("Fragments (documents-powered)", () => {
         onData: (d) => (last = d),
       });
 
-      console.log("last", last);
       await tick();
 
       expect(last.comments.pageInfo).toEqual({

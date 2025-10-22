@@ -1,6 +1,6 @@
 import type { App, Plugin } from "vue";
 import type { CachebayInstance } from "../../core/client";
-import { CACHEBAY_KEY } from "../../core/constants";
+import { CACHEBAY_KEY } from "./constants";
 
 /**
  * Vue plugin options

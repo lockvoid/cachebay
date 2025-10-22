@@ -6,3 +6,4 @@ export { useClient } from './useClient';
 export { useQuery } from './useQuery';
 export { useMutation } from './useMutation';
 export { useSubscription } from './useSubscription';
+export { useFragment } from './useFragment';
