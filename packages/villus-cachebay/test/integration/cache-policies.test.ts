@@ -208,7 +208,7 @@ describe("Cache Policies Behavior", () => {
       await fx.restore();
     });
 
-    it.only("returns cached data immediately without network request", async () => {
+    it("returns cached data immediately without network request", async () => {
       const { client, cache, fx } = createTestClient();
 
       await seedCache(cache, {
@@ -350,9 +350,9 @@ describe("Cache Policies Behavior", () => {
         query: operations.USERS_QUERY,
 
         variables: {
-          usersRole: "news",
-          usersFirst: 2,
-          usersAfter: null,
+          role: "news",
+          first: 2,
+          after: null,
         },
 
         data: {
@@ -364,7 +364,7 @@ describe("Cache Policies Behavior", () => {
       const routes = [
         {
           when: ({ variables }) => {
-            return variables.usersRole === "news";
+            return variables.role === "news";
           },
           respond: () => {
             return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ id: "u1", email: "u1+updated@example.com" }]) } };
@@ -385,9 +385,9 @@ describe("Cache Policies Behavior", () => {
 
       const wrapper = mount(Cmp, {
         props: {
-          usersRole: "news",
-          usersFirst: 2,
-          usersAfter: null,
+          role: "news",
+          first: 2,
+          after: null,
         },
 
         global: {
@@ -411,9 +411,9 @@ describe("Cache Policies Behavior", () => {
       await seedCache(cache, {
         query: operations.USERS_QUERY,
         variables: {
-          usersRole: "admin",
-          usersFirst: 2,
-          usersAfter: null,
+          role: "admin",
+          first: 2,
+          after: null,
         },
         data: {
           __typename: "Query",
@@ -424,7 +424,7 @@ describe("Cache Policies Behavior", () => {
       const routes = [
         {
           when: ({ variables }) => {
-            return variables.usersRole === "admin";
+            return variables.role === "admin";
           },
           respond: () => {
             return { data: { data: { __typename: "Query", users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }]) } } };
@@ -445,9 +445,9 @@ describe("Cache Policies Behavior", () => {
 
       const wrapper = mount(Cmp, {
         props: {
-          usersRole: "admin",
-          usersFirst: 2,
-          usersAfter: null,
+          role: "admin",
+          first: 2,
+          after: null,
         },
         global: {
           plugins: [client],
@@ -471,9 +471,9 @@ describe("Cache Policies Behavior", () => {
         query: operations.USERS_QUERY,
 
         variables: {
-          usersRole: "admin",
-          usersFirst: 2,
-          usersAfter: null,
+          role: "admin",
+          first: 2,
+          after: null,
         },
 
         data: {
@@ -485,7 +485,7 @@ describe("Cache Policies Behavior", () => {
       const routes = [
         {
           when: ({ variables }) => {
-            return variables.usersRole === "admin";
+            return variables.role === "admin";
           },
           respond: () => {
             return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ id: "u1", email: "u1+updated@example.com" }]) } };
@@ -506,9 +506,9 @@ describe("Cache Policies Behavior", () => {
 
       const wrapper = mount(Cmp, {
         props: {
-          usersRole: "admin",
-          usersFirst: 2,
-          usersAfter: null,
+          role: "admin",
+          first: 2,
+          after: null,
         },
         global: {
           plugins: [client],
@@ -702,9 +702,9 @@ describe("Cache Policies Behavior", () => {
         query: operations.USERS_QUERY,
 
         variables: {
-          usersRole: "admin",
-          usersFirst: 2,
-          usersAfter: null,
+          role: "admin",
+          first: 2,
+          after: null,
         },
 
         data: {
@@ -717,9 +717,9 @@ describe("Cache Policies Behavior", () => {
         query: operations.USERS_QUERY,
 
         variables: {
-          usersRole: "admin",
-          usersFirst: 2,
-          usersAfter: "u2",
+          role: "admin",
+          first: 2,
+          after: "u2",
         },
 
         data: {
@@ -731,7 +731,7 @@ describe("Cache Policies Behavior", () => {
       const routes = [
         {
           when: ({ variables }) => {
-            return variables.usersRole === "admin" && variables.usersAfter == null;
+            return variables.role === "admin" && variables.after == null;
           },
           respond: () => {
             return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }, { id: "u2", email: "u2@example.com" }]) } };
@@ -752,9 +752,9 @@ describe("Cache Policies Behavior", () => {
 
       const wrapper = mount(Cmp, {
         props: {
-          usersRole: "admin",
-          usersFirst: 2,
-          usersAfter: null,
+          role: "admin",
+          first: 2,
+          after: null,
         },
 
         global: {
@@ -864,9 +864,9 @@ describe("Cache Policies Behavior", () => {
 
       const wrapper = mount(Cmp, {
         props: {
-          usersRole: "admin",
-          usersFirst: 2,
-          usersAfter: null,
+          role: "admin",
+          first: 2,
+          after: null,
         },
 
         global: {
