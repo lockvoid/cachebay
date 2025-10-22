@@ -1,9 +1,10 @@
 import { mount } from "@vue/test-utils";
 import { defineComponent, h, computed, watch, Suspense } from "vue";
 import { createTestClient, createConnectionComponent, getEdges, fixtures, operations, delay, tick } from "@/test/helpers";
+import { useQuery } from "@/src/adapters/vue/useQuery";
 
 describe("Edge cases", () => {
-  it.only("reflects in-place entity updates across all edges (no union dedup)", async () => {
+  it("reflects in-place entity updates across all edges (no union dedup)", async () => {
     const PostList = createConnectionComponent(operations.POSTS_QUERY, {
       cachePolicy: "cache-and-network",
       connectionFn: (data: any) => data.posts,
@@ -82,7 +83,7 @@ describe("Edge cases", () => {
     await fx.restore();
   });
 
-  it.only("renders concrete fragment implementations without phantom keys", async () => {
+  it("renders concrete fragment implementations without phantom keys", async () => {
     const { cache, client } = createTestClient();
 
     cache.writeFragment({
@@ -111,7 +112,7 @@ describe("Edge cases", () => {
     expect(userFragment?.email).toBe("u2@example.com");
   });
 
-  it.only("hides deleted entities from live fragment readers", async () => {
+  it("hides deleted entities from live fragment readers", async () => {
     const { cache, client } = createTestClient();
 
     cache.writeFragment({
@@ -155,10 +156,9 @@ describe("Edge cases", () => {
       fragment: operations.POST_FRAGMENT,
     });
 
-    expect(post1.title).toBeUndefined();
-    expect(post2.title).toBe("Post 2");
+    expect(post1).toBeUndefined(); // Deleted entity returns undefined
+    expect(post2?.title).toBe("Post 2");
   });
-
 
   it("sends two requests even if the root the same", async () => {
     const routes = [
@@ -168,6 +168,17 @@ describe("Edge cases", () => {
         },
 
         respond: () => {
+          const connection = fixtures.posts.buildConnection([
+            { id: "pa1", title: "A1", author: { id: "1", email: "u1@example.com", __typename: "User" } },
+            { id: "pa2", title: "A2", author: { id: "1", email: "u1@example.com", __typename: "User" } }
+          ]);
+          
+          // Add missing score field to edges
+          connection.edges = connection.edges.map((edge: any) => ({
+            ...edge,
+            score: 100,
+          }));
+
           return {
             data: {
               __typename: "Query",
@@ -175,7 +186,7 @@ describe("Edge cases", () => {
               user: fixtures.users.buildNode({
                 id: "1",
                 email: "u1@example.com",
-                posts: fixtures.posts.buildConnection([{ id: "pa1", title: "A1" }, { id: "pa2", title: "A2" }]),
+                posts: connection,
               }),
             },
           };
@@ -217,8 +228,6 @@ describe("Edge cases", () => {
       inheritAttrs: false,
 
       setup() {
-        const { useQuery } = require("villus");
-
         const userQuery = useQuery({ query: operations.USER_QUERY, variables: { id: "1" }, cachePolicy: "cache-and-network" });
 
         const userPostsQuery = useQuery({ query: operations.USER_POSTS_QUERY, variables: { userId: "1", postsCategory: "A", postsFirst: 2, postsAfter: null }, cachePolicy: "cache-and-network" });
