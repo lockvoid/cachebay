@@ -74,18 +74,16 @@ export const createSSR = (options: SSROptions = {}, { graph }: Deps) => {
       }
     };
 
-    hydrating = true;
+    if (hydrationTimeout !== 0) {
+      hydrating = true;
 
-    try {
-      if (typeof input === "function") {
-        input((s) => run(s));
-      } else {
-        run(input);
-      }
-    } finally {
-      setTimeout(() => {
-        hydrating = false;
-      }, hydrationTimeout);
+      setTimeout(() => { hydrating = false; }, hydrationTimeout);
+    }
+
+    if (typeof input === "function") {
+      input((s) => run(s));
+    } else {
+      run(input);
     }
   };
 

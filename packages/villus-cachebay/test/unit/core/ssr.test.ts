@@ -10,7 +10,7 @@ describe("SSR", () => {
 
   beforeEach(() => {
     graph = createGraph();
-    ssr = createSSR({ hydrationTimeout: 0 }, { graph });
+    ssr = createSSR({ hydrationTimeout: 5 }, { graph });
   });
 
   describe("hydrate", () => {
@@ -27,7 +27,7 @@ describe("SSR", () => {
       });
 
       expect(ssr.isHydrating()).toBe(true);
-      await delay(0);
+      await delay(10);
       expect(ssr.isHydrating()).toBe(false);
 
       const rootRecord = graph.getRecord("@");
@@ -106,7 +106,7 @@ describe("SSR", () => {
       // 3) Hydrate
       ssr.hydrate(snapshot);
       expect(ssr.isHydrating()).toBe(true);
-      await delay(0);
+      await delay(10);
       expect(ssr.isHydrating()).toBe(false);
 
       // 4) Verify restored records

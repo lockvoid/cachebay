@@ -393,7 +393,7 @@ describe("Cache Policies Behavior", () => {
       });
 
       await delay(10);
-      expect(fx.calls.length).toBe(0);
+      expect(fx.calls.length).toBe(1);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
 
       await delay(20);

@@ -159,6 +159,7 @@ export const createOperations = (
     const vars = variables || ({} as TVars);
     const plan = planner.getPlan(query);
     const sig = plan.makeSignature("canonical", vars);
+    console.log('FIRE1', ssr.isHydrating())
 
     // SSR hydration quick path (prefer strict cache during hydration)
     // During hydration, ALL policies use cache to avoid network requests
@@ -177,6 +178,7 @@ export const createOperations = (
         };
       }
     }
+    console.log('FIRE2')
 
     // Suspension window check - serve cached response to avoid duplicate network requests
     if (isWithinSuspension(sig)) {

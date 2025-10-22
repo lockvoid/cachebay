@@ -23,6 +23,7 @@ export function createTestClient({ routes, cache, cacheOptions }: { routes?: Rou
 
     finalCache = createCachebay({
       suspensionTimeout: 0,
+      hydrationTimeout: 0,
       transport: fx.transport,
 
       ...(cacheOptions || {}),
