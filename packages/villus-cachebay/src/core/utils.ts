@@ -7,6 +7,68 @@ export const isObject = (value: any): value is Record<string, any> => {
   return value !== null && typeof value === "object";
 };
 
+/**
+ * Deep equality comparison for JSON data structures (normalized cache data).
+ * Optimized for common patterns: __ref objects, __refs arrays, primitives.
+ * Not a true deep equal - designed specifically for cache comparison.
+ */
+export const isDataDeepEqual = (a: any, b: any): boolean => {
+  // Fast path: reference equality (includes null === null, undefined === undefined)
+  if (a === b) return true;
+  
+  // null and undefined are different values
+  if (a == null || b == null) return false;
+  
+  // Fast path: different types (string vs number, etc)
+  const typeA = typeof a;
+  const typeB = typeof b;
+  if (typeA !== typeB) return false;
+  
+  // Fast path: primitives (already handled by a === b above, but helps V8 optimize)
+  if (typeA !== 'object') return false;
+  
+  // Special case: __ref objects (very common in normalized cache)
+  if (a.__ref !== undefined && b.__ref !== undefined) {
+    return a.__ref === b.__ref;
+  }
+  
+  // Special case: __refs arrays (single-level array of refs, no recursion needed)
+  if (Array.isArray(a.__refs) && Array.isArray(b.__refs)) {
+    if (a.__refs.length !== b.__refs.length) return false;
+    for (let i = 0; i < a.__refs.length; i++) {
+      if (a.__refs[i] !== b.__refs[i]) return false;
+    }
+    return true;
+  }
+  
+  // Fast path: array vs non-array
+  const isArrayA = Array.isArray(a);
+  const isArrayB = Array.isArray(b);
+  if (isArrayA !== isArrayB) return false;
+  
+  // Arrays
+  if (isArrayA) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!isDataDeepEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  
+  // Objects - check key count first (fast rejection)
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  
+  // Compare object properties
+  for (let i = 0; i < keysA.length; i++) {
+    const key = keysA[i];
+    if (!isDataDeepEqual(a[key], b[key])) return false;
+  }
+  
+  return true;
+};
+
 export const hasTypename = (value: any): boolean => {
   return !!(value && typeof value === "object" && typeof value.__typename === "string");
 };

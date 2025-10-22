@@ -1,5 +1,5 @@
 import { ID_FIELD, TYPENAME_FIELD, IDENTITY_FIELDS, ROOT_ID } from "./constants";
-import { isObject } from "./utils";
+import { isObject, isDataDeepEqual } from "./utils";
 
 /**
  * Configuration options for graph store
@@ -23,9 +23,10 @@ export type GraphInstance = ReturnType<typeof createGraph>;
 
 /**
  * Diff field changes and track what changed
+ * Uses deep equality for objects/arrays to avoid false positives from JSON.parse
  * @private
  */
-const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot: Record<string, any>): [string[], boolean, boolean, boolean] => {
+const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot: Record<string, any>): boolean => {
   let hasChanges = false;
 
   for (let i = 0, fields = Object.keys(partialSnapshot); i < fields.length; i++) {
@@ -45,14 +46,27 @@ const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot
 
       currentSnapshot[ID_FIELD] = normalizedId;
       hasChanges = true;
+      continue;
     }
 
-    if (currentSnapshot[fieldName] !== incomingValue) {
-      currentSnapshot[fieldName] = incomingValue;
-      hasChanges = true;
+    const currentValue = currentSnapshot[fieldName];
+    
+    // Fast path: reference equality (handles primitives and same object references)
+    if (currentValue === incomingValue) {
+      continue;
     }
+    
+    // Only use deep equality for objects/arrays to avoid false positives from JSON.parse
+    if (typeof incomingValue === 'object' && incomingValue !== null && 
+        typeof currentValue === 'object' && currentValue !== null) {
+      if (isDataDeepEqual(currentValue, incomingValue)) {
+        continue;
+      }
+    }
+    
+    currentSnapshot[fieldName] = incomingValue;
+    hasChanges = true;
   }
-
 
   return hasChanges;
 };

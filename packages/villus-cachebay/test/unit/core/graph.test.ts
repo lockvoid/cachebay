@@ -74,14 +74,6 @@ describe("core/graph.ts", () => {
       });
     });
 
-    it("does not increment version when no changes occur", () => {
-      graph.putRecord("User:u1", { __typename: "User", id: "u1", name: "John" });
-      expect(graph.getVersion("User:u1")).toBe(1);
-
-      graph.putRecord("User:u1", { name: "John" });
-      expect(graph.getVersion("User:u1")).toBe(1);
-    });
-
     it("stores normalized refs as-is", () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", name: "Ada" });
       graph.putRecord("Post:p1", {
@@ -93,6 +85,300 @@ describe("core/graph.ts", () => {
 
       const post = graph.getRecord("Post:p1");
       expect(post?.author).toEqual({ __ref: "User:u1" });
+    });
+
+    describe("changes", () => {
+      describe("string values", () => {
+        it("does not emit change when string value is the same", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", name: "John" });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { name: "John" });
+          expect(graph.getVersion("User:u1")).toBe(1);
+        });
+
+        it("emits change when string value changes", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", name: "John" });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { name: "Jane" });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+
+        it("emits change when empty string changes to non-empty", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", name: "" });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { name: "John" });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+
+        it("does not emit change for empty string to empty string", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", name: "" });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { name: "" });
+          expect(graph.getVersion("User:u1")).toBe(1);
+        });
+      });
+
+      describe("number values", () => {
+        it("does not emit change when number value is the same", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", age: 25 });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { age: 25 });
+          expect(graph.getVersion("User:u1")).toBe(1);
+        });
+
+        it("emits change when number value changes", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", age: 25 });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { age: 26 });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+
+        it("does not emit change for zero to zero", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", count: 0 });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { count: 0 });
+          expect(graph.getVersion("User:u1")).toBe(1);
+        });
+
+        it("emits change when zero changes to non-zero", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", count: 0 });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { count: 1 });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+
+        it("emits change for NaN to number", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", value: NaN });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { value: 42 });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+
+        it("does not emit change for NaN to NaN (NaN !== NaN)", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", value: NaN });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          // NaN !== NaN, so this should trigger a change
+          graph.putRecord("User:u1", { value: NaN });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+      });
+
+      describe("boolean values", () => {
+        it("does not emit change when boolean value is the same (true)", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", active: true });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { active: true });
+          expect(graph.getVersion("User:u1")).toBe(1);
+        });
+
+        it("does not emit change when boolean value is the same (false)", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", active: false });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { active: false });
+          expect(graph.getVersion("User:u1")).toBe(1);
+        });
+
+        it("emits change when boolean value changes (true to false)", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", active: true });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { active: false });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+
+        it("emits change when boolean value changes (false to true)", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", active: false });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { active: true });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+      });
+
+      describe("null values", () => {
+        it("does not emit change when null value stays null", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", email: null });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { email: null });
+          expect(graph.getVersion("User:u1")).toBe(1);
+        });
+
+        it("emits change when null changes to string", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", email: null });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { email: "john@example.com" });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+
+        it("emits change when string changes to null", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "john@example.com" });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { email: null });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+
+        it("emits change when null changes to number", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", age: null });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { age: 25 });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+
+        it("emits change when null changes to boolean", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", active: null });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { active: true });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+      });
+
+      describe("undefined values", () => {
+        it("does not emit change when undefined is passed (no-op)", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", name: "John" });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { email: undefined });
+          expect(graph.getVersion("User:u1")).toBe(1);
+        });
+
+        it("does not change existing field when undefined is passed", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", name: "John", email: "john@example.com" });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { email: undefined });
+          expect(graph.getVersion("User:u1")).toBe(1);
+          expect(graph.getRecord("User:u1")?.email).toBe("john@example.com");
+        });
+      });
+
+      describe("object values", () => {
+        it("emits change when content changes", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", address: { city: "NYC", country: "USA" } });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { address: { city: "NYC", country: { city: "LA", country: "USA" } } });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+
+        it("does not emit change when same object reference is used", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", address: { city: "NYC", country: "USA" } });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { address: { city: "NYC", country: "USA" } });
+          expect(graph.getVersion("User:u1")).toBe(1);
+        });
+
+        it("emits change when empty object changes to non-empty", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", metadata: {} });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { metadata: { key: "value" } });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+      });
+
+      describe("array values", () => {
+        it("emits change when array content changes", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", tags: ["tag1", "tag2"] });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { tags: ["tag1", "tag3"] });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+
+        it("does not emit change when same array reference is used", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", tags: ["tag1", "tag2"] });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { tags: ["tag1", "tag2"] });
+          expect(graph.getVersion("User:u1")).toBe(1);
+        });
+
+        it("emits change when empty array changes to non-empty", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", tags: [] });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { tags: ["tag1"] });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+
+        it("emits change when array length changes", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", tags: ["tag1"] });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { tags: ["tag1", "tag2"] });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+      });
+
+      describe("mixed field updates", () => {
+        it("does not emit change when all fields are the same", () => {
+          graph.putRecord("User:u1", {
+            __typename: "User",
+            id: "u1",
+            name: "John",
+            age: 25,
+            active: true,
+            email: null,
+            arr: [1, 2],
+            obj: { key: "value" }
+          });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", {
+            name: "John",
+            age: 25,
+            active: true,
+            email: null,
+            arr: [1, 2],
+            obj: { key: "value" }
+          });
+          expect(graph.getVersion("User:u1")).toBe(1);
+        });
+
+        it("emits change when at least one field changes", () => {
+          graph.putRecord("User:u1", {
+            __typename: "User",
+            id: "u1",
+            name: "John",
+            age: 25,
+            active: true
+          });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", {
+            name: "John",  // same
+            age: 26,       // changed
+            active: true   // same
+          });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+
+        it("emits change when adding new field", () => {
+          graph.putRecord("User:u1", { __typename: "User", id: "u1", name: "John" });
+          expect(graph.getVersion("User:u1")).toBe(1);
+
+          graph.putRecord("User:u1", { email: "john@example.com" });
+          expect(graph.getVersion("User:u1")).toBe(2);
+        });
+      });
     });
   });
 
