@@ -286,7 +286,7 @@ export const createOperations = (
     // Check if ws transport is available
     if (!transport.ws) {
       throw new Error(
-        "WebSocket transport is not configured. Please provide 'transport.ws' in createCache options to use subscriptions."
+        "WebSocket transport is not configured. Please provide 'transport.ws' in createCachebay options to use subscriptions."
       );
     }
 

@@ -54,7 +54,7 @@ import { bench, group, run } from 'mitata';
 group('My Benchmarks', () => {
   bench('my benchmark', function* () {
     // Setup (not timed)
-    const cache = createCache();
+    const cache = createCachebay();
     cache.populate();
 
     // Benchmark (timed)

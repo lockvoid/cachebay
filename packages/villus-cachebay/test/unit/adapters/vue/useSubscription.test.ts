@@ -2,7 +2,7 @@ import { mount } from "@vue/test-utils";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { defineComponent, h, ref, nextTick } from "vue";
 import { useSubscription } from "@/src/adapters/vue/useSubscription";
-import { createCache } from "@/src/core/client";
+import { createCachebay } from "@/src/core/client";
 import { provideCachebay } from "@/src/adapters/vue/plugin";
 import type { Transport, ObservableLike, OperationResult } from "@/src/core/operations";
 
@@ -10,7 +10,7 @@ const SUBSCRIPTION = `subscription OnMessage { messageAdded { id text } }`;
 
 describe("useSubscription", () => {
   let mockTransport: Transport;
-  let cache: ReturnType<typeof createCache>;
+  let cache: ReturnType<typeof createCachebay>;
   let mockObservable: ObservableLike<OperationResult>;
   let capturedObserver: any;
 
@@ -27,7 +27,7 @@ describe("useSubscription", () => {
       ws: vi.fn().mockResolvedValue(mockObservable),
     };
 
-    cache = createCache({ transport: mockTransport });
+    cache = createCachebay({ transport: mockTransport });
   });
 
   it("starts with loading state", () => {

@@ -3,7 +3,7 @@ import { Session } from 'node:inspector';
 import { writeFileSync } from 'node:fs';
 
 // ---- cachebay ----
-import { createCache } from "../../villus-cachebay/src/core/client";
+import { createCachebay } from "../../villus-cachebay/src/core/client";
 
 // ---- apollo ----
 import { InMemoryCache } from "@apollo/client/cache";
@@ -18,7 +18,7 @@ import RelayWriteQuery from "../src/__generated__/relayWriteQueryDefRelayWriteQu
 import { makeResponse, buildPages, CACHEBAY_QUERY, APOLLO_QUERY } from "../api/utils";
 
 function createCachebay() {
-  return createCache({
+  return createCachebay({
     keys: {
       Query: () => "Query",
       User: (o: any) => o.id ?? null,

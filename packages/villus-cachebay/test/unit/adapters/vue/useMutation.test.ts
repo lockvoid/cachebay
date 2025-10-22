@@ -2,7 +2,7 @@ import { mount } from "@vue/test-utils";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { defineComponent, h, nextTick } from "vue";
 import { useMutation } from "@/src/adapters/vue/useMutation";
-import { createCache } from "@/src/core/client";
+import { createCachebay } from "@/src/core/client";
 import { provideCachebay } from "@/src/adapters/vue/plugin";
 import type { Transport } from "@/src/core/operations";
 
@@ -10,7 +10,7 @@ const MUTATION = `mutation CreateUser($name: String!) { createUser(name: $name) 
 
 describe("useMutation", () => {
   let mockTransport: Transport;
-  let cache: ReturnType<typeof createCache>;
+  let cache: ReturnType<typeof createCachebay>;
 
   beforeEach(() => {
     mockTransport = {
@@ -19,7 +19,7 @@ describe("useMutation", () => {
         error: null,
       }),
     };
-    cache = createCache({ transport: mockTransport });
+    cache = createCachebay({ transport: mockTransport });
   });
 
   it("provides execute function", () => {
@@ -137,7 +137,7 @@ describe("useMutation", () => {
         error: new Error("Validation failed"),
       }),
     };
-    const errorCache = createCache({ transport: errorTransport });
+    const errorCache = createCachebay({ transport: errorTransport });
 
     let mutationResult: any;
 

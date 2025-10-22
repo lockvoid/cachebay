@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { createApp } from "vue";
-import { createCache } from "@/src/core/client";
+import { createCachebay } from "@/src/core/client";
 import { createCachebayPlugin, provideCachebay } from "@/src/adapters/vue/plugin";
 import { CACHEBAY_KEY } from "@/src/adapters/vue/constants";
 import type { Transport } from "@/src/core/operations";
@@ -12,7 +12,7 @@ describe("Vue Plugin", () => {
 
   describe("createCachebayPlugin", () => {
     it("creates plugin with install method", () => {
-      const cache = createCache({ transport: mockTransport });
+      const cache = createCachebay({ transport: mockTransport });
       const plugin = createCachebayPlugin(cache);
 
       expect(typeof plugin.install).toBe("function");
@@ -20,7 +20,7 @@ describe("Vue Plugin", () => {
     });
 
     it("provides cache instance to Vue app", () => {
-      const cache = createCache({ transport: mockTransport });
+      const cache = createCachebay({ transport: mockTransport });
       const plugin = createCachebayPlugin(cache);
       const app = createApp({});
       const provideSpy = vi.spyOn(app, "provide");
@@ -31,7 +31,7 @@ describe("Vue Plugin", () => {
     });
 
     it("stores default suspensionTimeout option", () => {
-      const cache = createCache({ transport: mockTransport });
+      const cache = createCachebay({ transport: mockTransport });
       const plugin = createCachebayPlugin(cache);
       const app = createApp({});
 
@@ -43,7 +43,7 @@ describe("Vue Plugin", () => {
     });
 
     it("stores custom suspensionTimeout option", () => {
-      const cache = createCache({ transport: mockTransport });
+      const cache = createCachebay({ transport: mockTransport });
       const plugin = createCachebayPlugin(cache, {
         suspensionTimeout: 5000,
       });
@@ -57,7 +57,7 @@ describe("Vue Plugin", () => {
     });
 
     it("preserves all cache methods", () => {
-      const cache = createCache({ transport: mockTransport });
+      const cache = createCachebay({ transport: mockTransport });
       const plugin = createCachebayPlugin(cache);
 
       expect(plugin.identify).toBe(cache.identify);
@@ -73,7 +73,7 @@ describe("Vue Plugin", () => {
 
   describe("provideCachebay", () => {
     it("provides cache instance to Vue app", () => {
-      const cache = createCache({ transport: mockTransport });
+      const cache = createCachebay({ transport: mockTransport });
       const app = createApp({});
       const provideSpy = vi.spyOn(app, "provide");
 
@@ -83,7 +83,7 @@ describe("Vue Plugin", () => {
     });
 
     it("stores default suspensionTimeout option", () => {
-      const cache = createCache({ transport: mockTransport });
+      const cache = createCachebay({ transport: mockTransport });
       const app = createApp({});
 
       provideCachebay(app, cache);
@@ -94,7 +94,7 @@ describe("Vue Plugin", () => {
     });
 
     it("stores custom suspensionTimeout option", () => {
-      const cache = createCache({ transport: mockTransport });
+      const cache = createCachebay({ transport: mockTransport });
       const app = createApp({});
 
       provideCachebay(app, cache, {
@@ -107,7 +107,7 @@ describe("Vue Plugin", () => {
     });
 
     it("works as alternative to plugin", () => {
-      const cache = createCache({ transport: mockTransport });
+      const cache = createCachebay({ transport: mockTransport });
       const app = createApp({});
       const provideSpy = vi.spyOn(app, "provide");
 

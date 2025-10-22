@@ -68,10 +68,10 @@ Basic setup for creating a Cachebay-enabled Villus client with normalized cachin
 ```ts
 // client.ts
 import { createClient } from 'villus'
-import { createCache } from 'villus-cachebay'
+import { createCachebay } from 'villus-cachebay'
 import { fetch as fetchPlugin } from 'villus'
 
-export const cache = createCache({
+export const cache = createCachebay({
   // e.g. keys: { Post: (post) => post.id }
 })
 
@@ -92,9 +92,9 @@ export const client = createClient({
 Configuration options for customizing Cachebay behavior including entity identification, interface mapping, and SSR/Suspense timeouts.
 
 ```ts
-import { createCache } from 'villus-cachebay'
+import { createCachebay } from 'villus-cachebay'
 
-const cache = createCache({
+const cache = createCachebay({
   keys: {
     // e.g. AudioPost: (post) => post?.id ?? null
   },
@@ -172,11 +172,11 @@ Integration pattern for Nuxt 4 using plugins to manage cache lifecycle, state sy
 ```ts
 // plugins/villus.ts
 import { createClient } from 'villus'
-import { createCache } from 'villus-cachebay'
+import { createCachebay } from 'villus-cachebay'
 import { fetch as fetchPlugin, dedup as dedupPlugin } from 'villus'
 
 export default defineNuxtPlugin((nuxtApp) => {
-  const cache = createCache()
+  const cache = createCachebay()
 
   const state = useState('cachebay', () => null)
 

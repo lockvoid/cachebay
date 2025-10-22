@@ -1,7 +1,7 @@
 import { gql } from "graphql-tag";
 import { createClient, useQuery, fetch as fetchPlugin } from "villus";
 import { createApp, defineComponent, nextTick, watch } from "vue";
-import { createCache } from "../../villus-cachebay/src/core/client";
+import { createCachebay } from "../../villus-cachebay/src/core/client";
 
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {
@@ -61,7 +61,7 @@ export function createVueCachebayNestedApp(
 ): VueCachebayNestedController {
   // Reset metrics bucket for this app/run.
 
-  const cachebay = createCache({
+  const cachebay = createCachebay({
     interfaces: { Node: ["User", "Post", "Comment"] },
   });
 

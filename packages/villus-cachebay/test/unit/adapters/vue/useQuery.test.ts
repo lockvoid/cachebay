@@ -2,7 +2,7 @@ import { mount } from "@vue/test-utils";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { defineComponent, h, ref, nextTick } from "vue";
 import { useQuery } from "@/src/adapters/vue/useQuery";
-import { createCache } from "@/src/core/client";
+import { createCachebay } from "@/src/core/client";
 import { provideCachebay } from "@/src/adapters/vue/plugin";
 import type { Transport, OperationResult } from "@/src/core/operations";
 
@@ -10,7 +10,7 @@ const QUERY = `query GetUser { user { id name } }`;
 
 describe("useQuery", () => {
   let mockTransport: Transport;
-  let cache: ReturnType<typeof createCache>;
+  let cache: ReturnType<typeof createCachebay>;
 
   beforeEach(() => {
     mockTransport = {
@@ -19,7 +19,7 @@ describe("useQuery", () => {
         error: null,
       }),
     };
-    cache = createCache({ transport: mockTransport });
+    cache = createCachebay({ transport: mockTransport });
   });
 
   it("executes query and returns reactive data", async () => {
@@ -91,7 +91,7 @@ describe("useQuery", () => {
         error: new Error("Network error"),
       }),
     };
-    const errorCache = createCache({ transport: errorTransport });
+    const errorCache = createCachebay({ transport: errorTransport });
 
     let queryResult: any;
 
@@ -345,7 +345,7 @@ describe("useQuery", () => {
 
   describe("Suspension timeout", () => {
     it("serves cached response within suspension window to avoid duplicate network requests", async () => {
-      const cache = createCache({ 
+      const cache = createCachebay({ 
         transport: mockTransport,
         suspensionTimeout: 1000 // 1 second window
       });
@@ -370,7 +370,7 @@ describe("useQuery", () => {
     });
 
     it("hits network again after suspension window expires", async () => {
-      const cache = createCache({ 
+      const cache = createCachebay({ 
         transport: mockTransport,
         suspensionTimeout: 50 // 50ms window
       });
@@ -399,7 +399,7 @@ describe("useQuery", () => {
 
   describe("SSR hydration", () => {
     it("serves from strict cache during hydration", async () => {
-      const cache = createCache({ 
+      const cache = createCachebay({ 
         transport: mockTransport,
         hydrationTimeout: 100
       });
@@ -425,7 +425,7 @@ describe("useQuery", () => {
     });
 
     it("does not hit network during hydration window", async () => {
-      const cache = createCache({ 
+      const cache = createCachebay({ 
         transport: mockTransport,
         hydrationTimeout: 100 // 100ms window
       });
@@ -450,7 +450,7 @@ describe("useQuery", () => {
     });
 
     it("network-only still uses cache during hydration to avoid network", async () => {
-      const cache = createCache({ 
+      const cache = createCachebay({ 
         transport: mockTransport,
         hydrationTimeout: 100
       });

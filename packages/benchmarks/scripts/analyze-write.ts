@@ -2,7 +2,7 @@
 import { performance } from 'node:perf_hooks';
 
 // ---- cachebay ----
-import { createCache } from "../../villus-cachebay/src/core/client";
+import { createCachebay } from "../../villus-cachebay/src/core/client";
 
 // ---- relay ----
 import { Environment, Network, RecordSource, Store, createOperationDescriptor } from "relay-runtime";
@@ -13,7 +13,7 @@ import RelayWriteQuery from "../src/__generated__/relayWriteQueryDefRelayWriteQu
 import { makeResponse, buildPages, CACHEBAY_QUERY } from "../api/utils";
 
 function createCachebay() {
-  return createCache({
+  return createCachebay({
     keys: {
       Query: () => "Query",
       User: (o: any) => o.id ?? null,
@@ -43,7 +43,7 @@ function analyzeCachebay() {
   console.log('🔍 Cachebay Analysis:');
 
   const timings = {
-    createCache: 0,
+    createCachebay: 0,
     writeQueries: [] as number[],
     total: 0,
   };
@@ -53,7 +53,7 @@ function analyzeCachebay() {
   // Measure cache creation
   const t0 = performance.now();
   const cache = createCachebay();
-  timings.createCache = performance.now() - t0;
+  timings.createCachebay = performance.now() - t0;
 
   // Measure each writeQuery
   for (let i = 0; i < pages.length; i++) {
@@ -73,7 +73,7 @@ function analyzeCachebay() {
   const minWrite = Math.min(...timings.writeQueries);
   const maxWrite = Math.max(...timings.writeQueries);
 
-  console.log(`  Cache creation: ${timings.createCache.toFixed(3)}ms`);
+  console.log(`  Cache creation: ${timings.createCachebay.toFixed(3)}ms`);
   console.log(`  Write avg: ${avgWrite.toFixed(3)}ms (min: ${minWrite.toFixed(3)}ms, max: ${maxWrite.toFixed(3)}ms)`);
   console.log(`  Total: ${timings.total.toFixed(2)}ms`);
   console.log(`  First 10 writes: ${timings.writeQueries.slice(0, 10).map(t => t.toFixed(2)).join(', ')}ms`);

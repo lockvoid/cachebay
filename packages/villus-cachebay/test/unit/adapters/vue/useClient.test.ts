@@ -1,9 +1,9 @@
 import { mount } from "@vue/test-utils";
 import { describe, it, expect, vi } from "vitest";
 import { defineComponent, h } from "vue";
-import { useClient } from "@/src/adapters/vue/useClient";
-import { createCache } from "@/src/core/client";
 import { provideCachebay } from "@/src/adapters/vue/plugin";
+import { useClient } from "@/src/adapters/vue/useClient";
+import { createCachebay } from "@/src/core/client";
 import type { Transport } from "@/src/core/operations";
 
 describe("useClient", () => {
@@ -26,7 +26,7 @@ describe("useClient", () => {
   });
 
   it("returns the cache instance directly by reference", () => {
-    const cache = createCache({ transport: mockTransport });
+    const cache = createCachebay({ transport: mockTransport });
 
     let cacheApi: any;
 

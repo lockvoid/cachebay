@@ -2,7 +2,7 @@
 import { createClient, cache as cachePlugin, fetch as fetchPlugin } from 'villus';
 import { gql } from 'graphql-tag';
 import type { Adapter, FeedResult } from './types';
-import { createCache } from 'villus-cachebay';
+import { createCachebay } from 'villus-cachebay';
 
 const FEED = gql`
   query Feed($first: Int!, $after: String) {
@@ -14,7 +14,7 @@ const FEED = gql`
 `;
 
 export function createCachebayAdapter(url: string): Adapter {
-  const cachebay = createCache({});
+  const cachebay = createCachebay({});
 
   console.log('Cachebay adapter created', cachebay);
 

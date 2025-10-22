@@ -127,13 +127,13 @@ export type CachebayInstance = {
  * @param options - Configuration options for the cache
  * @returns Configured cache instance with Villus plugin interface
  */
-export function createCache(options: CachebayOptions): CachebayInstance {
+export function createCachebay(options: CachebayOptions): CachebayInstance {
   // Validate transport configuration
   if (!options.transport) {
     throw new Error(
       "Cachebay: 'transport' is required. Please provide a transport object with 'http' function.\n" +
       "Example:\n" +
-      "  createCache({\n" +
+      "  createCachebay({\n" +
       "    transport: {\n" +
       "      http: async (context) => { /* HTTP implementation */ },\n" +
       "      ws: async (context) => { /* WebSocket implementation (optional) */ }\n" +

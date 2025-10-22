@@ -3,17 +3,17 @@ import * as Cachebay from "@/src/index";
 
 describe("Core Package Exports", () => {
   describe("Function exports", () => {
-    it("exports createCache function", () => {
-      expect(typeof Cachebay.createCache).toBe("function");
+    it("exports createCachebay function", () => {
+      expect(typeof Cachebay.createCachebay).toBe("function");
     });
   });
 
   describe("Export completeness", () => {
     it("has all expected exports", () => {
       const exports = Object.keys(Cachebay);
-      
+
       // Functions
-      expect(exports).toContain("createCache");
+      expect(exports).toContain("createCachebay");
     });
 
     it("exports exactly 1 function", () => {

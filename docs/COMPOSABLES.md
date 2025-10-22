@@ -4,11 +4,11 @@ Cachebay ships a small set of Vue composables that sit on top of the normalized 
 
 ```ts
 import { createApp } from 'vue'
-import { createCache } from 'villus-cachebay'
+import { createCachebay } from 'villus-cachebay'
 
 const app = createApp(App)
 
-const cachebay = createCache()
+const cachebay = createCachebay()
 
 app.use(cachebay) // <-- provides composables
 app.mount('#app')
@@ -33,13 +33,13 @@ const {
   readQuery,
   writeQuery,
   watchQuery,
-  
+
   // Fragment APIs
   identify,
   readFragment,
   writeFragment,
   watchFragment,
-  
+
   // Optimistic APIs
   modifyOptimistic,
 } = useCache()
@@ -53,9 +53,9 @@ import { useCache } from 'villus-cachebay'
 
 const { readQuery } = useCache()
 
-const data = readQuery({ 
-  query: POSTS_QUERY, 
-  variables: { first: 10 } 
+const data = readQuery({
+  query: POSTS_QUERY,
+  variables: { first: 10 }
 })
 ```
 
@@ -65,8 +65,8 @@ import { useCache } from 'villus-cachebay'
 
 const { writeQuery } = useCache()
 
-writeQuery({ 
-  query: POSTS_QUERY, 
+writeQuery({
+  query: POSTS_QUERY,
   variables: { first: 10 },
   data: { posts: { edges: [...], pageInfo: {...} } }
 })

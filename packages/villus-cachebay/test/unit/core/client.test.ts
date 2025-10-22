@@ -1,30 +1,30 @@
 import { describe, it, expect, vi } from "vitest";
-import { createCache } from "../../../src/core/client";
+import { createCachebay } from "../../../src/core/client";
 import type { Transport } from "../../../src/core/operations";
 
-describe("createCache", () => {
+describe("createCachebay", () => {
   const mockTransport: Transport = {
     http: vi.fn().mockResolvedValue({ data: null, error: null }),
   };
 
   it("throws error when transport is not provided", () => {
-    expect(() => createCache({} as any)).toThrow("transport' is required");
+    expect(() => createCachebay({} as any)).toThrow("transport' is required");
   });
 
   it("throws error when transport.http is not a function", () => {
-    expect(() => createCache({ transport: { http: "not a function" } } as any)).toThrow(
-      "transport.http' must be a function"
+    expect(() => createCachebay({ transport: { http: "not a function" } } as any)).toThrow(
+      "transport.http' must be a function",
     );
   });
 
   it("throws error when transport.ws is provided but not a function", () => {
     expect(() =>
-      createCache({ transport: { http: vi.fn(), ws: "not a function" } } as any)
+      createCachebay({ transport: { http: vi.fn(), ws: "not a function" } } as any),
     ).toThrow("transport.ws' must be a function");
   });
 
   it("exposes public APIs", () => {
-    const cache = createCache({ transport: mockTransport });
+    const cache = createCachebay({ transport: mockTransport });
 
     // Identity
     expect(typeof cache.identify).toBe("function");
@@ -56,7 +56,7 @@ describe("createCache", () => {
   });
 
   it("exposes internals for testing", () => {
-    const cache = createCache({ transport: mockTransport });
+    const cache = createCachebay({ transport: mockTransport });
 
     expect(cache.__internals.graph).toBeTruthy();
     expect(cache.__internals.optimistic).toBeTruthy();
@@ -72,15 +72,15 @@ describe("createCache", () => {
 
   it("accepts optional WebSocket transport", () => {
     const transport: Transport = {
-      http: vi.fn().mockResolvedValue({ 
-        data: null, error: null, 
+      http: vi.fn().mockResolvedValue({
+        data: null, error: null,
       }),
       ws: vi.fn().mockResolvedValue({
         subscribe: vi.fn().mockReturnValue({ unsubscribe: vi.fn() }),
       }),
     };
 
-    const cache = createCache({ transport });
+    const cache = createCachebay({ transport });
 
     expect(cache.executeSubscription).toBeTruthy();
   });

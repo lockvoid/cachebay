@@ -1,5 +1,5 @@
 import { createClient, handleSubscriptions, fetch as fetchPlugin, dedup as dedupPlugin } from "villus";
-import { createCache } from "villus-cachebay";
+import { createCachebay } from "villus-cachebay";
 import * as sse from 'graphql-sse';
 
 const createSubscriptions = (url: string) => {
@@ -40,7 +40,7 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   const settings = useSettings();
 
-  const cachebay = createCache({
+  const cachebay = createCachebay({
     // keys: { ... }, etc
   });
 

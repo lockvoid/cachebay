@@ -1,9 +1,9 @@
 import { defineComponent, h, computed, watch, Suspense } from "vue";
-import { createCache } from "@/src/core/client";
 import { provideCachebay } from "@/src/adapters/vue/plugin";
 import { useQuery } from "@/src/adapters/vue/useQuery";
-import { tick, delay } from "./concurrency";
+import { createCachebay } from "@/src/core/client";
 import type { Transport } from "@/src/core/operations";
+import { tick, delay } from "./concurrency";
 
 export async function seedCache(cache, { query, variables, data }) {
   const internals = cache.__internals;
@@ -22,7 +22,7 @@ export async function seedCache(cache, { query, variables, data }) {
 export function createTestClient({ routes, cache, cacheOptions }: { routes?: Route[], cache?: any, cacheOptions?: any } = {}) {
   const fx = createTransportMock(routes);
 
-  const finalCache = cache ?? createCache({
+  const finalCache = cache ?? createCachebay({
     suspensionTimeout: 0,
     transport: fx.transport,
 
@@ -79,21 +79,21 @@ export function createTransportMock(routes: Route[] = []) {
 
       calls.push({ query: queryStr, variables });
       pending++;
-      
+
       try {
         if (route.delay && route.delay > 0) {
           await delay(route.delay);
         }
 
         const payload = route.respond(op);
-        
+
         if (payload && typeof payload === "object" && "error" in payload && (payload as any).error) {
           return {
             data: null,
             error: (payload as any).error,
           };
         }
-        
+
         return {
           data: payload?.data || payload,
           error: null,

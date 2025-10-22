@@ -30,7 +30,7 @@ identify({ __typename: 'User', id: 'alice123' }) // → "User:alice123"
 identify({ __typename: 'Comment', uuid: 'comment-xyz' }) // → "Comment:comment-xyz" (if uuid is configured as key)
 ```
 
-If you configured type keys in `createCache({ keys: { ... } })`, those rules are used first.
+If you configured type keys in `createCachebay({ keys: { ... } })`, those rules are used first.
 
 ---
 ## Read Fragment
@@ -224,9 +224,9 @@ onUnmounted(() => unsubscribe())
 Customize identity and enable interface-style addressing at **cache creation**:
 
 ```ts
-import { createCache } from 'villus-cachebay'
+import { createCachebay } from 'villus-cachebay'
 
-const cache = createCache({
+const cache = createCachebay({
 
   keys: {
     User: (user) => user.id ?? null,

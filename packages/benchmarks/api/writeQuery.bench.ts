@@ -2,7 +2,7 @@
 import { bench, group, run, summary } from "mitata";
 
 // ---- cachebay ----
-import { createCache } from "../../villus-cachebay/src/core/client";
+import { createCachebay } from "../../villus-cachebay/src/core/client";
 
 // ---- apollo ----
 import { InMemoryCache } from "@apollo/client/cache";
@@ -24,7 +24,7 @@ const sinkWrite = () => { __sink ^= 1; };
 // Rigs
 // -----------------------------------------------------------------------------
 function createCachebay() {
-  return createCache({
+  return createCachebay({
     keys: {
       Query: () => "Query",
       User: (o: any) => o.id ?? null,

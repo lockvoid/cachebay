@@ -55,10 +55,10 @@ Some Suspense setups re-run the same query immediately after a result lands. Cac
 
 ```ts
 // server.ts
-import { createCache } from 'villus-cachebay'
+import { createCachebay } from 'villus-cachebay'
 
 // New Cache Per SSR Request
-const cache = createCache()
+const cache = createCachebay()
 
 // Render Your App With This Cache Installed (details depend on your SSR stack)
 
@@ -74,10 +74,10 @@ const snapshot = cache.dehydrate()
 // client.ts
 import { createClient } from 'villus'
 import { fetch as fetchPlugin } from 'villus'
-import { createCache } from 'villus-cachebay'
+import { createCachebay } from 'villus-cachebay'
 
 // Optional Runtime Tuning
-const cache = createCache({
+const cache = createCachebay({
   hydrationTimeout: 120,   // ms to suppress CN revalidate after hydrate
   suspensionTimeout: 800,  // ms to serve repeat Suspense re-execs from cache
 })
@@ -108,11 +108,11 @@ export const client = createClient({
 ```ts
 // plugins/villus.ts
 import { createClient } from 'villus'
-import { createCache } from 'villus-cachebay'
+import { createCachebay } from 'villus-cachebay'
 import { fetch as fetchPlugin, dedup as dedupPlugin } from 'villus'
 
 export default defineNuxtPlugin((nuxtApp) => {
-  const cache = createCache({
+  const cache = createCachebay({
     // hydrationTimeout: 120,
     // suspensionTimeout: 800,
   })
@@ -156,9 +156,9 @@ export default defineNuxtPlugin((nuxtApp) => {
 You can tune SSR/Suspense timeouts when creating the cache:
 
 ```ts
-import { createCache } from 'villus-cachebay'
+import { createCachebay } from 'villus-cachebay'
 
-const cache = createCache({
+const cache = createCachebay({
   /** Suppress the first CN revalidate right after hydrate (ms) */
   hydrationTimeout: 120,
 
