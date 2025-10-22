@@ -20,6 +20,7 @@ describe("operations", () => {
     mockPlanner = {
       getPlan: vi.fn().mockReturnValue({
         compiled: true,
+        networkQuery: "query GetUser { user { id name __typename } }",
         makeSignature: vi.fn().mockReturnValue("query-sig-123"),
       }),
     };
@@ -101,7 +102,7 @@ describe("operations", () => {
       expect(mockPlanner.getPlan).toHaveBeenCalledWith(query);
       expect(mockTransport.http).toHaveBeenCalledWith(
         expect.objectContaining({
-          query,
+          query: "query GetUser { user { id name __typename } }", // networkQuery with __typename
           variables,
           operationType: "query",
           compiledQuery: expect.objectContaining({ compiled: true }),

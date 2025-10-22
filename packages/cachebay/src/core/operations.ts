@@ -1,4 +1,5 @@
 import type { DocumentNode, GraphQLError } from "graphql";
+import { print } from "graphql";
 import type { PlannerInstance } from "./planner";
 import type { QueriesInstance } from "./queries";
 import type { SSRInstance } from "./ssr";
@@ -209,7 +210,7 @@ export const createOperations = (
 
     // Network fetch
     const context: HttpContext = {
-      query,
+      query: plan.networkQuery, // Use the pre-compiled network-safe query string
       variables: vars,
       operationType: "query",
       compiledQuery: plan,

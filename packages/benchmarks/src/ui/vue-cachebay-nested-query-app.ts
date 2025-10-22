@@ -1,5 +1,5 @@
 import { gql } from "graphql-tag";
-import { createApp, defineComponent, nextTick } from "vue";
+import { createApp, defineComponent, nextTick, reactive } from "vue";
 import { createCachebay } from "../../../cachebay/src/core/client";
 import { createCachebayPlugin, useQuery } from "../../../cachebay/src/adapters/vue";
 
@@ -68,7 +68,7 @@ export function createVueCachebayNestedApp(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          query: context.body,
+          query: context.query,
           variables: context.variables,
         }),
       });
@@ -82,6 +82,8 @@ export function createVueCachebayNestedApp(
 
   const cachebay = createCachebay({
     interfaces: { Node: ["User", "Post", "Comment"] },
+    hydrationTimeout: 0,
+    suspensionTimeout: 0,
     transport,
   });
 
@@ -94,13 +96,12 @@ export function createVueCachebayNestedApp(
 
   const NestedList = defineComponent({
     setup() {
-      // Plain, non-reactive vars to avoid extra watchers.
-      const variables: { first: number; after: string | null } = { first: 10, after: null };
+      // Make variables reactive so useQuery can watch for changes
+      const variables = reactive<{ first: number; after: string | null }>({ first: 10, after: null });
 
-      const { data, refetch } = useQuery({
+      const { data, error, refetch, isFetching } = useQuery({
         query: USERS_QUERY,
         variables: () => variables,
-        pause: true,
         cachePolicy,
       });
 
@@ -112,11 +113,27 @@ export function createVueCachebayNestedApp(
         try {
           const t0 = performance.now();
 
-          // Includes network + cache work.
-          await refetch();
-
+          console.log('Before - variables:', JSON.stringify(variables));
+          console.log('Before - data:', data.value);
+          console.log('Before - isFetching:', isFetching.value);
+          
+          // Get endCursor from current data and update variables
           const endCursor = data.value?.users?.pageInfo?.endCursor ?? null;
-          if (endCursor) variables.after = endCursor;
+          if (endCursor) {
+            variables.after = endCursor;
+            console.log('Updated variables.after to:', endCursor);
+            
+            // Wait for the watch to trigger and query to complete
+            await nextTick();
+            
+            // Wait for isFetching to become false
+            while (isFetching.value) {
+              await new Promise(resolve => setTimeout(resolve, 10));
+            }
+          }
+          
+          console.log('After - data:', data.value);
+          console.log('After - error:', error.value);
 
           // Ensure DOM paint before measuring render time.
           await nextTick();

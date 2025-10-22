@@ -1,6 +1,7 @@
 import {
   Kind,
   parse,
+  print,
   visit,
   type DocumentNode,
   type FragmentDefinitionNode,
@@ -207,9 +208,9 @@ function ensureTypenameNested(ss: SelectionSetNode): SelectionSetNode {
   return { kind: ss.kind, selections };
 }
 
-/** Create a network-safe copy: strip @connection directives. __typename is already added during compilation. */
-function buildNetworkQuery(doc: DocumentNode): DocumentNode {
-  return visit(doc, {
+/** Create a network-safe copy: strip @connection directives. __typename is already added during compilation. Returns a string ready to send to server. */
+function buildNetworkQuery(doc: DocumentNode): string {
+  const cleaned = visit(doc, {
     Field: {
       enter(node) {
         if (!node.directives || node.directives.length === 0) {
@@ -233,6 +234,8 @@ function buildNetworkQuery(doc: DocumentNode): DocumentNode {
       },
     },
   });
+  
+  return print(cleaned);
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */

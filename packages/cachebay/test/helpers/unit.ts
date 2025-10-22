@@ -55,7 +55,7 @@ export const writeConnectionPage = (graph: ReturnType<typeof createGraph>, pageK
 // old
 
 
-import { visit, Kind, type DocumentNode, type SelectionSetNode } from "graphql";
+import { visit, parse, Kind, type DocumentNode, type SelectionSetNode } from "graphql";
 import gql from "graphql-tag";
 import type { PlanField } from "@/src/compiler";
 import { compilePlan } from "@/src/compiler/compile";
@@ -99,9 +99,10 @@ export function readCanonicalEdges(graph: ReturnType<typeof createGraph>, canoni
   return out;
 }
 
-export const collectConnectionDirectives = (doc: DocumentNode): string[] => {
+export const collectConnectionDirectives = (doc: DocumentNode | string): string[] => {
+  const parsed = typeof doc === 'string' ? parse(doc) : doc;
   const hits: string[] = [];
-  visit(doc, {
+  visit(parsed, {
     Field(node) {
       const hasConn = (node.directives || []).some(d => d.name.value === "connection");
       if (hasConn) hits.push(node.name.value);
@@ -122,10 +123,11 @@ export const selectionSetHasTypename = (node: { selectionSet?: SelectionSetNode 
   });
 };
 
-export const hasTypenames = (doc: DocumentNode): boolean => {
+export const hasTypenames = (doc: DocumentNode | string): boolean => {
+  const parsed = typeof doc === 'string' ? parse(doc) : doc;
   let ok = true;
 
-  visit(doc, {
+  visit(parsed, {
     SelectionSet: {
       enter(node, _key, parent) {
         if (parent && parent.kind === Kind.OPERATION_DEFINITION) {

@@ -41,7 +41,7 @@ importers:
         version: 4.2.2(@apollo/client@3.14.0(@types/react@19.2.2)(graphql@16.11.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(graphql@16.11.0)(typescript@5.9.2)(vue@3.5.21(typescript@5.9.2))
       cachebay:
         specifier: workspace:*
-        version: link:../villus-cachebay
+        version: link:../cachebay
       graphql:
         specifier: ^16.11.0
         version: 16.11.0
@@ -134,6 +134,69 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/node@24.2.1)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.1)(terser@5.44.0)(tsx@4.20.6)(yaml@2.8.1)
 
+  packages/cachebay:
+    devDependencies:
+      '@codspeed/vitest-plugin':
+        specifier: ^5.0.1
+        version: 5.0.1(tinybench@5.0.1)(vite@7.1.4(@types/node@24.2.1)(jiti@2.6.1)(lightningcss@1.30.1)(terser@5.44.0)(tsx@4.20.6)(yaml@2.8.1))(vitest@3.2.4(@types/node@24.2.1)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.1)(terser@5.44.0)(tsx@4.20.6)(yaml@2.8.1))
+      '@lockvoid/eslint-config':
+        specifier: ^0.7.0
+        version: 0.7.0(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.42.0(eslint@9.33.0(jiti@2.6.1))(typescript@5.9.2))(eslint@9.33.0(jiti@2.6.1)))(eslint@9.33.0(jiti@2.6.1))
+      '@nuxt/test-utils':
+        specifier: ^3.19.2
+        version: 3.19.2(@playwright/test@1.55.0)(@vue/test-utils@2.4.6)(happy-dom@18.0.1)(jsdom@26.1.0)(magicast@0.3.5)(playwright-core@1.55.0)(typescript@5.9.2)(vitest@3.2.4(@types/node@24.2.1)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.1)(terser@5.44.0)(tsx@4.20.6)(yaml@2.8.1))
+      '@playwright/test':
+        specifier: ^1.55.0
+        version: 1.55.0
+      '@vitest/coverage-v8':
+        specifier: 3.2.4
+        version: 3.2.4(vitest@3.2.4(@types/node@24.2.1)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.1)(terser@5.44.0)(tsx@4.20.6)(yaml@2.8.1))
+      '@vue/test-utils':
+        specifier: ^2.4.6
+        version: 2.4.6
+      eslint:
+        specifier: ^9.31.0
+        version: 9.33.0(jiti@2.6.1)
+      eslint-plugin-tailwindcss:
+        specifier: ^4.0.0-beta.0
+        version: 4.0.0-beta.0(tailwindcss@4.1.13)
+      eslint-plugin-vue:
+        specifier: ^10.4.0
+        version: 10.4.0(@typescript-eslint/parser@8.42.0(eslint@9.33.0(jiti@2.6.1))(typescript@5.9.2))(eslint@9.33.0(jiti@2.6.1))(vue-eslint-parser@10.2.0(eslint@9.33.0(jiti@2.6.1)))
+      glob:
+        specifier: ^11.0.3
+        version: 11.0.3
+      graphql:
+        specifier: ^16.11.0
+        version: 16.11.0
+      graphql-tag:
+        specifier: ^2.12.6
+        version: 2.12.6(graphql@16.11.0)
+      happy-dom:
+        specifier: ^18.0.1
+        version: 18.0.1
+      tailwindcss:
+        specifier: ^4.1.13
+        version: 4.1.13
+      tsdown:
+        specifier: ^0.15.6
+        version: 0.15.6(typescript@5.9.2)
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.2
+      typescript-eslint:
+        specifier: ^8.41.0
+        version: 8.42.0(eslint@9.33.0(jiti@2.6.1))(typescript@5.9.2)
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/node@24.2.1)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.1)(terser@5.44.0)(tsx@4.20.6)(yaml@2.8.1)
+      vue:
+        specifier: ^3.5.18
+        version: 3.5.21(typescript@5.9.2)
+      vue-router:
+        specifier: ^4.5.1
+        version: 4.5.1(vue@3.5.21(typescript@5.9.2))
+
   packages/demo:
     dependencies:
       '@lockvoid/vue-form':
@@ -150,7 +213,7 @@ importers:
         version: 4.6.2(@pothos/core@4.9.1(graphql@16.11.0))(graphql@16.11.0)
       cachebay:
         specifier: workspace:*
-        version: link:../villus-cachebay
+        version: link:../cachebay
       graphql-sse:
         specifier: ^2.5.4
         version: 2.5.4(graphql@16.11.0)
@@ -215,69 +278,6 @@ importers:
       vue-tsc:
         specifier: ^3.0.6
         version: 3.0.6(typescript@5.9.2)
-
-  packages/villus-cachebay:
-    devDependencies:
-      '@codspeed/vitest-plugin':
-        specifier: ^5.0.1
-        version: 5.0.1(tinybench@5.0.1)(vite@7.1.4(@types/node@24.2.1)(jiti@2.6.1)(lightningcss@1.30.1)(terser@5.44.0)(tsx@4.20.6)(yaml@2.8.1))(vitest@3.2.4(@types/node@24.2.1)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.1)(terser@5.44.0)(tsx@4.20.6)(yaml@2.8.1))
-      '@lockvoid/eslint-config':
-        specifier: ^0.7.0
-        version: 0.7.0(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.42.0(eslint@9.33.0(jiti@2.6.1))(typescript@5.9.2))(eslint@9.33.0(jiti@2.6.1)))(eslint@9.33.0(jiti@2.6.1))
-      '@nuxt/test-utils':
-        specifier: ^3.19.2
-        version: 3.19.2(@playwright/test@1.55.0)(@vue/test-utils@2.4.6)(happy-dom@18.0.1)(jsdom@26.1.0)(magicast@0.3.5)(playwright-core@1.55.0)(typescript@5.9.2)(vitest@3.2.4(@types/node@24.2.1)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.1)(terser@5.44.0)(tsx@4.20.6)(yaml@2.8.1))
-      '@playwright/test':
-        specifier: ^1.55.0
-        version: 1.55.0
-      '@vitest/coverage-v8':
-        specifier: 3.2.4
-        version: 3.2.4(vitest@3.2.4(@types/node@24.2.1)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.1)(terser@5.44.0)(tsx@4.20.6)(yaml@2.8.1))
-      '@vue/test-utils':
-        specifier: ^2.4.6
-        version: 2.4.6
-      eslint:
-        specifier: ^9.31.0
-        version: 9.33.0(jiti@2.6.1)
-      eslint-plugin-tailwindcss:
-        specifier: ^4.0.0-beta.0
-        version: 4.0.0-beta.0(tailwindcss@4.1.13)
-      eslint-plugin-vue:
-        specifier: ^10.4.0
-        version: 10.4.0(@typescript-eslint/parser@8.42.0(eslint@9.33.0(jiti@2.6.1))(typescript@5.9.2))(eslint@9.33.0(jiti@2.6.1))(vue-eslint-parser@10.2.0(eslint@9.33.0(jiti@2.6.1)))
-      glob:
-        specifier: ^11.0.3
-        version: 11.0.3
-      graphql:
-        specifier: ^16.11.0
-        version: 16.11.0
-      graphql-tag:
-        specifier: ^2.12.6
-        version: 2.12.6(graphql@16.11.0)
-      happy-dom:
-        specifier: ^18.0.1
-        version: 18.0.1
-      tailwindcss:
-        specifier: ^4.1.13
-        version: 4.1.13
-      tsdown:
-        specifier: ^0.15.6
-        version: 0.15.6(typescript@5.9.2)
-      typescript:
-        specifier: ^5.9.2
-        version: 5.9.2
-      typescript-eslint:
-        specifier: ^8.41.0
-        version: 8.42.0(eslint@9.33.0(jiti@2.6.1))(typescript@5.9.2)
-      vitest:
-        specifier: ^3.2.4
-        version: 3.2.4(@types/node@24.2.1)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.1)(terser@5.44.0)(tsx@4.20.6)(yaml@2.8.1)
-      vue:
-        specifier: ^3.5.18
-        version: 3.5.21(typescript@5.9.2)
-      vue-router:
-        specifier: ^4.5.1
-        version: 4.5.1(vue@3.5.21(typescript@5.9.2))
 
 packages:
 
@@ -7700,7 +7700,7 @@ snapshots:
       estree-walker: 2.0.2
       fdir: 6.5.0(picomatch@4.0.3)
       is-reference: 1.2.1
-      magic-string: 0.30.18
+      magic-string: 0.30.19
       picomatch: 4.0.3
     optionalDependencies:
       rollup: 4.50.1
@@ -7709,7 +7709,7 @@ snapshots:
     dependencies:
       '@rollup/pluginutils': 5.3.0(rollup@4.50.1)
       estree-walker: 2.0.2
-      magic-string: 0.30.18
+      magic-string: 0.30.19
     optionalDependencies:
       rollup: 4.50.1
 
@@ -7732,7 +7732,7 @@ snapshots:
   '@rollup/plugin-replace@6.0.2(rollup@4.50.1)':
     dependencies:
       '@rollup/pluginutils': 5.3.0(rollup@4.50.1)
-      magic-string: 0.30.18
+      magic-string: 0.30.19
     optionalDependencies:
       rollup: 4.50.1
 
@@ -10281,7 +10281,7 @@ snapshots:
     dependencies:
       '@ioredis/commands': 1.3.1
       cluster-key-slot: 1.1.2
-      debug: 4.4.1
+      debug: 4.4.3
       denque: 2.1.0
       lodash.defaults: 4.2.0
       lodash.isarguments: 3.1.0
@@ -12802,7 +12802,7 @@ snapshots:
   unwasm@0.3.11:
     dependencies:
       knitwork: 1.2.0
-      magic-string: 0.30.18
+      magic-string: 0.30.19
       mlly: 1.8.0
       pathe: 2.0.3
       pkg-types: 2.3.0

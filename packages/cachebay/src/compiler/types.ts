@@ -43,8 +43,8 @@ export type CachePlan = {
   root: PlanField[];
   rootSelectionMap?: Map<string, PlanField>;
 
-  /** Network-safe document: __typename added; @connection stripped. */
-  networkQuery: DocumentNode;
+  /** Network-safe query string: __typename added; @connection stripped. Ready to send to server. */
+  networkQuery: string;
 
   /** Stable, selection-shape ID for watcher/caching signatures. */
   id: number;

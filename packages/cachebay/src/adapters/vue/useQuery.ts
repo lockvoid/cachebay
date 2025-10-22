@@ -69,6 +69,7 @@ export function useQuery<TData = any, TVars = any>(
    * Returns a promise that resolves when initial data is available (for Suspense)
    */
   const setupWatch = async (): Promise<void> => {
+    console.log('ssdsd', options.variables)
     const vars = toValue(options.variables) || ({} as TVars);
     const isPaused = toValue(options.pause);
 
@@ -180,14 +181,14 @@ export function useQuery<TData = any, TVars = any>(
             // Ignore stale errors - they're expected and shouldn't surface to UI
             // Check if the error is a StaleResponseError (wrapped in CombinedError)
             const isStale = result.error.networkError instanceof StaleResponseError;
-            
+
             if (isStale) {
               isFetching.value = false;
               settled = true;
               resolve();
               return;
             }
-            
+
             error.value = result.error;
             isFetching.value = false;
             settled = true;
