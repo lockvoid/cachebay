@@ -54,7 +54,7 @@ describe("Relay connections", () => {
         },
 
         global: {
-          plugins: [client, cache],
+          plugins: [client],
         },
       });
 
@@ -120,7 +120,7 @@ describe("Relay connections", () => {
       },
 
       global: {
-        plugins: [client, cache],
+        plugins: [client],
       },
     });
 
@@ -186,7 +186,7 @@ describe("Relay connections", () => {
       },
 
       global: {
-        plugins: [client, cache],
+        plugins: [client],
       },
     });
 
@@ -251,7 +251,7 @@ describe("Relay connections", () => {
       },
 
       global: {
-        plugins: [client, cache],
+        plugins: [client],
       },
     });
 
@@ -446,7 +446,7 @@ describe("Relay connections", () => {
 
     const wrapper = mount(Cmp, {
       props: { category: "A", first: 2, after: null },
-      global: { plugins: [client, cache] },
+      global: { plugins: [client] },
     });
 
     // 1. Initial load: empty while network request is pending
@@ -703,7 +703,7 @@ describe("Relay connections", () => {
         last: 2,
         before: null,
       },
-      global: { plugins: [client, cache] },
+      global: { plugins: [client] },
     });
 
     // 1) Initial load: empty while network leader is pending
