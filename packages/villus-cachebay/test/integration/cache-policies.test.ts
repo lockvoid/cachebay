@@ -2,6 +2,166 @@ import { mount } from "@vue/test-utils";
 import { createTestClient, createConnectionComponent, createDetailComponent, seedCache, getEdges, fixtures, operations, delay, tick } from "@/test/helpers";
 
 describe("Cache Policies Behavior", () => {
+  describe("network-only policy", () => {
+    it.only("ignores cache and always fetches from network", async () => {
+      const routes = [
+        {
+          when: ({ variables }) => {
+            return variables.usersRole === "admin";
+          },
+          respond: () => {
+            return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ email: "u1@example.com" }]) } };
+          },
+          delay: 20,
+        },
+      ];
+
+      const { client, fx } = createTestClient({ routes });
+
+      const Cmp = createConnectionComponent(operations.USERS_QUERY, {
+        cachePolicy: "network-only",
+
+        connectionFn: (data) => {
+          return data.users;
+        },
+      });
+
+      const wrapper = mount(Cmp, {
+        props: {
+          usersRole: "admin",
+          usersFirst: 2,
+          usersAfter: null,
+        },
+        global: {
+          plugins: [client],
+        },
+      });
+
+      await tick();
+      expect(getEdges(wrapper, "email").length).toBe(0);
+      expect(fx.calls.length).toBe(1);
+
+      await delay(25);
+      expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
+
+      await fx.restore();
+    });
+
+    it("fetches single user from network ignoring cache", async () => {
+      const routes = [
+        {
+          when: ({ variables }) => {
+            return variables.id === "u1";
+          },
+          respond: () => {
+            return { data: { __typename: "Query", user: fixtures.user({ id: "u1", email: "u1@example.com" }) } };
+          },
+          delay: 15,
+        },
+      ];
+
+      const { client, fx } = createTestClient({ routes });
+
+      const Cmp = createDetailComponent(operations.USER_QUERY, {
+        cachePolicy: "network-only",
+
+        detailFn: (data) => {
+          return data.user;
+        },
+      });
+
+      const wrapper = mount(Cmp, {
+        props: {
+          id: "u1",
+        },
+        global: {
+          plugins: [client],
+        },
+      });
+
+      await tick();
+      expect(getEdges(wrapper, "email")).toEqual([]);
+      expect(fx.calls.length).toBe(1);
+
+      await delay(20);
+      expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
+
+      await fx.restore();
+    });
+
+    it("handles paginated comments with cursor-based navigation", async () => {
+      const data1 = {
+        __typename: "Query",
+
+        user: fixtures.user({
+          id: "u1",
+          email: "user1@example.com",
+
+          posts: fixtures.posts.buildConnection([
+            {
+              id: "p1",
+              title: "Post 1",
+
+              comments: fixtures.comments.buildConnection([
+                {
+                  uuid: "c3",
+                  text: "Comment 3",
+                },
+                {
+                  uuid: "c4",
+                  text: "Comment 4",
+                },
+              ]),
+            },
+          ]),
+        }),
+      };
+
+      const routes = [
+        {
+          when: ({ variables }) => {
+            return variables.id === "u1" && variables.postsCategory === "tech" && variables.commentsFirst === 2 && variables.commentsAfter === "c2";
+          },
+          respond: () => {
+            return { data: data1 };
+          },
+          delay: 10,
+        },
+      ];
+
+      const Cmp = createConnectionComponent(operations.USER_POSTS_COMMENTS_QUERY, {
+        cachePolicy: "network-only",
+
+        connectionFn: (data) => {
+          return data.user?.posts?.edges?.[0]?.node?.comments;
+        },
+      });
+
+      const { client, cache, fx } = createTestClient({ routes });
+
+      const wrapper = mount(Cmp, {
+        props: {
+          id: "u1",
+          postsCategory: "tech",
+          postsFirst: 1,
+          postsAfter: null,
+          commentsFirst: 2,
+          commentsAfter: "c2",
+        },
+
+        global: {
+          plugins: [client],
+        },
+      });
+
+      await delay(12);
+
+      expect(getEdges(wrapper, "text")).toEqual(["Comment 3", "Comment 4"]);
+
+      await fx.restore();
+    });
+  });
+
   describe("cache-first policy", () => {
     it("makes network request and renders when cache is empty", async () => {
       const routes = [
@@ -44,7 +204,6 @@ describe("Cache Policies Behavior", () => {
 
       await delay(40);
       expect(getEdges(wrapper, "email")).toEqual(["tech.user@example.com"]);
-
 
       await fx.restore();
     });
@@ -612,166 +771,6 @@ describe("Cache Policies Behavior", () => {
       await delay(20);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com", "u2@example.com"]);
       expect(fx.calls.length).toBe(1);
-
-      await fx.restore();
-    });
-  });
-
-  describe("network-only policy", () => {
-    it("ignores cache and always fetches from network", async () => {
-      const routes = [
-        {
-          when: ({ variables }) => {
-            return variables.usersRole === "admin";
-          },
-          respond: () => {
-            return { data: { __typename: "Query", users: fixtures.users.buildConnection([{ email: "u1@example.com" }]) } };
-          },
-          delay: 20,
-        },
-      ];
-
-      const { client, fx } = createTestClient({ routes });
-
-      const Cmp = createConnectionComponent(operations.USERS_QUERY, {
-        cachePolicy: "network-only",
-
-        connectionFn: (data) => {
-          return data.users;
-        },
-      });
-
-      const wrapper = mount(Cmp, {
-        props: {
-          usersRole: "admin",
-          usersFirst: 2,
-          usersAfter: null,
-        },
-        global: {
-          plugins: [client],
-        },
-      });
-
-      await tick();
-      expect(getEdges(wrapper, "email").length).toBe(0);
-      expect(fx.calls.length).toBe(1);
-
-      await delay(25);
-      expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
-
-      await fx.restore();
-    });
-
-    it("fetches single user from network ignoring cache", async () => {
-      const routes = [
-        {
-          when: ({ variables }) => {
-            return variables.id === "u1";
-          },
-          respond: () => {
-            return { data: { __typename: "Query", user: fixtures.user({ id: "u1", email: "u1@example.com" }) } };
-          },
-          delay: 15,
-        },
-      ];
-
-      const { client, fx } = createTestClient({ routes });
-
-      const Cmp = createDetailComponent(operations.USER_QUERY, {
-        cachePolicy: "network-only",
-
-        detailFn: (data) => {
-          return data.user;
-        },
-      });
-
-      const wrapper = mount(Cmp, {
-        props: {
-          id: "u1",
-        },
-        global: {
-          plugins: [client],
-        },
-      });
-
-      await tick();
-      expect(getEdges(wrapper, "email")).toEqual([]);
-      expect(fx.calls.length).toBe(1);
-
-      await delay(20);
-      expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
-
-      await fx.restore();
-    });
-
-    it("handles paginated comments with cursor-based navigation", async () => {
-      const data1 = {
-        __typename: "Query",
-
-        user: fixtures.user({
-          id: "u1",
-          email: "user1@example.com",
-
-          posts: fixtures.posts.buildConnection([
-            {
-              id: "p1",
-              title: "Post 1",
-
-              comments: fixtures.comments.buildConnection([
-                {
-                  uuid: "c3",
-                  text: "Comment 3",
-                },
-                {
-                  uuid: "c4",
-                  text: "Comment 4",
-                },
-              ]),
-            },
-          ]),
-        }),
-      };
-
-      const routes = [
-        {
-          when: ({ variables }) => {
-            return variables.id === "u1" && variables.postsCategory === "tech" && variables.commentsFirst === 2 && variables.commentsAfter === "c2";
-          },
-          respond: () => {
-            return { data: data1 };
-          },
-          delay: 10,
-        },
-      ];
-
-      const Cmp = createConnectionComponent(operations.USER_POSTS_COMMENTS_QUERY, {
-        cachePolicy: "network-only",
-
-        connectionFn: (data) => {
-          return data.user?.posts?.edges?.[0]?.node?.comments;
-        },
-      });
-
-      const { client, cache, fx } = createTestClient({ routes });
-
-      const wrapper = mount(Cmp, {
-        props: {
-          id: "u1",
-          postsCategory: "tech",
-          postsFirst: 1,
-          postsAfter: null,
-          commentsFirst: 2,
-          commentsAfter: "c2",
-        },
-
-        global: {
-          plugins: [client],
-        },
-      });
-
-      await delay(12);
-
-      expect(getEdges(wrapper, "text")).toEqual(["Comment 3", "Comment 4"]);
 
       await fx.restore();
     });

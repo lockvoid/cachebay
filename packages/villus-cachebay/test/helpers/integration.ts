@@ -1,8 +1,9 @@
-import { createClient } from "villus";
-import { fetch as villusFetch } from "villus";
 import { defineComponent, h, computed, watch, Suspense } from "vue";
 import { createCache } from "@/src/core/client";
+import { provideCachebay } from "@/src/adapters/vue/plugin";
+import { useQuery } from "@/src/adapters/vue/useQuery";
 import { tick, delay } from "./concurrency";
+import type { Transport } from "@/src/core/operations";
 
 export async function seedCache(cache, { query, variables, data }) {
   const internals = cache.__internals;
@@ -19,8 +20,11 @@ export async function seedCache(cache, { query, variables, data }) {
 }
 
 export function createTestClient({ routes, cache, cacheOptions }: { routes?: Route[], cache?: any, cacheOptions?: any } = {}) {
+  const fx = createTransportMock(routes);
+
   const finalCache = cache ?? createCache({
     suspensionTimeout: 0,
+    transport: fx.transport,
 
     ...(cacheOptions || {}),
 
@@ -39,13 +43,12 @@ export function createTestClient({ routes, cache, cacheOptions }: { routes?: Rou
     },
   });
 
-  const fx = createFetchMock(routes);
-
-  const client = createClient({
-    url: "/test",
-
-    use: [finalCache, fx.plugin],
-  });
+  // Create Vue plugin that provides the cache
+  const client = {
+    install(app: any) {
+      provideCachebay(app, finalCache);
+    },
+  };
 
   return { client, cache: finalCache, fx };
 }
@@ -56,69 +59,53 @@ export type Route = {
   delay?: number;
 };
 
-type RecordedCall = { body: string; variables: any; context: any };
+type RecordedCall = { query: string; variables: any };
 
-/** Build a Response compatible object (works in happy-dom too) */
-function buildResponse(obj: any) {
-  if (typeof Response !== "undefined") {
-    return new Response(JSON.stringify(obj), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-  return {
-    ok: true,
-    status: 200,
-    async json() { return obj; },
-    async text() { return JSON.stringify(obj); },
-  } as any;
-}
-
-export function createFetchMock(routes: Route[] = []) {
+export function createTransportMock(routes: Route[] = []) {
   const calls: Array<RecordedCall> = [];
-  const originalFetch = globalThis.fetch;
   let pending = 0;
 
-  globalThis.fetch = async (_input: any, init?: any) => {
-    try {
-      const bodyObj =
-        init && typeof (init as any).body === "string"
-          ? JSON.parse((init as any).body as string)
-          : {};
-      const body = bodyObj.query || "";
-      const variables = bodyObj.variables || {};
-      const context = {};
-      const op = { body, variables, context };
+  const transport: Transport = {
+    http: async (context) => {
+      const { query, variables } = context;
+      const queryStr = typeof query === "string" ? query : query.loc?.source.body || "";
+      const op = { body: queryStr, variables, context };
 
       const route = routes.find(r => r.when(op));
       if (!route) {
         // unmatched: return benign payload; do not count as "call"
-        return buildResponse({ data: null });
+        return { data: null, error: null };
       }
 
-      calls.push(op);
+      calls.push({ query: queryStr, variables });
       pending++;
-      if (route.delay && route.delay > 0) {
-        await delay(route.delay);
+      
+      try {
+        if (route.delay && route.delay > 0) {
+          await delay(route.delay);
+        }
+
+        const payload = route.respond(op);
+        
+        if (payload && typeof payload === "object" && "error" in payload && (payload as any).error) {
+          return {
+            data: null,
+            error: (payload as any).error,
+          };
+        }
+        
+        return {
+          data: payload?.data || payload,
+          error: null,
+        };
+      } finally {
+        if (pending > 0) pending--;
       }
-
-      const payload = route.respond(op);
-      const resp =
-        payload && typeof payload === "object" && "error" in payload && (payload as any).error
-          ? { errors: [{ message: (payload as any).error?.message || "Mock error" }] }
-          : (payload && typeof payload === "object" && "data" in payload
-            ? payload
-            : { data: payload });
-
-      return buildResponse(resp);
-    } finally {
-      if (pending > 0) pending--;
-    }
+    },
   };
 
   return {
-    plugin: villusFetch(),
-
+    transport,
     calls,
 
     async restore(timeoutMs = 200) {
@@ -126,8 +113,6 @@ export function createFetchMock(routes: Route[] = []) {
       while (pending > 0 && Date.now() < end) {
         await tick();
       }
-
-      globalThis.fetch = originalFetch;
     },
   };
 }
@@ -170,13 +155,11 @@ export const createConnectionComponent = (
     inheritAttrs: false,
 
     setup(props, { attrs }) {
-      const { useQuery } = require("villus");
-
       const variables = computed(() => {
         return attrs;
       });
 
-      const { data, error, isFetching } = useQuery({ query, variables, cachePolicy });
+      const { data, error, loading } = useQuery({ query, variables, cachePolicy });
 
       const connection = computed(() => {
         if (!data.value) {
@@ -200,12 +183,12 @@ export const createConnectionComponent = (
       }, { immediate: true });
 
       return () => {
-        if (!connection.value && isFetching.value) {
+        if (!connection.value && loading.value) {
           return h("div", { class: "loading" }, "Loading...");
         }
 
         if (error.value) {
-          return h("div", { class: "error" }, JSON.stringify(error.value));
+          return h("div", { class: "error" }, error.value.message || JSON.stringify(error.value));
         }
 
         return h("div", {}, [
@@ -257,8 +240,6 @@ export const createConnectionComponentSuspense = (
     inheritAttrs: false,
 
     async setup(props, { attrs }) {
-      const { useQuery } = require("villus");
-
       const variables = computed(() => {
         return attrs;
       });
@@ -353,13 +334,11 @@ export const createDetailComponent = (
     inheritAttrs: false,
 
     setup(props, { attrs }) {
-      const { useQuery } = require("villus");
-
       const variables = computed(() => {
         return attrs;
       });
 
-      const { data, isFetching, error } = useQuery({ query, variables, cachePolicy });
+      const { data, loading, error } = useQuery({ query, variables, cachePolicy });
 
       const detail = computed(() => {
         if (!data.value) {
@@ -384,12 +363,12 @@ export const createDetailComponent = (
       }, { immediate: true });
 
       return () => {
-        if (!detail.value && isFetching.value) {
+        if (!detail.value && loading.value) {
           return h("div", { class: "loading" }, "Loading...");
         }
 
         if (error.value) {
-          return h("div", { class: "error" }, JSON.stringify(error.value));
+          return h("div", { class: "error" }, error.value.message || JSON.stringify(error.value));
         }
 
         return h("ul", { class: "edges" }, [
@@ -428,8 +407,6 @@ export const createDetailComponentSuspense = (
     inheritAttrs: false,
 
     async setup(props, { attrs }) {
-      const { useQuery } = require("villus");
-
       const variables = computed(() => {
         return attrs;
       });
