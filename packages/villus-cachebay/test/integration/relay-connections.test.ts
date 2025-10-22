@@ -267,7 +267,7 @@ describe("Relay connections", () => {
     expect(getPageInfo(wrapper)).toEqual({ startCursor: "p3", endCursor: "p4", hasNextPage: false, hasPreviousPage: false });
   });
 
-  it("maintains stable artifacts unless changed", async () => {
+  it("maintains stable references unless changed", async () => {
     const routes = [
       {
         when: ({ variables }) => {
