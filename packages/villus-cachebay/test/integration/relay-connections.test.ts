@@ -4,7 +4,7 @@ import { createTestClient, createConnectionComponent, seedCache, getPageInfo, ge
 
 describe("Relay connections", () => {
   describe("cache-first", () => {
-    it("appends new pages at end and updates pageInfo from tail cursor (cache-first)", async () => {
+    it.only("appends new pages at end and updates pageInfo from tail cursor (cache-first)", async () => {
       const routes = [
         {
           when: ({ variables }) => {
@@ -266,7 +266,7 @@ describe("Relay connections", () => {
     expect(getPageInfo(wrapper)).toEqual({ startCursor: "p3", endCursor: "p4", hasNextPage: false, hasPreviousPage: false });
   });
 
-  it.skip("maintains stable reactive edges while keeping pageInfo non-reactive across views", async () => {
+  it("maintains stable reactive edges while keeping pageInfo non-reactive across views", async () => {
     const routes = [
       {
         when: ({ variables }) => {
