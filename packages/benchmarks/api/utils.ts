@@ -111,18 +111,18 @@ export function makeResponse({
                       },
                     },
                   })),
-                  pageInfo: { 
-                    __typename: "PageInfo", 
+                  pageInfo: {
+                    __typename: "PageInfo",
                     endCursor: comments > 0 ? "c" + comments : null,
-                    hasNextPage: false 
+                    hasNextPage: false
                   },
                 },
               },
             })),
-            pageInfo: { 
-              __typename: "PageInfo", 
+            pageInfo: {
+              __typename: "PageInfo",
               endCursor: posts > 0 ? "p" + posts : null,
-              hasNextPage: false 
+              hasNextPage: false
             },
           },
         },
@@ -142,10 +142,10 @@ export function makeResponse({
 export type Page = {
   data: ResponseShape;
   after: string | null;
-  vars: { first: number; after: string | null };
+  variables: { first: number; after: string | null };
 };
 
-export function buildPages(all: ResponseShape, pageSize: number): Page[] {
+export const buildPages = (all: ResponseShape, pageSize: number): Page[] => {
   const edges = all.users.edges;
   const pages: Page[] = [];
   const total = edges.length;
@@ -173,7 +173,7 @@ export function buildPages(all: ResponseShape, pageSize: number): Page[] {
     pages.push({
       data: pageData,
       after,
-      vars: { first: pageSize, after },
+      variables: { first: pageSize, after },
     });
   }
 

@@ -201,11 +201,11 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     ]));
 
     // Fingerprinting: connection should have fingerprint
-    const fp1 = (res.data as any).__version;
+    const fp1 = res.fingerprint;
     expect(fp1).toBeGreaterThan(0);
-    expect((res.data.users as any).__version).toBeGreaterThan(0);
-    expect((res.data.users.edges as any).__version).toBeGreaterThan(0);
-    expect((res.data.users.pageInfo as any).__version).toBeGreaterThan(0);
+    expect((res.data.users as any).__fp).toBeGreaterThan(0);
+    expect((res.data.users.edges as any).__fp).toBeGreaterThan(0);
+    expect((res.data.users.pageInfo as any).__fp).toBeGreaterThan(0);
 
     // Update a user node
     graph.putRecord("User:u1", { email: "u1+updated@example.com" });
@@ -216,8 +216,8 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     }) as any;
 
     // Fingerprint should change because node changed
-    expect((res2.data as any).__version).not.toBe(fp1);
-    expect((res2.data.users as any).__version).not.toBe((res.data.users as any).__version);
+    expect(res2.fingerprint).not.toBe(fp1);
+    expect((res2.data.users as any).__fp).not.toBe((res.data.users as any).__fp);
   });
 
   it("materializes a nested connection via canonical key (user.posts)", () => {
@@ -263,10 +263,10 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     ]));
 
     // Fingerprinting: nested connection fingerprints
-    const userFp1 = (res.data.user as any).__version;
-    const postsFp1 = (res.data.user.posts as any).__version;
-    const edgeFp1 = (res.data.user.posts.edges[0] as any).__version;
-    const nodeFp1 = (res.data.user.posts.edges[0].node as any).__version;
+    const userFp1 = (res.data.user as any).__fp;
+    const postsFp1 = (res.data.user.posts as any).__fp;
+    const edgeFp1 = (res.data.user.posts.edges[0] as any).__fp;
+    const nodeFp1 = (res.data.user.posts.edges[0].node as any).__fp;
 
     expect(userFp1).toBeGreaterThan(0);
     expect(postsFp1).toBeGreaterThan(0);
@@ -282,11 +282,11 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     }) as any;
 
     // All fingerprints in the chain should change
-    expect((res2.data.user.posts.edges[0].node as any).__version).not.toBe(nodeFp1);
-    expect((res2.data.user.posts.edges[0] as any).__version).not.toBe(edgeFp1);
-    expect((res2.data.user.posts as any).__version).not.toBe(postsFp1);
-    expect((res2.data.user as any).__version).not.toBe(userFp1);
-    expect((res2.data as any).__version).not.toBe((res.data as any).__version);
+    expect((res2.data.user.posts.edges[0].node as any).__fp).not.toBe(nodeFp1);
+    expect((res2.data.user.posts.edges[0] as any).__fp).not.toBe(edgeFp1);
+    expect((res2.data.user.posts as any).__fp).not.toBe(postsFp1);
+    expect((res2.data.user as any).__fp).not.toBe(userFp1);
+    expect(res2.fingerprint).not.toBe(res.fingerprint);
   });
 
   describe("dependencies tracking", () => {
@@ -1813,8 +1813,8 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       const result1 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } });
       const result2 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } });
 
-      expect((result1.data as any).__version).toBe((result2.data as any).__version);
-      expect((result1.data as any).__version).toBeGreaterThan(0);
+      expect(result1.fingerprint).toBe(result2.fingerprint);
+      expect(result1.fingerprint).toBeGreaterThan(0);
     });
 
     it("returns different fingerprint after data changes", () => {
@@ -1848,12 +1848,12 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
 
       const result2 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } });
 
-      expect((result1.data as any).__version).not.toBe((result2.data as any).__version);
-      expect((result1.data as any).__version).toBeGreaterThan(0);
-      expect((result2.data as any).__version).toBeGreaterThan(0);
+      expect(result1.fingerprint).not.toBe(result2.fingerprint);
+      expect(result1.fingerprint).toBeGreaterThan(0);
+      expect(result2.fingerprint).toBeGreaterThan(0);
     });
 
-    it("stores fingerprints as __version property", () => {
+    it("stores fingerprints externally (not on object)", () => {
       const QUERY = compilePlan(/* GraphQL */ `
         query UserById($id: ID!) {
           user(id: $id) {
@@ -1873,13 +1873,13 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
 
       const result = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } });
 
-      // Fingerprint should be accessible via __version property
-      const userFp = (result.data.user as any).__version;
+      // Fingerprint should be accessible via result helper
+      const userFp = result.getFingerprint(result.data.user);
       expect(userFp).toBeGreaterThan(0);
 
-      // __version is now a regular enumerable property (for performance)
-      expect(Object.keys(result.data.user)).toContain("__version");
-      expect(JSON.stringify(result.data.user)).toContain("__version");
+      // Should not be on the object itself
+      expect(Object.keys(result.data.user)).toEqual(["__typename", "id", "email"]);
+      expect(JSON.stringify(result.data.user)).not.toContain("__fp");
     });
 
     it("computes hierarchical fingerprints: User -> Post -> Comment", () => {
@@ -1923,17 +1923,17 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       });
 
       const r1 = documents.materializeDocument({ document: QUERY, variables: { userId: "u1", postId: "p1" } });
-      const userFp1 = (r1.data.user as any).__version;
-      const postFp1 = (r1.data.user.post as any).__version;
-      const commentFp1 = (r1.data.user.post.comment as any).__version;
+      const userFp1 = r1.getFingerprint(r1.data.user);
+      const postFp1 = r1.getFingerprint(r1.data.user.post);
+      const commentFp1 = r1.getFingerprint(r1.data.user.post.comment);
 
       // Update Post only
       graph.putRecord("Post:p1", { title: "Post 1 Updated" });
 
       const r2 = documents.materializeDocument({ document: QUERY, variables: { userId: "u1", postId: "p1" } });
-      const userFp2 = (r2.data.user as any).__version;
-      const postFp2 = (r2.data.user.post as any).__version;
-      const commentFp2 = (r2.data.user.post.comment as any).__version;
+      const userFp2 = r2.getFingerprint(r2.data.user);
+      const postFp2 = r2.getFingerprint(r2.data.user.post);
+      const commentFp2 = r2.getFingerprint(r2.data.user.post.comment);
 
       // Comment should have same fingerprint (unchanged)
       expect(commentFp2).toBe(commentFp1);
@@ -1945,7 +1945,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       expect(userFp2).not.toBe(userFp1);
 
       // Root should have different fingerprint
-      expect((r2.data as any).__version).not.toBe((r1.data as any).__version);
+      expect(r2.fingerprint).not.toBe(r1.fingerprint);
     });
 
     it("computes fingerprints for arrays", () => {
@@ -1986,9 +1986,9 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       const result2 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" } });
 
       // Fingerprints should be different because array item changed
-      expect((result1.data as any).__version).not.toBe((result2.data as any).__version);
-      const tags1Fp = (result1.data.post.tags as any).__version;
-      const tags2Fp = (result2.data.post.tags as any).__version;
+      expect(result1.fingerprint).not.toBe(result2.fingerprint);
+      const tags1Fp = result1.getFingerprint(result1.data.post.tags);
+      const tags2Fp = result2.getFingerprint(result2.data.post.tags);
       expect(tags1Fp).not.toBe(tags2Fp);
       
       // Array should have a fingerprint
@@ -2019,11 +2019,11 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         fingerprint: false,
       });
 
-      // Root should NOT have __version when fingerprinting is disabled
-      expect((result.data as any).__version).toBeUndefined();
+      // Root fingerprint should still be returned (for compatibility)
+      expect(result.fingerprint).toBe(0);
 
       // Objects should NOT have fingerprints in WeakMap
-      expect((result.data.user as any).__version).toBeUndefined();
+      expect(result.getFingerprint(result.data.user)).toBeUndefined();
       expect(Object.keys(result.data.user)).toEqual(["__typename", "id", "email"]);
     });
   });

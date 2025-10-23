@@ -3,7 +3,7 @@ import { defineConfig } from '@rsbuild/core';
 export default defineConfig({
   source: {
     entry: {
-      bench: './api/materializeDocument.bench.ts',
+      bench: './api/normalizeDocument.bench.ts',
     },
   },
   output: {
