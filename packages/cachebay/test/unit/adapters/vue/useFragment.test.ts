@@ -261,4 +261,77 @@ describe("useFragment", () => {
       }),
     ).toThrowError("[useFragment] cache must expose watchFragment()");
   });
+
+  it("recycles unchanged data (stable references)", async () => {
+    const testCache = createCachebay({ transport: mockTransport });
+
+    // Write initial user data
+    testCache.writeFragment({
+      id: "User:u1",
+      fragment: USER_FIELDS_FRAGMENT,
+      data: { id: "u1", email: "alice@example.com" },
+    });
+
+    let fragmentData: any;
+    const dataRefs: any[] = [];
+
+    const App = defineComponent({
+      setup() {
+        fragmentData = useFragment({
+          id: "User:u1",
+          fragment: USER_FIELDS_FRAGMENT,
+        });
+
+        // Track data references
+        dataRefs.push(fragmentData.value);
+
+        return () => h("div");
+      },
+    });
+
+    mount(App, {
+      global: {
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, testCache);
+            },
+          },
+        ],
+      },
+    });
+
+    await nextTick();
+
+    // Initial data should be present
+    expect(fragmentData.value).toMatchObject({ id: "u1", email: "alice@example.com" });
+    const initialRef = fragmentData.value;
+
+    // Write same data again (should recycle - same fingerprint)
+    testCache.writeFragment({
+      id: "User:u1",
+      fragment: USER_FIELDS_FRAGMENT,
+      data: { id: "u1", email: "alice@example.com" },
+    });
+
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Data reference should be recycled (same object because fingerprint unchanged)
+    expect(fragmentData.value).toBe(initialRef);
+
+    // Write different data (should create new object - different fingerprint)
+    testCache.writeFragment({
+      id: "User:u1",
+      fragment: USER_FIELDS_FRAGMENT,
+      data: { id: "u1", email: "alice.updated@example.com" },
+    });
+
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Data reference should be different (new fingerprint)
+    expect(fragmentData.value).not.toBe(initialRef);
+    expect(fragmentData.value?.email).toBe("alice.updated@example.com");
+  });
 });

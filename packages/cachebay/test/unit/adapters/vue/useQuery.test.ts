@@ -18,7 +18,10 @@ describe("useQuery", () => {
         error: null,
       }),
     };
-    cache = createCachebay({ transport: mockTransport });
+    cache = createCachebay({ 
+      transport: mockTransport,
+      suspensionTimeout: 50  // Use 50ms for faster tests
+    });
   });
 
   it("executes query and returns reactive data", async () => {
@@ -228,8 +231,8 @@ describe("useQuery", () => {
 
     expect(mockTransport.http).toHaveBeenCalledTimes(1);
 
-    // Wait for suspension window to expire (default 1000ms)
-    await new Promise((resolve) => setTimeout(resolve, 1100));
+    // Wait for suspension window to expire
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     // Change variables
     userId.value = "2";
@@ -390,7 +393,7 @@ describe("useQuery", () => {
       expect(mockTransport.http).toHaveBeenCalledTimes(1);
 
       // Wait for suspension window to expire
-      await new Promise((resolve) => setTimeout(resolve, 60));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Second query after window - hits network again
       await cache.executeQuery({
@@ -528,7 +531,10 @@ describe("useQuery", () => {
           }),
       };
 
-      const postsCache = createCachebay({ transport: postsTransport });
+      const postsCache = createCachebay({ 
+        transport: postsTransport,
+        suspensionTimeout: 50
+      });
 
       const variables = ref({ category: "tech", first: 2, after: null });
       let queryResult: any;
@@ -566,7 +572,7 @@ describe("useQuery", () => {
       expect(postsTransport.http).toHaveBeenCalledTimes(1);
 
       // Wait for suspension window to expire
-      await new Promise((resolve) => setTimeout(resolve, 1100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Change pagination cursor (same canonical connection)
       variables.value = { category: "tech", first: 2, after: "cursor2" };
@@ -621,7 +627,10 @@ describe("useQuery", () => {
           }),
       };
 
-      const postsCache = createCachebay({ transport: postsTransport });
+      const postsCache = createCachebay({ 
+        transport: postsTransport,
+        suspensionTimeout: 50
+      });
 
       const variables = ref({ category: "tech", first: 10, after: null });
       let queryResult: any;
@@ -655,7 +664,7 @@ describe("useQuery", () => {
       expect(queryResult.data.value.posts.edges[0].node.title).toBe("Tech Post");
 
       // Wait for suspension window
-      await new Promise((resolve) => setTimeout(resolve, 1100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Change category (different canonical connection)
       variables.value = { category: "news", first: 10, after: null };
@@ -705,7 +714,10 @@ describe("useQuery", () => {
         }),
       };
 
-      const postsCache = createCachebay({ transport: postsTransport });
+      const postsCache = createCachebay({ 
+        transport: postsTransport,
+        suspensionTimeout: 50
+      });
 
       const variables = ref({ first: 10, after: null, last: null, before: null });
       let queryResult: any;
@@ -738,7 +750,7 @@ describe("useQuery", () => {
       expect(postsTransport.http).toHaveBeenCalledTimes(1);
 
       // Wait for suspension window to expire
-      await new Promise((resolve) => setTimeout(resolve, 1100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Change all pagination args (but no filters)
       variables.value = { first: 5, after: "c1", last: null, before: null };
