@@ -635,6 +635,109 @@ describe("Utils", () => {
         expect(result.pageInfo).toBe(prevPageInfo); // Recycled!
       });
 
+      it("recycles common prefix when array grows (pagination append)", () => {
+        const prevEdge1 = {
+          __typename: "PostEdge",
+          __version: 100,
+          cursor: "p1",
+          node: { __typename: "Post", __version: 200, id: "p1", title: "Post 1" },
+        };
+        const prevEdge2 = {
+          __typename: "PostEdge",
+          __version: 101,
+          cursor: "p2",
+          node: { __typename: "Post", __version: 201, id: "p2", title: "Post 2" },
+        };
+        const prevEdges = [prevEdge1, prevEdge2];
+        (prevEdges as any).__version = 300;
+
+        // Next data: array grew from 2 to 4 edges (appended new page)
+        const nextEdge1 = {
+          __typename: "PostEdge",
+          __version: 100, // Same!
+          cursor: "p1",
+          node: { __typename: "Post", __version: 200, id: "p1", title: "Post 1" },
+        };
+        const nextEdge2 = {
+          __typename: "PostEdge",
+          __version: 101, // Same!
+          cursor: "p2",
+          node: { __typename: "Post", __version: 201, id: "p2", title: "Post 2" },
+        };
+        const nextEdge3 = {
+          __typename: "PostEdge",
+          __version: 102,
+          cursor: "p3",
+          node: { __typename: "Post", __version: 202, id: "p3", title: "Post 3" },
+        };
+        const nextEdge4 = {
+          __typename: "PostEdge",
+          __version: 103,
+          cursor: "p4",
+          node: { __typename: "Post", __version: 203, id: "p4", title: "Post 4" },
+        };
+        const nextEdges = [nextEdge1, nextEdge2, nextEdge3, nextEdge4];
+        (nextEdges as any).__version = 301;
+
+        const result = recycleSnapshots(prevEdges, nextEdges);
+
+        // Array reference should be nextEdges (different length)
+        expect(result).toBe(nextEdges);
+        // But first 2 edges should be recycled from prevEdges
+        expect(result[0]).toBe(prevEdge1); // Recycled!
+        expect(result[1]).toBe(prevEdge2); // Recycled!
+        // New edges are not recycled (no previous version)
+        expect(result[2]).toBe(nextEdge3);
+        expect(result[3]).toBe(nextEdge4);
+      });
+
+      it("recycles common prefix when array shrinks", () => {
+        const prevEdge1 = {
+          __typename: "PostEdge",
+          __version: 100,
+          cursor: "p1",
+          node: { __typename: "Post", __version: 200, id: "p1", title: "Post 1" },
+        };
+        const prevEdge2 = {
+          __typename: "PostEdge",
+          __version: 101,
+          cursor: "p2",
+          node: { __typename: "Post", __version: 201, id: "p2", title: "Post 2" },
+        };
+        const prevEdge3 = {
+          __typename: "PostEdge",
+          __version: 102,
+          cursor: "p3",
+          node: { __typename: "Post", __version: 202, id: "p3", title: "Post 3" },
+        };
+        const prevEdges = [prevEdge1, prevEdge2, prevEdge3];
+        (prevEdges as any).__version = 300;
+
+        // Next data: array shrunk from 3 to 2 edges
+        const nextEdge1 = {
+          __typename: "PostEdge",
+          __version: 100, // Same!
+          cursor: "p1",
+          node: { __typename: "Post", __version: 200, id: "p1", title: "Post 1" },
+        };
+        const nextEdge2 = {
+          __typename: "PostEdge",
+          __version: 101, // Same!
+          cursor: "p2",
+          node: { __typename: "Post", __version: 201, id: "p2", title: "Post 2" },
+        };
+        const nextEdges = [nextEdge1, nextEdge2];
+        (nextEdges as any).__version = 301;
+
+        const result = recycleSnapshots(prevEdges, nextEdges);
+
+        // Array reference should be nextEdges (different length)
+        expect(result).toBe(nextEdges);
+        // But first 2 edges should be recycled from prevEdges
+        expect(result[0]).toBe(prevEdge1); // Recycled!
+        expect(result[1]).toBe(prevEdge2); // Recycled!
+      });
+
       it("recycles unchanged posts in nested connections", () => {
         const prevComment1 = {
           __typename: "Comment",
