@@ -20,15 +20,12 @@ export type GraphOptions = {
  */
 export type GraphInstance = ReturnType<typeof createGraph>;
 
-// Removed: proxy-related code (RECORD_PROXY_VERSION, overlayRecordDiff, overlayRecordFull)
-// Graph now returns plain objects, not reactive proxies
-
 /**
  * Diff field changes and track what changed
  * Uses deep equality for objects/arrays to avoid false positives from JSON.parse
  * @private
  */
-const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot: Record<string, any>): boolean => {
+const commitChanges = (currentSnapshot: Record<string, any>, partialSnapshot: Record<string, any>): boolean => {
   let hasChanges = false;
 
   for (let i = 0, fields = Object.keys(partialSnapshot); i < fields.length; i++) {
@@ -208,7 +205,7 @@ export const createGraph = (options: GraphOptions = {}) => {
   const putRecord = (recordId: string, partialSnapshot: Record<string, any>): void => {
     const currentSnapshot = recordStore.get(recordId) || {};
 
-    const hasChanges = applyFieldChanges(currentSnapshot, partialSnapshot); // NOTE: Don't destructure for performance
+    const hasChanges = commitChanges(currentSnapshot, partialSnapshot); // NOTE: Don't destructure for performance
 
     if (!hasChanges) {
       return;
@@ -219,15 +216,10 @@ export const createGraph = (options: GraphOptions = {}) => {
     recordStore.set(recordId, currentSnapshot);
     recordVersionStore.set(recordId, nextVersion);
 
-    // Notify subscribers of change (batched in microtask)
-    // For ROOT_ID, also notify field-level changes for granular dependency tracking
     if (recordId === ROOT_ID) {
-      const keys = Object.keys(partialSnapshot);
-      for (let i = 0; i < keys.length; i++) {
+      for (let i = 0, keys = Object.keys(partialSnapshot); i < keys.length; i++) {
         const key = keys[i];
-        const value = partialSnapshot[key];
-        // Skip metadata fields (id/typename that equal ROOT_ID) but track actual query fields
-        if (value === ROOT_ID) continue;
+
         notifyChange(`${recordId}.${key}`);
       }
     }

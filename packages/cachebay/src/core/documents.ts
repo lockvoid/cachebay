@@ -510,7 +510,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     };
 
     const readPageInfo = (pageInfoId: string, field: PlanField, outConn: any, path: string): number => {
-      // touch(pageInfoId);
+      // touch(pageInfoId); NOTE: Keep it for the future
 
       const record = graph.getRecord(pageInfoId) || {};
       const selection = field.selectionSet || [];
@@ -648,7 +648,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     };
 
     const readEdge = (edgeId: string, field: PlanField, outArray: any[], index: number, path: string) => {
-      // touch(edgeId);
+      // touch(edgeId); // NOTE: Keep it for the future
 
       const record = graph.getRecord(edgeId) || {};
       const outEdge: any = {};
