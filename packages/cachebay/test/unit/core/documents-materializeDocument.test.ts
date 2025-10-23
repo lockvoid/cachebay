@@ -1853,7 +1853,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       expect(result2.fingerprint).toBeGreaterThan(0);
     });
 
-    it("stores fingerprints as non-enumerable properties", () => {
+    it("stores fingerprints externally (not on object)", () => {
       const QUERY = compilePlan(/* GraphQL */ `
         query UserById($id: ID!) {
           user(id: $id) {
@@ -1873,11 +1873,12 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
 
       const result = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } });
 
-      // Fingerprint should exist on the user object
-      expect((result.data.user as any).__fp).toBeGreaterThan(0);
+      // Fingerprint should be accessible via result helper
+      const userFp = result.getFingerprint(result.data.user);
+      expect(userFp).toBeGreaterThan(0);
 
-      // But should not be enumerable
-      expect(Object.keys(result.data.user)).not.toContain("__fp");
+      // Should not be on the object itself
+      expect(Object.keys(result.data.user)).toEqual(["__typename", "id", "email"]);
       expect(JSON.stringify(result.data.user)).not.toContain("__fp");
     });
 
@@ -1922,17 +1923,17 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       });
 
       const r1 = documents.materializeDocument({ document: QUERY, variables: { userId: "u1", postId: "p1" } });
-      const userFp1 = (r1.data.user as any).__fp;
-      const postFp1 = (r1.data.user.post as any).__fp;
-      const commentFp1 = (r1.data.user.post.comment as any).__fp;
+      const userFp1 = r1.getFingerprint(r1.data.user);
+      const postFp1 = r1.getFingerprint(r1.data.user.post);
+      const commentFp1 = r1.getFingerprint(r1.data.user.post.comment);
 
       // Update Post only
       graph.putRecord("Post:p1", { title: "Post 1 Updated" });
 
       const r2 = documents.materializeDocument({ document: QUERY, variables: { userId: "u1", postId: "p1" } });
-      const userFp2 = (r2.data.user as any).__fp;
-      const postFp2 = (r2.data.user.post as any).__fp;
-      const commentFp2 = (r2.data.user.post.comment as any).__fp;
+      const userFp2 = r2.getFingerprint(r2.data.user);
+      const postFp2 = r2.getFingerprint(r2.data.user.post);
+      const commentFp2 = r2.getFingerprint(r2.data.user.post.comment);
 
       // Comment should have same fingerprint (unchanged)
       expect(commentFp2).toBe(commentFp1);
@@ -1986,10 +1987,12 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
 
       // Fingerprints should be different because array item changed
       expect(result1.fingerprint).not.toBe(result2.fingerprint);
-      expect((result1.data.post.tags as any).__fp).not.toBe((result2.data.post.tags as any).__fp);
+      const tags1Fp = result1.getFingerprint(result1.data.post.tags);
+      const tags2Fp = result2.getFingerprint(result2.data.post.tags);
+      expect(tags1Fp).not.toBe(tags2Fp);
       
       // Array should have a fingerprint
-      expect((result1.data.post.tags as any).__fp).toBeGreaterThan(0);
+      expect(tags1Fp).toBeGreaterThan(0);
     });
 
     it("can disable fingerprinting with fingerprint: false option", () => {
@@ -2019,9 +2022,9 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       // Root fingerprint should still be returned (for compatibility)
       expect(result.fingerprint).toBe(0);
 
-      // But objects should NOT have __fp property
-      expect((result.data.user as any).__fp).toBeUndefined();
-      expect("__fp" in result.data.user).toBe(false);
+      // Objects should NOT have fingerprints in WeakMap
+      expect(result.getFingerprint(result.data.user)).toBeUndefined();
+      expect(Object.keys(result.data.user)).toEqual(["__typename", "id", "email"]);
     });
   });
 });
