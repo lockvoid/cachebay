@@ -235,12 +235,11 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
     const prevArray = prevData as any[];
     const nextArray = nextData as any[];
 
-    if (prevArray.length !== nextArray.length) {
-      return nextData;
-    }
+    // Recycle common prefix even if lengths differ
+    const minLength = Math.min(prevArray.length, nextArray.length);
+    let allEqual = prevArray.length === nextArray.length;
 
-    let allEqual = true;
-    for (let i = 0; i < nextArray.length; i++) {
+    for (let i = 0; i < minLength; i++) {
       const recycled = recycleSnapshots(prevArray[i], nextArray[i]);
       if (recycled !== nextArray[i]) {
         nextArray[i] = recycled;
@@ -250,6 +249,7 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
       }
     }
 
+    // If lengths differ, we can't reuse prevData
     return allEqual ? prevData : nextData;
   } else {
     // Both are plain objects
