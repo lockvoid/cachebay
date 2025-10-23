@@ -543,6 +543,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     };
 
     const readPageInfo = (pageInfoId: string, field: PlanField, outConn: any, path: string) => {
+      touch(pageInfoId);
+
       const record = graph.getRecord(pageInfoId) || {};
       const selection = field.selectionSet || [];
       const outPageInfo: any = {};

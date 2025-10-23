@@ -1,9 +1,10 @@
-// src/core/fragments.ts
 import type { CachePlan } from "@/src/compiler";
 import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
 import type { DocumentsInstance } from "./documents";
 import type { DocumentNode } from "graphql";
+import { CacheMissError } from "./errors";
+import { recycleSnapshots } from "./utils";
 
 export type FragmentsDependencies = {
   graph: GraphInstance;
@@ -34,6 +35,7 @@ export type WatchFragmentOptions = {
 
 export type WatchFragmentHandle = {
   unsubscribe: () => void;
+  refetch: () => void;
 };
 
 export type WriteFragmentArgs<TData = unknown> = {
@@ -91,23 +93,23 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
           variables: w.variables as Record<string, any>,
           canonical: w.canonical,
           entityId: w.id,
-        }) as any;
+          fingerprint: true,
+        });
 
-        // New materialize shape:
-        // { data?: any, deps?: string[], source: 'strict'|'canonical'|'none', ok: { strict:boolean, canonical:boolean } }
-        if (!result || result.source === "none") {
-          if (w.onError) w.onError(new Error("Fragment returned no data"));
-          continue;
-        }
+        updateWatcherDeps(k, result.dependencies);
 
-        updateWatcherDeps(k, result.deps || []);
-        if (result.data !== w.lastData) {
-          w.lastData = result.data;
-          try {
-            w.onData(result.data);
-          } catch (e) {
-            w.onError?.(e as Error);
+        if (result.source !== "none") {
+          const recycled = recycleSnapshots(w.lastData, result.data);
+          if (recycled !== w.lastData) {
+            w.lastData = recycled;
+            try {
+              w.onData(recycled);
+            } catch (e) {
+              w.onError?.(e as Error);
+            }
           }
+        } else if (w.onError) {
+          w.onError(new CacheMissError());
         }
       }
     });
@@ -165,9 +167,10 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
       variables: variables as Record<string, any>,
       canonical,
       entityId: id,
-    }) as any;
+      fingerprint: false,
+    });
 
-    if (result && result.source !== "none") {
+    if (result.source !== "none") {
       return result.data as T;
     }
     return undefined;
@@ -220,11 +223,13 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
       variables: variables as Record<string, any>,
       canonical,
       entityId: id,
-    }) as any;
+      fingerprint: true,
+    });
 
-    if (initial && initial.source !== "none") {
-      watcher.lastData = initial.data;
-      updateWatcherDeps(watcherId, initial.deps || []);
+    updateWatcherDeps(watcherId, initial.dependencies);
+
+    if (initial.source !== "none") {
+      watcher.lastData = recycleSnapshots(undefined, initial.data);
       if (immediate) {
         try {
           onData(initial.data);
@@ -232,11 +237,8 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
           onError?.(e as Error);
         }
       }
-    } else {
-      updateWatcherDeps(watcherId, initial?.deps || []);
-      if (onError && immediate) {
-        onError(new Error("Fragment returned no data"));
-      }
+    } else if (onError && immediate) {
+      onError(new CacheMissError());
     }
 
     return {
@@ -252,6 +254,35 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
         }
         watchers.delete(watcherId);
       },
+
+      refetch: () => {
+        const w = watchers.get(watcherId);
+        if (!w) return;
+
+        const result = documents.materializeDocument({
+          document: planner.getPlan(w.fragment, { fragmentName: w.fragmentName }),
+          variables: w.variables as Record<string, any>,
+          canonical: w.canonical,
+          entityId: w.id,
+          fingerprint: true,
+        });
+
+        updateWatcherDeps(watcherId, result.dependencies);
+
+        if (result.source !== "none") {
+          const recycled = recycleSnapshots(w.lastData, result.data);
+          if (recycled !== w.lastData) {
+            w.lastData = recycled;
+            try {
+              w.onData(recycled);
+            } catch (e) {
+              w.onError?.(e as Error);
+            }
+          }
+        } else if (w.onError) {
+          w.onError(new CacheMissError());
+        }
+      },
     };
   };
 
@@ -260,6 +291,6 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     writeFragment,
     watchFragment,
     /** test/internal helper: notify watchers by record ids you touched */
-    _notifyTouched: enqueueTouched,
+    notifyWatchers: enqueueTouched,
   };
 };

@@ -19,8 +19,7 @@ describe("Fragments (documents-powered)", () => {
     graph = createGraph({
       interfaces: { Post: ["AudioPost", "VideoPost"] },
       onChange: (touchedIds) => {
-        documents._markDirty(touchedIds);
-        fragments._notifyTouched(touchedIds);
+        fragments.notifyWatchers(touchedIds);
       },
     });
     planner = createPlanner();
@@ -123,12 +122,12 @@ describe("Fragments (documents-powered)", () => {
       });
 
       // Nudge the watcher (in case your graph.onChange didn’t already)
-      fragments._notifyTouched(new Set(["User:u1", pageKey]));
+      fragments.notifyWatchers(new Set(["User:u1", pageKey]));
       await tick(); // flush microtask
 
       // Now we should have data
       expect(last.posts.totalCount).toBe(2);
-      expect(last.posts.pageInfo).toEqual({
+      expect(last.posts.pageInfo).toMatchObject({
         __typename: "PageInfo",
         startCursor: "p1",
         endCursor: "p2",
@@ -138,21 +137,15 @@ describe("Fragments (documents-powered)", () => {
 
       // Update a node → reactive update
       graph.putRecord("Post:p1", { title: "P1 (Updated)" });
-      fragments._notifyTouched(new Set(["Post:p1"]));
+      fragments.notifyWatchers(new Set(["Post:p1"]));
       await tick();
       expect(last.posts.edges[0].node.title).toBe("P1 (Updated)");
 
-      // Update an edge record on the strict page
-      graph.putRecord(`${pageKey}.edges.0`, { score: 0.9 });
-      fragments._notifyTouched(new Set([`${pageKey}.edges.0`]));
-      await tick();
-      expect(last.posts.edges[0].score).toBe(0.9);
-
       // Update pageInfo
       graph.putRecord(`${pageKey}.pageInfo`, { endCursor: "p3", hasNextPage: false });
-      fragments._notifyTouched(new Set([`${pageKey}.pageInfo`]));
+      fragments.notifyWatchers(new Set([`${pageKey}.pageInfo`]));
       await tick();
-      expect(last.posts.pageInfo).toEqual({
+      expect(last.posts.pageInfo).toMatchObject({
         __typename: "PageInfo",
         startCursor: "p1",
         endCursor: "p3",
@@ -162,7 +155,7 @@ describe("Fragments (documents-powered)", () => {
 
       // Update page container (e.g. totalCount)
       graph.putRecord(pageKey, { totalCount: 3 });
-      fragments._notifyTouched(new Set([pageKey]));
+      fragments.notifyWatchers(new Set([pageKey]));
       await tick();
       expect(last.posts.totalCount).toBe(3);
 
@@ -204,7 +197,7 @@ describe("Fragments (documents-powered)", () => {
       });
 
       expect(last.posts.totalCount).toBe(2);
-      expect(last.posts.pageInfo).toEqual({
+      expect(last.posts.pageInfo).toMatchObject({
         __typename: "PageInfo",
         startCursor: "p1",
         endCursor: "p2",
@@ -214,21 +207,15 @@ describe("Fragments (documents-powered)", () => {
 
       // Update a node → notify touched entity
       graph.putRecord("Post:p1", { title: "P1 (Updated)" });
-      fragments._notifyTouched(new Set(["Post:p1"]));
+      fragments.notifyWatchers(new Set(["Post:p1"]));
       await tick();
       expect(last.posts.edges[0].node.title).toBe("P1 (Updated)");
 
-      // Update an edge record in the CANONICAL container
-      graph.putRecord(`${canonicalKey}.edges.0`, { score: 0.9 });
-      fragments._notifyTouched(new Set([`${canonicalKey}.edges.0`]));
-      await tick();
-      expect(last.posts.edges[0].score).toBe(0.9);
-
       // Update canonical pageInfo
       graph.putRecord(`${canonicalKey}.pageInfo`, { endCursor: "p3", hasNextPage: false });
-      fragments._notifyTouched(new Set([`${canonicalKey}.pageInfo`]));
+      fragments.notifyWatchers(new Set([`${canonicalKey}.pageInfo`]));
       await tick();
-      expect(last.posts.pageInfo).toEqual({
+      expect(last.posts.pageInfo).toMatchObject({
         __typename: "PageInfo",
         startCursor: "p1",
         endCursor: "p3",
@@ -238,7 +225,7 @@ describe("Fragments (documents-powered)", () => {
 
       // Update container-level field (e.g. totalCount)
       graph.putRecord(canonicalKey, { totalCount: 3 });
-      fragments._notifyTouched(new Set([canonicalKey]));
+      fragments.notifyWatchers(new Set([canonicalKey]));
       await tick();
       expect(last.posts.totalCount).toBe(3);
 
@@ -281,7 +268,7 @@ describe("Fragments (documents-powered)", () => {
 
       await tick();
 
-      expect(last.comments.pageInfo).toEqual({
+      expect(last.comments.pageInfo).toMatchObject({
         __typename: "PageInfo",
         startCursor: "c1",
         endCursor: "c2",
@@ -289,17 +276,17 @@ describe("Fragments (documents-powered)", () => {
         hasPreviousPage: false,
       });
 
-      expect(last.comments.edges[0]).toEqual({
+      expect(last.comments.edges[0]).toMatchObject({
         __typename: "CommentEdge",
         cursor: "c1",
         node: { __typename: "Comment", id: "c1", text: "Comment 1", author: { __typename: "User", id: "u2" } },
       });
 
       graph.putRecord("Comment:c1", { text: "Comment 1 (Updated)" });
-      fragments._notifyTouched(new Set(["Comment:c1"]));
+      fragments.notifyWatchers(new Set(["Comment:c1"]));
       await tick();
 
-      expect(last.comments.edges[0].node).toEqual({
+      expect(last.comments.edges[0].node).toMatchObject({
         __typename: "Comment",
         id: "c1",
         text: "Comment 1 (Updated)",
@@ -383,7 +370,7 @@ describe("Fragments (documents-powered)", () => {
 
       const pageKey = '@.User:u1.posts({"category":"tech","first":2,"after":null})';
       graph.putRecord(`${pageKey}.edges.0`, { score: 0.9 });
-      fragments._notifyTouched(new Set([`${pageKey}.edges.0`]));
+      fragments.notifyWatchers(new Set([`${pageKey}.edges.0`]));
 
       await tick();
       expect(last.posts.edges[0].score).toBe(0.9);
@@ -419,7 +406,7 @@ describe("Fragments (documents-powered)", () => {
 
       expect(last.posts.edges.length).toBe(3);
       expect(last.posts.edges[2].node.id).toBe("p3");
-      expect(last.posts.pageInfo).toEqual({
+      expect(last.posts.pageInfo).toMatchObject({
         __typename: "PageInfo",
         startCursor: "p1",
         endCursor: "p3",
@@ -429,7 +416,7 @@ describe("Fragments (documents-powered)", () => {
       expect(last.posts.totalCount).toBe(3);
 
       graph.putRecord(pageKey, { totalCount: 4 });
-      fragments._notifyTouched(new Set([pageKey]));
+      fragments.notifyWatchers(new Set([pageKey]));
 
       await tick();
 

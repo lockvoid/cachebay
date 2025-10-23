@@ -196,6 +196,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     // dependencies include the canonical connection key, pageInfo & edges
     expect(res.dependencies).toEqual(new Set([
       canonicalKey,
+      `${canonicalKey}.pageInfo`,
       "User:u1",
       "User:u2",
     ]));
@@ -257,6 +258,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       `${ROOT_ID}.user({"id":"u1"})`,
       "User:u1",
       postsCanonicalKey,
+      `${postsCanonicalKey}.pageInfo`,
       "Post:p1",
     ]));
 
@@ -347,6 +349,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
 
       expect(res.dependencies).toEqual(new Set([
         connKey,
+        `${connKey}.pageInfo`,
         "User:u1",
         "User:u2",
       ]));
@@ -361,6 +364,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
 
       expect(res2.dependencies).toEqual(new Set([
         connKey,
+        `${connKey}.pageInfo`,
         "User:u1",
         "User:u2",
       ]));
