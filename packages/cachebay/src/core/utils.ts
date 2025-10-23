@@ -230,3 +230,103 @@ export const fingerprintNodes = (baseNode: number, childNodes: number[]): number
   }
   return h >>> 0;
 };
+
+const FINGERPRINT_KEY = '__version';
+
+/**
+ * Recycles subtrees from prevData by replacing equal subtrees in nextData.
+ * Uses __version fingerprints for O(1) equality checks.
+ * 
+ * IMPORTANT: Only works with materialized results that have __version fingerprints.
+ * 
+ * @param prevData - Previous materialized snapshot
+ * @param nextData - New materialized snapshot to recycle into
+ * @returns Recycled snapshot (reuses prevData subtrees where possible)
+ */
+export function recycleSnapshots<T>(prevData: T, nextData: T): T {
+  // Fast path: reference equality
+  if (prevData === nextData) {
+    return nextData;
+  }
+
+  // Only recycle objects and arrays
+  if (
+    typeof prevData !== 'object' ||
+    !prevData ||
+    typeof nextData !== 'object' ||
+    !nextData
+  ) {
+    return nextData;
+  }
+
+  // Only recycle plain objects and arrays
+  const prevIsArray = Array.isArray(prevData);
+  const nextIsArray = Array.isArray(nextData);
+  
+  if (prevIsArray !== nextIsArray) {
+    return nextData;
+  }
+
+  if (!prevIsArray && prevData.constructor !== Object) {
+    return nextData;
+  }
+
+  if (!nextIsArray && nextData.constructor !== Object) {
+    return nextData;
+  }
+
+  // Compare fingerprints - materialized results always have __version
+  const prevVersion = (prevData as any)[FINGERPRINT_KEY];
+  const nextVersion = (nextData as any)[FINGERPRINT_KEY];
+  
+  if (prevVersion === nextVersion) {
+    // Fingerprints match - data is identical, reuse prevData
+    return prevData;
+  }
+
+  // Fingerprints differ - recycle children
+  if (prevIsArray && nextIsArray) {
+    const prevArray = prevData as any[];
+    const nextArray = nextData as any[];
+    
+    if (prevArray.length !== nextArray.length) {
+      return nextData;
+    }
+
+    let allEqual = true;
+    for (let i = 0; i < nextArray.length; i++) {
+      const recycled = recycleSnapshots(prevArray[i], nextArray[i]);
+      if (recycled !== nextArray[i]) {
+        nextArray[i] = recycled;
+      }
+      if (recycled !== prevArray[i]) {
+        allEqual = false;
+      }
+    }
+    
+    return allEqual ? prevData : nextData;
+  } else {
+    // Both are plain objects
+    const prevObject = prevData as Record<string, any>;
+    const nextObject = nextData as Record<string, any>;
+    const prevKeys = Object.keys(prevObject);
+    const nextKeys = Object.keys(nextObject);
+    
+    if (prevKeys.length !== nextKeys.length) {
+      return nextData;
+    }
+
+    let allEqual = true;
+    for (const key of nextKeys) {
+      const recycled = recycleSnapshots(prevObject[key], nextObject[key]);
+      if (recycled !== nextObject[key]) {
+        nextObject[key] = recycled;
+      }
+      if (recycled !== prevObject[key]) {
+        allEqual = false;
+      }
+    }
+    
+    return allEqual ? prevData : nextData;
+  }
+}

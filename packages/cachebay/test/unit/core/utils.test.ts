@@ -1,5 +1,5 @@
 import { ROOT_ID } from "@/src/core/constants";
-import { LRU, traverseFast, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, TRAVERSE_SKIP, TRAVERSE_SCALAR, TRAVERSE_ARRAY, TRAVERSE_OBJECT, isObject } from "@/src/core/utils";
+import { LRU, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, recycleSnapshots, isObject } from "@/src/core/utils";
 import { operations, createTestPlan } from "@/test/helpers";
 
 describe("Utils", () => {
@@ -99,308 +99,6 @@ describe("Utils", () => {
       expect(lru.get("a")).toBeUndefined();
       expect(lru.get("b")).toBe(2);
       expect(evicted).toEqual([["a", 1]]);
-    });
-  });
-
-  describe("traverseFast", () => {
-    let visitedNodes: Array<{ parentNode: any; valueNode: any; fieldKey: string | number | null; kind: any; frameContext: any }>;
-    let visitMock: ReturnType<typeof vi.fn>;
-
-    beforeEach(() => {
-      visitedNodes = [];
-
-      visitMock = vi.fn((parentNode, valueNode, fieldKey, kind, frameContext) => {
-        visitedNodes.push({ parentNode, valueNode, fieldKey, kind, frameContext });
-      });
-    });
-
-    it("traverses a simple object", () => {
-      traverseFast({ a: { value: 1 }, b: { value: 2 } }, { initial: true }, visitMock);
-
-      expect(visitMock).toHaveBeenCalledTimes(5);
-      expect(visitMock).toHaveBeenCalledWith(null, { a: { value: 1 }, b: { value: 2 } }, null, TRAVERSE_OBJECT, { initial: true });
-      expect(visitMock).toHaveBeenCalledWith({ a: { value: 1 }, b: { value: 2 } }, { value: 1 }, "a", TRAVERSE_OBJECT, { initial: true });
-      expect(visitMock).toHaveBeenCalledWith({ value: 1 }, 1, "value", TRAVERSE_SCALAR, { initial: true });
-      expect(visitMock).toHaveBeenCalledWith({ a: { value: 1 }, b: { value: 2 } }, { value: 2 }, "b", TRAVERSE_OBJECT, { initial: true });
-      expect(visitMock).toHaveBeenCalledWith({ value: 2 }, 2, "value", TRAVERSE_SCALAR, { initial: true });
-    });
-
-    it("traverses nested objects", () => {
-      traverseFast({ level1: { level2: { level3: { value: "deep" } } } }, {}, visitMock);
-
-      expect(visitMock).toHaveBeenCalledTimes(5);
-      expect(visitedNodes[0]).toEqual({
-        parentNode: null,
-        valueNode: { level1: { level2: { level3: { value: "deep" } } } },
-        fieldKey: null,
-        kind: TRAVERSE_OBJECT,
-        frameContext: {},
-      });
-      expect(visitedNodes[1].fieldKey).toBe("level1");
-      expect(visitedNodes[2].fieldKey).toBe("level2");
-      expect(visitedNodes[3].fieldKey).toBe("level3");
-      expect(visitedNodes[4].fieldKey).toBe("value");
-      expect(visitedNodes[4].kind).toBe(TRAVERSE_SCALAR);
-    });
-
-    it("traverses arrays", () => {
-      traverseFast([{ id: 1 }, { id: 2 }, { id: 3 }], {}, visitMock);
-
-      expect(visitMock).toHaveBeenCalledTimes(7);
-      expect(visitMock).toHaveBeenCalledWith(null, [{ id: 1 }, { id: 2 }, { id: 3 }], null, TRAVERSE_ARRAY, {});
-      expect(visitMock).toHaveBeenCalledWith([{ id: 1 }, { id: 2 }, { id: 3 }], { id: 1 }, 0, TRAVERSE_OBJECT, {});
-      expect(visitMock).toHaveBeenCalledWith({ id: 1 }, 1, "id", TRAVERSE_SCALAR, {});
-      expect(visitMock).toHaveBeenCalledWith([{ id: 1 }, { id: 2 }, { id: 3 }], { id: 2 }, 1, TRAVERSE_OBJECT, {});
-      expect(visitMock).toHaveBeenCalledWith({ id: 2 }, 2, "id", TRAVERSE_SCALAR, {});
-      expect(visitMock).toHaveBeenCalledWith([{ id: 1 }, { id: 2 }, { id: 3 }], { id: 3 }, 2, TRAVERSE_OBJECT, {});
-      expect(visitMock).toHaveBeenCalledWith({ id: 3 }, 3, "id", TRAVERSE_SCALAR, {});
-    });
-
-    it("traverses mixed objects and arrays", () => {
-      traverseFast({ items: [{ name: "Item1", details: { color: "black" } }, { name: "Item2", details: { color: "white" } }] }, {}, visitMock);
-
-      expect(visitMock).toHaveBeenCalledTimes(10);
-
-      const arrayNode = visitedNodes.find(v => Array.isArray(v.valueNode));
-      expect(arrayNode).toBeDefined();
-      expect(arrayNode?.fieldKey).toBe("items");
-      expect(arrayNode?.kind).toBe(TRAVERSE_ARRAY);
-    });
-
-    it("visits primitives in objects with TRAVERSE_SCALAR", () => {
-      traverseFast({ string: "string", number: 42, boolean: true, null: null, object: { nested: true } }, {}, visitMock);
-
-      expect(visitMock).toHaveBeenCalledTimes(7);
-      expect(visitMock).toHaveBeenCalledWith(null, { string: "string", number: 42, boolean: true, null: null, object: { nested: true } }, null, TRAVERSE_OBJECT, {});
-      expect(visitMock).toHaveBeenCalledWith({ string: "string", number: 42, boolean: true, null: null, object: { nested: true } }, "string", "string", TRAVERSE_SCALAR, {});
-      expect(visitMock).toHaveBeenCalledWith({ string: "string", number: 42, boolean: true, null: null, object: { nested: true } }, 42, "number", TRAVERSE_SCALAR, {});
-      expect(visitMock).toHaveBeenCalledWith({ string: "string", number: 42, boolean: true, null: null, object: { nested: true } }, true, "boolean", TRAVERSE_SCALAR, {});
-      expect(visitMock).toHaveBeenCalledWith({ string: "string", number: 42, boolean: true, null: null, object: { nested: true } }, null, "null", TRAVERSE_SCALAR, {});
-      expect(visitMock).toHaveBeenCalledWith({ string: "string", number: 42, boolean: true, null: null, object: { nested: true } }, { nested: true }, "object", TRAVERSE_OBJECT, {});
-      expect(visitMock).toHaveBeenCalledWith({ nested: true }, true, "nested", TRAVERSE_SCALAR, {});
-    });
-
-    it("visits primitives in arrays with TRAVERSE_SCALAR", () => {
-      traverseFast(["string", 42, true, null, { id: 1 }], {}, visitMock);
-
-      expect(visitMock).toHaveBeenCalledTimes(7);
-      expect(visitMock).toHaveBeenCalledWith(null, ["string", 42, true, null, { id: 1 }], null, TRAVERSE_ARRAY, {});
-      expect(visitMock).toHaveBeenCalledWith(["string", 42, true, null, { id: 1 }], "string", 0, TRAVERSE_SCALAR, {});
-      expect(visitMock).toHaveBeenCalledWith(["string", 42, true, null, { id: 1 }], 42, 1, TRAVERSE_SCALAR, {});
-      expect(visitMock).toHaveBeenCalledWith(["string", 42, true, null, { id: 1 }], true, 2, TRAVERSE_SCALAR, {});
-      expect(visitMock).toHaveBeenCalledWith(["string", 42, true, null, { id: 1 }], null, 3, TRAVERSE_SCALAR, {});
-      expect(visitMock).toHaveBeenCalledWith(["string", 42, true, null, { id: 1 }], { id: 1 }, 4, TRAVERSE_OBJECT, {});
-      expect(visitMock).toHaveBeenCalledWith({ id: 1 }, 1, "id", TRAVERSE_SCALAR, {});
-    });
-
-    it("handles TRAVERSE_SKIP for objects", () => {
-      const skipVisit = vi.fn((parentNode, valueNode, fieldKey, kind) => {
-        if (fieldKey === "skipMe") {
-          return TRAVERSE_SKIP;
-        }
-      });
-
-      traverseFast({ skipMe: { child: { value: "should not visit" } }, visitMe: { child: { value: "should visit" } } }, {}, skipVisit);
-
-      expect(skipVisit).toHaveBeenCalledTimes(5);
-      expect(skipVisit).toHaveBeenCalledWith(null, { skipMe: { child: { value: "should not visit" } }, visitMe: { child: { value: "should visit" } } }, null, TRAVERSE_OBJECT, {});
-      expect(skipVisit).toHaveBeenCalledWith({ skipMe: { child: { value: "should not visit" } }, visitMe: { child: { value: "should visit" } } }, { child: { value: "should not visit" } }, "skipMe", TRAVERSE_OBJECT, {});
-      expect(skipVisit).toHaveBeenCalledWith({ skipMe: { child: { value: "should not visit" } }, visitMe: { child: { value: "should visit" } } }, { child: { value: "should visit" } }, "visitMe", TRAVERSE_OBJECT, {});
-      expect(skipVisit).toHaveBeenCalledWith({ child: { value: "should visit" } }, { value: "should visit" }, "child", TRAVERSE_OBJECT, {});
-      expect(skipVisit).toHaveBeenCalledWith({ value: "should visit" }, "should visit", "value", TRAVERSE_SCALAR, {});
-
-      expect(skipVisit).not.toHaveBeenCalledWith({ child: { value: "should not visit" } }, { value: "should not visit" }, "child", TRAVERSE_OBJECT, {});
-    });
-
-    it("respects TRAVERSE_SKIP for arrays", () => {
-      const skipVisit = vi.fn((parentNode, valueNode, fieldKey, kind) => {
-        if (Array.isArray(valueNode)) {
-          return TRAVERSE_SKIP;
-        }
-      });
-
-      traverseFast([{ id: 1, children: [{ nested: true }] }, { id: 2 }], {}, skipVisit);
-
-      expect(skipVisit).toHaveBeenCalledTimes(1);
-      expect(skipVisit).toHaveBeenCalledWith(null, [{ id: 1, children: [{ nested: true }] }, { id: 2 }], null, TRAVERSE_ARRAY, {});
-    });
-
-    it("updates context when visitor returns new context", () => {
-      const contextVisit = vi.fn((parentNode, valueNode, fieldKey, kind, frameContext) => {
-        if (fieldKey === "a") {
-          return { count: frameContext.count + 1 };
-        }
-      });
-
-      traverseFast({ a: { b: { value: 1 } } }, { count: 0 }, contextVisit);
-
-      expect(contextVisit).toHaveBeenCalledTimes(4);
-      expect(contextVisit).toHaveBeenNthCalledWith(1, null, { a: { b: { value: 1 } } }, null, TRAVERSE_OBJECT, { count: 0 });
-      expect(contextVisit).toHaveBeenNthCalledWith(2, { a: { b: { value: 1 } } }, { b: { value: 1 } }, "a", TRAVERSE_OBJECT, { count: 0 });
-      expect(contextVisit).toHaveBeenNthCalledWith(3, { b: { value: 1 } }, { value: 1 }, "b", TRAVERSE_OBJECT, { count: 1 });
-      expect(contextVisit).toHaveBeenNthCalledWith(4, { value: 1 }, 1, "value", TRAVERSE_SCALAR, { count: 1 });
-    });
-
-    it("passes updated context to nested objects", () => {
-      const contextVisit = vi.fn((parentNode, valueNode, fieldKey, kind, frameContext) => {
-        return { level: frameContext.level + 1 };
-      });
-
-      traverseFast({ parent: { child: {} } }, { level: 0 }, contextVisit);
-
-      expect(contextVisit).toHaveBeenCalledTimes(3);
-      expect(contextVisit).toHaveBeenNthCalledWith(1, null, { parent: { child: {} } }, null, TRAVERSE_OBJECT, { level: 0 });
-      expect(contextVisit).toHaveBeenNthCalledWith(2, { parent: { child: {} } }, { child: {} }, "parent", TRAVERSE_OBJECT, { level: 1 });
-      expect(contextVisit).toHaveBeenNthCalledWith(3, { child: {} }, {}, "child", TRAVERSE_OBJECT, { level: 2 });
-    });
-
-    it("handles empty objects", () => {
-      traverseFast({}, {}, visitMock);
-
-      expect(visitMock).toHaveBeenCalledTimes(1);
-      expect(visitMock).toHaveBeenCalledWith(null, {}, null, TRAVERSE_OBJECT, {});
-    });
-
-    it("handles empty arrays", () => {
-      traverseFast([], {}, visitMock);
-
-      expect(visitMock).toHaveBeenCalledTimes(1);
-      expect(visitMock).toHaveBeenCalledWith(null, [], null, TRAVERSE_ARRAY, {});
-    });
-
-    it("handles null root", () => {
-      traverseFast(null, {}, visitMock);
-
-      expect(visitMock).toHaveBeenCalledTimes(1);
-      expect(visitMock).toHaveBeenCalledWith(null, null, null, TRAVERSE_SCALAR, {});
-    });
-
-    it("handles undefined root", () => {
-      traverseFast(undefined, {}, visitMock);
-
-      expect(visitMock).toHaveBeenCalledTimes(1);
-      expect(visitMock).toHaveBeenCalledWith(null, undefined, null, TRAVERSE_SCALAR, {});
-    });
-
-    it("handles primitive root values", () => {
-      traverseFast("string", {}, visitMock);
-
-      expect(visitMock).toHaveBeenCalledTimes(1);
-      expect(visitMock).toHaveBeenCalledWith(null, "string", null, TRAVERSE_SCALAR, {});
-
-      visitMock.mockClear();
-
-      traverseFast(42, {}, visitMock);
-      expect(visitMock).toHaveBeenCalledTimes(1);
-      expect(visitMock).toHaveBeenCalledWith(null, 42, null, TRAVERSE_SCALAR, {});
-
-      visitMock.mockClear();
-
-      traverseFast(true, {}, visitMock);
-      expect(visitMock).toHaveBeenCalledTimes(1);
-      expect(visitMock).toHaveBeenCalledWith(null, true, null, TRAVERSE_SCALAR, {});
-    });
-
-    it("maintains correct parent-child relationships", () => {
-      const root = { parent1: { child1: {}, child2: {} }, parent2: { child3: {} } };
-
-      traverseFast(root, {}, visitMock);
-
-      const parent1Visits = visitedNodes.filter(v => v.parentNode === root.parent1);
-
-      expect(parent1Visits).toHaveLength(2);
-      // Stack-based traversal visits in reverse order
-      expect(parent1Visits[0].fieldKey).toBe("child2");
-      expect(parent1Visits[1].fieldKey).toBe("child1");
-
-      const parent2Visits = visitedNodes.filter(v => v.parentNode === root.parent2);
-
-      expect(parent2Visits).toHaveLength(1);
-      expect(parent2Visits[0].fieldKey).toBe("child3");
-    });
-
-    it("visits nodes in stack order for objects", () => {
-      traverseFast({ first: {}, second: {}, third: {} }, {}, visitMock);
-
-      const keys = visitedNodes.map(v => v.fieldKey).filter(k => k !== null);
-      // Stack-based traversal processes object keys in reverse order
-      expect(keys).toEqual(["third", "second", "first"]);
-    });
-
-    it("visits array elements in correct order", () => {
-      traverseFast([{ index: 0 }, { index: 1 }, { index: 2 }], {}, visitMock);
-
-      const indices = visitedNodes.filter(v => typeof v.fieldKey === "number" && v.kind === TRAVERSE_OBJECT).map(v => v.fieldKey);
-      expect(indices).toEqual([0, 1, 2]);
-    });
-
-    it("correctly identifies node kinds", () => {
-      traverseFast({ obj: { nested: 1 }, arr: [1, 2], scalar: "test" }, {}, visitMock);
-
-      const objectNodes = visitedNodes.filter(v => v.kind === TRAVERSE_OBJECT);
-      const arrayNodes = visitedNodes.filter(v => v.kind === TRAVERSE_ARRAY);
-      const scalarNodes = visitedNodes.filter(v => v.kind === TRAVERSE_SCALAR);
-
-      expect(objectNodes.length).toBeGreaterThan(0);
-      expect(arrayNodes.length).toBeGreaterThan(0);
-      expect(scalarNodes.length).toBeGreaterThan(0);
-    });
-
-    it("handles deeply nested structures", () => {
-      const deep = { a: { b: { c: { d: { e: { value: "deep" } } } } } };
-
-      traverseFast(deep, {}, visitMock);
-
-      const depthLevels = visitedNodes.filter(v => v.kind === TRAVERSE_OBJECT).length;
-      expect(depthLevels).toBe(6); // root + a + b + c + d + e
-    });
-
-    it("handles mixed array and object nesting", () => {
-      const mixed = { users: [{ name: "Alice", tags: ["admin", "user"] }, { name: "Bob", tags: ["user"] }] };
-
-      traverseFast(mixed, {}, visitMock);
-
-      const arrayKinds = visitedNodes.filter(v => v.kind === TRAVERSE_ARRAY);
-      const objectKinds = visitedNodes.filter(v => v.kind === TRAVERSE_OBJECT);
-      const scalarKinds = visitedNodes.filter(v => v.kind === TRAVERSE_SCALAR);
-
-      expect(arrayKinds.length).toBe(3); // users array + 2 tags arrays
-      expect(objectKinds.length).toBeGreaterThan(0);
-      expect(scalarKinds.length).toBeGreaterThan(0);
-    });
-
-    it("context propagates through TRAVERSE_SKIP", () => {
-      const contextVisit = vi.fn((parentNode, valueNode, fieldKey, kind, frameContext) => {
-        if (fieldKey === null) {
-          return { counter: 1 };
-        }
-        if (fieldKey === "skip") {
-          return TRAVERSE_SKIP;
-        }
-        return { counter: frameContext.counter + 1 };
-      });
-
-      traverseFast({ skip: { nested: {} }, visit: { nested: {} } }, {}, contextVisit);
-
-      const visitedContexts = contextVisit.mock.calls.map(call => call[4]);
-      const maxCounter = Math.max(...visitedContexts.map(ctx => ctx.counter || 0));
-
-      expect(maxCounter).toBeGreaterThan(1);
-    });
-
-    it("handles arrays with only primitive values in reverse order due to stack", () => {
-      traverseFast([1, 2, 3, "four", true], {}, visitMock);
-
-      const scalarCalls = visitedNodes.filter(v => v.kind === TRAVERSE_SCALAR);
-      expect(scalarCalls).toHaveLength(5);
-      expect(scalarCalls.map(v => v.valueNode)).toEqual([true, "four", 3, 2, 1]);
-    });
-
-    it("handles objects with only primitive values", () => {
-      traverseFast({ a: 1, b: "two", c: true, d: null }, {}, visitMock);
-
-      const scalarCalls = visitedNodes.filter(v => v.kind === TRAVERSE_SCALAR);
-      expect(scalarCalls).toHaveLength(4);
     });
   });
 
@@ -510,4 +208,337 @@ describe("Utils", () => {
       expect(keyA).toBe("@connection.posts({\"category\":\"tech\"})");
     });
   });
+
+  describe("recycleSnapshots", () => {
+    describe("basic behavior", () => {
+      it("reuses prevData when fingerprints match", () => {
+        const prevData = { __typename: "User", __version: 123, id: "u1", name: "Alice" };
+        const nextData = { __typename: "User", __version: 123, id: "u1", name: "Alice" };
+
+        const result = recycleSnapshots(prevData, nextData);
+
+        expect(result).toBe(prevData);
+        expect(result).not.toBe(nextData);
+      });
+
+      it("returns nextData when fingerprints differ", () => {
+        const prevData = { __typename: "User", __version: 123, id: "u1", name: "Alice" };
+        const nextData = { __typename: "User", __version: 124, id: "u1", name: "Bob" };
+
+        const result = recycleSnapshots(prevData, nextData);
+
+        expect(result).toBe(nextData);
+        expect(result).not.toBe(prevData);
+      });
+
+      it("returns same reference when prevData === nextData", () => {
+        const data = { __version: 123, id: "u1", name: "Alice" };
+
+        const result = recycleSnapshots(data, data);
+
+        expect(result).toBe(data);
+      });
+
+      it("handles primitives and non-objects", () => {
+        expect(recycleSnapshots(42, 42)).toBe(42);
+        expect(recycleSnapshots("hello", "hello")).toBe("hello");
+        expect(recycleSnapshots(true, false)).toBe(false);
+        expect(recycleSnapshots(null, null)).toBe(null);
+        expect(recycleSnapshots(undefined, undefined)).toBe(undefined);
+      });
+
+      it("does not recycle non-plain objects", () => {
+        class CustomClass {
+          value = 42;
+        }
+
+        const prevData = new CustomClass();
+        const nextData = new CustomClass();
+
+        const result = recycleSnapshots(prevData, nextData);
+
+        expect(result).toBe(nextData);
+        expect(result).not.toBe(prevData);
+      });
+    });
+
+    describe("partial recycling", () => {
+      it("recycles unchanged subtrees in objects", () => {
+        const prevUser = { __typename: "User", __version: 200, id: "u1", name: "Alice" };
+        const prevData = {
+          __typename: "Query",
+          __version: 100,
+          user: prevUser,
+          count: 10,
+        };
+
+        const nextUser = { __typename: "User", __version: 200, id: "u1", name: "Alice" };
+        const nextData = {
+          __typename: "Query",
+          __version: 101,
+          user: nextUser,
+          count: 11,
+        };
+
+        const result = recycleSnapshots(prevData, nextData);
+
+        expect(result).toBe(nextData);
+        expect(result.user).toBe(prevUser); // Recycled!
+      });
+
+      it("recycles unchanged elements in arrays", () => {
+        const prevItem1 = { __typename: "Post", __version: 100, id: "p1", title: "Post 1" };
+        const prevItem2 = { __typename: "Post", __version: 200, id: "p2", title: "Post 2" };
+        const prevData = [prevItem1, prevItem2];
+        (prevData as any).__version = 500;
+
+        const nextItem1 = { __typename: "Post", __version: 100, id: "p1", title: "Post 1" };
+        const nextItem2 = { __typename: "Post", __version: 201, id: "p2", title: "Post 2 Updated" };
+        const nextData = [nextItem1, nextItem2];
+        (nextData as any).__version = 501;
+
+        const result = recycleSnapshots(prevData, nextData);
+
+        expect(result).toBe(nextData);
+        expect(result[0]).toBe(prevItem1); // Recycled!
+        expect(result[1]).toBe(nextItem2); // Not recycled
+      });
+
+      it("handles mixed arrays and objects with partial changes", () => {
+        const prevUser1 = { __typename: "User", __version: 100, id: "u1", name: "Alice" };
+        const prevUser2 = { __typename: "User", __version: 101, id: "u2", name: "Bob" };
+        const prevUsers = [prevUser1, prevUser2];
+        (prevUsers as any).__version = 200;
+
+        const prevData = {
+          __typename: "Query",
+          __version: 300,
+          users: prevUsers,
+          metadata: { __typename: "Metadata", __version: 400, count: 2 },
+        };
+
+        const nextUser1 = { __typename: "User", __version: 100, id: "u1", name: "Alice" };
+        const nextUser2 = { __typename: "User", __version: 102, id: "u2", name: "Bob Updated" };
+        const nextUsers = [nextUser1, nextUser2];
+        (nextUsers as any).__version = 201;
+
+        const nextData = {
+          __typename: "Query",
+          __version: 301,
+          users: nextUsers,
+          metadata: { __typename: "Metadata", __version: 400, count: 2 },
+        };
+
+        const result = recycleSnapshots(prevData, nextData);
+
+        expect(result).toBe(nextData);
+        expect(result.users[0]).toBe(prevUser1); // Recycled!
+        expect(result.users[1]).toBe(nextUser2); // Not recycled
+        expect(result.metadata).toBe(prevData.metadata); // Recycled!
+      });
+
+      it("recycles deep unchanged subtrees when middle level changes", () => {
+        const prevLevel4 = { __version: 500, value: "deep" };
+        const prevLevel3 = { __version: 400, level4: prevLevel4 };
+        const prevLevel2 = { __version: 300, level3: prevLevel3 };
+        const prevData = {
+          __version: 100,
+          level1: { __version: 200, level2: prevLevel2 },
+        };
+
+        const nextLevel4 = { __version: 500, value: "deep" };
+        const nextLevel3 = { __version: 400, level4: nextLevel4 };
+        const nextLevel2 = { __version: 301, level3: nextLevel3 }; // L2 changed!
+        const nextData = {
+          __version: 101,
+          level1: { __version: 201, level2: nextLevel2 },
+        };
+
+        const result = recycleSnapshots(prevData, nextData);
+
+        expect(result).toBe(nextData);
+        expect(result.level1.level2.level3).toBe(prevLevel3); // L3 recycled!
+        expect(result.level1.level2.level3.level4).toBe(prevLevel4); // L4 not traversed
+      });
+
+      it("recycles unchanged edges and pageInfo in connections", () => {
+        const prevEdge1 = {
+          __typename: "PostEdge",
+          __version: 100,
+          cursor: "c1",
+          node: { __typename: "Post", __version: 200, id: "p1", title: "Post 1" },
+        };
+        const prevEdge2 = {
+          __typename: "PostEdge",
+          __version: 101,
+          cursor: "c2",
+          node: { __typename: "Post", __version: 201, id: "p2", title: "Post 2" },
+        };
+        const prevEdges = [prevEdge1, prevEdge2];
+        (prevEdges as any).__version = 300;
+
+        const prevPageInfo = {
+          __typename: "PageInfo",
+          __version: 400,
+          hasNextPage: true,
+          endCursor: "c2",
+        };
+
+        const prevData = {
+          __typename: "PostConnection",
+          __version: 500,
+          edges: prevEdges,
+          pageInfo: prevPageInfo,
+        };
+
+        // Next data: edge2 changed
+        const nextEdge1 = {
+          __typename: "PostEdge",
+          __version: 100,
+          cursor: "c1",
+          node: { __typename: "Post", __version: 200, id: "p1", title: "Post 1" },
+        };
+        const nextEdge2 = {
+          __typename: "PostEdge",
+          __version: 102, // Changed!
+          cursor: "c2",
+          node: { __typename: "Post", __version: 202, id: "p2", title: "Post 2 Updated" },
+        };
+        const nextEdges = [nextEdge1, nextEdge2];
+        (nextEdges as any).__version = 301; // Changed!
+
+        const nextPageInfo = {
+          __typename: "PageInfo",
+          __version: 400, // Same
+          hasNextPage: true,
+          endCursor: "c2",
+        };
+
+        const nextData = {
+          __typename: "PostConnection",
+          __version: 501, // Changed!
+          edges: nextEdges,
+          pageInfo: nextPageInfo,
+        };
+
+        const result = recycleSnapshots(prevData, nextData);
+
+        expect(result).toBe(nextData);
+        expect(result.edges[0]).toBe(prevEdge1); // Recycled!
+        expect(result.edges[1]).toBe(nextEdge2); // Not recycled
+        expect(result.pageInfo).toBe(prevPageInfo); // Recycled!
+      });
+
+      it("recycles unchanged posts in nested connections", () => {
+        const prevComment1 = {
+          __typename: "Comment",
+          __version: 100,
+          id: "c1",
+          text: "Comment 1",
+        };
+        const prevCommentEdges = [prevComment1];
+        (prevCommentEdges as any).__version = 200;
+
+        const prevPost1 = {
+          __typename: "Post",
+          __version: 300,
+          id: "p1",
+          title: "Post 1",
+          comments: {
+            __typename: "CommentConnection",
+            __version: 400,
+            edges: prevCommentEdges,
+          },
+        };
+
+        const prevPost2 = {
+          __typename: "Post",
+          __version: 350,
+          id: "p2",
+          title: "Post 2",
+          comments: {
+            __typename: "CommentConnection",
+            __version: 450,
+            edges: [],
+          },
+        };
+
+        const prevPostEdges = [prevPost1, prevPost2];
+        (prevPostEdges as any).__version = 500;
+
+        const prevData = {
+          __typename: "Query",
+          __version: 600,
+          user: {
+            __typename: "User",
+            __version: 700,
+            id: "u1",
+            posts: {
+              __typename: "PostConnection",
+              __version: 800,
+              edges: prevPostEdges,
+            },
+          },
+        };
+
+        // Next data: comment in post1 changed
+        const nextComment1 = {
+          __typename: "Comment",
+          __version: 101, // Changed!
+          id: "c1",
+          text: "Comment 1 Updated",
+        };
+        const nextCommentEdges = [nextComment1];
+        (nextCommentEdges as any).__version = 201; // Changed!
+
+        const nextPost1 = {
+          __typename: "Post",
+          __version: 301, // Changed!
+          id: "p1",
+          title: "Post 1",
+          comments: {
+            __typename: "CommentConnection",
+            __version: 401, // Changed!
+            edges: nextCommentEdges,
+          },
+        };
+
+        const nextPost2 = {
+          __typename: "Post",
+          __version: 350, // Same!
+          id: "p2",
+          title: "Post 2",
+          comments: {
+            __typename: "CommentConnection",
+            __version: 450,
+            edges: [],
+          },
+        };
+
+        const nextPostEdges = [nextPost1, nextPost2];
+        (nextPostEdges as any).__version = 501; // Changed!
+
+        const nextData = {
+          __typename: "Query",
+          __version: 601, // Changed!
+          user: {
+            __typename: "User",
+            __version: 701, // Changed!
+            id: "u1",
+            posts: {
+              __typename: "PostConnection",
+              __version: 801, // Changed!
+              edges: nextPostEdges,
+            },
+          },
+        };
+
+        const result = recycleSnapshots(prevData, nextData);
+
+        expect(result).toBe(nextData);
+        expect(result.user.posts.edges[1]).toBe(prevPost2); // Post2 recycled!
+      });
+    });
+  });
 });
+
