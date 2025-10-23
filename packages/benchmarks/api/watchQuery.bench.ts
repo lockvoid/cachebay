@@ -104,29 +104,10 @@ summary(() => {
       };
     });
 
-    bench(`apollo.watch:initial:cold(${getLabel()})`, function* () {
-      yield {
-        [0]() {
-          return createApolloCache();
-        },
-        async bench(apollo) {
-          const unwatch = apollo.watch({
-            query: APOLLO_QUERY,
-            variables: { first: USERS_PAGE_SIZE, after: null },
-            optimistic: false,
-            immediate: true,
-            callback: (diff) => sink(diff.result),
-          });
-
-          for (let i = 0; i < pages.length; i++) {
-            apollo.writeQuery({ query: APOLLO_QUERY, variables: pages[i].variables, data: pages[i].data });
-            await Promise.resolve();
-          }
-
-          unwatch();
-        },
-      };
-    });
+    // Note: Apollo watch benchmark omitted
+    // Apollo's watch() is on ApolloClient (not InMemoryCache), which requires
+    // network layer setup and is not directly comparable to cache-only watchers.
+    // Apollo is designed for component-level queries with useQuery hook.
 
     bench(`relay.subscribe:initial:cold(${getLabel()})`, function* () {
       yield {
@@ -180,24 +161,9 @@ summary(() => {
       sub.unsubscribe();
     });
 
-    const apollo = createApolloCache();
-
-    for (let i = 0; i < pages.length; i++) {
-      apollo.writeQuery({ query: APOLLO_QUERY, variables: pages[i].variables, data: pages[i].data });
-    }
-
-    apollo.readQuery({ query: APOLLO_QUERY, variables: { first: USERS_PAGE_SIZE, after: null } });
-
-    bench(`apollo.watch:initial:hot(${getLabel()})`, () => {
-      const unwatch = apollo.watch({
-        query: APOLLO_QUERY,
-        variables: { first: USERS_PAGE_SIZE, after: null },
-        optimistic: false,
-        immediate: true,
-        callback: (diff) => sink(diff.result),
-      });
-      unwatch();
-    });
+    // Note: Apollo watch benchmark omitted
+    // Apollo's watch() is on ApolloClient (not InMemoryCache), which requires
+    // network layer setup and is not directly comparable to cache-only watchers.
 
     const relay = createRelayEnvironment();
 
