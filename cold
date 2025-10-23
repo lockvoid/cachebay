@@ -1,0 +1,465 @@
+type Task =
+  | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string }
+  | { t: "ENTITY"; id: string; field: PlanField; out: any }
+  | { t: "CONNECTION"; parentId: string; field: PlanField; out: any; outKey: string }
+  | { t: "PAGE_INFO"; id: string; field: PlanField; out: any }
+  | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[] };
+
+const ENTITY = Symbol("ENTITY");
+const CONNECTION = Symbol("CONNECTION");
+const PAGE_INFO = Symbol("PAGE_INFO");
+const EDGE = Symbol("EDGE");
+
+const materializeDocument = ({
+  document,
+  variables = {},
+  canonical = true,
+  entityId,
+}: {
+  document: DocumentNode | CachePlan;
+  variables?: Record<string, any>;
+  canonical?: boolean;
+  /** When provided, read the plan.root selection over this entity id instead of ROOT */
+  entityId?: string;
+}): MaterializeResult => {
+  // Flush any pending graph changes before reading
+  graph.flush();
+
+  // --- dev-mode diagnostics ---------------------------------------------------
+  type Miss =
+    | { kind: "entity-missing"; at: string; id: string }
+    | { kind: "root-link-missing"; at: string; fieldKey: string }
+    | { kind: "field-link-missing"; at: string; parentId: string; fieldKey: string }
+    | {
+        kind: "connection-missing";
+        at: string;
+        mode: "strict" | "canonical";
+        parentId: string;
+        canonicalKey: string;
+        strictKey: string;
+        hasCanonical: boolean;
+        hasStrict: boolean;
+      }
+    | { kind: "pageinfo-missing"; at: string; pageId: string }
+    | { kind: "edge-node-missing"; at: string; edgeId: string }
+    | { kind: "scalar-missing"; at: string; parentId: string; fieldKey: string };
+
+  const misses: Miss[] = [];
+  const miss = __DEV__ ? (m: Miss) => { misses.push(m); } : () => {};
+  const addPath = __DEV__ ? (base: string, seg: string) => (base ? base + "." + seg : seg) : () => {};
+
+  // --- plan & helpers (no LRU / no dirty / no dep-index) ---------------------
+  const plan = planner.getPlan(document);
+
+  const isSubtype = (actual?: string, expected?: string): boolean => {
+    if (!expected || !actual) return true;
+    if (actual === expected) return true;
+    const intfMap = (graph as any)?.interfaces || (graph as any)?.__interfaces || undefined;
+    const impls: string[] | undefined = intfMap?.[expected];
+    return Array.isArray(impls) ? impls.includes(actual) : false;
+  };
+  const fieldAppliesToType = (pf: any, actualType?: string): boolean => {
+    const one = pf?.typeCondition ?? pf?.onType ?? pf?.typeName ?? undefined;
+    const many = pf?.typeConditions ?? pf?.onTypes ?? pf?.typeNames ?? undefined;
+    if (!one && !many) return true;
+    if (one) return isSubtype(actualType, one);
+    if (Array.isArray(many)) return many.some((t: string) => isSubtype(actualType, t));
+    return true;
+  };
+
+  // ---- traversal (cold) ----
+  const deps = new Set<string>();
+  const touch = (id?: string | null) => {
+    if (id) deps.add(id);
+  };
+
+  const outData: Record<string, any> = {};
+  let strictOK = true;
+  let canonicalOK = true;
+
+  type Task =
+    | { t: "ROOT_FIELD"; parentId: string; field: PlanField; out: any; outKey: string; path: string }
+    | { t: "ENTITY"; id: string; field: PlanField; out: any; path: string }
+    | { t: "CONNECTION"; parentId: string; field: PlanField; out: any; outKey: string; path: string }
+    | { t: "PAGE_INFO"; id: string; field: PlanField; out: any; path: string }
+    | { t: "EDGE"; id: string; idx: number; field: PlanField; outArr: any[]; path: string };
+
+  const tasks: Task[] = [];
+  const rootSel = plan.root;
+
+  let root: any = undefined;
+  if (entityId) {
+    // Synthetic "ENTITY" root: apply fragment selection to the entity directly
+    const syntheticField = { selectionSet: rootSel, selectionMap: plan.rootSelectionMap } as unknown as PlanField;
+    tasks.push({ t: ENTITY as any, id: entityId, field: syntheticField, out: outData, path: entityId } as any);
+  } else {
+    root = graph.getRecord(ROOT_ID) || {};
+    for (let i = rootSel.length - 1; i >= 0; i--) {
+      const f = rootSel[i];
+      tasks.push({
+        t: "ROOT_FIELD",
+        parentId: ROOT_ID,
+        field: f,
+        out: outData,
+        outKey: f.responseKey,
+        path: addPath(ROOT_ID, f.responseKey) as any,
+      } as any);
+    }
+  }
+
+  while (tasks.length) {
+    const task = tasks.pop() as Task;
+
+    if (task.t === "ROOT_FIELD") {
+      const { parentId, field, out, outKey, path } = task;
+
+      if ((field as any).isConnection) {
+        tasks.push({ t: CONNECTION as any, parentId, field, out, outKey, path } as any);
+        continue;
+      }
+
+      if (field.selectionSet && field.selectionSet.length) {
+        const snap = graph.getRecord(parentId) || {};
+        const fieldKey = buildFieldKey(field, variables);
+        if (parentId === ROOT_ID) touch(`${parentId}.${fieldKey}`);
+        const link = (snap as any)[fieldKey];
+
+        if (!link || !link.__ref) {
+          out[outKey] = link === null ? null : undefined;
+          strictOK = false;
+          canonicalOK = false;
+          miss({ kind: "root-link-missing", at: path, fieldKey });
+          continue;
+        }
+
+        const childId = link.__ref as string;
+        const childOut: any = {};
+        out[outKey] = childOut;
+        tasks.push({ t: ENTITY as any, id: childId, field, out: childOut, path: addPath(path, childId) as any } as any);
+        continue;
+      }
+
+      if (field.fieldName === "__typename") {
+        out[outKey] = (root as any).__typename;
+      } else {
+        const sk = buildFieldKey(field, variables);
+        out[outKey] = (root as any)[sk];
+      }
+      continue;
+    }
+
+    if (task.t === (ENTITY as any)) {
+      const { id, field, out, path } = task as any;
+      const rec = graph.getRecord(id);
+      touch(id);
+
+      if (!rec) {
+        strictOK = false;
+        canonicalOK = false;
+        miss({ kind: "entity-missing", at: path, id });
+      }
+
+      const snap = rec || {};
+
+      if ((snap as any).__typename !== undefined) {
+        out.__typename = (snap as any).__typename;
+      }
+
+      const actualType = (snap as any).__typename as string | undefined;
+      const sel = field.selectionSet || [];
+      for (let i = sel.length - 1; i >= 0; i--) {
+        const f = sel[i];
+
+        if (!fieldAppliesToType(f, actualType)) continue;
+
+        if ((f as any).isConnection) {
+          tasks.push({ t: CONNECTION as any, parentId: id, field: f, out, outKey: f.responseKey, path: addPath(path, f.responseKey) as any } as any);
+          continue;
+        }
+
+        if (f.selectionSet && f.selectionSet.length) {
+          const fKey = buildFieldKey(f, variables);
+          const link = (snap as any)[fKey];
+
+          // array-of-refs
+          if (link && typeof link === "object" && Array.isArray(link.__refs)) {
+            const refs: string[] = link.__refs; // no copy
+            const arrOut: any[] = new Array(refs.length);
+            out[f.responseKey] = arrOut;
+
+            for (let j = refs.length - 1; j >= 0; j--) {
+              const childOut: any = {};
+              arrOut[j] = childOut;
+              tasks.push({ t: ENTITY as any, id: refs[j], field: f, out: childOut, path: addPath(path, `${f.responseKey}[${j}]`) as any } as any);
+            }
+            continue;
+          }
+
+          // single ref or missing
+          if (!link || !link.__ref) {
+            out[f.responseKey] = link === null ? null : undefined;
+            strictOK = false;
+            canonicalOK = false;
+            miss({ kind: "field-link-missing", at: addPath(path, f.responseKey) as any, parentId: id, fieldKey: fKey });
+            continue;
+          }
+
+          const childId = link.__ref as string;
+          const childOut: any = {};
+          out[f.responseKey] = childOut;
+          tasks.push({ t: ENTITY as any, id: childId, field: f, out: childOut, path: addPath(path, f.responseKey) as any } as any);
+          continue;
+        }
+
+        // scalar
+        if (f.fieldName === "__typename") {
+          out[f.responseKey] = (snap as any).__typename;
+        } else {
+          const sk = buildFieldKey(f, variables);
+          const val = (snap as any)[sk];
+          if (val === undefined && __DEV__) {
+            miss({ kind: "scalar-missing", at: addPath(path, f.responseKey) as any, parentId: id, fieldKey: sk });
+          }
+          out[f.responseKey] = val;
+        }
+      }
+
+      // scalar fallback for interface-gated scalars present on the record
+      if (Array.isArray(field.selectionSet) && field.selectionSet.length) {
+        for (let i = 0; i < field.selectionSet.length; i++) {
+          const pf = field.selectionSet[i];
+          if (pf.selectionSet) continue;
+          if (out[pf.responseKey] !== undefined) continue;
+          const sk = buildFieldKey(pf, variables);
+          if (sk in (snap as any)) out[pf.responseKey] = (snap as any)[sk];
+        }
+      }
+      continue;
+    }
+
+    if (task.t === (CONNECTION as any)) {
+      const { parentId, field, out, outKey, path } = task as any;
+
+      // compute both keys
+      const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
+      const strictKey = buildConnectionKey(field, parentId, variables);
+
+      // Only touch the dependency for the requested mode
+      if (canonical) {
+        touch(canonicalKey);
+      } else {
+        touch(strictKey);
+      }
+
+      const pageCanonical = graph.getRecord(canonicalKey);
+      const pageStrict = graph.getRecord(strictKey);
+
+      // Track overall satisfiability
+      canonicalOK &&= !!pageCanonical;
+      strictOK &&= !!pageStrict;
+
+      const requestedOK = canonical ? !!pageCanonical : !!pageStrict;
+
+      const conn: any = { edges: [], pageInfo: {} };
+      out[outKey] = conn;
+
+      if (!requestedOK) {
+        miss({
+          kind: "connection-missing",
+          at: path,
+          mode: canonical ? "canonical" : "strict",
+          parentId,
+          canonicalKey,
+          strictKey,
+          hasCanonical: !!pageCanonical,
+          hasStrict: !!pageStrict,
+        });
+        continue;
+      }
+
+      // Choose the page for the requested mode (also used to build edge IDs)
+      const baseIsCanonical = !!canonical;
+      const page = (baseIsCanonical ? pageCanonical : pageStrict)!;
+      const baseKey = baseIsCanonical ? canonicalKey : strictKey;
+
+      const selMap = (field as any).selectionMap as Map<string, PlanField> | undefined;
+      if (selMap && selMap.size) {
+        for (const [rk, pf] of selMap) {
+          if (rk === "pageInfo") {
+            const piLink = (page as any).pageInfo;
+            if (piLink?.__ref) {
+              tasks.push({ t: PAGE_INFO as any, id: piLink.__ref as string, field: pf, out: conn, path: addPath(path, "pageInfo") as any } as any);
+            } else {
+              conn.pageInfo = {};
+              strictOK = false;
+              canonicalOK = false;
+              miss({ kind: "pageinfo-missing", at: addPath(path, "pageInfo") as any, pageId: `${baseKey}.pageInfo` });
+            }
+            continue;
+          }
+
+          if (rk === "edges") {
+            const edgesRaw = (page as any).edges;
+            let refs: string[] = [];
+            if (edgesRaw && typeof edgesRaw === "object" && Array.isArray(edgesRaw.__refs)) {
+              refs = edgesRaw.__refs; // no copy
+            } else if (Array.isArray(edgesRaw)) {
+              // derive edge record ids based on the *requested* mode's baseKey
+              refs = edgesRaw.map((_: any, i: number) => `${baseKey}.edges.${i}`);
+            }
+
+            const arr: any[] = new Array(refs.length);
+            conn.edges = arr;
+
+            for (let i = refs.length - 1; i >= 0; i--) {
+              tasks.push({ t: EDGE as any, id: refs[i], idx: i, field: pf, outArr: arr, path: addPath(path, `edges[${i}]`) as any } as any);
+            }
+            continue;
+          }
+
+          if (!pf.selectionSet) {
+            if (pf.fieldName === "__typename") {
+              conn[pf.responseKey] = (page as any).__typename;
+            } else {
+              const sk = buildFieldKey(pf, variables);
+              conn[pf.responseKey] = (page as any)[sk];
+            }
+            continue;
+          }
+
+          if ((pf as any).isConnection) {
+            tasks.push({
+              t: CONNECTION as any,
+              parentId: baseIsCanonical ? canonicalKey : strictKey,
+              field: pf,
+              out: conn,
+              outKey: pf.responseKey,
+              path: addPath(path, pf.responseKey) as any,
+            } as any);
+            continue;
+          }
+
+          const link = (page as any)[buildFieldKey(pf, variables)];
+          if (link && typeof link === "object" && Array.isArray(link.__refs)) {
+            const refs: string[] = link.__refs; // no copy
+            const arrOut: any[] = new Array(refs.length);
+            conn[pf.responseKey] = arrOut;
+
+            for (let j = refs.length - 1; j >= 0; j--) {
+              const childOut: any = {};
+              arrOut[j] = childOut;
+              tasks.push({ t: ENTITY as any, id: refs[j], field: pf, out: childOut, path: addPath(path, `${pf.responseKey}[${j}]`) as any } as any);
+            }
+            continue;
+          }
+
+          if (!link || !link.__ref) {
+            conn[pf.responseKey] = link === null ? null : undefined;
+            strictOK = false;
+            canonicalOK = false;
+            miss({
+              kind: "field-link-missing",
+              at: addPath(path, pf.responseKey) as any,
+              parentId: baseKey,
+              fieldKey: buildFieldKey(pf, variables),
+            });
+            continue;
+          }
+
+          const childId = link.__ref as string;
+          const childOut: any = {};
+          conn[pf.responseKey] = childOut;
+          tasks.push({ t: ENTITY as any, id: childId, field: pf, out: childOut, path: addPath(path, pf.responseKey) as any } as any);
+        }
+      }
+      continue;
+    }
+
+    if (task.t === (PAGE_INFO as any)) {
+      const { id, field, out, path } = task as any;
+      touch(id);
+      const pi = graph.getRecord(id) || {};
+      const piOut: any = {};
+      const sel = field.selectionSet || [];
+      for (let i = 0; i < sel.length; i++) {
+        const pf = sel[i];
+        if (pf.selectionSet) continue;
+        if (pf.fieldName === "__typename") {
+          piOut[pf.responseKey] = (pi as any).__typename;
+        } else {
+          const sk = buildFieldKey(pf, variables);
+          piOut[pf.responseKey] = (pi as any)[sk];
+        }
+      }
+      out.pageInfo = piOut;
+      continue;
+    }
+
+    if (task.t === (EDGE as any)) {
+      const { id, idx, field, outArr, path } = task as any;
+      touch(id);
+      const edge = graph.getRecord(id) || {};
+      const edgeOut: any = {};
+      outArr[idx] = edgeOut;
+
+      if ((edge as any).__typename !== undefined) {
+        edgeOut.__typename = (edge as any).__typename;
+      }
+
+      const sel = field.selectionSet || [];
+      const nodePlan = (field as any).selectionMap?.get("node");
+
+      for (let i = 0; i < sel.length; i++) {
+        const pf = sel[i];
+        const rk = pf.responseKey;
+
+        if (rk === "node") {
+          const nlink = (edge as any).node;
+          if (!nlink || !nlink.__ref) {
+            edgeOut.node = nlink === null ? null : undefined;
+            strictOK = false;
+            canonicalOK = false;
+            miss({ kind: "edge-node-missing", at: addPath(path, "node") as any, edgeId: id });
+          } else {
+            const nid = nlink.__ref as string;
+            const nOut: any = {};
+            edgeOut.node = nOut;
+            tasks.push({ t: ENTITY as any, id: nid, field: nodePlan as PlanField, out: nOut, path: addPath(path, "node") as any } as any);
+          }
+        } else if (!pf.selectionSet) {
+          if (pf.fieldName === "__typename") {
+            edgeOut[rk] = (edge as any).__typename;
+          } else {
+            const sk = buildFieldKey(pf, variables);
+            const val = (edge as any)[sk];
+            if (val === undefined && __DEV__) {
+              miss({ kind: "scalar-missing", at: addPath(path, rk) as any, parentId: id, fieldKey: sk });
+            }
+            edgeOut[rk] = val;
+          }
+        }
+      }
+      continue;
+    }
+  }
+
+  const ids = deps.size ? Array.from(deps) : [];
+  const requestedOK = canonical ? canonicalOK : strictOK;
+
+  if (!requestedOK) {
+    return {
+      data: undefined,
+      deps: ids,
+      source: "none",
+      ok: { strict: strictOK, canonical: canonicalOK, miss: __DEV__ ? misses : undefined },
+    };
+  }
+
+  // No LRU / no dep-index linking / no dirty bookkeeping in cold path
+  return {
+    data: outData,
+    deps: ids,
+    source: canonical ? "canonical" : "strict",
+    ok: { strict: strictOK, canonical: canonicalOK, miss: __DEV__ ? misses : undefined },
+  };
+};

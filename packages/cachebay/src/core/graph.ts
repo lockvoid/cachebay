@@ -1,6 +1,8 @@
 import { ID_FIELD, TYPENAME_FIELD, IDENTITY_FIELDS, ROOT_ID } from "./constants";
 import { isObject, isDataDeepEqual } from "./utils";
 
+const EMPTY_SET: ReadonlySet<string> = new Set();
+
 /**
  * Configuration options for graph store
  */
@@ -50,20 +52,20 @@ const applyFieldChanges = (currentSnapshot: Record<string, any>, partialSnapshot
     }
 
     const currentValue = currentSnapshot[fieldName];
-    
+
     // Fast path: reference equality (handles primitives and same object references)
     if (currentValue === incomingValue) {
       continue;
     }
-    
+
     // Only use deep equality for objects/arrays to avoid false positives from JSON.parse
-    if (typeof incomingValue === 'object' && incomingValue !== null && 
-        typeof currentValue === 'object' && currentValue !== null) {
+    if (typeof incomingValue === 'object' && incomingValue !== null &&
+      typeof currentValue === 'object' && currentValue !== null) {
       if (isDataDeepEqual(currentValue, incomingValue)) {
         continue;
       }
     }
-    
+
     currentSnapshot[fieldName] = incomingValue;
     hasChanges = true;
   }
@@ -149,12 +151,25 @@ class IdentityManager {
  * @returns Graph store instance with CRUD and read methods
  */
 export const createGraph = (options: GraphOptions = {}) => {
-  const { onChange = () => {} } = options;
+  const { onChange = () => { } } = options;
 
   const identityManager = new IdentityManager({ keys: options.keys || {}, interfaces: options.interfaces || {} });
+  const implementersMap = new Map<string, ReadonlySet<string>>();
   const recordStore = new Map<string, Record<string, any>>();
   const recordVersionStore = new Map<string, number>();
   const pendingChanges = new Set<string>();
+
+  let isFlushing = false;
+
+  for (const name in options.interfaces) {
+    const implementors = options.interfaces[name];
+
+    if (Array.isArray(implementors) && implementors.length > 0) {
+      implementersMap.set(name, new Set(implementors));
+    } else {
+      implementersMap.set(name, EMPTY_SET);
+    }
+  }
 
   const notifyChange = (recordId: string) => {
     const shouldSchedule = pendingChanges.size === 0;
@@ -164,6 +179,13 @@ export const createGraph = (options: GraphOptions = {}) => {
     if (shouldSchedule) {
       queueMicrotask(flush);
     }
+  };
+
+  /**
+   * Get implementers for a given interface
+   */
+  const getImplementers = (interfaceName: string): ReadonlySet<string> => {
+    return implementersMap.get(interfaceName) || EMPTY_SET;
   };
 
   /**
@@ -233,16 +255,18 @@ export const createGraph = (options: GraphOptions = {}) => {
   /**
    * Flush pending onChange notifications immediately (for sync reads after writes)
    */
-  let isFlushing = false;
+
   const flush = () => {
     if (isFlushing) {
       return;
     }
+
     if (pendingChanges.size === 0) {
       return;
     }
 
     isFlushing = true;
+
     try {
       onChange(pendingChanges);
       pendingChanges.clear();
@@ -287,6 +311,7 @@ export const createGraph = (options: GraphOptions = {}) => {
   };
 
   return {
+    getImplementers,
     identify,
     putRecord,
     getRecord,

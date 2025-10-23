@@ -22,19 +22,17 @@ import {
   MULTIPLE_USERS_QUERY,
 } from "@/test/helpers/operations";
 
-describe("documents.materializeDocument (plain materialization + source/ok)", () => {
+describe("documents.materializeDocument (plain materialization + source/ok + dependencies)", () => {
   let graph: ReturnType<typeof createGraph>;
   let optimistic: ReturnType<typeof createOptimistic>;
   let planner: ReturnType<typeof createPlanner>;
-  let canonical: ReturnType<typeof createCanonical>;
+  let canonicalLayer: ReturnType<typeof createCanonical>;
   let documents: ReturnType<typeof createDocuments>;
 
   beforeEach(() => {
     planner = createPlanner();
 
-    // Create documents first (will be assigned after graph creation)
-    let documentsRef: ReturnType<typeof createDocuments>;
-
+    // We don't need to call into documents on graph changes anymore.
     graph = createGraph({
       keys: {
         Profile: (p) => p.slug,
@@ -45,14 +43,13 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
         Post: (p) => p.id,
       },
       interfaces: { Post: ["AudioPost", "VideoPost"] },
-      onChange: (touchedIds) => {
-        // Notify documents for cache invalidation
-        documentsRef._markDirty(touchedIds);
+      onChange: (_touchedIds) => {
+        // No per-plan dirty marking; watchers will rely on versioned dependencies.
       },
     });
 
     optimistic = createOptimistic({ graph });
-    canonical = createCanonical({ graph, optimistic });
+    canonicalLayer = createCanonical({ graph, optimistic });
 
     // Root record is always present
     graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
@@ -60,10 +57,8 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
     documents = createDocuments({
       graph,
       planner,
-      canonical,
+      canonical: canonicalLayer,
     });
-
-    documentsRef = documents;
   });
 
   it("FULFILLED (source !== 'none') for fully-present entity selection (scalars + link)", () => {
@@ -76,7 +71,6 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
       }
     `);
 
-    // Simulate a network payload -> normalize into the graph store
     documents.normalizeDocument({
       document: QUERY,
       variables: { id: "u1" },
@@ -90,6 +84,13 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
     expect(res.data).toEqual({
       user: { __typename: "User", id: "u1", email: "u1@example.com" },
     });
+
+    // dependencies should include root field key and entity id
+    const rootFieldKey = `${ROOT_ID}.user({"id":"u1"})`;
+    expect(res.dependencies).toBeInstanceOf(Map);
+    expect(res.dependencies.has(rootFieldKey)).toBe(true);
+    expect(res.dependencies.has("User:u1")).toBe(true);
+    expect(res.dependencies.get("User:u1")).toBe(graph.getVersion("User:u1"));
   });
 
   it("MISSING when a required link target is absent", () => {
@@ -104,12 +105,16 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
 
     // Only wire the ROOT link but don't create the target record
     graph.putRecord(ROOT_ID, {
-      [/* storage key */ 'user({"id":"u2"})']: { __ref: "User:u2" },
+      ['user({"id":"u2"})']: { __ref: "User:u2" },
     });
 
     const res = documents.materializeDocument({ document: QUERY, variables: { id: "u2" } }) as any;
     expect(res.source).toBe("none");
     expect(res.data).toBeUndefined();
+
+    // Still tracks dependency to the missing entity id (helps watchers)
+    expect(res.dependencies).toBeInstanceOf(Map);
+    expect(res.dependencies.has("User:u2")).toBe(true);
   });
 
   it("maps aliases and args to response keys (no proxies)", () => {
@@ -131,7 +136,7 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
           __typename: "Media",
           key: "m1",
           dataUrl: "raw-1",
-          previewUrl: "raw-2", // response alias
+          previewUrl: "raw-2",
         },
       },
     });
@@ -158,7 +163,6 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
       }
     `);
 
-    // Build canonical connection directly (helper writes records correctly)
     const canonicalKey = '@connection.users({"role":"admin"})';
     const data = users.buildConnection(
       [
@@ -179,7 +183,15 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
     expect(res.data.users.pageInfo.startCursor).toBe("u1");
     expect(res.data.users.pageInfo.endCursor).toBe("u2");
     expect(res.data.users.edges).toHaveLength(2);
-    expect(res.data.users.edges[0].node).toEqual({ __typename: "User", id: "u1", email: "u1@example.com" });
+
+    // dependencies include the canonical connection key, pageInfo & edges
+    const pageInfoId = `${canonicalKey}.pageInfo`;
+    const edge0Id = `${canonicalKey}.edges.0`;
+    const edge1Id = `${canonicalKey}.edges.1`;
+    expect(res.dependencies.has(canonicalKey)).toBe(true);
+    expect(res.dependencies.has(pageInfoId)).toBe(true);
+    expect(res.dependencies.has(edge0Id)).toBe(true);
+    expect(res.dependencies.has(edge1Id)).toBe(true);
   });
 
   it("materializes a nested connection via canonical key (user.posts)", () => {
@@ -188,8 +200,8 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
         user(id: $id) {
           id
           posts(first: $first, after: $after, category: $category) @connection {
-            edges { cursor node { id title __typename } __typename }
-            pageInfo { startCursor endCursor hasNextPage hasPreviousPage __typename }
+            edges { cursor node { id title flags } }
+            pageInfo { startCursor endCursor hasNextPage hasPreviousPage }
           }
         }
       }
@@ -212,37 +224,89 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
     }) as any;
 
     expect(res.source).toBe("canonical");
-    expect(res.data.user.posts.edges[0].node).toEqual({ __typename: "Post", id: "p1", title: "Post 1" });
+    expect(res.data.user.posts.edges[0].node).toEqual({ __typename: "Post", id: "p1", title: "Post 1", flags: [] });
+
+    // dependencies include user record + nested connection keys
+    expect(res.dependencies.has("User:u1")).toBe(true);
+    expect(res.dependencies.has(postsCanonicalKey)).toBe(true);
+    expect(res.dependencies.has(`${postsCanonicalKey}.pageInfo`)).toBe(true);
+    expect(res.dependencies.has(`${postsCanonicalKey}.edges.0`)).toBe(true);
   });
 
-  it("LRU-ish cache: returns same object reference for identical reads, invalidates after graph update", () => {
-    const QUERY = compilePlan(/* GraphQL */ `
-      query Q {
-        user(id: "u1") { id email __typename }
-      }
-    `);
+  describe("dependencies (versioned) behavior", () => {
+    it("exposes dependency versions and updates after writes", () => {
+      const QUERY = compilePlan(/* GraphQL */ `
+        query UserById($id: ID!) {
+          user(id: $id) {
+            id
+            email
+          }
+        }
+      `);
 
-    documents.normalizeDocument({
-      document: QUERY,
-      variables: {},
-      data: { user: { __typename: "User", id: "u1", email: "v1@example.com" } },
+      documents.normalizeDocument({
+        document: QUERY,
+        variables: { id: "u1" },
+        data: { user: { __typename: "User", id: "u1", email: "a@example.com" } },
+      });
+
+      const r1 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } }) as any;
+      const verUser1 = r1.dependencies.get("User:u1");
+      const verRootLink = r1.dependencies.get(`${ROOT_ID}.user({"id":"u1"})`);
+      expect(typeof verUser1).toBe("number");
+      expect(verUser1).toBe(graph.getVersion("User:u1"));
+      expect(typeof verRootLink).toBe("number");
+
+      // Write a change -> version must bump
+      graph.putRecord("User:u1", { email: "b@example.com" });
+
+      const r2 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } }) as any;
+      const verUser2 = r2.dependencies.get("User:u1");
+      expect(verUser2).toBe(graph.getVersion("User:u1"));
+      expect(verUser2).not.toBe(verUser1);
     });
 
-    const a = documents.materializeDocument({ document: QUERY, variables: {} }) as any;
-    const b = documents.materializeDocument({ document: QUERY, variables: {} }) as any;
+    it("tracks connection keys, pageInfo and edge records as dependencies", () => {
+      const QUERY = compilePlan(/* GraphQL */ `
+        query AdminUsers($role: String!, $first: Int, $after: ID) {
+          users(role: $role, first: $first, after: $after) @connection {
+            edges { cursor node { id email  }  }
+            pageInfo { startCursor endCursor hasNextPage hasPreviousPage  }
+          }
+        }
+      `);
 
-    expect(a.source).not.toBe("none");
-    expect(b.source).not.toBe("none");
-    // identity stable if cache hits
-    expect(b.data).toBe(a.data);
+      const connKey = '@connection.users({"role":"admin"})';
+      const data = users.buildConnection(
+        [
+          { id: "u1", email: "u1@example.com" },
+          { id: "u2", email: "u2@example.com" },
+        ],
+        { startCursor: "u1", endCursor: "u2", hasNextPage: false, hasPreviousPage: false },
+      );
+      writeConnectionPage(graph, connKey, data);
 
-    // mutate underlying record -> should invalidate cached shape
-    graph.putRecord("User:u1", { email: "v2@example.com" });
+      const res = documents.materializeDocument({
+        document: QUERY,
+        variables: { role: "admin", first: 2, after: null },
+      }) as any;
 
-    const c = documents.materializeDocument({ document: QUERY, variables: {} }) as any;
-    expect(c.source).not.toBe("none");
-    expect(c.data).not.toBe(a.data);
-    expect(c.data).toEqual({ user: { __typename: "User", id: "u1", email: "v2@example.com" } });
+      const deps = res.dependencies as Map<string, number>;
+      expect(deps.has(connKey)).toBe(true);
+      expect(deps.has(`${connKey}.pageInfo`)).toBe(true);
+      expect(deps.has(`${connKey}.edges.0`)).toBe(true);
+      expect(deps.has(`${connKey}.edges.1`)).toBe(true);
+
+      // Mutate an edge (simulate new cursor) -> the edge record version must change
+      graph.putRecord(`${connKey}.edges.0`, { cursor: "u1-new" });
+
+      const res2 = documents.materializeDocument({
+        document: QUERY,
+        variables: { role: "admin", first: 2, after: null },
+      }) as any;
+
+      expect(res2.dependencies.get(`${connKey}.edges.0`)).not.toBe(deps.get(`${connKey}.edges.0`));
+    });
   });
 
   describe("primitives (views)", () => {
@@ -541,7 +605,7 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
               nested2 {
                 nested3 {
                   author {
-                            id
+                    id
                     email
                   }
                 }
@@ -611,7 +675,7 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
             id
             title
             tags {
-                id
+              id
               name
             }
           }
@@ -657,7 +721,7 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
           post(id: $id) {
             id
             author {
-                id
+              id
               email
             }
           }
@@ -686,7 +750,7 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
           post(id: $id) {
             id
             author {
-                id
+              id
               email
             }
           }
@@ -1361,7 +1425,7 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
 
     expect(d.data.posts.edges[0].node.aggregations).toMatchObject({
       __typename: "Aggregations",
-    })
+    });
 
     expect(d.data.posts.edges[0].node.aggregations.moderationTags.pageInfo).toEqual({
       __typename: "PageInfo",
@@ -1587,7 +1651,6 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
         );
         writeConnectionPage(graph, canonicalKey, connectionData);
 
-        // canonical: true should find the canonical connection
         const result = documents.materializeDocument({
           document: POSTS_QUERY,
           variables: {},
@@ -1609,7 +1672,6 @@ describe("documents.materializeDocument (plain materialization + source/ok)", ()
         );
         writeConnectionPage(graph, canonicalKey, connectionData);
 
-        // canonical: false should return MISSING (no strict data)
         const result = documents.materializeDocument({
           document: POSTS_QUERY,
           variables: {},
