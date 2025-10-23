@@ -86,11 +86,10 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     });
 
     // dependencies should include root field key and entity id
-    const rootFieldKey = `${ROOT_ID}.user({"id":"u1"})`;
-    expect(res.dependencies).toBeInstanceOf(Map);
-    expect(res.dependencies.has(rootFieldKey)).toBe(true);
-    expect(res.dependencies.has("User:u1")).toBe(true);
-    expect(res.dependencies.get("User:u1")).toBe(graph.getVersion("User:u1"));
+    expect(res.dependencies).toEqual(new Set([
+      `${ROOT_ID}.user({"id":"u1"})`,
+      "User:u1",
+    ]));
   });
 
   it("MISSING when a required link target is absent", () => {
@@ -113,8 +112,10 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     expect(res.data).toBeUndefined();
 
     // Still tracks dependency to the missing entity id (helps watchers)
-    expect(res.dependencies).toBeInstanceOf(Map);
-    expect(res.dependencies.has("User:u2")).toBe(true);
+    expect(res.dependencies).toEqual(new Set([
+      `${ROOT_ID}.user({"id":"u2"})`,
+      "User:u2",
+    ]));
   });
 
   it("maps aliases and args to response keys (no proxies)", () => {
@@ -151,6 +152,11 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         previewUrl: "raw-2",
       },
     });
+
+    expect(res.dependencies).toEqual(new Set([
+      `${ROOT_ID}.media({"key":"m1"})`,
+      "Media:m1",
+    ]));
   });
 
   it("materializes a ROOT connection via canonical key (edges + pageInfo)", () => {
@@ -185,13 +191,14 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     expect(res.data.users.edges).toHaveLength(2);
 
     // dependencies include the canonical connection key, pageInfo & edges
-    const pageInfoId = `${canonicalKey}.pageInfo`;
-    const edge0Id = `${canonicalKey}.edges.0`;
-    const edge1Id = `${canonicalKey}.edges.1`;
-    expect(res.dependencies.has(canonicalKey)).toBe(true);
-    expect(res.dependencies.has(pageInfoId)).toBe(true);
-    expect(res.dependencies.has(edge0Id)).toBe(true);
-    expect(res.dependencies.has(edge1Id)).toBe(true);
+    expect(res.dependencies).toEqual(new Set([
+      canonicalKey,
+      `${canonicalKey}.pageInfo`,
+      `${canonicalKey}.edges.0`,
+      `${canonicalKey}.edges.1`,
+      "User:u1",
+      "User:u2",
+    ]));
   });
 
   it("materializes a nested connection via canonical key (user.posts)", () => {
@@ -227,14 +234,18 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     expect(res.data.user.posts.edges[0].node).toEqual({ __typename: "Post", id: "p1", title: "Post 1", flags: [] });
 
     // dependencies include user record + nested connection keys
-    expect(res.dependencies.has("User:u1")).toBe(true);
-    expect(res.dependencies.has(postsCanonicalKey)).toBe(true);
-    expect(res.dependencies.has(`${postsCanonicalKey}.pageInfo`)).toBe(true);
-    expect(res.dependencies.has(`${postsCanonicalKey}.edges.0`)).toBe(true);
+    expect(res.dependencies).toEqual(new Set([
+      `${ROOT_ID}.user({"id":"u1"})`,
+      "User:u1",
+      postsCanonicalKey,
+      `${postsCanonicalKey}.pageInfo`,
+      `${postsCanonicalKey}.edges.0`,
+      "Post:p1",
+    ]));
   });
 
-  describe("dependencies (versioned) behavior", () => {
-    it("exposes dependency versions and updates after writes", () => {
+  describe("dependencies tracking", () => {
+    it("tracks dependencies for entities and root fields", () => {
       const QUERY = compilePlan(/* GraphQL */ `
         query UserById($id: ID!) {
           user(id: $id) {
@@ -251,19 +262,19 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       });
 
       const r1 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } }) as any;
-      const verUser1 = r1.dependencies.get("User:u1");
-      const verRootLink = r1.dependencies.get(`${ROOT_ID}.user({"id":"u1"})`);
-      expect(typeof verUser1).toBe("number");
-      expect(verUser1).toBe(graph.getVersion("User:u1"));
-      expect(typeof verRootLink).toBe("number");
+      expect(r1.dependencies).toEqual(new Set([
+        `${ROOT_ID}.user({"id":"u1"})`,
+        "User:u1",
+      ]));
 
-      // Write a change -> version must bump
+      // Write a change -> dependencies should still be tracked
       graph.putRecord("User:u1", { email: "b@example.com" });
 
       const r2 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } }) as any;
-      const verUser2 = r2.dependencies.get("User:u1");
-      expect(verUser2).toBe(graph.getVersion("User:u1"));
-      expect(verUser2).not.toBe(verUser1);
+      expect(r2.dependencies).toEqual(new Set([
+        `${ROOT_ID}.user({"id":"u1"})`,
+        "User:u1",
+      ]));
     });
 
     it("tracks connection keys, pageInfo and edge records as dependencies", () => {
@@ -291,13 +302,16 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         variables: { role: "admin", first: 2, after: null },
       }) as any;
 
-      const deps = res.dependencies as Map<string, number>;
-      expect(deps.has(connKey)).toBe(true);
-      expect(deps.has(`${connKey}.pageInfo`)).toBe(true);
-      expect(deps.has(`${connKey}.edges.0`)).toBe(true);
-      expect(deps.has(`${connKey}.edges.1`)).toBe(true);
+      expect(res.dependencies).toEqual(new Set([
+        connKey,
+        `${connKey}.pageInfo`,
+        `${connKey}.edges.0`,
+        `${connKey}.edges.1`,
+        "User:u1",
+        "User:u2",
+      ]));
 
-      // Mutate an edge (simulate new cursor) -> the edge record version must change
+      // Mutate an edge (simulate new cursor) -> dependencies should still be tracked
       graph.putRecord(`${connKey}.edges.0`, { cursor: "u1-new" });
 
       const res2 = documents.materializeDocument({
@@ -305,7 +319,14 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         variables: { role: "admin", first: 2, after: null },
       }) as any;
 
-      expect(res2.dependencies.get(`${connKey}.edges.0`)).not.toBe(deps.get(`${connKey}.edges.0`));
+      expect(res2.dependencies).toEqual(new Set([
+        connKey,
+        `${connKey}.pageInfo`,
+        `${connKey}.edges.0`,
+        `${connKey}.edges.1`,
+        "User:u1",
+        "User:u2",
+      ]));
     });
   });
 
@@ -327,6 +348,11 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       const c = documents.materializeDocument({ document: QUERY, variables: { id: "e1" } }) as any;
       expect(c.source).not.toBe("none");
       expect(c.data).toEqual({ entity: { __typename: "Entity", id: "e1", data: "string" } });
+
+      expect(c.dependencies).toEqual(new Set([
+        `${ROOT_ID}.entity({"id":"e1"})`,
+        "Entity:e1",
+      ]));
     });
 
     it("reads number scalar via entity view", () => {
@@ -346,6 +372,11 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       const c = documents.materializeDocument({ document: QUERY, variables: { id: "e1" } }) as any;
       expect(c.source).not.toBe("none");
       expect(c.data).toEqual({ entity: { __typename: "Entity", id: "e1", data: 123 } });
+
+      expect(c.dependencies).toEqual(new Set([
+        `${ROOT_ID}.entity({"id":"e1"})`,
+        "Entity:e1",
+      ]));
     });
 
     it("reads boolean scalar via entity view", () => {
@@ -365,6 +396,11 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       const c = documents.materializeDocument({ document: QUERY, variables: { id: "e1" } }) as any;
       expect(c.source).not.toBe("none");
       expect(c.data).toEqual({ entity: { __typename: "Entity", id: "e1", data: true } });
+
+      expect(c.dependencies).toEqual(new Set([
+        `${ROOT_ID}.entity({"id":"e1"})`,
+        "Entity:e1",
+      ]));
     });
 
     it("reads null scalar via entity view", () => {
@@ -384,6 +420,11 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       const c = documents.materializeDocument({ document: QUERY, variables: { id: "e1" } }) as any;
       expect(c.source).not.toBe("none");
       expect(c.data).toEqual({ entity: { __typename: "Entity", id: "e1", data: null } });
+
+      expect(c.dependencies).toEqual(new Set([
+        `${ROOT_ID}.entity({"id":"e1"})`,
+        "Entity:e1",
+      ]));
     });
 
     it("reads JSON scalar (object) inline via entity view", () => {
@@ -403,6 +444,11 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       const c = documents.materializeDocument({ document: QUERY, variables: { id: "e1" } }) as any;
       expect(c.source).not.toBe("none");
       expect(c.data).toEqual({ entity: { __typename: "Entity", id: "e1", data: { foo: { bar: "baz" } } } });
+
+      expect(c.dependencies).toEqual(new Set([
+        `${ROOT_ID}.entity({"id":"e1"})`,
+        "Entity:e1",
+      ]));
     });
   });
 
@@ -439,6 +485,11 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
           previewUrl: "2",
         },
       });
+
+      expect(c.dependencies).toEqual(new Set([
+        `${ROOT_ID}.entity({"id":"e1"})`,
+        "Entity:e1",
+      ]));
     });
   });
 
@@ -493,6 +544,15 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         id: "u1",
         email: "u1+updated@example.com",
       });
+
+      expect(c1.dependencies).toEqual(new Set([
+        `${ROOT_ID}.user({"id":"u1"})`,
+        "User:u1",
+      ]));
+      expect(c2.dependencies).toEqual(new Set([
+        `${ROOT_ID}.user({"id":"u1"})`,
+        "User:u1",
+      ]));
     });
 
     it("follows __ref to child entity", async () => {

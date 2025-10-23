@@ -17,7 +17,7 @@ const ENTITY_MISSING = "entity-missing" as const;
 const ROOT_LINK_MISSING = "root-link-missing" as const;
 const FIELD_LINK_MISSING = "field-link-missing" as const;
 const CONNECTION_MISSING = "connection-missing" as const;
-const PAGEINFO_MISSING = "pageinfo-missing" as const;
+const PAGE_INFO_MISSING = "pageinfo-missing" as const;
 const EDGE_NODE_MISSING = "edge-node-missing" as const;
 const SCALAR_MISSING = "scalar-missing" as const;
 
@@ -26,7 +26,7 @@ export type Miss =
   | { kind: typeof ROOT_LINK_MISSING; at: string; fieldKey: string }
   | { kind: typeof FIELD_LINK_MISSING; at: string; parentId: string; fieldKey: string }
   | { kind: typeof CONNECTION_MISSING; at: string; mode: "strict" | "canonical"; parentId: string; canonicalKey: string; strictKey: string; hasCanonical: boolean; hasStrict: boolean; }
-  | { kind: typeof PAGEINFO_MISSING; at: string; pageId: string }
+  | { kind: typeof PAGE_INFO_MISSING; at: string; pageId: string }
   | { kind: typeof EDGE_NODE_MISSING; at: string; edgeId: string }
   | { kind: typeof SCALAR_MISSING; at: string; parentId: string; fieldKey: string };
 
@@ -39,7 +39,7 @@ export type MaterializeDocumentOptions = {
 
 export type MaterializeDocumentResult = {
   data: any;
-  dependencies: Map<string, number>;
+  dependencies: Set<string>;
   source: "canonical" | "strict" | "none";
   ok: { strict: boolean; canonical: boolean; miss?: Miss[] };
 };
@@ -515,7 +515,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   const ROOT_LINK_MISSING = "root-link-missing" as const;
   const FIELD_LINK_MISSING = "field-link-missing" as const;
   const CONNECTION_MISSING = "connection-missing" as const;
-  const PAGEINFO_MISSING = "pageinfo-missing" as const;
+  const PAGE_INFO_MISSING = "pageinfo-missing" as const;
   const EDGE_NODE_MISSING = "edge-node-missing" as const;
   const SCALAR_MISSING = "scalar-missing" as const;
 
@@ -533,7 +533,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       hasCanonical: boolean;
       hasStrict: boolean;
     }
-    | { kind: typeof PAGEINFO_MISSING; at: string; pageId: string }
+    | { kind: typeof PAGE_INFO_MISSING; at: string; pageId: string }
     | { kind: typeof EDGE_NODE_MISSING; at: string; edgeId: string }
     | { kind: typeof SCALAR_MISSING; at: string; parentId: string; fieldKey: string };
 
@@ -547,7 +547,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
   type MaterializeDocumentResult = {
     data: any;
-    dependencies: Map<string, number>;
+    dependencies: Set<string>;
     source: "canonical" | "strict" | "none";
     ok: { strict: boolean; canonical: boolean; miss?: Miss[] };
   };
@@ -565,10 +565,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     const plan = planner.getPlan(document);
 
-    const dependencies = new Map<string, number>();
+    const dependencies = new Set<string>();
     const touch = (id: string) => {
-      // Record the version at read time for O(1) staleness checks later
-      dependencies.set(id, graph.getVersion(id));
+      dependencies.add(id);
     };
 
     let strictOK = true;
@@ -808,7 +807,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             conn.pageInfo = {};
             strictOK = false;
             canonicalOK = false;
-            miss({ kind: PAGEINFO_MISSING, at: addPath(path, "pageInfo"), pageId: baseKey + ".pageInfo" });
+            miss({ kind: PAGE_INFO_MISSING, at: addPath(path, "pageInfo"), pageId: baseKey + ".pageInfo" });
           }
           continue;
         }
