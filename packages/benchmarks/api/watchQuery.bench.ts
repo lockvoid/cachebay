@@ -104,11 +104,6 @@ summary(() => {
       };
     });
 
-    // Note: Apollo watch benchmark omitted
-    // Apollo's watch() is on ApolloClient (not InMemoryCache), which requires
-    // network layer setup and is not directly comparable to cache-only watchers.
-    // Apollo is designed for component-level queries with useQuery hook.
-
     bench(`relay.subscribe:initial:cold(${getLabel()})`, function* () {
       yield {
         [0]() {
@@ -160,10 +155,6 @@ summary(() => {
       });
       sub.unsubscribe();
     });
-
-    // Note: Apollo watch benchmark omitted
-    // Apollo's watch() is on ApolloClient (not InMemoryCache), which requires
-    // network layer setup and is not directly comparable to cache-only watchers.
 
     const relay = createRelayEnvironment();
 
