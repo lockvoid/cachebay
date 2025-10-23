@@ -150,21 +150,21 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const edgeKey = `${pageKey}.edges.${idx}`;
         const edgeObj = edges[idx];
 
-        // Create/patch edge record
+        // Batch edge record creation + node link into single put()
+        const edgePatch: Record<string, any> = {};
         if (edgeObj && edgeObj.__typename) {
-          put(edgeKey, { __typename: edgeObj.__typename });
-        } else {
-          put(edgeKey, {});
+          edgePatch.__typename = edgeObj.__typename;
         }
 
-        // Pre-link node if present
         const nodeObj = edgeObj?.node;
         if (nodeObj && typeof nodeObj === "object") {
           const nodeId = graph.identify(nodeObj);
           if (nodeId) {
-            put(edgeKey, { node: { __ref: nodeId } });
+            edgePatch.node = { __ref: nodeId };
           }
         }
+
+        put(edgeKey, edgePatch);
 
         // Recurse into edge object
         const edgeFrame: Frame = {
