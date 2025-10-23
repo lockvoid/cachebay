@@ -474,12 +474,23 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     // ---- Fingerprinting helper ------------------------------------------------------
 
     /**
-     * Set version/fingerprint on object (direct property assignment - fastest).
-     * Only sets if fingerprinting is enabled.
+     * Set version/fingerprint on object.
+     * Always use defineProperty to make __version non-enumerable.
+     * This keeps it hidden from Object.keys(), JSON.stringify(), etc.
      */
     const setFingerprint = (obj: any, fp: number): void => {
       if (!fingerprint) return;
-      obj[FINGERPRINT_KEY] = fp;
+
+      if (Array.isArray(obj)) {
+        Object.defineProperty(obj, FINGERPRINT_KEY, {
+          value: fp,
+          writable: true,
+          enumerable: false,
+          configurable: true,
+        });
+      } else {
+        obj[FINGERPRINT_KEY] = fp;
+      }
     };
 
     /**

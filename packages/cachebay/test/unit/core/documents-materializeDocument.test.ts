@@ -193,9 +193,6 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     // dependencies include the canonical connection key, pageInfo & edges
     expect(res.dependencies).toEqual(new Set([
       canonicalKey,
-      `${canonicalKey}.pageInfo`,
-      `${canonicalKey}.edges.0`,
-      `${canonicalKey}.edges.1`,
       "User:u1",
       "User:u2",
     ]));
@@ -257,8 +254,6 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       `${ROOT_ID}.user({"id":"u1"})`,
       "User:u1",
       postsCanonicalKey,
-      `${postsCanonicalKey}.pageInfo`,
-      `${postsCanonicalKey}.edges.0`,
       "Post:p1",
     ]));
 
@@ -349,9 +344,6 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
 
       expect(res.dependencies).toEqual(new Set([
         connKey,
-        `${connKey}.pageInfo`,
-        `${connKey}.edges.0`,
-        `${connKey}.edges.1`,
         "User:u1",
         "User:u2",
       ]));
@@ -366,9 +358,6 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
 
       expect(res2.dependencies).toEqual(new Set([
         connKey,
-        `${connKey}.pageInfo`,
-        `${connKey}.edges.0`,
-        `${connKey}.edges.1`,
         "User:u1",
         "User:u2",
       ]));
@@ -1990,7 +1979,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       // const tags1Fp = (result1.data.post.tags as any).__version;
       // const tags2Fp = (result2.data.post.tags as any).__version;
       // expect(tags1Fp).not.toBe(tags2Fp);
-      
+
       // Array should have a fingerprint
       // expect(tags1Fp).toBeGreaterThan(0);
     });
@@ -2013,8 +2002,8 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const result = documents.materializeDocument({ 
-        document: QUERY, 
+      const result = documents.materializeDocument({
+        document: QUERY,
         variables: { id: "u1" },
         fingerprint: false,
       });
