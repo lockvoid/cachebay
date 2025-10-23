@@ -1,5 +1,5 @@
 import { ROOT_ID } from "./constants";
-import { isObject, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey } from "./utils";
+import { isObject, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, fingerprintNodes } from "./utils";
 import { __DEV__ } from "./instrumentation";
 import type { CachePlan, PlanField } from "../compiler";
 import type { CanonicalInstance } from "./canonical";
@@ -21,6 +21,9 @@ const PAGE_INFO_MISSING = "pageinfo-missing" as const;
 const EDGE_NODE_MISSING = "edge-node-missing" as const;
 const SCALAR_MISSING = "scalar-missing" as const;
 
+/** Symbol for storing fingerprints on materialized objects (non-enumerable) */
+const FINGERPRINT_KEY = "__fp" as const;
+
 export type Miss =
   | { kind: typeof ENTITY_MISSING; at: string; id: string }
   | { kind: typeof ROOT_LINK_MISSING; at: string; fieldKey: string }
@@ -35,11 +38,13 @@ export type MaterializeDocumentOptions = {
   variables?: Record<string, any>;
   canonical?: boolean;
   entityId?: string;
+  fingerprint?: boolean;
 };
 
 export type MaterializeDocumentResult = {
   data: any;
   dependencies: Set<string>;
+  fingerprint: number;
   source: "canonical" | "strict" | "none";
   ok: { strict: boolean; canonical: boolean; miss?: Miss[] };
 };
@@ -548,12 +553,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   type MaterializeDocumentResult = {
     data: any;
     dependencies: Set<string>;
+    fingerprint: number;
     source: "canonical" | "strict" | "none";
     ok: { strict: boolean; canonical: boolean; miss?: Miss[] };
   };
 
   const materializeDocument = (opts: MaterializeDocumentOptions): MaterializeDocumentResult => {
-    const { document, variables = {}, canonical = true, entityId } = opts;
+    const { document, variables = {}, canonical = true, entityId, fingerprint = true } = opts;
 
     graph.flush();
 
@@ -597,6 +603,23 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       return true;
     };
 
+    // ---- Fingerprinting helper ------------------------------------------------------
+
+    /**
+     * Set fingerprint on an object as a non-enumerable property.
+     * Keeps fingerprints out of JSON.stringify and Object.keys.
+     * Only sets if fingerprinting is enabled.
+     */
+    const setFingerprint = (obj: any, fp: number): void => {
+      if (!fingerprint) return;
+      Object.defineProperty(obj, FINGERPRINT_KEY, {
+        value: fp,
+        enumerable: false,
+        writable: false,
+        configurable: true,
+      });
+    };
+
     // ---- Recursive readers ------------------------------------------------------
 
     const readScalar = (record: any, field: PlanField, out: any, outKey: string, parentId: string, path: string) => {
@@ -616,7 +639,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       out[outKey] = value;
     };
 
-    const readPageInfo = (pageInfoId: string, field: PlanField, outConn: any, path: string) => {
+    const readPageInfo = (pageInfoId: string, field: PlanField, outConn: any, path: string): number => {
       touch(pageInfoId);
 
       const record = graph.getRecord(pageInfoId) || {};
@@ -630,6 +653,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
 
       outConn.pageInfo = outPageInfo;
+
+      // PageInfo is a simple node - use version directly as fingerprint
+      const pageInfoVersion = graph.getVersion(pageInfoId);
+      setFingerprint(outPageInfo, pageInfoVersion);
+
+      return pageInfoVersion;
     };
 
     const readEntity = (id: string, field: PlanField, out: any, path: string) => {
@@ -651,6 +680,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       const runtimeType = (snapshot as any).__typename as string | undefined;
       const selection = field.selectionSet || [];
 
+      // Collect child fingerprints for combining
+      const childFingerprints: number[] = [];
+
       for (let i = 0; i < selection.length; i++) {
         const childField = selection[i];
         const outKey = childField.responseKey;
@@ -661,6 +693,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
         if ((childField as any).isConnection) {
           readConnection(id, childField, out, outKey, addPath(path, outKey));
+          // Collect connection fingerprint
+          const connObj = out[outKey];
+          if (connObj && typeof connObj === "object" && FINGERPRINT_KEY in connObj) {
+            childFingerprints.push((connObj as any)[FINGERPRINT_KEY]);
+          }
           continue;
         }
 
@@ -674,10 +711,21 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             const outArray: any[] = new Array(refs.length);
             out[outKey] = outArray;
 
+            const arrayFingerprints: number[] = [];
             for (let j = 0; j < refs.length; j++) {
               const childOut: any = {};
               outArray[j] = childOut;
               readEntity(refs[j], childField, childOut, addPath(path, outKey + "[" + j + "]"));
+              // Collect child fingerprint
+              if (FINGERPRINT_KEY in childOut) {
+                arrayFingerprints.push((childOut as any)[FINGERPRINT_KEY]);
+              }
+            }
+            // Compute array fingerprint (order-dependent)
+            if (arrayFingerprints.length > 0) {
+              const arrayFp = fingerprintNodes(0, arrayFingerprints);
+              setFingerprint(outArray, arrayFp);
+              childFingerprints.push(arrayFp);
             }
             continue;
           }
@@ -695,6 +743,10 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           const childOut: any = {};
           out[outKey] = childOut;
           readEntity(childId, childField, childOut, addPath(path, outKey));
+          // Collect child fingerprint
+          if (FINGERPRINT_KEY in childOut) {
+            childFingerprints.push((childOut as any)[FINGERPRINT_KEY]);
+          }
           continue;
         }
 
@@ -715,6 +767,15 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           }
         }
       }
+
+      // Compute entity fingerprint: version + childFingerprints
+      const entityVersion = graph.getVersion(id);
+
+      const finalFingerprint = childFingerprints.length > 0
+        ? fingerprintNodes(entityVersion, childFingerprints)
+        : entityVersion;
+
+      setFingerprint(out, finalFingerprint);
     };
 
     const readEdge = (edgeId: string, field: PlanField, outArray: any[], index: number, path: string) => {
@@ -730,6 +791,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
       const selection = field.selectionSet || [];
       const nodePlan = (field as any).selectionMap ? (field as any).selectionMap.get("node") : undefined;
+
+      let nodeFingerprint: number | undefined;
 
       for (let i = 0; i < selection.length; i++) {
         const f = selection[i];
@@ -747,11 +810,24 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             const nodeOut: any = {};
             outEdge.node = nodeOut;
             readEntity(nodeId, nodePlan as PlanField, nodeOut, addPath(path, "node"));
+            // Collect node fingerprint
+            if (FINGERPRINT_KEY in nodeOut) {
+              nodeFingerprint = (nodeOut as any)[FINGERPRINT_KEY];
+            }
           }
         } else if (!f.selectionSet) {
           readScalar(record, f, outEdge, outKey, edgeId, addPath(path, outKey));
         }
       }
+
+      // Compute edge fingerprint: version + nodeFingerprint
+      const edgeVersion = graph.getVersion(edgeId);
+
+      const finalFingerprint = nodeFingerprint !== undefined
+        ? fingerprintNodes(edgeVersion, [nodeFingerprint])
+        : edgeVersion;
+
+      setFingerprint(outEdge, finalFingerprint);
     };
 
     const readConnection = (parentId: string, field: PlanField, out: any, outKey: string, path: string) => {
@@ -798,11 +874,14 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         return;
       }
 
+      let pageInfoFingerprint: number | undefined;
+      const edgeFingerprints: number[] = [];
+
       for (const [responseKey, childField] of selMap) {
         if (responseKey === "pageInfo") {
           const pageInfoLink = page.pageInfo;
           if (pageInfoLink && pageInfoLink.__ref) {
-            readPageInfo(pageInfoLink.__ref as string, childField, conn, addPath(path, "pageInfo"));
+            pageInfoFingerprint = readPageInfo(pageInfoLink.__ref as string, childField, conn, addPath(path, "pageInfo"));
           } else {
             conn.pageInfo = {};
             strictOK = false;
@@ -820,6 +899,17 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
           for (let i = 0; i < refs.length; i++) {
             readEdge(refs[i], childField, outArr, i, addPath(path, "edges[" + i + "]"));
+            // Collect edge fingerprint
+            const edge = outArr[i];
+            if (edge && FINGERPRINT_KEY in edge) {
+              edgeFingerprints.push((edge as any)[FINGERPRINT_KEY]);
+            }
+          }
+
+          // Compute edges array fingerprint (order-dependent)
+          if (edgeFingerprints.length > 0) {
+            const edgesArrayFp = fingerprintNodes(0, edgeFingerprints);
+            setFingerprint(outArr, edgesArrayFp);
           }
           continue;
         }
@@ -867,6 +957,22 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         conn[childField.responseKey] = childOut;
         readEntity(childId, childField, childOut, addPath(path, childField.responseKey));
       }
+
+      // Compute connection fingerprint: version + pageInfoFp + edgesFp
+      const pageVersion = graph.getVersion(baseKey);
+
+      const connChildren: number[] = [];
+      if (pageInfoFingerprint !== undefined) {
+        connChildren.push(pageInfoFingerprint);
+      }
+      if (edgeFingerprints.length > 0) {
+        connChildren.push(fingerprintNodes(0, edgeFingerprints));
+      }
+
+      const connFingerprint = connChildren.length > 0
+        ? fingerprintNodes(pageVersion, connChildren)
+        : pageVersion;
+      setFingerprint(conn, connFingerprint);
     };
 
     // ---- Root -------------------------------------------------------------------
@@ -916,10 +1022,33 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     const requestedOK = canonical ? canonicalOK : strictOK;
 
+    // Compute root fingerprint from all top-level fields
+    const rootFingerprints: number[] = [];
+    if (entityId) {
+      // For fragment reads, use the entity's fingerprint
+      if (FINGERPRINT_KEY in data) {
+        rootFingerprints.push((data as any)[FINGERPRINT_KEY]);
+      }
+    } else {
+      // For regular queries, collect fingerprints from all root fields
+      for (let i = 0; i < plan.root.length; i++) {
+        const field = plan.root[i];
+        const value = data[field.responseKey];
+        if (value && typeof value === "object" && FINGERPRINT_KEY in value) {
+          rootFingerprints.push((value as any)[FINGERPRINT_KEY]);
+        }
+      }
+    }
+
+    const rootFingerprint = rootFingerprints.length > 0
+      ? fingerprintNodes(0, rootFingerprints)
+      : 0; // Default fingerprint for empty results
+
     if (!requestedOK) {
       return {
         data: undefined,
         dependencies,
+        fingerprint: 0, // No data = no fingerprint
         source: "none",
         ok: { strict: strictOK, canonical: canonicalOK, miss: __DEV__ ? misses : undefined },
       };
@@ -928,6 +1057,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     return {
       data,
       dependencies,
+      fingerprint: rootFingerprint,
       source: canonical ? "canonical" : "strict",
       ok: { strict: strictOK, canonical: canonicalOK, miss: __DEV__ ? misses : undefined },
     };

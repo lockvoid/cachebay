@@ -169,7 +169,6 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
     interfaces: options.interfaces || {},
     onChange: (touchedIds) => {
       // Notify all subsystems of changes
-      documents._markDirty(touchedIds);
       queries._notifyTouched(touchedIds);
       fragments._notifyTouched(touchedIds);
     },

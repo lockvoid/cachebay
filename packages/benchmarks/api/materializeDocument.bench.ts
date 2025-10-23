@@ -80,16 +80,11 @@ const allUsers = Object.freeze(makeResponse({ users: USERS_TOTAL, posts: 5, comm
 const pages = buildPages(allUsers, PAGE_SIZE);
 const label = `${USERS_TOTAL} users (${pages.length} pages of ${PAGE_SIZE})`;
 
-// -----------------------------------------------------------------------------
-// Cold paths
-// -----------------------------------------------------------------------------
 summary(() => {
-  group("readQuery – COLD paths", () => {
+  group("materializeDocument – COLD paths", () => {
 
-    // Cachebay: readQuery:canonical:cold (new instance per iteration)
-    bench(`cachebay.readQuery:canonical:cold(${label})`, function* () {
+    bench(`cachebay.materializeDocument:canonical:cold(${label})`, function* () {
       yield {
-        // Computed parameter: create fresh instance before each iteration (not timed)
         [0]() {
           const cache = createCachebay();
           for (let i = 0; i < pages.length; i++) {
@@ -99,8 +94,8 @@ summary(() => {
               data: pages[i].data,
             });
 
-            cache.readQuery({
-              query: CACHEBAY_QUERY,
+            cache.__internals.documents.materializeDocument({
+              document: CACHEBAY_QUERY,
               variables: pages[i].vars,
               canonical: true,
             });
@@ -108,10 +103,42 @@ summary(() => {
 
           return cache;
         },
-        // Benchmark: only measure the read (timed)
         bench(cache) {
-          const res = cache.readQuery({
-            query: CACHEBAY_QUERY,
+          const res = cache.__internals.documents.materializeDocument({
+            document: CACHEBAY_QUERY,
+            variables: { first: PAGE_SIZE, after: null },
+            canonical: true,
+            fingerprint: false,
+          });
+          sinkObj(res.data);
+        },
+      };
+    });
+
+    bench(`cachebay.materializeDocument:canonical:fingerprint:cold(${label})`, function* () {
+      yield {
+        [0]() {
+          const cache = createCachebay();
+          for (let i = 0; i < pages.length; i++) {
+            cache.writeQuery({
+              query: CACHEBAY_QUERY,
+              variables: pages[i].vars,
+              data: pages[i].data,
+            });
+
+            cache.__internals.documents.materializeDocument({
+              document: CACHEBAY_QUERY,
+              variables: pages[i].vars,
+              canonical: true,
+              fingerprint: true,
+            });
+          }
+
+          return cache;
+        },
+        bench(cache) {
+          const res = cache.__internals.documents.materializeDocument({
+            document: CACHEBAY_QUERY,
             variables: { first: PAGE_SIZE, after: null },
             canonical: true,
           });
@@ -120,37 +147,8 @@ summary(() => {
       };
     });
 
-    // Cachebay: readQuery:strict:cold (new instance per iteration)
-    bench(`cachebay.readQuery:strict:cold(${label})`, function* () {
-      yield {
-        // Computed parameter: create fresh instance before each iteration (not timed)
-        [0]() {
-          const cache = createCachebay();
-          for (let i = 0; i < pages.length; i++) {
-            cache.writeQuery({
-              query: CACHEBAY_QUERY,
-              variables: pages[i].vars,
-              data: pages[i].data,
-            });
-          }
-          return cache;
-        },
-        // Benchmark: only measure the read (timed)
-        bench(cache) {
-          const res = cache.readQuery({
-            query: CACHEBAY_QUERY,
-            variables: { first: PAGE_SIZE, after: null },
-            canonical: false,
-          });
-          sinkObj(res.data);
-        },
-      };
-    });
-
-    // Apollo: readQuery:cold (new instance per iteration)
     bench(`apollo.readQuery:cold(${label})`, function* () {
       yield {
-        // Computed parameter: create fresh instance before each iteration (not timed)
         [0]() {
           const cache = createApolloCache(false);
           for (let i = 0; i < pages.length; i++) {
@@ -162,21 +160,18 @@ summary(() => {
           }
           return cache;
         },
-        // Benchmark: only measure the read (timed)
         bench(cache) {
-          const r = cache.readQuery({
+          const res = cache.readQuery({
             query: APOLLO_QUERY,
             variables: { first: PAGE_SIZE, after: null },
           });
-          sinkObj(r);
+          sinkObj(res);
         },
       };
     });
 
-    // Relay: lookup:cold (new environment per iteration)
     bench(`relay.lookup:cold(${label})`, function* () {
       yield {
-        // Computed parameter: create fresh environment before each iteration (not timed)
         [0]() {
           const env = createRelayEnvironment();
           for (let i = 0; i < pages.length; i++) {
@@ -185,7 +180,6 @@ summary(() => {
           }
           return env;
         },
-        // Benchmark: only measure the read (timed)
         bench(env) {
           const operation = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, { first: PAGE_SIZE, after: null });
           const r = env.lookup(operation.fragment);
@@ -196,13 +190,9 @@ summary(() => {
   });
 });
 
-// -----------------------------------------------------------------------------
-// Hot paths
-// -----------------------------------------------------------------------------
 summary(() => {
   group("readQuery – HOT paths", () => {
 
-    // Cachebay: readQuery:canonical:hot
     const cache1 = createCachebay();
     for (let i = 0; i < pages.length; i++) {
       cache1.writeQuery({
@@ -212,15 +202,15 @@ summary(() => {
       });
     }
     // warm
-    cache1.readQuery({
-      query: CACHEBAY_QUERY,
+    cache1.__internals.documents.materializeDocument({
+      document: CACHEBAY_QUERY,
       variables: { first: PAGE_SIZE, after: null },
       canonical: true,
     });
 
     bench(`cachebay.readQuery:canonical:hot(${label})`, () => {
-      const res = cache1.readQuery({
-        query: CACHEBAY_QUERY,
+      const res = cache1.__internals.documents.materializeDocument({
+        document: CACHEBAY_QUERY,
         variables: { first: PAGE_SIZE, after: null },
         canonical: true,
       });
@@ -237,15 +227,15 @@ summary(() => {
       });
     }
     // warm
-    cache2.readQuery({
-      query: CACHEBAY_QUERY,
+    cache2.__internals.documents.materializeDocument({
+      document: CACHEBAY_QUERY,
       variables: { first: PAGE_SIZE, after: null },
       canonical: false,
     });
 
     bench(`cachebay.readQuery:strict:hot(${label})`, () => {
-      const res = cache2.readQuery({
-        query: CACHEBAY_QUERY,
+      cache2.__internals.documents.materializeDocument({
+        document: CACHEBAY_QUERY,
         variables: { first: PAGE_SIZE, after: null },
         canonical: false,
       });

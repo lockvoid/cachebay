@@ -199,6 +199,25 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       "User:u1",
       "User:u2",
     ]));
+
+    // Fingerprinting: connection should have fingerprint
+    const fp1 = res.fingerprint;
+    expect(fp1).toBeGreaterThan(0);
+    expect((res.data.users as any).__fp).toBeGreaterThan(0);
+    expect((res.data.users.edges as any).__fp).toBeGreaterThan(0);
+    expect((res.data.users.pageInfo as any).__fp).toBeGreaterThan(0);
+
+    // Update a user node
+    graph.putRecord("User:u1", { email: "u1+updated@example.com" });
+
+    const res2 = documents.materializeDocument({
+      document: QUERY,
+      variables: { role: "admin", first: 2, after: null },
+    }) as any;
+
+    // Fingerprint should change because node changed
+    expect(res2.fingerprint).not.toBe(fp1);
+    expect((res2.data.users as any).__fp).not.toBe((res.data.users as any).__fp);
   });
 
   it("materializes a nested connection via canonical key (user.posts)", () => {
@@ -242,6 +261,32 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       `${postsCanonicalKey}.edges.0`,
       "Post:p1",
     ]));
+
+    // Fingerprinting: nested connection fingerprints
+    const userFp1 = (res.data.user as any).__fp;
+    const postsFp1 = (res.data.user.posts as any).__fp;
+    const edgeFp1 = (res.data.user.posts.edges[0] as any).__fp;
+    const nodeFp1 = (res.data.user.posts.edges[0].node as any).__fp;
+
+    expect(userFp1).toBeGreaterThan(0);
+    expect(postsFp1).toBeGreaterThan(0);
+    expect(edgeFp1).toBeGreaterThan(0);
+    expect(nodeFp1).toBeGreaterThan(0);
+
+    // Update the post node
+    graph.putRecord("Post:p1", { title: "Post 1 Updated" });
+
+    const res2 = documents.materializeDocument({
+      document: QUERY,
+      variables: { id: "u1", first: 1, after: null, category: "tech" },
+    }) as any;
+
+    // All fingerprints in the chain should change
+    expect((res2.data.user.posts.edges[0].node as any).__fp).not.toBe(nodeFp1);
+    expect((res2.data.user.posts.edges[0] as any).__fp).not.toBe(edgeFp1);
+    expect((res2.data.user.posts as any).__fp).not.toBe(postsFp1);
+    expect((res2.data.user as any).__fp).not.toBe(userFp1);
+    expect(res2.fingerprint).not.toBe(res.fingerprint);
   });
 
   describe("dependencies tracking", () => {
@@ -1743,6 +1788,240 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         expect(result.ok.canonical).toBe(true);
         expect(result.data).toBeUndefined();
       });
+    });
+  });
+
+  describe("fingerprinting", () => {
+    it("returns same fingerprint for unchanged data", () => {
+      const QUERY = compilePlan(/* GraphQL */ `
+        query UserById($id: ID!) {
+          user(id: $id) {
+            id
+            email
+          }
+        }
+      `);
+
+      documents.normalizeDocument({
+        document: QUERY,
+        variables: { id: "u1" },
+        data: {
+          user: { __typename: "User", id: "u1", email: "u1@example.com" },
+        },
+      });
+
+      const result1 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } });
+      const result2 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } });
+
+      expect(result1.fingerprint).toBe(result2.fingerprint);
+      expect(result1.fingerprint).toBeGreaterThan(0);
+    });
+
+    it("returns different fingerprint after data changes", () => {
+      const QUERY = compilePlan(/* GraphQL */ `
+        query UserById($id: ID!) {
+          user(id: $id) {
+            id
+            email
+          }
+        }
+      `);
+
+      documents.normalizeDocument({
+        document: QUERY,
+        variables: { id: "u1" },
+        data: {
+          user: { __typename: "User", id: "u1", email: "u1@example.com" },
+        },
+      });
+
+      const result1 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } });
+
+      // Update the user
+      documents.normalizeDocument({
+        document: QUERY,
+        variables: { id: "u1" },
+        data: {
+          user: { __typename: "User", id: "u1", email: "u1+updated@example.com" },
+        },
+      });
+
+      const result2 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } });
+
+      expect(result1.fingerprint).not.toBe(result2.fingerprint);
+      expect(result1.fingerprint).toBeGreaterThan(0);
+      expect(result2.fingerprint).toBeGreaterThan(0);
+    });
+
+    it("stores fingerprints as non-enumerable properties", () => {
+      const QUERY = compilePlan(/* GraphQL */ `
+        query UserById($id: ID!) {
+          user(id: $id) {
+            id
+            email
+          }
+        }
+      `);
+
+      documents.normalizeDocument({
+        document: QUERY,
+        variables: { id: "u1" },
+        data: {
+          user: { __typename: "User", id: "u1", email: "u1@example.com" },
+        },
+      });
+
+      const result = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } });
+
+      // Fingerprint should exist on the user object
+      expect((result.data.user as any).__fp).toBeGreaterThan(0);
+
+      // But should not be enumerable
+      expect(Object.keys(result.data.user)).not.toContain("__fp");
+      expect(JSON.stringify(result.data.user)).not.toContain("__fp");
+    });
+
+    it("computes hierarchical fingerprints: User -> Post -> Comment", () => {
+      const QUERY = compilePlan(/* GraphQL */ `
+        query UserWithPostAndComment($userId: ID!, $postId: ID!) {
+          user(id: $userId) {
+            id
+            email
+            post(id: $postId) {
+              id
+              title
+              comment {
+                uuid
+                text
+              }
+            }
+          }
+        }
+      `);
+
+      documents.normalizeDocument({
+        document: QUERY,
+        variables: { userId: "u1", postId: "p1" },
+        data: {
+          user: {
+            __typename: "User",
+            id: "u1",
+            email: "u1@example.com",
+            post: {
+              __typename: "Post",
+              id: "p1",
+              title: "Post 1",
+              comment: {
+                __typename: "Comment",
+                uuid: "c1",
+                text: "Comment 1",
+              },
+            },
+          },
+        },
+      });
+
+      const r1 = documents.materializeDocument({ document: QUERY, variables: { userId: "u1", postId: "p1" } });
+      const userFp1 = (r1.data.user as any).__fp;
+      const postFp1 = (r1.data.user.post as any).__fp;
+      const commentFp1 = (r1.data.user.post.comment as any).__fp;
+
+      // Update Post only
+      graph.putRecord("Post:p1", { title: "Post 1 Updated" });
+
+      const r2 = documents.materializeDocument({ document: QUERY, variables: { userId: "u1", postId: "p1" } });
+      const userFp2 = (r2.data.user as any).__fp;
+      const postFp2 = (r2.data.user.post as any).__fp;
+      const commentFp2 = (r2.data.user.post.comment as any).__fp;
+
+      // Comment should have same fingerprint (unchanged)
+      expect(commentFp2).toBe(commentFp1);
+
+      // Post should have different fingerprint (changed)
+      expect(postFp2).not.toBe(postFp1);
+
+      // User should have different fingerprint (child changed)
+      expect(userFp2).not.toBe(userFp1);
+
+      // Root should have different fingerprint
+      expect(r2.fingerprint).not.toBe(r1.fingerprint);
+    });
+
+    it("computes fingerprints for arrays", () => {
+      const QUERY = compilePlan(/* GraphQL */ `
+        query PostWithTags($id: ID!) {
+          post(id: $id) {
+            id
+            title
+            tags {
+              id
+              name
+            }
+          }
+        }
+      `);
+
+      documents.normalizeDocument({
+        document: QUERY,
+        variables: { id: "p1" },
+        data: {
+          post: {
+            __typename: "Post",
+            id: "p1",
+            title: "Post 1",
+            tags: [
+              { __typename: "Tag", id: "t1", name: "Tag 1" },
+              { __typename: "Tag", id: "t2", name: "Tag 2" },
+            ],
+          },
+        },
+      });
+
+      const result1 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" } });
+
+      // Update one of the tags
+      graph.putRecord("Tag:t1", { name: "Tag 1 Updated" });
+
+      const result2 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" } });
+
+      // Fingerprints should be different because array item changed
+      expect(result1.fingerprint).not.toBe(result2.fingerprint);
+      expect((result1.data.post.tags as any).__fp).not.toBe((result2.data.post.tags as any).__fp);
+      
+      // Array should have a fingerprint
+      expect((result1.data.post.tags as any).__fp).toBeGreaterThan(0);
+    });
+
+    it("can disable fingerprinting with fingerprint: false option", () => {
+      const QUERY = compilePlan(/* GraphQL */ `
+        query UserById($id: ID!) {
+          user(id: $id) {
+            id
+            email
+          }
+        }
+      `);
+
+      documents.normalizeDocument({
+        document: QUERY,
+        variables: { id: "u1" },
+        data: {
+          user: { __typename: "User", id: "u1", email: "u1@example.com" },
+        },
+      });
+
+      const result = documents.materializeDocument({ 
+        document: QUERY, 
+        variables: { id: "u1" },
+        fingerprint: false,
+      });
+
+      // Root fingerprint should still be returned (for compatibility)
+      expect(result.fingerprint).toBe(0);
+
+      // But objects should NOT have __fp property
+      expect((result.data.user as any).__fp).toBeUndefined();
+      expect("__fp" in result.data.user).toBe(false);
     });
   });
 });
