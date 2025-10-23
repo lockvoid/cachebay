@@ -17,7 +17,7 @@
 10. Keep types declarations concise and readable at the top of each file.
 11. Use jsdoc comments for all public functions and classes.
 12. You are writing code for modern environments, ensuring compatibility with the latest standards and best practices.
-
+13. ALL "if" statements should be formatted with K&R braces and newlines.
 ---
 
 ## Formatting & Style Details

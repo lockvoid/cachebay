@@ -1,104 +1,309 @@
 import { ROOT_ID } from "@/src/core/constants";
-import { LRU, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, recycleSnapshots, isObject } from "@/src/core/utils";
+import {
+  isObject,
+  isDataDeepEqual,
+  hasTypename,
+  stableStringify,
+  fingerprintNodes,
+  buildFieldKey,
+  buildConnectionKey,
+  buildConnectionCanonicalKey,
+  recycleSnapshots,
+} from "@/src/core/utils";
 import { operations, createTestPlan } from "@/test/helpers";
 
 describe("Utils", () => {
-  describe("LRU", () => {
-    it("stores and retrieves values", () => {
-      const lru = new LRU<string, number>(3);
-      
-      lru.set("a", 1);
-      lru.set("b", 2);
-      lru.set("c", 3);
-      
-      expect(lru.get("a")).toBe(1);
-      expect(lru.get("b")).toBe(2);
-      expect(lru.get("c")).toBe(3);
-      expect(lru.size).toBe(3);
+  describe("isObject", () => {
+    it("returns true for plain objects", () => {
+      expect(isObject({})).toBe(true);
+      expect(isObject({ a: 1 })).toBe(true);
+      expect(isObject({ __typename: "User" })).toBe(true);
     });
 
-    it("evicts oldest item when capacity exceeded", () => {
-      const evicted: Array<[string, number]> = [];
-      const lru = new LRU<string, number>(3, (k, v) => evicted.push([k, v]));
-      
-      lru.set("a", 1);
-      lru.set("b", 2);
-      lru.set("c", 3);
-      lru.set("d", 4); // Should evict "a"
-      
-      expect(lru.get("a")).toBeUndefined();
-      expect(lru.get("b")).toBe(2);
-      expect(lru.get("c")).toBe(3);
-      expect(lru.get("d")).toBe(4);
-      expect(lru.size).toBe(3);
-      expect(evicted).toEqual([["a", 1]]);
+    it("returns true for arrays", () => {
+      expect(isObject([])).toBe(true);
+      expect(isObject([1, 2, 3])).toBe(true);
     });
 
-    it("moves accessed items to end (most recent)", () => {
-      const evicted: Array<[string, number]> = [];
-      const lru = new LRU<string, number>(3, (k, v) => evicted.push([k, v]));
-      
-      lru.set("a", 1);
-      lru.set("b", 2);
-      lru.set("c", 3);
-      
-      // Access "a" to make it most recent
-      lru.get("a");
-      
-      // Add "d" - should evict "b" (oldest), not "a"
-      lru.set("d", 4);
-      
-      expect(lru.get("a")).toBe(1);
-      expect(lru.get("b")).toBeUndefined();
-      expect(lru.get("c")).toBe(3);
-      expect(lru.get("d")).toBe(4);
-      expect(evicted).toEqual([["b", 2]]);
+    it("returns false for null", () => {
+      expect(isObject(null)).toBe(false);
     });
 
-    it("updates existing keys without eviction", () => {
-      const evicted: Array<[string, number]> = [];
-      const lru = new LRU<string, number>(3, (k, v) => evicted.push([k, v]));
-      
-      lru.set("a", 1);
-      lru.set("b", 2);
-      lru.set("c", 3);
-      lru.set("a", 10); // Update "a"
-      
-      expect(lru.get("a")).toBe(10);
-      expect(lru.size).toBe(3);
-      expect(evicted).toEqual([]);
+    it("returns false for primitives", () => {
+      expect(isObject(42)).toBe(false);
+      expect(isObject("string")).toBe(false);
+      expect(isObject(true)).toBe(false);
+      expect(isObject(undefined)).toBe(false);
     });
 
-    it("clears all items and calls onEvict for each", () => {
-      const evicted: Array<[string, number]> = [];
-      const lru = new LRU<string, number>(3, (k, v) => evicted.push([k, v]));
-      
-      lru.set("a", 1);
-      lru.set("b", 2);
-      lru.set("c", 3);
-      
-      lru.clear();
-      
-      expect(lru.size).toBe(0);
-      expect(lru.get("a")).toBeUndefined();
-      expect(evicted).toHaveLength(3);
-      expect(evicted).toContainEqual(["a", 1]);
-      expect(evicted).toContainEqual(["b", 2]);
-      expect(evicted).toContainEqual(["c", 3]);
+    it("returns true for class instances", () => {
+      class CustomClass {}
+      expect(isObject(new CustomClass())).toBe(true);
+      expect(isObject(new Date())).toBe(true);
+    });
+  });
+
+  describe("isDataDeepEqual", () => {
+    describe("primitives", () => {
+      it("compares primitives with ===", () => {
+        expect(isDataDeepEqual(42, 42)).toBe(true);
+        expect(isDataDeepEqual("hello", "hello")).toBe(true);
+        expect(isDataDeepEqual(true, true)).toBe(true);
+        expect(isDataDeepEqual(null, null)).toBe(true);
+        expect(isDataDeepEqual(undefined, undefined)).toBe(true);
+      });
+
+      it("returns false for different primitives", () => {
+        expect(isDataDeepEqual(42, 43)).toBe(false);
+        expect(isDataDeepEqual("hello", "world")).toBe(false);
+        expect(isDataDeepEqual(true, false)).toBe(false);
+      });
+
+      it("treats null and undefined as different", () => {
+        expect(isDataDeepEqual(null, undefined)).toBe(false);
+        expect(isDataDeepEqual(undefined, null)).toBe(false);
+      });
+
+      it("returns false for different types", () => {
+        expect(isDataDeepEqual(42, "42")).toBe(false);
+        expect(isDataDeepEqual(0, false)).toBe(false);
+        expect(isDataDeepEqual("", false)).toBe(false);
+      });
     });
 
-    it("handles capacity of 1", () => {
-      const evicted: Array<[string, number]> = [];
-      const lru = new LRU<string, number>(1, (k, v) => evicted.push([k, v]));
-      
-      lru.set("a", 1);
-      expect(lru.size).toBe(1);
-      
-      lru.set("b", 2);
-      expect(lru.size).toBe(1);
-      expect(lru.get("a")).toBeUndefined();
-      expect(lru.get("b")).toBe(2);
-      expect(evicted).toEqual([["a", 1]]);
+    describe("__ref objects", () => {
+      it("compares __ref objects by reference value", () => {
+        const a = { __ref: "User:1" };
+        const b = { __ref: "User:1" };
+        expect(isDataDeepEqual(a, b)).toBe(true);
+      });
+
+      it("returns false for different __ref values", () => {
+        const a = { __ref: "User:1" };
+        const b = { __ref: "User:2" };
+        expect(isDataDeepEqual(a, b)).toBe(false);
+      });
+
+      it("ignores other properties when __ref is present", () => {
+        const a = { __ref: "User:1", extra: "ignored" };
+        const b = { __ref: "User:1", different: "also ignored" };
+        expect(isDataDeepEqual(a, b)).toBe(true);
+      });
+    });
+
+    describe("__refs arrays", () => {
+      it("compares __refs arrays shallowly", () => {
+        const a = { __refs: ["User:1", "User:2"] };
+        const b = { __refs: ["User:1", "User:2"] };
+        expect(isDataDeepEqual(a, b)).toBe(true);
+      });
+
+      it("returns false for different __refs arrays", () => {
+        const a = { __refs: ["User:1", "User:2"] };
+        const b = { __refs: ["User:1", "User:3"] };
+        expect(isDataDeepEqual(a, b)).toBe(false);
+      });
+
+      it("returns false for different __refs array lengths", () => {
+        const a = { __refs: ["User:1", "User:2"] };
+        const b = { __refs: ["User:1"] };
+        expect(isDataDeepEqual(a, b)).toBe(false);
+      });
+    });
+
+    describe("arrays", () => {
+      it("compares arrays recursively", () => {
+        expect(isDataDeepEqual([1, 2, 3], [1, 2, 3])).toBe(true);
+        expect(isDataDeepEqual([{ a: 1 }], [{ a: 1 }])).toBe(true);
+      });
+
+      it("returns false for different array lengths", () => {
+        expect(isDataDeepEqual([1, 2], [1, 2, 3])).toBe(false);
+      });
+
+      it("returns false for different array elements", () => {
+        expect(isDataDeepEqual([1, 2, 3], [1, 2, 4])).toBe(false);
+      });
+
+      it("returns false when comparing array to non-array", () => {
+        expect(isDataDeepEqual([1, 2], { 0: 1, 1: 2 })).toBe(false);
+      });
+    });
+
+    describe("objects", () => {
+      it("compares plain objects recursively", () => {
+        const a = { name: "Alice", age: 30 };
+        const b = { name: "Alice", age: 30 };
+        expect(isDataDeepEqual(a, b)).toBe(true);
+      });
+
+      it("returns false for different key counts", () => {
+        const a = { name: "Alice", age: 30 };
+        const b = { name: "Alice" };
+        expect(isDataDeepEqual(a, b)).toBe(false);
+      });
+
+      it("returns false for different values", () => {
+        const a = { name: "Alice", age: 30 };
+        const b = { name: "Alice", age: 31 };
+        expect(isDataDeepEqual(a, b)).toBe(false);
+      });
+
+      it("compares nested objects", () => {
+        const a = { user: { name: "Alice", posts: [{ id: "p1" }] } };
+        const b = { user: { name: "Alice", posts: [{ id: "p1" }] } };
+        expect(isDataDeepEqual(a, b)).toBe(true);
+      });
+    });
+
+    describe("complex scenarios", () => {
+      it("handles normalized cache data with __ref", () => {
+        const a = {
+          __typename: "Query",
+          user: { __ref: "User:1" },
+          posts: { __refs: ["Post:1", "Post:2"] },
+        };
+        const b = {
+          __typename: "Query",
+          user: { __ref: "User:1" },
+          posts: { __refs: ["Post:1", "Post:2"] },
+        };
+        expect(isDataDeepEqual(a, b)).toBe(true);
+      });
+
+      it("detects differences in nested cache data", () => {
+        const a = {
+          __typename: "Query",
+          user: { __ref: "User:1" },
+          posts: { __refs: ["Post:1", "Post:2"] },
+        };
+        const b = {
+          __typename: "Query",
+          user: { __ref: "User:2" },
+          posts: { __refs: ["Post:1", "Post:2"] },
+        };
+        expect(isDataDeepEqual(a, b)).toBe(false);
+      });
+    });
+  });
+
+  describe("hasTypename", () => {
+    it("returns true for objects with __typename string", () => {
+      expect(hasTypename({ __typename: "User" })).toBe(true);
+      expect(hasTypename({ __typename: "Post", id: "p1" })).toBe(true);
+    });
+
+    it("returns false for objects without __typename", () => {
+      expect(hasTypename({ id: "u1" })).toBe(false);
+      expect(hasTypename({})).toBe(false);
+    });
+
+    it("returns false for __typename with non-string value", () => {
+      expect(hasTypename({ __typename: 123 })).toBe(false);
+      expect(hasTypename({ __typename: null })).toBe(false);
+      expect(hasTypename({ __typename: undefined })).toBe(false);
+    });
+
+    it("returns false for non-objects", () => {
+      expect(hasTypename(null)).toBe(false);
+      expect(hasTypename(undefined)).toBe(false);
+      expect(hasTypename(42)).toBe(false);
+      expect(hasTypename("User")).toBe(false);
+      expect(hasTypename([])).toBe(false);
+    });
+  });
+
+  describe("stableStringify", () => {
+    it("produces stable output for objects with different key order", () => {
+      const a = { b: 2, a: 1, c: 3 };
+      const b = { c: 3, a: 1, b: 2 };
+      expect(stableStringify(a)).toBe(stableStringify(b));
+      expect(stableStringify(a)).toBe('{"a":1,"b":2,"c":3}');
+    });
+
+    it("handles nested objects", () => {
+      const obj = { z: { y: 2, x: 1 }, a: 1 };
+      expect(stableStringify(obj)).toBe('{"a":1,"z":{"x":1,"y":2}}');
+    });
+
+    it("handles arrays", () => {
+      const obj = { items: [3, 1, 2], name: "test" };
+      expect(stableStringify(obj)).toBe('{"items":[3,1,2],"name":"test"}');
+    });
+
+    it("handles primitives", () => {
+      expect(stableStringify(42)).toBe("42");
+      expect(stableStringify("hello")).toBe('"hello"');
+      expect(stableStringify(true)).toBe("true");
+      expect(stableStringify(null)).toBe("null");
+    });
+
+    it("returns empty string for circular references", () => {
+      const obj: any = { a: 1 };
+      obj.self = obj;
+      expect(stableStringify(obj)).toBe("");
+    });
+
+    it("handles complex nested structures", () => {
+      const obj = {
+        filters: { category: "tech", sort: "hot" },
+        pagination: { first: 10, after: null },
+      };
+      const result = stableStringify(obj);
+      expect(result).toBe('{"filters":{"category":"tech","sort":"hot"},"pagination":{"after":null,"first":10}}');
+    });
+  });
+
+  describe("fingerprintNodes", () => {
+    it("combines base node with child fingerprints", () => {
+      const fp1 = fingerprintNodes(100, [200, 300]);
+      const fp2 = fingerprintNodes(100, [200, 300]);
+      expect(fp1).toBe(fp2);
+      expect(typeof fp1).toBe("number");
+    });
+
+    it("produces different fingerprints for different base nodes", () => {
+      const fp1 = fingerprintNodes(100, [200, 300]);
+      const fp2 = fingerprintNodes(101, [200, 300]);
+      expect(fp1).not.toBe(fp2);
+    });
+
+    it("produces different fingerprints for different child nodes", () => {
+      const fp1 = fingerprintNodes(100, [200, 300]);
+      const fp2 = fingerprintNodes(100, [200, 301]);
+      expect(fp1).not.toBe(fp2);
+    });
+
+    it("is order-dependent", () => {
+      const fp1 = fingerprintNodes(100, [200, 300]);
+      const fp2 = fingerprintNodes(100, [300, 200]);
+      expect(fp1).not.toBe(fp2);
+    });
+
+    it("handles empty child array", () => {
+      const fp1 = fingerprintNodes(100, []);
+      const fp2 = fingerprintNodes(100, []);
+      expect(fp1).toBe(fp2);
+      expect(typeof fp1).toBe("number");
+    });
+
+    it("handles base node of 0 for arrays", () => {
+      const fp1 = fingerprintNodes(0, [100, 200, 300]);
+      const fp2 = fingerprintNodes(0, [100, 200, 300]);
+      expect(fp1).toBe(fp2);
+    });
+
+    it("handles large child arrays", () => {
+      const children = Array.from({ length: 100 }, (_, i) => i);
+      const fp1 = fingerprintNodes(42, children);
+      const fp2 = fingerprintNodes(42, children);
+      expect(fp1).toBe(fp2);
+    });
+
+    it("produces different fingerprints for different array lengths", () => {
+      const fp1 = fingerprintNodes(100, [200, 300]);
+      const fp2 = fingerprintNodes(100, [200, 300, 400]);
+      expect(fp1).not.toBe(fp2);
     });
   });
 
@@ -541,4 +746,3 @@ describe("Utils", () => {
     });
   });
 });
-

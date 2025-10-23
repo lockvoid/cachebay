@@ -101,6 +101,11 @@ export type CachebayInstance = {
   executeSubscription: ReturnType<typeof createOperations>["executeSubscription"];
 
   /**
+   * Get compiled query plan
+   */
+  getPlan: ReturnType<typeof createOperations>["getPlan"];
+
+  /**
    * Debug inspection API for cache internals
    */
   inspect: ReturnType<typeof createInspect>;
@@ -221,6 +226,9 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
   // SSR API
   cache.dehydrate = ssr.dehydrate;
   cache.hydrate = ssr.hydrate;
+
+  // Planner
+  cache.getPlan = planner.getPlan;
 
   // Internals for tests
   cache.__internals = {

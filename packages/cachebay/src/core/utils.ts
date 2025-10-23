@@ -1,7 +1,5 @@
-import { IDENTITY_FIELDS, CONNECTION_FIELDS, ROOT_ID } from "./constants";
-import type { GraphInstance } from "./graph";
+import { CONNECTION_FIELDS, ROOT_ID } from "./constants";
 import type { PlanField } from "../compiler/types";
-
 
 export const isObject = (value: any): value is Record<string, any> => {
   return value !== null && typeof value === "object";
@@ -102,58 +100,6 @@ export const stableStringify = (object: any): string => {
 };
 
 /**
- * Simple LRU cache using Map's insertion order
- * Most recently used items are moved to the end
- */
-export class LRU<K, V> {
-  private m = new Map<K, V>();
-
-  constructor(
-    private cap: number,
-    private onEvict?: (k: K, v: V) => void
-  ) { }
-
-  get(k: K): V | undefined {
-    const v = this.m.get(k);
-    if (v !== undefined) {
-      // Move to end (most recent)
-      this.m.delete(k);
-      this.m.set(k, v);
-    }
-    return v;
-  }
-
-  set(k: K, v: V): void {
-    // Remove if exists to update position
-    if (this.m.has(k)) {
-      this.m.delete(k);
-    }
-    this.m.set(k, v);
-
-    // Evict oldest if over capacity
-    if (this.m.size > this.cap) {
-      const oldest = this.m.keys().next().value as K;
-      const ov = this.m.get(oldest)!;
-      this.m.delete(oldest);
-      this.onEvict?.(oldest, ov);
-    }
-  }
-
-  clear(): void {
-    if (this.onEvict) {
-      for (const [k, v] of this.m) {
-        this.onEvict(k, v);
-      }
-    }
-    this.m.clear();
-  }
-
-  get size(): number {
-    return this.m.size;
-  }
-}
-
-/**
  * Build a field link key used on a record snapshot, e.g.:
  *   user({"id":"u1"})
  *
@@ -220,7 +166,7 @@ const FNV_PRIME = 16777619;
  * Combine base node fingerprint with child fingerprints using FNV-1a.
  * Order-dependent: child order matters for the final hash.
  * Inlined mixing for maximum performance.
- * 
+ *
  * For arrays without a base node, pass 0 as baseNode.
  */
 export const fingerprintNodes = (baseNode: number, childNodes: number[]): number => {
@@ -236,9 +182,9 @@ const FINGERPRINT_KEY = '__version';
 /**
  * Recycles subtrees from prevData by replacing equal subtrees in nextData.
  * Uses __version fingerprints for O(1) equality checks.
- * 
+ *
  * IMPORTANT: Only works with materialized results that have __version fingerprints.
- * 
+ *
  * @param prevData - Previous materialized snapshot
  * @param nextData - New materialized snapshot to recycle into
  * @returns Recycled snapshot (reuses prevData subtrees where possible)
@@ -262,7 +208,7 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
   // Only recycle plain objects and arrays
   const prevIsArray = Array.isArray(prevData);
   const nextIsArray = Array.isArray(nextData);
-  
+
   if (prevIsArray !== nextIsArray) {
     return nextData;
   }
@@ -278,7 +224,7 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
   // Compare fingerprints - materialized results always have __version
   const prevVersion = (prevData as any)[FINGERPRINT_KEY];
   const nextVersion = (nextData as any)[FINGERPRINT_KEY];
-  
+
   if (prevVersion === nextVersion) {
     // Fingerprints match - data is identical, reuse prevData
     return prevData;
@@ -288,7 +234,7 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
   if (prevIsArray && nextIsArray) {
     const prevArray = prevData as any[];
     const nextArray = nextData as any[];
-    
+
     if (prevArray.length !== nextArray.length) {
       return nextData;
     }
@@ -303,7 +249,7 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
         allEqual = false;
       }
     }
-    
+
     return allEqual ? prevData : nextData;
   } else {
     // Both are plain objects
@@ -311,7 +257,7 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
     const nextObject = nextData as Record<string, any>;
     const prevKeys = Object.keys(prevObject);
     const nextKeys = Object.keys(nextObject);
-    
+
     if (prevKeys.length !== nextKeys.length) {
       return nextData;
     }
@@ -326,7 +272,7 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
         allEqual = false;
       }
     }
-    
+
     return allEqual ? prevData : nextData;
   }
 }

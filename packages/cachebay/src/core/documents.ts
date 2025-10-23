@@ -1,5 +1,5 @@
+import { buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, fingerprintNodes } from "./utils";
 import { ROOT_ID } from "./constants";
-import { isObject, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, fingerprintNodes } from "./utils";
 import { __DEV__ } from "./instrumentation";
 import type { CachePlan, PlanField } from "../compiler";
 import type { CanonicalInstance } from "./canonical";
@@ -7,21 +7,28 @@ import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
 import type { DocumentNode } from "graphql";
 
+/**
+ * Dependencies required by documents instance
+ */
 export type DocumentsDependencies = {
   graph: GraphInstance;
   planner: PlannerInstance;
   canonical: CanonicalInstance;
 };
 
-export const ENTITY_MISSING = "entity-missing" as const;
-export const ROOT_LINK_MISSING = "root-link-missing" as const;
-export const FIELD_LINK_MISSING = "field-link-missing" as const;
-export const CONNECTION_MISSING = "connection-missing" as const;
-export const PAGE_INFO_MISSING = "pageinfo-missing" as const;
-export const EDGE_NODE_MISSING = "edge-node-missing" as const;
-export const SCALAR_MISSING = "scalar-missing" as const;
-export const FINGERPRINT_KEY = "__version" as const;
+export const ENTITY_MISSING = "entity-missing";
+export const ROOT_LINK_MISSING = "root-link-missing";
+export const FIELD_LINK_MISSING = "field-link-missing";
+export const CONNECTION_MISSING = "connection-missing";
+export const PAGE_INFO_MISSING = "pageinfo-missing";
+export const EDGE_NODE_MISSING = "edge-node-missing";
+export const SCALAR_MISSING = "scalar-missing";
+export const FINGERPRINT_KEY = "__version";
 
+/**
+ * Represents a cache miss during materialization
+ * Used for debugging incomplete reads in development mode
+ */
 export type Miss =
   | { kind: typeof ENTITY_MISSING; at: string; id: string }
   | { kind: typeof ROOT_LINK_MISSING; at: string; fieldKey: string }
@@ -31,6 +38,24 @@ export type Miss =
   | { kind: typeof EDGE_NODE_MISSING; at: string; edgeId: string }
   | { kind: typeof SCALAR_MISSING; at: string; parentId: string; fieldKey: string };
 
+/**
+ * Options for normalizing a document into cache
+ */
+export type NormalizeDocumentOptions = {
+  document: DocumentNode | CachePlan;
+  variables?: Record<string, any>;
+  data: any;
+  rootId?: string;
+};
+
+/**
+ * Result of normalizing a document (void for now, may add stats later)
+ */
+export type NormalizeDocumentResult = void;
+
+/**
+ * Options for materializing a document from cache
+ */
 export type MaterializeDocumentOptions = {
   document: DocumentNode | CachePlan;
   variables?: Record<string, any>;
@@ -39,6 +64,9 @@ export type MaterializeDocumentOptions = {
   fingerprint?: boolean;
 };
 
+/**
+ * Result of materializing a document from cache
+ */
 export type MaterializeDocumentResult = {
   data: any;
   dependencies: Set<string>;
@@ -46,38 +74,25 @@ export type MaterializeDocumentResult = {
   ok: { strict: boolean; canonical: boolean; miss?: Miss[] };
 };
 
-type Frame = {
-  parentId: string;
-  fields: PlanField[] | undefined | null;
-  fieldsMap: Map<string, PlanField> | undefined | null;
-  insideConnection: boolean;
-  pageKey: string | null;
-  inEdges: boolean;
-};
-
-type ConnectionPage = {
-  field: PlanField;
-  parentId: string;
-  pageKey: string;
-};
-
+/**
+ * Documents instance type
+ */
 export type DocumentsInstance = ReturnType<typeof createDocuments>;
 
+/**
+ * Create documents instance for normalization and materialization
+ * Handles writing GraphQL responses to cache and reading them back
+ */
 export const createDocuments = (deps: DocumentsDependencies) => {
   const { graph, planner, canonical } = deps;
 
-  const normalizeDocument = ({
-    document,
-    variables = {},
-    data,
-    rootId,
-  }: {
-    document: DocumentNode | CachePlan;
-    variables?: Record<string, any>;
-    data: any;
-    /** When provided, treat this entity id as the "root" parent (used by fragments) */
-    rootId?: string;
-  }): void => {
+  /**
+   * Normalize a GraphQL response into the cache
+   * Writes entities, connections, and links to the graph store
+   */
+  const normalizeDocument = (options: NormalizeDocumentOptions) => {
+    const { document, variables = {}, data, rootId } = options;
+
     const put = (id: string, patch: Record<string, any>) => {
       graph.putRecord(id, patch);
     };
@@ -98,17 +113,15 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       pageKey: string | null;
     };
 
-    const connectionPages: Array<{ field: PlanField; parentId: string; pageKey: string }> = [];
+    const connectionPages = [];
 
-    const initialFrame: Frame = {
+    const initialFrame = {
       parentId: startId,
       fields: plan.root,
-      fieldsMap: plan.rootSelectionMap ?? new Map<string, PlanField>(),
+      fieldsMap: plan.rootSelectionMap ?? new Map(),
       insideConnection: false,
       pageKey: null,
     };
-
-    // -------- helpers --------
 
     const writeScalar = (parentId: string, field: PlanField, value: any) => {
       const fieldKey = buildFieldKey(field, variables);
@@ -116,18 +129,19 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     };
 
     const linkTo = (parentId: string, field: PlanField, targetId: string) => {
-      if (!shouldLink) return;
+      if (!shouldLink) {
+        return;
+      }
       const fieldKey = buildFieldKey(field, variables);
       put(parentId, { [fieldKey]: { __ref: targetId } });
     };
 
     const normalizeObjectFields = (obj: any, frame: Frame) => {
-      // Traverse actual response keys; map to PlanField via fieldsMap when needed.
       const keys = Object.keys(obj);
+
       for (let i = 0; i < keys.length; i++) {
         const responseKey = keys[i];
         const value = obj[responseKey];
-
         const field = frame.fieldsMap?.get(responseKey);
 
         normalizeValue(value, responseKey, field, frame);
@@ -135,30 +149,35 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     };
 
     const normalizeEdgesArray = (pageKey: string, edges: any[], edgesField: PlanField | undefined, parentFrame: Frame) => {
-      // Always normalize edges as { __refs }
-      const refs = new Array<string>(edges.length);
+      const refs = new Array(edges.length);
+
       for (let i = 0; i < edges.length; i++) {
         refs[i] = `${pageKey}.edges.${i}`;
       }
+
       put(pageKey, { edges: { __refs: refs } });
 
-      if (!edgesField?.selectionSet) return;
+      if (!edgesField?.selectionSet) {
+        return;
+      }
+
       const edgesSel = edgesField.selectionSet;
       const edgesSelMap = edgesField.selectionMap;
 
       for (let idx = 0; idx < edges.length; idx++) {
         const edgeKey = `${pageKey}.edges.${idx}`;
         const edgeObj = edges[idx];
+        const edgePatch = {};
 
-        // Batch edge record creation + node link into single put()
-        const edgePatch: Record<string, any> = {};
         if (edgeObj && edgeObj.__typename) {
           edgePatch.__typename = edgeObj.__typename;
         }
 
         const nodeObj = edgeObj?.node;
+
         if (nodeObj && typeof nodeObj === "object") {
           const nodeId = graph.identify(nodeObj);
+
           if (nodeId) {
             edgePatch.node = { __ref: nodeId };
           }
@@ -166,8 +185,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
         put(edgeKey, edgePatch);
 
-        // Recurse into edge object
-        const edgeFrame: Frame = {
+        const edgeFrame = {
           parentId: edgeKey,
           fields: edgesSel,
           fieldsMap: edgesSelMap,
@@ -182,43 +200,48 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     };
 
     const normalizeConnection = (value: any, field: PlanField, frame: Frame) => {
-      // Build strict page key and link parent -> page
       const pageKey = buildConnectionKey(field, frame.parentId, variables);
       const fieldKey = buildFieldKey(field, variables);
+      const pageRecord = {};
 
-      // Create page record with passthrough scalars/inline data (not edges/pageInfo)
-      const pageRecord: Record<string, any> = {};
-      if (value?.__typename) pageRecord.__typename = value.__typename;
+      if (value?.__typename) {
+        pageRecord.__typename = value.__typename;
+      }
 
       if (value && typeof value === "object") {
         const keys = Object.keys(value);
+
         for (let i = 0; i < keys.length; i++) {
-          const k = keys[i];
-          if (k === "__typename" || k === "edges" || k === "pageInfo") continue;
+          const key = keys[i];
 
-          const v = value[k];
-          const isScalarLike = v === null || typeof v !== "object";
-          const isInlineObject = v && typeof v === "object" && !v.__typename;
+          if (key === "__typename" || key === "edges" || key === "pageInfo") {
+            continue;
+          }
 
-          if (isScalarLike || Array.isArray(v) || isInlineObject) {
-            pageRecord[k] = v;
+          const fieldValue = value[key];
+          const isScalarLike = fieldValue === null || typeof fieldValue !== "object";
+          const isInlineObject = fieldValue && typeof fieldValue === "object" && !fieldValue.__typename;
+
+          if (isScalarLike || Array.isArray(fieldValue) || isInlineObject) {
+            pageRecord[key] = fieldValue;
           }
         }
       }
 
       put(pageKey, pageRecord);
 
-      // Link parent to page record
       if (shouldLink) {
         put(frame.parentId, { [fieldKey]: { __ref: pageKey } });
         connectionPages.push({ field, parentId: frame.parentId, pageKey });
       }
 
-      // pageInfo: create sub-record and link
       const pageInfoObj = value?.pageInfo;
+
       if (pageInfoObj && typeof pageInfoObj === "object") {
         const pageInfoKey = `${pageKey}.pageInfo`;
+
         put(pageKey, { pageInfo: { __ref: pageInfoKey } });
+
         if (pageInfoObj.__typename) {
           put(pageInfoKey, { __typename: pageInfoObj.__typename });
         } else {
@@ -226,8 +249,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         }
       }
 
-      // Recurse into connection container
-      const nextFrame: Frame = {
+      const nextFrame = {
         parentId: pageKey,
         fields: field.selectionSet,
         fieldsMap: field.selectionMap,
@@ -243,34 +265,41 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const normalizeArrayOfObjectsWithSelection = (arr: any[], field: PlanField, frame: Frame) => {
       const fieldKey = buildFieldKey(field, variables);
       const baseKey = `${frame.parentId}.${fieldKey}`;
+      const refs = new Array(arr.length);
 
-      // Write refs first
-      const refs = new Array<string>(arr.length);
       for (let i = 0; i < arr.length; i++) {
         const item = arr[i];
         const entityId = (item && typeof item === "object") ? graph.identify(item) : null;
         const itemKey = entityId ?? `${baseKey}.${i}`;
 
         if (item && typeof item === "object") {
-          if (item.__typename) put(itemKey, { __typename: item.__typename });
-          else put(itemKey, {});
+          if (item.__typename) {
+            put(itemKey, { __typename: item.__typename });
+          } else {
+            put(itemKey, {});
+          }
         }
 
         refs[i] = itemKey;
       }
+
       put(frame.parentId, { [fieldKey]: { __refs: refs } });
 
-      // Recurse into each object item
-      if (!field.selectionSet) return;
+      if (!field.selectionSet) {
+        return;
+      }
 
       for (let i = 0; i < arr.length; i++) {
         const val = arr[i];
-        if (!val || typeof val !== "object") continue;
+
+        if (!val || typeof val !== "object") {
+          continue;
+        }
 
         const entityId = graph.identify(val);
         const itemKey = entityId ?? `${baseKey}.${i}`;
 
-        const itemFrame: Frame = {
+        const itemFrame = {
           parentId: itemKey,
           fields: field.selectionSet,
           fieldsMap: field.selectionMap,
@@ -283,23 +312,24 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     };
 
     const normalizeArray = (arr: any[], responseKey: string | number, field: PlanField | undefined, frame: Frame) => {
-      // Connection edges
       if (frame.insideConnection && responseKey === "edges" && typeof frame.pageKey === "string") {
         normalizeEdgesArray(frame.pageKey, arr, field, frame);
         return;
       }
 
-      // Array-of-objects with selection
       if (field && field.selectionSet) {
         normalizeArrayOfObjectsWithSelection(arr, field, frame);
         return;
       }
 
-      // Raw array scalar/object values without selection → store shallow copy
       if (field && !field.selectionSet) {
         const fieldKey = buildFieldKey(field, variables);
         const out = new Array(arr.length);
-        for (let i = 0; i < arr.length; i++) out[i] = arr[i];
+
+        for (let i = 0; i < arr.length; i++) {
+          out[i] = arr[i];
+        }
+
         put(frame.parentId, { [fieldKey]: out });
       }
     };
@@ -308,20 +338,21 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       const containerFieldKey = buildFieldKey(field, variables);
       const containerKey = `${frame.parentId}.${containerFieldKey}`;
 
-      // Create inline container record
-      if (obj?.__typename) put(containerKey, { __typename: obj.__typename });
-      else put(containerKey, {});
+      if (obj?.__typename) {
+        put(containerKey, { __typename: obj.__typename });
+      } else {
+        put(containerKey, {});
+      }
 
       if (shouldLink) {
         put(frame.parentId, { [containerFieldKey]: { __ref: containerKey } });
       }
 
-      // Special case: inside connection pageInfo
       if (frame.insideConnection && containerFieldKey === "pageInfo" && frame.pageKey) {
         put(frame.pageKey, { pageInfo: { __ref: containerKey } });
       }
 
-      const nextFrame: Frame = {
+      const nextFrame = {
         parentId: containerKey,
         fields: field.selectionSet,
         fieldsMap: field.selectionMap,
@@ -334,19 +365,23 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     const normalizeEntityObject = (obj: any, field: PlanField | undefined, frame: Frame) => {
       const entityId = graph.identify(obj);
-      if (!entityId) return false;
 
-      // Ensure entity record exists
-      if (obj.__typename) put(entityId, { __typename: obj.__typename });
-      else put(entityId, {});
+      if (!entityId) {
+        return false;
+      }
 
-      // Link parent → entity (except connection edge's "node" pre-link case handled earlier)
+      if (obj.__typename) {
+        put(entityId, { __typename: obj.__typename });
+      } else {
+        put(entityId, {});
+      }
+
       if (field && !(frame.insideConnection && field.responseKey === "node")) {
         linkTo(frame.parentId, field, entityId);
       }
 
       const fromNode = !!field && field.responseKey === "node";
-      const nextFrame: Frame = {
+      const nextFrame = {
         parentId: entityId,
         fields: field?.selectionSet,
         fieldsMap: field?.selectionMap,
@@ -355,65 +390,56 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       };
 
       normalizeObjectFields(obj, nextFrame);
+
       return true;
     };
 
     const normalizeValue = (value: any, responseKey: string | number, field: PlanField | undefined, frame: Frame) => {
-      // Arrays
       if (Array.isArray(value)) {
         normalizeArray(value, responseKey, field, frame);
         return;
       }
 
-      // Objects
       if (value && typeof value === "object") {
-        // Field without selection: write raw object
         if (field && !field.selectionSet) {
           writeScalar(frame.parentId, field, value);
           return;
         }
 
-        // Connection container
         if (field && (field as any).isConnection) {
           normalizeConnection(value, field, frame);
           return;
         }
 
-        // Entity object
         if (normalizeEntityObject(value, field, frame)) {
           return;
         }
 
-        // Inline container with selection
         if (field && field.selectionSet) {
           normalizeInlineContainer(value, field, frame);
           return;
         }
 
-        // No matching field or no selection: ignore (cannot derive storage key)
         return;
       }
 
-      // Scalars at object scope
       if (typeof responseKey === "string" && field && !field.selectionSet) {
         writeScalar(frame.parentId, field, value);
       }
     };
 
-    // -------- start recursion --------
-
-    // Root: traverse response keys with the initial frame
     if (data && typeof data === "object") {
       normalizeObjectFields(data, initialFrame);
     }
-
-    // -------- canonical updates --------
 
     if (connectionPages.length > 0) {
       for (let i = 0; i < connectionPages.length; i++) {
         const { field, parentId, pageKey } = connectionPages[i];
         const normalizedPage = graph.getRecord(pageKey);
-        if (!normalizedPage) continue;
+
+        if (!normalizedPage) {
+          continue;
+        }
 
         canonical.updateConnection({
           field,
@@ -426,20 +452,17 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     }
   };
 
-  const materializeDocument = (opts: MaterializeDocumentOptions): MaterializeDocumentResult => {
-    const { document, variables = {}, canonical = true, entityId, fingerprint = true } = opts;
+  /**
+   * Materialize a document from cache
+   * Reads normalized data and reconstructs the GraphQL response shape
+   */
+  const materializeDocument = (options: MaterializeDocumentOptions): MaterializeDocumentResult => {
+    const { document, variables = {}, canonical = true, entityId, fingerprint = true } = options;
 
     graph.flush();
 
-    const misses: Miss[] = [];
-    const miss = __DEV__ ? (m: Miss) => { misses.push(m); } : (_: Miss) => { };
-    const addPath = __DEV__
-      ? (base: string, seg: string) => (base ? base + "." + seg : seg)
-      : (_base: string, _seg: string) => "";
-
     const plan = planner.getPlan(document);
-
-    const dependencies = new Set<string>();
+    const dependencies = new Set();
     const touch = (id: string) => {
       dependencies.add(id);
     };
@@ -447,9 +470,15 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     let strictOK = true;
     let canonicalOK = true;
 
-    // Single applicability helper (merges subtype + field checks)
+    const misses = [];
+    const miss = __DEV__ ? (m: Miss) => { misses.push(m); } : (_: Miss) => { };
+    const addPath = __DEV__
+      ? (base: string, seg: string) => (base ? base + "." + seg : seg)
+      : (_base: string, _seg: string) => "";
+
     const selectionAppliesToRuntime = (field: any, runtimeType: string | undefined): boolean => {
       const one = field.typeCondition || field.onType || field.typeName;
+
       if (one != null) {
         if (runtimeType == null) return true;
         if (runtimeType === one) return true;
@@ -457,6 +486,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
 
       const many = field.typeConditions || field.onTypes || field.typeNames;
+
       if (Array.isArray(many)) {
         if (runtimeType == null) return true;
         for (let i = 0; i < many.length; i++) {
@@ -471,15 +501,10 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       return true;
     };
 
-    // ---- Fingerprinting helper ------------------------------------------------------
-
-    /**
-     * Set version/fingerprint on object.
-     * Always use defineProperty to make __version non-enumerable.
-     * This keeps it hidden from Object.keys(), JSON.stringify(), etc.
-     */
-    const setFingerprint = (obj: any, fp: number): void => {
-      if (!fingerprint) return;
+    const setFingerprint = (obj: any, fp: number) => {
+      if (!fingerprint) {
+        return;
+      }
 
       if (Array.isArray(obj)) {
         Object.defineProperty(obj, FINGERPRINT_KEY, {
@@ -493,15 +518,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
     };
 
-    /**
-     * Get version/fingerprint from object (direct property access).
-     */
-    const getFingerprint = (obj: any): number | undefined => {
-      if (!fingerprint) return undefined;
+    const getFingerprint = (obj: any) => {
+      if (!fingerprint) {
+        return undefined;
+      }
       return obj[FINGERPRINT_KEY];
     };
-
-    // ---- Recursive readers ------------------------------------------------------
 
     const readScalar = (record: any, field: PlanField, out: any, outKey: string, parentId: string, path: string) => {
       if (field.fieldName === "__typename") {
@@ -520,23 +542,25 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       out[outKey] = value;
     };
 
-    const readPageInfo = (pageInfoId: string, field: PlanField, outConn: any, path: string): number => {
-      // touch(pageInfoId); NOTE: Keep it for the future
-
+    const readPageInfo = (pageInfoId: string, field: PlanField, outConn: any, path: string) => {
       const record = graph.getRecord(pageInfoId) || {};
       const selection = field.selectionSet || [];
       const outPageInfo: any = {};
 
       for (let i = 0; i < selection.length; i++) {
         const f = selection[i];
-        if (f.selectionSet) continue;
+
+        if (f.selectionSet) {
+          continue;
+        }
+
         readScalar(record, f, outPageInfo, f.responseKey, pageInfoId, addPath(path, f.responseKey));
       }
 
       outConn.pageInfo = outPageInfo;
 
-      // PageInfo is a simple node - use version directly as fingerprint
       const pageInfoVersion = graph.getVersion(pageInfoId);
+
       setFingerprint(outPageInfo, pageInfoVersion);
 
       return pageInfoVersion;
@@ -560,9 +584,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
       const runtimeType = (snapshot as any).__typename as string | undefined;
       const selection = field.selectionSet || [];
-
-      // Collect child fingerprints for combining
-      const childFingerprints: number[] = [];
+      const childFingerprints = [];
 
       for (let i = 0; i < selection.length; i++) {
         const childField = selection[i];
@@ -574,7 +596,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
         if ((childField as any).isConnection) {
           readConnection(id, childField, out, outKey, addPath(path, outKey));
-          // Collect connection fingerprint
           const connObj = out[outKey];
           if (connObj && typeof connObj === "object") {
             const fp = getFingerprint(connObj);
@@ -587,31 +608,34 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           const storeKey = buildFieldKey(childField, variables);
           const link = (snapshot as any)[storeKey];
 
-          // array-of-refs
           if (link != null && Array.isArray(link.__refs)) {
-            const refs: string[] = link.__refs;
-            const outArray: any[] = new Array(refs.length);
+            const refs = link.__refs;
+            const outArray = new Array(refs.length);
+
             out[outKey] = outArray;
 
-            const arrayFingerprints: number[] = [];
+            const arrayFingerprints = [];
+
             for (let j = 0; j < refs.length; j++) {
               const childOut: any = {};
               outArray[j] = childOut;
               readEntity(refs[j], childField, childOut, addPath(path, outKey + "[" + j + "]"));
-              // Collect child fingerprint
               const fp = getFingerprint(childOut);
-              if (fp !== undefined) arrayFingerprints.push(fp);
+
+              if (fp !== undefined) {
+                arrayFingerprints.push(fp);
+              }
             }
-            // Compute array fingerprint (order-dependent)
+
             if (arrayFingerprints.length > 0) {
               const arrayFp = fingerprintNodes(0, arrayFingerprints);
               setFingerprint(outArray, arrayFp);
               childFingerprints.push(arrayFp);
             }
+
             continue;
           }
 
-          // single ref or missing
           if (!link || !link.__ref) {
             out[outKey] = link === null ? null : undefined;
             strictOK = false;
@@ -624,43 +648,41 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           const childOut: any = {};
           out[outKey] = childOut;
           readEntity(childId, childField, childOut, addPath(path, outKey));
-          // Collect child fingerprint
           const fp = getFingerprint(childOut);
           if (fp !== undefined) childFingerprints.push(fp);
           continue;
         }
 
-        // scalar
         readScalar(snapshot, childField, out, outKey, id, addPath(path, outKey));
       }
 
-      // scalar fallback for interface-gated scalars present on the record
       if (Array.isArray(field.selectionSet) && field.selectionSet.length) {
         for (let i = 0; i < field.selectionSet.length; i++) {
           const pf = field.selectionSet[i];
-          if (pf.selectionSet) continue;
-          if (out[pf.responseKey] !== undefined) continue;
+
+          if (pf.selectionSet) {
+            continue;
+          }
+          if (out[pf.responseKey] !== undefined) {
+            continue;
+          }
 
           const storeKey = buildFieldKey(pf, variables);
+
           if (snapshot && storeKey in (snapshot as any)) {
             out[pf.responseKey] = (snapshot as any)[storeKey];
           }
         }
       }
 
-      // Compute entity fingerprint: version + childFingerprints
       const entityVersion = graph.getVersion(id);
 
-      const finalFingerprint = childFingerprints.length > 0
-        ? fingerprintNodes(entityVersion, childFingerprints)
-        : entityVersion;
+      const finalFingerprint = childFingerprints.length > 0 ? fingerprintNodes(entityVersion, childFingerprints) : entityVersion;
 
       setFingerprint(out, finalFingerprint);
     };
 
     const readEdge = (edgeId: string, field: PlanField, outArray: any[], index: number, path: string) => {
-      // touch(edgeId); // NOTE: Keep it for the future
-
       const record = graph.getRecord(edgeId) || {};
       const outEdge: any = {};
       outArray[index] = outEdge;
@@ -672,7 +694,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       const selection = field.selectionSet || [];
       const nodePlan = (field as any).selectionMap ? (field as any).selectionMap.get("node") : undefined;
 
-      let nodeFingerprint: number | undefined;
+      let nodeFingerprint;
 
       for (let i = 0; i < selection.length; i++) {
         const f = selection[i];
@@ -680,6 +702,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
         if (outKey === "node") {
           const nlink = (record as any).node;
+
           if (!nlink || !nlink.__ref) {
             outEdge.node = nlink === null ? null : undefined;
             strictOK = false;
@@ -690,7 +713,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             const nodeOut: any = {};
             outEdge.node = nodeOut;
             readEntity(nodeId, nodePlan as PlanField, nodeOut, addPath(path, "node"));
-            // Collect node fingerprint
             nodeFingerprint = getFingerprint(nodeOut);
           }
         } else if (!f.selectionSet) {
@@ -698,12 +720,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         }
       }
 
-      // Compute edge fingerprint: version + nodeFingerprint
       const edgeVersion = graph.getVersion(edgeId);
 
-      const finalFingerprint = nodeFingerprint !== undefined
-        ? fingerprintNodes(edgeVersion, [nodeFingerprint])
-        : edgeVersion;
+      const finalFingerprint = nodeFingerprint !== undefined ? fingerprintNodes(edgeVersion, [nodeFingerprint]) : edgeVersion;
 
       setFingerprint(outEdge, finalFingerprint);
     };
@@ -747,17 +766,19 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       const page = (baseIsCanonical ? pageCanonical : pageStrict) as any;
       const baseKey = baseIsCanonical ? canonicalKey : strictKey;
 
-      const selMap: Map<string, PlanField> | undefined = (field as any).selectionMap;
+      const selMap = (field as any).selectionMap;
+
       if (!selMap || selMap.size === 0) {
         return;
       }
 
-      let pageInfoFingerprint: number | undefined;
-      const edgeFingerprints: number[] = [];
+      let pageInfoFingerprint;
+      const edgeFingerprints = [];
 
       for (const [responseKey, childField] of selMap) {
         if (responseKey === "pageInfo") {
           const pageInfoLink = page.pageInfo;
+
           if (pageInfoLink && pageInfoLink.__ref) {
             pageInfoFingerprint = readPageInfo(pageInfoLink.__ref as string, childField, conn, addPath(path, "pageInfo"));
           } else {
@@ -770,26 +791,26 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         }
 
         if (responseKey === "edges") {
-          // Assumption: edges always normalized to { __refs: string[] }
-          const refs: string[] = page.edges.__refs as string[];
-          const outArr: any[] = new Array(refs.length);
+          const refs = page.edges.__refs;
+          const outArr = new Array(refs.length);
           conn.edges = outArr;
 
           for (let i = 0; i < refs.length; i++) {
             readEdge(refs[i], childField, outArr, i, addPath(path, "edges[" + i + "]"));
-            // Collect edge fingerprint
+
             const edge = outArr[i];
+
             if (edge) {
               const fp = getFingerprint(edge);
               if (fp !== undefined) edgeFingerprints.push(fp);
             }
           }
 
-          // Compute edges array fingerprint (order-dependent)
           if (edgeFingerprints.length > 0) {
             const edgesArrayFp = fingerprintNodes(0, edgeFingerprints);
             setFingerprint(outArr, edgesArrayFp);
           }
+
           continue;
         }
 
@@ -806,8 +827,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const link = page[buildFieldKey(childField, variables)];
 
         if (link != null && Array.isArray(link.__refs)) {
-          const refs: string[] = link.__refs;
-          const outArray: any[] = new Array(refs.length);
+          const refs = link.__refs;
+          const outArray = new Array(refs.length);
           conn[childField.responseKey] = outArray;
 
           for (let j = 0; j < refs.length; j++) {
@@ -815,6 +836,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             outArray[j] = childOut;
             readEntity(refs[j], childField, childOut, addPath(path, childField.responseKey + "[" + j + "]"));
           }
+
           continue;
         }
 
@@ -837,10 +859,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         readEntity(childId, childField, childOut, addPath(path, childField.responseKey));
       }
 
-      // Compute connection fingerprint: version + pageInfoFp + edgesFp
       const pageVersion = graph.getVersion(baseKey);
 
-      const connChildren: number[] = [];
+      const connChildren = [];
       if (pageInfoFingerprint !== undefined) {
         connChildren.push(pageInfoFingerprint);
       }
@@ -854,9 +875,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       setFingerprint(conn, connFingerprint);
     };
 
-    // ---- Root -------------------------------------------------------------------
-
-    const data: Record<string, any> = {};
+    const data = {};
 
     if (entityId) {
       const synthetic = { selectionSet: plan.root, selectionMap: plan.rootSelectionMap } as unknown as PlanField;
@@ -876,8 +895,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
         if (field.selectionSet && field.selectionSet.length) {
           const fieldKey = buildFieldKey(field, variables);
-
-          // Root field dependency (field-level invalidation)
           touch(ROOT_ID + "." + fieldKey);
 
           const link = (rootRecord as any)[fieldKey];
@@ -900,15 +917,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     }
 
     const requestedOK = canonical ? canonicalOK : strictOK;
-
-    // Compute root fingerprint from all top-level fields
-    const rootFingerprints: number[] = [];
+    const rootFingerprints = [];
     if (entityId) {
-      // For fragment reads, use the entity's fingerprint
       const fp = getFingerprint(data);
       if (fp !== undefined) rootFingerprints.push(fp);
     } else {
-      // For regular queries, collect fingerprints from all root fields
       for (let i = 0; i < plan.root.length; i++) {
         const field = plan.root[i];
         const value = data[field.responseKey];
@@ -919,7 +932,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
     }
 
-    // Set root fingerprint on data object
     if (requestedOK && rootFingerprints.length > 0) {
       const rootFingerprint = fingerprintNodes(0, rootFingerprints);
       setFingerprint(data, rootFingerprint);
