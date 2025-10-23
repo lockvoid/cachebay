@@ -445,13 +445,14 @@ describe("core/graph.ts", () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", name: "John" });
       graph.putRecord("User:u2", { __typename: "User", id: "u2", name: "Jane" });
 
+      // With global clock, versions are sequential across all records
       expect(graph.getVersion("User:u1")).toBe(1);
-      expect(graph.getVersion("User:u2")).toBe(1);
+      expect(graph.getVersion("User:u2")).toBe(2);
 
       graph.putRecord("User:u1", { name: "John Updated" });
 
-      expect(graph.getVersion("User:u1")).toBe(2);
-      expect(graph.getVersion("User:u2")).toBe(1);
+      expect(graph.getVersion("User:u1")).toBe(3);
+      expect(graph.getVersion("User:u2")).toBe(2);
     });
 
     it("resets to 0 after removeRecord", () => {
@@ -472,8 +473,9 @@ describe("core/graph.ts", () => {
       graph.removeRecord("User:u1");
       expect(graph.getVersion("User:u1")).toBe(0);
 
+      // With global clock, next write gets next clock value (2), not 1
       graph.putRecord("User:u1", { __typename: "User", id: "u1", name: "Jane" });
-      expect(graph.getVersion("User:u1")).toBe(1);
+      expect(graph.getVersion("User:u1")).toBe(2);
     });
 
     it("increments for null value changes", () => {
@@ -521,8 +523,9 @@ describe("core/graph.ts", () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", name: "Ada" });
       graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Title 1" });
 
+      // With global clock, versions are sequential
       expect(graph.getVersion("User:u1")).toBe(1);
-      expect(graph.getVersion("Post:p1")).toBe(1);
+      expect(graph.getVersion("Post:p1")).toBe(2);
 
       graph.clear();
 

@@ -157,6 +157,7 @@ export const createGraph = (options: GraphOptions = {}) => {
   const pendingChanges = new Set<string>();
 
   let isFlushing = false;
+  let versionClock = 0;
 
   for (const name in options.interfaces) {
     const implementors = options.interfaces[name];
@@ -211,10 +212,10 @@ export const createGraph = (options: GraphOptions = {}) => {
       return;
     }
 
-    const nextVersion = (recordVersionStore.get(recordId) || 0) + 1;
+    versionClock++;
 
     recordStore.set(recordId, currentSnapshot);
-    recordVersionStore.set(recordId, nextVersion);
+    recordVersionStore.set(recordId, versionClock);
 
     if (recordId === ROOT_ID) {
       for (let i = 0, keys = Object.keys(partialSnapshot); i < keys.length; i++) {
