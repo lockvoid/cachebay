@@ -13,18 +13,14 @@ export type DocumentsDependencies = {
   canonical: CanonicalInstance;
 };
 
-const ENTITY_MISSING = "entity-missing" as const;
-const ROOT_LINK_MISSING = "root-link-missing" as const;
-const FIELD_LINK_MISSING = "field-link-missing" as const;
-const CONNECTION_MISSING = "connection-missing" as const;
-const PAGE_INFO_MISSING = "pageinfo-missing" as const;
-const EDGE_NODE_MISSING = "edge-node-missing" as const;
-const SCALAR_MISSING = "scalar-missing" as const;
-
-/** Symbol for storing fingerprints on materialized objects (non-enumerable) */
-const FINGERPRINT_KEY = "__fp" as const;
-
-/** WeakMap for storing fingerprints externally (avoids Object.defineProperty overhead) */
+export const ENTITY_MISSING = "entity-missing" as const;
+export const ROOT_LINK_MISSING = "root-link-missing" as const;
+export const FIELD_LINK_MISSING = "field-link-missing" as const;
+export const CONNECTION_MISSING = "connection-missing" as const;
+export const PAGE_INFO_MISSING = "pageinfo-missing" as const;
+export const EDGE_NODE_MISSING = "edge-node-missing" as const;
+export const SCALAR_MISSING = "scalar-missing" as const;
+export const FINGERPRINT_KEY = "__version" as const;
 
 export type Miss =
   | { kind: typeof ENTITY_MISSING; at: string; id: string }
@@ -46,7 +42,6 @@ export type MaterializeDocumentOptions = {
 export type MaterializeDocumentResult = {
   data: any;
   dependencies: Set<string>;
-  fingerprint: number;
   source: "canonical" | "strict" | "none";
   ok: { strict: boolean; canonical: boolean; miss?: Miss[] };
 };
@@ -506,58 +501,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
     }
 
-    // Note: We don't call markResultsDirtyForTouched here anymore.
-    // The graph's onChange callback (set up in client.ts) will call
-    // documents._markDirty with only the records that actually changed.
-    // This prevents false cache invalidation when data is identical.
-  };
-
-  // Types expected to exist in your environment:
-  // - DocumentNode, CachePlan, PlanField, MaterializeDocumentResult, MaterializeDocumentOptions
-  // - ROOT_ID, planner.getPlan(document)
-  // - graph.flush(), graph.getRecord(id), graph.getVersion(id), graph.getImplementers(iface)
-  // - buildFieldKey(field, vars), buildConnectionKey(field, parentId, vars), buildConnectionCanonicalKey(field, parentId, vars)
-
-  const ENTITY_MISSING = "entity-missing" as const;
-  const ROOT_LINK_MISSING = "root-link-missing" as const;
-  const FIELD_LINK_MISSING = "field-link-missing" as const;
-  const CONNECTION_MISSING = "connection-missing" as const;
-  const PAGE_INFO_MISSING = "pageinfo-missing" as const;
-  const EDGE_NODE_MISSING = "edge-node-missing" as const;
-  const SCALAR_MISSING = "scalar-missing" as const;
-
-  type Miss =
-    | { kind: typeof ENTITY_MISSING; at: string; id: string }
-    | { kind: typeof ROOT_LINK_MISSING; at: string; fieldKey: string }
-    | { kind: typeof FIELD_LINK_MISSING; at: string; parentId: string; fieldKey: string }
-    | {
-      kind: typeof CONNECTION_MISSING;
-      at: string;
-      mode: "strict" | "canonical";
-      parentId: string;
-      canonicalKey: string;
-      strictKey: string;
-      hasCanonical: boolean;
-      hasStrict: boolean;
-    }
-    | { kind: typeof PAGE_INFO_MISSING; at: string; pageId: string }
-    | { kind: typeof EDGE_NODE_MISSING; at: string; edgeId: string }
-    | { kind: typeof SCALAR_MISSING; at: string; parentId: string; fieldKey: string };
-
-  type MaterializeDocumentOptions = {
-    document: DocumentNode | CachePlan;
-    variables?: Record<string, any>;
-    canonical?: boolean;
-    /** When provided, read the plan.root selection over this entity id instead of ROOT */
-    entityId?: string;
-  };
-
-  type MaterializeDocumentResult = {
-    data: any;
-    dependencies: Set<string>;
-    fingerprint: number;
-    source: "canonical" | "strict" | "none";
-    ok: { strict: boolean; canonical: boolean; miss?: Miss[] };
   };
 
   const materializeDocument = (opts: MaterializeDocumentOptions): MaterializeDocumentResult => {
@@ -608,7 +551,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     // ---- Fingerprinting helper ------------------------------------------------------
 
     /**
-     * Set fingerprint directly on object (fastest approach - simple property assignment).
+     * Set version/fingerprint on object (direct property assignment - fastest).
      * Only sets if fingerprinting is enabled.
      */
     const setFingerprint = (obj: any, fp: number): void => {
@@ -617,7 +560,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     };
 
     /**
-     * Get fingerprint from object (direct property access).
+     * Get version/fingerprint from object (direct property access).
      */
     const getFingerprint = (obj: any): number | undefined => {
       if (!fingerprint) return undefined;
@@ -1042,15 +985,16 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
     }
 
-    const rootFingerprint = rootFingerprints.length > 0
-      ? fingerprintNodes(0, rootFingerprints)
-      : 0; // Default fingerprint for empty results
+    // Set root fingerprint on data object
+    if (requestedOK && rootFingerprints.length > 0) {
+      const rootFingerprint = fingerprintNodes(0, rootFingerprints);
+      setFingerprint(data, rootFingerprint);
+    }
 
     if (!requestedOK) {
       return {
         data: undefined,
         dependencies,
-        fingerprint: 0, // No data = no fingerprint
         source: "none",
         ok: { strict: strictOK, canonical: canonicalOK, miss: __DEV__ ? misses : undefined },
       };
@@ -1059,11 +1003,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     return {
       data,
       dependencies,
-      fingerprint: rootFingerprint,
       source: canonical ? "canonical" : "strict",
       ok: { strict: strictOK, canonical: canonicalOK, miss: __DEV__ ? misses : undefined },
-      /** Get fingerprint from any materialized object */
-      getFingerprint,
     };
   };
 
