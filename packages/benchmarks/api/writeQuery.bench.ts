@@ -1,93 +1,72 @@
-// perf/writeQuery-vs-apollo.bench.ts
 import { bench, group, run, summary } from "mitata";
-
-// ---- cachebay ----
 import { createCachebay as createCachebayClient } from "../../cachebay/src/core/client";
-
-// ---- apollo ----
 import { InMemoryCache } from "@apollo/client/cache";
 import { relayStylePagination } from "@apollo/client/utilities";
-
-// ---- relay ----
 import { Environment, Network, RecordSource, Store, createOperationDescriptor } from "relay-runtime";
 import type { ConcreteRequest } from "relay-runtime";
 import RelayWriteQuery from "../src/__generated__/relayWriteQueryDefRelayWriteQuery.graphql";
-
-// ---- shared ----
 import { makeResponse, buildPages, CACHEBAY_QUERY, APOLLO_QUERY } from "./utils";
 
-// sink to force result consumption
 let __sink = 0;
-const sinkWrite = () => { __sink ^= 1; };
 
-// -----------------------------------------------------------------------------
-// Rigs
-// -----------------------------------------------------------------------------
-function createCachebay() {
+const sink = () => {
+  __sink ^= 1;
+};
+
+const createCachebay = () => {
   return createCachebayClient({
     transport: {
-      http: async () => ({ data: {} }), // dummy transport for benchmarks
-    },
-    keys: {
-      Query: () => "Query",
-      User: (o: any) => o.id ?? null,
-      Post: (o: any) => o.id ?? null,
-      Comment: (o: any) => o.id ?? null,
+      http: async () => ({ data: {} }),
     },
   });
 }
 
-function createApolloCache() {
+const createApolloCache = () => {
   return new InMemoryCache({
-    // parity with normalize benches (disables apollo's result memo)
     resultCaching: false,
+
     typePolicies: {
       Query: {
         fields: {
-          users: relayStylePagination(), // default relay merge
+          users: relayStylePagination(),
         },
       },
       User: {
         keyFields: ["id"],
+
         fields: {
           posts: relayStylePagination(),
         },
       },
       Post: {
         keyFields: ["id"],
+
         fields: {
           comments: relayStylePagination(),
         },
       },
-      Comment: { keyFields: ["id"] },
+      Comment: {
+        keyFields: ["id"],
+      },
     },
   });
 }
 
-function createRelayEnvironment() {
-  return new Environment({
-    network: Network.create(() => Promise.resolve({ data: {} })),
-    store: new Store(new RecordSource()),
-  });
+const createRelayEnvironment = () => {
+  return new Environment({ network: Network.create(() => Promise.resolve({ data: {} })), store: new Store(new RecordSource()), });
 }
 
-// -----------------------------------------------------------------------------
-// Shared data
-// -----------------------------------------------------------------------------
-const USERS_TOTAL = 1000;
-const PAGE_SIZE = 10;
-const allUsers = Object.freeze(makeResponse({ users: USERS_TOTAL, posts: 5, comments: 3 }));
-const pages = buildPages(allUsers, PAGE_SIZE);
-const label = `${USERS_TOTAL} users (${pages.length} pages of ${PAGE_SIZE})`;
-
-// -----------------------------------------------------------------------------
-// Paginated writes
-// -----------------------------------------------------------------------------
 summary(() => {
-  group("writeQuery – Paginated (COLD)", () => {
+  const TOTAL_USERS = 1000;
+  const USERS_PAGE_SIZE = 10;
+  const pages = buildPages(makeResponse({ users: TOTAL_USERS, posts: 5, comments: 3 }), USERS_PAGE_SIZE);
 
-    // Cachebay: COLD — new instance per iteration, write ALL pages
-    bench(`cachebay.writeQuery:cold(${label})`, function* () {
+  const getLabel = () => {
+    return `${TOTAL_USERS} users (${pages.length} pages of ${USERS_PAGE_SIZE})`;
+  };
+
+  group("writeQuery – Paginated (COLD)", () => {
+    bench(`cachebay.writeQuery:cold(${getLabel()})`, function* () {
       yield {
         [0]() {
           const cachebay = createCachebay();
@@ -98,52 +77,43 @@ summary(() => {
         },
         bench(cache) {
           for (let i = 0; i < pages.length; i++) {
-            const p = pages[i];
-            cache.writeQuery({
-              query: CACHEBAY_QUERY,
-              variables: p.vars,
-              data: p.data,
-            });
+            const page = pages[i];
+
+            cache.writeQuery({ query: CACHEBAY_QUERY, variables: page.variables, data: page.data });
           }
-          sinkWrite();
+          sink();
         },
       };
     });
 
-    // Apollo: COLD — new cache per iteration, write ALL pages
-    bench(`apollo.writeQuery:cold(${label})`, function* () {
+    bench(`apollo.writeQuery:cold(${getLabel()})`, function* () {
       yield {
         [0]() {
           return createApolloCache();
         },
         bench(apollo) {
           for (let i = 0; i < pages.length; i++) {
-            const p = pages[i];
-            apollo.writeQuery({
-              broadcast: false,
-              query: APOLLO_QUERY,
-              variables: p.vars,
-              data: p.data,
-            });
+            const page = pages[i];
+
+            apollo.writeQuery({ broadcast: false, query: APOLLO_QUERY, variables: page.variables, data: page.data });
           }
-          sinkWrite();
+          sink();
         },
       };
     });
 
-    // Relay: COLD — new environment per iteration, write ALL pages
-    bench(`relay.commitPayload:cold(${label})`, function* () {
+    bench(`relay.commitPayload:cold(${getLabel()})`, function* () {
       yield {
         [0]() {
           return createRelayEnvironment();
         },
         bench(relay) {
           for (let i = 0; i < pages.length; i++) {
-            const p = pages[i];
-            const operation = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, p.vars);
-            relay.commitPayload(operation, p.data);
+            const page = pages[i];
+
+            relay.commitPayload(createOperationDescriptor(RelayWriteQuery as ConcreteRequest, page.variables), page.data);
           }
-          sinkWrite();
+          sink();
         },
       };
     });
@@ -151,131 +121,111 @@ summary(() => {
 });
 
 summary(() => {
+  const TOTAL_USERS = 1000;
+  const USERS_PAGE_SIZE = 10;
+  const pages = buildPages(makeResponse({ users: TOTAL_USERS, posts: 5, comments: 3 }), USERS_PAGE_SIZE);
+
+  const getLabel = () => {
+    return `${TOTAL_USERS} users (${pages.length} pages of ${USERS_PAGE_SIZE})`;
+  };
+
   group("writeQuery – Paginated (HOT)", () => {
-    // Cachebay: HOT — pre-seeded, write ALL pages again
-    const cache1 = createCachebay();
+    const cachebay = createCachebay();
+
     for (let i = 0; i < pages.length; i++) {
-      const p = pages[i];
-      cache1.writeQuery({
-        query: CACHEBAY_QUERY,
-        variables: p.vars,
-        data: p.data,
-      });
+      const page = pages[i];
+
+      cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: page.variables, data: page.data });
     }
 
-    bench(`cachebay.writeQuery:hot(${label})`, () => {
+    bench(`cachebay.writeQuery:hot(${getLabel()})`, () => {
       for (let i = 0; i < pages.length; i++) {
-        const p = pages[i];
-        cache1.writeQuery({
-          query: CACHEBAY_QUERY,
-          variables: p.vars,
-          data: p.data,
-        });
+        const page = pages[i];
+
+        cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: page.variables, data: page.data });
       }
-      sinkWrite();
+      sink();
     });
 
-    // Apollo: HOT — pre-seeded, write ALL pages again
-    const apollo1 = createApolloCache();
+    const apollo = createApolloCache();
+
     for (let i = 0; i < pages.length; i++) {
-      const p = pages[i];
-      apollo1.writeQuery({
-        broadcast: false,
-        query: APOLLO_QUERY,
-        variables: p.vars,
-        data: p.data,
-      });
+      const page = pages[i];
+
+      apollo.writeQuery({ broadcast: false, query: APOLLO_QUERY, variables: page.variables, data: page.data });
     }
 
-    bench(`apollo.writeQuery:hot(${label})`, () => {
+    bench(`apollo.writeQuery:hot(${getLabel()})`, () => {
       for (let i = 0; i < pages.length; i++) {
-        const p = pages[i];
-        apollo1.writeQuery({
-          broadcast: false,
-          query: APOLLO_QUERY,
-          variables: p.vars,
-          data: p.data,
-        });
+        const page = pages[i];
+
+        apollo.writeQuery({ broadcast: false, query: APOLLO_QUERY, variables: page.variables, data: page.data });
       }
-      sinkWrite();
+      sink();
     });
 
-    // Relay: HOT — pre-seeded, write ALL pages again
-    const relay1 = createRelayEnvironment();
+    const relay = createRelayEnvironment();
+
     for (let i = 0; i < pages.length; i++) {
-      const p = pages[i];
-      const operation = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, p.vars);
-      relay1.commitPayload(operation, p.data);
+      const page = pages[i];
+
+      relay.commitPayload(createOperationDescriptor(RelayWriteQuery as ConcreteRequest, page.variables), page.data);
     }
 
-    bench(`relay.commitPayload:hot(${label})`, () => {
+    bench(`relay.commitPayload:hot(${getLabel()})`, () => {
       for (let i = 0; i < pages.length; i++) {
-        const p = pages[i];
-        const operation = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, p.vars);
-        relay1.commitPayload(operation, p.data);
+        const page = pages[i];
+
+        relay.commitPayload(createOperationDescriptor(RelayWriteQuery as ConcreteRequest, page.variables), page.data);
       }
-      sinkWrite();
+      sink();
     });
   });
 });
 
-// -----------------------------------------------------------------------------
-// Single-page writes
-// -----------------------------------------------------------------------------
-const USERS_PER_PAGE = 10;
-const singlePage = Object.freeze(makeResponse({ users: USERS_PER_PAGE, posts: 5, comments: 3 }));
-
 summary(() => {
-  group("writeQuery – Single page (COLD)", () => {
+  const USERS_PAGE = 10;
+  const LABEL = `${USERS_PAGE} users`;
+  const singlePage = makeResponse({ users: USERS_PAGE, posts: 5, comments: 3 });
 
-    // Cachebay: write single page (cold)
-    bench(`cachebay.writeQuery:single-page:cold(${USERS_PER_PAGE} users)`, function* () {
+  group("writeQuery – Single page (COLD)", () => {
+    bench(`cachebay.writeQuery:single-page:cold(${LABEL})`, function* () {
       yield {
         [0]() {
           const cachebay = createCachebay();
-          // Warm up: compile the plan
+
           cachebay.__internals.planner.getPlan(CACHEBAY_QUERY);
+
           return cachebay;
         },
         bench(cache) {
-          cache.writeQuery({
-            query: CACHEBAY_QUERY,
-            variables: { first: USERS_PER_PAGE, after: null },
-            data: singlePage,
-          });
-          sinkWrite();
+          cache.writeQuery({ query: CACHEBAY_QUERY, variables: { first: USERS_PAGE, after: null }, data: singlePage });
+
+          sink();
         },
       };
     });
 
-    // Apollo: write single page (cold)
-    bench(`apollo.writeQuery:single-page:cold(${USERS_PER_PAGE} users)`, function* () {
+    bench(`apollo.writeQuery:single-page:cold(${LABEL})`, function* () {
       yield {
         [0]() {
           return createApolloCache();
         },
         bench(apollo) {
-          apollo.writeQuery({
-            broadcast: false,
-            query: APOLLO_QUERY,
-            variables: { first: USERS_PER_PAGE, after: null },
-            data: singlePage,
-          });
-          sinkWrite();
+          apollo.writeQuery({ broadcast: false, query: APOLLO_QUERY, variables: { first: USERS_PAGE, after: null }, data: singlePage });
+          sink();
         },
       };
     });
 
-    // Relay: write single page (cold)
-    bench(`relay.commitPayload:single-page:cold(${USERS_PER_PAGE} users)`, function* () {
+    bench(`relay.commitPayload:single-page:cold(${LABEL})`, function* () {
       yield {
         [0]() {
           return createRelayEnvironment();
         },
         bench(relay) {
-          const operation = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, { first: USERS_PER_PAGE, after: null });
-          relay.commitPayload(operation, singlePage);
-          sinkWrite();
+          relay.commitPayload(createOperationDescriptor(RelayWriteQuery as ConcreteRequest, { first: USERS_PAGE, after: null }), singlePage);
+          sink();
         },
       };
     });
@@ -283,58 +233,41 @@ summary(() => {
 });
 
 summary(() => {
+  const USERS_PAGE = 10;
+  const LABEL = `${USERS_PAGE} users`;
+  const singlePage = makeResponse({ users: USERS_PAGE, posts: 5, comments: 3 });
+
   group("writeQuery – Single page (HOT)", () => {
-    // Cachebay: write single page (hot)
-    const cache2 = createCachebay();
-    cache2.writeQuery({
-      query: CACHEBAY_QUERY,
-      variables: { first: USERS_PER_PAGE, after: null },
-      data: singlePage,
+    const cachebay = createCachebay();
+
+    cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: { first: USERS_PAGE, after: null }, data: singlePage });
+
+    bench(`cachebay.writeQuery:single-page:hot(${LABEL})`, () => {
+      cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: { first: USERS_PAGE, after: null }, data: singlePage });
+      sink();
     });
 
-    bench(`cachebay.writeQuery:single-page:hot(${USERS_PER_PAGE} users)`, () => {
-      cache2.writeQuery({
-        query: CACHEBAY_QUERY,
-        variables: { first: USERS_PER_PAGE, after: null },
-        data: singlePage,
-      });
-      sinkWrite();
-    });
+    const apollo = createApolloCache();
 
-    // Apollo: write single page (hot)
-    const apollo2 = createApolloCache();
-    apollo2.writeQuery({
-      broadcast: false,
-      query: APOLLO_QUERY,
-      variables: { first: USERS_PER_PAGE, after: null },
-      data: singlePage,
-    });
+    apollo.writeQuery({ broadcast: false, query: APOLLO_QUERY, variables: { first: USERS_PAGE, after: null }, data: singlePage });
 
-    bench(`apollo.writeQuery:single-page:hot(${USERS_PER_PAGE} users)`, () => {
-      apollo2.writeQuery({
-        broadcast: false,
-        query: APOLLO_QUERY,
-        variables: { first: USERS_PER_PAGE, after: null },
-        data: singlePage,
-      });
-      sinkWrite();
+    bench(`apollo.writeQuery:single-page:hot(${LABEL})`, () => {
+      apollo.writeQuery({ broadcast: false, query: APOLLO_QUERY, variables: { first: USERS_PAGE, after: null }, data: singlePage });
+      sink();
     });
 
     // Relay: write single page (hot)
-    const relay2 = createRelayEnvironment();
-    const warmOp2 = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, { first: USERS_PER_PAGE, after: null });
-    relay2.commitPayload(warmOp2, singlePage);
+    const relay = createRelayEnvironment();
 
-    bench(`relay.commitPayload:single-page:hot(${USERS_PER_PAGE} users)`, () => {
-      const operation = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, { first: USERS_PER_PAGE, after: null });
-      relay2.commitPayload(operation, singlePage);
-      sinkWrite();
+    relay.commitPayload(createOperationDescriptor(RelayWriteQuery as ConcreteRequest, { first: USERS_PAGE, after: null }), singlePage);
+
+    bench(`relay.commitPayload:single-page:hot(${LABEL})`, () => {
+      relay.commitPayload(createOperationDescriptor(RelayWriteQuery as ConcreteRequest, { first: USERS_PAGE, after: null }), singlePage);
+      sink();
     });
   });
 });
 
-// keep the sink visible so V8 can't fully DCE it
 (globalThis as any).__bench_sink = __sink;
 
-// Run benchmarks
 await run();

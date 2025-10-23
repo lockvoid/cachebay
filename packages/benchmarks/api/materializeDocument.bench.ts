@@ -77,7 +77,7 @@ summary(() => {
           for (let i = 0; i < pages.length; i++) {
             cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
 
-            cachebay.__internals.documents.materializeDocument({ document: CACHEBAY_QUERY, variables: pages[i].variables, canonical: true });
+            cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true });
           }
 
           return cachebay;
@@ -97,7 +97,7 @@ summary(() => {
           for (let i = 0; i < pages.length; i++) {
             cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
 
-            cachebay.__internals.documents.materializeDocument({ document: CACHEBAY_QUERY, variables: pages[i].variables, canonical: true, fingerprint: true });
+            cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true });
           }
 
           return cachebay;

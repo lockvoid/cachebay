@@ -9,6 +9,7 @@ import {
   buildConnectionKey,
   buildConnectionCanonicalKey,
   recycleSnapshots,
+  getQueryCanonicalKeys,
 } from "@/src/core/utils";
 import { operations, createTestPlan } from "@/test/helpers";
 
@@ -743,6 +744,59 @@ describe("Utils", () => {
         expect(result).toBe(nextData);
         expect(result.user.posts.edges[1]).toBe(prevPost2); // Post2 recycled!
       });
+    });
+  });
+
+  describe("getQueryCanonicalKeys", () => {
+    it("returns empty array for non-connection queries", () => {
+      const plan = createTestPlan(operations.USER_QUERY);
+      const keys = getQueryCanonicalKeys(plan, { id: "1" });
+      expect(keys).toEqual([]);
+    });
+
+    it("returns canonical key for connection query", () => {
+      const plan = createTestPlan(operations.POSTS_QUERY);
+      const keys = getQueryCanonicalKeys(plan, { category: "tech", first: 10, after: null });
+
+      expect(keys).toHaveLength(1);
+      expect(keys[0]).toBe('@connection.posts({"category":"tech"})');
+    });
+
+    it("ignores pagination args in canonical key", () => {
+      const plan = createTestPlan(operations.POSTS_QUERY);
+
+      const keys1 = getQueryCanonicalKeys(plan, { category: "tech", first: 10, after: null });
+      const keys2 = getQueryCanonicalKeys(plan, { category: "tech", first: 10, after: "cursor10" });
+
+      expect(keys1).toEqual(keys2);
+    });
+
+    it("returns different keys for different filter values", () => {
+      const plan = createTestPlan(operations.POSTS_QUERY);
+
+      const keys1 = getQueryCanonicalKeys(plan, { category: "tech", first: 10, after: null });
+      const keys2 = getQueryCanonicalKeys(plan, { category: "news", first: 10, after: null });
+
+      expect(keys1).not.toEqual(keys2);
+      expect(keys1[0]).toBe('@connection.posts({"category":"tech"})');
+      expect(keys2[0]).toBe('@connection.posts({"category":"news"})');
+    });
+
+    it("handles multiple connections in same query", () => {
+      const plan = createTestPlan(operations.MULTI_CONNECTION_QUERY);
+      const keys = getQueryCanonicalKeys(plan, { category: "tech", first: 10 });
+
+      expect(keys).toHaveLength(2);
+      expect(keys).toContain('@connection.posts({"category":"tech"})');
+      expect(keys).toContain('@connection.users({})');
+    });
+
+    it("handles connection with no filter args", () => {
+      const plan = createTestPlan(operations.USERS_QUERY);
+      const keys = getQueryCanonicalKeys(plan, { first: 10, after: null });
+
+      expect(keys).toHaveLength(1);
+      expect(keys[0]).toBe('@connection.users({})');
     });
   });
 });

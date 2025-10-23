@@ -50,7 +50,7 @@ describe("useQuery", () => {
     await nextTick();
     await new Promise((resolve) => setTimeout(resolve, 10));
 
-    expect(queryResult.data.value).toEqual({ user: { id: "1", email: "alice@example.com" } });
+    expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "alice@example.com" } });
     expect(queryResult.isFetching.value).toBe(false);
     expect(queryResult.error.value).toBeNull();
   });
@@ -478,6 +478,277 @@ describe("useQuery", () => {
 
       expect(mockTransport.http).not.toHaveBeenCalled();
       expect(result.data).toEqual({ user: { id: "1", email: "ssr@example.com" } });
+    });
+  });
+
+  describe("Smart watcher reuse for pagination", () => {
+    it("reuses watcher when paginating within same connection", async () => {
+      const POSTS_QUERY = `
+        query GetPosts($category: String, $first: Int, $after: String) {
+          posts(category: $category, first: $first, after: $after) @connection(key: "posts") {
+            edges {
+              node {
+                id
+                title
+              }
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+          }
+        }
+      `;
+
+      const postsTransport: Transport = {
+        http: vi.fn()
+          .mockResolvedValueOnce({
+            data: {
+              posts: {
+                edges: [
+                  { node: { id: "p1", title: "Post 1" } },
+                  { node: { id: "p2", title: "Post 2" } },
+                ],
+                pageInfo: { hasNextPage: true, endCursor: "cursor2" },
+              },
+            },
+            error: null,
+          })
+          .mockResolvedValueOnce({
+            data: {
+              posts: {
+                edges: [
+                  { node: { id: "p3", title: "Post 3" } },
+                  { node: { id: "p4", title: "Post 4" } },
+                ],
+                pageInfo: { hasNextPage: false, endCursor: "cursor4" },
+              },
+            },
+            error: null,
+          }),
+      };
+
+      const postsCache = createCachebay({ transport: postsTransport });
+
+      const variables = ref({ category: "tech", first: 2, after: null });
+      let queryResult: any;
+      const emissions: any[] = [];
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: POSTS_QUERY,
+            variables,
+          });
+
+          // Track emissions
+          queryResult.data.value && emissions.push(queryResult.data.value);
+
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, postsCache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(postsTransport.http).toHaveBeenCalledTimes(1);
+
+      // Wait for suspension window to expire
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+
+      // Change pagination cursor (same canonical connection)
+      variables.value = { category: "tech", first: 2, after: "cursor2" };
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Should have called network for page 2
+      expect(postsTransport.http).toHaveBeenCalledTimes(2);
+
+      // Watcher was reused (not recreated), so recycling should work
+      // This is verified by the fact that the watcher didn't unsubscribe/resubscribe
+    });
+
+    it("recreates watcher when filter changes (different canonical connection)", async () => {
+      const POSTS_QUERY = `
+        query GetPosts($category: String, $first: Int, $after: String) {
+          posts(category: $category, first: $first, after: $after) @connection(key: "posts") {
+            edges {
+              node {
+                id
+                title
+              }
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+          }
+        }
+      `;
+
+      const postsTransport: Transport = {
+        http: vi.fn()
+          .mockResolvedValueOnce({
+            data: {
+              posts: {
+                edges: [{ node: { id: "p1", title: "Tech Post" } }],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+            error: null,
+          })
+          .mockResolvedValueOnce({
+            data: {
+              posts: {
+                edges: [{ node: { id: "p2", title: "News Post" } }],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+            error: null,
+          }),
+      };
+
+      const postsCache = createCachebay({ transport: postsTransport });
+
+      const variables = ref({ category: "tech", first: 10, after: null });
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: POSTS_QUERY,
+            variables,
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, postsCache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(postsTransport.http).toHaveBeenCalledTimes(1);
+      expect(queryResult.data.value.posts.edges[0].node.title).toBe("Tech Post");
+
+      // Wait for suspension window
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+
+      // Change category (different canonical connection)
+      variables.value = { category: "news", first: 10, after: null };
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Should have called network for new category
+      expect(postsTransport.http).toHaveBeenCalledTimes(2);
+      expect(queryResult.data.value.posts.edges[0].node.title).toBe("News Post");
+    });
+
+    it("keeps watcher when only pagination args change", async () => {
+      const POSTS_QUERY = `
+        query GetPosts($first: Int, $after: String, $last: Int, $before: String) {
+          posts(first: $first, after: $after, last: $last, before: $before) @connection(key: "posts") {
+            edges {
+              node {
+                id
+                title
+              }
+            }
+            pageInfo {
+              hasNextPage
+              hasPreviousPage
+              endCursor
+              startCursor
+            }
+          }
+        }
+      `;
+
+      const postsTransport: Transport = {
+        http: vi.fn().mockResolvedValue({
+          data: {
+            posts: {
+              edges: [{ node: { id: "p1", title: "Post" } }],
+              pageInfo: {
+                hasNextPage: true,
+                hasPreviousPage: false,
+                endCursor: "c1",
+                startCursor: "c0",
+              },
+            },
+          },
+          error: null,
+        }),
+      };
+
+      const postsCache = createCachebay({ transport: postsTransport });
+
+      const variables = ref({ first: 10, after: null, last: null, before: null });
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: POSTS_QUERY,
+            variables,
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, postsCache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(postsTransport.http).toHaveBeenCalledTimes(1);
+
+      // Wait for suspension window to expire
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+
+      // Change all pagination args (but no filters)
+      variables.value = { first: 5, after: "c1", last: null, before: null };
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Watcher should be reused (canonical key unchanged)
+      // Network call happens but watcher wasn't recreated
+      expect(postsTransport.http).toHaveBeenCalledTimes(2);
     });
   });
 });

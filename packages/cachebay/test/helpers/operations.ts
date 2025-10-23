@@ -740,3 +740,39 @@ export const POST_COMMENTS_QUERY = gql`
     }
   }
 `;
+
+export const MULTI_CONNECTION_QUERY = `
+  ${PAGE_INFO_FRAGMENT}
+  ${POST_FRAGMENT}
+  ${USER_FRAGMENT}
+
+  query MultiConnection($category: String, $first: Int, $after: String) {
+    posts(category: $category, first: $first, after: $after) @connection(filters: ["category"]) {
+      pageInfo {
+        ...PageInfoFields
+      }
+
+      edges {
+        cursor
+
+        node {
+          ...PostFields
+        }
+      }
+    }
+
+    users(first: $first, after: $after) @connection(filters: []) {
+      pageInfo {
+        ...PageInfoFields
+      }
+
+      edges {
+        cursor
+
+        node {
+          ...UserFields
+        }
+      }
+    }
+  }
+`;

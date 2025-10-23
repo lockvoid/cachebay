@@ -3,6 +3,8 @@ import type { DocumentsInstance } from "./documents";
 import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
 import { CacheMissError } from "./errors";
+import { recycleSnapshots, buildConnectionCanonicalKey, getQueryCanonicalKeys } from "./utils";
+import { ROOT_ID } from "./constants";
 import type { DocumentNode } from "graphql";
 
 export type QueriesDependencies = {
@@ -12,7 +14,7 @@ export type QueriesDependencies = {
 };
 
 export type ReadQueryOptions = {
-  query: DocumentNode;
+  query: DocumentNode | string;
   variables?: Record<string, any>;
   /** use canonical fill (default: true) */
   canonical?: boolean;
@@ -20,21 +22,20 @@ export type ReadQueryOptions = {
 
 export type ReadQueryResult<T = any> = {
   data: T | undefined;
-  deps: string[];
-  /** 'strict' | 'canonical' | 'none' */
+  dependencies: Set<string>;
   source: "strict" | "canonical" | "none";
   ok: { strict: boolean; canonical: boolean };
 };
 
 export type WriteQueryOptions = {
-  query: DocumentNode;
+  query: DocumentNode | string;
   variables?: Record<string, any>;
   data: any;
 };
 
 
 export type WatchQueryOptions = {
-  query: DocumentNode;
+  query: DocumentNode | string;
   variables?: Record<string, any>;
   canonical?: boolean;
   onData: (data: any) => void;
@@ -53,7 +54,7 @@ export type QueriesInstance = ReturnType<typeof createQueries>;
 export const createQueries = ({ documents }: QueriesDependencies) => {
   // --- Watcher state & indices ---
   type WatcherState = {
-    query: DocumentNode;
+    query: DocumentNode | string;
     variables: Record<string, any>;
     canonical: boolean;
     onData: (data: any) => void;
@@ -105,19 +106,21 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
           document: w.query,
           variables: w.variables,
           canonical: w.canonical,
-        }) as any;
+          fingerprint: true,
+        });
 
         // Always refresh deps so missing -> fulfilled transitions trigger
-        updateWatcherDeps(k, result?.deps || []);
+        updateWatcherDependencies(k, result.dependencies);
 
-        if (!result || result.source === "none") {
+        if (result.source === "none") {
           continue;
         }
 
-        if (result.data !== w.lastData) {
-          w.lastData = result.data;
+        const recycled = recycleSnapshots(w.lastData, result.data);
+        if (recycled !== w.lastData) {
+          w.lastData = recycled;
           try {
-            w.onData(result.data);
+            w.onData(recycled);
           } catch (e) {
             w.onError?.(e as Error);
           }
@@ -126,7 +129,7 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
     });
   };
 
-  const enqueueTouched = (touched?: Set<string> | string[]) => {
+  const notifyWatchers = (touched?: Set<string> | string[]) => {
     if (!touched) return;
     const arr = Array.isArray(touched) ? touched : Array.from(touched);
     for (const id of arr) pendingTouched.add(id);
@@ -134,12 +137,12 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
   };
 
   // --- Dep index maintenance ---
-  const updateWatcherDeps = (watcherId: number, nextDepsArr: string[]) => {
+  const updateWatcherDependencies = (watcherId: number, nextDeps: Set<string>) => {
     const watcher = watchers.get(watcherId);
     if (!watcher) return;
 
     const old = watcher.deps;
-    const next = new Set(nextDepsArr);
+    const next = nextDeps;
 
     // fast path
     if (old.size === next.size) {
@@ -182,22 +185,14 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
       document: query,
       variables,
       canonical,
-    }) as any;
-
-    if (result && result.source !== "none") {
-      return {
-        data: result.data as T,
-        deps: result.deps || [],
-        source: result.source,
-        ok: result.ok ?? { strict: true, canonical: true },
-      };
-    }
+      fingerprint: false,
+    });
 
     return {
-      data: undefined,
-      deps: result?.deps || [],
-      source: "none",
-      ok: result?.ok ?? { strict: false, canonical: false },
+      data: result.source !== "none" ? (result.data as T) : undefined,
+      dependencies: result.dependencies,
+      source: result.source,
+      ok: result.ok,
     };
   };
 
@@ -238,13 +233,14 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
       document: query,
       variables,
       canonical,
-    }) as any;
+      fingerprint: true,
+    });
 
     // Track deps even if initial data is missing
-    updateWatcherDeps(watcherId, initial?.deps || []);
+    updateWatcherDependencies(watcherId, initial.dependencies);
 
-    if (initial && initial.source !== "none") {
-      watcher.lastData = initial.data;
+    if (initial.source !== "none") {
+      watcher.lastData = recycleSnapshots(undefined, initial.data);
       if (immediate) {
         try {
           onData(initial.data);
@@ -278,15 +274,17 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
           document: w.query,
           variables: w.variables,
           canonical: w.canonical,
-        }) as any;
+          fingerprint: true,
+        });
 
-        updateWatcherDeps(watcherId, res?.deps || []);
+        updateWatcherDependencies(watcherId, res.dependencies);
 
-        if (res && res.source !== "none") {
-          if (res.data !== w.lastData) {
-            w.lastData = res.data;
+        if (res.source !== "none") {
+          const recycled = recycleSnapshots(w.lastData, res.data);
+          if (recycled !== w.lastData) {
+            w.lastData = recycled;
             try {
-              w.onData(res.data);
+              w.onData(recycled);
             } catch (e) {
               w.onError?.(e as Error);
             }
@@ -304,15 +302,17 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
           document: w.query,
           variables: w.variables,
           canonical: w.canonical,
-        }) as any;
+          fingerprint: true,
+        });
 
-        updateWatcherDeps(watcherId, res?.deps || []);
+        updateWatcherDependencies(watcherId, res.dependencies);
 
-        if (res && res.source !== "none") {
-          if (res.data !== w.lastData) {
-            w.lastData = res.data;
+        if (res.source !== "none") {
+          const recycled = recycleSnapshots(w.lastData, res.data);
+          if (recycled !== w.lastData) {
+            w.lastData = recycled;
             try {
-              w.onData(res.data);
+              w.onData(recycled);
             } catch (e) {
               w.onError?.(e as Error);
             }
@@ -328,7 +328,7 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
     readQuery,
     writeQuery,
     watchQuery,
-    /** Internal utility for integration points that want to notify watchers manually. */
-    _notifyTouched: enqueueTouched,
+    notifyWatchers,
   };
 };
+

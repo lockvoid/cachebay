@@ -276,3 +276,26 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
     return allEqual ? prevData : nextData;
   }
 }
+
+/**
+ * Get canonical keys for all connections in a query
+ * Used to determine if variables change affects the connection identity
+ * Returns empty array for non-connection queries
+ */
+export const getQueryCanonicalKeys = (
+  plan: { rootSelectionMap?: Map<string, PlanField> },
+  variables: Record<string, any>
+): string[] => {
+  const keys: string[] = [];
+
+  if (plan.rootSelectionMap) {
+    for (const field of plan.rootSelectionMap.values()) {
+      if (field.isConnection) {
+        const key = buildConnectionCanonicalKey(field, ROOT_ID, variables);
+        keys.push(key);
+      }
+    }
+  }
+
+  return keys;
+};

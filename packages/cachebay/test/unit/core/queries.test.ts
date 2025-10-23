@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createQueries } from "@/src/core/queries";
+import { createQueries, getQueryCanonicalKeys } from "@/src/core/queries";
 import { createGraph } from "@/src/core/graph";
 import { createPlanner } from "@/src/core/planner";
 import { createDocuments } from "@/src/core/documents";
@@ -26,9 +26,8 @@ describe("queries API", () => {
         Profile: (p: any) => p.id,
       },
       onChange: (touchedIds) => {
-        documents._markDirty(touchedIds);
-        queries._notifyTouched(touchedIds);
-        fragments._notifyTouched(touchedIds);
+        queries.notifyWatchers(touchedIds);
+        fragments.notifyWatchers(touchedIds);
       },
     });
     planner = createPlanner();
@@ -79,7 +78,7 @@ describe("queries API", () => {
           email: "alice@example.com",
         },
       });
-      expect(readResult.deps.length).toBeGreaterThan(0);
+      expect(readResult.dependencies.size).toBeGreaterThan(0);
       expect(readResult.source === "canonical" || readResult.source === "strict").toBe(true);
     });
 
@@ -100,7 +99,7 @@ describe("queries API", () => {
 
       expect(result.data).toBeUndefined();
       // With new materialization, deps should be present so watchers can subscribe.
-      expect(result.deps.length).toBeGreaterThan(0);
+      expect(result.dependencies.size).toBeGreaterThan(0);
       expect(result.source).toBe("none");
       expect(result.ok).toBeDefined();
     });
@@ -439,6 +438,403 @@ describe("queries API", () => {
       expect(emissions).toHaveLength(2);
       expect(emissions[1].user.name).toBe("Alice Updated");
       expect(emissions[1].user.email).toBe("alice.updated@example.com");
+
+      handle.unsubscribe();
+    });
+  });
+
+  describe("recycleSnapshots integration", () => {
+    it("reuses unchanged nested objects when only one field changes", async () => {
+      const QUERY = gql`
+        query GetUserWithProfile($id: ID!) {
+          user(id: $id) {
+            id
+            name
+            profile {
+              id
+              bio
+              avatar
+            }
+          }
+        }
+      `;
+
+      // Initial write
+      queries.writeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        data: {
+          user: {
+            __typename: "User",
+            id: "1",
+            name: "Alice",
+            profile: {
+              __typename: "Profile",
+              id: "p1",
+              bio: "Software Engineer",
+              avatar: "avatar1.jpg",
+            },
+          },
+        },
+      });
+
+      const emissions: any[] = [];
+      const profileRefs: any[] = [];
+
+      const handle = queries.watchQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        onData: (data) => {
+          emissions.push(data);
+          profileRefs.push(data.user.profile);
+        },
+      });
+
+      expect(emissions).toHaveLength(1);
+      expect(profileRefs[0].bio).toBe("Software Engineer");
+
+      // Update only user name (profile unchanged)
+      queries.writeQuery({
+        query: gql`
+          mutation UpdateUserName($id: ID!, $name: String!) {
+            updateUser(id: $id, name: $name) {
+              id
+              name
+            }
+          }
+        `,
+        variables: { id: "1", name: "Alice Updated" },
+        data: {
+          updateUser: {
+            __typename: "User",
+            id: "1",
+            name: "Alice Updated",
+          },
+        },
+      });
+
+      await tick();
+
+      expect(emissions).toHaveLength(2);
+      expect(emissions[1].user.name).toBe("Alice Updated");
+      // Profile object should be recycled (same reference)
+      expect(profileRefs[1]).toBe(profileRefs[0]);
+
+      handle.unsubscribe();
+    });
+
+    it("reuses unchanged array elements when only one element changes", async () => {
+      const QUERY = gql`
+        query GetUserPosts($id: ID!) {
+          user(id: $id) {
+            id
+            posts {
+              id
+              title
+              content
+            }
+          }
+        }
+      `;
+
+      queries.writeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        data: {
+          user: {
+            __typename: "User",
+            id: "1",
+            posts: [
+              { __typename: "Post", id: "p1", title: "Post 1", content: "Content 1" },
+              { __typename: "Post", id: "p2", title: "Post 2", content: "Content 2" },
+              { __typename: "Post", id: "p3", title: "Post 3", content: "Content 3" },
+            ],
+          },
+        },
+      });
+
+      const emissions: any[] = [];
+      const postRefs: any[][] = [];
+
+      const handle = queries.watchQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        onData: (data) => {
+          emissions.push(data);
+          postRefs.push(data.user.posts);
+        },
+      });
+
+      expect(emissions).toHaveLength(1);
+      const initialPost1 = postRefs[0][0];
+      const initialPost2 = postRefs[0][1];
+      const initialPost3 = postRefs[0][2];
+
+      // Update only post 2
+      queries.writeQuery({
+        query: gql`
+          mutation UpdatePost($id: ID!, $title: String!) {
+            updatePost(id: $id, title: $title) {
+              id
+              title
+            }
+          }
+        `,
+        variables: { id: "p2", title: "Post 2 Updated" },
+        data: {
+          updatePost: {
+            __typename: "Post",
+            id: "p2",
+            title: "Post 2 Updated",
+          },
+        },
+      });
+
+      await tick();
+
+      expect(emissions).toHaveLength(2);
+      // Post 1 and Post 3 should be recycled (same references)
+      expect(postRefs[1][0]).toBe(initialPost1);
+      expect(postRefs[1][2]).toBe(initialPost3);
+      // Post 2 should be new reference
+      expect(postRefs[1][1]).not.toBe(initialPost2);
+      expect(postRefs[1][1].title).toBe("Post 2 Updated");
+
+      handle.unsubscribe();
+    });
+
+    it("does not emit when data is structurally identical (no changes)", async () => {
+      const QUERY = gql`
+        query GetUser($id: ID!) {
+          user(id: $id) {
+            id
+            name
+            email
+          }
+        }
+      `;
+
+      queries.writeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        data: {
+          user: {
+            __typename: "User",
+            id: "1",
+            name: "Alice",
+            email: "alice@example.com",
+          },
+        },
+      });
+
+      const emissions: any[] = [];
+
+      const handle = queries.watchQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        onData: (data) => {
+          emissions.push(data);
+        },
+      });
+
+      expect(emissions).toHaveLength(1);
+
+      // Write same data again (should not trigger emission)
+      queries.writeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        data: {
+          user: {
+            __typename: "User",
+            id: "1",
+            name: "Alice",
+            email: "alice@example.com",
+          },
+        },
+      });
+
+      await tick();
+
+      // Should still be 1 emission (no change detected)
+      expect(emissions).toHaveLength(1);
+
+      handle.unsubscribe();
+    });
+
+    it("recycles deeply nested unchanged structures", async () => {
+      const QUERY = gql`
+        query GetUserWithNestedData($id: ID!) {
+          user(id: $id) {
+            id
+            name
+            profile {
+              id
+              bio
+              settings {
+                id
+                theme
+                notifications {
+                  id
+                  email
+                  push
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      queries.writeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        data: {
+          user: {
+            __typename: "User",
+            id: "1",
+            name: "Alice",
+            profile: {
+              __typename: "Profile",
+              id: "p1",
+              bio: "Engineer",
+              settings: {
+                __typename: "Settings",
+                id: "s1",
+                theme: "dark",
+                notifications: {
+                  __typename: "Notifications",
+                  id: "n1",
+                  email: true,
+                  push: false,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const emissions: any[] = [];
+      const settingsRefs: any[] = [];
+      const notificationsRefs: any[] = [];
+
+      const handle = queries.watchQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        onData: (data) => {
+          emissions.push(data);
+          settingsRefs.push(data.user.profile.settings);
+          notificationsRefs.push(data.user.profile.settings.notifications);
+        },
+      });
+
+      expect(emissions).toHaveLength(1);
+
+      // Update only user name (all nested structures unchanged)
+      queries.writeQuery({
+        query: gql`
+          mutation UpdateUserName($id: ID!, $name: String!) {
+            updateUser(id: $id, name: $name) {
+              id
+              name
+            }
+          }
+        `,
+        variables: { id: "1", name: "Alice Updated" },
+        data: {
+          updateUser: {
+            __typename: "User",
+            id: "1",
+            name: "Alice Updated",
+          },
+        },
+      });
+
+      await tick();
+
+      expect(emissions).toHaveLength(2);
+      // All nested structures should be recycled
+      expect(settingsRefs[1]).toBe(settingsRefs[0]);
+      expect(notificationsRefs[1]).toBe(notificationsRefs[0]);
+
+      handle.unsubscribe();
+    });
+
+    it("works correctly with refetch", async () => {
+      const QUERY = gql`
+        query GetUser($id: ID!) {
+          user(id: $id) {
+            id
+            name
+            profile {
+              id
+              bio
+            }
+          }
+        }
+      `;
+
+      queries.writeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        data: {
+          user: {
+            __typename: "User",
+            id: "1",
+            name: "Alice",
+            profile: {
+              __typename: "Profile",
+              id: "p1",
+              bio: "Engineer",
+            },
+          },
+        },
+      });
+
+      const emissions: any[] = [];
+      const profileRefs: any[] = [];
+
+      const handle = queries.watchQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        onData: (data) => {
+          emissions.push(data);
+          profileRefs.push(data.user.profile);
+        },
+      });
+
+      expect(emissions).toHaveLength(1);
+
+      // Refetch (data unchanged)
+      handle.refetch();
+
+      expect(emissions).toHaveLength(1); // No new emission (data identical)
+
+      // Update user name
+      queries.writeQuery({
+        query: gql`
+          mutation UpdateUserName($id: ID!, $name: String!) {
+            updateUser(id: $id, name: $name) {
+              id
+              name
+            }
+          }
+        `,
+        variables: { id: "1", name: "Alice Updated" },
+        data: {
+          updateUser: {
+            __typename: "User",
+            id: "1",
+            name: "Alice Updated",
+          },
+        },
+      });
+
+      // Refetch after update
+      handle.refetch();
+
+      expect(emissions).toHaveLength(2);
+      expect(emissions[1].user.name).toBe("Alice Updated");
+      // Profile should be recycled
+      expect(profileRefs[1]).toBe(profileRefs[0]);
 
       handle.unsubscribe();
     });

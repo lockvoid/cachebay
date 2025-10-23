@@ -66,7 +66,7 @@ summary(() => {
   };
 
   group("normalizeDocument – Paginated (COLD)", () => {
-    bench(`cachebay.writeQuery:cold(${getLabel()})`, function* () {
+    bench(`cachebay.normalizeDocument:cold(${getLabel()})`, function* () {
       yield {
         [0]() {
           const cachebay = createCachebay();
@@ -138,11 +138,11 @@ summary(() => {
       cachebay.__internals.documents.normalizeDocument({ document: CACHEBAY_QUERY, variables: page.variables, data: page.data });
     }
 
-    bench(`cachebay.writeQuery:hot(${getLabel()})`, () => {
+    bench(`cachebay.normalizeDocument:hot(${getLabel()})`, () => {
       for (let i = 0; i < pages.length; i++) {
         const page = pages[i];
 
-        cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: page.variables, data: page.data });
+        cachebay.__internals.documents.normalizeDocument({ document: CACHEBAY_QUERY, variables: page.variables, data: page.data });
       }
       sink();
     });
@@ -236,15 +236,15 @@ summary(() => {
 summary(() => {
   const USERS_PAGE = 10;
   const LABEL = `${USERS_PAGE} users`;
-  const singlePage = Object.freeze(makeResponse({ users: USERS_PAGE, posts: 5, comments: 3 }));
+  const singlePage = makeResponse({ users: USERS_PAGE, posts: 5, comments: 3 });
 
-  group("writeQuery – Single page (HOT)", () => {
+  group("normalizeDocument – Single page (HOT)", () => {
     const cachebay = createCachebay();
 
-    cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: { first: USERS_PAGE, after: null }, data: singlePage });
+    cachebay.__internals.documents.normalizeDocument({ document: CACHEBAY_QUERY, variables: { first: USERS_PAGE, after: null }, data: singlePage });
 
     bench(`cachebay.writeQuery:single-page:hot(${LABEL})`, () => {
-      cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: { first: USERS_PAGE, after: null }, data: singlePage });
+      cachebay.__internals.documents.normalizeDocument({ document: CACHEBAY_QUERY, variables: { first: USERS_PAGE, after: null }, data: singlePage });
       sink();
     });
 

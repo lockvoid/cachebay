@@ -3,6 +3,7 @@ import { useClient } from "./useClient";
 import type { CachePolicy, Operation, OperationResult } from "../../core/operations";
 import type { DocumentNode } from "graphql";
 import { StaleResponseError, CacheMissError } from "../../core/errors";
+import { getQueryCanonicalKeys } from "../../core/utils";
 
 /**
  * useQuery options
@@ -60,6 +61,7 @@ export function useQuery<TData = any, TVars = any>(
 
   let watchHandle: { unsubscribe: () => void; refetch: () => void } | null = null;
   let initialExecutionPromise: Promise<void> | null = null;
+  let prevCanonicalKeys: string[] = [];
 
   const policy = options.cachePolicy || "cache-first";
   const canonical = options.canonical ?? true;
@@ -69,14 +71,32 @@ export function useQuery<TData = any, TVars = any>(
    * Returns a promise that resolves when initial data is available (for Suspense)
    */
   const setupWatch = async (): Promise<void> => {
-    console.log('ssdsd', options.variables)
     const vars = toValue(options.variables) || ({} as TVars);
     const isPaused = toValue(options.pause);
 
-    // Cleanup previous watch
-    if (watchHandle) {
-      watchHandle.unsubscribe();
-      watchHandle = null;
+    // Check if canonical keys changed (for connection queries)
+    const plan = client.getPlan(options.query);
+    const currentCanonicalKeys = getQueryCanonicalKeys(plan, vars);
+
+    const hasConnections = currentCanonicalKeys.length > 0;
+    const keysMatch = hasConnections &&
+      currentCanonicalKeys.length === prevCanonicalKeys.length &&
+      currentCanonicalKeys.every((key, i) => key === prevCanonicalKeys[i]);
+
+    // Only recreate watcher if canonical keys changed (or first setup)
+    const shouldRecreateWatcher = !keysMatch || !watchHandle;
+
+    if (!shouldRecreateWatcher) {
+      // Canonical keys match - keep existing watcher for recycling
+      // But still proceed with cache check + network fetch below
+      prevCanonicalKeys = currentCanonicalKeys;
+    } else {
+      // Cleanup previous watch (different connection or first setup)
+      if (watchHandle) {
+        watchHandle.unsubscribe();
+        watchHandle = null;
+      }
+      prevCanonicalKeys = currentCanonicalKeys;
     }
 
     if (isPaused) {
@@ -133,33 +153,35 @@ export function useQuery<TData = any, TVars = any>(
       error.value = new CacheMissError();
     }
 
-    // Setup single watcher for all reactive updates
+    // Setup single watcher for all reactive updates (only if needed)
     return new Promise<void>((resolve) => {
       let settled = false;
 
-      watchHandle = client.watchQuery({
-        query: options.query,
-        variables: vars,
-        canonical,
-        onData: (newData) => {
-          data.value = newData as TData;
-          error.value = null;
-          isFetching.value = false;
-          if (!settled) {
-            settled = true;
-            resolve();
-          }
-        },
-        onError: (err) => {
-          error.value = err;
-          isFetching.value = false;
-          if (!settled) {
-            settled = true;
-            resolve();
-          }
-        },
-        immediate: false, // We already handled initial cache data above
-      });
+      if (shouldRecreateWatcher) {
+        watchHandle = client.watchQuery({
+          query: options.query,
+          variables: vars,
+          canonical,
+          onData: (newData) => {
+            data.value = newData as TData;
+            error.value = null;
+            isFetching.value = false;
+            if (!settled) {
+              settled = true;
+              resolve();
+            }
+          },
+          onError: (err) => {
+            error.value = err;
+            isFetching.value = false;
+            if (!settled) {
+              settled = true;
+              resolve();
+            }
+          },
+          immediate: false, // We already handled initial cache data above
+        });
+      }
 
       // If we're showing cached data and don't need network, resolve immediately
       if (shouldShowCachedData && !shouldFetchFromNetwork) {

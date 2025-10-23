@@ -174,8 +174,8 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
     interfaces: options.interfaces || {},
     onChange: (touchedIds) => {
       // Notify all subsystems of changes
-      queries._notifyTouched(touchedIds);
-      fragments._notifyTouched(touchedIds);
+      queries.notifyWatchers(touchedIds);
+      fragments.notifyWatchers(touchedIds);
     },
   });
 
