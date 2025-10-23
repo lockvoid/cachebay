@@ -300,20 +300,42 @@ describe("Relay connections", () => {
 
     const { cache } = createTestClient({ routes });
 
-    const response1 = await cache.executeQuery({ query: operations.POSTS_QUERY, variables: { category: "A", first: 2 } });
-    const connection1 = response1.data.posts;
+    // Use watchQuery to enable recycling
+    let latestData: any;
+
+    const watcher = cache.watchQuery({
+      query: operations.POSTS_QUERY,
+      variables: { category: "A", first: 2 },
+      canonical: true,
+      onData: (data) => {
+        latestData = data;
+      },
+    });
+
+    // First query - get initial data
+    await cache.executeQuery({ query: operations.POSTS_QUERY, variables: { category: "A", first: 2 } });
+    await tick();
+
+    const connection1 = latestData.posts;
     const edgesRef1 = connection1.edges;
 
-    const response2 = await cache.executeQuery({ query: operations.POSTS_QUERY, variables: { category: "A", first: 2, after: "p2" } });
-    const connection2 = response2.data.posts;
+    // Second query - append next page
+    await cache.executeQuery({ query: operations.POSTS_QUERY, variables: { category: "A", first: 2, after: "p2" } });
+    await tick();
+
+    const connection2 = latestData.posts;
     const edgesRef2 = connection2.edges;
 
+    // Edges array should be different (new page appended)
     expect(edgesRef2).not.toBe(edgesRef1);
 
-    expect(connection1.edges[0]).toBe(connection2.edges[0]);
-    expect(connection1.edges[1]).toBe(connection2.edges[1]);
-    expect(connection1.edges[0].node).toBe(connection2.edges[0].node);
-    expect(connection1.edges[1].node).toBe(connection2.edges[1].node);
+    // But first 2 edges should be recycled (stable references)
+    expect(connection2.edges[0]).toBe(connection1.edges[0]);
+    expect(connection2.edges[1]).toBe(connection1.edges[1]);
+    expect(connection2.edges[0].node).toBe(connection1.edges[0].node);
+    expect(connection2.edges[1].node).toBe(connection1.edges[1].node);
+
+    watcher.unsubscribe();
   });
 
   it("handles complex infinite (append) pagination flow with caching, filtering, and network revalidation", async () => {
