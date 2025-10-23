@@ -13,8 +13,8 @@ describe("Vue Adapter Exports", () => {
   });
 
   describe("Hook exports", () => {
-    it("exports useClient function", () => {
-      expect(typeof VueAdapter.useClient).toBe("function");
+    it("exports useCachebay function", () => {
+      expect(typeof VueAdapter.useCachebay).toBe("function");
     });
 
     it("exports useQuery function", () => {

@@ -1,5 +1,5 @@
 import { ref, type Ref } from "vue";
-import { useClient } from "./useClient";
+import { useCachebay } from "./useCachebay";
 import type { Operation, OperationResult } from "../../core/operations";
 import type { DocumentNode } from "graphql";
 
@@ -25,31 +25,31 @@ export interface UseMutationReturn<TData = any, TVars = any> {
 export function useMutation<TData = any, TVars = any>(
   mutation: DocumentNode | string
 ): UseMutationReturn<TData, TVars> {
-  const client = useClient();
-  
+  const client = useCachebay();
+
   const data = ref<TData | null>(null) as Ref<TData | null>;
   const error = ref<Error | null>(null);
   const isFetching = ref(false);
-  
+
   /**
    * Execute the mutation
    */
   const execute = async (variables?: TVars): Promise<OperationResult<TData>> => {
     isFetching.value = true;
     error.value = null;
-    
+
     try {
       const result = await client.executeMutation<TData, TVars>({
         query: mutation,
         variables: variables || ({} as TVars),
       });
-      
+
       if (result.error) {
         error.value = result.error;
       } else {
         data.value = result.data;
       }
-      
+
       return result;
     } catch (err) {
       const errorResult = {
@@ -62,7 +62,7 @@ export function useMutation<TData = any, TVars = any>(
       isFetching.value = false;
     }
   };
-  
+
   return {
     data,
     error,

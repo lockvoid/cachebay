@@ -6,7 +6,7 @@ export { createCachebayPlugin, provideCachebay } from './plugin';
 export type { CachebayPlugin, CachebayPluginOptions } from './plugin';
 
 // Hooks
-export { useClient } from './useClient';
+export { useCachebay } from './useCachebay';
 export { useQuery } from './useQuery';
 export type { UseQueryOptions, UseQueryReturn, BaseUseQueryReturn } from './useQuery';
 export { useMutation } from './useMutation';

@@ -1,5 +1,5 @@
 import { ref, computed, watch, onBeforeUnmount, type Ref, type MaybeRefOrGetter, toValue } from "vue";
-import { useClient } from "./useClient";
+import { useCachebay } from "./useCachebay";
 import type { CachePolicy, Operation, OperationResult } from "../../core/operations";
 import type { DocumentNode } from "graphql";
 import { StaleResponseError, CacheMissError } from "../../core/errors";
@@ -53,7 +53,7 @@ export interface UseQueryReturn<TData = any> extends BaseUseQueryReturn<TData> {
 export function useQuery<TData = any, TVars = any>(
   options: UseQueryOptions<TData, TVars>
 ): UseQueryReturn<TData> {
-  const client = useClient();
+  const client = useCachebay();
 
   const data = ref<TData | null | undefined>() as Ref<TData | null | undefined>;
   const error = ref<Error | null>(null);

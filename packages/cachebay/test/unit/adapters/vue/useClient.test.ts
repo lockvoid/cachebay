@@ -2,11 +2,11 @@ import { mount } from "@vue/test-utils";
 import { describe, it, expect, vi } from "vitest";
 import { defineComponent, h } from "vue";
 import { provideCachebay } from "@/src/adapters/vue/plugin";
-import { useClient } from "@/src/adapters/vue/useClient";
+import { useCachebay } from "@/src/adapters/vue/useCachebay";
 import { createCachebay } from "@/src/core/client";
 import type { Transport } from "@/src/core/operations";
 
-describe("useClient", () => {
+describe("useCachebay", () => {
   const mockTransport: Transport = {
     http: vi.fn().mockResolvedValue({ data: null, error: null }),
   };
@@ -14,14 +14,14 @@ describe("useClient", () => {
   it("throws if used without provider", () => {
     const App = defineComponent({
       setup() {
-        useClient();
+        useCachebay();
       },
 
       render: () => h("div"),
     });
 
     expect(() => mount(App)).toThrowError(
-      "[cachebay] useClient() called before cache setup",
+      "[cachebay] useCachebay() called before cache setup",
     );
   });
 
@@ -32,7 +32,7 @@ describe("useClient", () => {
 
     const App = defineComponent({
       setup() {
-        cacheApi = useClient();
+        cacheApi = useCachebay();
         return () => h("div");
       },
     });

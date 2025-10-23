@@ -1,5 +1,5 @@
 import { ref, watch, onBeforeUnmount, type Ref, type MaybeRefOrGetter, toValue } from "vue";
-import { useClient } from "./useClient";
+import { useCachebay } from "./useCachebay";
 import type { Operation, OperationResult } from "../../core/operations";
 import type { DocumentNode } from "graphql";
 
@@ -35,41 +35,41 @@ export interface UseSubscriptionReturn<TData = any> {
 export function useSubscription<TData = any, TVars = any>(
   options: UseSubscriptionOptions<TData, TVars>
 ): UseSubscriptionReturn<TData> {
-  const client = useClient();
-  
+  const client = useCachebay();
+
   const data = ref<TData | null>(null) as Ref<TData | null>;
   const error = ref<Error | null>(null);
   const isFetching = ref(true);
-  
+
   let unsubscribe: (() => void) | null = null;
-  
+
   /**
    * Setup subscription
    */
   const setupSubscription = async () => {
     const vars = toValue(options.variables) || ({} as TVars);
     const isPaused = toValue(options.pause);
-    
+
     // Cleanup previous subscription
     if (unsubscribe) {
       unsubscribe();
       unsubscribe = null;
     }
-    
+
     if (isPaused) {
       isFetching.value = false;
       return;
     }
-    
+
     isFetching.value = true;
     error.value = null;
-    
+
     try {
       const observable = await client.executeSubscription<TData, TVars>({
         query: options.query,
         variables: vars,
       });
-      
+
       const subscription = observable.subscribe({
         next: (result) => {
           if (result.error) {
@@ -88,14 +88,14 @@ export function useSubscription<TData = any, TVars = any>(
           isFetching.value = false;
         },
       });
-      
+
       unsubscribe = () => subscription.unsubscribe();
     } catch (err) {
       error.value = err as Error;
       isFetching.value = false;
     }
   };
-  
+
   // Watch for variable and pause changes
   watch(
     () => [toValue(options.variables), toValue(options.pause)],
@@ -104,7 +104,7 @@ export function useSubscription<TData = any, TVars = any>(
     },
     { immediate: true, deep: true }
   );
-  
+
   // Cleanup on unmount
   onBeforeUnmount(() => {
     if (unsubscribe) {
@@ -112,7 +112,7 @@ export function useSubscription<TData = any, TVars = any>(
       unsubscribe = null;
     }
   });
-  
+
   return {
     data,
     error,

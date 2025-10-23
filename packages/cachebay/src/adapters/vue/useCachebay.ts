@@ -8,11 +8,11 @@ import type { CachebayInstance } from "../../core/client";
  * @returns Cachebay cache instance
  * @throws Error if called before setup
  */
-export function useClient(): CachebayInstance {
+export function useCachebay(): CachebayInstance {
   const instance = inject<CachebayInstance | null>(CACHEBAY_KEY, null);
   if (!instance) {
     throw new Error(
-      "[cachebay] useClient() called before cache setup. " +
+      "[cachebay] useCachebay() called before cache setup. " +
       "Make sure to call app.use(cachebayPlugin) or provideCachebay(app, cache) first."
     );
   }
