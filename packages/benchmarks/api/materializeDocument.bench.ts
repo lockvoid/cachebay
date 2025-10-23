@@ -81,9 +81,8 @@ const pages = buildPages(allUsers, PAGE_SIZE);
 const label = `${USERS_TOTAL} users (${pages.length} pages of ${PAGE_SIZE})`;
 
 summary(() => {
-  group("materializeDocument – COLD paths", () => {
-
-    bench(`cachebay.materializeDocument:canonical:cold(${label})`, function* () {
+  group("materializeDocument", () => {
+    bench(`cachebay.materializeDocument:canonical(${label})`, function* () {
       yield {
         [0]() {
           const cache = createCachebay();
@@ -115,7 +114,7 @@ summary(() => {
       };
     });
 
-    bench(`cachebay.materializeDocument:canonical:fingerprint:cold(${label})`, function* () {
+    bench(`cachebay.materializeDocument:canonical:fingerprint(${label})`, function* () {
       yield {
         [0]() {
           const cache = createCachebay();
@@ -147,7 +146,7 @@ summary(() => {
       };
     });
 
-    bench(`apollo.readQuery:cold(${label})`, function* () {
+    bench(`apollo.readQuery(${label})`, function* () {
       yield {
         [0]() {
           const cache = createApolloCache(false);
@@ -170,7 +169,7 @@ summary(() => {
       };
     });
 
-    bench(`relay.lookup:cold(${label})`, function* () {
+    bench(`relay.lookup(${label})`, function* () {
       yield {
         [0]() {
           const env = createRelayEnvironment();
@@ -186,122 +185,6 @@ summary(() => {
           sinkObj(r.data);
         },
       };
-    });
-  });
-});
-
-summary(() => {
-  group("readQuery – HOT paths", () => {
-
-    const cache1 = createCachebay();
-    for (let i = 0; i < pages.length; i++) {
-      cache1.writeQuery({
-        query: CACHEBAY_QUERY,
-        variables: pages[i].vars,
-        data: pages[i].data,
-      });
-    }
-    // warm
-    cache1.__internals.documents.materializeDocument({
-      document: CACHEBAY_QUERY,
-      variables: { first: PAGE_SIZE, after: null },
-      canonical: true,
-    });
-
-    bench(`cachebay.readQuery:canonical:hot(${label})`, () => {
-      const res = cache1.__internals.documents.materializeDocument({
-        document: CACHEBAY_QUERY,
-        variables: { first: PAGE_SIZE, after: null },
-        canonical: true,
-      });
-      sinkObj(res.data);
-    });
-
-    // Cachebay: readQuery:strict:hot
-    const cache2 = createCachebay();
-    for (let i = 0; i < pages.length; i++) {
-      cache2.writeQuery({
-        query: CACHEBAY_QUERY,
-        variables: pages[i].vars,
-        data: pages[i].data,
-      });
-    }
-    // warm
-    cache2.__internals.documents.materializeDocument({
-      document: CACHEBAY_QUERY,
-      variables: { first: PAGE_SIZE, after: null },
-      canonical: false,
-    });
-
-    bench(`cachebay.readQuery:strict:hot(${label})`, () => {
-      cache2.__internals.documents.materializeDocument({
-        document: CACHEBAY_QUERY,
-        variables: { first: PAGE_SIZE, after: null },
-        canonical: false,
-      });
-      sinkObj(res.data);
-    });
-
-    // Apollo: readQuery:hot (resultCaching=false)
-    const apollo1 = createApolloCache(false);
-    for (let i = 0; i < pages.length; i++) {
-      apollo1.writeQuery({
-        query: APOLLO_QUERY,
-        variables: pages[i].vars,
-        data: pages[i].data,
-      });
-    }
-    // warm
-    apollo1.readQuery({
-      query: APOLLO_QUERY,
-      variables: { first: PAGE_SIZE, after: null },
-    });
-
-    bench(`apollo.readQuery:hot(${label})`, () => {
-      const r = apollo1.readQuery({
-        query: APOLLO_QUERY,
-        variables: { first: PAGE_SIZE, after: null },
-      });
-      sinkObj(r);
-    });
-
-    // Apollo: readQuery:hot (resultCaching=true)
-    const apollo2 = createApolloCache(true);
-    for (let i = 0; i < pages.length; i++) {
-      apollo2.writeQuery({
-        query: APOLLO_QUERY,
-        variables: pages[i].vars,
-        data: pages[i].data,
-      });
-    }
-    // warm
-    apollo2.readQuery({
-      query: APOLLO_QUERY,
-      variables: { first: PAGE_SIZE, after: null },
-    });
-
-    bench(`apollo.readQuery:hot(resultCaching)(${label})`, () => {
-      const r = apollo2.readQuery({
-        query: APOLLO_QUERY,
-        variables: { first: PAGE_SIZE, after: null },
-      });
-      sinkObj(r);
-    });
-
-    // Relay: lookup:hot
-    const relayEnv = createRelayEnvironment();
-    for (let i = 0; i < pages.length; i++) {
-      const op = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, pages[i].vars);
-      relayEnv.commitPayload(op, pages[i].data);
-    }
-    // warm
-    const warmOp = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, { first: PAGE_SIZE, after: null });
-    relayEnv.lookup(warmOp.fragment);
-
-    bench(`relay.lookup:hot(${label})`, () => {
-      const operation = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, { first: PAGE_SIZE, after: null });
-      const r = relayEnv.lookup(operation.fragment);
-      sinkObj(r.data);
     });
   });
 });

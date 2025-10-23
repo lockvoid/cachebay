@@ -82,17 +82,23 @@ const compileArgBuilder = (args: readonly any[] | undefined): {
   return { buildArgs, expectedArgNames };
 };
 
-/** stable stringify (keys sorted, deep) - kept for backward compatibility */
-const stableStringify = (v: any): string => {
-  if (v == null || typeof v !== "object") return JSON.stringify(v);
-  if (Array.isArray(v)) return "[" + v.map(stableStringify).join(",") + "]";
-  const keys = Object.keys(v).sort();
-  return "{" + keys.map(k => JSON.stringify(k) + ":" + stableStringify(v[k])).join(",") + "}";
+/**
+ * Fast stringify for common primitive types (avoids JSON.stringify overhead)
+ */
+const fastStringify = (value: any): string => {
+  const type = typeof value;
+  if (type === "string") return '"' + value + '"';
+  if (type === "number") return String(value);
+  if (type === "boolean") return value ? "true" : "false";
+  if (value === null) return "null";
+  // Fallback to JSON.stringify for arrays/objects
+  return JSON.stringify(value);
 };
 
 /**
  * Compile a fast stringifyArgs function using precomputed arg order.
  * This avoids the need for stableStringify by iterating args in a fixed order.
+ * Optimized with pre-stringified arg names and fast primitive stringification.
  */
 const compileStringifyArgs = (
   buildArgs: (vars: Record<string, any>) => Record<string, any>,
@@ -102,22 +108,21 @@ const compileStringifyArgs = (
     return () => "";
   }
 
+  // Pre-stringify arg names at compile time (only once)
+  const stringifiedArgNames = expectedArgNames.map(name => '"' + name + '":');
+
   return (vars: Record<string, any>) => {
     const args = buildArgs(vars);
-    let result = "{";
-    let first = true;
+    const parts: string[] = [];
 
     for (let i = 0; i < expectedArgNames.length; i++) {
-      const argName = expectedArgNames[i];
-      if (args[argName] !== undefined) {
-        if (!first) result += ",";
-        result += JSON.stringify(argName) + ":" + JSON.stringify(args[argName]);
-        first = false;
+      const value = args[expectedArgNames[i]];
+      if (value !== undefined) {
+        parts.push(stringifiedArgNames[i] + fastStringify(value));
       }
     }
 
-    result += "}";
-    return result;
+    return "{" + parts.join(",") + "}";
   };
 };
 
