@@ -958,8 +958,8 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       expect(d.data.posts.edges).toEqual([
         {
           __typename: "PostEdge",
-          cursor: "p1",
           __version: expect.any(Number),
+          cursor: "p1",
           node: {
             __typename: "Post",
             id: "p1",
@@ -1069,10 +1069,11 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     expect(d.data.user.posts.edges[0].node.comments.edges).toEqual([
       {
         __typename: "CommentEdge",
-        cursor: "c1",
         __version: expect.any(Number),
+        cursor: "c1",
         node: {
           __typename: "Comment",
+          __version: expect.any(Number),
           uuid: "c1",
           text: "Comment 1",
           author: {
@@ -1080,15 +1081,15 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
             __version: expect.any(Number),
             id: "u2",
           },
-          __version: expect.any(Number),
         },
       },
       {
         __typename: "CommentEdge",
-        cursor: "c2",
         __version: expect.any(Number),
+        cursor: "c2",
         node: {
           __typename: "Comment",
+          __version: expect.any(Number),
           uuid: "c2",
           text: "Comment 2",
           author: {
@@ -1096,7 +1097,6 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
             __version: expect.any(Number),
             id: "u3",
           },
-          __version: expect.any(Number),
         },
       },
     ]);
@@ -1119,10 +1119,11 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     expect(d.data.user.posts.edges[1].node.comments.edges).toEqual([
       {
         __typename: "CommentEdge",
-        cursor: "c3",
         __version: expect.any(Number),
+        cursor: "c3",
         node: {
           __typename: "Comment",
+          __version: expect.any(Number),
           uuid: "c3",
           text: "Comment 3",
           author: {
@@ -1130,7 +1131,6 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
             __version: expect.any(Number),
             id: "u2",
           },
-          __version: expect.any(Number),
         },
       },
     ]);
@@ -1274,24 +1274,24 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     expect(d.data.users.edges[0].node.posts.edges[0].node.comments.edges).toEqual([
       {
         __typename: "CommentEdge",
-        cursor: "c1",
         __version: expect.any(Number),
+        cursor: "c1",
         node: {
           __typename: "Comment",
+          __version: expect.any(Number),
           uuid: "c1",
           text: "Comment 1",
-          __version: expect.any(Number),
         },
       },
       {
         __typename: "CommentEdge",
-        cursor: "c2",
         __version: expect.any(Number),
+        cursor: "c2",
         node: {
           __typename: "Comment",
+          __version: expect.any(Number),
           uuid: "c2",
           text: "Comment 2",
-          __version: expect.any(Number),
         },
       },
     ]);
@@ -1314,13 +1314,13 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     expect(d.data.users.edges[0].node.posts.edges[1].node.comments.edges).toEqual([
       {
         __typename: "CommentEdge",
-        cursor: "c3",
         __version: expect.any(Number),
+        cursor: "c3",
         node: {
           __typename: "Comment",
+          __version: expect.any(Number),
           uuid: "c3",
           text: "Comment 3",
-          __version: expect.any(Number),
         },
       },
     ]);
@@ -1360,13 +1360,13 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     expect(d.data.users.edges[1].node.posts.edges[0].node.comments.edges).toEqual([
       {
         __typename: "CommentEdge",
-        cursor: "c4",
         __version: expect.any(Number),
+        cursor: "c4",
         node: {
           __typename: "Comment",
+          __version: expect.any(Number),
           uuid: "c4",
           text: "Comment 4",
-          __version: expect.any(Number),
         },
       },
     ]);
