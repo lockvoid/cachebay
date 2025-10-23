@@ -104,6 +104,30 @@ summary(() => {
       };
     });
 
+    bench(`apollo.watch:initial:cold(${getLabel()})`, function* () {
+      yield {
+        [0]() {
+          return createApolloCache();
+        },
+        async bench(apollo) {
+          const unwatch = apollo.watch({
+            query: APOLLO_QUERY,
+            variables: { first: USERS_PAGE_SIZE, after: null },
+            optimistic: false,
+            immediate: true,
+            callback: (diff) => sink(diff.result),
+          });
+
+          for (let i = 0; i < pages.length; i++) {
+            apollo.writeQuery({ query: APOLLO_QUERY, variables: pages[i].variables, data: pages[i].data });
+            await Promise.resolve();
+          }
+
+          unwatch();
+        },
+      };
+    });
+
     bench(`relay.subscribe:initial:cold(${getLabel()})`, function* () {
       yield {
         [0]() {
@@ -154,6 +178,25 @@ summary(() => {
         onData: (d) => sink(d),
       });
       sub.unsubscribe();
+    });
+
+    const apollo = createApolloCache();
+
+    for (let i = 0; i < pages.length; i++) {
+      apollo.writeQuery({ query: APOLLO_QUERY, variables: pages[i].variables, data: pages[i].data });
+    }
+
+    apollo.readQuery({ query: APOLLO_QUERY, variables: { first: USERS_PAGE_SIZE, after: null } });
+
+    bench(`apollo.watch:initial:hot(${getLabel()})`, () => {
+      const unwatch = apollo.watch({
+        query: APOLLO_QUERY,
+        variables: { first: USERS_PAGE_SIZE, after: null },
+        optimistic: false,
+        immediate: true,
+        callback: (diff) => sink(diff.result),
+      });
+      unwatch();
     });
 
     const relay = createRelayEnvironment();
@@ -331,26 +374,11 @@ summary(() => {
       apollo.writeQuery({ query: APOLLO_QUERY, variables: pages[pageIndex2].variables, data: pages[pageIndex2].data });
     });
 
-    const relay = createRelayEnvironment();
-
-    for (let i = 0; i < 3; i++) {
-      relay.commitPayload(createOperationDescriptor(RelayWriteQuery as ConcreteRequest, pages[i].variables), pages[i].data);
-    }
-
-    const operation = createOperationDescriptor(RelayWriteQuery as ConcreteRequest, { first: USERS_PAGE_SIZE, after: null });
-    const snapshot = relay.lookup(operation.fragment);
-    relay.subscribe(snapshot, (newSnapshot) => {
-      sink(newSnapshot.data);
-    });
-
-    let pageIndex3 = 3;
-
-    bench(`relay.subscribe:pagination(${getLabel()})`, () => {
-      pageIndex3 = (pageIndex3 + 1) % pages.length;
-      if (pageIndex3 === 0) pageIndex3 = 3;
-
-      relay.commitPayload(createOperationDescriptor(RelayWriteQuery as ConcreteRequest, pages[pageIndex3].variables), pages[pageIndex3].data);
-    });
+    // Note: Relay pagination benchmark omitted
+    // Relay's connection pagination requires ConnectionHandler and proper
+    // configuration that's not directly comparable to Cachebay's approach.
+    // Relay is designed for React components with usePaginationFragment,
+    // not for imperative pagination via commitPayload.
   });
 });
 
