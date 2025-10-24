@@ -1,9 +1,7 @@
-import { ref, computed, watch, onBeforeUnmount, type Ref, type MaybeRefOrGetter, toValue } from "vue";
+import { ref, watch, onBeforeUnmount, type Ref, type MaybeRefOrGetter, toValue } from "vue";
 import { useCachebay } from "./useCachebay";
-import type { CachePolicy, Operation, OperationResult } from "../../core/operations";
+import type { CachePolicy } from "../../core/operations";
 import type { DocumentNode } from "graphql";
-import { StaleResponseError, CacheMissError } from "../../core/errors";
-import { getQueryCanonicalKeys } from "../../core/utils";
 
 /**
  * useQuery options
@@ -13,8 +11,8 @@ export interface UseQueryOptions<TData = any, TVars = any> {
   query: DocumentNode | string;
   /** Query variables (can be reactive) */
   variables?: MaybeRefOrGetter<TVars>;
-  /** Cache policy (default: cache-first) */
-  cachePolicy?: CachePolicy;
+  /** Cache policy (default: cache-first) - can be reactive */
+  cachePolicy?: MaybeRefOrGetter<CachePolicy>;
   /** Pause query execution if true (can be reactive) */
   pause?: MaybeRefOrGetter<boolean>;
   /** Use canonical mode for cache reads (default: true) */
@@ -59,179 +57,56 @@ export function useQuery<TData = any, TVars = any>(
   const error = ref<Error | null>(null);
   const isFetching = ref(false);
 
-  let watchHandle: { unsubscribe: () => void; refetch: () => void } | null = null;
+  let watchHandle: ReturnType<typeof client.watchQuery> | null = null;
   let initialExecutionPromise: Promise<void> | null = null;
-  let prevCanonicalKeys: string[] = [];
 
-  const policy = options.cachePolicy || "cache-first";
   const canonical = options.canonical ?? true;
 
   /**
-   * Setup watchQuery which handles both initial fetch and reactive updates
-   * Returns a promise that resolves when initial data is available (for Suspense)
+   * Setup watcher (first time only)
    */
-  const setupWatch = async (): Promise<void> => {
-    const vars = toValue(options.variables) || ({} as TVars);
-    const isPaused = toValue(options.pause);
-
-    // Check if canonical keys changed (for connection queries)
-    const plan = client.getPlan(options.query);
-    const currentCanonicalKeys = getQueryCanonicalKeys(plan, vars);
-
-    const hasConnections = currentCanonicalKeys.length > 0;
-    const keysMatch = hasConnections &&
-      currentCanonicalKeys.length === prevCanonicalKeys.length &&
-      currentCanonicalKeys.every((key, i) => key === prevCanonicalKeys[i]);
-
-    // Only recreate watcher if canonical keys changed (or first setup)
-    const shouldRecreateWatcher = !keysMatch || !watchHandle;
-
-    if (!shouldRecreateWatcher) {
-      // Canonical keys match - keep existing watcher for recycling
-      // But still proceed with cache check + network fetch below
-      prevCanonicalKeys = currentCanonicalKeys;
-    } else {
-      // Cleanup previous watch (different connection or first setup)
-      if (watchHandle) {
-        watchHandle.unsubscribe();
-        watchHandle = null;
-      }
-      prevCanonicalKeys = currentCanonicalKeys;
-    }
-
-    if (isPaused) {
-      isFetching.value = false;
-      return;
-    }
-
-    error.value = null;
-
-    // Check cache first
-    const cached = client.readQuery({
+  const setupWatcher = (vars: TVars) => {
+    watchHandle = client.watchQuery({
       query: options.query,
       variables: vars,
       canonical,
+      onData: (newData) => {
+        data.value = newData as TData;
+        error.value = null;
+        isFetching.value = false;
+      },
+      onError: (err) => {
+        // Don't set cache miss errors - executeQuery will handle them based on policy
+        // Only set real errors (network errors, GraphQL errors, etc.)
+        if (err.name !== 'CacheMissError') {
+          error.value = err;
+        }
+        isFetching.value = false;
+      },
+      immediate: true,
     });
+  };
 
-    const isCanonical = cached?.ok?.canonical ?? false;
-    const isStrict = cached?.ok?.strict ?? false;
+  /**
+   * Execute query with current variables
+   */
+  const executeQuery = async (vars: TVars): Promise<void> => {
+    const policy = toValue(options.cachePolicy) || "cache-first";
+    error.value = null;
+    isFetching.value = true;
 
-    // Determine if we should fetch from network based on policy
-    let shouldFetchFromNetwork = false;
-    let shouldShowCachedData = false;
-
-    if (policy === "network-only") {
-      shouldFetchFromNetwork = true;
-      shouldShowCachedData = false;
-    } else if (policy === "cache-and-network") {
-      shouldFetchFromNetwork = true;
-      shouldShowCachedData = isCanonical;
-    } else if (policy === "cache-first") {
-      // cache-first logic:
-      // 1. canonical: true + strict: true → show data, don't send request
-      // 2. canonical: true + strict: false → show data, send request (partial, need completion)
-      // 3. canonical: false + strict: false → don't show data, send request
-      if (isCanonical && isStrict) {
-        shouldShowCachedData = true;
-        shouldFetchFromNetwork = false;
-      } else if (isCanonical && !isStrict) {
-        shouldShowCachedData = true;
-        shouldFetchFromNetwork = true;
-      } else {
-        shouldShowCachedData = false;
-        shouldFetchFromNetwork = true;
-      }
-    } else if (policy === "cache-only") {
-      shouldFetchFromNetwork = false;
-      shouldShowCachedData = isCanonical;
+    try {
+      await client.executeQuery<TData, TVars>({
+        query: options.query,
+        variables: vars,
+        cachePolicy: policy,
+        canonical,
+      });
+      isFetching.value = false;
+    } catch (err) {
+      // Watcher already set error through onError callback
+      isFetching.value = false;
     }
-
-    // Set initial data from cache if we should show it
-    if (shouldShowCachedData) {
-      data.value = cached.data as TData;
-    } else if (policy === "cache-only") {
-      error.value = new CacheMissError();
-    }
-
-    // Setup single watcher for all reactive updates (only if needed)
-    return new Promise<void>((resolve) => {
-      let settled = false;
-
-      if (shouldRecreateWatcher) {
-        watchHandle = client.watchQuery({
-          query: options.query,
-          variables: vars,
-          canonical,
-          onData: (newData) => {
-            data.value = newData as TData;
-            error.value = null;
-            isFetching.value = false;
-            if (!settled) {
-              settled = true;
-              resolve();
-            }
-          },
-          onError: (err) => {
-            error.value = err;
-            isFetching.value = false;
-            if (!settled) {
-              settled = true;
-              resolve();
-            }
-          },
-          immediate: false, // We already handled initial cache data above
-        });
-      }
-
-      // If we're showing cached data and don't need network, resolve immediately
-      if (shouldShowCachedData && !shouldFetchFromNetwork) {
-        settled = true;
-        resolve();
-        return;
-      }
-
-      // Fetch from network if needed
-      if (shouldFetchFromNetwork) {
-        isFetching.value = true;
-
-        client.executeQuery<TData, TVars>({
-          query: options.query,
-          variables: vars,
-        }).then((result) => {
-          // If executeQuery returns an error (not thrown), handle it
-          if (result.error && !settled) {
-            // Ignore stale errors - they're expected and shouldn't surface to UI
-            // Check if the error is a StaleResponseError (wrapped in CombinedError)
-            const isStale = result.error.networkError instanceof StaleResponseError;
-
-            if (isStale) {
-              isFetching.value = false;
-              settled = true;
-              resolve();
-              return;
-            }
-
-            error.value = result.error;
-            isFetching.value = false;
-            settled = true;
-            resolve();
-          }
-          // Otherwise watcher will handle the success case
-        }).catch((err) => {
-          // executeQuery threw an exception
-          if (!settled) {
-            error.value = err as Error;
-            isFetching.value = false;
-            settled = true;
-            resolve();
-          }
-        });
-      } else if (!shouldShowCachedData) {
-        // No cached data to show and not fetching - resolve immediately
-        settled = true;
-        resolve();
-      }
-    });
   };
 
   /**
@@ -239,21 +114,84 @@ export function useQuery<TData = any, TVars = any>(
    */
   const refetch = async () => {
     if (watchHandle) {
-      watchHandle.refetch();
+      const vars = toValue(options.variables) || ({} as TVars);
+      await executeQuery(vars);
     }
   };
 
-  // Watch for variable and pause changes
+  // Watch for pause changes
   watch(
-    () => [toValue(options.variables), toValue(options.pause)],
-    () => {
-      const promise = setupWatch();
-      // Capture the first execution for Suspense
-      if (!initialExecutionPromise) {
-        initialExecutionPromise = promise;
+    () => toValue(options.pause),
+    (isPaused) => {
+      if (isPaused) {
+        // Destroy watcher when paused
+        if (watchHandle) {
+          watchHandle.unsubscribe();
+          watchHandle = null;
+        }
+        isFetching.value = false;
+      } else {
+        // Create watcher when unpaused (if not exists)
+        const vars = toValue(options.variables) || ({} as TVars);
+        const policy = toValue(options.cachePolicy) || "cache-first";
+        if (!watchHandle) {
+          setupWatcher(vars);
+          // Only execute query if not cache-only policy
+          if (policy !== 'cache-only') {
+            const promise = executeQuery(vars);
+            // Capture the first execution for Suspense
+            if (!initialExecutionPromise) {
+              initialExecutionPromise = promise;
+            }
+          } else {
+            // For cache-only, just resolve immediately
+            if (!initialExecutionPromise) {
+              initialExecutionPromise = Promise.resolve();
+            }
+          }
+        }
       }
     },
-    { immediate: true, deep: true }
+    { immediate: true }
+  );
+
+  // Watch for variable changes
+  watch(
+    () => toValue(options.variables),
+    (newVars) => {
+      const isPaused = toValue(options.pause);
+      if (isPaused) return;
+
+      const vars = newVars || ({} as TVars);
+      const policy = toValue(options.cachePolicy) || "cache-first";
+      
+      if (watchHandle) {
+        // Update existing watcher with new variables
+        watchHandle.update({ variables: vars });
+        // Execute query with new variables (unless cache-only)
+        if (policy !== 'cache-only') {
+          executeQuery(vars);
+        }
+      }
+    },
+    { deep: true }
+  );
+
+  // Watch for cache policy changes
+  watch(
+    () => toValue(options.cachePolicy),
+    () => {
+      const isPaused = toValue(options.pause);
+      if (isPaused || !watchHandle) return;
+
+      const vars = toValue(options.variables) || ({} as TVars);
+      const policy = toValue(options.cachePolicy) || "cache-first";
+      
+      // Re-execute query with new policy (unless cache-only)
+      if (policy !== 'cache-only') {
+        executeQuery(vars);
+      }
+    }
   );
 
   // Cleanup on unmount
