@@ -1,4 +1,4 @@
-import { useMutation } from "villus";
+import { useMutation } from "cachebay/vue";
 import { useCache } from "cachebay";
 import { SPELL_FIELDS } from "./useSpellQuery";
 

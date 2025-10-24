@@ -1,4 +1,4 @@
-import { useQuery } from "villus";
+import { useQuery } from "cachebay/vue";
 import { SPELL_FIELDS } from "./useSpellQuery";
 
 export const PAGE_INFO_FIELDS = `
