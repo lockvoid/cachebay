@@ -60,5 +60,8 @@
     "docs",
     "LICENSE.md",
     "README.md"
-  ]
+  ],
+  "dependencies": {
+    "@vitejs/plugin-vue": "^6.0.1"
+  }
 }

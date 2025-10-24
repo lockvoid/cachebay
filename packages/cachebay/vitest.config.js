@@ -1,9 +1,10 @@
 import { URL, fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
-import codspeedPlugin from "@codspeed/vitest-plugin";
+import vue from '@vitejs/plugin-vue'
+import codspeed from "@codspeed/vitest-plugin";
 
 export default defineConfig({
-  plugins: [codspeedPlugin()],
+  plugins: [vue(), codspeed()],
 
   test: {
     environment: "happy-dom",
