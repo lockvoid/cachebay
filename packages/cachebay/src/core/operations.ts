@@ -12,7 +12,7 @@ import { StaleResponseError, CombinedError, CacheMissError } from "./errors";
 
 /**
  * GraphQL query variables
- * 
+ *
  * @public
  * @example
  * ```typescript
@@ -27,17 +27,17 @@ export type QueryVariables = Record<string, any>;
 
 /**
  * Cache policy determines how the cache interacts with the network
- * 
+ *
  * @public
  * - `cache-first`: Return cached data if available, otherwise fetch from network
  * - `cache-only`: Only return cached data, never fetch from network (throws if not cached)
  * - `network-only`: Always fetch from network, ignore cache
  * - `cache-and-network`: Return cached data immediately, then fetch from network and update
- * 
+ *
  * @example
  * ```typescript
  * const policy: CachePolicy = "cache-first";
- * 
+ *
  * // Or use constants
  * import { CACHE_POLICIES } from 'cachebay';
  * const policy = CACHE_POLICIES.CACHE_FIRST;
@@ -52,7 +52,7 @@ export const CACHE_ONLY = "cache-only" as const;
 
 /**
  * GraphQL operation configuration
- * 
+ *
  * @public
  * @template TData - Expected data type returned from the operation
  * @template TVars - Variables type for the operation
@@ -82,7 +82,7 @@ export interface Operation<TData = any, TVars = QueryVariables> {
 
 /**
  * Result of a GraphQL operation
- * 
+ *
  * @public
  * @template TData - Type of data returned
  * @example
@@ -125,7 +125,7 @@ export interface WsTransport {
 /**
  * Transport layer for GraphQL operations
  * Provides HTTP transport (required) and WebSocket transport (optional)
- * 
+ *
  * @public
  * @example
  * ```typescript
@@ -223,6 +223,7 @@ export const createOperations = (
     onSuccess,
     onError,
   }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
+    console.log('Executing query:', cachePolicy);
     const plan = planner.getPlan(query);
     const signature = plan.makeSignature("canonical", variables);  // Always canonical
 
@@ -435,7 +436,6 @@ export const createOperations = (
   const executeSubscription = async <TData = any, TVars = QueryVariables>({
     query,
     variables,
-    ...restOptions
   }: Operation<TData, TVars>): Promise<ObservableLike<OperationResult<TData>>> => {
     if (!transport.ws) {
       throw new Error(
@@ -461,6 +461,7 @@ export const createOperations = (
         subscribe(observer: Partial<ObserverLike<OperationResult<TData>>>) {
           return observable.subscribe({
             next: (result: OperationResult<TData>) => {
+              console.log("Received subscription data:", result);
               // Write successful subscription data to cache
               if (result.data && !result.error) {
                 documents.normalizeDocument({

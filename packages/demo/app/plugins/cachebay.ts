@@ -70,6 +70,8 @@ export default defineNuxtPlugin((nuxtApp) => {
   const url = import.meta.server ? config.graphqlServerEndpoint : config.public.graphqlClientEndpoint;
 
   const cachebay = createCachebay({
+    cachePolicy: settings.cachePolicy,
+
     transport: {
       http: createHttpTransport(url),
       ws: createWsTransport(url),

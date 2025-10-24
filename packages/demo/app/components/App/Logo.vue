@@ -10,6 +10,8 @@
       <h1 class="hidden font-serif text-xl font-bold text-gray-800 sm:block">
         Harry Potter's Spellbook
       </h1>
+
+      <AppHogwartsTime />
     </div>
   </div>
 </template>

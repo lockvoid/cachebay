@@ -1,5 +1,4 @@
-import { useMutation } from "cachebay/vue";
-import { useCache } from "cachebay";
+import { useMutation, useCachebay } from "cachebay/vue";
 import { useSettings } from "../stores/settings";
 import { SPELL_FIELDS } from "./useSpellQuery";
 
@@ -18,7 +17,7 @@ export const UPDATE_SPELL_MUTATION = `
 export const useUpdateSpell = () => {
   const settings = useSettings();
 
-  const cache = useCache();
+  const cache = useCachebay();
 
   const updateSpell = useMutation(UPDATE_SPELL_MUTATION);
 

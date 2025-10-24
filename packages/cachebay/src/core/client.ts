@@ -13,12 +13,12 @@ import type { CachebayOptions } from "./types";
 /**
  * Main Cachebay instance type
  * Framework-agnostic GraphQL cache client with Relay support
- * 
+ *
  * @public
  * @example
  * ```typescript
  * import { createCachebay } from 'cachebay';
- * 
+ *
  * const cachebay = createCachebay({
  *   transport: {
  *     http: async (ctx) => {
@@ -30,13 +30,13 @@ import type { CachebayOptions } from "./types";
  *     }
  *   }
  * });
- * 
+ *
  * // Read from cache
  * const user = cachebay.readFragment({
  *   id: 'User:123',
  *   fragment: USER_FRAGMENT
  * });
- * 
+ *
  * const result = await cachebay.executeQuery({
  *   query: GET_USER_QUERY,
  *   variables: { id: '123' },
@@ -224,6 +224,7 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
   // Operations (always created since transport is required)
   const operations = createOperations(
     {
+      cachePolicy: options.cachePolicy,
       transport: options.transport,
       suspensionTimeout: options.suspensionTimeout,
       onQueryError: (signature, error) => {

@@ -82,7 +82,7 @@ export function useQuery<TData = any, TVars = any>(
    * Execute query with current variables
    */
   const executeQuery = async (vars: TVars): Promise<void> => {
-    const policy = toValue(options.cachePolicy) || "cache-first";
+    const policy = toValue(options.cachePolicy);
     error.value = null;
     isFetching.value = true;
 
@@ -122,7 +122,7 @@ export function useQuery<TData = any, TVars = any>(
         isFetching.value = false;
       } else {
         const vars = toValue(options.variables) || ({} as TVars);
-        const policy = toValue(options.cachePolicy) || "cache-first";
+        const policy = toValue(options.cachePolicy);
         if (!watchHandle) {
           setupWatcher(vars);
           // Only execute query if not cache-only policy
@@ -152,8 +152,8 @@ export function useQuery<TData = any, TVars = any>(
       if (isPaused) return;
 
       const vars = newVars || ({} as TVars);
-      const policy = toValue(options.cachePolicy) || "cache-first";
-      
+      const policy = toValue(options.cachePolicy)
+
       if (watchHandle) {
         watchHandle.update({ variables: vars });
         if (policy !== 'cache-only') {
@@ -172,8 +172,8 @@ export function useQuery<TData = any, TVars = any>(
       if (isPaused || !watchHandle) return;
 
       const vars = toValue(options.variables) || ({} as TVars);
-      const policy = toValue(options.cachePolicy) || "cache-first";
-      
+      const policy = toValue(options.cachePolicy)
+
       // Re-execute query with new policy (unless cache-only)
       if (policy !== 'cache-only') {
         executeQuery(vars);

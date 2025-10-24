@@ -17,11 +17,11 @@ export type CachebayPlugin = CachebayInstance & Plugin;
  * @example
  * ```ts
  * import { createCachebay } from 'cachebay/vue'
- * 
+ *
  * const cachebay = createCachebay({
  *   transport: { http: async (ctx) => fetch(...) }
  * })
- * 
+ *
  * app.use(cachebay)
  * ```
  */

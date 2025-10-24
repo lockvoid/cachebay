@@ -94,39 +94,39 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
       return await runScenario("cachebay", "network-only");
     });
 
-    /*  bench("apollo(vue)", async () => {
+     bench("apollo(vue)", async () => {
         return await runScenario("apollo", "network-only");
       });
-  
+
       bench("urql(vue)", async () => {
         return await runScenario("urql", "network-only");
       });
-  
+
       bench("relay(react)", async () => {
         return await runScenario("relay", "network-only");
-        }); */
+        });
   });
   /*
     describe("cache-first", () => {
       bench("cachebay(vue)", async () => {
         return await runScenario("cachebay", "cache-first");
       });
-  
+
       bench("apollo(vue)", async () => {
         return await runScenario("apollo", "cache-first");
       });
-  
+
       bench("urql(vue)", async () => {
         return await runScenario("urql", "cache-first");
       });
-  
+
       bench("relay(react)", async () => {
         return await runScenario("relay", "cache-first");
       });
     });
-  
+
     describe("cache-and-network", () => {
-  
+
       bench("cachebay(vue)", async () => {
         return await runScenario("cachebay", "cache-and-network");
       }, {
@@ -135,15 +135,15 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
           // console.log(JSON.stringify(metrics, null, 2));
         }
       });
-  
+
       bench("apollo(vue)", async () => {
         return await runScenario("apollo", "cache-and-network");
       });
-  
+
       bench("urql(vue)", async () => {
         return await runScenario("urql", "cache-and-network");
       });
-  
+
       bench("relay(react)", async () => {
         return await runScenario("relay", "cache-and-network");
       });

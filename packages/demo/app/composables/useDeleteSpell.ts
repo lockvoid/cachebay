@@ -1,5 +1,4 @@
-import { useMutation } from "cachebay/vue";
-import { useCache } from "cachebay";
+import { useMutation, useCachebay } from "cachebay/vue";
 import { useSettings } from "../stores/settings";
 
 export const DELETE_SPELL = `
@@ -13,7 +12,7 @@ export const useDeleteSpell = () => {
 
   const deleteSpell = useMutation(DELETE_SPELL);
 
-  const cache = useCache();
+  const cache = useCachebay();
 
   const execute = async (variables) => {
     if (settings.optimistic) {

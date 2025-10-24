@@ -588,4 +588,53 @@ describe("useQuery", () => {
 
     expect(queryResult.isFetching.value).toBe(false);
   });
+
+  it("uses global cachePolicy when no local policy is specified", async () => {
+    const httpSpy = vi.fn().mockResolvedValue({
+      data: { user: { id: "1", email: "alice@example.com" } },
+      error: null,
+    });
+
+    const cacheWithPolicy = createCachebay({
+      transport: { http: httpSpy },
+      cachePolicy: "network-only",
+    });
+
+    let queryResult: any;
+
+    const App = defineComponent({
+      setup() {
+        queryResult = useQuery({
+          query: USER_QUERY,
+          variables: { id: "1" },
+          // No cachePolicy specified - should use global "network-only"
+        });
+        return () => h("div");
+      },
+    });
+
+    mount(App, {
+      global: {
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, cacheWithPolicy);
+            },
+          },
+        ],
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Should have called HTTP transport (network-only behavior)
+    expect(httpSpy).toHaveBeenCalledTimes(1);
+    expect(httpSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.any(Object),
+        variables: { id: "1" },
+        operationType: "query",
+      })
+    );
+  });
 });
