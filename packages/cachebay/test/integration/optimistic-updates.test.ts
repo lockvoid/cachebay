@@ -6,7 +6,7 @@ describe("Optimistic updates", () => {
     const { cache } = createTestClient();
 
     const post_1 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
-    expect(post_1).toEqual({});
+    expect(post_1).toBeUndefined();
 
     const tx = cache.modifyOptimistic((o) => {
       o.patch("Post:p1", { __typename: "Post", id: "p1", title: "Post 1" });
@@ -596,7 +596,7 @@ describe("Optimistic updates", () => {
     const { cache } = createTestClient();
 
     // Starts empty
-    expect(cache.readFragment({ id: "Post:x1", fragment: operations.POST_FRAGMENT })).toEqual({});
+    expect(cache.readFragment({ id: "Post:x1", fragment: operations.POST_FRAGMENT })).toBeUndefined();
 
     // Builder branches by data presence
     const tx = cache.modifyOptimistic((o: any, { data }: any) => {

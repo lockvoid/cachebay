@@ -28,6 +28,12 @@ export type CachebayInstance = {
   hydrate: (input: Record<string, unknown> | ((emit: (snapshot: Record<string, unknown>) => void) => void)) => void;
 
   /**
+   * Check if currently in SSR hydration window
+   * @returns true if within hydration timeout, false otherwise
+   */
+  isHydrating: () => boolean;
+
+  /**
    * Generate stable cache key for an object
    * @param obj - GraphQL object with __typename and id
    * @returns Cache key string (typename:id) or null if not identifiable
@@ -226,6 +232,7 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
   // SSR API
   cache.dehydrate = ssr.dehydrate;
   cache.hydrate = ssr.hydrate;
+  cache.isHydrating = ssr.isHydrating;
 
   // Planner
   cache.getPlan = planner.getPlan;
