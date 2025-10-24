@@ -83,7 +83,7 @@ describe("Compiler x Fragments", () => {
   it("includes __typename in pageInfo and edges for connection fields", () => {
     // Fragment with connection but no explicit __typename in pageInfo
     const FRAGMENT = gql`
-      fragment UserPosts on User {
+      fragment UserPostsWithFilters on User {
         posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(filters: ["category"]) {
           totalCount
           pageInfo {
@@ -103,7 +103,7 @@ describe("Compiler x Fragments", () => {
       }
     `;
 
-    const plan = compilePlan(FRAGMENT, { fragmentName: "UserPosts" });
+    const plan = compilePlan(FRAGMENT, { fragmentName: "UserPostsWithFilters" });
 
     // Check root has __typename
     expect(plan.root.find(f => f.fieldName === "__typename")).toBeDefined();

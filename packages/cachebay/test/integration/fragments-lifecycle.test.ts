@@ -232,7 +232,7 @@ describe("Fragments lifecycle", () => {
         },
       });
 
-      const wrapper = mount(Cmp, { global: { plugins: [client, cache] } });
+      const wrapper = mount(Cmp, { global: { plugins: [client] } });
 
       await tick();
       expect(wrapper.text()).toBe("u1@example.com");

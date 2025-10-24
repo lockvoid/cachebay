@@ -56,7 +56,7 @@ describe("Mutations", () => {
       },
     });
 
-    const wrapper = mount(Cmp, { global: { plugins: [cache, client] } });
+    const wrapper = mount(Cmp, { global: { plugins: [client] } });
 
     await seedCache(cache, {
       query: operations.USER_QUERY,
