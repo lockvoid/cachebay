@@ -1,7 +1,6 @@
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, reactive } from "vue";
-import { createCachebay } from "../../../cachebay/src/core/client";
-import { createCachebayPlugin, useQuery } from "../../../cachebay/src/adapters/vue";
+import { createCachebay, useQuery } from "../../../cachebay/src/adapters/vue";
 
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {
@@ -80,14 +79,13 @@ export function createVueCachebayNestedApp(
     },
   };
 
-  const cachebay = createCachebay({
+
+  const plugin = createCachebay({
     interfaces: { Node: ["User", "Post", "Comment"] },
     hydrationTimeout: 0,
     suspensionTimeout: 0,
     transport,
   });
-
-  const plugin = createCachebayPlugin(cachebay);
 
   let totalRenderTime = 0;
   let app: any = null;
@@ -113,27 +111,22 @@ export function createVueCachebayNestedApp(
         try {
           const t0 = performance.now();
 
-          console.log('Before - variables:', JSON.stringify(variables));
-          console.log('Before - data:', data.value);
-          console.log('Before - isFetching:', isFetching.value);
-          
           // Get endCursor from current data and update variables
           const endCursor = data.value?.users?.pageInfo?.endCursor ?? null;
           if (endCursor) {
             variables.after = endCursor;
-            console.log('Updated variables.after to:', endCursor);
-            
+
             // Wait for the watch to trigger and query to complete
             await nextTick();
-            
+
             // Wait for isFetching to become false
-            while (isFetching.value) {
-              await new Promise(resolve => setTimeout(resolve, 10));
-            }
+
           }
-          
-          console.log('After - data:', data.value);
-          console.log('After - error:', error.value);
+          while (isFetching.value) {
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
+         // console.log('After - data:', data.value);
+         // console.log('After - error:', error.value);
 
           // Ensure DOM paint before measuring render time.
           await nextTick();

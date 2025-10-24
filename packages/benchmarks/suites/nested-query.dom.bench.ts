@@ -94,7 +94,7 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
       return await runScenario("cachebay", "network-only");
     });
 
-     bench("apollo(vue)", async () => {
+   /* bench("apollo(vue)", async () => {
         return await runScenario("apollo", "network-only");
       });
 
@@ -104,7 +104,7 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
 
       bench("relay(react)", async () => {
         return await runScenario("relay", "network-only");
-        });
+        }); */
   });
   /*
     describe("cache-first", () => {
