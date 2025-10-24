@@ -55,7 +55,6 @@ export function useFragment<TData = unknown>(options: UseFragmentOptions<TData>)
         unsubscribe = null;
       }
 
-      // Set up new watcher
       const handle = cache.watchFragment({
         id,
         fragment: options.fragment,

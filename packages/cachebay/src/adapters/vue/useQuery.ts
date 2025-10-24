@@ -71,8 +71,6 @@ export function useQuery<TData = any, TVars = any>(
         isFetching.value = false;
       },
       onError: (err) => {
-        // Set all errors including CacheMissError
-        // (CacheMissError is important for cache-only policy)
         error.value = err;
         isFetching.value = false;
       },
@@ -123,7 +121,6 @@ export function useQuery<TData = any, TVars = any>(
         }
         isFetching.value = false;
       } else {
-        // Create watcher when unpaused (if not exists)
         const vars = toValue(options.variables) || ({} as TVars);
         const policy = toValue(options.cachePolicy) || "cache-first";
         if (!watchHandle) {
@@ -158,9 +155,7 @@ export function useQuery<TData = any, TVars = any>(
       const policy = toValue(options.cachePolicy) || "cache-first";
       
       if (watchHandle) {
-        // Update existing watcher with new variables
         watchHandle.update({ variables: vars });
-        // Execute query with new variables (unless cache-only)
         if (policy !== 'cache-only') {
           executeQuery(vars);
         }

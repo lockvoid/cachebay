@@ -26,12 +26,9 @@ export type CachebayPlugin = CachebayInstance & Plugin;
  * ```
  */
 export function createCachebay(options: CachebayOptions): CachebayPlugin {
-  // Create the core cachebay instance
   const cachebay = createAgnosticCachebay(options) as CachebayPlugin;
 
-  // Add Vue plugin install method
   cachebay.install = (app: App) => {
-    // Provide cache instance to all components
     app.provide(CACHEBAY_KEY, cachebay);
   };
 

@@ -12,7 +12,37 @@ import type { CachebayOptions } from "./types";
 
 /**
  * Main Cachebay instance type
- * Framework-agnostic cache client
+ * Framework-agnostic GraphQL cache client with Relay support
+ * 
+ * @public
+ * @example
+ * ```typescript
+ * import { createCachebay } from 'cachebay';
+ * 
+ * const cachebay = createCachebay({
+ *   transport: {
+ *     http: async (ctx) => {
+ *       const res = await fetch('/graphql', {
+ *         method: 'POST',
+ *         body: JSON.stringify({ query: ctx.query, variables: ctx.variables })
+ *       });
+ *       return res.json();
+ *     }
+ *   }
+ * });
+ * 
+ * // Read from cache
+ * const user = cachebay.readFragment({
+ *   id: 'User:123',
+ *   fragment: USER_FRAGMENT
+ * });
+ * 
+ * const result = await cachebay.executeQuery({
+ *   query: GET_USER_QUERY,
+ *   variables: { id: '123' },
+ *   cachePolicy: 'cache-first'
+ * });
+ * ```
  */
 export type CachebayInstance = {
   /**
@@ -167,10 +197,8 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
     );
   }
 
-  // Create planner first (no dependencies)
   const planner = createPlanner();
 
-  // Create graph with onChange that will notify subsystems
   let documents: ReturnType<typeof createDocuments>;
   let queries: ReturnType<typeof createQueries>;
   let fragments: ReturnType<typeof createFragments>;
@@ -206,13 +234,10 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
     { planner, documents, ssr }
   );
 
-  // Features
   const inspect = createInspect({ graph, optimistic });
 
-  // Create cache instance
   const cache = {} as CachebayInstance;
 
-  // Public identity
   cache.identify = graph.identify;
 
   // Fragments API

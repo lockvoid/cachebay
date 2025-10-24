@@ -10,13 +10,67 @@ import { StaleResponseError, CombinedError, CacheMissError } from "./errors";
  * Types
  */
 
+/**
+ * GraphQL query variables
+ * 
+ * @public
+ * @example
+ * ```typescript
+ * const variables: QueryVariables = {
+ *   id: "123",
+ *   first: 10,
+ *   after: "cursor"
+ * };
+ * ```
+ */
 export type QueryVariables = Record<string, any>;
 
+/**
+ * Cache policy determines how the cache interacts with the network
+ * 
+ * @public
+ * - `cache-first`: Return cached data if available, otherwise fetch from network
+ * - `cache-only`: Only return cached data, never fetch from network (throws if not cached)
+ * - `network-only`: Always fetch from network, ignore cache
+ * - `cache-and-network`: Return cached data immediately, then fetch from network and update
+ * 
+ * @example
+ * ```typescript
+ * const policy: CachePolicy = "cache-first";
+ * 
+ * // Or use constants
+ * import { CACHE_POLICIES } from 'cachebay';
+ * const policy = CACHE_POLICIES.CACHE_FIRST;
+ * ```
+ */
 export type CachePolicy = "cache-and-network" | "network-only" | "cache-first" | "cache-only";
 
+export const CACHE_AND_NETWORK = "cache-and-network" as const;
+export const NETWORK_ONLY = "network-only" as const;
+export const CACHE_FIRST = "cache-first" as const;
+export const CACHE_ONLY = "cache-only" as const;
+
+/**
+ * GraphQL operation configuration
+ * 
+ * @public
+ * @template TData - Expected data type returned from the operation
+ * @template TVars - Variables type for the operation
+ * @example
+ * ```typescript
+ * const operation: Operation<{ user: User }, { id: string }> = {
+ *   query: gql`query GetUser($id: ID!) { user(id: $id) { id name } }`,
+ *   variables: { id: "123" },
+ *   cachePolicy: "cache-first"
+ * };
+ * ```
+ */
 export interface Operation<TData = any, TVars = QueryVariables> {
+  /** GraphQL query string or DocumentNode */
   query: string | DocumentNode;
+  /** Variables for the GraphQL operation */
   variables?: TVars;
+  /** Cache policy for this operation */
   cachePolicy?: CachePolicy;
   /** Callback when data is successfully fetched/read */
   onSuccess?: (data: TData) => void;
@@ -26,8 +80,23 @@ export interface Operation<TData = any, TVars = QueryVariables> {
 
 // CombinedError is now imported from ./errors
 
+/**
+ * Result of a GraphQL operation
+ * 
+ * @public
+ * @template TData - Type of data returned
+ * @example
+ * ```typescript
+ * const result: OperationResult<{ user: User }> = {
+ *   data: { user: { id: "123", name: "Alice" } },
+ *   error: null
+ * };
+ * ```
+ */
 export interface OperationResult<TData = any> {
+  /** Operation data if successful, null if error */
   data: TData | null;
+  /** Error if operation failed, null if successful */
   error: CombinedError | null;
 }
 
@@ -53,8 +122,36 @@ export interface WsTransport {
   (context: WsContext): Promise<ObservableLike<OperationResult>>;
 }
 
+/**
+ * Transport layer for GraphQL operations
+ * Provides HTTP transport (required) and WebSocket transport (optional)
+ * 
+ * @public
+ * @example
+ * ```typescript
+ * const transport: Transport = {
+ *   http: async (ctx) => {
+ *     const res = await fetch('/graphql', {
+ *       method: 'POST',
+ *       headers: { 'Content-Type': 'application/json' },
+ *       body: JSON.stringify({
+ *         query: ctx.query,
+ *         variables: ctx.variables
+ *       })
+ *     });
+ *     return res.json();
+ *   },
+ *   ws: async (ctx) => {
+ *     // WebSocket implementation for subscriptions
+ *     return createWebSocketObservable(ctx);
+ *   }
+ * };
+ * ```
+ */
 export interface Transport {
+  /** HTTP transport for queries and mutations (required) */
   http: HttpTransport;
+  /** WebSocket transport for subscriptions (optional) */
   ws?: WsTransport;
 }
 
@@ -153,7 +250,6 @@ export const createOperations = (
 
         const result = await transport.http(context);
 
-        // Check if this response is stale (a newer request was made)
         const isStale = queryEpochs.get(signature) !== currentEpoch;
 
         // If stale, return null data with StaleResponseError wrapped in CombinedError
@@ -200,10 +296,8 @@ export const createOperations = (
             };
           }
 
-          // Mark as emitted for suspension tracking
           markEmitted(signature);
 
-          // Return data with error if present (partial data scenario)
           const successResult = {
             data: cachedAfterWrite.data as TData,
             error: result.error || null,
@@ -343,7 +437,6 @@ export const createOperations = (
     variables,
     ...restOptions
   }: Operation<TData, TVars>): Promise<ObservableLike<OperationResult<TData>>> => {
-    // Check if ws transport is available
     if (!transport.ws) {
       throw new Error(
         "WebSocket transport is not configured. Please provide 'transport.ws' in createCachebay options to use subscriptions."
@@ -398,7 +491,6 @@ export const createOperations = (
         },
       };
     } catch (err) {
-      // Return an observable that immediately errors
       return {
         subscribe(observer: Partial<ObserverLike<OperationResult<TData>>>) {
           if (observer.error) {

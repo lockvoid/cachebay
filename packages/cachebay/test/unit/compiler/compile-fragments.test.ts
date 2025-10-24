@@ -30,7 +30,6 @@ describe("Compiler x Fragments", () => {
 
     const plan = compilePlan(FRAGMENT);
 
-    // Check that __typename is in plan.root (used for cache materialization)
     const typenameField = plan.root.find(f => f.fieldName === "__typename");
     expect(typenameField).toBeDefined();
     expect(typenameField?.responseKey).toBe("__typename");
@@ -73,10 +72,7 @@ describe("Compiler x Fragments", () => {
     const pageInfo = posts.selectionMap!.get("pageInfo")!;
     expect(pageInfo).toBeDefined();
     
-    // CRITICAL: pageInfo selection should include __typename
     expect(pageInfo.selectionMap!.has("__typename")).toBe(true);
-    
-    // Verify it's in the network query too
     expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
 
@@ -105,27 +101,22 @@ describe("Compiler x Fragments", () => {
 
     const plan = compilePlan(FRAGMENT, { fragmentName: "UserPostsWithFilters" });
 
-    // Check root has __typename
     expect(plan.root.find(f => f.fieldName === "__typename")).toBeDefined();
 
-    // Check posts connection field
     const posts = plan.rootSelectionMap!.get("posts")!;
     expect(posts.isConnection).toBe(true);
 
-    // Check pageInfo has __typename in its selection
     const pageInfo = posts.selectionMap!.get("pageInfo")!;
     expect(pageInfo).toBeDefined();
     const pageInfoTypename = pageInfo.selectionSet?.find(f => f.fieldName === "__typename");
     expect(pageInfoTypename).toBeDefined();
     expect(pageInfoTypename?.responseKey).toBe("__typename");
 
-    // Check edges has __typename
     const edges = posts.selectionMap!.get("edges")!;
     expect(edges).toBeDefined();
     const edgesTypename = edges.selectionSet?.find(f => f.fieldName === "__typename");
     expect(edgesTypename).toBeDefined();
 
-    // Check node has __typename
     const node = edges.selectionMap!.get("node")!;
     expect(node).toBeDefined();
     const nodeTypename = node.selectionSet?.find(f => f.fieldName === "__typename");

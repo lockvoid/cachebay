@@ -152,7 +152,6 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
 
     ensureCanonical(canonicalKey);
 
-    // Get incoming edges (reuse array, no copy)
     const incomingEdgeRefs = (normalizedPage.edges?.__refs as string[]) || [];
 
     // Page mode: replace entire canonical with incoming page
@@ -189,7 +188,6 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
     const existingEdges = (existing?.edges?.__refs as string[]) || [];
     const existingCursorIndex = readCursorIndex(canonicalKey);
 
-    // Get incoming pageInfo
     const incomingPageInfo = graph.getRecord(normalizedPage.pageInfo?.__ref) || {};
 
     // Determine splice indices (no array allocations yet)

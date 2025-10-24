@@ -276,8 +276,6 @@ export const compilePlan = (
   if (operation) {
     const rootTypename = opRootTypename(operation);
 
-    // Add __typename to nested selections (not root) once
-    // This ensures both the plan and networkQuery have matching __typename fields
     const selectionWithTypename = ensureTypenameNested(operation.selectionSet);
     
     // Lower the selection set (it still has @connection) so we retain metadata
@@ -302,7 +300,6 @@ export const compilePlan = (
       if (d.kind === Kind.OPERATION_DEFINITION) {
         newDefinitions[i] = operationWithTypename;
       } else if (d.kind === Kind.FRAGMENT_DEFINITION) {
-        // Add __typename to all fragments in the document
         const fragWithTypename = ensureTypenameRecursive(d.selectionSet);
         newDefinitions[i] = {
           kind: d.kind,
@@ -389,7 +386,6 @@ export const compilePlan = (
     for (let i = 0; i < document.definitions.length; i++) {
       const d = document.definitions[i];
       if (d.kind === Kind.FRAGMENT_DEFINITION) {
-        // Add __typename to all fragments, not just the target one
         const fragWithTypename = ensureTypenameRecursive(d.selectionSet);
         newDefinitions[i] = {
           kind: d.kind,

@@ -320,7 +320,6 @@ export const createQueries = ({ documents, planner, operations }: QueriesDepende
         const w = watchers.get(watcherId);
         if (!w) return;
 
-        // Update variables and signature
         w.variables = newVariables;
         const plan = planner.getPlan(w.query);
         w.signature = plan.makeSignature("canonical", newVariables);

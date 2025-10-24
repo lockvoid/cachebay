@@ -94,12 +94,10 @@ describe("Compiler metadata", () => {
   it("computes selId for each field", () => {
     const plan = compilePlan(USER_POSTS_QUERY);
 
-    // Check that root fields have selId
     const userField = plan.root.find(f => f.fieldName === "user");
     expect(userField?.selId).toBeDefined();
     expect(typeof userField?.selId).toBe("string");
 
-    // Check nested fields
     const postsField = userField?.selectionSet?.find(f => f.fieldName === "posts");
     expect(postsField?.selId).toBeDefined();
     expect(typeof postsField?.selId).toBe("string");
@@ -155,16 +153,13 @@ describe("Compiler metadata", () => {
     expect(plan.windowArgs).toBeDefined();
     expect(plan.varMask).toBeDefined();
     
-    // Should collect window args from all nested connections
     expect(plan.windowArgs.has("first")).toBe(true);
     expect(plan.windowArgs.has("after")).toBe(true);
     
-    // Should have multiple connection fields with selId
     const postsField = plan.root.find(f => f.fieldName === "posts");
     expect(postsField?.isConnection).toBe(true);
     expect(postsField?.selId).toBeDefined();
     
-    // Check nested connection in node aggregations (moderationTags is an alias for tags field)
     const edgesField = postsField?.selectionSet?.find(f => f.fieldName === "edges");
     const nodeField = edgesField?.selectionSet?.find(f => f.fieldName === "node");
     const aggregationsField = nodeField?.selectionSet?.find(f => f.fieldName === "aggregations");
@@ -176,7 +171,6 @@ describe("Compiler metadata", () => {
     expect(moderationTagsField?.connectionKey).toBe("ModerationTags");
     expect(moderationTagsField?.selId).toBeDefined();
     
-    // Check connection in top-level aggregations
     const topAggregationsField = postsField?.selectionSet?.find(f => f.fieldName === "aggregations");
     const baseTagsField = topAggregationsField?.selectionSet?.find(f => f.fieldName === "tags");
     
@@ -191,17 +185,14 @@ describe("Compiler metadata", () => {
     expect(plan.id).toBeDefined();
     expect(plan.windowArgs).toBeDefined();
     
-    // Should collect window args from all levels
     expect(plan.windowArgs.has("first")).toBe(true);
     expect(plan.windowArgs.has("after")).toBe(true);
     
-    // Verify nested structure
     const userField = plan.root.find(f => f.fieldName === "user");
     const postsField = userField?.selectionSet?.find(f => f.fieldName === "posts");
     expect(postsField?.isConnection).toBe(true);
     expect(postsField?.selId).toBeDefined();
     
-    // Check deeply nested comments connection
     const postsEdgesField = postsField?.selectionSet?.find(f => f.fieldName === "edges");
     const postNodeField = postsEdgesField?.selectionSet?.find(f => f.fieldName === "node");
     const commentsField = postNodeField?.selectionSet?.find(f => f.fieldName === "comments");
@@ -217,17 +208,14 @@ describe("Compiler metadata", () => {
     expect(plan.id).toBeDefined();
     expect(plan.windowArgs).toBeDefined();
     
-    // Should collect window args from all connection levels
     expect(plan.windowArgs.has("first")).toBe(true);
     expect(plan.windowArgs.has("after")).toBe(true);
     
-    // Verify top-level users connection
     const usersField = plan.root.find(f => f.fieldName === "users");
     expect(usersField?.isConnection).toBe(true);
     expect(usersField?.connectionFilters).toContain("role");
     expect(usersField?.selId).toBeDefined();
     
-    // Verify nested posts connection
     const usersEdgesField = usersField?.selectionSet?.find(f => f.fieldName === "edges");
     const userNodeField = usersEdgesField?.selectionSet?.find(f => f.fieldName === "node");
     const postsField = userNodeField?.selectionSet?.find(f => f.fieldName === "posts");
@@ -236,7 +224,6 @@ describe("Compiler metadata", () => {
     expect(postsField?.connectionFilters).toContain("category");
     expect(postsField?.selId).toBeDefined();
     
-    // Verify deeply nested comments connection
     const postsEdgesField = postsField?.selectionSet?.find(f => f.fieldName === "edges");
     const postNodeField = postsEdgesField?.selectionSet?.find(f => f.fieldName === "node");
     const commentsField = postNodeField?.selectionSet?.find(f => f.fieldName === "comments");
@@ -313,7 +300,6 @@ describe("Compiler metadata", () => {
     const strictSig = plan.makeSignature("strict", vars);
     const canonicalSig = plan.makeSignature("canonical", vars);
 
-    // Should match manual construction
     expect(strictSig).toBe(`${plan.id}|strict|${plan.makeVarsKey("strict", vars)}`);
     expect(canonicalSig).toBe(`${plan.id}|canonical|${plan.makeVarsKey("canonical", vars)}`);
 

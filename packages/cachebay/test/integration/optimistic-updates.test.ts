@@ -808,7 +808,6 @@ describe("Optimistic updates", () => {
       global: { plugins: [client] },
     });
 
-    // Wait leader #1 → A1,A2,A3
     await delay(20);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3"]);
 
@@ -889,7 +888,6 @@ describe("Optimistic updates", () => {
       global: { plugins: [client] },
     });
 
-    // Wait leader #1 → A1,A2,A3
     await delay(20);
     expect(getEdges(wrapper, "title")).toEqual(["A1", "A2", "A3"]);
 

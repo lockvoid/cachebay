@@ -39,10 +39,7 @@ describe("Error Handling (epoch & pagination semantics)", () => {
     // No data was emitted
     expect(PostList.dataUpdates.length).toBe(1);
 
-    // No phantom edges
     expect(getEdges(wrapper, "title")).toEqual([]);
-
-    // Renders may include loading+error; just ensure at least one happened.
     expect(PostList.renders.count).toBeGreaterThanOrEqual(1);
 
     await fx.restore();
@@ -84,10 +81,8 @@ describe("Error Handling (epoch & pagination semantics)", () => {
     // Trigger B
     await wrapper.setProps({ first: 3 });
 
-    // Let B resolve first
     await delay(15);
 
-    // Should have at least one data emission, no error
     expect(PostList.dataUpdates.length).toBeGreaterThanOrEqual(1);
     expect(PostList.errorUpdates.length).toBe(0);
     expect(getEdges(wrapper, "title")).toEqual(["Post 1"]);

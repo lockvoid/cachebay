@@ -774,7 +774,6 @@ describe("Cache Policies Behavior", () => {
     it("merges paginated cache data with network response", async () => {
       const { cache } = createTestClient();
 
-      // Seed cache with first page (stale data)
       await seedCache(cache, {
         query: operations.USERS_QUERY,
 
@@ -789,7 +788,6 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      // Network will return fresh data
       const routes = [
         {
           when: ({ variables }) => {
@@ -824,18 +822,16 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      // Should show cached data immediately
       await delay(5);
       expect(getEdges(wrapper, "email")).toEqual(["cached-u1@example.com"]);
-      expect(fx.calls.length).toBe(1); // Network request started
+      expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(1);
       expect(Cmp.errorUpdates.length).toBe(0);
 
-      // After network response, should show fresh data
       await delay(15);
       expect(getEdges(wrapper, "email")).toEqual(["fresh-u1@example.com", "fresh-u2@example.com"]);
-      expect(fx.calls.length).toBe(1); // Still only 1 network call
-      expect(Cmp.dataUpdates.length).toBe(2); // Re-rendered with fresh data
+      expect(fx.calls.length).toBe(1);
+      expect(Cmp.dataUpdates.length).toBe(2);
       expect(Cmp.errorUpdates.length).toBe(0);
       expect(Cmp.renders.count).toBe(2);
 
@@ -920,7 +916,7 @@ describe("Cache Policies Behavior", () => {
       expect(getEdges(wrapper, "email").length).toBe(0);
       expect(fx.calls.length).toBe(0);
       expect(Cmp.dataUpdates.length).toBe(1);
-      expect(Cmp.errorUpdates.length).toBe(1); // CacheMiss error emitted
+      expect(Cmp.errorUpdates.length).toBe(1);
       expect(Cmp.renders.count).toBe(1);
 
       await fx.restore();
@@ -953,7 +949,7 @@ describe("Cache Policies Behavior", () => {
       expect(wrapper.text()).toContain("Cache miss");
       expect(fx.calls.length).toBe(0);
       expect(Cmp.dataUpdates.length).toBe(1);
-      expect(Cmp.errorUpdates.length).toBe(1); // Should have 1 error (CacheMissError)
+      expect(Cmp.errorUpdates.length).toBe(1);
       expect(Cmp.renders.count).toBe(1);
 
       await fx.restore();
