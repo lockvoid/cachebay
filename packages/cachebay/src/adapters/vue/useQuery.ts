@@ -66,6 +66,8 @@ export function useQuery<TData = any, TVars = any>(
    * Setup watcher (first time only)
    */
   const setupWatcher = (vars: TVars) => {
+    const policy = toValue(options.cachePolicy) || "cache-first";
+    
     watchHandle = client.watchQuery({
       query: options.query,
       variables: vars,
@@ -76,11 +78,14 @@ export function useQuery<TData = any, TVars = any>(
         isFetching.value = false;
       },
       onError: (err) => {
-        // Don't set cache miss errors - executeQuery will handle them based on policy
-        // Only set real errors (network errors, GraphQL errors, etc.)
-        if (err.name !== 'CacheMissError') {
-          error.value = err;
+        // For cache-only, show CacheMissError
+        // For other policies, filter it out (executeQuery will handle it)
+        if (err.name === 'CacheMissError' && policy !== 'cache-only') {
+          // Ignore cache miss for non-cache-only policies
+          isFetching.value = false;
+          return;
         }
+        error.value = err;
         isFetching.value = false;
       },
       immediate: true,
