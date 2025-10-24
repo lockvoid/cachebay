@@ -3,8 +3,8 @@ import * as VueAdapter from "@/src/adapters/vue/index";
 
 describe("Vue Adapter Exports", () => {
   describe("Plugin exports", () => {
-    it("exports createCachebayPlugin function", () => {
-      expect(typeof VueAdapter.createCachebayPlugin).toBe("function");
+    it("exports createCachebay function", () => {
+      expect(typeof VueAdapter.createCachebay).toBe("function");
     });
 
     it("exports provideCachebay function", () => {

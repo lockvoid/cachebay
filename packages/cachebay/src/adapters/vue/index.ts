@@ -2,8 +2,8 @@
 // Provides Vue-specific hooks and plugin
 
 // Vue Plugin
-export { createCachebayPlugin, provideCachebay } from './plugin';
-export type { CachebayPlugin, CachebayPluginOptions } from './plugin';
+export { createCachebay, provideCachebay } from './plugin';
+export type { CachebayPlugin } from './plugin';
 
 // Hooks
 export { useCachebay } from './useCachebay';

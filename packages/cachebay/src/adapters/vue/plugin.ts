@@ -1,14 +1,7 @@
 import type { App, Plugin } from "vue";
-import type { CachebayInstance } from "../../core/client";
+import { createCachebay as createAgnosticCachebay, type CachebayInstance } from "../../core/client";
+import type { CachebayOptions } from "../../core/types";
 import { CACHEBAY_KEY } from "./constants";
-
-/**
- * Vue plugin options
- */
-export interface CachebayPluginOptions {
-  /** Timeout in ms for Suspense result caching (default: 1000) */
-  suspensionTimeout?: number;
-}
 
 /**
  * Cachebay Vue plugin instance
@@ -17,47 +10,40 @@ export interface CachebayPluginOptions {
 export type CachebayPlugin = CachebayInstance & Plugin;
 
 /**
- * Create a Vue plugin from a Cachebay cache instance
- * @param cache - Cachebay cache instance
- * @param options - Vue plugin options
- * @returns Vue plugin with install method
+ * Create a Cachebay instance with Vue plugin support
+ * This is the main entry point for Vue users
+ * @param options - Cachebay configuration options
+ * @returns Cachebay instance with Vue plugin install method
+ * @example
+ * ```ts
+ * import { createCachebay } from 'cachebay/vue'
+ * 
+ * const cachebay = createCachebay({
+ *   transport: { http: async (ctx) => fetch(...) }
+ * })
+ * 
+ * app.use(cachebay)
+ * ```
  */
-export function createCachebayPlugin(
-  cache: CachebayInstance,
-  options: CachebayPluginOptions = {}
-): CachebayPlugin {
-  const plugin = cache as CachebayPlugin;
+export function createCachebay(options: CachebayOptions): CachebayPlugin {
+  // Create the core cachebay instance
+  const cachebay = createAgnosticCachebay(options) as CachebayPlugin;
 
   // Add Vue plugin install method
-  plugin.install = (app: App) => {
+  cachebay.install = (app: App) => {
     // Provide cache instance to all components
-    app.provide(CACHEBAY_KEY, cache);
-
-    // Store options for hooks to access
-    (cache as any).__vueOptions = {
-      suspensionTimeout: options.suspensionTimeout ?? 1000,
-    };
+    app.provide(CACHEBAY_KEY, cachebay);
   };
 
-  return plugin;
+  return cachebay;
 }
 
 /**
  * Provide Cachebay instance to Vue app
- * Alternative to using createCachebayPlugin if you want manual control
+ * Alternative to using createCachebay if you want manual control
  * @param app - Vue application instance
  * @param cache - Cachebay cache instance
- * @param options - Vue plugin options
  */
-export function provideCachebay(
-  app: App,
-  cache: CachebayInstance,
-  options: CachebayPluginOptions = {}
-): void {
+export function provideCachebay(app: App, cache: CachebayInstance): void {
   app.provide(CACHEBAY_KEY, cache);
-
-  // Store options for hooks to access
-  (cache as any).__vueOptions = {
-    suspensionTimeout: options.suspensionTimeout ?? 1000,
-  };
 }
