@@ -17,8 +17,6 @@ export type ReadFragmentArgs<TData = unknown> = {
   fragment: DocumentNode | CachePlan;
   fragmentName?: string;
   variables?: Record<string, unknown>;
-  /** use canonical fill (default: true) */
-  canonical?: boolean;
 };
 
 export type WatchFragmentOptions = {
@@ -26,7 +24,6 @@ export type WatchFragmentOptions = {
   fragment: DocumentNode | CachePlan;
   fragmentName?: string;
   variables?: Record<string, unknown>;
-  canonical?: boolean;
   onData: (data: any) => void;
   onError?: (error: Error) => void;
   /** Emit initial data immediately (default: true) */
@@ -35,7 +32,6 @@ export type WatchFragmentOptions = {
 
 export type WatchFragmentHandle = {
   unsubscribe: () => void;
-  refetch: () => void;
 };
 
 export type WriteFragmentArgs<TData = unknown> = {
@@ -53,7 +49,6 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     fragment: DocumentNode | CachePlan;
     fragmentName?: string;
     variables: Record<string, unknown>;
-    canonical: boolean;
     onData: (data: any) => void;
     onError?: (error: Error) => void;
     deps: Set<string>;
@@ -91,7 +86,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
         const result = documents.materializeDocument({
           document: planner.getPlan(w.fragment, { fragmentName: w.fragmentName }),
           variables: w.variables as Record<string, any>,
-          canonical: w.canonical,
+          canonical: true,  // Always use canonical mode
           entityId: w.id,
           fingerprint: true,
         });
@@ -108,9 +103,8 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
               w.onError?.(e as Error);
             }
           }
-        } else if (w.onError) {
-          w.onError(new CacheMissError());
         }
+        // Don't call onError for cache miss - entity might be deleted or not loaded yet
       }
     });
   };
@@ -160,12 +154,11 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     fragment,
     fragmentName,
     variables = {},
-    canonical = true,
-  }: ReadFragmentArgs): T | undefined => {
+  }: ReadFragmentArgs): T | null => {
     const result = documents.materializeDocument({
       document: planner.getPlan(fragment, { fragmentName }),
       variables: variables as Record<string, any>,
-      canonical,
+      canonical: true,  // Always use canonical mode
       entityId: id,
       fingerprint: false,
     });
@@ -173,7 +166,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     if (result.source !== "none") {
       return result.data as T;
     }
-    return undefined;
+    return null;
   };
 
   const writeFragment = ({
@@ -198,7 +191,6 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     fragment,
     fragmentName,
     variables = {},
-    canonical = true,
     onData,
     onError,
     immediate = true,
@@ -210,7 +202,6 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
       fragment,
       fragmentName,
       variables: variables || {},
-      canonical,
       onData,
       onError,
       deps: new Set(),
@@ -221,7 +212,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     const initial = documents.materializeDocument({
       document: planner.getPlan(fragment, { fragmentName }),
       variables: variables as Record<string, any>,
-      canonical,
+      canonical: true,  // Always use canonical mode
       entityId: id,
       fingerprint: true,
     });
@@ -237,9 +228,8 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
           onError?.(e as Error);
         }
       }
-    } else if (onError && immediate) {
-      onError(new CacheMissError());
     }
+    // Don't call onError for initial cache miss - entity might not be loaded yet
 
     return {
       unsubscribe: () => {
@@ -254,35 +244,6 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
         }
         watchers.delete(watcherId);
       },
-
-      refetch: () => {
-        const w = watchers.get(watcherId);
-        if (!w) return;
-
-        const result = documents.materializeDocument({
-          document: planner.getPlan(w.fragment, { fragmentName: w.fragmentName }),
-          variables: w.variables as Record<string, any>,
-          canonical: w.canonical,
-          entityId: w.id,
-          fingerprint: true,
-        });
-
-        updateWatcherDeps(watcherId, result.dependencies);
-
-        if (result.source !== "none") {
-          const recycled = recycleSnapshots(w.lastData, result.data);
-          if (recycled !== w.lastData) {
-            w.lastData = recycled;
-            try {
-              w.onData(recycled);
-            } catch (e) {
-              w.onError?.(e as Error);
-            }
-          }
-        } else if (w.onError) {
-          w.onError(new CacheMissError());
-        }
-      },
     };
   };
 
@@ -290,7 +251,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     readFragment,
     writeFragment,
     watchFragment,
-    /** test/internal helper: notify watchers by record ids you touched */
-    notifyWatchers: enqueueTouched,
+    /** Propagate data changes to fragment watchers */
+    propagateData: enqueueTouched,
   };
 };

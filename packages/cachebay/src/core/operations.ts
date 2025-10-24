@@ -278,7 +278,7 @@ export const createOperations = (
     }
 
     if (cachePolicy === 'cache-and-network') {
-      if (cached.source !== "none") {
+      if (cached.ok.canonical) {
         performRequest().catch((err) => {
           if (__DEV__) {
             console.warn('Cachebay: Cache hit, but network request failed', err);

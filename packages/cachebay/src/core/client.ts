@@ -181,7 +181,7 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
     onChange: (touchedIds) => {
       // Propagate data changes to all subsystems
       queries.propagateData(touchedIds);
-      fragments.notifyWatchers(touchedIds);
+      fragments.propagateData(touchedIds);
     },
   });
 
@@ -195,8 +195,8 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
 
   // Operations (always created since transport is required)
   const operations = createOperations(
-    { 
-      transport: options.transport, 
+    {
+      transport: options.transport,
       suspensionTimeout: options.suspensionTimeout,
       onQueryError: (signature, error) => {
         // Propagate errors to queries, which will notify watchers
