@@ -6,7 +6,7 @@ import type { Transport, OperationResult, ObservableLike } from "../../../src/co
 describe("operations", () => {
   let mockTransport: Transport;
   let mockPlanner: any;
-  let mockQueries: any;
+  let mockDocuments: any;
   let mockSsr: any;
   let operations: ReturnType<typeof createOperations>;
 
@@ -26,27 +26,20 @@ describe("operations", () => {
       }),
     };
 
-    // Mock queries with proper cache simulation
+    // Mock documents with proper cache simulation
     let cachedData: any = null;
-    mockQueries = {
-      writeQuery: vi.fn((args) => {
+    mockDocuments = {
+      normalizeDocument: vi.fn((args) => {
         cachedData = args.data;
       }),
-      readQuery: vi.fn((args) => {
-        // If canonical is explicitly requested and we have cached data
-        if (args?.canonical && cachedData) {
-          return {
-            data: cachedData,
-            source: "canonical",
-            ok: { canonical: true, strict: true },
-          };
-        }
-        // If we have cached data (for any read)
+      materializeDocument: vi.fn((args) => {
+        // If we have cached data
         if (cachedData) {
           return {
             data: cachedData,
             source: "canonical",
             ok: { canonical: true, strict: true },
+            dependencies: new Set(),
           };
         }
         // No cache
@@ -54,6 +47,7 @@ describe("operations", () => {
           data: undefined,
           source: "none",
           ok: { canonical: false, strict: false },
+          dependencies: new Set(),
         };
       }),
     };
@@ -66,7 +60,7 @@ describe("operations", () => {
     // Create operations instance
     operations = createOperations(
       { transport: mockTransport, suspensionTimeout: 1000 },
-      { planner: mockPlanner, queries: mockQueries, ssr: mockSsr }
+      { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr }
     );
   });
 
@@ -132,8 +126,8 @@ describe("operations", () => {
           compiledQuery: expect.objectContaining({ compiled: true }),
         })
       );
-      expect(mockQueries.writeQuery).toHaveBeenCalledWith({
-        query,
+      expect(mockDocuments.normalizeDocument).toHaveBeenCalledWith({
+        document: query,
         variables,
         data: mockResult.data,
       });
@@ -152,7 +146,7 @@ describe("operations", () => {
       const result = await operations.executeQuery({ query, variables });
 
       expect(result).toEqual(mockResult);
-      expect(mockQueries.writeQuery).not.toHaveBeenCalled();
+      expect(mockDocuments.normalizeDocument).not.toHaveBeenCalled();
     });
 
     it("handles network errors", async () => {
@@ -164,7 +158,7 @@ describe("operations", () => {
       expect(result.data).toBeNull();
       expect(result.error).toBeInstanceOf(CombinedError);
       expect(result.error?.networkError).toBe(networkError);
-      expect(mockQueries.writeQuery).not.toHaveBeenCalled();
+      expect(mockDocuments.normalizeDocument).not.toHaveBeenCalled();
     });
 
     it("uses empty object for missing variables", async () => {
@@ -193,7 +187,7 @@ describe("operations", () => {
       vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
 
       // Mock readQuery to return source: "none" (materialization failure)
-      mockQueries.readQuery.mockReturnValue({
+      mockDocuments.materializeDocument.mockReturnValue({
         data: undefined,
         source: "none",
         ok: {
@@ -212,7 +206,7 @@ describe("operations", () => {
       expect(result.error).toBeInstanceOf(CombinedError);
       expect(result.error?.message).toContain("Failed to materialize query after write");
       expect(result.error?.networkError?.message).toContain("missing required fields");
-      expect(mockQueries.writeQuery).toHaveBeenCalled();
+      expect(mockDocuments.normalizeDocument).toHaveBeenCalled();
     });
   });
 
@@ -226,7 +220,7 @@ describe("operations", () => {
       it("always fetches from network and ignores cache", async () => {
         // Setup: First readQuery returns cached data, second returns network data after write
         let readCount = 0;
-        mockQueries.readQuery.mockImplementation(() => {
+        mockDocuments.materializeDocument.mockImplementation(() => {
           readCount++;
           if (readCount === 1) {
             // Initial read (before network fetch)
@@ -303,7 +297,7 @@ describe("operations", () => {
 
     describe("cache-first", () => {
       it("returns cached data when canonical cache hit", async () => {
-        mockQueries.readQuery.mockReturnValue({
+        mockDocuments.materializeDocument.mockReturnValue({
           data: cachedData,
           source: "canonical",
           ok: { canonical: true, strict: false },
@@ -324,7 +318,7 @@ describe("operations", () => {
       });
 
       it("returns cached data when strict cache hit", async () => {
-        mockQueries.readQuery.mockReturnValue({
+        mockDocuments.materializeDocument.mockReturnValue({
           data: cachedData,
           source: "strict",
           ok: { canonical: false, strict: true },
@@ -346,7 +340,7 @@ describe("operations", () => {
 
       it("fetches from network on cache miss", async () => {
         let readCount = 0;
-        mockQueries.readQuery.mockImplementation(() => {
+        mockDocuments.materializeDocument.mockImplementation(() => {
           readCount++;
           if (readCount === 1) {
             // Initial cache miss
@@ -383,31 +377,11 @@ describe("operations", () => {
         expect(onSuccess).toHaveBeenCalledWith(networkData);
       });
 
-      it("respects canonical parameter for cache lookup", async () => {
-        mockQueries.readQuery.mockReturnValue({
-          data: cachedData,
-          source: "strict",
-          ok: { canonical: false, strict: true },
-        });
-
-        await operations.executeQuery({
-          query,
-          variables,
-          cachePolicy: "cache-first",
-          canonical: false,
-        });
-
-        expect(mockQueries.readQuery).toHaveBeenCalledWith({
-          query,
-          variables,
-          canonical: false,
-        });
-      });
     });
 
     describe("cache-only", () => {
       it("returns cached data when available", async () => {
-        mockQueries.readQuery.mockReturnValue({
+        mockDocuments.materializeDocument.mockReturnValue({
           data: cachedData,
           source: "canonical",
           ok: { canonical: true, strict: true },
@@ -428,7 +402,7 @@ describe("operations", () => {
       });
 
       it("returns CacheMissError when no cache", async () => {
-        mockQueries.readQuery.mockReturnValue({
+        mockDocuments.materializeDocument.mockReturnValue({
           data: undefined,
           source: "none",
           ok: { canonical: false, strict: false },
@@ -450,7 +424,7 @@ describe("operations", () => {
       });
 
       it("never makes network request", async () => {
-        mockQueries.readQuery.mockReturnValue({
+        mockDocuments.materializeDocument.mockReturnValue({
           data: cachedData,
           source: "canonical",
           ok: { canonical: true, strict: true },
@@ -469,7 +443,7 @@ describe("operations", () => {
     describe("cache-and-network", () => {
       it("returns cached data immediately and fetches in background", async () => {
         let readCount = 0;
-        mockQueries.readQuery.mockImplementation(() => {
+        mockDocuments.materializeDocument.mockImplementation(() => {
           readCount++;
           if (readCount === 1) {
             // Initial read returns cached data
@@ -518,7 +492,7 @@ describe("operations", () => {
       });
 
       it("handles background fetch errors gracefully", async () => {
-        mockQueries.readQuery.mockReturnValue({
+        mockDocuments.materializeDocument.mockReturnValue({
           data: cachedData,
           source: "strict",
           ok: { canonical: false, strict: true },
@@ -553,7 +527,7 @@ describe("operations", () => {
 
       it("fetches from network when no cache available", async () => {
         let readCount = 0;
-        mockQueries.readQuery.mockImplementation(() => {
+        mockDocuments.materializeDocument.mockImplementation(() => {
           readCount++;
           if (readCount === 1) {
             // Initial cache miss
@@ -591,7 +565,7 @@ describe("operations", () => {
     describe("SSR hydration", () => {
       it("returns cached data during hydration for network-only", async () => {
         mockSsr.isHydrating.mockReturnValue(true);
-        mockQueries.readQuery.mockReturnValue({
+        mockDocuments.materializeDocument.mockReturnValue({
           data: cachedData,
           source: "canonical",
           ok: { canonical: true, strict: true },
@@ -612,7 +586,7 @@ describe("operations", () => {
 
       it("returns cached data during hydration for cache-first", async () => {
         mockSsr.isHydrating.mockReturnValue(true);
-        mockQueries.readQuery.mockReturnValue({
+        mockDocuments.materializeDocument.mockReturnValue({
           data: cachedData,
           source: "canonical",
           ok: { canonical: true, strict: true },
@@ -630,7 +604,7 @@ describe("operations", () => {
 
       it("skips network request during hydration", async () => {
         mockSsr.isHydrating.mockReturnValue(true);
-        mockQueries.readQuery.mockReturnValue({
+        mockDocuments.materializeDocument.mockReturnValue({
           data: cachedData,
           source: "canonical",
           ok: { canonical: true, strict: true },
@@ -747,8 +721,8 @@ describe("operations", () => {
           compiledQuery: expect.objectContaining({ compiled: true }),
         })
       );
-      expect(mockQueries.writeQuery).toHaveBeenCalledWith({
-        query: mutation,
+      expect(mockDocuments.normalizeDocument).toHaveBeenCalledWith({
+        document: mutation,
         variables,
         data: mockResult.data,
       });
@@ -767,7 +741,7 @@ describe("operations", () => {
       const result = await operations.executeMutation({ query: mutation, variables });
 
       expect(result).toEqual(mockResult);
-      expect(mockQueries.writeQuery).not.toHaveBeenCalled();
+      expect(mockDocuments.normalizeDocument).not.toHaveBeenCalled();
     });
 
     it("handles network errors", async () => {
@@ -779,7 +753,7 @@ describe("operations", () => {
       expect(result.data).toBeNull();
       expect(result.error).toBeInstanceOf(CombinedError);
       expect(result.error?.networkError).toBe(networkError);
-      expect(mockQueries.writeQuery).not.toHaveBeenCalled();
+      expect(mockDocuments.normalizeDocument).not.toHaveBeenCalled();
     });
   });
 
@@ -790,7 +764,7 @@ describe("operations", () => {
     it("throws error when WebSocket transport is not configured", async () => {
       const opsWithoutWs = createOperations(
         { transport: { http: vi.fn() } },
-        { planner: mockPlanner, queries: mockQueries }
+        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr }
       );
 
       await expect(
@@ -847,8 +821,8 @@ describe("operations", () => {
       };
       capturedObserver.next(result);
 
-      expect(mockQueries.writeQuery).toHaveBeenCalledWith({
-        query: subscription,
+      expect(mockDocuments.normalizeDocument).toHaveBeenCalledWith({
+        document: subscription,
         variables,
         data: result.data,
       });
@@ -877,7 +851,7 @@ describe("operations", () => {
       };
       capturedObserver.next(result);
 
-      expect(mockQueries.writeQuery).not.toHaveBeenCalled();
+      expect(mockDocuments.normalizeDocument).not.toHaveBeenCalled();
       expect(observer.next).toHaveBeenCalledWith(result);
     });
 
@@ -933,6 +907,68 @@ describe("operations", () => {
       observable.subscribe(observer);
 
       expect(observer.error).toHaveBeenCalledWith(transportError);
+    });
+  });
+
+  describe("onQueryError callback", () => {
+    it("calls onQueryError callback when cache-only query has no cache", async () => {
+      const onQueryError = vi.fn();
+      const query = "query GetUser { user { id name } }";
+      const variables = { id: "1" };
+
+      const opsWithCallback = createOperations(
+        { transport: mockTransport, onQueryError },
+        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr }
+      );
+
+      mockDocuments.materializeDocument.mockReturnValue({
+        data: undefined,
+        source: "none",
+        ok: { canonical: false, strict: false },
+        dependencies: new Set(),
+      });
+
+      await opsWithCallback.executeQuery({
+        query,
+        variables,
+        cachePolicy: "cache-only",
+      });
+
+      expect(onQueryError).toHaveBeenCalledWith(
+        "query-sig-123",
+        expect.objectContaining({
+          networkError: expect.objectContaining({
+            name: "CacheMissError",
+          }),
+        })
+      );
+    });
+
+    it("calls onQueryError callback when network request fails", async () => {
+      const onQueryError = vi.fn();
+      const query = "query GetUser { user { id name } }";
+      const variables = { id: "1" };
+      const networkError = new Error("Network timeout");
+
+      const opsWithCallback = createOperations(
+        { transport: mockTransport, onQueryError },
+        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr }
+      );
+
+      vi.mocked(mockTransport.http).mockRejectedValue(networkError);
+
+      await opsWithCallback.executeQuery({
+        query,
+        variables,
+        cachePolicy: "network-only",
+      });
+
+      expect(onQueryError).toHaveBeenCalledWith(
+        "query-sig-123",
+        expect.objectContaining({
+          networkError,
+        })
+      );
     });
   });
 });

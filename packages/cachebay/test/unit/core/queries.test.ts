@@ -26,7 +26,7 @@ describe("queries API", () => {
         Profile: (p: any) => p.id,
       },
       onChange: (touchedIds) => {
-        queries.notifyWatchers(touchedIds);
+        queries.propagateData(touchedIds);
         fragments.notifyWatchers(touchedIds);
       },
     });
@@ -35,7 +35,7 @@ describe("queries API", () => {
     canonical = createCanonical({ graph, optimistic });
     documents = createDocuments({ graph, planner, canonical });
     fragments = createFragments({ graph, planner, documents });
-    queries = createQueries({ graph, documents });
+    queries = createQueries({ graph, documents, planner });
   });
 
   describe("readQuery / writeQuery", () => {
@@ -78,8 +78,7 @@ describe("queries API", () => {
           email: "alice@example.com",
         },
       });
-      expect(readResult.dependencies.size).toBeGreaterThan(0);
-      expect(readResult.source === "canonical" || readResult.source === "strict").toBe(true);
+      expect(readResult.error).toBeUndefined();
     });
 
     it("returns no data but provides deps for missing data", () => {
@@ -98,13 +97,12 @@ describe("queries API", () => {
       });
 
       expect(result.data).toBeUndefined();
-      // With new materialization, deps should be present so watchers can subscribe.
-      expect(result.dependencies.size).toBeGreaterThan(0);
-      expect(result.source).toBe("none");
-      expect(result.ok).toBeDefined();
+      // Should have error when data is missing
+      expect(result.error).toBeDefined();
+      expect(result.error?.name).toBe("CacheMissError");
     });
 
-    it("supports canonical flag (strict vs canonical)", () => {
+    it("reads written data successfully", () => {
       const QUERY = gql`
         query GetUser($id: ID!) {
           user(id: $id) {
@@ -122,23 +120,16 @@ describe("queries API", () => {
         },
       });
 
-      // Strict mode (canonical: false)
-      const strictResult = queries.readQuery({
+      // Read the data back (always uses canonical mode now)
+      const result = queries.readQuery({
         query: QUERY,
         variables: { id: "1" },
-        canonical: false,
       });
-      expect(strictResult.data).toBeDefined();
-      expect(strictResult.source === "strict" || strictResult.source === "canonical").toBe(true);
-
-      // Canonical mode (canonical: true)
-      const canonicalResult = queries.readQuery({
-        query: QUERY,
-        variables: { id: "1" },
-        canonical: true,
+      expect(result.data).toBeDefined();
+      expect(result.data).toEqual({
+        user: { __typename: "User", id: "1", name: "Alice" },
       });
-      expect(canonicalResult.data).toBeDefined();
-      expect(canonicalResult.source === "canonical" || canonicalResult.source === "strict").toBe(true);
+      expect(result.error).toBeUndefined();
     });
   });
 

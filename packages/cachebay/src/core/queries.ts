@@ -1,6 +1,7 @@
 // src/core/queries.ts
 import type { DocumentsInstance } from "./documents";
 import type { GraphInstance } from "./graph";
+import type { PlannerInstance } from "./planner";
 import { CacheMissError } from "./errors";
 import { recycleSnapshots } from "./utils";
 import { ROOT_ID } from "./constants";
@@ -9,20 +10,19 @@ import type { DocumentNode } from "graphql";
 export type QueriesDependencies = {
   graph: GraphInstance;
   documents: DocumentsInstance;
+  planner: PlannerInstance;
 };
 
 export type ReadQueryOptions = {
   query: DocumentNode | string;
   variables?: Record<string, any>;
-  /** use canonical fill (default: true) */
-  canonical?: boolean;
 };
 
 export type ReadQueryResult<T = any> = {
+  /** Query data if available in cache */
   data: T | undefined;
-  dependencies: Set<string>;
-  source: "strict" | "canonical" | "none";
-  ok: { strict: boolean; canonical: boolean };
+  /** Error if query cannot be read from cache (e.g., missing required fields) */
+  error?: Error;
 };
 
 export type WriteQueryOptions = {
@@ -31,11 +31,9 @@ export type WriteQueryOptions = {
   data: any;
 };
 
-
 export type WatchQueryOptions = {
   query: DocumentNode | string;
   variables?: Record<string, any>;
-  canonical?: boolean;
   onData: (data: any) => void;
   onError?: (error: Error) => void;
   /** Emit initial data immediately (default: true) */
@@ -51,12 +49,12 @@ export type WatchQueryHandle = {
 
 export type QueriesInstance = ReturnType<typeof createQueries>;
 
-export const createQueries = ({ documents }: QueriesDependencies) => {
+export const createQueries = ({ documents, planner, operations }: QueriesDependencies) => {
   // --- Watcher state & indices ---
   type WatcherState = {
     query: DocumentNode | string;
     variables: Record<string, any>;
-    canonical: boolean;
+    signature: string;  // Query signature for error tracking
     onData: (data: any) => void;
     onError?: (error: Error) => void;
     deps: Set<string>;
@@ -129,11 +127,38 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
     });
   };
 
-  const notifyWatchers = (touched?: Set<string> | string[]) => {
+  /**
+   * Propagate data changes to watchers tracking the given dependencies
+   */
+  const propagateData = (touched?: Set<string> | string[]) => {
     if (!touched) return;
     const arr = Array.isArray(touched) ? touched : Array.from(touched);
     for (const id of arr) pendingTouched.add(id);
     scheduleFlush();
+  };
+
+  /**
+   * Propagate error to the watcher with the given signature
+   */
+  const propagateError = (signature: string, error: Error) => {
+    console.log('[queries] propagateError called, signature:', signature);
+    console.log('[queries] watchers count:', watchers.size);
+    
+    // Find watcher with this signature
+    let found = false;
+    for (const [id, watcher] of watchers) {
+      console.log('[queries] checking watcher', id, 'signature:', watcher.signature);
+      if (watcher.signature === signature && watcher.onError) {
+        console.log('[queries] MATCH! Calling onError');
+        watcher.onError(error);
+        found = true;
+        break;  // Only one watcher per signature
+      }
+    }
+    
+    if (!found) {
+      console.log('[queries] NO MATCH FOUND for signature:', signature);
+    }
   };
 
   // --- Dep index maintenance ---
@@ -179,20 +204,25 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
   const readQuery = <T = any>({
     query,
     variables = {},
-    canonical = true,
   }: ReadQueryOptions): ReadQueryResult<T> => {
     const result = documents.materializeDocument({
       document: query,
       variables,
-      canonical,
+      canonical: true,  // Always use canonical mode
       fingerprint: false,
     });
 
+    if (result.source === "none") {
+      // No data available - create descriptive error
+      const error = new CacheMissError(
+        'Query cannot be read from cache. Required fields are missing.'
+      );
+      return { data: undefined, error };
+    }
+
     return {
-      data: result.source !== "none" ? (result.data as T) : undefined,
-      dependencies: result.dependencies,
-      source: result.source,
-      ok: result.ok,
+      data: result.data as T,
+      error: undefined,
     };
   };
 
@@ -211,17 +241,20 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
   const watchQuery = ({
     query,
     variables = {},
-    canonical = true,
     onData,
     onError,
     immediate = true,
   }: WatchQueryOptions): WatchQueryHandle => {
     const watcherId = watcherSeq++;
 
+    // Generate signature for error tracking (always canonical)
+    const plan = planner.getPlan(query);
+    const signature = plan.makeSignature("canonical", variables);
+
     const watcher: WatcherState = {
       query,
       variables,
-      canonical,
+      signature,
       onData,
       onError,
       deps: new Set(),
@@ -232,7 +265,7 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
     const initial = documents.materializeDocument({
       document: query,
       variables,
-      canonical,
+      canonical: true,  // Always use canonical mode
       fingerprint: true,
     });
 
@@ -273,7 +306,7 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
         const res = documents.materializeDocument({
           document: w.query,
           variables: w.variables,
-          canonical: w.canonical,
+          canonical: true,  // Always use canonical mode
           fingerprint: true,
         });
 
@@ -298,13 +331,15 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
         const w = watchers.get(watcherId);
         if (!w) return;
 
-        // Update variables and refetch
+        // Update variables and signature
         w.variables = newVariables;
+        const plan = planner.getPlan(w.query);
+        w.signature = plan.makeSignature("canonical", newVariables);
 
         const res = documents.materializeDocument({
           document: w.query,
           variables: newVariables,
-          canonical: w.canonical,
+          canonical: true,  // Always use canonical mode
           fingerprint: true,
         });
 
@@ -330,7 +365,7 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
     readQuery,
     writeQuery,
     watchQuery,
-    notifyWatchers,
+    propagateData,
+    propagateError,
   };
 };
-

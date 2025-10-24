@@ -179,8 +179,8 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
     keys: options.keys || {},
     interfaces: options.interfaces || {},
     onChange: (touchedIds) => {
-      // Notify all subsystems of changes
-      queries.notifyWatchers(touchedIds);
+      // Propagate data changes to all subsystems
+      queries.propagateData(touchedIds);
       fragments.notifyWatchers(touchedIds);
     },
   });
@@ -191,12 +191,19 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
   const canonical = createCanonical({ graph, optimistic });
   documents = createDocuments({ graph, planner, canonical });
   fragments = createFragments({ graph, planner, documents });
-  queries = createQueries({ graph, documents });
+  queries = createQueries({ graph, documents, planner });
 
   // Operations (always created since transport is required)
   const operations = createOperations(
-    { transport: options.transport, suspensionTimeout: options.suspensionTimeout },
-    { planner, queries, ssr }
+    { 
+      transport: options.transport, 
+      suspensionTimeout: options.suspensionTimeout,
+      onQueryError: (signature, error) => {
+        // Propagate errors to queries, which will notify watchers
+        queries.propagateError(signature, error);
+      },
+    },
+    { planner, documents, ssr }
   );
 
   // Features

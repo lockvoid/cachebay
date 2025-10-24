@@ -1,7 +1,7 @@
 import type { DocumentNode, GraphQLError } from "graphql";
 import { print } from "graphql";
 import type { PlannerInstance } from "./planner";
-import type { QueriesInstance } from "./queries";
+import type { DocumentsInstance } from "./documents";
 import type { SSRInstance } from "./ssr";
 import { __DEV__ } from "./instrumentation";
 import { StaleResponseError, CombinedError, CacheMissError } from "./errors";
@@ -18,7 +18,6 @@ export interface Operation<TData = any, TVars = QueryVariables> {
   query: string | DocumentNode;
   variables?: TVars;
   cachePolicy?: CachePolicy;
-  canonical?: boolean;
   /** Callback when data is successfully fetched/read */
   onSuccess?: (data: TData) => void;
   /** Callback when an error occurs */
@@ -80,17 +79,18 @@ export interface WsContext {
 export interface OperationsOptions {
   transport: Transport;
   suspensionTimeout?: number;
+  onQueryError?: (signature: string, error: CombinedError) => void;
 }
 
 export interface OperationsDependencies {
   planner: PlannerInstance;
-  queries: QueriesInstance;
+  documents: DocumentsInstance;
   ssr: SSRInstance;
 }
 
 export const createOperations = (
-  { transport, suspensionTimeout = 1000 }: OperationsOptions,
-  { planner, queries, ssr }: OperationsDependencies
+  { transport, suspensionTimeout = 1000, onQueryError }: OperationsOptions,
+  { planner, documents, ssr }: OperationsDependencies
 ) => {
   // Track query epochs to prevent stale responses from notifying watchers
   // Key: query signature, Value: current epoch number
@@ -98,6 +98,8 @@ export const createOperations = (
 
   // Suspension tracking: last terminal emit time per query signature
   const lastEmitBySig = new Map<string, number>();
+
+  // No need for error tracking maps - just call onQueryError callback
 
   /**
    * Check if we're within the suspension window for a query signature
@@ -121,13 +123,19 @@ export const createOperations = (
     query,
     variables = {},
     cachePolicy = 'network-only',
-    canonical = true,
     onSuccess,
     onError,
   }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
     const plan = planner.getPlan(query);
-    const signature = plan.makeSignature("canonical", variables);
-    const cached = queries.readQuery({ query, variables, canonical });
+    const signature = plan.makeSignature("canonical", variables);  // Always canonical
+    
+    // Read from cache using documents directly
+    const cached = documents.materializeDocument({
+      document: query,
+      variables,
+      canonical: true,
+      fingerprint: false,
+    });
 
     const performRequest = async () => {
       try {
@@ -156,28 +164,29 @@ export const createOperations = (
         // Write result to cache if we have data (even with partial errors)
         // This matches Relay/Apollo behavior: partial data is still useful
         if (result.data) {
-          queries.writeQuery({
-            query,
+          documents.normalizeDocument({
+            document: query,
             variables,
             data: result.data,
           });
 
           // Read back from cache to get normalized/materialized data
           // This ensures the same reference as watchQuery would emit
-          const cached = queries.readQuery({
-            query,
+          const cachedAfterWrite = documents.materializeDocument({
+            document: query,
             variables,
             canonical: true,
+            fingerprint: false,
           });
 
           // Validate that we can materialize the data we just wrote
-          if (cached.source === "none") {
-            if (__DEV__ && cached.ok.miss) {
+          if (cachedAfterWrite.source === "none") {
+            if (__DEV__ && cachedAfterWrite.ok.miss) {
               console.error(
                 '[cachebay] Failed to materialize query after network response.\n' +
                 'This usually means the response is missing required fields.\n' +
                 'Missing data:',
-                cached.ok.miss
+                cachedAfterWrite.ok.miss
               );
             }
             return {
@@ -196,7 +205,7 @@ export const createOperations = (
 
           // Return data with error if present (partial data scenario)
           const successResult = {
-            data: cached.data as TData,
+            data: cachedAfterWrite.data as TData,
             error: result.error || null,
           };
           onSuccess?.(successResult.data);
@@ -211,6 +220,9 @@ export const createOperations = (
         const combinedError = new CombinedError({ networkError: error as Error });
 
         onError?.(combinedError);
+        
+        // Notify error callback
+        onQueryError?.(signature, combinedError);
 
         return {
           data: null,
@@ -221,7 +233,7 @@ export const createOperations = (
 
     // SSR hydration or suspension window: return cached data immediately
     if (ssr.isHydrating() || isWithinSuspension(signature)) {
-      if (cached && cached.data !== undefined) {
+      if (cached.source !== "none") {
         const result = { data: cached.data as TData, error: null };
         onSuccess?.(result.data);
         return result;
@@ -229,9 +241,14 @@ export const createOperations = (
     }
 
     if (cachePolicy === 'cache-only') {
-      if (!cached || cached.data === undefined) {
+      if (cached.source === "none") {
         const error = new CombinedError({ networkError: new CacheMissError() });
         onError?.(error);
+        
+        // Notify error callback
+        console.log('[operations] cache-only error, signature:', signature);
+        onQueryError?.(signature, error);
+        
         return { data: null, error };
       }
 
@@ -241,13 +258,8 @@ export const createOperations = (
     }
 
     if (cachePolicy === 'cache-first') {
-      if (!canonical && cached?.ok?.strict) {
-        const result = { data: cached.data as TData, error: null };
-        onSuccess?.(result.data);
-        return result;
-      }
-
-      if (canonical && cached?.ok?.canonical) {
+      // Always use canonical mode now, so just check if we have data
+      if (cached.source !== "none") {
         const result = { data: cached.data as TData, error: null };
         onSuccess?.(result.data);
         return result;
@@ -255,20 +267,8 @@ export const createOperations = (
     }
 
     if (cachePolicy === 'cache-and-network') {
-      if (!canonical && cached?.ok?.strict) {
-        // Return cached data immediately, fetch in background
-        performRequest().catch((err) => {
-          if (__DEV__) {
-            console.warn('Cachebay: Cache hit, but network request failed', err);
-          }
-        });
-
-        const result = { data: cached.data as TData, error: null };
-        onSuccess?.(result.data);
-        return result;
-      }
-
-      if (canonical && cached?.ok?.canonical) {
+      // Always use canonical mode now, so just check if we have data
+      if (cached.source !== "none") {
         // Return cached data immediately, fetch in background
         performRequest().catch((err) => {
           if (__DEV__) {
@@ -308,8 +308,8 @@ export const createOperations = (
 
       // Write successful mutation result to cache
       if (result.data && !result.error) {
-        queries.writeQuery({
-          query,
+        documents.normalizeDocument({
+          document: query,
           variables: vars,
           data: result.data,
         });
@@ -361,8 +361,8 @@ export const createOperations = (
             next: (result: OperationResult<TData>) => {
               // Write successful subscription data to cache
               if (result.data && !result.error) {
-                queries.writeQuery({
-                  query,
+                documents.normalizeDocument({
+                  document: query,
                   variables: vars,
                   data: result.data,
                 });
@@ -407,3 +407,5 @@ export const createOperations = (
     executeSubscription,
   };
 };
+
+export type OperationsInstance = ReturnType<typeof createOperations>;

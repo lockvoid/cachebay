@@ -15,8 +15,6 @@ export interface UseQueryOptions<TData = any, TVars = any> {
   cachePolicy?: MaybeRefOrGetter<CachePolicy>;
   /** Pause query execution if true (can be reactive) */
   pause?: MaybeRefOrGetter<boolean>;
-  /** Use canonical mode for cache reads (default: true) */
-  canonical?: boolean;
 }
 
 /**
@@ -60,32 +58,24 @@ export function useQuery<TData = any, TVars = any>(
   let watchHandle: ReturnType<typeof client.watchQuery> | null = null;
   let initialExecutionPromise: Promise<void> | null = null;
 
-  const canonical = options.canonical ?? true;
-
   /**
    * Setup watcher (first time only)
    */
   const setupWatcher = (vars: TVars) => {
-    const policy = toValue(options.cachePolicy) || "cache-first";
-    
     watchHandle = client.watchQuery({
       query: options.query,
       variables: vars,
-      canonical,
       onData: (newData) => {
         data.value = newData as TData;
         error.value = null;
         isFetching.value = false;
       },
       onError: (err) => {
-        // For cache-only, show CacheMissError
-        // For other policies, filter it out (executeQuery will handle it)
-        if (err.name === 'CacheMissError' && policy !== 'cache-only') {
-          // Ignore cache miss for non-cache-only policies
-          isFetching.value = false;
-          return;
+        // Don't set cache miss errors - executeQuery will handle them based on policy
+        // Only set real errors (network errors, GraphQL errors, etc.)
+        if (err.name !== 'CacheMissError') {
+          error.value = err;
         }
-        error.value = err;
         isFetching.value = false;
       },
       immediate: true,
@@ -105,7 +95,6 @@ export function useQuery<TData = any, TVars = any>(
         query: options.query,
         variables: vars,
         cachePolicy: policy,
-        canonical,
       });
       isFetching.value = false;
     } catch (err) {
