@@ -270,7 +270,7 @@ export const createOperations = (
     }
 
     if (cachePolicy === 'cache-first') {
-      if (cached.ok.strict) {
+      if (cached.ok.canonical && cached.ok.strict) {
         const result = { data: cached.data as TData, error: null };
         onSuccess?.(result.data);
         return result;

@@ -296,11 +296,11 @@ describe("operations", () => {
     });
 
     describe("cache-first", () => {
-      it("returns cached data when canonical cache hit", async () => {
+      it("returns cached data when canonical and strict cache hit", async () => {
         mockDocuments.materializeDocument.mockReturnValue({
           data: cachedData,
           source: "canonical",
-          ok: { canonical: true, strict: false },
+          ok: { canonical: true, strict: true },
         });
 
         const onSuccess = vi.fn();
@@ -317,28 +317,7 @@ describe("operations", () => {
         expect(onSuccess).toHaveBeenCalledWith(cachedData);
       });
 
-      it("returns cached data when strict cache hit", async () => {
-        mockDocuments.materializeDocument.mockReturnValue({
-          data: cachedData,
-          source: "strict",
-          ok: { canonical: false, strict: true },
-        });
-
-        const onSuccess = vi.fn();
-        const result = await operations.executeQuery({
-          query,
-          variables,
-          cachePolicy: "cache-first",
-          canonical: false,
-          onSuccess,
-        });
-
-        expect(result.data).toEqual(cachedData);
-        expect(mockTransport.http).not.toHaveBeenCalled();
-        expect(onSuccess).toHaveBeenCalledWith(cachedData);
-      });
-
-      it("fetches from network on cache miss", async () => {
+      it("fetches from network when strict cache hit but canonical cache miss", async () => {
         let readCount = 0;
         mockDocuments.materializeDocument.mockImplementation(() => {
           readCount++;
@@ -347,7 +326,7 @@ describe("operations", () => {
             return {
               data: undefined,
               source: "none",
-              ok: { canonical: false, strict: false },
+              ok: { canonical: false, strict: true },
             };
           }
           // After network fetch and write
@@ -377,6 +356,44 @@ describe("operations", () => {
         expect(onSuccess).toHaveBeenCalledWith(networkData);
       });
 
+      it("fetches from network when canonical cache hit but strict cache miss", async () => {
+        let readCount = 0;
+        mockDocuments.materializeDocument.mockImplementation(() => {
+          readCount++;
+          if (readCount === 1) {
+            // Initial cache miss
+            return {
+              data: undefined,
+              source: "none",
+              ok: { canonical: true, strict: false },
+            };
+          }
+          // After network fetch and write
+          return {
+            data: networkData,
+            source: "canonical",
+            ok: { canonical: true, strict: true },
+          };
+        });
+
+        const mockResult: OperationResult = {
+          data: networkData,
+          error: null,
+        };
+        vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+        const onSuccess = vi.fn();
+        const result = await operations.executeQuery({
+          query,
+          variables,
+          cachePolicy: "cache-first",
+          onSuccess,
+        });
+
+        expect(result.data).toEqual(networkData);
+        expect(mockTransport.http).toHaveBeenCalled();
+        expect(onSuccess).toHaveBeenCalledWith(networkData);
+      });
     });
 
     describe("cache-only", () => {
