@@ -17,6 +17,8 @@ export type CachePolicy = "cache-and-network" | "network-only" | "cache-first" |
 export interface Operation<TData = any, TVars = QueryVariables> {
   query: string | DocumentNode;
   variables?: TVars;
+  cachePolicy?: CachePolicy;
+  canonical?: boolean;
 }
 
 /**
@@ -143,16 +145,16 @@ export const createOperations = (
   /**
    * Check if we're within the suspension window for a query signature
    */
-  const isWithinSuspension = (sig: string): boolean => {
-    const last = lastEmitBySig.get(sig);
+  const isWithinSuspension = (signature: string): boolean => {
+    const last = lastEmitBySig.get(signature);
     return last != null && performance.now() - last <= suspensionTimeout;
   };
 
   /**
    * Mark a query signature as having emitted (for suspension tracking)
    */
-  const markEmitted = (sig: string): void => {
-    lastEmitBySig.set(sig, performance.now());
+  const markEmitted = (signature: string): void => {
+    lastEmitBySig.set(signature, performance.now());
   };
 
   /**
@@ -160,67 +162,31 @@ export const createOperations = (
    */
   const executeQuery = async <TData = any, TVars = QueryVariables>({
     query,
-    variables,
-    ...restOptions
+    variables = {},
+    cachePolicy = 'network-only',
+    canonical = true,
   }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
-    const vars = variables || ({} as TVars);
     const plan = planner.getPlan(query);
-    const sig = plan.makeSignature("canonical", vars);
+    const signature = plan.makeSignature("canonical", variables);
+    const cached = queries.readQuery({ query, variables, canonical });
 
-    // SSR hydration quick path (prefer strict cache during hydration)
-    // During hydration, ALL policies use cache to avoid network requests
-    if (ssr.isHydrating()) {
-      const cached = queries.readQuery({
-        query,
-        variables: vars,
-        canonical: false, // strict cache for hydration
-      });
+    const performRequest = async () => {
+      const currentEpoch = (queryEpochs.get(signature) || 0) + 1;
 
-      if (cached && cached.data !== undefined) {
-        markEmitted(sig);
-        return {
-          data: cached.data as TData,
-          error: null,
-        };
-      }
-    }
+      queryEpochs.set(signature, currentEpoch);
 
-    // Suspension window check - serve cached response to avoid duplicate network requests
-    if (isWithinSuspension(sig)) {
-      const cached = queries.readQuery({
-        query,
-        variables: vars,
-        canonical: true,
-      });
+      // Network fetch
+      const context: HttpContext = {
+        query: plan.networkQuery, // Use the pre-compiled network-safe query string
+        variables,
+        operationType: "query",
+        compiledQuery: plan,
+      };
 
-      if (cached && cached.data !== undefined) {
-        // For network-only or cache-and-network within suspension window,
-        // serve cached to avoid duplicate fetch
-        markEmitted(sig);
-        return {
-          data: cached.data as TData,
-          error: null,
-        };
-      }
-    }
-
-    // Increment epoch for this query to track staleness
-    const currentEpoch = (queryEpochs.get(sig) || 0) + 1;
-    queryEpochs.set(sig, currentEpoch);
-
-    // Network fetch
-    const context: HttpContext = {
-      query: plan.networkQuery, // Use the pre-compiled network-safe query string
-      variables: vars,
-      operationType: "query",
-      compiledQuery: plan,
-    };
-
-    try {
       const result = await transport.http(context);
 
       // Check if this response is stale (a newer request was made)
-      const isStale = queryEpochs.get(sig) !== currentEpoch;
+      const isStale = queryEpochs.get(signature) !== currentEpoch;
 
       // If stale, return null data with StaleResponseError wrapped in CombinedError
       if (isStale) {
@@ -245,7 +211,7 @@ export const createOperations = (
         // This ensures the same reference as watchQuery would emit
         const cached = queries.readQuery({
           query,
-          variables: vars,
+          variables,
           canonical: true,
         });
 
@@ -271,7 +237,7 @@ export const createOperations = (
         }
 
         // Mark as emitted for suspension tracking
-        markEmitted(sig);
+        markEmitted(signature);
 
         // Return data with error if present (partial data scenario)
         return {
@@ -281,138 +247,279 @@ export const createOperations = (
       }
 
       // Mark as emitted for suspension tracking
-      markEmitted(sig);
+      markEmitted(signature);
 
-      return result as OperationResult<TData>;
-    } catch (err) {
-      return {
-        data: null,
-        error: new CombinedError({
-          networkError: err as Error,
-        }),
-      };
+      return result as OperationResult<TData>; ee
     }
-  };
 
-  /**
-   * Execute a GraphQL mutation
-   */
-  const executeMutation = async <TData = any, TVars = QueryVariables>({
-    query,
-    variables,
-    ...restOptions
-  }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
-    const vars = variables || ({} as TVars);
-    const compiledQuery = planner.getPlan(query);
-
-    const context: HttpContext = {
-      query,
-      variables: vars,
-      operationType: "mutation",
-      compiledQuery,
-    };
-
-    try {
-      const result = await transport.http(context);
-
-      // Write successful mutation result to cache
-      if (result.data && !result.error) {
-        queries.writeQuery({
-          query,
-          variables: vars,
-          data: result.data,
-        });
+    if (ssr.isHydrating() || isWithinSuspension(signature)) {
+      if (cached && cached.data !== undefined) {
+        return { data: cached.data as TData, error: null };
       }
 
-      return result as OperationResult<TData>;
-    } catch (err) {
-      return {
-        data: null,
-        error: new CombinedError({
-          networkError: err as Error,
-        }),
+      if (cachePolicy === 'cache-only') {
+        if (cached && cached.data === undefined) {
+          return { data: null, error: new CombineeError({ networkError: new CacheMissError() }) };
+        }
+
+        return { data: cached.data as TData, error: null };
+      }
+
+      if (cachePolicy === 'cache-first') {
+        if (!canonical && cached.ok.strict) {
+          return { data: cached.data as TData, error: null };
+        }
+
+        if (canonical && cached.ok.canonical) {
+          return { data: cached.data as TData, error: null };
+        }
+      }
+
+      if (cachePolicy === 'cache-and-network') {
+        if (!canonical && cached.ok.strict) {
+          performRequest().catch(() => {
+            if (__DEV__) {
+              console.warn('Cachebay: Cache hit, but network request failed');
+            }
+          });
+
+          return { data: cached.data as TData, error: null };
+        }
+
+        if (canonical && cached.ok.canonical) {
+          performRequest().catch(() => {
+            if (__DEV__) {
+              console.warn('Cachebay: Cache hit, but network request failed');
+            }
+          });
+
+          return { data: cached.data as TData, error: null };
+        }
+      }
+
+      try {
+        const result = await performRequest();
+
+        return result;
+      } catch (err) {
+        return {
+          data: null,
+          error: new CombinedError({
+            networkError: err as Error,
+          }),
+        };
+      }
+
+      /*
+      const currentEpoch = (queryEpochs.get(signature) || 0) + 1;
+
+      queryEpochs.set(signature, currentEpoch);
+
+      // Network fetch
+      const context: HttpContext = {
+        query: plan.networkQuery, // Use the pre-compiled network-safe query string
+        variables,
+        operationType: "query",
+        compiledQuery: plan,
       };
-    }
-  };
 
-  /**
-   * Execute a GraphQL subscription - returns observable that writes data to cache
-   */
-  const executeSubscription = async <TData = any, TVars = QueryVariables>({
-    query,
-    variables,
-    ...restOptions
-  }: Operation<TData, TVars>): Promise<ObservableLike<OperationResult<TData>>> => {
-    // Check if ws transport is available
-    if (!transport.ws) {
-      throw new Error(
-        "WebSocket transport is not configured. Please provide 'transport.ws' in createCachebay options to use subscriptions."
-      );
-    }
+      try {
+        const result = await transport.http(context);
 
-    const vars = variables || ({} as TVars);
-    const compiledQuery = planner.getPlan(query);
+        // Check if this response is stale (a newer request was made)
+        const isStale = queryEpochs.get(signature) !== currentEpoch;
 
-    const context: WsContext = {
-      query,
-      variables: vars,
-      operationType: "subscription",
-      compiledQuery,
+        // If stale, return null data with StaleResponseError wrapped in CombinedError
+        if (isStale) {
+          return {
+            data: null,
+            error: new CombinedError({
+              networkError: new StaleResponseError(),
+            }),
+          };
+        }
+
+        // Write result to cache if we have data (even with partial errors)
+        // This matches Relay/Apollo behavior: partial data is still useful
+        if (result.data) {
+          queries.writeQuery({
+            query,
+            variables: vars,
+            data: result.data,
+          });
+
+          // Read back from cache to get normalized/materialized data
+          // This ensures the same reference as watchQuery would emit
+          const cached = queries.readQuery({
+            query,
+            variables,
+            canonical: true,
+          });
+
+          // Validate that we can materialize the data we just wrote
+          if (cached.source === "none") {
+            if (__DEV__ && cached.ok.miss) {
+              console.error(
+                '[cachebay] Failed to materialize query after network response.\n' +
+                'This usually means the response is missing required fields.\n' +
+                'Missing data:',
+                cached.ok.miss
+              );
+            }
+            return {
+              data: null,
+              error: new CombinedError({
+                networkError: new Error(
+                  'Failed to materialize query after write. ' +
+                  'The response may be missing required fields like __typename or id.'
+                ),
+              }),
+            };
+          }
+
+          // Mark as emitted for suspension tracking
+          markEmitted(signature);
+
+          // Return data with error if present (partial data scenario)
+          return {
+            data: cached.data as TData,
+            error: result.error || null,
+          };
+        }
+
+        // Mark as emitted for suspension tracking
+        markEmitted(signature);
+
+        return result as OperationResult<TData>;
+      } catch (err) {
+        return {
+          data: null,
+          error: new CombinedError({
+            networkError: err as Error,
+          }),
+        };
+      } */
     };
 
-    try {
-      const observable = await transport.ws(context);
+    /**
+     * Execute a GraphQL mutation
+     */
+    const executeMutation = async <TData = any, TVars = QueryVariables>({
+      query,
+      variables,
+      ...restOptions
+    }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
+      const vars = variables || ({} as TVars);
+      const compiledQuery = planner.getPlan(query);
 
-      // Wrap observable to write incoming data to cache
-      return {
-        subscribe(observer: Partial<ObserverLike<OperationResult<TData>>>) {
-          return observable.subscribe({
-            next: (result: OperationResult<TData>) => {
-              // Write successful subscription data to cache
-              if (result.data && !result.error) {
-                queries.writeQuery({
-                  query,
-                  variables: vars,
-                  data: result.data,
-                });
-              }
+      const context: HttpContext = {
+        query,
+        variables: vars,
+        operationType: "mutation",
+        compiledQuery,
+      };
 
-              // Forward to observer
-              if (observer.next) {
-                observer.next(result);
-              }
-            },
-            error: (err: any) => {
-              // Forward error to observer
-              if (observer.error) {
-                observer.error(err);
-              }
-            },
-            complete: () => {
-              // Forward completion to observer
-              if (observer.complete) {
-                observer.complete();
-              }
-            },
+      try {
+        const result = await transport.http(context);
+
+        // Write successful mutation result to cache
+        if (result.data && !result.error) {
+          queries.writeQuery({
+            query,
+            variables: vars,
+            data: result.data,
           });
-        },
-      };
-    } catch (err) {
-      // Return an observable that immediately errors
-      return {
-        subscribe(observer: Partial<ObserverLike<OperationResult<TData>>>) {
-          if (observer.error) {
-            observer.error(err);
-          }
-          return { unsubscribe: () => { } };
-        },
-      };
-    }
-  };
+        }
 
-  return {
-    executeQuery,
-    executeMutation,
-    executeSubscription,
+        return result as OperationResult<TData>;
+      } catch (err) {
+        return {
+          data: null,
+          error: new CombinedError({
+            networkError: err as Error,
+          }),
+        };
+      }
+    };
+
+    /**
+     * Execute a GraphQL subscription - returns observable that writes data to cache
+     */
+    const executeSubscription = async <TData = any, TVars = QueryVariables>({
+      query,
+      variables,
+      ...restOptions
+    }: Operation<TData, TVars>): Promise<ObservableLike<OperationResult<TData>>> => {
+      // Check if ws transport is available
+      if (!transport.ws) {
+        throw new Error(
+          "WebSocket transport is not configured. Please provide 'transport.ws' in createCachebay options to use subscriptions."
+        );
+      }
+
+      const vars = variables || ({} as TVars);
+      const compiledQuery = planner.getPlan(query);
+
+      const context: WsContext = {
+        query,
+        variables: vars,
+        operationType: "subscription",
+        compiledQuery,
+      };
+
+      try {
+        const observable = await transport.ws(context);
+
+        // Wrap observable to write incoming data to cache
+        return {
+          subscribe(observer: Partial<ObserverLike<OperationResult<TData>>>) {
+            return observable.subscribe({
+              next: (result: OperationResult<TData>) => {
+                // Write successful subscription data to cache
+                if (result.data && !result.error) {
+                  queries.writeQuery({
+                    query,
+                    variables: vars,
+                    data: result.data,
+                  });
+                }
+
+                // Forward to observer
+                if (observer.next) {
+                  observer.next(result);
+                }
+              },
+              error: (err: any) => {
+                // Forward error to observer
+                if (observer.error) {
+                  observer.error(err);
+                }
+              },
+              complete: () => {
+                // Forward completion to observer
+                if (observer.complete) {
+                  observer.complete();
+                }
+              },
+            });
+          },
+        };
+      } catch (err) {
+        // Return an observable that immediately errors
+        return {
+          subscribe(observer: Partial<ObserverLike<OperationResult<TData>>>) {
+            if (observer.error) {
+              observer.error(err);
+            }
+            return { unsubscribe: () => { } };
+          },
+        };
+      }
+    };
+
+    return {
+      executeQuery,
+      executeMutation,
+      executeSubscription,
+    };
   };
-};
