@@ -512,7 +512,7 @@ describe("operations", () => {
         mockDocuments.materializeDocument.mockReturnValue({
           data: cachedData,
           source: "strict",
-          ok: { canonical: false, strict: true },
+          ok: { canonical: true, strict: false },
         });
 
         const networkError = new Error("Background fetch failed");
@@ -523,7 +523,6 @@ describe("operations", () => {
           query,
           variables,
           cachePolicy: "cache-and-network",
-          canonical: false,
           onError,
         });
 
