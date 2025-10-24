@@ -5,7 +5,6 @@ import { createPlanner } from "@/src/core/planner";
 import { createDocuments } from "@/src/core/documents";
 import { createCanonical } from "@/src/core/canonical";
 import { createOptimistic } from "@/src/core/optimistic";
-import { createFragments } from "@/src/core/fragments";
 import { gql } from "graphql-tag";
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
@@ -15,7 +14,6 @@ describe("queries API", () => {
   let planner: ReturnType<typeof createPlanner>;
   let canonical: ReturnType<typeof createCanonical>;
   let documents: ReturnType<typeof createDocuments>;
-  let fragments: ReturnType<typeof createFragments>;
   let queries: ReturnType<typeof createQueries>;
 
   beforeEach(() => {
@@ -27,14 +25,12 @@ describe("queries API", () => {
       },
       onChange: (touchedIds) => {
         queries.propagateData(touchedIds);
-        fragments.notifyWatchers(touchedIds);
       },
     });
     planner = createPlanner();
     const optimistic = createOptimistic({ graph });
     canonical = createCanonical({ graph, optimistic });
     documents = createDocuments({ graph, planner, canonical });
-    fragments = createFragments({ graph, planner, documents });
     queries = createQueries({ graph, documents, planner });
   });
 
@@ -326,24 +322,11 @@ describe("queries API", () => {
       expect(emissions).toHaveLength(1);
       expect(emissions[0].user.profile.bio).toBe("Original bio");
 
-      // Update ONLY the profile entity (not the user)
-      const PROFILE_FRAGMENT = gql`
-        fragment ProfileFields on Profile {
-          id
-          bio
-          avatar
-        }
-      `;
-
-      fragments.writeFragment({
-        id: "Profile:p1",
-        fragment: PROFILE_FRAGMENT,
-        data: {
-          __typename: "Profile",
-          id: "p1",
-          bio: "Updated bio",
-          avatar: "avatar2.jpg",
-        },
+      // Update ONLY the profile entity using low-level graph API
+      // This simulates an external update to the Profile entity
+      graph.putRecord("Profile:p1", {
+        bio: "Updated bio",
+        avatar: "avatar2.jpg",
       });
 
       // Wait for microtask

@@ -79,7 +79,7 @@ const routes = [
 ];
 
 describe("SSR", () => {
-  describe.skip("Suspense", () => {
+  describe("Suspense", () => {
     describe("cache-and-network", () => {
       it("renders cached data immediately after hydration without network requests", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
@@ -181,9 +181,11 @@ describe("SSR", () => {
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
 
+        wrapper.setProps({ category: "music", first: 2, after: null });
+
         // After hydration window (10ms) - network request fires
         await delay(20);
-        expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
+        expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
         expect(fx.calls.length).toBe(1);
 
         await fx.restore();

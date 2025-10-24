@@ -356,9 +356,31 @@ describe("Fragments (documents-powered)", () => {
       expect(last.posts.edges.length).toBe(2);
       expect(last.posts.totalCount).toBe(2);
 
-      const canonicalKey = '@connection.User:u1.posts({"category":"tech"})';
-      graph.putRecord(`${canonicalKey}.edges.0`, { score: 0.9 });
-      fragments.propagateData(new Set([canonicalKey, `${canonicalKey}.edges.0`]));
+      // Update edge metadata using writeFragment (proper high-level API)
+      fragments.writeFragment({
+        id: "User:u1",
+        fragment: operations.USER_POSTS_FRAGMENT,
+        fragmentName: "UserPosts",
+        variables: { postsCategory: "tech", postsFirst: 2, postsAfter: null },
+        data: {
+          id: "u1",
+          posts: {
+            __typename: "PostConnection",
+            totalCount: 2,
+            pageInfo: {
+              __typename: "PageInfo",
+              startCursor: "p1",
+              endCursor: "p2",
+              hasNextPage: true,
+              hasPreviousPage: false,
+            },
+            edges: [
+              { __typename: "PostEdge", cursor: "p1", score: 0.9, node: { __typename: "Post", id: "p1", title: "P1", flags: [] } },
+              { __typename: "PostEdge", cursor: "p2", score: 0.7, node: { __typename: "Post", id: "p2", title: "P2", flags: [] } },
+            ],
+          },
+        },
+      });
 
       await tick();
       expect(last.posts.edges[0].score).toBe(0.9);
@@ -403,8 +425,32 @@ describe("Fragments (documents-powered)", () => {
       });
       expect(last.posts.totalCount).toBe(3);
 
-      graph.putRecord(canonicalKey, { totalCount: 4 });
-      fragments.propagateData(new Set([canonicalKey]));
+      // Update totalCount using writeFragment
+      fragments.writeFragment({
+        id: "User:u1",
+        fragment: operations.USER_POSTS_FRAGMENT,
+        fragmentName: "UserPosts",
+        variables: { postsCategory: "tech", postsFirst: 2, postsAfter: null },
+        data: {
+          id: "u1",
+          posts: {
+            __typename: "PostConnection",
+            totalCount: 4,
+            pageInfo: {
+              __typename: "PageInfo",
+              startCursor: "p1",
+              endCursor: "p3",
+              hasNextPage: false,
+              hasPreviousPage: false,
+            },
+            edges: [
+              { __typename: "PostEdge", cursor: "p1", score: 0.9, node: { __typename: "Post", id: "p1", title: "P1", flags: [] } },
+              { __typename: "PostEdge", cursor: "p2", score: 0.7, node: { __typename: "Post", id: "p2", title: "P2", flags: [] } },
+              { __typename: "PostEdge", cursor: "p3", score: 0.4, node: { __typename: "Post", id: "p3", title: "P3", flags: [] } },
+            ],
+          },
+        },
+      });
 
       await tick();
 
