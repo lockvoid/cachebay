@@ -19,7 +19,8 @@ export default defineNuxtConfig({
   ],
 
   alias: {
-    "cachebay": resolve("../cachebay/src"),
+    "cachebay$": resolve("../cachebay/src/index.ts"),
+    "cachebay/vue$": resolve("../cachebay/src/adapters/vue/index.ts"),
   },
 
   imports: {
@@ -77,9 +78,10 @@ export default defineNuxtConfig({
     },
 
     resolve: {
-      alias: {
-        "cachebay": resolve("../cachebay/src"),
-      },
+      alias: [
+        { find: /^cachebay\/vue$/, replacement: resolve("../cachebay/src/adapters/vue/index.ts") },
+        { find: /^cachebay$/, replacement: resolve("../cachebay/src/index.ts") },
+      ],
     },
   },
 
