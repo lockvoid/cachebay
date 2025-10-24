@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createOperations, CombinedError } from "../../../src/core/operations";
+import { createOperations } from "../../../src/core/operations";
+import { CombinedError } from "../../../src/core/errors";
 import type { Transport, OperationResult, ObservableLike } from "../../../src/core/operations";
 
 describe("operations", () => {
@@ -25,13 +26,36 @@ describe("operations", () => {
       }),
     };
 
-    // Mock queries
+    // Mock queries with proper cache simulation
     let cachedData: any = null;
     mockQueries = {
       writeQuery: vi.fn((args) => {
         cachedData = args.data;
       }),
-      readQuery: vi.fn(() => ({ data: cachedData })),
+      readQuery: vi.fn((args) => {
+        // If canonical is explicitly requested and we have cached data
+        if (args?.canonical && cachedData) {
+          return {
+            data: cachedData,
+            source: "canonical",
+            ok: { canonical: true, strict: true },
+          };
+        }
+        // If we have cached data (for any read)
+        if (cachedData) {
+          return {
+            data: cachedData,
+            source: "canonical",
+            ok: { canonical: true, strict: true },
+          };
+        }
+        // No cache
+        return {
+          data: undefined,
+          source: "none",
+          ok: { canonical: false, strict: false },
+        };
+      }),
     };
 
     // Mock SSR
@@ -189,6 +213,513 @@ describe("operations", () => {
       expect(result.error?.message).toContain("Failed to materialize query after write");
       expect(result.error?.networkError?.message).toContain("missing required fields");
       expect(mockQueries.writeQuery).toHaveBeenCalled();
+    });
+  });
+
+  describe("executeQuery - cache policies", () => {
+    const query = "query GetUser { user { id name } }";
+    const variables = { id: "1" };
+    const cachedData = { user: { id: "1", name: "Cached Alice" } };
+    const networkData = { user: { id: "1", name: "Network Alice" } };
+
+    describe("network-only (default)", () => {
+      it("always fetches from network and ignores cache", async () => {
+        // Setup: First readQuery returns cached data, second returns network data after write
+        let readCount = 0;
+        mockQueries.readQuery.mockImplementation(() => {
+          readCount++;
+          if (readCount === 1) {
+            // Initial read (before network fetch)
+            return {
+              data: cachedData,
+              source: "canonical",
+              ok: { canonical: true, strict: true },
+            };
+          }
+          // After write, return the network data
+          return {
+            data: networkData,
+            source: "canonical",
+            ok: { canonical: true, strict: true },
+          };
+        });
+
+        const mockResult: OperationResult = {
+          data: networkData,
+          error: null,
+        };
+        vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+        const result = await operations.executeQuery({
+          query,
+          variables,
+          cachePolicy: "network-only",
+        });
+
+        expect(result.data).toEqual(networkData);
+        expect(mockTransport.http).toHaveBeenCalled();
+      });
+
+      it("invokes onSuccess callback with data", async () => {
+        const mockResult: OperationResult = {
+          data: networkData,
+          error: null,
+        };
+        vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+        const onSuccess = vi.fn();
+        await operations.executeQuery({
+          query,
+          variables,
+          cachePolicy: "network-only",
+          onSuccess,
+        });
+
+        expect(onSuccess).toHaveBeenCalledWith(networkData);
+        expect(onSuccess).toHaveBeenCalledTimes(1);
+      });
+
+      it("invokes onError callback on network failure", async () => {
+        const networkError = new Error("Network failed");
+        vi.mocked(mockTransport.http).mockRejectedValue(networkError);
+
+        const onError = vi.fn();
+        const result = await operations.executeQuery({
+          query,
+          variables,
+          cachePolicy: "network-only",
+          onError,
+        });
+
+        expect(result.data).toBeNull();
+        expect(onError).toHaveBeenCalledTimes(1);
+        expect(onError).toHaveBeenCalledWith(
+          expect.objectContaining({
+            networkError,
+          })
+        );
+      });
+    });
+
+    describe("cache-first", () => {
+      it("returns cached data when canonical cache hit", async () => {
+        mockQueries.readQuery.mockReturnValue({
+          data: cachedData,
+          source: "canonical",
+          ok: { canonical: true, strict: false },
+        });
+
+        const onSuccess = vi.fn();
+        const result = await operations.executeQuery({
+          query,
+          variables,
+          cachePolicy: "cache-first",
+          canonical: true,
+          onSuccess,
+        });
+
+        expect(result.data).toEqual(cachedData);
+        expect(mockTransport.http).not.toHaveBeenCalled();
+        expect(onSuccess).toHaveBeenCalledWith(cachedData);
+      });
+
+      it("returns cached data when strict cache hit", async () => {
+        mockQueries.readQuery.mockReturnValue({
+          data: cachedData,
+          source: "strict",
+          ok: { canonical: false, strict: true },
+        });
+
+        const onSuccess = vi.fn();
+        const result = await operations.executeQuery({
+          query,
+          variables,
+          cachePolicy: "cache-first",
+          canonical: false,
+          onSuccess,
+        });
+
+        expect(result.data).toEqual(cachedData);
+        expect(mockTransport.http).not.toHaveBeenCalled();
+        expect(onSuccess).toHaveBeenCalledWith(cachedData);
+      });
+
+      it("fetches from network on cache miss", async () => {
+        let readCount = 0;
+        mockQueries.readQuery.mockImplementation(() => {
+          readCount++;
+          if (readCount === 1) {
+            // Initial cache miss
+            return {
+              data: undefined,
+              source: "none",
+              ok: { canonical: false, strict: false },
+            };
+          }
+          // After network fetch and write
+          return {
+            data: networkData,
+            source: "canonical",
+            ok: { canonical: true, strict: true },
+          };
+        });
+
+        const mockResult: OperationResult = {
+          data: networkData,
+          error: null,
+        };
+        vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+        const onSuccess = vi.fn();
+        const result = await operations.executeQuery({
+          query,
+          variables,
+          cachePolicy: "cache-first",
+          onSuccess,
+        });
+
+        expect(result.data).toEqual(networkData);
+        expect(mockTransport.http).toHaveBeenCalled();
+        expect(onSuccess).toHaveBeenCalledWith(networkData);
+      });
+
+      it("respects canonical parameter for cache lookup", async () => {
+        mockQueries.readQuery.mockReturnValue({
+          data: cachedData,
+          source: "strict",
+          ok: { canonical: false, strict: true },
+        });
+
+        await operations.executeQuery({
+          query,
+          variables,
+          cachePolicy: "cache-first",
+          canonical: false,
+        });
+
+        expect(mockQueries.readQuery).toHaveBeenCalledWith({
+          query,
+          variables,
+          canonical: false,
+        });
+      });
+    });
+
+    describe("cache-only", () => {
+      it("returns cached data when available", async () => {
+        mockQueries.readQuery.mockReturnValue({
+          data: cachedData,
+          source: "canonical",
+          ok: { canonical: true, strict: true },
+        });
+
+        const onSuccess = vi.fn();
+        const result = await operations.executeQuery({
+          query,
+          variables,
+          cachePolicy: "cache-only",
+          onSuccess,
+        });
+
+        expect(result.data).toEqual(cachedData);
+        expect(result.error).toBeNull();
+        expect(mockTransport.http).not.toHaveBeenCalled();
+        expect(onSuccess).toHaveBeenCalledWith(cachedData);
+      });
+
+      it("returns CacheMissError when no cache", async () => {
+        mockQueries.readQuery.mockReturnValue({
+          data: undefined,
+          source: "none",
+          ok: { canonical: false, strict: false },
+        });
+
+        const onError = vi.fn();
+        const result = await operations.executeQuery({
+          query,
+          variables,
+          cachePolicy: "cache-only",
+          onError,
+        });
+
+        expect(result.data).toBeNull();
+        expect(result.error).toBeInstanceOf(CombinedError);
+        expect(result.error?.networkError?.name).toBe("CacheMissError");
+        expect(mockTransport.http).not.toHaveBeenCalled();
+        expect(onError).toHaveBeenCalledTimes(1);
+      });
+
+      it("never makes network request", async () => {
+        mockQueries.readQuery.mockReturnValue({
+          data: cachedData,
+          source: "canonical",
+          ok: { canonical: true, strict: true },
+        });
+
+        await operations.executeQuery({
+          query,
+          variables,
+          cachePolicy: "cache-only",
+        });
+
+        expect(mockTransport.http).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("cache-and-network", () => {
+      it("returns cached data immediately and fetches in background", async () => {
+        let readCount = 0;
+        mockQueries.readQuery.mockImplementation(() => {
+          readCount++;
+          if (readCount === 1) {
+            // Initial read returns cached data
+            return {
+              data: cachedData,
+              source: "canonical",
+              ok: { canonical: true, strict: true },
+            };
+          }
+          // After background fetch and write, return network data
+          return {
+            data: networkData,
+            source: "canonical",
+            ok: { canonical: true, strict: true },
+          };
+        });
+
+        const mockResult: OperationResult = {
+          data: networkData,
+          error: null,
+        };
+        vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+        const onSuccess = vi.fn();
+        const result = await operations.executeQuery({
+          query,
+          variables,
+          cachePolicy: "cache-and-network",
+          canonical: true,
+          onSuccess,
+        });
+
+        // Should return cached data immediately
+        expect(result.data).toEqual(cachedData);
+        expect(onSuccess).toHaveBeenCalledWith(cachedData);
+
+        // Network request should be initiated
+        expect(mockTransport.http).toHaveBeenCalled();
+
+        // Wait for background fetch to complete
+        await new Promise((resolve) => setTimeout(resolve, 10));
+
+        // onSuccess should be called again with network data
+        expect(onSuccess).toHaveBeenCalledTimes(2);
+        expect(onSuccess).toHaveBeenNthCalledWith(2, networkData);
+      });
+
+      it("handles background fetch errors gracefully", async () => {
+        mockQueries.readQuery.mockReturnValue({
+          data: cachedData,
+          source: "strict",
+          ok: { canonical: false, strict: true },
+        });
+
+        const networkError = new Error("Background fetch failed");
+        vi.mocked(mockTransport.http).mockRejectedValue(networkError);
+
+        const onError = vi.fn();
+        const result = await operations.executeQuery({
+          query,
+          variables,
+          cachePolicy: "cache-and-network",
+          canonical: false,
+          onError,
+        });
+
+        // Should still return cached data
+        expect(result.data).toEqual(cachedData);
+        expect(result.error).toBeNull();
+
+        // Wait for background fetch to fail
+        await new Promise((resolve) => setTimeout(resolve, 10));
+
+        // onError should be called for background failure
+        expect(onError).toHaveBeenCalledWith(
+          expect.objectContaining({
+            networkError,
+          })
+        );
+      });
+
+      it("fetches from network when no cache available", async () => {
+        let readCount = 0;
+        mockQueries.readQuery.mockImplementation(() => {
+          readCount++;
+          if (readCount === 1) {
+            // Initial cache miss
+            return {
+              data: undefined,
+              source: "none",
+              ok: { canonical: false, strict: false },
+            };
+          }
+          // After network fetch and write
+          return {
+            data: networkData,
+            source: "canonical",
+            ok: { canonical: true, strict: true },
+          };
+        });
+
+        const mockResult: OperationResult = {
+          data: networkData,
+          error: null,
+        };
+        vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+        const result = await operations.executeQuery({
+          query,
+          variables,
+          cachePolicy: "cache-and-network",
+        });
+
+        expect(result.data).toEqual(networkData);
+        expect(mockTransport.http).toHaveBeenCalled();
+      });
+    });
+
+    describe("SSR hydration", () => {
+      it("returns cached data during hydration for network-only", async () => {
+        mockSsr.isHydrating.mockReturnValue(true);
+        mockQueries.readQuery.mockReturnValue({
+          data: cachedData,
+          source: "canonical",
+          ok: { canonical: true, strict: true },
+        });
+
+        const onSuccess = vi.fn();
+        const result = await operations.executeQuery({
+          query,
+          variables,
+          cachePolicy: "network-only",
+          onSuccess,
+        });
+
+        expect(result.data).toEqual(cachedData);
+        expect(mockTransport.http).not.toHaveBeenCalled();
+        expect(onSuccess).toHaveBeenCalledWith(cachedData);
+      });
+
+      it("returns cached data during hydration for cache-first", async () => {
+        mockSsr.isHydrating.mockReturnValue(true);
+        mockQueries.readQuery.mockReturnValue({
+          data: cachedData,
+          source: "canonical",
+          ok: { canonical: true, strict: true },
+        });
+
+        const result = await operations.executeQuery({
+          query,
+          variables,
+          cachePolicy: "cache-first",
+        });
+
+        expect(result.data).toEqual(cachedData);
+        expect(mockTransport.http).not.toHaveBeenCalled();
+      });
+
+      it("skips network request during hydration", async () => {
+        mockSsr.isHydrating.mockReturnValue(true);
+        mockQueries.readQuery.mockReturnValue({
+          data: cachedData,
+          source: "canonical",
+          ok: { canonical: true, strict: true },
+        });
+
+        await operations.executeQuery({
+          query,
+          variables,
+          cachePolicy: "network-only",
+        });
+
+        expect(mockTransport.http).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("callbacks", () => {
+      it("invokes onSuccess with data on successful query", async () => {
+        const mockResult: OperationResult = {
+          data: networkData,
+          error: null,
+        };
+        vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+        const onSuccess = vi.fn();
+        await operations.executeQuery({
+          query,
+          variables,
+          onSuccess,
+        });
+
+        expect(onSuccess).toHaveBeenCalledWith(networkData);
+        expect(onSuccess).toHaveBeenCalledTimes(1);
+      });
+
+      it("invokes onError with CombinedError on failure", async () => {
+        const networkError = new Error("Request failed");
+        vi.mocked(mockTransport.http).mockRejectedValue(networkError);
+
+        const onError = vi.fn();
+        await operations.executeQuery({
+          query,
+          variables,
+          onError,
+        });
+
+        expect(onError).toHaveBeenCalledTimes(1);
+        expect(onError).toHaveBeenCalledWith(
+          expect.objectContaining({
+            name: "CombinedError",
+            networkError,
+          })
+        );
+      });
+
+      it("invokes callbacks for partial data scenarios", async () => {
+        const mockResult: OperationResult = {
+          data: networkData,
+          error: new CombinedError({
+            graphqlErrors: [{ message: "Partial error" } as any],
+          }),
+        };
+        vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+        const onSuccess = vi.fn();
+        await operations.executeQuery({
+          query,
+          variables,
+          onSuccess,
+        });
+
+        // Should still call onSuccess even with partial errors
+        expect(onSuccess).toHaveBeenCalledWith(networkData);
+      });
+
+      it("does not invoke callbacks when not provided", async () => {
+        const mockResult: OperationResult = {
+          data: networkData,
+          error: null,
+        };
+        vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+        // Should not throw when callbacks are undefined
+        await expect(
+          operations.executeQuery({
+            query,
+            variables,
+          })
+        ).resolves.toBeDefined();
+      });
     });
   });
 
