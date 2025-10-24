@@ -1,6 +1,7 @@
 
 import { mount } from "@vue/test-utils";
 import { defineComponent, h } from "vue";
+import { useQuery, useMutation } from "@/src/adapters/vue";
 import { createTestClient, seedCache, tick, fixtures, operations } from "@/test/helpers";
 
 describe("Mutations", () => {
@@ -33,8 +34,6 @@ describe("Mutations", () => {
 
     const Cmp = defineComponent({
       setup() {
-        const { useQuery, useMutation } = require("villus");
-
         const { data } = useQuery({ query: operations.USER_QUERY, variables: { id: "u1" }, cachePolicy: "cache-first" });
 
         const { execute } = useMutation(operations.UPDATE_USER_MUTATION);
