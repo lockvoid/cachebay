@@ -30,7 +30,7 @@ const ssrRoundtrip = async ({ routes }) => {
 
   // 2
 
-  const clientClient = createTestClient({
+  const result = createTestClient({
     routes,
 
     cacheOptions: {
@@ -39,9 +39,9 @@ const ssrRoundtrip = async ({ routes }) => {
     },
   });
 
-  clientClient.cache.hydrate(snapshot);
+  result.cache.hydrate(snapshot);
 
-  return clientClient;
+  return result;
 };
 
 const routes = [
@@ -96,6 +96,7 @@ describe("SSR", () => {
           props: {
             first: 2,
             after: null,
+            category: "lifestyle",
           },
 
           global: {
@@ -131,6 +132,7 @@ describe("SSR", () => {
           props: {
             first: 2,
             after: null,
+            category: "lifestyle",
           },
 
           global: {
@@ -166,6 +168,7 @@ describe("SSR", () => {
           props: {
             first: 2,
             after: null,
+            category: "lifestyle",
           },
 
           global: {
@@ -178,9 +181,9 @@ describe("SSR", () => {
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
 
-        // After hydration window (100ms) - network request fires
-        await delay(120);
-        expect(getEdges(wrapper, "title")).toEqual(["A1 Updated", "A2 Updated"]);
+        // After hydration window (10ms) - network request fires
+        await delay(20);
+        expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(1);
 
         await fx.restore();
@@ -203,6 +206,7 @@ describe("SSR", () => {
           props: {
             first: 2,
             after: null,
+            category: "lifestyle",
           },
 
           global: {
@@ -225,8 +229,8 @@ describe("SSR", () => {
 
   describe("Non-suspense", () => {
     describe("cache-and-network", () => {
-      it.only("renders cached data immediately without network requests", async () => {
-        const { client, fx } = await ssrRoundtrip({ routes });
+      it("renders cached data immediately without network requests", async () => {
+        const { client, cache, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
           cachePolicy: "cache-and-network",
@@ -240,6 +244,7 @@ describe("SSR", () => {
           props: {
             first: 2,
             after: null,
+            category: "lifestyle",
           },
 
           global: {
@@ -261,14 +266,14 @@ describe("SSR", () => {
         expect(Cmp.errorUpdates.length).toBe(0);
         expect(Cmp.renders.count).toBe(1);
 
-        wrapper.setProps({ category: "music", first: 2, after: "pa2" });
+        wrapper.setProps({ category: "music", first: 2, after: null });
 
-        await delay(20);
+        await delay(5);
         expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
         expect(fx.calls.length).toBe(1);
-        expect(Cmp.dataUpdates.length).toBe(1);
+        expect(Cmp.dataUpdates.length).toBe(2);
         expect(Cmp.errorUpdates.length).toBe(0);
-        expect(Cmp.renders.count).toBe(1);
+        expect(Cmp.renders.count).toBe(3);
 
         await fx.restore();
       });
@@ -290,6 +295,7 @@ describe("SSR", () => {
           props: {
             first: 2,
             after: null,
+            category: "lifestyle",
           },
 
           global: {
@@ -300,10 +306,17 @@ describe("SSR", () => {
         await tick();
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
+        expect(Cmp.dataUpdates.length).toBe(1);
+        expect(Cmp.errorUpdates.length).toBe(0);
+        expect(Cmp.renders.count).toBe(1);
 
+        // After hydration timeout (10ms) - still no network request for cache-first
         await delay(20);
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
+        expect(Cmp.dataUpdates.length).toBe(1);
+        expect(Cmp.errorUpdates.length).toBe(0);
+        expect(Cmp.renders.count).toBe(1);
 
         await fx.restore();
       });
@@ -325,6 +338,7 @@ describe("SSR", () => {
           props: {
             first: 2,
             after: null,
+            category: "lifestyle",
           },
 
           global: {
@@ -336,11 +350,17 @@ describe("SSR", () => {
         await tick();
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
+        expect(Cmp.dataUpdates.length).toBe(1);
+        expect(Cmp.errorUpdates.length).toBe(0);
+        expect(Cmp.renders.count).toBe(1);
 
-        // After hydration window (100ms) - network request fires
-        await delay(120);
-        expect(getEdges(wrapper, "title")).toEqual(["A1 Updated", "A2 Updated"]);
+        // After hydration window (10ms) - network request fires
+        await delay(20);
+        expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(1);
+        expect(Cmp.dataUpdates.length).toBe(1);
+        expect(Cmp.errorUpdates.length).toBe(0);
+        expect(Cmp.renders.count).toBe(1);
 
         await fx.restore();
       });
@@ -362,6 +382,7 @@ describe("SSR", () => {
           props: {
             first: 2,
             after: null,
+            category: "lifestyle",
           },
 
           global: {
@@ -372,10 +393,17 @@ describe("SSR", () => {
         await tick();
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
+        expect(Cmp.dataUpdates.length).toBe(1);
+        expect(Cmp.errorUpdates.length).toBe(0);
+        expect(Cmp.renders.count).toBe(1);
 
+        // After hydration timeout (10ms) - still no network request for cache-only
         await delay(20);
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
+        expect(Cmp.dataUpdates.length).toBe(1);
+        expect(Cmp.errorUpdates.length).toBe(0);
+        expect(Cmp.renders.count).toBe(1);
 
         await fx.restore();
       });
