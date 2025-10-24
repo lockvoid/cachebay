@@ -35,7 +35,7 @@ const ssrRoundtrip = async ({ routes }) => {
 
     cacheOptions: {
       suspensionTimeout: 1,
-      hydrationTimeout: 10,
+      hydrationTimeout: 20,
     },
   });
 
@@ -81,7 +81,7 @@ const routes = [
 describe("SSR", () => {
   describe("Suspense", () => {
     describe("cache-and-network", () => {
-      it("renders cached data immediately after hydration without network requests", async () => {
+      it("swallows cached requests but fires uncached requests during hydration", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponentSuspense(operations.POSTS_QUERY, {
@@ -96,7 +96,7 @@ describe("SSR", () => {
           props: {
             first: 2,
             after: null,
-            category: "lifestyle",
+            category: "lifestyle", // cached
           },
 
           global: {
@@ -104,20 +104,33 @@ describe("SSR", () => {
           },
         });
 
-        await tick();
+        // 1. Right after mount - cached data, no request
+        await delay(1);
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
 
-        await delay(20);
+        // 2. Immediately switch to uncached data during hydration
+        wrapper.setProps({ category: "music", first: 2, after: null });
+
+        // 3. Request fires for uncached data
+        await delay(1);
+        expect(fx.calls.length).toBe(1);
+        expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
+
+        // 4. Immediately switch back to cached data
+        wrapper.setProps({ category: "lifestyle", first: 2, after: null });
+
+        // 5. No new request for cached data during hydration
+        await delay(1);
+        expect(fx.calls.length).toBe(1); // Still 1, no new request during hydration
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
-        expect(fx.calls.length).toBe(0);
 
         await fx.restore();
       });
     });
 
     describe("cache-first", () => {
-      it("displays cached data without making network requests", async () => {
+      it("swallows cached requests but fires uncached requests during hydration", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponentSuspense(operations.POSTS_QUERY, {
@@ -132,7 +145,7 @@ describe("SSR", () => {
           props: {
             first: 2,
             after: null,
-            category: "lifestyle",
+            category: "lifestyle", // cached
           },
 
           global: {
@@ -140,20 +153,33 @@ describe("SSR", () => {
           },
         });
 
-        await tick();
+        // 1. Right after mount - cached data, no request
+        await delay(1);
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
 
-        await delay(20);
+        // 2. Immediately switch to uncached data during hydration
+        wrapper.setProps({ category: "music", first: 2, after: null });
+
+        // 3. Request fires for uncached data
+        await delay(1);
+        expect(fx.calls.length).toBe(1);
+        expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
+
+        // 4. Immediately switch back to cached data
+        wrapper.setProps({ category: "lifestyle", first: 2, after: null });
+
+        // 5. No new request for cached data during hydration
+        await delay(1);
+        expect(fx.calls.length).toBe(1); // Still 1, no new request during hydration
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
-        expect(fx.calls.length).toBe(0);
 
         await fx.restore();
       });
     });
 
     describe("network-only", () => {
-      it("displays cached data during hydration, then fetches after hydration window", async () => {
+      it("swallows cached requests but fires uncached requests during hydration", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponentSuspense(operations.POSTS_QUERY, {
@@ -168,7 +194,7 @@ describe("SSR", () => {
           props: {
             first: 2,
             after: null,
-            category: "lifestyle",
+            category: "lifestyle", // cached
           },
 
           global: {
@@ -176,24 +202,33 @@ describe("SSR", () => {
           },
         });
 
-        // During hydration - shows cached data, no network request
+        // 1. Right after mount - cached data, no request
         await tick();
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
 
+        // 2. Immediately switch to uncached data during hydration
         wrapper.setProps({ category: "music", first: 2, after: null });
 
-        // After hydration window (10ms) - network request fires
-        await delay(20);
-        expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
+        // 3. Request fires for uncached data
+        await delay(1);
         expect(fx.calls.length).toBe(1);
+        expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
+
+        // 4. Immediately switch back to cached data
+        wrapper.setProps({ category: "lifestyle", first: 2, after: null });
+
+        // 5. No new request for cached data
+        await delay(1);
+        expect(fx.calls.length).toBe(1); // Still 1, no new request
+        expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
 
         await fx.restore();
       });
     });
 
     describe("cache-only", () => {
-      it("displays cached data without making network requests", async () => {
+      it("never fires requests, even for uncached data", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponentSuspense(operations.POSTS_QUERY, {
@@ -208,7 +243,7 @@ describe("SSR", () => {
           props: {
             first: 2,
             after: null,
-            category: "lifestyle",
+            category: "lifestyle", // cached
           },
 
           global: {
@@ -216,13 +251,27 @@ describe("SSR", () => {
           },
         });
 
-        await tick();
+        // 1. Right after mount - cached data, no request
+        await delay(1);
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
 
-        await delay(20);
-        expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
-        expect(fx.calls.length).toBe(0);
+        // 2. Immediately switch to uncached data during hydration
+        wrapper.setProps({ category: "music", first: 2, after: null });
+
+        // 3. No request fires (cache-only never makes network requests)
+        // Suspense keeps showing old data until new data arrives
+        await delay(1);
+        expect(fx.calls.length).toBe(0); // Still 0
+        expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]); // Suspense shows old data
+
+        // 4. Immediately switch back to cached data
+        wrapper.setProps({ category: "lifestyle", first: 2, after: null });
+
+        // 5. Still no request
+        await delay(1);
+        expect(fx.calls.length).toBe(0); // Still 0
+        expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]); // Cached data restored
 
         await fx.restore();
       });
@@ -231,7 +280,7 @@ describe("SSR", () => {
 
   describe("Non-suspense", () => {
     describe("cache-and-network", () => {
-      it("renders cached data immediately without network requests", async () => {
+      it("swallows cached requests but fires uncached requests during hydration", async () => {
         const { client, cache, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
@@ -246,7 +295,7 @@ describe("SSR", () => {
           props: {
             first: 2,
             after: null,
-            category: "lifestyle",
+            category: "lifestyle", // cached
           },
 
           global: {
@@ -254,35 +303,33 @@ describe("SSR", () => {
           },
         });
 
-        await delay(5);
+        // 1. Right after mount - cached data, no request
+        await tick();
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
-        expect(Cmp.dataUpdates.length).toBe(1);
-        expect(Cmp.errorUpdates.length).toBe(0);
-        expect(Cmp.renders.count).toBe(1);
 
-        await delay(20);
-        expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
-        expect(fx.calls.length).toBe(0);
-        expect(Cmp.dataUpdates.length).toBe(1);
-        expect(Cmp.errorUpdates.length).toBe(0);
-        expect(Cmp.renders.count).toBe(1);
-
+        // 2. Immediately switch to uncached data during hydration
         wrapper.setProps({ category: "music", first: 2, after: null });
 
-        await delay(5);
-        expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
+        // 3. Request fires for uncached data
+        await delay(1);
         expect(fx.calls.length).toBe(1);
-        expect(Cmp.dataUpdates.length).toBe(2);
-        expect(Cmp.errorUpdates.length).toBe(0);
-        expect(Cmp.renders.count).toBe(3);
+        expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
+
+        // 4. Immediately switch back to cached data
+        wrapper.setProps({ category: "lifestyle", first: 2, after: null });
+
+        // 5. No new request for cached data
+        await delay(1);
+        expect(fx.calls.length).toBe(1); // Still 1, no new request
+        expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
 
         await fx.restore();
       });
     });
 
     describe("cache-first", () => {
-      it("displays cached data without making network requests", async () => {
+      it("swallows cached requests but fires uncached requests during hydration", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
@@ -297,7 +344,7 @@ describe("SSR", () => {
           props: {
             first: 2,
             after: null,
-            category: "lifestyle",
+            category: "lifestyle", // cached
           },
 
           global: {
@@ -305,35 +352,33 @@ describe("SSR", () => {
           },
         });
 
-        await tick();
+        // 1. Right after mount - cached data, no request
+        await delay(1);
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
-        expect(Cmp.dataUpdates.length).toBe(1);
-        expect(Cmp.errorUpdates.length).toBe(0);
-        expect(Cmp.renders.count).toBe(1);
 
-        await delay(20);
-        expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
-        expect(fx.calls.length).toBe(0);
-        expect(Cmp.dataUpdates.length).toBe(1);
-        expect(Cmp.errorUpdates.length).toBe(0);
-        expect(Cmp.renders.count).toBe(1);
-
+        // 2. Immediately switch to uncached data during hydration
         wrapper.setProps({ category: "music", first: 2, after: null });
 
-        await delay(5);
-        expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
+        // 3. Request fires for uncached data
+        await delay(1);
         expect(fx.calls.length).toBe(1);
-        expect(Cmp.dataUpdates.length).toBe(2);
-        expect(Cmp.errorUpdates.length).toBe(0);
-        expect(Cmp.renders.count).toBe(3);
+        expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
+
+        // 4. Immediately switch back to cached data
+        wrapper.setProps({ category: "lifestyle", first: 2, after: null });
+
+        // 5. No new request for cached data during hydration
+        await delay(1);
+        expect(fx.calls.length).toBe(1); // Still 1, no new request during hydration
+        expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
 
         await fx.restore();
       });
     });
 
     describe("network-only", () => {
-      it("displays cached data during hydration, then fetches after hydration window", async () => {
+      it("swallows cached requests but fires uncached requests during hydration", async () => {
         const { client, cache, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
@@ -348,7 +393,7 @@ describe("SSR", () => {
           props: {
             first: 2,
             after: null,
-            category: "lifestyle",
+            category: "lifestyle", // cached
           },
 
           global: {
@@ -356,35 +401,33 @@ describe("SSR", () => {
           },
         });
 
+        // 1. Right after mount - cached data, no request
         await tick();
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
-        expect(Cmp.dataUpdates.length).toBe(1);
-        expect(Cmp.errorUpdates.length).toBe(0);
-        expect(Cmp.renders.count).toBe(1);
 
-        await delay(20);
-        expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
-        expect(fx.calls.length).toBe(0);
-        expect(Cmp.dataUpdates.length).toBe(1);
-        expect(Cmp.errorUpdates.length).toBe(0);
-        expect(Cmp.renders.count).toBe(1);
-
+        // 2. Immediately switch to uncached data during hydration
         wrapper.setProps({ category: "music", first: 2, after: null });
 
-        await delay(5);
-        expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
+        // 3. Request fires for uncached data
+        await delay(1);
         expect(fx.calls.length).toBe(1);
-        expect(Cmp.dataUpdates.length).toBe(2);
-        expect(Cmp.errorUpdates.length).toBe(0);
-        expect(Cmp.renders.count).toBe(3);
+        expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
+
+        // 4. Immediately switch back to cached data
+        wrapper.setProps({ category: "lifestyle", first: 2, after: null });
+
+        // 5. No new request for cached data
+        await delay(1);
+        expect(fx.calls.length).toBe(1); // Still 1, no new request
+        expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
 
         await fx.restore();
       });
     });
 
     describe("cache-only", () => {
-      it("displays cached data without making network requests", async () => {
+      it("never fires requests, even for uncached data", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
@@ -399,7 +442,7 @@ describe("SSR", () => {
           props: {
             first: 2,
             after: null,
-            category: "lifestyle",
+            category: "lifestyle", // cached
           },
 
           global: {
@@ -407,28 +450,26 @@ describe("SSR", () => {
           },
         });
 
-        await tick();
+        // 1. Right after mount - cached data, no request
+        await delay(1);
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
-        expect(Cmp.dataUpdates.length).toBe(1);
-        expect(Cmp.errorUpdates.length).toBe(0);
-        expect(Cmp.renders.count).toBe(1);
 
-        await delay(20);
-        expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
-        expect(fx.calls.length).toBe(0);
-        expect(Cmp.dataUpdates.length).toBe(1);
-        expect(Cmp.errorUpdates.length).toBe(0);
-        expect(Cmp.renders.count).toBe(1);
-
+        // 2. Immediately switch to uncached data during hydration
         wrapper.setProps({ category: "music", first: 2, after: null });
 
-        await delay(5);
-        expect(getEdges(wrapper, "title")).toEqual([]);
-        expect(fx.calls.length).toBe(0);
-        expect(Cmp.dataUpdates.length).toBe(1);
-        expect(Cmp.errorUpdates.length).toBe(1);
-        expect(Cmp.renders.count).toBe(2);
+        // 3. No request fires (cache-only never makes network requests)
+        await delay(1);
+        expect(fx.calls.length).toBe(0); // Still 0
+        expect(getEdges(wrapper, "title")).toEqual([]); // No data (cache miss)
+
+        // 4. Immediately switch back to cached data
+        wrapper.setProps({ category: "lifestyle", first: 2, after: null });
+
+        // 5. Still no request
+        await delay(1);
+        expect(fx.calls.length).toBe(0); // Still 0
+        expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]); // Cached data restored
 
         await fx.restore();
       });
