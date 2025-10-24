@@ -131,7 +131,7 @@ describe("Optimistic updates", () => {
       },
 
       global: {
-        plugins: [client, cache],
+        plugins: [client],
       },
     });
 
@@ -187,7 +187,7 @@ describe("Optimistic updates", () => {
 
     const wrapper = mount(Cmp, {
       props: { first: 2, after: null },
-      global: { plugins: [client, cache] },
+      global: { plugins: [client] },
     });
 
     await tick();
@@ -222,7 +222,7 @@ describe("Optimistic updates", () => {
 
     const wrapper = mount(Cmp, {
       props: { first: 2, after: null },
-      global: { plugins: [client, cache] },
+      global: { plugins: [client] },
     });
 
     await tick();
@@ -398,7 +398,7 @@ describe("Optimistic updates", () => {
 
     const wrapper = mount(Cmp, {
       props: { category: "A", first: 3, after: null },
-      global: { plugins: [client, cache] },
+      global: { plugins: [client] },
     });
 
     // 1. Initial A leader
@@ -510,7 +510,7 @@ describe("Optimistic updates", () => {
 
     const wrapper = mount(Cmp, {
       props: { first: 2, after: null },
-      global: { plugins: [client, cache] },
+      global: { plugins: [client] },
     });
 
     await tick();
@@ -558,7 +558,7 @@ describe("Optimistic updates", () => {
 
     const wrapper = mount(Cmp, {
       props: { first: 4, after: null },
-      global: { plugins: [client, cache] },
+      global: { plugins: [client] },
     });
 
     await tick();
@@ -638,7 +638,7 @@ describe("Optimistic updates", () => {
 
     const wrapper = mount(Cmp, {
       props: { first: 2, after: null },
-      global: { plugins: [client, cache] },
+      global: { plugins: [client] },
     });
 
     await tick();
@@ -689,7 +689,7 @@ describe("Optimistic updates", () => {
 
     const wrapper = mount(Cmp, {
       props: { first: 3, after: null },
-      global: { plugins: [client, cache] },
+      global: { plugins: [client] },
     });
 
     await tick();
@@ -728,7 +728,7 @@ describe("Optimistic updates", () => {
 
     const wrapper = mount(Cmp, {
       props: { first: 2, after: null },
-      global: { plugins: [client, cache] },
+      global: { plugins: [client] },
     });
 
     await tick();
@@ -805,7 +805,7 @@ describe("Optimistic updates", () => {
     // First mount → leader #1
     let wrapper = mount(Cmp, {
       props: { first: 3, after: null },
-      global: { plugins: [client, cache] },
+      global: { plugins: [client] },
     });
 
     // Wait leader #1 → A1,A2,A3
@@ -827,7 +827,7 @@ describe("Optimistic updates", () => {
 
     wrapper = mount(Cmp, {
       props: { first: 3, after: null },
-      global: { plugins: [client, cache] },
+      global: { plugins: [client] },
     });
 
     // Immediate cached frame on remount should still show A4 at start
@@ -886,7 +886,7 @@ describe("Optimistic updates", () => {
     // First mount → leader #1
     let wrapper = mount(Cmp, {
       props: { first: 3, after: null },
-      global: { plugins: [client, cache] },
+      global: { plugins: [client] },
     });
 
     // Wait leader #1 → A1,A2,A3
@@ -907,7 +907,7 @@ describe("Optimistic updates", () => {
     wrapper.unmount();
     wrapper = mount(Cmp, {
       props: { first: 3, after: null },
-      global: { plugins: [client, cache] },
+      global: { plugins: [client] },
     });
 
     // Cached frame → A4 + A1..A3
