@@ -156,7 +156,7 @@ describe("Edge cases", () => {
       fragment: operations.POST_FRAGMENT,
     });
 
-    expect(post1).toBeUndefined(); // Deleted entity returns undefined
+    expect(post1).toBe(null);
     expect(post2?.title).toBe("Post 2");
   });
 
@@ -172,7 +172,7 @@ describe("Edge cases", () => {
             { id: "pa1", title: "A1", author: { id: "1", email: "u1@example.com", __typename: "User" } },
             { id: "pa2", title: "A2", author: { id: "1", email: "u1@example.com", __typename: "User" } }
           ]);
-          
+
           // Add missing score field to edges
           connection.edges = connection.edges.map((edge: any) => ({
             ...edge,

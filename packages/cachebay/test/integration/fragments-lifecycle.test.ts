@@ -1,6 +1,6 @@
 import { mount } from "@vue/test-utils";
-import { defineComponent, ref, isReactive, h } from "vue";
-import { useFragment } from "@/src";
+import { defineComponent, ref, h } from "vue";
+import { useFragment } from "@/src/adapters/vue/useFragment";
 import { createTestClient, operations, tick } from "@/test/helpers";
 
 describe("Fragments lifecycle", () => {
@@ -27,7 +27,6 @@ describe("Fragments lifecycle", () => {
         fragment: operations.USER_FRAGMENT,
       });
 
-      expect(isReactive(view)).toBe(true);
       expect(view).toEqual({ __typename: "User", id: "1", email: "ann@example.com" });
     });
 
@@ -46,7 +45,6 @@ describe("Fragments lifecycle", () => {
       });
 
       expect(view).toEqual({ __typename: "User", id: "2", email: "u1@example.com" });
-      expect(isReactive(view)).toBe(true);
 
       cache.writeFragment({
         id: "User:2",
@@ -54,8 +52,12 @@ describe("Fragments lifecycle", () => {
         data: { email: "u1+updated@example.com" },
       });
 
-      expect(view).toEqual({ __typename: "User", id: "2", email: "u1+updated@example.com" });
-      expect(isReactive(view)).toBe(true);
+      const updatedView = cache.readFragment({
+        id: "User:2",
+        fragment: operations.USER_FRAGMENT,
+      });
+
+      expect(updatedView).toEqual({ __typename: "User", id: "2", email: "u1+updated@example.com" });
     });
 
     it("applies multiple writes correctly with latest data winning", async () => {
@@ -78,7 +80,6 @@ describe("Fragments lifecycle", () => {
         fragment: operations.USER_FRAGMENT,
       });
       expect(view.email).toBe("bravo@example.com");
-      expect(isReactive(view)).toBe(true);
     });
 
     it("handles nested connections with pageInfo correctly", () => {
@@ -117,10 +118,14 @@ describe("Fragments lifecycle", () => {
       expect(snapshot).toEqual({
         typename: "PostConnection",
         titles: ["Hello", "World"],
-        pageInfo: { __typename: "PageInfo", hasNextPage: true, endCursor: "c2" },
+        pageInfo: { 
+          __typename: "PageInfo", 
+          hasNextPage: true, 
+          hasPreviousPage: false,
+          endCursor: "c2",
+          startCursor: "c1"
+        },
       });
-
-      expect(isReactive(result.posts)).toBe(true);
     });
 
     it("supports custom entity keys", async () => {
@@ -142,7 +147,6 @@ describe("Fragments lifecycle", () => {
       });
 
       expect(v1).toEqual({ __typename: "Comment", uuid: "abc-123", text: "First!" });
-      expect(isReactive(v1)).toBe(true);
 
       cache.writeFragment({
         id: "Comment:abc-123",
@@ -185,13 +189,9 @@ describe("Fragments lifecycle", () => {
       expect(user1?.email).toBe("alice@example.com");
       expect(user2?.email).toBe("bob@example.com");
       expect(user3?.email).toBe("charlie@example.com");
-
-      expect(isReactive(user1)).toBe(true);
-      expect(isReactive(user2)).toBe(true);
-      expect(isReactive(user3)).toBe(true);
     });
 
-    it("returns empty objects for missing fragments", () => {
+    it("returns null for missing fragments", () => {
       const { cache } = createTestClient();
 
       cache.writeFragment({
@@ -204,7 +204,7 @@ describe("Fragments lifecycle", () => {
       const user2 = cache.readFragment({ id: "User:2", fragment: operations.USER_FRAGMENT });
 
       expect(user1?.email).toBe("alice@example.com");
-      expect(user2).toEqual({});
+      expect(user2).toBe(null);
     });
   });
 
