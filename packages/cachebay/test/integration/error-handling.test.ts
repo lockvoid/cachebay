@@ -34,7 +34,7 @@ describe("Error Handling (epoch & pagination semantics)", () => {
 
     // Error surfaced
     expect(PostList.errorUpdates.length).toBe(1);
-    expect(PostList.errorUpdates.at(-1)?.message).toBe("🥲");
+    expect(PostList.errorUpdates.at(-1)?.message).toBe("[Network] 🥲");
 
     // No data was emitted
     expect(PostList.dataUpdates.length).toBe(1);

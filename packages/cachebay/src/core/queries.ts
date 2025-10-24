@@ -141,23 +141,12 @@ export const createQueries = ({ documents, planner, operations }: QueriesDepende
    * Propagate error to the watcher with the given signature
    */
   const propagateError = (signature: string, error: Error) => {
-    console.log('[queries] propagateError called, signature:', signature);
-    console.log('[queries] watchers count:', watchers.size);
-    
     // Find watcher with this signature
-    let found = false;
-    for (const [id, watcher] of watchers) {
-      console.log('[queries] checking watcher', id, 'signature:', watcher.signature);
+    for (const [_, watcher] of watchers) {
       if (watcher.signature === signature && watcher.onError) {
-        console.log('[queries] MATCH! Calling onError');
         watcher.onError(error);
-        found = true;
         break;  // Only one watcher per signature
       }
-    }
-    
-    if (!found) {
-      console.log('[queries] NO MATCH FOUND for signature:', signature);
     }
   };
 

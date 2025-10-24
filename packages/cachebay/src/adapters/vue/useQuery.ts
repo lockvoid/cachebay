@@ -71,11 +71,9 @@ export function useQuery<TData = any, TVars = any>(
         isFetching.value = false;
       },
       onError: (err) => {
-        // Don't set cache miss errors - executeQuery will handle them based on policy
-        // Only set real errors (network errors, GraphQL errors, etc.)
-        if (err.name !== 'CacheMissError') {
-          error.value = err;
-        }
+        // Set all errors including CacheMissError
+        // (CacheMissError is important for cache-only policy)
+        error.value = err;
         isFetching.value = false;
       },
       immediate: true,

@@ -128,7 +128,7 @@ export const createOperations = (
   }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
     const plan = planner.getPlan(query);
     const signature = plan.makeSignature("canonical", variables);  // Always canonical
-    
+
     // Read from cache using documents directly
     const cached = documents.materializeDocument({
       document: query,
@@ -215,14 +215,27 @@ export const createOperations = (
         // Mark as emitted for suspension tracking
         markEmitted(signature);
 
+        // If we have an error but no data, propagate the error
+        if (result.error) {
+          const combinedError = result.error instanceof CombinedError
+            ? result.error
+            : new CombinedError({ networkError: result.error as Error });
+
+          onError?.(combinedError);
+          onQueryError?.(signature, combinedError);
+        }
+
         return result as OperationResult<TData>;
       } catch (error) {
         const combinedError = new CombinedError({ networkError: error as Error });
 
         onError?.(combinedError);
-        
-        // Notify error callback
-        onQueryError?.(signature, combinedError);
+
+        // Only notify error callback if not a stale response
+        // Stale errors should be silently dropped
+        if (!(error instanceof StaleResponseError)) {
+          onQueryError?.(signature, combinedError);
+        }
 
         return {
           data: null,
@@ -244,11 +257,10 @@ export const createOperations = (
       if (cached.source === "none") {
         const error = new CombinedError({ networkError: new CacheMissError() });
         onError?.(error);
-        
+
         // Notify error callback
-        console.log('[operations] cache-only error, signature:', signature);
         onQueryError?.(signature, error);
-        
+
         return { data: null, error };
       }
 
@@ -258,8 +270,7 @@ export const createOperations = (
     }
 
     if (cachePolicy === 'cache-first') {
-      // Always use canonical mode now, so just check if we have data
-      if (cached.source !== "none") {
+      if (cached.ok.strict) {
         const result = { data: cached.data as TData, error: null };
         onSuccess?.(result.data);
         return result;
@@ -267,9 +278,7 @@ export const createOperations = (
     }
 
     if (cachePolicy === 'cache-and-network') {
-      // Always use canonical mode now, so just check if we have data
       if (cached.source !== "none") {
-        // Return cached data immediately, fetch in background
         performRequest().catch((err) => {
           if (__DEV__) {
             console.warn('Cachebay: Cache hit, but network request failed', err);
