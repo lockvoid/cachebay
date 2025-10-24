@@ -1,15 +1,13 @@
 // src/core/queries.ts
 import type { DocumentsInstance } from "./documents";
 import type { GraphInstance } from "./graph";
-import type { PlannerInstance } from "./planner";
 import { CacheMissError } from "./errors";
-import { recycleSnapshots, buildConnectionCanonicalKey, getQueryCanonicalKeys } from "./utils";
+import { recycleSnapshots } from "./utils";
 import { ROOT_ID } from "./constants";
 import type { DocumentNode } from "graphql";
 
 export type QueriesDependencies = {
   graph: GraphInstance;
-  planner: PlannerInstance;
   documents: DocumentsInstance;
 };
 
@@ -47,6 +45,8 @@ export type WatchQueryOptions = {
 export type WatchQueryHandle = {
   unsubscribe: () => void;
   refetch: () => void;
+  /** Update variables and refetch. Handles pagination recycling automatically. */
+  update: (options: { variables?: Record<string, any> }) => void;
 };
 
 export type QueriesInstance = ReturnType<typeof createQueries>;
@@ -266,7 +266,7 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
         watchers.delete(watcherId);
       },
 
-      emitChange: () => {
+      refetch: () => {
         const w = watchers.get(watcherId);
         if (!w) return;
 
@@ -294,13 +294,16 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
         }
       },
 
-      refetch: () => {
+      update: ({ variables: newVariables = {} }) => {
         const w = watchers.get(watcherId);
         if (!w) return;
 
+        // Update variables and refetch
+        w.variables = newVariables;
+
         const res = documents.materializeDocument({
           document: w.query,
-          variables: w.variables,
+          variables: newVariables,
           canonical: w.canonical,
           fingerprint: true,
         });
@@ -308,17 +311,16 @@ export const createQueries = ({ documents }: QueriesDependencies) => {
         updateWatcherDependencies(watcherId, res.dependencies);
 
         if (res.source !== "none") {
+          // recycleSnapshots automatically preserves object identity for unchanged parts
           const recycled = recycleSnapshots(w.lastData, res.data);
-          if (recycled !== w.lastData) {
-            w.lastData = recycled;
-            try {
-              w.onData(recycled);
-            } catch (e) {
-              w.onError?.(e as Error);
-            }
+          w.lastData = recycled;
+          try {
+            w.onData(recycled);
+          } catch (e) {
+            w.onError?.(e as Error);
           }
         } else if (w.onError) {
-          w.onError(new Error("Refetch returned no data"));
+          w.onError(new Error("Update returned no data"));
         }
       },
     };

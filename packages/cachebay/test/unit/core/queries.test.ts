@@ -35,7 +35,7 @@ describe("queries API", () => {
     canonical = createCanonical({ graph, optimistic });
     documents = createDocuments({ graph, planner, canonical });
     fragments = createFragments({ graph, planner, documents });
-    queries = createQueries({ graph, planner, documents });
+    queries = createQueries({ graph, documents });
   });
 
   describe("readQuery / writeQuery", () => {
@@ -835,6 +835,176 @@ describe("queries API", () => {
       expect(emissions[1].user.name).toBe("Alice Updated");
       // Profile should be recycled
       expect(profileRefs[1]).toBe(profileRefs[0]);
+
+      handle.unsubscribe();
+    });
+
+    it("updates variables with update method", async () => {
+      const QUERY = gql`
+        query GetUser($id: ID!) {
+          user(id: $id) {
+            id
+            name
+          }
+        }
+      `;
+
+      // Write data for two users
+      queries.writeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        data: {
+          user: {
+            __typename: "User",
+            id: "1",
+            name: "Alice",
+          },
+        },
+      });
+
+      queries.writeQuery({
+        query: QUERY,
+        variables: { id: "2" },
+        data: {
+          user: {
+            __typename: "User",
+            id: "2",
+            name: "Bob",
+          },
+        },
+      });
+
+      const emissions: any[] = [];
+
+      const handle = queries.watchQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        onData: (data) => {
+          emissions.push(data);
+        },
+      });
+
+      expect(emissions).toHaveLength(1);
+      expect(emissions[0].user.name).toBe("Alice");
+
+      // Update variables to fetch different user
+      handle.update({ variables: { id: "2" } });
+
+      expect(emissions).toHaveLength(2);
+      expect(emissions[1].user.name).toBe("Bob");
+
+      handle.unsubscribe();
+    });
+
+    it("recycles data with update method for pagination", async () => {
+      const QUERY = gql`
+        query GetPosts($first: Int!, $after: String) {
+          posts(first: $first, after: $after) {
+            edges {
+              node {
+                id
+                title
+              }
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+          }
+        }
+      `;
+
+      // Write initial page
+      queries.writeQuery({
+        query: QUERY,
+        variables: { first: 2, after: null },
+        data: {
+          posts: {
+            __typename: "PostConnection",
+            edges: [
+              {
+                __typename: "PostEdge",
+                node: {
+                  __typename: "Post",
+                  id: "1",
+                  title: "Post 1",
+                },
+              },
+              {
+                __typename: "PostEdge",
+                node: {
+                  __typename: "Post",
+                  id: "2",
+                  title: "Post 2",
+                },
+              },
+            ],
+            pageInfo: {
+              __typename: "PageInfo",
+              hasNextPage: true,
+              endCursor: "cursor2",
+            },
+          },
+        },
+      });
+
+      // Write next page (accumulated in canonical cache)
+      queries.writeQuery({
+        query: QUERY,
+        variables: { first: 2, after: "cursor2" },
+        data: {
+          posts: {
+            __typename: "PostConnection",
+            edges: [
+              {
+                __typename: "PostEdge",
+                node: {
+                  __typename: "Post",
+                  id: "3",
+                  title: "Post 3",
+                },
+              },
+              {
+                __typename: "PostEdge",
+                node: {
+                  __typename: "Post",
+                  id: "4",
+                  title: "Post 4",
+                },
+              },
+            ],
+            pageInfo: {
+              __typename: "PageInfo",
+              hasNextPage: false,
+              endCursor: "cursor4",
+            },
+          },
+        },
+      });
+
+      const emissions: any[] = [];
+      const edgeRefs: any[][] = [];
+
+      const handle = queries.watchQuery({
+        query: QUERY,
+        variables: { first: 2, after: null },
+        canonical: true,
+        onData: (data) => {
+          emissions.push(data);
+          edgeRefs.push(data.posts.edges);
+        },
+      });
+
+      expect(emissions).toHaveLength(1);
+      expect(emissions[0].posts.edges).toHaveLength(2);
+
+      // Update to next page
+      handle.update({ variables: { first: 2, after: "cursor2" } });
+
+      expect(emissions).toHaveLength(2);
+      expect(emissions[1].posts.edges).toHaveLength(2); // Next page has 2 edges
+      expect(emissions[1].posts.edges[0].node.id).toBe("3");
+      expect(emissions[1].posts.edges[1].node.id).toBe("4");
 
       handle.unsubscribe();
     });

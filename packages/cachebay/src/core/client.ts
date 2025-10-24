@@ -191,7 +191,7 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
   const canonical = createCanonical({ graph, optimistic });
   documents = createDocuments({ graph, planner, canonical });
   fragments = createFragments({ graph, planner, documents });
-  queries = createQueries({ graph, planner, documents });
+  queries = createQueries({ graph, documents });
 
   // Operations (always created since transport is required)
   const operations = createOperations(

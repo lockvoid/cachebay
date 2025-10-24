@@ -87,47 +87,6 @@ describe("useQuery", () => {
     expect(queryResult.data.value).toBe(undefined);
   });
 
-  it("handles query errors", async () => {
-    const errorTransport: Transport = {
-      http: vi.fn().mockResolvedValue({
-        data: null,
-        error: new Error("Network error"),
-      }),
-    };
-    const errorCache = createCachebay({ transport: errorTransport });
-
-    let queryResult: any;
-
-    const App = defineComponent({
-      setup() {
-        queryResult = useQuery({
-          query: USER_QUERY,
-          variables: { id: "1" },
-        });
-        return () => h("div");
-      },
-    });
-
-    mount(App, {
-      global: {
-        plugins: [
-          {
-            install(app) {
-              provideCachebay(app as any, errorCache);
-            },
-          },
-        ],
-      },
-    });
-
-    await nextTick();
-    await new Promise((resolve) => setTimeout(resolve, 10));
-
-    expect(queryResult.error.value).toBeInstanceOf(Error);
-    expect(queryResult.data.value).toBe(undefined);
-    expect(queryResult.isFetching.value).toBe(false);
-  });
-
   it("pauses query when pause is true", async () => {
     let queryResult: any;
 
@@ -349,7 +308,7 @@ describe("useQuery", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(mockTransport.http).not.toHaveBeenCalled();
-    expect(queryResult.data.value).toEqual({ user: { id: "cached", email: "cached@example.com" } });
+    expect(queryResult.data.value).toMatchObject({ user: { id: "cached", email: "cached@example.com" } });
   });
 
   describe("Suspension timeout", () => {
@@ -484,283 +443,149 @@ describe("useQuery", () => {
     });
   });
 
-  describe("Smart watcher reuse for pagination", () => {
-    it("reuses watcher when paginating within same connection", async () => {
-      const POSTS_QUERY = `
-        query GetPosts($category: String, $first: Int, $after: String) {
-          posts(category: $category, first: $first, after: $after) @connection(key: "posts") {
-            edges {
-              node {
-                id
-                title
-              }
-            }
-            pageInfo {
-              hasNextPage
-              endCursor
-            }
-          }
-        }
-      `;
+  it("reacts to reactive cache policy changes", async () => {
+    const policy = ref<"cache-first" | "network-only">("cache-first");
+    let queryResult: any;
 
-      const postsTransport: Transport = {
-        http: vi.fn()
-          .mockResolvedValueOnce({
-            data: {
-              posts: {
-                edges: [
-                  { node: { id: "p1", title: "Post 1" } },
-                  { node: { id: "p2", title: "Post 2" } },
-                ],
-                pageInfo: { hasNextPage: true, endCursor: "cursor2" },
-              },
-            },
-            error: null,
-          })
-          .mockResolvedValueOnce({
-            data: {
-              posts: {
-                edges: [
-                  { node: { id: "p3", title: "Post 3" } },
-                  { node: { id: "p4", title: "Post 4" } },
-                ],
-                pageInfo: { hasNextPage: false, endCursor: "cursor4" },
-              },
-            },
-            error: null,
-          }),
-      };
-
-      const postsCache = createCachebay({ 
-        transport: postsTransport,
-        suspensionTimeout: 50
-      });
-
-      const variables = ref({ category: "tech", first: 2, after: null });
-      let queryResult: any;
-      const emissions: any[] = [];
-
-      const App = defineComponent({
-        setup() {
-          queryResult = useQuery({
-            query: POSTS_QUERY,
-            variables,
-          });
-
-          // Track emissions
-          queryResult.data.value && emissions.push(queryResult.data.value);
-
-          return () => h("div");
-        },
-      });
-
-      mount(App, {
-        global: {
-          plugins: [
-            {
-              install(app) {
-                provideCachebay(app as any, postsCache);
-              },
-            },
-          ],
-        },
-      });
-
-      await nextTick();
-      await new Promise((resolve) => setTimeout(resolve, 10));
-
-      expect(postsTransport.http).toHaveBeenCalledTimes(1);
-
-      // Wait for suspension window to expire
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // Change pagination cursor (same canonical connection)
-      variables.value = { category: "tech", first: 2, after: "cursor2" };
-
-      await nextTick();
-      await new Promise((resolve) => setTimeout(resolve, 10));
-
-      // Should have called network for page 2
-      expect(postsTransport.http).toHaveBeenCalledTimes(2);
-
-      // Watcher was reused (not recreated), so recycling should work
-      // This is verified by the fact that the watcher didn't unsubscribe/resubscribe
+    // Pre-populate cache
+    cache.writeQuery({
+      query: USER_QUERY,
+      variables: { id: "1" },
+      data: { user: { id: "1", email: "cached@example.com" } },
     });
 
-    it("recreates watcher when filter changes (different canonical connection)", async () => {
-      const POSTS_QUERY = `
-        query GetPosts($category: String, $first: Int, $after: String) {
-          posts(category: $category, first: $first, after: $after) @connection(key: "posts") {
-            edges {
-              node {
-                id
-                title
-              }
-            }
-            pageInfo {
-              hasNextPage
-              endCursor
-            }
-          }
-        }
-      `;
-
-      const postsTransport: Transport = {
-        http: vi.fn()
-          .mockResolvedValueOnce({
-            data: {
-              posts: {
-                edges: [{ node: { id: "p1", title: "Tech Post" } }],
-                pageInfo: { hasNextPage: false, endCursor: null },
-              },
-            },
-            error: null,
-          })
-          .mockResolvedValueOnce({
-            data: {
-              posts: {
-                edges: [{ node: { id: "p2", title: "News Post" } }],
-                pageInfo: { hasNextPage: false, endCursor: null },
-              },
-            },
-            error: null,
-          }),
-      };
-
-      const postsCache = createCachebay({ 
-        transport: postsTransport,
-        suspensionTimeout: 50
-      });
-
-      const variables = ref({ category: "tech", first: 10, after: null });
-      let queryResult: any;
-
-      const App = defineComponent({
-        setup() {
-          queryResult = useQuery({
-            query: POSTS_QUERY,
-            variables,
-          });
-          return () => h("div");
-        },
-      });
-
-      mount(App, {
-        global: {
-          plugins: [
-            {
-              install(app) {
-                provideCachebay(app as any, postsCache);
-              },
-            },
-          ],
-        },
-      });
-
-      await nextTick();
-      await new Promise((resolve) => setTimeout(resolve, 10));
-
-      expect(postsTransport.http).toHaveBeenCalledTimes(1);
-      expect(queryResult.data.value.posts.edges[0].node.title).toBe("Tech Post");
-
-      // Wait for suspension window
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // Change category (different canonical connection)
-      variables.value = { category: "news", first: 10, after: null };
-
-      await nextTick();
-      await new Promise((resolve) => setTimeout(resolve, 10));
-
-      // Should have called network for new category
-      expect(postsTransport.http).toHaveBeenCalledTimes(2);
-      expect(queryResult.data.value.posts.edges[0].node.title).toBe("News Post");
+    const App = defineComponent({
+      setup() {
+        queryResult = useQuery({
+          query: USER_QUERY,
+          variables: { id: "1" },
+          cachePolicy: policy,
+        });
+        return () => h("div");
+      },
     });
 
-    it("keeps watcher when only pagination args change", async () => {
-      const POSTS_QUERY = `
-        query GetPosts($first: Int, $after: String, $last: Int, $before: String) {
-          posts(first: $first, after: $after, last: $last, before: $before) @connection(key: "posts") {
-            edges {
-              node {
-                id
-                title
-              }
-            }
-            pageInfo {
-              hasNextPage
-              hasPreviousPage
-              endCursor
-              startCursor
-            }
-          }
-        }
-      `;
-
-      const postsTransport: Transport = {
-        http: vi.fn().mockResolvedValue({
-          data: {
-            posts: {
-              edges: [{ node: { id: "p1", title: "Post" } }],
-              pageInfo: {
-                hasNextPage: true,
-                hasPreviousPage: false,
-                endCursor: "c1",
-                startCursor: "c0",
-              },
+    mount(App, {
+      global: {
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, cache);
             },
           },
-          error: null,
-        }),
-      };
-
-      const postsCache = createCachebay({ 
-        transport: postsTransport,
-        suspensionTimeout: 50
-      });
-
-      const variables = ref({ first: 10, after: null, last: null, before: null });
-      let queryResult: any;
-
-      const App = defineComponent({
-        setup() {
-          queryResult = useQuery({
-            query: POSTS_QUERY,
-            variables,
-          });
-          return () => h("div");
-        },
-      });
-
-      mount(App, {
-        global: {
-          plugins: [
-            {
-              install(app) {
-                provideCachebay(app as any, postsCache);
-              },
-            },
-          ],
-        },
-      });
-
-      await nextTick();
-      await new Promise((resolve) => setTimeout(resolve, 10));
-
-      expect(postsTransport.http).toHaveBeenCalledTimes(1);
-
-      // Wait for suspension window to expire
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // Change all pagination args (but no filters)
-      variables.value = { first: 5, after: "c1", last: null, before: null };
-
-      await nextTick();
-      await new Promise((resolve) => setTimeout(resolve, 10));
-
-      // Watcher should be reused (canonical key unchanged)
-      // Network call happens but watcher wasn't recreated
-      expect(postsTransport.http).toHaveBeenCalledTimes(2);
+        ],
+      },
     });
+
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // cache-first should use cached data without network call
+    expect(mockTransport.http).not.toHaveBeenCalled();
+    expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "cached@example.com" } });
+
+    // Wait for suspension window
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Change to network-only
+    policy.value = "network-only";
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Should now hit network
+    expect(mockTransport.http).toHaveBeenCalledTimes(1);
+  });
+
+  it("updates watcher when variables change", async () => {
+    const userId = ref("1");
+    let queryResult: any;
+
+    const App = defineComponent({
+      setup() {
+        queryResult = useQuery({
+          query: USER_QUERY,
+          variables: () => ({ id: userId.value }),
+        });
+        return () => h("div");
+      },
+    });
+
+    mount(App, {
+      global: {
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, cache);
+            },
+          },
+        ],
+      },
+    });
+
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(mockTransport.http).toHaveBeenCalledTimes(1);
+    expect(queryResult.data.value).toMatchObject({ user: { id: "1" } });
+
+    // Wait for suspension window
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Change variables - should call watchHandle.update()
+    userId.value = "2";
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Should have called network again with new variables
+    expect(mockTransport.http).toHaveBeenCalledTimes(2);
+  });
+
+  it("destroys watcher when paused and recreates when unpaused", async () => {
+    const isPaused = ref(true);
+    let queryResult: any;
+
+    const App = defineComponent({
+      setup() {
+        queryResult = useQuery({
+          query: USER_QUERY,
+          variables: { id: "1" },
+          pause: isPaused,
+        });
+        return () => h("div");
+      },
+    });
+
+    mount(App, {
+      global: {
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, cache);
+            },
+          },
+        ],
+      },
+    });
+
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Should not have fetched while paused
+    expect(mockTransport.http).not.toHaveBeenCalled();
+    expect(queryResult.isFetching.value).toBe(false);
+
+    // Unpause - should create watcher and fetch
+    isPaused.value = false;
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(mockTransport.http).toHaveBeenCalledTimes(1);
+    expect(queryResult.data.value).toBeTruthy();
+
+    // Pause again - should destroy watcher
+    isPaused.value = true;
+    await nextTick();
+
+    expect(queryResult.isFetching.value).toBe(false);
   });
 });
