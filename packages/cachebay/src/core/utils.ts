@@ -235,21 +235,35 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
     const prevArray = prevData as any[];
     const nextArray = nextData as any[];
 
-    // Recycle common prefix even if lengths differ
-    const minLength = Math.min(prevArray.length, nextArray.length);
+    // Try to recycle each element by comparing all elements
+    // This handles both append and prepend cases
     let allEqual = prevArray.length === nextArray.length;
 
-    for (let i = 0; i < minLength; i++) {
-      const recycled = recycleSnapshots(prevArray[i], nextArray[i]);
-      if (recycled !== nextArray[i]) {
+    for (let i = 0; i < nextArray.length; i++) {
+      const nextItem = nextArray[i];
+      const nextFp = (nextItem as any)?.[FINGERPRINT_KEY];
+      
+      // Try to find matching item in prevArray by fingerprint
+      let recycled = nextItem;
+      if (nextFp !== undefined) {
+        for (let j = 0; j < prevArray.length; j++) {
+          const prevItem = prevArray[j];
+          const prevFp = (prevItem as any)?.[FINGERPRINT_KEY];
+          if (prevFp === nextFp) {
+            recycled = prevItem;
+            break;
+          }
+        }
+      }
+
+      if (recycled !== nextItem) {
         nextArray[i] = recycled;
       }
-      if (recycled !== prevArray[i]) {
+      if (i >= prevArray.length || recycled !== prevArray[i]) {
         allEqual = false;
       }
     }
 
-    // If lengths differ, we can't reuse prevData
     return allEqual ? prevData : nextData;
   } else {
     // Both are plain objects

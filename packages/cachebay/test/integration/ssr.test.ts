@@ -225,7 +225,7 @@ describe("SSR", () => {
 
   describe("Non-suspense", () => {
     describe("cache-and-network", () => {
-      it("renders cached data immediately without network requests", async () => {
+      it.only("renders cached data immediately without network requests", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
@@ -247,19 +247,34 @@ describe("SSR", () => {
           },
         });
 
-        await tick(2);
+        await delay(5);
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
+        expect(Cmp.dataUpdates.length).toBe(1);
+        expect(Cmp.errorUpdates.length).toBe(0);
+        expect(Cmp.renders.count).toBe(1);
 
         await delay(20);
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
+        expect(Cmp.dataUpdates.length).toBe(1);
+        expect(Cmp.errorUpdates.length).toBe(0);
+        expect(Cmp.renders.count).toBe(1);
+
+        wrapper.setProps({ category: "music", first: 2, after: "pa2" });
+
+        await delay(20);
+        expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
+        expect(fx.calls.length).toBe(1);
+        expect(Cmp.dataUpdates.length).toBe(1);
+        expect(Cmp.errorUpdates.length).toBe(0);
+        expect(Cmp.renders.count).toBe(1);
 
         await fx.restore();
       });
     });
 
-    describe.only("cache-first", () => {
+    describe("cache-first", () => {
       it("displays cached data without making network requests", async () => {
         const { client, fx } = await ssrRoundtrip({ routes });
 

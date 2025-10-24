@@ -3,7 +3,7 @@ import { defineConfig } from '@rsbuild/core';
 export default defineConfig({
   source: {
     entry: {
-      bench: './api/watchQuery.bench.ts',
+      bench: './api/writeQuery.bench.ts',
     },
   },
   output: {

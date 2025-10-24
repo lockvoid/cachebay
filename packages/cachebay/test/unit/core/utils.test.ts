@@ -691,6 +691,62 @@ describe("Utils", () => {
         expect(result[3]).toBe(nextEdge4);
       });
 
+      it("recycles elements when array is prepended", () => {
+        const prevEdge1 = {
+          __typename: "PostEdge",
+          __version: 100,
+          cursor: "p3",
+          node: { __typename: "Post", __version: 200, id: "p3", title: "Post 3" },
+        };
+        const prevEdge2 = {
+          __typename: "PostEdge",
+          __version: 101,
+          cursor: "p4",
+          node: { __typename: "Post", __version: 201, id: "p4", title: "Post 4" },
+        };
+        const prevEdges = [prevEdge1, prevEdge2];
+        (prevEdges as any).__version = 300;
+
+        // Next data: prepended 2 new edges at the start
+        const nextEdge1 = {
+          __typename: "PostEdge",
+          __version: 102,
+          cursor: "p1",
+          node: { __typename: "Post", __version: 202, id: "p1", title: "Post 1" },
+        };
+        const nextEdge2 = {
+          __typename: "PostEdge",
+          __version: 103,
+          cursor: "p2",
+          node: { __typename: "Post", __version: 203, id: "p2", title: "Post 2" },
+        };
+        const nextEdge3 = {
+          __typename: "PostEdge",
+          __version: 100, // Same as prevEdge1!
+          cursor: "p3",
+          node: { __typename: "Post", __version: 200, id: "p3", title: "Post 3" },
+        };
+        const nextEdge4 = {
+          __typename: "PostEdge",
+          __version: 101, // Same as prevEdge2!
+          cursor: "p4",
+          node: { __typename: "Post", __version: 201, id: "p4", title: "Post 4" },
+        };
+        const nextEdges = [nextEdge1, nextEdge2, nextEdge3, nextEdge4];
+        (nextEdges as any).__version = 301;
+
+        const result = recycleSnapshots(prevEdges, nextEdges);
+
+        // Array reference should be nextEdges (different length)
+        expect(result).toBe(nextEdges);
+        // First 2 edges are new (not recycled)
+        expect(result[0]).toBe(nextEdge1);
+        expect(result[1]).toBe(nextEdge2);
+        // Last 2 edges should be recycled from prevEdges
+        expect(result[2]).toBe(prevEdge1); // Recycled!
+        expect(result[3]).toBe(prevEdge2); // Recycled!
+      });
+
       it("recycles common prefix when array shrinks", () => {
         const prevEdge1 = {
           __typename: "PostEdge",
