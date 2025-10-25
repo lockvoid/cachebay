@@ -75,7 +75,8 @@ function mapCachePolicyToUrql(policy: "network-only" | "cache-first" | "cache-an
 
 export function createVueUrqlNestedApp(
   serverUrl: string,
-  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only"
+  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
+  debug = false
 ): VueUrqlNestedController {
   const cache = graphcache({
     resolvers: {
@@ -111,7 +112,7 @@ export function createVueUrqlNestedApp(
       watch(data, (v) => {
         const totalUsers = data.value?.users?.edges?.length ?? 0;
 
-        if (DEBUG) {
+        if (debug) {
           console.log(`URQL total users:`, totalUsers,  globalThis.urql.totalEntities);
         }
 

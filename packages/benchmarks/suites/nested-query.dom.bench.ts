@@ -6,7 +6,7 @@ import { createVueUrqlNestedApp } from "../src/ui/vue-urql-nested-query-app";
 import Table from 'cli-table3';
 
 const DEBUG = process.env.DEBUG === 'true';
-const PAGES_TO_LOAD = 5; // 1000 users / 10 per page = 100 pages
+const PAGES_TO_LOAD = 3; // 1000 users / 10 per page = 100 pages
 
 const serverUrl = process.env.BENCH_SERVER_URL || 'http://127.0.0.1:4001/graphql';
 
@@ -22,16 +22,16 @@ const runScenario = async (
 
     switch (appType) {
       case "cachebay":
-        app = createVueCachebayNestedApp(serverUrl, cachePolicy || "network-only");
+        app = createVueCachebayNestedApp(serverUrl, cachePolicy || "network-only", DEBUG);
         break;
       case "apollo":
-        app = createVueApolloNestedApp(serverUrl, cachePolicy || "network-only");
+        app = createVueApolloNestedApp(serverUrl, cachePolicy || "network-only", DEBUG);
         break;
       case "urql":
-        app = createVueUrqlNestedApp(serverUrl, cachePolicy || "network-only");
+        app = createVueUrqlNestedApp(serverUrl, cachePolicy || "network-only", DEBUG);
         break;
       case "relay":
-        app = createReactRelayNestedApp(serverUrl, cachePolicy || "network-only");
+        app = createReactRelayNestedApp(serverUrl, cachePolicy || "network-only", DEBUG);
         break;
       default:
         throw new Error(`Unknown app type: ${appType}`);
@@ -54,6 +54,7 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   globalThis.cachebay = { iteration: 0, name: 'cachebay', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
   globalThis.apollo = { iteration: 0, name: 'apollo', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
   globalThis.urql = { iteration: 0, name: 'urql', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
+  globalThis.relay = { iteration: 0, name: 'relay', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
 
   describe("network-only", async () => {
     bench("cachebay(vue)", async () => {
@@ -67,7 +68,7 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
       warmupTime: 0,
       time: 0,
     });
-
+/*
     bench("apollo(vue)", async () => {
       globalThis.apollo.iteration++;
 
@@ -89,11 +90,17 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
       throws: true,
       warmupTime: 0,
       time: 0,
+    }); */
+
+    bench("relay(react)", async () => {
+      return await runScenario("relay", "network-only");
+    }, {
+      iterations: 10,
+      warmupIterations: 2,
+      throws: true,
+      warmupTime: 0,
+      time: 0,
     });
- /*
-      bench("relay(react)", async () => {
-        return await runScenario("relay", "network-only");
-        }); */
   });
   /*
     describe("cache-first", () => {
@@ -147,6 +154,7 @@ afterAll(() => {
   table.push(Object.values(globalThis.cachebay));
   table.push(Object.values(globalThis.apollo));
   table.push(Object.values(globalThis.urql));
+  table.push(Object.values(globalThis.relay));
 
   setTimeout(() => {
     console.log(table.toString())

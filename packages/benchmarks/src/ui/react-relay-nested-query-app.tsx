@@ -12,8 +12,6 @@ export type ReactRelayNestedController = {
   mount(target?: Element): void;
   unmount(): void;
   loadNextPage(): Promise<void>;
-  getCount(): number;
-  getTotalRenderTime(): number;
 };
 
 type RelayFetchPolicy = "network-only" | "store-or-network" | "store-and-network";
@@ -105,7 +103,7 @@ function UsersList(props: {
 }) {
   const rootData = useLazyLoadQuery(
     UsersRootQuery,
-    { count: 10, cursor: null },
+    { count: 30, cursor: null },
     { fetchPolicy: props.fetchPolicy },
   );
 
@@ -119,8 +117,8 @@ function UsersList(props: {
   useEffect(() => {
     props.setLoadNext(async () => {
       if (!isLoadingNext && hasNext) {
-        await new Promise<void>((resolve, reject) => {
-          loadNext(10, { onComplete: (err) => (err ? reject(err) : resolve()) });
+        const r = await new Promise<void>((resolve, reject) => {
+          loadNext(30, { onComplete: (err) => (err ? reject(err) : resolve()) });
         });
       }
       // If no more data, resolve immediately
@@ -129,18 +127,12 @@ function UsersList(props: {
 
   const first = useRef(true);
   useEffect(() => {
-   //// Count entities
-   //let count = 0;
-   //for (const userEdge of edges) {
-   //  count++;
-   //  const posts = userEdge.node.posts?.edges || [];
-   //  for (const postEdge of posts) {
-   //    count++;
-   //    const comments = postEdge.node.comments?.edges || [];
-   //    count += comments.length;
-   //  }
-   //}
-    props.onUpdateCount(edges.length);
+    const totalUsers = edges.length;
+
+      console.log(`Relay total users:`, totalUsers);
+
+    globalThis.relay.totalEntities += totalUsers;
+    props.onUpdateCount(totalUsers);
 
     if (first.current) {
       first.current = false;
@@ -174,12 +166,11 @@ function UsersList(props: {
 
 export function createReactRelayNestedApp(
   serverUrl: string,
-  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only"
+  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
 ): ReactRelayNestedController {
   const environment = createRelayEnvironment(serverUrl);
   const fetchPolicy = mapCachePolicyToRelay(cachePolicy);
 
-  let totalRenderTime = 0;
   let root: Root | null = null;
   let container: Element | null = null;
   let lastCount = 0;
@@ -219,16 +210,20 @@ export function createReactRelayNestedApp(
       await ready;
       if (!loadNextFn) return;
 
-      const tStart = performance.now();
+      const t0 = performance.now();
 
       // Wait for network + cache to finish
       await loadNextFn();
 
+      const t2 = performance.now();
+
       // Wait a microtask to ensure React has committed
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      const tEnd = performance.now();
-      totalRenderTime += tEnd - tStart;
+      const t3 = performance.now();
+
+      globalThis.relay.totalRenderTime += (t3 - t0);
+      globalThis.relay.totalNetworkTime += (t2 - t0);
     },
 
     unmount() {
@@ -240,14 +235,6 @@ export function createReactRelayNestedApp(
         root = null;
         container = null;
       }
-    },
-
-    getCount() {
-      return lastCount;
-    },
-
-    getTotalRenderTime() {
-      return totalRenderTime;
     },
   };
 }

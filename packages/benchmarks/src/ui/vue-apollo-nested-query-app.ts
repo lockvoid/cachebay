@@ -4,7 +4,6 @@ import { DefaultApolloClient, useLazyQuery, useQuery } from "@vue/apollo-composa
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, ref, watch } from "vue";
 import { createDeferred } from "../utils/render";
-const DEBUG = process.env.DEBUG === 'true';
 
 try {
   const { loadErrorMessages, loadDevMessages } = require("@apollo/client/dev");
@@ -76,7 +75,8 @@ export type VueApolloNestedController = {
 
 export function createVueApolloNestedApp(
   serverUrl: string,
-  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only"
+  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
+  debug: boolean = false
 ): VueApolloNestedController {
   const client = new ApolloClient({
     cache: new InMemoryCache({
@@ -140,7 +140,7 @@ export function createVueApolloNestedApp(
       watch(result, (v) => {
         const totalUsers = result.value?.users?.edges?.length ?? 0;
 
-        if (DEBUG) {
+        if (debug) {
           console.log(`Apollo total users:`, totalUsers);
         }
 

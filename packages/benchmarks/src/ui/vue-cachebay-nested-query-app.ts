@@ -2,8 +2,6 @@ import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, watch, ref } from "vue";
 import { createCachebay, useQuery } from "../../../cachebay/src/adapters/vue";
 
-const DEBUG = process.env.DEBUG === 'true';
-
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {
     users(first: $first, after: $after) @connection {
@@ -70,7 +68,8 @@ export type VueCachebayNestedController = {
 
 export function createVueCachebayNestedApp(
   serverUrl: string,
-  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only"
+  cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
+  debug?: boolean,
 ): VueCachebayNestedController {
   // Reset metrics bucket for this app/run.
 
@@ -115,9 +114,7 @@ export function createVueCachebayNestedApp(
       watch(data, () => {
         const totalUsers = data.value?.users?.edges?.length ?? 0;
 
-        if (DEBUG) {
-          console.log(`Cachebay total users:`, totalUsers);
-        }
+        // console.log(`Cachebay total users:`, totalUsers);
         globalThis.cachebay.totalEntities += totalUsers;
       }, { immediate: true });
 
