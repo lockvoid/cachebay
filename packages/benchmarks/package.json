@@ -62,7 +62,6 @@
     "glob": "^11.0.3",
     "graphql": "^16.11.0",
     "happy-dom": "^18.0.1",
-    "jsdom": "^27.0.1",
     "mitata": "^1.0.34",
     "playwright": "^1.56.1",
     "relay-compiler": "^16.2.0",

@@ -113,7 +113,6 @@ export function createVueCachebayNestedApp(
       watch(data, () => {
         const totalUsers = data.value?.users?.edges?.length ?? 0;
 
-        console.log(`Total users: ${totalUsers}`);
         globalThis.cachebay.totalEntities += totalUsers;
       }, { immediate: true });
 

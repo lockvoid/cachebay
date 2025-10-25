@@ -143,10 +143,13 @@ export function createVueApolloNestedApp(
 
         const totalUsers = result.value?.users?.edges?.length ?? 0;
 
-        console.log(`Apoolo Total users: ${totalUsers}`);
-
         globalThis.apollo.totalEntities += totalUsers;
       }, { immediate: true });
+
+
+      watch(() => result.value?.users?.pageInfo?.endCursor , (v) => {
+        deferred.resolve();
+      });
 
       const loadNextPage = async () => {
         const t0 = performance.now();
@@ -155,25 +158,7 @@ export function createVueApolloNestedApp(
 
         deferred = createDeferred();
 
-        const currentEndCursor = result.value.users.pageInfo.endCursor;
-
-        await fetchMore({ variables: { first: 10, after: currentEndCursor } });
-
-        // Wait for Vue to update result.value with new data
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-
-       //const endCursor = result.value.users.pageInfo.endCursor;
-
-       //console.log('endCursor BEFORE:', endCursor, 'edges:', result.value.users.edges.length);
-
-       //if (endCursor) {
-       //  await fetchMore({ variables: { first: 10, after: endCursor } });
-       //  await nextTick(); // CRITICAL: Wait for Vue to update result.value
-       //  console.log('endCursor AFTER:', result.value.users.pageInfo.endCursor, 'edges:', result.value.users.edges.length);
-       //}
-       //
-      //  await fetchMore()
+        await fetchMore({ variables: { first: 10, after: result.value.users.pageInfo.endCursor } });
 
         const t2 = performance.now();
 
