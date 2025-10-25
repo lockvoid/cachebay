@@ -81,15 +81,9 @@ export function createVueUrqlNestedApp(
 
   const NestedList = defineComponent({
     setup() {
-      const variables = reactive<{ first: number; after: string | null }>({
-        first: 10,
-        after: null,
-      });
-
       const { data, executeQuery } = useQuery({
         query: USERS_QUERY,
         variables,
-        pause: true, // manual “infinite” style like your feed example
       });
 
       // like InfiniteList: resolve a promise when count increases (paint complete)

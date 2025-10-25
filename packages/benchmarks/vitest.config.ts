@@ -36,7 +36,7 @@ export default defineConfig(({ mode }) => ({
       enabled: true,
       name: 'chromium',
       provider: 'playwright',
-      headless: true,
+      headless: process.env.HEADLESS !== 'false', // Set HEADLESS=false to see browser
     },
     globals: true,
     include: ['suites/**/*.dom.bench.ts'],
