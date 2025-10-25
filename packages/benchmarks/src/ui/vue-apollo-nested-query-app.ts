@@ -3,6 +3,7 @@ import { relayStylePagination } from "@apollo/client/utilities";
 import { DefaultApolloClient, useLazyQuery, useQuery } from "@vue/apollo-composable";
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, ref, watch } from "vue";
+import { createDeferred } from "../utils/render";
 
 try {
   const { loadErrorMessages, loadDevMessages } = require("@apollo/client/dev");
@@ -81,18 +82,18 @@ export function createVueApolloNestedApp(
       typePolicies: {
         Query: {
           fields: {
-            users: relayStylePagination(),
+            users: relayStylePagination(["first"]),
           },
         },
         User: {
           fields: {
-            posts: relayStylePagination(),
-            followers: relayStylePagination(),
+            posts: relayStylePagination(["first"]),
+            followers: relayStylePagination(["first"]),
           },
         },
         Post: {
           fields: {
-            comments: relayStylePagination(),
+            comments: relayStylePagination(["first"]),
           },
         },
       },
@@ -127,13 +128,19 @@ export function createVueApolloNestedApp(
   let app: ReturnType<typeof createApp> | null = null;
   let container: Element | null = null;
 
+  let deferred = createDeferred();
+
   const NestedList = defineComponent({
     setup() {
-      const { result, load, fetchMore } = useQuery(USERS_QUERY, { first: 10, after: null }, { fetchPolicy: cachePolicy });
+      const { result, load, fetchMore, loading } = useQuery(USERS_QUERY, { first: 10, after: null }, { fetchPolicy: cachePolicy });
 
       const endCursor = ref(null)
 
-      watch(result, () => {
+      watch(result, (v) => {
+        if (v) {
+          deferred.resolve();
+        }
+
         const totalUsers = result.value?.users?.edges?.length ?? 0;
 
         console.log(`Apoolo Total users: ${totalUsers}`);
@@ -144,11 +151,16 @@ export function createVueApolloNestedApp(
       const loadNextPage = async () => {
         const t0 = performance.now();
 
-        while (!result.value) {
-          await new Promise(resolve => setTimeout(resolve, 0));
-        }
+        await deferred.promise;
 
-        await fetchMore({ variables: { first: 10, after: result.value.users.pageInfo.endCursor } });
+        deferred = createDeferred();
+
+        const currentEndCursor = result.value.users.pageInfo.endCursor;
+
+        await fetchMore({ variables: { first: 10, after: currentEndCursor } });
+
+        // Wait for Vue to update result.value with new data
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
 
        //const endCursor = result.value.users.pageInfo.endCursor;

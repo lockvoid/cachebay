@@ -6,7 +6,7 @@ import { createVueUrqlNestedApp } from "../src/ui/vue-urql-nested-query-app";
 import Table from 'cli-table3';
 
 const DEBUG = process.env.DEBUG === 'true';
-const PAGES_TO_LOAD = 5; // 1000 users / 10 per page = 100 pages
+const PAGES_TO_LOAD = 3; // 1000 users / 10 per page = 100 pages
 
 const serverUrl = process.env.BENCH_SERVER_URL || 'http://127.0.0.1:4001/graphql';
 
@@ -39,7 +39,7 @@ const runScenario = async (
 
     app.mount();
 
-    for (let i = 0; i < PAGES_TO_LOAD; i++) {
+    for (let i = 0; i < PAGES_TO_LOAD - 1; i++) {
       console.log(`Loading page ${i + 1} of ${PAGES_TO_LOAD}`);
       await app.loadNextPage();
     }
