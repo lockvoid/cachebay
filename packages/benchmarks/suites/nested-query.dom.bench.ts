@@ -19,6 +19,9 @@ const runScenario = async (
   cachePolicy?: "network-only" | "cache-first" | "cache-and-network"
 ) => {
   try {
+    // Increment iteration counter
+    globalThis[appType].iterations++;
+    
     let app;
 
     switch (appType) {
@@ -72,17 +75,21 @@ const runScenario = async (
 }
 
 describe("DOM Nested query (happy-dom): interfaces, custom keys, nested pagination", () => {
-  globalThis.cachebay = { name: 'cachebay', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
-  globalThis.apollo = { name: 'apollo', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
-  globalThis.urql = { name: 'urql', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
+  globalThis.cachebay = { name: 'cachebay', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0, iterations: 0 }
+  globalThis.apollo = { name: 'apollo', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0, iterations: 0 }
+  globalThis.urql = { name: 'urql', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0, iterations: 0 }
 
   describe("network-only", async () => {
     bench("cachebay(vue)", () => {
       return runScenario("cachebay", "network-only");
+    }, {
+      iterations: 10,  // Run exactly 10 times
     });
 
     bench("apollo(vue)", async () => {
       return await runScenario("apollo", "network-only");
+    }, {
+      iterations: 10,
     });
    //
    // bench("urql(vue)", async () => {
