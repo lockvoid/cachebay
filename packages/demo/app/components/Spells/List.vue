@@ -40,7 +40,7 @@
 
     <div v-else class="flex flex-row justify-center space-x-4">
       <button class="button-primary" :disabled="spellsQuery.isFetching.value || !spells.pageInfo.hasNextPage" @click="spellsQuery.loadMore">
-        <span v-if="spellsQuery.isFetching.value">
+        <span v-if="spellsPagination.after && spellsQuery.isFetching.value">
           Loading…
         </span>
 

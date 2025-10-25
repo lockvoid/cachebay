@@ -16,10 +16,14 @@ export const useDeleteSpell = () => {
 
   const execute = async (variables) => {
     if (settings.optimistic) {
-      const tx = cache.modifyOptimistic((state) => {
-        const connection = state.connection({ parent: "Query", key: "spells" });
+      const tx = cache.modifyOptimistic((o) => {
+        const keys = cache.inspect.connectionKeys({ parent: "Query", key: "spells" });
 
-        connection.removeNode(`Spell:${variables.input.id}`); // ...or connection.remove({ __typename: "Spell", id: variables.input.id });
+        keys.forEach((key) => {
+          const c = o.connection(key);
+
+          c.removeNode(`Spell:${variables.input.id}`); // ...or connection.removeNode({ __typename: "Spell", id: variables.input.id });
+        });
       });
 
       return deleteSpell.execute({ input: variables.input })

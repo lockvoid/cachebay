@@ -86,17 +86,23 @@ export function useQuery<TData = any, TVars = any>(
     error.value = null;
     isFetching.value = true;
 
-    console.log('isFetching1', isFetching.value)
     try {
-      await client.executeQuery<TData, TVars>({
+      const result = await client.executeQuery<TData, TVars>({
         query: options.query,
         variables: vars,
         cachePolicy: policy,
       });
+
+      // For cache-and-network with cached data, keep isFetching true
+      // The watcher will be notified when network data arrives and set isFetching to false
+      if (policy === 'cache-and-network' && result.meta?.source === 'cache') {
+        // Keep isFetching true - waiting for network data
+        return;
+      }
+
+      // For all other cases, set isFetching to false
       isFetching.value = false;
-      console.log('isFetching2',  isFetching.value)
     } catch (err) {
-      console.log('isFetching3', isFetching.value)
       // Watcher already set error through onError callback
       isFetching.value = false;
     }

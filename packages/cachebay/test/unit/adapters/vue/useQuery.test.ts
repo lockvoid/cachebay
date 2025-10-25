@@ -1,6 +1,6 @@
 import { mount } from "@vue/test-utils";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { defineComponent, h, ref, nextTick } from "vue";
+import { defineComponent, h, ref, nextTick, watch } from "vue";
 import { useQuery } from "@/src/adapters/vue/useQuery";
 import { createCachebay } from "@/src/core/client";
 import { provideCachebay } from "@/src/adapters/vue/plugin";
@@ -676,5 +676,242 @@ describe("useQuery", () => {
       })
     );
   });
+
+  describe("isFetching behavior for cache policies", () => {
+    it("cache-first: sets isFetching to false immediately with cache hit", async () => {
+      // Pre-populate cache
+      cache.writeQuery({
+        query: USER_QUERY,
+        variables: { id: "1" },
+        data: { user: { id: "1", email: "cached@example.com" } },
+      });
+
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: USER_QUERY,
+            variables: { id: "1" },
+            cachePolicy: "cache-first",
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Should show cached data
+      expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "cached@example.com" } });
+      
+      // isFetching should be false (not waiting for anything)
+      expect(queryResult.isFetching.value).toBe(false);
+      
+      // Should not have made network request
+      expect(mockTransport.http).not.toHaveBeenCalled();
+    });
+
+    it("cache-first: sets isFetching to false after network fetch on cache miss", async () => {
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: USER_QUERY,
+            variables: { id: "1" },
+            cachePolicy: "cache-first",
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      // Initially fetching
+      expect(queryResult.isFetching.value).toBe(true);
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // After network fetch completes
+      expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "alice@example.com" } });
+      expect(queryResult.isFetching.value).toBe(false);
+      expect(mockTransport.http).toHaveBeenCalled();
+    });
+
+    it("cache-only: sets isFetching to false immediately with cache hit", async () => {
+      // Pre-populate cache
+      cache.writeQuery({
+        query: USER_QUERY,
+        variables: { id: "1" },
+        data: { user: { id: "1", email: "cached@example.com" } },
+      });
+
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: USER_QUERY,
+            variables: { id: "1" },
+            cachePolicy: "cache-only",
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "cached@example.com" } });
+      expect(queryResult.isFetching.value).toBe(false);
+      expect(mockTransport.http).not.toHaveBeenCalled();
+    });
+
+    it("network-only: sets isFetching to false after network fetch completes", async () => {
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: USER_QUERY,
+            variables: { id: "1" },
+            cachePolicy: "network-only",
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      // Initially fetching
+      expect(queryResult.isFetching.value).toBe(true);
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // After network fetch completes
+      expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "alice@example.com" } });
+      expect(queryResult.isFetching.value).toBe(false);
+      expect(mockTransport.http).toHaveBeenCalled();
+    });
+
+    it("cache-and-network: keeps isFetching true until network fetch completes", async () => {
+      // Create a delayed mock transport
+      const delayedTransport = {
+        http: vi.fn().mockImplementation(() => 
+          new Promise((resolve) => {
+            setTimeout(() => {
+              resolve({
+                data: { user: { id: "1", email: "network@example.com" } },
+                error: null,
+              });
+            }, 50); // 50ms delay
+          })
+        ),
+      };
+
+      const delayedCache = createCachebay({ 
+        transport: delayedTransport,
+        suspensionTimeout: 50
+      });
+
+      // Pre-populate cache
+      delayedCache.writeQuery({
+        query: USER_QUERY,
+        variables: { id: "1" },
+        data: { user: { id: "1", email: "cached@example.com" } },
+      });
+
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: USER_QUERY,
+            variables: { id: "1" },
+            cachePolicy: "cache-and-network",
+          });
+          
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, delayedCache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      
+      // Should show cached data immediately
+      expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "cached@example.com" } });
+      
+      // But isFetching should still be true (background fetch in progress)
+      expect(queryResult.isFetching.value).toBe(true);
+
+      // Wait for background fetch to complete
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      
+      // Now isFetching should be false
+      expect(queryResult.isFetching.value).toBe(false);
+      
+      // Data should be updated from network
+      expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "network@example.com" } });
+    });
+  });
 });
+
 

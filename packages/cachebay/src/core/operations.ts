@@ -89,7 +89,8 @@ export interface Operation<TData = any, TVars = QueryVariables> {
  * ```typescript
  * const result: OperationResult<{ user: User }> = {
  *   data: { user: { id: "123", name: "Alice" } },
- *   error: null
+ *   error: null,
+ *   meta: { source: 'cache' }
  * };
  * ```
  */
@@ -98,6 +99,11 @@ export interface OperationResult<TData = any> {
   data: TData | null;
   /** Error if operation failed, null if successful */
   error: CombinedError | null;
+  /** Metadata about the operation result */
+  meta?: {
+    /** Source of the data: 'cache' for cached data, 'network' for fresh network data */
+    source?: 'cache' | 'network';
+  };
 }
 
 export interface ObserverLike<T> {
@@ -303,6 +309,7 @@ export const createOperations = (
           const successResult = {
             data: cachedAfterWrite.data as TData,
             error: result.error || null,
+            meta: { source: 'network' as const },
           };
           onSuccess?.(successResult.data);
           return successResult;
@@ -381,7 +388,11 @@ export const createOperations = (
           }
         });
 
-        const result = { data: cached.data as TData, error: null };
+        const result = { 
+          data: cached.data as TData, 
+          error: null,
+          meta: { source: 'cache' as const }
+        };
         onSuccess?.(result.data);
         return result;
       }

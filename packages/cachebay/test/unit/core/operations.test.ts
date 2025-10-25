@@ -116,7 +116,10 @@ describe("operations", () => {
 
       const result = await operations.executeQuery({ query, variables });
 
-      expect(result).toEqual(mockResult);
+      expect(result).toEqual({
+        ...mockResult,
+        meta: { source: 'network' },
+      });
       expect(mockPlanner.getPlan).toHaveBeenCalledWith(query);
       expect(mockTransport.http).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -985,6 +988,77 @@ describe("operations", () => {
           networkError,
         })
       );
+    });
+  });
+
+  describe("meta.source field", () => {
+    const query = "query GetUser { user { id name } }";
+    const variables = { id: "1" };
+    const cachedData = { user: { id: "1", name: "Cached Alice" } };
+    const networkData = { user: { id: "1", name: "Network Alice" } };
+
+    it("sets meta.source to 'cache' for cache-and-network with cache hit", async () => {
+      mockDocuments.materializeDocument.mockReturnValue({
+        data: cachedData,
+        source: "canonical",
+        ok: { canonical: true, strict: true },
+      });
+
+      const result = await operations.executeQuery({
+        query,
+        variables,
+        cachePolicy: "cache-and-network",
+      });
+
+      expect(result.data).toEqual(cachedData);
+      expect(result.meta?.source).toBe('cache');
+      expect(mockTransport.http).toHaveBeenCalled(); // Background fetch
+    });
+
+    it("sets meta.source to 'network' for network responses", async () => {
+      mockDocuments.materializeDocument
+        .mockReturnValueOnce({
+          data: undefined,
+          source: "none",
+          ok: { canonical: false, strict: false },
+        })
+        .mockReturnValueOnce({
+          data: networkData,
+          source: "canonical",
+          ok: { canonical: true, strict: true },
+        });
+
+      vi.mocked(mockTransport.http).mockResolvedValue({
+        data: networkData,
+        error: null,
+      });
+
+      const result = await operations.executeQuery({
+        query,
+        variables,
+        cachePolicy: "network-only",
+      });
+
+      expect(result.data).toEqual(networkData);
+      expect(result.meta?.source).toBe('network');
+    });
+
+    it("does not set meta.source for cache-first with cache hit", async () => {
+      mockDocuments.materializeDocument.mockReturnValue({
+        data: cachedData,
+        source: "canonical",
+        ok: { canonical: true, strict: true },
+      });
+
+      const result = await operations.executeQuery({
+        query,
+        variables,
+        cachePolicy: "cache-first",
+      });
+
+      expect(result.data).toEqual(cachedData);
+      expect(result.meta?.source).toBeUndefined();
+      expect(mockTransport.http).not.toHaveBeenCalled();
     });
   });
 
