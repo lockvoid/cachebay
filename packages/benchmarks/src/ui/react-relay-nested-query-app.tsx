@@ -7,6 +7,8 @@ import {
   useLazyLoadQuery,
   usePaginationFragment,
 } from 'react-relay';
+import { createNestedYoga } from '../server/schema-nested';
+import { makeNestedDataset } from '../utils/seed-nested';
 
 export type ReactRelayNestedController = {
   mount(target?: Element): void;
@@ -23,13 +25,18 @@ function mapCachePolicyToRelay(policy: "network-only" | "cache-first" | "cache-a
 }
 
 function createRelayEnvironment(serverUrl: string) {
+  // Create dataset and Yoga instance once
+  const dataset = makeNestedDataset(1000, 20, 10, 15, 10000);
+  const yoga = createNestedYoga(dataset, 0);
+
   const network = Network.create(async (operation, variables) => {
-    const res = await fetch(serverUrl, {
+    // Use Yoga's fetch directly (in-memory, no HTTP)
+    const response = await yoga.fetch('http://localhost/graphql', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ query: operation.text, variables }),
     });
-    return await res.json();
+    return await response.json();
   });
   return new Environment({ network, store: new Store(new RecordSource()) });
 }
