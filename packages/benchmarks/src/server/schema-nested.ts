@@ -46,17 +46,8 @@ export type ServerCtrl = {
   stop: () => Promise<void>;
 };
 
-export async function startNestedServer(
-  dataset: NestedDataset,
-  opts: { artificialDelayMs?: number; port?: number } = {}
-): Promise<ServerCtrl> {
-  const port = opts.port || 4001;
-  const artificialDelayMs = opts?.artificialDelayMs ?? 20;
-
-  const yoga = createYoga({
-    graphqlEndpoint: '/graphql',
-    cors: true,
-    schema: createSchema({
+export function createNestedSchema(dataset: NestedDataset, artificialDelayMs = 0) {
+  return createSchema({
       typeDefs: /* GraphQL */ `
         interface Node {
           id: ID!
@@ -185,7 +176,21 @@ export async function startNestedServer(
           },
         },
       },
-    }),
+    });
+}
+
+export async function startNestedServer(
+  dataset: NestedDataset,
+  opts: { artificialDelayMs?: number; port?: number } = {}
+): Promise<ServerCtrl> {
+  const port = opts.port || 4001;
+  const artificialDelayMs = opts?.artificialDelayMs ?? 0;
+
+  const schema = createNestedSchema(dataset, artificialDelayMs);
+  const yoga = createYoga({
+    graphqlEndpoint: '/graphql',
+    cors: true,
+    schema,
   });
 
   const server = createHttpServer(yoga);

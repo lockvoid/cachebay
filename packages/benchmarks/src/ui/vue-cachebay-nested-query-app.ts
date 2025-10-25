@@ -1,6 +1,8 @@
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, watch, ref } from "vue";
 import { createCachebay, useQuery } from "../../../cachebay/src/adapters/vue";
+import { createNestedSchema } from "../server/schema-nested";
+import { makeNestedDataset } from "../utils/seed-nested";
 
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {
@@ -67,28 +69,34 @@ export type VueCachebayNestedController = {
 };
 
 export function createVueCachebayNestedApp(
-  serverUrl: string,
+  serverUrl: string, // unused - kept for API compatibility
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
   debug?: boolean,
 ): VueCachebayNestedController {
-  // Reset metrics bucket for this app/run.
+  // Create dataset and schema once for this app instance
+  // Using Yoga directly (no HTTP/network overhead) for pure cache benchmarking
+  const dataset = makeNestedDataset(1000, 20, 10, 15, 10000);
+  const schema = createNestedSchema(dataset, 0); // 0ms artificial delay
 
-  // Create transport using real fetch (like Relay's network)
+  // Transport calls Yoga's execute directly - no fetch, no network, no serialization
   const transport = {
     http: async (context: any) => {
-      const response = await fetch(serverUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query: context.query,
-          variables: context.variables,
-        }),
-      });
-      const result = await response.json();
-      return {
-        data: result.data || null,
-        error: result.errors?.[0] || null
-      };
+      try {
+        const result = await schema.execute({
+          document: context.query,
+          variableValues: context.variables,
+        });
+
+        console.log('v', result);
+
+        return {
+          data: result.data || null,
+          error: result.errors?.[0] || null
+        };
+      } catch (error) {
+        console.error('Error executing query:', error);
+        throw error;
+      }
     },
   };
 
@@ -107,7 +115,7 @@ export function createVueCachebayNestedApp(
 
   const NestedList = defineComponent({
     setup() {
-      const { data, error, refetch, isFetching } = useQuery({ query: USERS_QUERY, variables: { first: 10, after: null }, cachePolicy, lazy: true });
+      const { data, error, refetch, isFetching } = useQuery({ query: USERS_QUERY, variables: { first: 30, after: null }, cachePolicy, lazy: true });
 
       const endCursor = ref(null)
 
