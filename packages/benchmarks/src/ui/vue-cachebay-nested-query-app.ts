@@ -98,7 +98,7 @@ export function createVueCachebayNestedApp(
       });
 
       const result = await response.json();
-      
+
       return {
         data: result.data || null,
         error: result.errors?.[0] || null
@@ -128,7 +128,7 @@ export function createVueCachebayNestedApp(
       watch(data, () => {
         const totalUsers = data.value?.users?.edges?.length ?? 0;
 
-        // console.log(`Cachebay total users:`, totalUsers);
+       // console.log(`Cachebay total users:`, totalUsers);
         globalThis.cachebay.totalEntities += totalUsers;
       }, { immediate: true });
 

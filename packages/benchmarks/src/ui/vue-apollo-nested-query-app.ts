@@ -98,7 +98,7 @@ export function createVueApolloNestedApp(
           // Use print from graphql to convert the query AST to string
           const { print } = await import('graphql');
           const query = print(operation.query);
-          
+
           const response = await yoga.fetch('http://localhost/graphql', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -108,7 +108,7 @@ export function createVueApolloNestedApp(
               operationName: operation.operationName,
             }),
           });
-          
+
           const result = await response.json();
           observer.next(result);
           observer.complete();
@@ -181,9 +181,7 @@ export function createVueApolloNestedApp(
       watch(result, (v) => {
         const totalUsers = result.value?.users?.edges?.length ?? 0;
 
-        if (debug) {
           console.log(`Apollo total users:`, totalUsers);
-        }
 
         globalThis.apollo.totalEntities += totalUsers;
       }, { immediate: true });

@@ -5,8 +5,8 @@ import { createVueCachebayNestedApp } from "../src/ui/vue-cachebay-nested-query-
 import { createVueUrqlNestedApp } from "../src/ui/vue-urql-nested-query-app";
 import Table from 'cli-table3';
 
-const DEBUG = process.env.DEBUG === 'true';
-const PAGES_TO_LOAD = 10; // 1000 users / 10 per page = 100 pages
+const DEBUG = true;
+const PAGES_TO_LOAD = 50; // 1000 users / 10 per page = 100 pages
 
 const serverUrl = process.env.BENCH_SERVER_URL || 'http://127.0.0.1:4001/graphql';
 
@@ -57,7 +57,11 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   globalThis.relay = { iteration: 0, name: 'relay', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
 
   describe("network-only", async () => {
-  /* bench("cachebay(vue)", async () => {
+    bench("cachebay(vue)", async () => {
+      if (DEBUG) {
+        console.log("cachebay(vue) network-only iteration", globalThis.cachebay.iteration);
+      }
+
       globalThis.cachebay.iteration++;
 
       return await runScenario("cachebay", "network-only");
@@ -70,6 +74,9 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
     });
     bench("apollo(vue)", async () => {
       globalThis.apollo.iteration++;
+      if (DEBUG) {
+        console.log("apollo(vue) network-only iteration", globalThis.apollo.iteration);
+      }
 
       return await runScenario("apollo", "network-only");
     }, {
@@ -82,6 +89,10 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
 
     bench("urql(vue)", async () => {
       globalThis.urql.iteration++;
+      if (DEBUG) {
+        console.log("urql(vue) network-only iteration", globalThis.urql.iteration);
+      }
+
       return await runScenario("urql", "network-only");
     }, {
       iterations: 10,
@@ -90,8 +101,13 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
       warmupTime: 0,
       time: 0,
     });
-*/
+
     bench("relay(react)", async () => {
+      globalThis.relay.iteration++;
+      if (DEBUG) {
+        console.log("relay(react) network-only iteration", globalThis.relay.iteration);
+      }
+
       return await runScenario("relay", "network-only");
     }, {
       iterations: 10,
