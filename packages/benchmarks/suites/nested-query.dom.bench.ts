@@ -93,15 +93,15 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
     bench("cachebay(vue)", async () => {
       return await runScenario("cachebay", "network-only");
     });
+    bench("apollo(vue)", async () => {
+         return await runScenario("apollo", "network-only");
+       });
 
-   /* bench("apollo(vue)", async () => {
-        return await runScenario("apollo", "network-only");
-      });
 
       bench("urql(vue)", async () => {
         return await runScenario("urql", "network-only");
       });
-
+ /*
       bench("relay(react)", async () => {
         return await runScenario("relay", "network-only");
         }); */

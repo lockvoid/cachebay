@@ -32,11 +32,15 @@ export default defineConfig(({ mode }) => ({
     exclude: ['node:http', 'node:buffer', 'node:stream'],
   },
   test: {
-    environment: 'happy-dom',
+    browser: {
+      enabled: true,
+      name: 'chromium',
+      provider: 'playwright',
+      headless: true,
+    },
     globals: true,
     include: ['suites/**/*.dom.bench.ts'],
     benchmark: { time: 300, warmupTime: 150, minSamples: 5, concurrent: false },
-    pool: 'forks',  // Use forks pool to allow Node.js APIs
     silent: false,  // Allow console output
     reporters: process.env.DEBUG === 'true' ? ['verbose'] : ['default'],
   },

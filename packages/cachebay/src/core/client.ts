@@ -169,7 +169,6 @@ export type CachebayInstance = {
  * @returns Configured cache instance with Villus plugin interface
  */
 export function createCachebay(options: CachebayOptions): CachebayInstance {
-  console.log("CRE")
   // Validate transport configuration
   if (!options.transport) {
     throw new Error(

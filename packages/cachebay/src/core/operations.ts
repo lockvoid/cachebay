@@ -223,7 +223,6 @@ export const createOperations = (
     onSuccess,
     onError,
   }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
-    console.log('Executing query:', cachePolicy);
     const plan = planner.getPlan(query);
     const signature = plan.makeSignature("canonical", variables);  // Always canonical
 
