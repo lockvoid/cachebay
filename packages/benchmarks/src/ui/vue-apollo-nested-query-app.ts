@@ -2,7 +2,7 @@ import { ApolloClient, InMemoryCache, HttpLink } from "@apollo/client/core";
 import { relayStylePagination } from "@apollo/client/utilities";
 import { DefaultApolloClient, useLazyQuery, useQuery } from "@vue/apollo-composable";
 import { gql } from "graphql-tag";
-import { createApp, defineComponent, nextTick, watch } from "vue";
+import { createApp, defineComponent, nextTick } from "vue";
 
 try {
   const { loadErrorMessages, loadDevMessages } = require("@apollo/client/dev");
@@ -121,15 +121,11 @@ export function createVueApolloNestedApp(
 
   const NestedList = defineComponent({
     setup() {
-      const { result, fetchMore } = useQuery( USERS_QUERY, { first: 10, after: null }, { fetchPolicy: cachePolicy });
-
-      watch(result, () => {
-        const totalUsers = result.value?.users?.edges?.length ?? 0;
-
-        console.log('APOLLO: Total users:', totalUsers);
-
-        globalThis.apollo.totalEntities += totalUsers;
-      }, { immediate: true });
+      const { result, load, fetchMore } = useQuery(
+        USERS_QUERY,
+        { first: 10, after: null },
+        { fetchPolicy: cachePolicy, errorPolicy: "ignore" },
+      );
 
       const loadNextPage = async () => {
         const t0 = performance.now();
@@ -139,10 +135,11 @@ export function createVueApolloNestedApp(
         }
 
         const endCursor = result.value.users.pageInfo.endCursor;
-        console.log('APOLLO: Fetching next page...', endCursor);
+
+        console.log('endCursor:', endCursor);
 
         if (endCursor) {
-          await fetchMore({ variables: { first: 10, after: endCursor } });
+          await fetchMore({ variables: { first: 10, after: endCursor } }).then(() => { console.log('fetchMore completed') });
         }
 
         const t2 = performance.now();
@@ -153,6 +150,7 @@ export function createVueApolloNestedApp(
 
         globalThis.apollo.totalRenderTime += (t3 - t0);
         globalThis.apollo.totalNetworkTime += (t2 - t0);
+        globalThis.apollo.totalEntities += result.value.users.edges.length;
       };
 
       return {
