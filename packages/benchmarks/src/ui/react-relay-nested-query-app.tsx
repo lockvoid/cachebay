@@ -26,13 +26,7 @@ function mapCachePolicyToRelay(policy: "network-only" | "cache-first" | "cache-a
 
 function createRelayEnvironment(serverUrl: string) {
   // Create dataset and Yoga instance once
-  const dataset = makeNestedDataset({
-    userCount: 1000,
-    postsPerUser: 20,
-    commentsPerPost: 10,
-    followersPerUser: 15,
-    seed: 10000,
-  });
+  const dataset = makeNestedDataset();
   const yoga = createNestedYoga(dataset, 0);
 
   const network = Network.create(async (operation, variables) => {

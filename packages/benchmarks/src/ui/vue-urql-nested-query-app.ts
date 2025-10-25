@@ -81,13 +81,7 @@ export function createVueUrqlNestedApp(
   debug = false
 ): VueUrqlNestedController {
   // Create dataset and Yoga instance once
-  const dataset = makeNestedDataset({
-    userCount: 1000,
-    postsPerUser: 20,
-    commentsPerPost: 10,
-    followersPerUser: 15,
-    seed: 10000,
-  });
+  const dataset = makeNestedDataset();
   const yoga = createNestedYoga(dataset, 0);
 
   const cache = graphcache({
