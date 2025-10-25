@@ -6,7 +6,7 @@ import { createVueUrqlNestedApp } from "../src/ui/vue-urql-nested-query-app";
 import Table from 'cli-table3';
 
 const DEBUG = process.env.DEBUG === 'true';
-const PAGES_TO_LOAD = 3; // 1000 users / 10 per page = 100 pages
+const PAGES_TO_LOAD = 5; // 1000 users / 10 per page = 100 pages
 
 const serverUrl = process.env.BENCH_SERVER_URL || 'http://127.0.0.1:4001/graphql';
 
@@ -18,7 +18,6 @@ const runScenario = async (
   appType: "cachebay" | "apollo" | "urql" | "relay",
   cachePolicy?: "network-only" | "cache-first" | "cache-and-network"
 ) => {
-  try {
     let app;
 
     switch (appType) {
@@ -40,14 +39,12 @@ const runScenario = async (
 
     app.mount();
 
-    for (let i = 0; i < PAGES_TO_LOAD - 1; i++) {
+    for (let i = 0; i < PAGES_TO_LOAD; i++) {
+      console.log(`Loading page ${i + 1} of ${PAGES_TO_LOAD}`);
       await app.loadNextPage();
     }
 
     app.unmount();
-  } catch (error) {
-    console.error(`Error running ${appType} scenario:`, error);
-  }
 }
 
 describe("DOM Nested query (happy-dom): interfaces, custom keys, nested pagination", () => {
@@ -56,19 +53,22 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   globalThis.urql = { iteration: 0, name: 'urql', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
 
   describe("network-only", async () => {
-    bench("cachebay(vue)", () => {
-      globalThis.cachebay.iteration++;
-      return runScenario("cachebay", "network-only");
-    }, {
-      iterations: 10
-    });
-
-   //bench("apollo(vue)", async () => {
-   //  globalThis.apollo.iteration++;
-   //  return await runScenario("apollo", "network-only");
+   //bench("cachebay(vue)", () => {
+   //  globalThis.cachebay.iteration++;
+   //  return runScenario("cachebay", "network-only");
    //}, {
    //  iterations: 10
    //});
+
+   bench("apollo(vue)", async () => {
+     globalThis.apollo.iteration++;
+
+     console.log('-----------')
+     return await runScenario("apollo", "network-only");
+   }, {
+     iterations: 10,
+     throws: true,
+   });
 
    // bench("urql(vue)", async () => {
    //   globalThis.urql.iteration++;

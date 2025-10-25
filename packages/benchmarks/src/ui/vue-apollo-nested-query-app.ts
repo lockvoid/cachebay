@@ -2,7 +2,7 @@ import { ApolloClient, InMemoryCache, HttpLink } from "@apollo/client/core";
 import { relayStylePagination } from "@apollo/client/utilities";
 import { DefaultApolloClient, useLazyQuery, useQuery } from "@vue/apollo-composable";
 import { gql } from "graphql-tag";
-import { createApp, defineComponent, nextTick } from "vue";
+import { createApp, defineComponent, nextTick, ref, watch } from "vue";
 
 try {
   const { loadErrorMessages, loadDevMessages } = require("@apollo/client/dev");
@@ -131,6 +131,16 @@ export function createVueApolloNestedApp(
     setup() {
       const { result, load, fetchMore } = useQuery(USERS_QUERY, { first: 10, after: null }, { fetchPolicy: cachePolicy });
 
+      const endCursor = ref(null)
+
+      watch(result, () => {
+        const totalUsers = result.value?.users?.edges?.length ?? 0;
+
+        console.log(`Apoolo Total users: ${totalUsers}`);
+
+        globalThis.apollo.totalEntities += totalUsers;
+      }, { immediate: true });
+
       const loadNextPage = async () => {
         const t0 = performance.now();
 
@@ -138,15 +148,20 @@ export function createVueApolloNestedApp(
           await new Promise(resolve => setTimeout(resolve, 0));
         }
 
-        const endCursor = result.value.users.pageInfo.endCursor;
+        await fetchMore({ variables: { first: 10, after: result.value.users.pageInfo.endCursor } });
 
-        console.log('endCursor BEFORE:', endCursor, 'edges:', result.value.users.edges.length);
 
-        if (endCursor) {
-          await fetchMore({ variables: { first: 10, after: endCursor } });
-          await nextTick(); // CRITICAL: Wait for Vue to update result.value
-          console.log('endCursor AFTER:', result.value.users.pageInfo.endCursor, 'edges:', result.value.users.edges.length);
-        }
+       //const endCursor = result.value.users.pageInfo.endCursor;
+
+       //console.log('endCursor BEFORE:', endCursor, 'edges:', result.value.users.edges.length);
+
+       //if (endCursor) {
+       //  await fetchMore({ variables: { first: 10, after: endCursor } });
+       //  await nextTick(); // CRITICAL: Wait for Vue to update result.value
+       //  console.log('endCursor AFTER:', result.value.users.pageInfo.endCursor, 'edges:', result.value.users.edges.length);
+       //}
+       //
+      //  await fetchMore()
 
         const t2 = performance.now();
 
@@ -156,7 +171,6 @@ export function createVueApolloNestedApp(
 
         globalThis.apollo.totalRenderTime += (t3 - t0);
         globalThis.apollo.totalNetworkTime += (t2 - t0);
-        globalThis.apollo.totalEntities += result.value.users.edges.length;
       };
 
       return {

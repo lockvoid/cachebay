@@ -13,8 +13,10 @@ export interface UseQueryOptions<TData = any, TVars = any> {
   variables?: MaybeRefOrGetter<TVars>;
   /** Cache policy (default: cache-first) - can be reactive */
   cachePolicy?: MaybeRefOrGetter<CachePolicy>;
-  /** Pause query execution if true (can be reactive) */
-  pause?: MaybeRefOrGetter<boolean>;
+  /** Enable query execution (default: true, can be reactive) */
+  enabled?: MaybeRefOrGetter<boolean>;
+  /** Lazy mode - skip initial query execution (default: false) */
+  lazy?: boolean;
 }
 
 /**
@@ -126,7 +128,9 @@ export function useQuery<TData = any, TVars = any>(
    * Defaults to network-only to force fresh data (Apollo behavior).
    */
   const refetch = async (refetchOptions?: RefetchOptions<TVars>) => {
-    if (!watchHandle) return;
+    // Don't execute if disabled or no watcher
+    const isEnabled = toValue(options.enabled) ?? true;
+    if (!isEnabled || !watchHandle) return;
 
     const currentVars = toValue(options.variables) || ({} as TVars);
 
@@ -161,33 +165,29 @@ export function useQuery<TData = any, TVars = any>(
     }
   };
 
-  // Watch for pause changes
+  // Watch for enabled changes
   watch(
-    () => toValue(options.pause),
-    (isPaused) => {
-      if (isPaused) {
-        // Destroy watcher when paused
+    () => toValue(options.enabled) ?? true,
+    (isEnabled) => {
+      if (!isEnabled) {
+        // Destroy watcher when disabled
         if (watchHandle) {
           watchHandle.unsubscribe();
           watchHandle = null;
         }
         isFetching.value = false;
       } else {
+        // Enable - recreate watcher
         const vars = toValue(options.variables) || ({} as TVars);
         const policy = toValue(options.cachePolicy);
         if (!watchHandle) {
           setupWatcher(vars);
-          // Only execute query if not cache-only policy
-          if (policy !== 'cache-only') {
+          // Only execute query if not cache-only policy and not lazy
+          if (policy !== 'cache-only' && !options.lazy) {
             const promise = executeQuery(vars);
             // Capture the first execution for Suspense
             if (!initialExecutionPromise) {
               initialExecutionPromise = promise;
-            }
-          } else {
-            // For cache-only, just resolve immediately
-            if (!initialExecutionPromise) {
-              initialExecutionPromise = Promise.resolve();
             }
           }
         }
@@ -200,8 +200,8 @@ export function useQuery<TData = any, TVars = any>(
   watch(
     () => toValue(options.variables),
     (newVars) => {
-      const isPaused = toValue(options.pause);
-      if (isPaused) return;
+      const isEnabled = toValue(options.enabled) ?? true;
+      if (!isEnabled) return;
 
       const vars = newVars || ({} as TVars);
       const policy = toValue(options.cachePolicy)
@@ -220,8 +220,8 @@ export function useQuery<TData = any, TVars = any>(
   watch(
     () => toValue(options.cachePolicy),
     () => {
-      const isPaused = toValue(options.pause);
-      if (isPaused || !watchHandle) return;
+      const isEnabled = toValue(options.enabled) ?? true;
+      if (!isEnabled || !watchHandle) return;
 
       const vars = toValue(options.variables) || ({} as TVars);
       const policy = toValue(options.cachePolicy)

@@ -87,7 +87,7 @@ describe("useQuery", () => {
     expect(queryResult.data.value).toBe(undefined);
   });
 
-  it("pauses query when pause is true", async () => {
+  it("disables query when enabled is false", async () => {
     let queryResult: any;
 
     const App = defineComponent({
@@ -95,7 +95,7 @@ describe("useQuery", () => {
         queryResult = useQuery({
           query: USER_QUERY,
           variables: { id: "1" },
-          pause: true,
+          enabled: false,
         });
         return () => h("div");
       },
@@ -120,8 +120,7 @@ describe("useQuery", () => {
     expect(queryResult.isFetching.value).toBe(false);
   });
 
-  it("reacts to reactive pause changes", async () => {
-    const isPaused = ref(true);
+  it("skips initial query execution when lazy is true", async () => {
     let queryResult: any;
 
     const App = defineComponent({
@@ -129,7 +128,388 @@ describe("useQuery", () => {
         queryResult = useQuery({
           query: USER_QUERY,
           variables: { id: "1" },
-          pause: isPaused,
+          lazy: true,
+        });
+        return () => h("div");
+      },
+    });
+
+    mount(App, {
+      global: {
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, cache);
+            },
+          },
+        ],
+      },
+    });
+
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Should not execute initial query
+    expect(mockTransport.http).not.toHaveBeenCalled();
+    expect(queryResult.isFetching.value).toBe(false);
+    expect(queryResult.data.value).toBeUndefined();
+  });
+
+  it("lazy query executes when refetch is called", async () => {
+    let queryResult: any;
+
+    const App = defineComponent({
+      setup() {
+        queryResult = useQuery({
+          query: USER_QUERY,
+          variables: { id: "1" },
+          lazy: true,
+        });
+        return () => h("div");
+      },
+    });
+
+    mount(App, {
+      global: {
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, cache);
+            },
+          },
+        ],
+      },
+    });
+
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Initial: no query
+    expect(mockTransport.http).not.toHaveBeenCalled();
+
+    // Call refetch to trigger query
+    await queryResult.refetch();
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Should have executed query
+    expect(mockTransport.http).toHaveBeenCalledTimes(1);
+    expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "alice@example.com" } });
+  });
+
+  it("lazy query does not auto-execute on re-enable", async () => {
+    const isEnabled = ref(true);
+    let queryResult: any;
+
+    const App = defineComponent({
+      setup() {
+        queryResult = useQuery({
+          query: USER_QUERY,
+          variables: { id: "1" },
+          lazy: true,
+          enabled: isEnabled,
+        });
+        return () => h("div");
+      },
+    });
+
+    mount(App, {
+      global: {
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, cache);
+            },
+          },
+        ],
+      },
+    });
+
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Initial: no query (lazy)
+    expect(mockTransport.http).not.toHaveBeenCalled();
+
+    // Call refetch to execute query
+    await queryResult.refetch();
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(mockTransport.http).toHaveBeenCalledTimes(1);
+
+    // Disable
+    isEnabled.value = false;
+    await nextTick();
+
+    // Re-enable - should NOT auto-execute (lazy stays lazy)
+    isEnabled.value = true;
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Still only 1 call - need to call refetch again
+    expect(mockTransport.http).toHaveBeenCalledTimes(1);
+  });
+
+  it("refetch does nothing when query is disabled", async () => {
+    const isEnabled = ref(false);
+    let queryResult: any;
+
+    const App = defineComponent({
+      setup() {
+        queryResult = useQuery({
+          query: USER_QUERY,
+          variables: { id: "1" },
+          enabled: isEnabled,
+        });
+        return () => h("div");
+      },
+    });
+
+    mount(App, {
+      global: {
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, cache);
+            },
+          },
+        ],
+      },
+    });
+
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Initial: no query (disabled)
+    expect(mockTransport.http).not.toHaveBeenCalled();
+
+    // Try to refetch while disabled - should do nothing
+    await queryResult.refetch();
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Still no calls
+    expect(mockTransport.http).not.toHaveBeenCalled();
+    expect(queryResult.data.value).toBeUndefined();
+  });
+
+  it("lazy query with refetch respects enabled state", async () => {
+    const isEnabled = ref(true);
+    let queryResult: any;
+
+    const App = defineComponent({
+      setup() {
+        queryResult = useQuery({
+          query: USER_QUERY,
+          variables: { id: "1" },
+          lazy: true,
+          enabled: isEnabled,
+        });
+        return () => h("div");
+      },
+    });
+
+    mount(App, {
+      global: {
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, cache);
+            },
+          },
+        ],
+      },
+    });
+
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Initial: no query (lazy)
+    expect(mockTransport.http).not.toHaveBeenCalled();
+
+    // Disable before refetch
+    isEnabled.value = false;
+    await nextTick();
+
+    // Try to refetch while disabled - should do nothing
+    await queryResult.refetch();
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Still no calls
+    expect(mockTransport.http).not.toHaveBeenCalled();
+
+    // Enable and refetch - should work
+    isEnabled.value = true;
+    await nextTick();
+    await queryResult.refetch();
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Now it executes
+    expect(mockTransport.http).toHaveBeenCalledTimes(1);
+    expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "alice@example.com" } });
+  });
+
+  it("lazy query can be refetched multiple times", async () => {
+    let queryResult: any;
+
+    const App = defineComponent({
+      setup() {
+        queryResult = useQuery({
+          query: USER_QUERY,
+          variables: { id: "1" },
+          lazy: true,
+        });
+        return () => h("div");
+      },
+    });
+
+    mount(App, {
+      global: {
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, cache);
+            },
+          },
+        ],
+      },
+    });
+
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Initial: no query
+    expect(mockTransport.http).not.toHaveBeenCalled();
+
+    // First refetch
+    await queryResult.refetch();
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(mockTransport.http).toHaveBeenCalledTimes(1);
+
+    // Mock different response
+    mockTransport.http.mockResolvedValueOnce({
+      data: { user: { id: "1", email: "updated@example.com" } },
+      error: null,
+    });
+
+    // Second refetch
+    await queryResult.refetch();
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(mockTransport.http).toHaveBeenCalledTimes(2);
+    expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "updated@example.com" } });
+  });
+
+  it("lazy query with enabled: false never executes", async () => {
+    let queryResult: any;
+
+    const App = defineComponent({
+      setup() {
+        queryResult = useQuery({
+          query: USER_QUERY,
+          variables: { id: "1" },
+          lazy: true,
+          enabled: false,
+        });
+        return () => h("div");
+      },
+    });
+
+    mount(App, {
+      global: {
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, cache);
+            },
+          },
+        ],
+      },
+    });
+
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Initial: no query (lazy + disabled)
+    expect(mockTransport.http).not.toHaveBeenCalled();
+
+    // Try to refetch - should do nothing (disabled)
+    await queryResult.refetch();
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Still no calls
+    expect(mockTransport.http).not.toHaveBeenCalled();
+    expect(queryResult.data.value).toBeUndefined();
+  });
+
+  it("refetch works after enabling a disabled lazy query", async () => {
+    const isEnabled = ref(false);
+    let queryResult: any;
+
+    const App = defineComponent({
+      setup() {
+        queryResult = useQuery({
+          query: USER_QUERY,
+          variables: { id: "1" },
+          lazy: true,
+          enabled: isEnabled,
+        });
+        return () => h("div");
+      },
+    });
+
+    mount(App, {
+      global: {
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, cache);
+            },
+          },
+        ],
+      },
+    });
+
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Initial: no query (lazy + disabled)
+    expect(mockTransport.http).not.toHaveBeenCalled();
+
+    // Enable
+    isEnabled.value = true;
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Still no query (lazy doesn't auto-execute)
+    expect(mockTransport.http).not.toHaveBeenCalled();
+
+    // Now refetch should work
+    await queryResult.refetch();
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(mockTransport.http).toHaveBeenCalledTimes(1);
+    expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "alice@example.com" } });
+  });
+
+  it("reacts to reactive enabled changes", async () => {
+    const isEnabled = ref(false);
+    let queryResult: any;
+
+    const App = defineComponent({
+      setup() {
+        queryResult = useQuery({
+          query: USER_QUERY,
+          variables: { id: "1" },
+          enabled: isEnabled,
         });
         return () => h("div");
       },
@@ -150,8 +530,8 @@ describe("useQuery", () => {
     await nextTick();
     expect(mockTransport.http).not.toHaveBeenCalled();
 
-    // Unpause
-    isPaused.value = false;
+    // Enable
+    isEnabled.value = true;
     await nextTick();
     await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -961,8 +1341,8 @@ describe("useQuery", () => {
     expect(mockTransport.http).toHaveBeenCalledTimes(2);
   });
 
-  it("destroys watcher when paused and recreates when unpaused", async () => {
-    const isPaused = ref(true);
+  it("destroys watcher when disabled and recreates when enabled", async () => {
+    const isEnabled = ref(false);
     let queryResult: any;
 
     const App = defineComponent({
@@ -970,7 +1350,7 @@ describe("useQuery", () => {
         queryResult = useQuery({
           query: USER_QUERY,
           variables: { id: "1" },
-          pause: isPaused,
+          enabled: isEnabled,
         });
         return () => h("div");
       },
@@ -991,20 +1371,20 @@ describe("useQuery", () => {
     await nextTick();
     await new Promise((resolve) => setTimeout(resolve, 10));
 
-    // Should not have fetched while paused
+    // Should not have fetched while disabled
     expect(mockTransport.http).not.toHaveBeenCalled();
     expect(queryResult.isFetching.value).toBe(false);
 
-    // Unpause - should create watcher and fetch
-    isPaused.value = false;
+    // Enable - should create watcher and fetch
+    isEnabled.value = true;
     await nextTick();
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(mockTransport.http).toHaveBeenCalledTimes(1);
     expect(queryResult.data.value).toBeTruthy();
 
-    // Pause again - should destroy watcher
-    isPaused.value = true;
+    // Disable again - should destroy watcher
+    isEnabled.value = false;
     await nextTick();
 
     expect(queryResult.isFetching.value).toBe(false);

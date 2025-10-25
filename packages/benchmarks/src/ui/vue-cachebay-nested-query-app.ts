@@ -106,28 +106,23 @@ export function createVueCachebayNestedApp(
 
   const NestedList = defineComponent({
     setup() {
-      const { data, error, refetch, isFetching } = useQuery({ query: USERS_QUERY, variables: { first: 10, after: null }, cachePolicy });
+      const { data, error, refetch, isFetching } = useQuery({ query: USERS_QUERY, variables: { first: 10, after: null }, cachePolicy, lazy: true });
 
       const endCursor = ref(null)
 
       watch(data, () => {
         const totalUsers = data.value?.users?.edges?.length ?? 0;
 
+        console.log(`Total users: ${totalUsers}`);
         globalThis.cachebay.totalEntities += totalUsers;
       }, { immediate: true });
 
       const loadNextPage = async () => {
         const t0 = performance.now();
 
-        while (!data.value) {
-          await new Promise(resolve => setTimeout(resolve, 0));
-        }
-
-        if (endCursor) {
-          await refetch({ variables: { first: 10, after: endCursor.value } }).then((result) => {
-            endCursor.value = result.data.users.pageInfo.endCursor;
-          });
-        }
+        await refetch({ variables: { first: 10, after: endCursor.value } }).then((result) => {
+          endCursor.value = result.data.users.pageInfo.endCursor;
+        });
 
         const t2 = performance.now();
 
