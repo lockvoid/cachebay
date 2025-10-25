@@ -4,6 +4,7 @@ import { DefaultApolloClient, useLazyQuery, useQuery } from "@vue/apollo-composa
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, ref, watch } from "vue";
 import { createDeferred } from "../utils/render";
+const DEBUG = process.env.DEBUG === 'true';
 
 try {
   const { loadErrorMessages, loadDevMessages } = require("@apollo/client/dev");
@@ -132,22 +133,19 @@ export function createVueApolloNestedApp(
 
   const NestedList = defineComponent({
     setup() {
-      const { result, load, fetchMore, loading } = useQuery(USERS_QUERY, { first: 10, after: null }, { fetchPolicy: cachePolicy });
+      const { result, load, fetchMore, loading } = useQuery(USERS_QUERY, { first: 30, after: null }, { fetchPolicy: cachePolicy });
 
       const endCursor = ref(null)
 
       watch(result, (v) => {
-        if (v) {
-          deferred.resolve();
-        }
-
         const totalUsers = result.value?.users?.edges?.length ?? 0;
 
-        console.log(`Apollo total users:`, totalUsers);
+        if (DEBUG) {
+          console.log(`Apollo total users:`, totalUsers);
+        }
 
         globalThis.apollo.totalEntities += totalUsers;
       }, { immediate: true });
-
 
       watch(() => result.value?.users?.pageInfo?.endCursor , (v) => {
         deferred.resolve();
@@ -160,7 +158,7 @@ export function createVueApolloNestedApp(
 
         deferred = createDeferred();
 
-        await fetchMore({ variables: { first: 10, after: result.value.users.pageInfo.endCursor } });
+        await fetchMore({ variables: { after: result.value.users.pageInfo.endCursor } });
 
         const t2 = performance.now();
 

@@ -6,7 +6,7 @@ import { createVueUrqlNestedApp } from "../src/ui/vue-urql-nested-query-app";
 import Table from 'cli-table3';
 
 const DEBUG = process.env.DEBUG === 'true';
-const PAGES_TO_LOAD = 4; // 1000 users / 10 per page = 100 pages
+const PAGES_TO_LOAD = 5; // 1000 users / 10 per page = 100 pages
 
 const serverUrl = process.env.BENCH_SERVER_URL || 'http://127.0.0.1:4001/graphql';
 
@@ -39,10 +39,12 @@ const runScenario = async (
 
     app.mount();
 
-    for (let i = 0; i < PAGES_TO_LOAD - 1; i++) {
+    for (let i = 0; i < PAGES_TO_LOAD - (appType ==='urql' ? 2 : 1); i++) {
       // console.log(`Loading page ${i + 1} of ${PAGES_TO_LOAD - 1}`);
 
-      await app.loadNextPage();
+      const isLastPage = i === PAGES_TO_LOAD - 2;
+
+      await app.loadNextPage(isLastPage);
     }
 
     app.unmount();
@@ -54,17 +56,17 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   globalThis.urql = { iteration: 0, name: 'urql', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
 
   describe("network-only", async () => {
-    /*bench("cachebay(vue)", () => {
+    bench("cachebay(vue)", async () => {
       globalThis.cachebay.iteration++;
 
-      return runScenario("cachebay", "network-only");
+      return await runScenario("cachebay", "network-only");
     }, {
       iterations: 10,
       warmupIterations: 2,
       throws: true,
-      time: 0,
       warmupTime: 0,
-    });*/
+      time: 0,
+    });
 
     bench("apollo(vue)", async () => {
       globalThis.apollo.iteration++;

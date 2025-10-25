@@ -2,6 +2,8 @@ import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, watch, ref } from "vue";
 import { createCachebay, useQuery } from "../../../cachebay/src/adapters/vue";
 
+const DEBUG = process.env.DEBUG === 'true';
+
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {
     users(first: $first, after: $after) @connection {
@@ -113,13 +115,16 @@ export function createVueCachebayNestedApp(
       watch(data, () => {
         const totalUsers = data.value?.users?.edges?.length ?? 0;
 
+        if (DEBUG) {
+          console.log(`Cachebay total users:`, totalUsers);
+        }
         globalThis.cachebay.totalEntities += totalUsers;
       }, { immediate: true });
 
       const loadNextPage = async () => {
         const t0 = performance.now();
 
-        await refetch({ variables: { first: 10, after: endCursor.value } }).then((result) => {
+        await refetch({ variables: { first: 30, after: endCursor.value } }).then((result) => {
           endCursor.value = result.data.users.pageInfo.endCursor;
         });
 

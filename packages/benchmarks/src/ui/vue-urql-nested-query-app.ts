@@ -5,6 +5,7 @@ import urql, { useQuery } from "@urql/vue";
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, ref, watch } from "vue";
 import { createDeferred } from "../utils/render";
+const DEBUG = process.env.DEBUG === 'true';
 
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {
@@ -98,7 +99,7 @@ export function createVueUrqlNestedApp(
 
   const NestedList = defineComponent({
     setup() {
-      const variables = ref({ first: 10, after: null });
+      const variables = ref({ first: 30, after: null });
 
       const { data, executeQuery } = useQuery({
         query: USERS_QUERY,
@@ -108,13 +109,11 @@ export function createVueUrqlNestedApp(
       const endCursor = ref(null);
 
       watch(data, (v) => {
-        if (v) {
-          deferred.resolve();
-        }
-
         const totalUsers = data.value?.users?.edges?.length ?? 0;
 
-        console.log(`URQL total users:`, totalUsers);
+        if (DEBUG) {
+          console.log(`URQL total users:`, totalUsers,  globalThis.urql.totalEntities);
+        }
 
         globalThis.urql.totalEntities += totalUsers;
       }, { immediate: true });
@@ -123,18 +122,20 @@ export function createVueUrqlNestedApp(
         deferred.resolve();
       });
 
-      const loadNextPage = async () => {
-        const t0 = performance.now();
-
+      const loadNextPage = async (isLastPage) => {
         await deferred.promise;
+
+        const t0 = performance.now();
 
         deferred = createDeferred();
 
         // Update reactive variables to trigger urql to fetch next page
         variables.value = {
-          first: 10,
+          first: 30,
           after: data.value.users.pageInfo.endCursor
         };
+        await nextTick();
+
 
         // Wait for the new data to arrive (deferred will be resolved by watch)
         await deferred.promise;
