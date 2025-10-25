@@ -86,6 +86,7 @@ export function useQuery<TData = any, TVars = any>(
     error.value = null;
     isFetching.value = true;
 
+    console.log('isFetching1', isFetching.value)
     try {
       await client.executeQuery<TData, TVars>({
         query: options.query,
@@ -93,7 +94,9 @@ export function useQuery<TData = any, TVars = any>(
         cachePolicy: policy,
       });
       isFetching.value = false;
+      console.log('isFetching2',  isFetching.value)
     } catch (err) {
+      console.log('isFetching3', isFetching.value)
       // Watcher already set error through onError callback
       isFetching.value = false;
     }

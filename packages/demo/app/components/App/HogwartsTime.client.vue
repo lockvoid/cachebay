@@ -8,10 +8,6 @@
 
   const hogwartsTime = useFragment({ id: "HogwartsTime:1", fragment: HOGWARTS_TIME_FIELDS });
 
-  watch(hogwartsTime, (newTime) => {
-    console.log(newTime);
-  });
-
   const timeFormatter = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit",  hour12: false });
 </script>
 

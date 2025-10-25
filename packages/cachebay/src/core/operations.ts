@@ -462,7 +462,6 @@ export const createOperations = (
         subscribe(observer: Partial<ObserverLike<OperationResult<TData>>>) {
           return observable.subscribe({
             next: (result: OperationResult<TData>) => {
-              console.log("Received subscription data:", result);
               // Write successful subscription data to cache
               if (result.data && !result.error) {
                 documents.normalizeDocument({
