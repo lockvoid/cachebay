@@ -3,7 +3,7 @@ import { cacheExchange as graphcache } from "@urql/exchange-graphcache";
 import { relayPagination } from "@urql/exchange-graphcache/extras";
 import urql, { useQuery } from "@urql/vue";
 import { gql } from "graphql-tag";
-import { createApp, defineComponent, reactive, nextTick, computed, watch } from "vue";
+import { createApp, defineComponent, nextTick } from "vue";
 
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {
@@ -47,8 +47,6 @@ export type VueUrqlNestedController = {
   mount(target?: Element): void;
   unmount(): void;
   loadNextPage(): Promise<void>;
-  getCount(): number;            // counts USERS only (top-level edges)
-  getTotalRenderTime(): number;
 };
 
 function mapCachePolicyToUrql(policy: "network-only" | "cache-first" | "cache-and-network"): "network-only" | "cache-first" | "cache-and-network" {
@@ -73,52 +71,39 @@ export function createVueUrqlNestedApp(
     exchanges: [cache, fetchExchange],
   });
 
-  let totalRenderTime = 0;
   let app: ReturnType<typeof createApp> | null = null;
   let container: Element | null = null;
   let componentInstance: any = null;
-  let onRenderComplete: (() => void) | null = null;
 
   const NestedList = defineComponent({
     setup() {
-      const variables = reactive<{ first: number; after: string | null }>({
-        first: 10,
-        after: null,
-      });
-
       const { data, executeQuery } = useQuery({
         query: USERS_QUERY,
-        variables,
-        pause: true, // manual “infinite” style like your feed example
-      });
-
-      // like InfiniteList: resolve a promise when count increases (paint complete)
-      const edgeCount = computed(() => data.value?.users?.edges?.length || 0);
-      let previousCount = 0;
-
-      watch(edgeCount, (newCount) => {
-        if (newCount > previousCount) {
-          previousCount = newCount;
-          nextTick(() => onRenderComplete?.());
-        }
+        variables: { first: 10, after: null },
       });
 
       const loadNextPage = async () => {
-        const renderStart = performance.now();
+        const t0 = performance.now();
 
-        const renderDone = new Promise<void>((resolve) => { onRenderComplete = resolve; });
+        while (!data.value) {
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
 
-        // fetch a page from network; graphcache merges into users.edges
-        await executeQuery({ variables, requestPolicy: mapCachePolicyToUrql(cachePolicy) });
+        const endCursor = data.value.users.pageInfo.endCursor;
 
-        // bump cursor from the merged result
-        const endCursor = data.value?.users?.pageInfo?.endCursor ?? null;
-        if (endCursor) variables.after = endCursor;
+        if (endCursor) {
+          await executeQuery({ variables: { first: 10, after: endCursor } });
+        }
 
-        await renderDone;
-        onRenderComplete = null;
+        const t2 = performance.now();
 
-        totalRenderTime += performance.now() - renderStart;
+        await nextTick();
+
+        const t3 = performance.now();
+
+        globalThis.urql.totalRenderTime += (t3 - t0);
+        globalThis.urql.totalNetworkTime += (t2 - t0);
+        globalThis.urql.totalEntities += data.value.users.edges.length;
       };
 
       return { data, loadNextPage };
@@ -152,7 +137,7 @@ export function createVueUrqlNestedApp(
     },
 
     async loadNextPage() {
-      await componentInstance?.loadNextPage?.();
+      await componentInstance.loadNextPage();
     },
 
     unmount() {
@@ -163,15 +148,6 @@ export function createVueUrqlNestedApp(
         container = null;
         componentInstance = null;
       }
-    },
-
-    // count USERS only (top-level edges)
-    getCount() {
-      return componentInstance?.data?.users?.edges?.length || 0;
-    },
-
-    getTotalRenderTime() {
-      return totalRenderTime;
     },
   };
 }
