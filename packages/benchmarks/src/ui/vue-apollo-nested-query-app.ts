@@ -1,8 +1,8 @@
 import { ApolloClient, InMemoryCache, HttpLink } from "@apollo/client/core";
 import { relayStylePagination } from "@apollo/client/utilities";
-import { DefaultApolloClient, useLazyQuery } from "@vue/apollo-composable";
+import { DefaultApolloClient, useLazyQuery, useQuery } from "@vue/apollo-composable";
 import { gql } from "graphql-tag";
-import { createApp, defineComponent, nextTick } from "vue";
+import { createApp, defineComponent, nextTick, watch } from "vue";
 
 try {
   const { loadErrorMessages, loadDevMessages } = require("@apollo/client/dev");
@@ -73,18 +73,18 @@ export function createVueApolloNestedApp(
       typePolicies: {
         Query: {
           fields: {
-            users: relayStylePagination(["first"]),
+            users: relayStylePagination(),
           },
         },
         User: {
           fields: {
-            posts: relayStylePagination(["first"]),
-            followers: relayStylePagination(["first"]),
+            posts: relayStylePagination(),
+            followers: relayStylePagination(),
           },
         },
         Post: {
           fields: {
-            comments: relayStylePagination(["first"]),
+            comments: relayStylePagination(),
           },
         },
       },
@@ -121,24 +121,25 @@ export function createVueApolloNestedApp(
 
   const NestedList = defineComponent({
     setup() {
-      const { result, load, fetchMore } = useLazyQuery(
-        USERS_QUERY,
-        {},
-        { fetchPolicy: cachePolicy, errorPolicy: "ignore" },
-      );
+      const { result, fetchMore } = useQuery( USERS_QUERY, { first: 10, after: null }, { fetchPolicy: cachePolicy });
+
+      watch(result, () => {
+        const totalUsers = result.value?.users?.edges?.length ?? 0;
+
+        console.log('APOLLO: Total users:', totalUsers);
+
+        globalThis.apollo.totalEntities += totalUsers;
+      }, { immediate: true });
 
       const loadNextPage = async () => {
         const t0 = performance.now();
-
-        if (!result.value) {
-          await load(USERS_QUERY, { first: 10, after: null });
-        }
 
         while (!result.value) {
           await new Promise(resolve => setTimeout(resolve, 0));
         }
 
         const endCursor = result.value.users.pageInfo.endCursor;
+        console.log('APOLLO: Fetching next page...', endCursor);
 
         if (endCursor) {
           await fetchMore({ variables: { first: 10, after: endCursor } });
@@ -152,7 +153,6 @@ export function createVueApolloNestedApp(
 
         globalThis.apollo.totalRenderTime += (t3 - t0);
         globalThis.apollo.totalNetworkTime += (t2 - t0);
-        globalThis.apollo.totalEntities += result.value.users.edges.length;
       };
 
       return {

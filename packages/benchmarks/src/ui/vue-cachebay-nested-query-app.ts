@@ -1,5 +1,5 @@
 import { gql } from "graphql-tag";
-import { createApp, defineComponent, nextTick } from "vue";
+import { createApp, defineComponent, nextTick, watch } from "vue";
 import { createCachebay, useQuery } from "../../../cachebay/src/adapters/vue";
 
 const USERS_QUERY = gql`
@@ -96,12 +96,19 @@ export function createVueCachebayNestedApp(
     setup() {
       const { data, error, refetch, isFetching } = useQuery({ query: USERS_QUERY, variables: { first: 10, after: null }, cachePolicy });
 
+      watch(data, () => {
+        const totalUsers = data.value?.users?.edges?.length ?? 0;
+
+        globalThis.cachebay.totalEntities += totalUsers;
+      }, { immediate: true });
+
       const loadNextPage = async () => {
         const t0 = performance.now();
 
         while (!data.value) {
           await new Promise(resolve => setTimeout(resolve, 0));
         }
+        //console.log('CACHEBAY: Loading next page');
 
         const endCursor = data.value.users.pageInfo.endCursor;
 
@@ -117,7 +124,6 @@ export function createVueCachebayNestedApp(
 
         globalThis.cachebay.totalRenderTime += (t3 - t0);
         globalThis.cachebay.totalNetworkTime += (t2 - t0);
-        globalThis.cachebay.totalEntities += data.value.users.edges.length;
       };
 
       return { data, loadNextPage };

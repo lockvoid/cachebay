@@ -40,29 +40,8 @@ const runScenario = async (
 
     app.mount();
 
-    if (DEBUG) {
-      console.log(`\n[${appType}] Starting benchmark...`);
-    }
-
-    const pageTimes: number[] = [];
-
-    // Load pages with nested data
-    for (let i = 0; i < PAGES_TO_LOAD; i++) {
-      try {
-        const pageStart = performance.now();
-        await app.loadNextPage();
-        const pageEnd = performance.now();
-
-        const pageTime = pageEnd - pageStart;
-        pageTimes.push(pageTime);
-
-        if (DEBUG) {
-          const count = app.getCount();
-          console.log(`[${appType}] Page ${i + 1}/${PAGES_TO_LOAD}: ${pageTime.toFixed(1)}ms | Total entities: ${count}`);
-        }
-      } catch (error) {
-        console.error(`Error loading page ${i + 1}:`, error);
-      }
+    for (let i = 0; i < PAGES_TO_LOAD - 1; i++) {
+      await app.loadNextPage();
     }
 
     app.unmount();
@@ -77,20 +56,26 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   globalThis.urql = { iteration: 0, name: 'urql', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
 
   describe("network-only", async () => {
-    bench("cachebay(vue)", () => {
-      globalThis.cachebay.iteration++;
-      return runScenario("cachebay", "network-only");
-    });
+    // bench("cachebay(vue)", () => {
+    //   globalThis.cachebay.iteration++;
+    //   return runScenario("cachebay", "network-only");
+    // }, {
+    //   iterations: 10
+    // });
 
     bench("apollo(vue)", async () => {
       globalThis.apollo.iteration++;
       return await runScenario("apollo", "network-only");
+    }, {
+      iterations: 10
     });
 
-    bench("urql(vue)", async () => {
-      globalThis.urql.iteration++;
-      return await runScenario("urql", "network-only");
-    });
+   // bench("urql(vue)", async () => {
+   //   globalThis.urql.iteration++;
+   //   return await runScenario("urql", "network-only");
+   // }, {
+   //   iterations: 10
+   // });
  /*
       bench("relay(react)", async () => {
         return await runScenario("relay", "network-only");
