@@ -95,14 +95,20 @@ export function createVueApolloNestedApp(
     return new Observable((observer) => {
       (async () => {
         try {
+          // Use print from graphql to convert the query AST to string
+          const { print } = await import('graphql');
+          const query = print(operation.query);
+          
           const response = await yoga.fetch('http://localhost/graphql', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              query: operation.query.loc?.source.body,
+              query,
               variables: operation.variables,
+              operationName: operation.operationName,
             }),
           });
+          
           const result = await response.json();
           observer.next(result);
           observer.complete();

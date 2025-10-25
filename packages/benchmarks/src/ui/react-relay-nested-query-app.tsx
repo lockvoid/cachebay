@@ -145,7 +145,7 @@ function UsersList(props: {
     const totalUsers = edges.length;
     const delta = totalUsers - previousCount.current;
 
-    console.log(`Relay total users:`, totalUsers, `(+${delta})`);
+    //console.log(`Relay total users:`, totalUsers, `(+${delta})`);
 
     globalThis.relay.totalEntities += delta;
     previousCount.current = totalUsers;

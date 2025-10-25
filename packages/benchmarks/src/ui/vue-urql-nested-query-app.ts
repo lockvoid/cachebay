@@ -100,14 +100,8 @@ export function createVueUrqlNestedApp(
 
   // Custom fetch using Yoga directly (in-memory, no HTTP)
   const customFetch = async (url: string, options: any) => {
-    try {
-      const response = await yoga.fetch('http://localhost/graphql', options);
-      console.log('Response:', response);
-      return response;
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      throw error;
-    }
+    // urql uses GET with query params by default, we need to pass the full URL
+    return await yoga.fetch(url, options);
   };
 
   const client = createUrqlClient({
@@ -136,9 +130,6 @@ export function createVueUrqlNestedApp(
 
       watch(data, (v) => {
         const totalUsers = data.value?.users?.edges?.length ?? 0;
-
-          console.log(`URQL total users:`, totalUsers,  globalThis.urql.totalEntities);
-
         globalThis.urql.totalEntities += totalUsers;
       }, { immediate: true });
 
