@@ -37,7 +37,7 @@ export interface BaseUseQueryReturn<TData = any, TVars = any> {
   error: Ref<Error | null>;
   /** Fetching state */
   isFetching: Ref<boolean>;
-  /** 
+  /**
    * Refetch the query with optional variables and cache policy.
    * Defaults to network-only policy to force fresh data from server (Apollo behavior).
    */
@@ -127,35 +127,34 @@ export function useQuery<TData = any, TVars = any>(
    */
   const refetch = async (refetchOptions?: RefetchOptions<TVars>) => {
     if (!watchHandle) return;
-    
+
     const currentVars = toValue(options.variables) || ({} as TVars);
-    
+
     // Merge variables (Apollo behavior: omitted variables use original values)
-    const vars = refetchOptions?.variables 
+    const vars = refetchOptions?.variables
       ? { ...currentVars, ...refetchOptions.variables } as TVars
       : currentVars;
-    
+
     // Default to network-only if no cache policy specified (Apollo behavior)
     const refetchPolicy = refetchOptions?.cachePolicy || 'network-only';
-    
+
     // Update watcher with new variables if provided
     if (refetchOptions?.variables) {
       watchHandle.update({ variables: vars });
     }
-    
+
     // Execute query with refetch policy
     error.value = null;
     isFetching.value = true;
 
     try {
-      await client.executeQuery<TData, TVars>({
+      const result = await client.executeQuery<TData, TVars>({
         query: options.query,
         variables: vars,
         cachePolicy: refetchPolicy,
       });
-      
-      // Note: The watcher's onData callback will set isFetching to false
-      // when the cache is updated. We don't set it here to avoid race conditions.
+
+      return result;
     } catch (err) {
       // Watcher already set error through onError callback
       isFetching.value = false;

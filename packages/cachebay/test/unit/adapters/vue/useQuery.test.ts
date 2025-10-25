@@ -231,8 +231,10 @@ describe("useQuery", () => {
 
     expect(typeof queryResult.refetch).toBe("function");
 
-    // Refetch should be callable without errors
-    await expect(queryResult.refetch()).resolves.not.toThrow();
+    // Refetch should return a result
+    const result = await queryResult.refetch();
+    expect(result).toBeDefined();
+    expect(result.data).toMatchObject({ user: { id: "1", email: "alice@example.com" } });
   });
 
   describe("refetch with variables", () => {

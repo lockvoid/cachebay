@@ -122,13 +122,10 @@ export function createVueCachebayNestedApp(
         while (!data.value) {
           await new Promise(resolve => setTimeout(resolve, 0));
         }
-        //console.log('CACHEBAY: Loading next page');
-
-        const endCursor = data.value.users.pageInfo.endCursor;
 
         if (endCursor) {
-          await refetch({ variables: { first: 10, after: endCursor } }).then((data) => {
-            console.log('data', data)
+          await refetch({ variables: { first: 10, after: endCursor.value } }).then((result) => {
+            endCursor.value = result.data.users.pageInfo.endCursor;
           });
         }
 
