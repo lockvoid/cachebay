@@ -1,9 +1,11 @@
-import { ApolloClient, InMemoryCache, HttpLink } from "@apollo/client/core";
+import { ApolloClient, InMemoryCache, ApolloLink, Observable } from "@apollo/client/core";
 import { relayStylePagination } from "@apollo/client/utilities";
 import { DefaultApolloClient, useLazyQuery, useQuery } from "@vue/apollo-composable";
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, ref, watch } from "vue";
 import { createDeferred } from "../utils/render";
+import { createNestedYoga } from "../server/schema-nested";
+import { makeNestedDataset } from "../utils/seed-nested";
 
 try {
   const { loadErrorMessages, loadDevMessages } = require("@apollo/client/dev");
@@ -74,10 +76,43 @@ export type VueApolloNestedController = {
 };
 
 export function createVueApolloNestedApp(
-  serverUrl: string,
+  serverUrl: string, // unused - kept for API compatibility
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
   debug: boolean = false
 ): VueApolloNestedController {
+  // Create dataset and Yoga instance once
+  const dataset = makeNestedDataset({
+    userCount: 1000,
+    postsPerUser: 20,
+    commentsPerPost: 10,
+    followersPerUser: 15,
+    seed: 10000,
+  });
+  const yoga = createNestedYoga(dataset, 0);
+
+  // Custom Apollo Link using Yoga directly (in-memory, no HTTP)
+  const yogaLink = new ApolloLink((operation) => {
+    return new Observable((observer) => {
+      (async () => {
+        try {
+          const response = await yoga.fetch('http://localhost/graphql', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query: operation.query.loc?.source.body,
+              variables: operation.variables,
+            }),
+          });
+          const result = await response.json();
+          observer.next(result);
+          observer.complete();
+        } catch (error) {
+          observer.error(error);
+        }
+      })();
+    });
+  });
+
   const client = new ApolloClient({
     cache: new InMemoryCache({
       typePolicies: {
@@ -99,7 +134,7 @@ export function createVueApolloNestedApp(
         },
       },
     }),
-    link: new HttpLink({ uri: serverUrl, fetch }),
+    link: yogaLink,
     defaultOptions: { query: { fetchPolicy: cachePolicy } },
   });
 

@@ -5,6 +5,8 @@ import urql, { useQuery } from "@urql/vue";
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, ref, watch } from "vue";
 import { createDeferred } from "../utils/render";
+import { createNestedYoga } from "../server/schema-nested";
+import { makeNestedDataset } from "../utils/seed-nested";
 const DEBUG = process.env.DEBUG === 'true';
 
 const USERS_QUERY = gql`
@@ -74,10 +76,20 @@ function mapCachePolicyToUrql(policy: "network-only" | "cache-first" | "cache-an
 }
 
 export function createVueUrqlNestedApp(
-  serverUrl: string,
+  serverUrl: string, // unused - kept for API compatibility
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
   debug = false
 ): VueUrqlNestedController {
+  // Create dataset and Yoga instance once
+  const dataset = makeNestedDataset({
+    userCount: 1000,
+    postsPerUser: 20,
+    commentsPerPost: 10,
+    followersPerUser: 15,
+    seed: 10000,
+  });
+  const yoga = createNestedYoga(dataset, 0);
+
   const cache = graphcache({
     resolvers: {
       Query: { users: relayPagination() },
@@ -86,10 +98,23 @@ export function createVueUrqlNestedApp(
     },
   });
 
+  // Custom fetch using Yoga directly (in-memory, no HTTP)
+  const customFetch = async (url: string, options: any) => {
+    try {
+      const response = await yoga.fetch('http://localhost/graphql', options);
+      console.log('Response:', response);
+      return response;
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      throw error;
+    }
+  };
+
   const client = createUrqlClient({
     url: serverUrl,
     requestPolicy: mapCachePolicyToUrql(cachePolicy),
     exchanges: [cache, fetchExchange],
+    fetch: customFetch,
   });
 
   let app: ReturnType<typeof createApp> | null = null;
@@ -112,9 +137,7 @@ export function createVueUrqlNestedApp(
       watch(data, (v) => {
         const totalUsers = data.value?.users?.edges?.length ?? 0;
 
-        if (debug) {
           console.log(`URQL total users:`, totalUsers,  globalThis.urql.totalEntities);
-        }
 
         globalThis.urql.totalEntities += totalUsers;
       }, { immediate: true });

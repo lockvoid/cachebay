@@ -57,7 +57,7 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   globalThis.relay = { iteration: 0, name: 'relay', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
 
   describe("network-only", async () => {
-    bench("cachebay(vue)", async () => {
+   /* bench("cachebay(vue)", async () => {
       globalThis.cachebay.iteration++;
 
       return await runScenario("cachebay", "network-only");
@@ -68,7 +68,7 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
       warmupTime: 0,
       time: 0,
     });
-/*
+    x
     bench("apollo(vue)", async () => {
       globalThis.apollo.iteration++;
 
@@ -80,7 +80,7 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
       warmupTime: 0,
       time: 0,
     });
-
+*/
     bench("urql(vue)", async () => {
       globalThis.urql.iteration++;
       return await runScenario("urql", "network-only");
@@ -90,8 +90,8 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
       throws: true,
       warmupTime: 0,
       time: 0,
-    }); */
-
+    });
+/*
     bench("relay(react)", async () => {
       return await runScenario("relay", "network-only");
     }, {
@@ -100,7 +100,7 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
       throws: true,
       warmupTime: 0,
       time: 0,
-    });
+    });*/
   });
   /*
     describe("cache-first", () => {

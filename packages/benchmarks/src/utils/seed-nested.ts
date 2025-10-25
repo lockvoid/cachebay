@@ -37,13 +37,22 @@ function mulberry32(seed: number) {
   };
 }
 
-export function makeNestedDataset(
-  userCount: number,
-  postsPerUser: number,
-  commentsPerPost: number,
-  followersPerUser: number,
-  seed = 12345
-): NestedDataset {
+export type MakeNestedDatasetOptions = {
+  userCount?: number;
+  postsPerUser?: number;
+  commentsPerPost?: number;
+  followersPerUser?: number;
+  seed?: number;
+};
+
+export function makeNestedDataset(options: MakeNestedDatasetOptions = {}): NestedDataset {
+  const {
+    userCount = 5000,
+    postsPerUser = 20,
+    commentsPerPost = 10,
+    followersPerUser = 15,
+    seed = 12345,
+  } = options;
   const rnd = mulberry32(seed);
   
   const users = new Map<string, User>();

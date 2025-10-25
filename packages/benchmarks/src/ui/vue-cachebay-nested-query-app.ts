@@ -75,7 +75,13 @@ export function createVueCachebayNestedApp(
 ): VueCachebayNestedController {
   // Create dataset and Yoga instance once for this app
   // Using Yoga directly (no HTTP/network overhead) for pure cache benchmarking
-  const dataset = makeNestedDataset(1000, 20, 10, 15, 10000);
+  const dataset = makeNestedDataset({
+    userCount: 1000,
+    postsPerUser: 20,
+    commentsPerPost: 10,
+    followersPerUser: 15,
+    seed: 10000,
+  });
   const yoga = createNestedYoga(dataset, 0); // 0ms artificial delay
 
   // Transport calls Yoga's fetch directly - no HTTP, no network, no serialization

@@ -8,13 +8,13 @@ const COMMENTS_PER_POST = 10;
 const FOLLOWERS_PER_USER = 15;
 
 async function main() {
-  const dataset = makeNestedDataset(
-    USER_COUNT,
-    POSTS_PER_USER,
-    COMMENTS_PER_POST,
-    FOLLOWERS_PER_USER,
-    10000
-  );
+  const dataset = makeNestedDataset({
+    userCount: USER_COUNT,
+    postsPerUser: POSTS_PER_USER,
+    commentsPerPost: COMMENTS_PER_POST,
+    followersPerUser: FOLLOWERS_PER_USER,
+    seed: 10000,
+  });
   const server = await startNestedServer(dataset, { artificialDelayMs: 20, port: 4001 });
   
   console.log(`Server started at ${server.url}`);
