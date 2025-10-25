@@ -1,7 +1,7 @@
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, watch, ref } from "vue";
 import { createCachebay, useQuery } from "../../../cachebay/src/adapters/vue";
-import { createNestedSchema } from "../server/schema-nested";
+import { createNestedYoga } from "../server/schema-nested";
 import { makeNestedDataset } from "../utils/seed-nested";
 
 const USERS_QUERY = gql`
@@ -73,30 +73,30 @@ export function createVueCachebayNestedApp(
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
   debug?: boolean,
 ): VueCachebayNestedController {
-  // Create dataset and schema once for this app instance
+  // Create dataset and Yoga instance once for this app
   // Using Yoga directly (no HTTP/network overhead) for pure cache benchmarking
   const dataset = makeNestedDataset(1000, 20, 10, 15, 10000);
-  const schema = createNestedSchema(dataset, 0); // 0ms artificial delay
+  const yoga = createNestedYoga(dataset, 0); // 0ms artificial delay
 
-  // Transport calls Yoga's execute directly - no fetch, no network, no serialization
+  // Transport calls Yoga's fetch directly - no HTTP, no network, no serialization
   const transport = {
     http: async (context: any) => {
-      try {
-        const result = await schema.execute({
-          document: context.query,
-          variableValues: context.variables,
-        });
+      // Use Yoga's fetch API (works in-memory without HTTP)
+      const response = await yoga.fetch('http://localhost/graphql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: context.query,
+          variables: context.variables,
+        }),
+      });
 
-        console.log('v', result);
-
-        return {
-          data: result.data || null,
-          error: result.errors?.[0] || null
-        };
-      } catch (error) {
-        console.error('Error executing query:', error);
-        throw error;
-      }
+      const result = await response.json();
+      
+      return {
+        data: result.data || null,
+        error: result.errors?.[0] || null
+      };
     },
   };
 

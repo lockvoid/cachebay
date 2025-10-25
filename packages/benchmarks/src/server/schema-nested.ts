@@ -1,18 +1,18 @@
 import { createYoga, createSchema } from 'graphql-yoga';
 import { createServer as createHttpServer } from 'http';
-import { Buffer } from 'buffer';
 import type { NestedDataset } from '../utils/seed-nested';
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+// Browser-compatible base64 encoding
 function encodeCursor(index: number): string {
-  return Buffer.from(`cursor:${index}`, 'utf8').toString('base64');
+  return btoa(`cursor:${index}`);
 }
 
 function decodeCursor(cursor: string | null | undefined): number {
   if (!cursor) return -1;
   try {
-    const s = Buffer.from(cursor, 'base64').toString('utf8');
+    const s = atob(cursor);
     const m = s.match(/^cursor:(\d+)$/);
     return m ? parseInt(m[1], 10) : -1;
   } catch {
@@ -46,8 +46,8 @@ export type ServerCtrl = {
   stop: () => Promise<void>;
 };
 
-export function createNestedSchema(dataset: NestedDataset, artificialDelayMs = 0) {
-  return createSchema({
+export function createNestedYoga(dataset: NestedDataset, artificialDelayMs = 0) {
+  const schema = createSchema({
       typeDefs: /* GraphQL */ `
         interface Node {
           id: ID!
@@ -177,6 +177,10 @@ export function createNestedSchema(dataset: NestedDataset, artificialDelayMs = 0
         },
       },
     });
+  
+  return createYoga({
+    schema,
+  });
 }
 
 export async function startNestedServer(
@@ -186,12 +190,7 @@ export async function startNestedServer(
   const port = opts.port || 4001;
   const artificialDelayMs = opts?.artificialDelayMs ?? 0;
 
-  const schema = createNestedSchema(dataset, artificialDelayMs);
-  const yoga = createYoga({
-    graphqlEndpoint: '/graphql',
-    cors: true,
-    schema,
-  });
+  const yoga = createNestedYoga(dataset, artificialDelayMs);
 
   const server = createHttpServer(yoga);
 
