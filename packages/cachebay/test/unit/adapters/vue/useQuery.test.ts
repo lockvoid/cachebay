@@ -631,10 +631,50 @@ describe("useQuery", () => {
     expect(httpSpy).toHaveBeenCalledTimes(1);
     expect(httpSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        query: expect.any(Object),
+        query: expect.any(String),
         variables: { id: "1" },
         operationType: "query",
       })
     );
   });
+
+  it("does not add default cachePolicy when not provided", async () => {
+    const executeQuerySpy = vi.spyOn(cache, 'executeQuery');
+
+    const App = defineComponent({
+      setup() {
+        useQuery({
+          query: USER_QUERY,
+          variables: { id: "1" },
+          // No cachePolicy specified - should pass undefined to executeQuery
+        });
+        return () => h("div");
+      },
+    });
+
+    mount(App, {
+      global: {
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, cache);
+            },
+          },
+        ],
+      },
+    });
+
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Verify executeQuery was called with undefined cachePolicy
+    expect(executeQuerySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: USER_QUERY,
+        variables: { id: "1" },
+        cachePolicy: undefined,
+      })
+    );
+  });
 });
+

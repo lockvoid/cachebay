@@ -177,6 +177,7 @@ export interface OperationsOptions {
   transport: Transport;
   suspensionTimeout?: number;
   onQueryError?: (signature: string, error: CombinedError) => void;
+  cachePolicy?: CachePolicy;
 }
 
 export interface OperationsDependencies {
@@ -186,7 +187,7 @@ export interface OperationsDependencies {
 }
 
 export const createOperations = (
-  { transport, suspensionTimeout = 1000, onQueryError }: OperationsOptions,
+  { transport, suspensionTimeout = 1000, onQueryError, cachePolicy: defaultCachePolicy }: OperationsOptions,
   { planner, documents, ssr }: OperationsDependencies
 ) => {
   // Track query epochs to prevent stale responses from notifying watchers
@@ -219,10 +220,11 @@ export const createOperations = (
   const executeQuery = async <TData = any, TVars = QueryVariables>({
     query,
     variables = {},
-    cachePolicy = 'network-only',
+    cachePolicy,
     onSuccess,
     onError,
   }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
+    const effectiveCachePolicy = cachePolicy ?? defaultCachePolicy ?? 'network-only';
     const plan = planner.getPlan(query);
     const signature = plan.makeSignature("canonical", variables);  // Always canonical
 
@@ -347,7 +349,7 @@ export const createOperations = (
       }
     }
 
-    if (cachePolicy === 'cache-only') {
+    if (effectiveCachePolicy === 'cache-only') {
       if (cached.source === "none") {
         const error = new CombinedError({ networkError: new CacheMissError() });
         onError?.(error);
@@ -363,7 +365,7 @@ export const createOperations = (
       return result;
     }
 
-    if (cachePolicy === 'cache-first') {
+    if (effectiveCachePolicy === 'cache-first') {
       if (cached.ok.canonical && cached.ok.strict) {
         const result = { data: cached.data as TData, error: null };
         onSuccess?.(result.data);
@@ -371,7 +373,7 @@ export const createOperations = (
       }
     }
 
-    if (cachePolicy === 'cache-and-network') {
+    if (effectiveCachePolicy === 'cache-and-network') {
       if (cached.ok.canonical) {
         performRequest().catch((err) => {
           if (__DEV__) {
@@ -443,13 +445,13 @@ export const createOperations = (
     }
 
     const vars = variables || ({} as TVars);
-    const compiledQuery = planner.getPlan(query);
+    const plan = planner.getPlan(query);
 
     const context: WsContext = {
-      query,
+      query: plan.networkQuery,
       variables: vars,
       operationType: "subscription",
-      compiledQuery,
+      compiledQuery: plan,
     };
 
     try {

@@ -800,7 +800,7 @@ describe("operations", () => {
       expect(mockPlanner.getPlan).toHaveBeenCalledWith(subscription);
       expect(mockTransport.ws).toHaveBeenCalledWith(
         expect.objectContaining({
-          query: subscription,
+          query: "query GetUser { user { id name __typename } }", // networkQuery with __typename
           variables,
           operationType: "subscription",
           compiledQuery: expect.objectContaining({ compiled: true }),
@@ -985,6 +985,112 @@ describe("operations", () => {
           networkError,
         })
       );
+    });
+  });
+
+  describe("default cachePolicy from options", () => {
+    const query = "query GetUser { user { id name } }";
+    const variables = { id: "1" };
+    const cachedData = { user: { id: "1", name: "Cached Alice" } };
+
+    it("uses default cachePolicy from options when not provided in executeQuery", async () => {
+      const opsWithDefaultPolicy = createOperations(
+        { transport: mockTransport, cachePolicy: "cache-first" },
+        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr }
+      );
+
+      mockDocuments.materializeDocument.mockReturnValue({
+        data: cachedData,
+        source: "canonical",
+        ok: { canonical: true, strict: true },
+      });
+
+      const result = await opsWithDefaultPolicy.executeQuery({
+        query,
+        variables,
+      });
+
+      expect(result.data).toEqual(cachedData);
+      expect(mockTransport.http).not.toHaveBeenCalled();
+    });
+
+    it("executeQuery cachePolicy takes priority over options cachePolicy", async () => {
+      const opsWithDefaultPolicy = createOperations(
+        { transport: mockTransport, cachePolicy: "cache-first" },
+        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr }
+      );
+
+      const networkData = { user: { id: "1", name: "Network Alice" } };
+      let readCount = 0;
+      mockDocuments.materializeDocument.mockImplementation(() => {
+        readCount++;
+        if (readCount === 1) {
+          return {
+            data: cachedData,
+            source: "canonical",
+            ok: { canonical: true, strict: true },
+          };
+        }
+        return {
+          data: networkData,
+          source: "canonical",
+          ok: { canonical: true, strict: true },
+        };
+      });
+
+      const mockResult = {
+        data: networkData,
+        error: null,
+      };
+      vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+      const result = await opsWithDefaultPolicy.executeQuery({
+        query,
+        variables,
+        cachePolicy: "network-only",
+      });
+
+      expect(mockTransport.http).toHaveBeenCalled();
+      expect(result.data).toEqual(networkData);
+    });
+
+    it("defaults to network-only when no cachePolicy provided in both places", async () => {
+      const opsWithoutPolicy = createOperations(
+        { transport: mockTransport },
+        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr }
+      );
+
+      const networkData = { user: { id: "1", name: "Network Alice" } };
+      let readCount = 0;
+      mockDocuments.materializeDocument.mockImplementation(() => {
+        readCount++;
+        if (readCount === 1) {
+          return {
+            data: cachedData,
+            source: "canonical",
+            ok: { canonical: true, strict: true },
+          };
+        }
+        return {
+          data: networkData,
+          source: "canonical",
+          ok: { canonical: true, strict: true },
+        };
+      });
+
+      const mockResult = {
+        data: networkData,
+        error: null,
+      };
+      vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+      const result = await opsWithoutPolicy.executeQuery({
+        query,
+        variables,
+      });
+
+      expect(mockTransport.http).toHaveBeenCalled();
+      expect(result.data).toEqual(networkData);
     });
   });
 });

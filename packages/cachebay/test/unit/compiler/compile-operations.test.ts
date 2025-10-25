@@ -323,4 +323,60 @@ describe("Compiler x Operations", () => {
     // Key should follow expectedArgNames order: ["role", "first", "after"]
     expect(key1).toBe('{"role":"admin","first":10,"after":"cursor1"}');
   });
+
+  it("compiles UPDATE_USER_MUTATION: parses mutation type and adds __typename", () => {
+    const plan = compilePlan(operations.UPDATE_USER_MUTATION);
+    
+    expect(plan.kind).toBe("CachePlan");
+    expect(plan.operation).toBe("mutation");
+    expect(plan.rootTypename).toBe("Mutation");
+    
+    const updateUser = findField(plan.root, "updateUser")!;
+    expect(updateUser).toBeTruthy();
+    expect(updateUser.fieldName).toBe("updateUser");
+    
+    const user = findField(updateUser.selectionSet!, "user")!;
+    expect(user).toBeTruthy();
+    
+    const id = findField(user.selectionSet!, "id");
+    const email = findField(user.selectionSet!, "email");
+    expect(id).toBeTruthy();
+    expect(email).toBeTruthy();
+    
+    const posts = findField(user.selectionSet!, "posts")!;
+    expect(posts.isConnection).toBe(true);
+    expect(posts.connectionKey).toBe("posts");
+    
+    // Verify __typename is added throughout
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
+    expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
+  });
+
+  it("compiles USER_UPDATED_SUBSCRIPTION: parses subscription type and adds __typename", () => {
+    const plan = compilePlan(operations.USER_UPDATED_SUBSCRIPTION);
+    
+    expect(plan.kind).toBe("CachePlan");
+    expect(plan.operation).toBe("subscription");
+    expect(plan.rootTypename).toBe("Subscription");
+    
+    const userUpdated = findField(plan.root, "userUpdated")!;
+    expect(userUpdated).toBeTruthy();
+    expect(userUpdated.fieldName).toBe("userUpdated");
+    
+    const userUpdatedArgs = userUpdated.buildArgs({ id: "u1" });
+    expect(userUpdatedArgs).toEqual({ id: "u1" });
+    expect(userUpdated.expectedArgNames).toEqual(["id"]);
+    
+    const user = findField(userUpdated.selectionSet!, "user")!;
+    expect(user).toBeTruthy();
+    
+    const id = findField(user.selectionSet!, "id");
+    const email = findField(user.selectionSet!, "email");
+    expect(id).toBeTruthy();
+    expect(email).toBeTruthy();
+    
+    // Verify __typename is added throughout
+    expect(hasTypenames(plan.networkQuery)).toBe(true);
+    expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
+  });
 });
