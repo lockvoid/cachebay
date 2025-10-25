@@ -126,12 +126,16 @@ function UsersList(props: {
   }, [hasNext, isLoadingNext, loadNext, props]);
 
   const first = useRef(true);
+  const previousCount = useRef(0);
+
   useEffect(() => {
     const totalUsers = edges.length;
+    const delta = totalUsers - previousCount.current;
 
-      console.log(`Relay total users:`, totalUsers);
+    console.log(`Relay total users:`, totalUsers, `(+${delta})`);
 
-    globalThis.relay.totalEntities += totalUsers;
+    globalThis.relay.totalEntities += delta;
+    previousCount.current = totalUsers;
     props.onUpdateCount(totalUsers);
 
     if (first.current) {
