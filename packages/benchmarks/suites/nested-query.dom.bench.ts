@@ -56,19 +56,19 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   globalThis.urql = { iteration: 0, name: 'urql', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
 
   describe("network-only", async () => {
-    // bench("cachebay(vue)", () => {
-    //   globalThis.cachebay.iteration++;
-    //   return runScenario("cachebay", "network-only");
-    // }, {
-    //   iterations: 10
-    // });
-
-    bench("apollo(vue)", async () => {
-      globalThis.apollo.iteration++;
-      return await runScenario("apollo", "network-only");
+    bench("cachebay(vue)", () => {
+      globalThis.cachebay.iteration++;
+      return runScenario("cachebay", "network-only");
     }, {
       iterations: 10
     });
+
+   //bench("apollo(vue)", async () => {
+   //  globalThis.apollo.iteration++;
+   //  return await runScenario("apollo", "network-only");
+   //}, {
+   //  iterations: 10
+   //});
 
    // bench("urql(vue)", async () => {
    //   globalThis.urql.iteration++;

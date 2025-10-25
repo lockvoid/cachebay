@@ -39,20 +39,28 @@ const USERS_QUERY = gql`
                     }
                   }
                   pageInfo {
+                    startCursor
+                    endCursor
+                    hasPreviousPage
                     hasNextPage
                   }
                 }
               }
             }
             pageInfo {
+              startCursor
+              endCursor
+              hasPreviousPage
               hasNextPage
             }
           }
         }
       }
       pageInfo {
-        endCursor
-        hasNextPage
+      startCursor
+      endCursor
+      hasPreviousPage
+      hasNextPage
       }
     }
   }
@@ -135,19 +143,13 @@ export function createVueApolloNestedApp(
         console.log('endCursor BEFORE:', endCursor, 'edges:', result.value.users.edges.length);
 
         if (endCursor) {
-          await fetchMore({ variables: { first: 10, after: endCursor } }).then(d => {
-            console.log('fetchMore result:', d);
-          });
+          await fetchMore({ variables: { first: 10, after: endCursor } });
           await nextTick(); // CRITICAL: Wait for Vue to update result.value
           console.log('endCursor AFTER:', result.value.users.pageInfo.endCursor, 'edges:', result.value.users.edges.length);
         }
 
         const t2 = performance.now();
 
-        await nextTick();
-        await nextTick();
-        await nextTick();
-        await nextTick();
         await nextTick();
 
         const t3 = performance.now();

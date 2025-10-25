@@ -1,5 +1,5 @@
 import { gql } from "graphql-tag";
-import { createApp, defineComponent, nextTick, watch } from "vue";
+import { createApp, defineComponent, nextTick, watch, ref } from "vue";
 import { createCachebay, useQuery } from "../../../cachebay/src/adapters/vue";
 
 const USERS_QUERY = gql`
@@ -30,16 +30,28 @@ const USERS_QUERY = gql`
                       }
                     }
                   }
-                  pageInfo { hasNextPage }
+                  pageInfo {
+                    startCursor
+                    endCursor
+                    hasPreviousPage
+                    hasNextPage
+                  }
                 }
               }
             }
-            pageInfo { hasNextPage }
+            pageInfo {
+              startCursor
+              endCursor
+              hasPreviousPage
+              hasNextPage
+            }
           }
         }
       }
       pageInfo {
+        startCursor
         endCursor
+        hasPreviousPage
         hasNextPage
       }
     }
@@ -96,6 +108,8 @@ export function createVueCachebayNestedApp(
     setup() {
       const { data, error, refetch, isFetching } = useQuery({ query: USERS_QUERY, variables: { first: 10, after: null }, cachePolicy });
 
+      const endCursor = ref(null)
+
       watch(data, () => {
         const totalUsers = data.value?.users?.edges?.length ?? 0;
 
@@ -113,7 +127,9 @@ export function createVueCachebayNestedApp(
         const endCursor = data.value.users.pageInfo.endCursor;
 
         if (endCursor) {
-          await refetch({ variables: { first: 10, after: endCursor } });
+          await refetch({ variables: { first: 10, after: endCursor } }).then((data) => {
+            console.log('data', data)
+          });
         }
 
         const t2 = performance.now();
