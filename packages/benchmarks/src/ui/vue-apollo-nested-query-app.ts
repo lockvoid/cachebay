@@ -121,11 +121,7 @@ export function createVueApolloNestedApp(
 
   const NestedList = defineComponent({
     setup() {
-      const { result, load, fetchMore } = useQuery(
-        USERS_QUERY,
-        { first: 10, after: null },
-        { fetchPolicy: cachePolicy, errorPolicy: "ignore" },
-      );
+      const { result, load, fetchMore } = useQuery(USERS_QUERY, { first: 10, after: null }, { fetchPolicy: cachePolicy });
 
       const loadNextPage = async () => {
         const t0 = performance.now();
@@ -136,14 +132,22 @@ export function createVueApolloNestedApp(
 
         const endCursor = result.value.users.pageInfo.endCursor;
 
-        console.log('endCursor:', endCursor);
+        console.log('endCursor BEFORE:', endCursor, 'edges:', result.value.users.edges.length);
 
         if (endCursor) {
-          await fetchMore({ variables: { first: 10, after: endCursor } }).then(() => { console.log('fetchMore completed') });
+          await fetchMore({ variables: { first: 10, after: endCursor } }).then(d => {
+            console.log('fetchMore result:', d);
+          });
+          await nextTick(); // CRITICAL: Wait for Vue to update result.value
+          console.log('endCursor AFTER:', result.value.users.pageInfo.endCursor, 'edges:', result.value.users.edges.length);
         }
 
         const t2 = performance.now();
 
+        await nextTick();
+        await nextTick();
+        await nextTick();
+        await nextTick();
         await nextTick();
 
         const t3 = performance.now();
