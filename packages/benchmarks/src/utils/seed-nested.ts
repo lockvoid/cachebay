@@ -47,7 +47,7 @@ export type MakeNestedDatasetOptions = {
 
 export function makeNestedDataset(options: MakeNestedDatasetOptions = {}): NestedDataset {
   const {
-    userCount = 5000,
+    userCount = 20000,
     postsPerUser = 20,
     commentsPerPost = 10,
     followersPerUser = 15,
