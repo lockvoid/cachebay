@@ -73,18 +73,18 @@ export function createVueApolloNestedApp(
       typePolicies: {
         Query: {
           fields: {
-            users: relayStylePagination(["first"]),
+            users: relayStylePagination(),
           },
         },
         User: {
           fields: {
-            posts: relayStylePagination(["first"]),
-            followers: relayStylePagination(["first"]),
+            posts: relayStylePagination(),
+            followers: relayStylePagination(),
           },
         },
         Post: {
           fields: {
-            comments: relayStylePagination(["first"]),
+            comments: relayStylePagination(),
           },
         },
       },
