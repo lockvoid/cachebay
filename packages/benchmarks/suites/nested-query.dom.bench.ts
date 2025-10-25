@@ -6,7 +6,7 @@ import { createVueUrqlNestedApp } from "../src/ui/vue-urql-nested-query-app";
 import Table from 'cli-table3';
 
 const DEBUG = process.env.DEBUG === 'true';
-const PAGES_TO_LOAD = 100; // 1000 users / 10 per page = 100 pages
+const PAGES_TO_LOAD = 4; // 1000 users / 10 per page = 100 pages
 
 const serverUrl = process.env.BENCH_SERVER_URL || 'http://127.0.0.1:4001/graphql';
 
@@ -54,36 +54,40 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   globalThis.urql = { iteration: 0, name: 'urql', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
 
   describe("network-only", async () => {
-   bench("cachebay(vue)", () => {
-     globalThis.cachebay.iteration++;
+    /*bench("cachebay(vue)", () => {
+      globalThis.cachebay.iteration++;
 
-     return runScenario("cachebay", "network-only");
-   }, {
-     iterations: 10,
-     warmupIterations: 2,
-     throws: true,
-     time: 0,
-     warmupTime: 0,
-   });
+      return runScenario("cachebay", "network-only");
+    }, {
+      iterations: 10,
+      warmupIterations: 2,
+      throws: true,
+      time: 0,
+      warmupTime: 0,
+    });
 
-   bench("apollo(vue)", async () => {
-     globalThis.apollo.iteration++;
+    bench("apollo(vue)", async () => {
+      globalThis.apollo.iteration++;
 
-     return await runScenario("apollo", "network-only");
-   }, {
-     iterations: 10,
-     warmupIterations: 2,
-     throws: true,
-     warmupTime: 0,
-     time: 0,
-   });
+      return await runScenario("apollo", "network-only");
+    }, {
+      iterations: 10,
+      warmupIterations: 2,
+      throws: true,
+      warmupTime: 0,
+      time: 0,
+    }); */
 
-  // bench("urql(vue)", async () => {
-  //   globalThis.urql.iteration++;
-  //   return await runScenario("urql", "network-only");
-  // }, {
-  //   iterations: 10
-  // });
+    bench("urql(vue)", async () => {
+      globalThis.urql.iteration++;
+      return await runScenario("urql", "network-only");
+    }, {
+      iterations: 10,
+      warmupIterations: 2,
+      throws: true,
+      warmupTime: 0,
+      time: 0,
+    });
  /*
       bench("relay(react)", async () => {
         return await runScenario("relay", "network-only");
