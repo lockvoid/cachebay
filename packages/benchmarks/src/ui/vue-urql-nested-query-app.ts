@@ -78,11 +78,11 @@ function mapCachePolicyToUrql(policy: "network-only" | "cache-first" | "cache-an
 export function createVueUrqlNestedApp(
   serverUrl: string, // unused - kept for API compatibility
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  debug = false
+  debug = false,
+  sharedYoga?: any, // Optional shared Yoga instance
 ): VueUrqlNestedController {
-  // Create dataset and Yoga instance once
-  const dataset = makeNestedDataset();
-  const yoga = createNestedYoga(dataset, 0);
+  // Use shared Yoga instance if provided, otherwise create new one
+  const yoga = sharedYoga || createNestedYoga(makeNestedDataset(), 0);
 
   const cache = graphcache({
     resolvers: {

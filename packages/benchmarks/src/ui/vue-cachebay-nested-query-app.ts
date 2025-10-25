@@ -72,11 +72,10 @@ export function createVueCachebayNestedApp(
   serverUrl: string, // unused - kept for API compatibility
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
   debug?: boolean,
+  sharedYoga?: any, // Optional shared Yoga instance
 ): VueCachebayNestedController {
-  // Create dataset and Yoga instance once for this app
-  // Using Yoga directly (no HTTP/network overhead) for pure cache benchmarking
-  const dataset = makeNestedDataset();
-  const yoga = createNestedYoga(dataset, 0); // 0ms artificial delay
+  // Use shared Yoga instance if provided, otherwise create new one
+  const yoga = sharedYoga || createNestedYoga(makeNestedDataset(), 0);
 
   // Transport calls Yoga's fetch directly - no HTTP, no network, no serialization
   const transport = {

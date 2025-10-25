@@ -24,10 +24,9 @@ function mapCachePolicyToRelay(policy: "network-only" | "cache-first" | "cache-a
   return "network-only";
 }
 
-function createRelayEnvironment(serverUrl: string) {
-  // Create dataset and Yoga instance once
-  const dataset = makeNestedDataset();
-  const yoga = createNestedYoga(dataset, 0);
+function createRelayEnvironment(serverUrl: string, sharedYoga?: any) {
+  // Use shared Yoga instance if provided, otherwise create new one
+  const yoga = sharedYoga || createNestedYoga(makeNestedDataset(), 0);
 
   const network = Network.create(async (operation, variables) => {
     // Use Yoga's fetch directly (in-memory, no HTTP)
@@ -174,8 +173,10 @@ function UsersList(props: {
 export function createReactRelayNestedApp(
   serverUrl: string,
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
+  debug: boolean = false,
+  sharedYoga?: any, // Optional shared Yoga instance
 ): ReactRelayNestedController {
-  const environment = createRelayEnvironment(serverUrl);
+  const environment = createRelayEnvironment(serverUrl, sharedYoga);
   const fetchPolicy = mapCachePolicyToRelay(cachePolicy);
 
   let root: Root | null = null;

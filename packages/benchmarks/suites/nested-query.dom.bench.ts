@@ -3,15 +3,22 @@ import { createReactRelayNestedApp } from "../src/ui/react-relay-nested-query-ap
 import { createVueApolloNestedApp } from "../src/ui/vue-apollo-nested-query-app";
 import { createVueCachebayNestedApp } from "../src/ui/vue-cachebay-nested-query-app";
 import { createVueUrqlNestedApp } from "../src/ui/vue-urql-nested-query-app";
+import { createNestedYoga } from "../src/server/schema-nested";
+import { makeNestedDataset } from "../src/utils/seed-nested";
 import Table from 'cli-table3';
 
 const DEBUG = true;
-const PAGES_TO_LOAD = 50; // 1000 users / 10 per page = 100 pages
+const PAGES_TO_LOAD = 2; // 1000 users / 10 per page = 100 pages
 
 const serverUrl = process.env.BENCH_SERVER_URL || 'http://127.0.0.1:4001/graphql';
 
+// Create shared dataset and Yoga instance once for all benchmarks
+const sharedDataset = makeNestedDataset();
+const sharedYoga = createNestedYoga(sharedDataset, 0);
+
 if (DEBUG) {
   console.log(`Using server at: ${serverUrl}`);
+  console.log(`Shared dataset created with ${sharedDataset.users.size} users`);
 }
 
 const runScenario = async (
@@ -22,16 +29,16 @@ const runScenario = async (
 
     switch (appType) {
       case "cachebay":
-        app = createVueCachebayNestedApp(serverUrl, cachePolicy || "network-only", DEBUG);
+        app = createVueCachebayNestedApp(serverUrl, cachePolicy || "network-only", DEBUG, sharedYoga);
         break;
       case "apollo":
-        app = createVueApolloNestedApp(serverUrl, cachePolicy || "network-only", DEBUG);
+        app = createVueApolloNestedApp(serverUrl, cachePolicy || "network-only", DEBUG, sharedYoga);
         break;
       case "urql":
-        app = createVueUrqlNestedApp(serverUrl, cachePolicy || "network-only", DEBUG);
+        app = createVueUrqlNestedApp(serverUrl, cachePolicy || "network-only", DEBUG, sharedYoga);
         break;
       case "relay":
-        app = createReactRelayNestedApp(serverUrl, cachePolicy || "network-only", DEBUG);
+        app = createReactRelayNestedApp(serverUrl, cachePolicy || "network-only", DEBUG, sharedYoga);
         break;
       default:
         throw new Error(`Unknown app type: ${appType}`);
@@ -57,6 +64,20 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   globalThis.relay = { iteration: 0, name: 'relay', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
 
   describe("network-only", async () => {
+    bench("cachebay(vue)", async () => {
+      globalThis.cachebay.iteration++;
+      if (DEBUG) {
+        console.log("cachebay(vue) network-only iteration", globalThis.cachebay.iteration);
+      }
+
+      return await runScenario("cachebay", "network-only");
+    }, {
+      iterations: 10,
+      warmupIterations: 2,
+      throws: true,
+      warmupTime: 0,
+      time: 0,
+    });
 
     bench("apollo(vue)", async () => {
       globalThis.apollo.iteration++;

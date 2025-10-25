@@ -78,11 +78,11 @@ export type VueApolloNestedController = {
 export function createVueApolloNestedApp(
   serverUrl: string, // unused - kept for API compatibility
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  debug: boolean = false
+  debug: boolean = false,
+  sharedYoga?: any, // Optional shared Yoga instance
 ): VueApolloNestedController {
-  // Create dataset and Yoga instance once
-  const dataset = makeNestedDataset();
-  const yoga = createNestedYoga(dataset, 0);
+  // Use shared Yoga instance if provided, otherwise create new one
+  const yoga = sharedYoga || createNestedYoga(makeNestedDataset(), 0);
 
   // Custom Apollo Link using Yoga directly (in-memory, no HTTP)
   const yogaLink = new ApolloLink((operation) => {
