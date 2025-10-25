@@ -3,9 +3,10 @@ import { createReactRelayNestedApp } from "../src/ui/react-relay-nested-query-ap
 import { createVueApolloNestedApp } from "../src/ui/vue-apollo-nested-query-app";
 import { createVueCachebayNestedApp } from "../src/ui/vue-cachebay-nested-query-app";
 import { createVueUrqlNestedApp } from "../src/ui/vue-urql-nested-query-app";
+import Table from 'cli-table3';
 
 const DEBUG = process.env.DEBUG === 'true';
-const PAGES_TO_LOAD = 50; // 1000 users / 10 per page = 100 pages
+const PAGES_TO_LOAD = 3; // 1000 users / 10 per page = 100 pages
 
 const serverUrl = process.env.BENCH_SERVER_URL || 'http://127.0.0.1:4001/graphql';
 
@@ -13,10 +14,10 @@ if (DEBUG) {
   console.log(`Using server at: ${serverUrl}`);
 }
 
-async function runScenario(
+const runScenario = async (
   appType: "cachebay" | "apollo" | "urql" | "relay",
   cachePolicy?: "network-only" | "cache-first" | "cache-and-network"
-) {
+) => {
   try {
     let app;
 
@@ -64,43 +65,29 @@ async function runScenario(
       }
     }
 
-    const totalRenderTime = app.getTotalRenderTime();
-    const totalPageTime = pageTimes.reduce((a, b) => a + b, 0);
-    const finalCount = app.getCount();
-
-    if (DEBUG) {
-      console.log(`[${appType}] Summary:`);
-      console.log(`  Total time (UX): ${totalPageTime.toFixed(1)}ms`);
-      console.log(`  Render time (cache): ${totalRenderTime.toFixed(1)}ms`);
-      console.log(`  Network time: ${(totalPageTime - totalRenderTime).toFixed(1)}ms`);
-      console.log(`  Final entity count: ${finalCount}`);
-      console.log(`  Avg per page: ${(totalPageTime / PAGES_TO_LOAD).toFixed(1)}ms`);
-      console.log(`  Render %: ${((totalRenderTime / totalPageTime) * 100).toFixed(1)}%\n`);
-    }
-
     app.unmount();
-
-    // Return total time (network + cache + render) as the primary metric
-    // This represents real-world user experience
-    return totalPageTime;
   } catch (error) {
     console.error(`Error running ${appType} scenario:`, error);
   }
 }
 
 describe("DOM Nested query (happy-dom): interfaces, custom keys, nested pagination", () => {
-  describe("network-only", () => {
-    bench("cachebay(vue)", async () => {
-      return await runScenario("cachebay", "network-only");
+  globalThis.cachebay = { name: 'cachebay', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
+  globalThis.apollo = { name: 'apollo', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
+  globalThis.urql = { name: 'urql', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
+
+  describe("network-only", async () => {
+    bench("cachebay(vue)", () => {
+      return runScenario("cachebay", "network-only");
     });
+
     bench("apollo(vue)", async () => {
-         return await runScenario("apollo", "network-only");
-       });
-
-
-      bench("urql(vue)", async () => {
-        return await runScenario("urql", "network-only");
-      });
+      return await runScenario("apollo", "network-only");
+    });
+   //
+   // bench("urql(vue)", async () => {
+   //   return await runScenario("urql", "network-only");
+   // });
  /*
       bench("relay(react)", async () => {
         return await runScenario("relay", "network-only");
@@ -148,4 +135,18 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
         return await runScenario("relay", "cache-and-network");
       });
       }); */
+});
+
+afterAll(() => {
+  const table = new Table({
+    head: Object.keys(globalThis.cachebay)
+  });
+
+  table.push(Object.values(globalThis.cachebay));
+  table.push(Object.values(globalThis.apollo));
+  table.push(Object.values(globalThis.urql));
+
+  setTimeout(() => {
+    console.log(table.toString())
+  })
 });

@@ -62,8 +62,6 @@ export type VueApolloNestedController = {
   mount(target?: Element): void;
   unmount(): void;
   loadNextPage(): Promise<void>;
-  getCount(): number;
-  getTotalRenderTime(): number;
 };
 
 export function createVueApolloNestedApp(
@@ -118,7 +116,6 @@ export function createVueApolloNestedApp(
     return _query(opts);
   };
 
-  let totalRenderTime = 0;
   let app: ReturnType<typeof createApp> | null = null;
   let container: Element | null = null;
 
@@ -131,26 +128,31 @@ export function createVueApolloNestedApp(
       );
 
       const loadNextPage = async () => {
-        try {
-          const t0 = performance.now();
+        const t0 = performance.now();
 
-          if (!result.value) {
-            await load(USERS_QUERY, { first: 10, after: null });
-          } else {
-            const endCursor = result.value?.users?.pageInfo?.endCursor;
-            if (endCursor) {
-              await fetchMore({ variables: { first: 10, after: endCursor } });
-            }
-          }
-
-          await nextTick();
-
-          const t1 = performance.now();
-          totalRenderTime += (t1 - t0);
-
-        } catch (error) {
-          console.warn("Apollo execute error (ignored):", error);
+        if (!result.value) {
+          await load(USERS_QUERY, { first: 10, after: null });
         }
+
+        while (!result.value) {
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+
+        const endCursor = result.value.users.pageInfo.endCursor;
+
+        if (endCursor) {
+          await fetchMore({ variables: { first: 10, after: endCursor } });
+        }
+
+        const t2 = performance.now();
+
+        await nextTick();
+
+        const t3 = performance.now();
+
+        globalThis.apollo.totalRenderTime += (t3 - t0);
+        globalThis.apollo.totalNetworkTime += (t2 - t0);
+        globalThis.apollo.totalEntities += result.value.users.edges.length;
       };
 
       return {
@@ -191,9 +193,7 @@ export function createVueApolloNestedApp(
     },
 
     async loadNextPage() {
-      if (componentInstance) {
-        await componentInstance.loadNextPage();
-      }
+      await componentInstance.loadNextPage();
     },
 
     unmount() {
@@ -206,15 +206,6 @@ export function createVueApolloNestedApp(
         container = null;
         componentInstance = null;
       }
-    },
-
-    // Count only top-level user edges (to match other apps)
-    getCount() {
-      return componentInstance?.result?.users?.edges?.length ?? 0;
-    },
-
-    getTotalRenderTime() {
-      return totalRenderTime;
     },
   };
 }

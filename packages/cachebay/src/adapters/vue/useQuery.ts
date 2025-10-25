@@ -18,27 +18,40 @@ export interface UseQueryOptions<TData = any, TVars = any> {
 }
 
 /**
+ * Refetch options
+ */
+export interface RefetchOptions<TVars = any> {
+  /** New variables to merge with existing variables */
+  variables?: Partial<TVars>;
+  /** Cache policy for this refetch (default: network-only) */
+  cachePolicy?: CachePolicy;
+}
+
+/**
  * Base useQuery return value
  */
-export interface BaseUseQueryReturn<TData = any> {
+export interface BaseUseQueryReturn<TData = any, TVars = any> {
   /** Query data (reactive) - undefined when not loaded, null when explicitly null, TData when loaded */
   data: Ref<TData | null | undefined>;
   /** Error if query failed */
   error: Ref<Error | null>;
   /** Fetching state */
   isFetching: Ref<boolean>;
-  /** Refetch the query */
-  refetch: () => Promise<void>;
+  /** 
+   * Refetch the query with optional variables and cache policy.
+   * Defaults to network-only policy to force fresh data from server (Apollo behavior).
+   */
+  refetch: (options?: RefetchOptions<TVars>) => Promise<void>;
 }
 
 /**
  * useQuery return value with Suspense support
  */
-export interface UseQueryReturn<TData = any> extends BaseUseQueryReturn<TData> {
+export interface UseQueryReturn<TData = any, TVars = any> extends BaseUseQueryReturn<TData, TVars> {
   /** Suspense support - makes the return value awaitable */
   then(
-    onFulfilled: (value: BaseUseQueryReturn<TData>) => any
-  ): Promise<BaseUseQueryReturn<TData>>;
+    onFulfilled: (value: BaseUseQueryReturn<TData, TVars>) => any
+  ): Promise<BaseUseQueryReturn<TData, TVars>>;
 }
 
 /**
@@ -48,7 +61,7 @@ export interface UseQueryReturn<TData = any> extends BaseUseQueryReturn<TData> {
  */
 export function useQuery<TData = any, TVars = any>(
   options: UseQueryOptions<TData, TVars>
-): UseQueryReturn<TData> {
+): UseQueryReturn<TData, TVars> {
   const client = useCachebay();
 
   const data = ref<TData | null | undefined>() as Ref<TData | null | undefined>;
@@ -109,12 +122,43 @@ export function useQuery<TData = any, TVars = any>(
   };
 
   /**
-   * Refetch the query
+   * Refetch the query with optional variables and cache policy.
+   * Defaults to network-only to force fresh data (Apollo behavior).
    */
-  const refetch = async () => {
-    if (watchHandle) {
-      const vars = toValue(options.variables) || ({} as TVars);
-      await executeQuery(vars);
+  const refetch = async (refetchOptions?: RefetchOptions<TVars>) => {
+    if (!watchHandle) return;
+    
+    const currentVars = toValue(options.variables) || ({} as TVars);
+    
+    // Merge variables (Apollo behavior: omitted variables use original values)
+    const vars = refetchOptions?.variables 
+      ? { ...currentVars, ...refetchOptions.variables } as TVars
+      : currentVars;
+    
+    // Default to network-only if no cache policy specified (Apollo behavior)
+    const refetchPolicy = refetchOptions?.cachePolicy || 'network-only';
+    
+    // Update watcher with new variables if provided
+    if (refetchOptions?.variables) {
+      watchHandle.update({ variables: vars });
+    }
+    
+    // Execute query with refetch policy
+    error.value = null;
+    isFetching.value = true;
+
+    try {
+      await client.executeQuery<TData, TVars>({
+        query: options.query,
+        variables: vars,
+        cachePolicy: refetchPolicy,
+      });
+      
+      // Note: The watcher's onData callback will set isFetching to false
+      // when the cache is updated. We don't set it here to avoid race conditions.
+    } catch (err) {
+      // Watcher already set error through onError callback
+      isFetching.value = false;
     }
   };
 

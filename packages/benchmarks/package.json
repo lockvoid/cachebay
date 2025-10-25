@@ -34,6 +34,7 @@
     "@urql/vue": "^1.4.3",
     "@vue/apollo-composable": "^4.2.1",
     "cachebay": "workspace:*",
+    "cli-table3": "^0.6.5",
     "graphql": "^16.11.0",
     "graphql-tag": "^2.12.6",
     "graphql-yoga": "^5.10.5",

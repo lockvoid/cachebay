@@ -1,5 +1,5 @@
 import { gql } from "graphql-tag";
-import { createApp, defineComponent, nextTick, reactive } from "vue";
+import { createApp, defineComponent, nextTick } from "vue";
 import { createCachebay, useQuery } from "../../../cachebay/src/adapters/vue";
 
 const USERS_QUERY = gql`
@@ -94,50 +94,30 @@ export function createVueCachebayNestedApp(
 
   const NestedList = defineComponent({
     setup() {
-      // Make variables reactive so useQuery can watch for changes
-      const variables = reactive<{ first: number; after: string | null }>({ first: 10, after: null });
-
-      const { data, error, refetch, isFetching } = useQuery({
-        query: USERS_QUERY,
-        variables: () => variables,
-        cachePolicy,
-      });
-
-      // watch(() => data.value, () => {
-      //  console.log('data.value.users.edges changed', data.value.users.edges.length);
-      // });
+      const { data, error, refetch, isFetching } = useQuery({ query: USERS_QUERY, variables: { first: 10, after: null }, cachePolicy });
 
       const loadNextPage = async () => {
-        try {
-          const t0 = performance.now();
+        const t0 = performance.now();
 
-          // Get endCursor from current data and update variables
-          const endCursor = data.value?.users?.pageInfo?.endCursor ?? null;
-          if (endCursor) {
-            variables.after = endCursor;
-
-            // Wait for the watch to trigger and query to complete
-            await nextTick();
-
-            // Wait for isFetching to become false
-
-          }
-          while (isFetching.value) {
-            await new Promise(resolve => setTimeout(resolve, 0));
-          }
-         // console.log('After - data:', data.value);
-         // console.log('After - error:', error.value);
-
-          // Ensure DOM paint before measuring render time.
-          await nextTick();
-
-          const t1 = performance.now();
-          totalRenderTime += (t1 - t0);
-        } catch (err) {
-          // swallow errors so the bench keeps going
-
-          console.warn("Cachebay execute error (ignored):", err);
+        while (!data.value) {
+          await new Promise(resolve => setTimeout(resolve, 0));
         }
+
+        const endCursor = data.value.users.pageInfo.endCursor;
+
+        if (endCursor) {
+          await refetch({ variables: { first: 10, after: endCursor } });
+        }
+
+        const t2 = performance.now();
+
+        await nextTick();
+
+        const t3 = performance.now();
+
+        globalThis.cachebay.totalRenderTime += (t3 - t0);
+        globalThis.cachebay.totalNetworkTime += (t2 - t0);
+        globalThis.cachebay.totalEntities += data.value.users.edges.length;
       };
 
       return { data, loadNextPage };
@@ -172,7 +152,7 @@ export function createVueCachebayNestedApp(
     },
 
     async loadNextPage() {
-      await componentInstance?.loadNextPage?.();
+      await componentInstance.loadNextPage();
     },
 
     unmount() {
@@ -185,14 +165,6 @@ export function createVueCachebayNestedApp(
         container = null;
         componentInstance = null;
       }
-    },
-
-    getCount() {
-      return componentInstance?.data?.users?.edges?.length ?? 0;
-    },
-
-    getTotalRenderTime() {
-      return totalRenderTime;
     },
   };
 }

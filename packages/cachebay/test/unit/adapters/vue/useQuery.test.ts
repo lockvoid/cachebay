@@ -235,6 +235,425 @@ describe("useQuery", () => {
     await expect(queryResult.refetch()).resolves.not.toThrow();
   });
 
+  describe("refetch with variables", () => {
+    it("supports passing new variables", async () => {
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: USER_QUERY,
+            variables: { id: "1" },
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Initial data
+      expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "alice@example.com" } });
+      expect(mockTransport.http).toHaveBeenCalledTimes(1);
+
+      // Mock different response for id: "2"
+      mockTransport.http.mockResolvedValueOnce({
+        data: { user: { id: "2", email: "bob@example.com" } },
+        error: null,
+      });
+
+      // Refetch with new variables
+      await queryResult.refetch({ variables: { id: "2" } });
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Should have new data
+      expect(queryResult.data.value).toMatchObject({ user: { id: "2", email: "bob@example.com" } });
+      expect(mockTransport.http).toHaveBeenCalledTimes(2);
+      expect(mockTransport.http).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          variables: { id: "2" },
+        })
+      );
+    });
+
+    it("merges new variables with existing variables (Apollo behavior)", async () => {
+      const SEARCH_QUERY = `
+        query SearchUsers($search: String, $limit: Int, $offset: Int) {
+          users(search: $search, limit: $limit, offset: $offset) {
+            id
+            email
+          }
+        }
+      `;
+
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: SEARCH_QUERY,
+            variables: { search: "", limit: 10, offset: 0 },
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      mockTransport.http.mockClear();
+
+      // Refetch with only search variable - should preserve limit and offset
+      await queryResult.refetch({ variables: { search: "alice" } });
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Should have merged variables
+      expect(mockTransport.http).toHaveBeenCalledWith(
+        expect.objectContaining({
+          variables: { search: "alice", limit: 10, offset: 0 },
+        })
+      );
+    });
+
+    it("allows overriding specific variables while preserving others", async () => {
+      const PAGINATED_QUERY = `
+        query GetPosts($category: String, $page: Int, $perPage: Int) {
+          posts(category: $category, page: $page, perPage: $perPage) {
+            id
+            title
+          }
+        }
+      `;
+
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: PAGINATED_QUERY,
+            variables: { category: "tech", page: 1, perPage: 20 },
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      mockTransport.http.mockClear();
+
+      // Change only page - should preserve category and perPage
+      await queryResult.refetch({ variables: { page: 2 } });
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(mockTransport.http).toHaveBeenCalledWith(
+        expect.objectContaining({
+          variables: { category: "tech", page: 2, perPage: 20 },
+        })
+      );
+
+      mockTransport.http.mockClear();
+
+      // Change multiple variables
+      await queryResult.refetch({ variables: { category: "sports", page: 1 } });
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(mockTransport.http).toHaveBeenCalledWith(
+        expect.objectContaining({
+          variables: { category: "sports", page: 1, perPage: 20 },
+        })
+      );
+    });
+
+    it("refetch without arguments uses original variables", async () => {
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: USER_QUERY,
+            variables: { id: "1" },
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      mockTransport.http.mockClear();
+      mockTransport.http.mockResolvedValueOnce({
+        data: { user: { id: "1", email: "alice-refreshed@example.com" } },
+        error: null,
+      });
+
+      // Refetch without arguments
+      await queryResult.refetch();
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Should use original variables
+      expect(mockTransport.http).toHaveBeenCalledWith(
+        expect.objectContaining({
+          variables: { id: "1" },
+        })
+      );
+    });
+
+    it("works with reactive variables", async () => {
+      const variables = ref({ id: "1" });
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: USER_QUERY,
+            variables,
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      mockTransport.http.mockClear();
+
+      // Refetch with new variables should merge with current reactive value
+      await queryResult.refetch({ variables: { id: "2" } });
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(mockTransport.http).toHaveBeenCalledWith(
+        expect.objectContaining({
+          variables: { id: "2" },
+        })
+      );
+    });
+
+    it("updates watcher with new variables", async () => {
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: USER_QUERY,
+            variables: { id: "1" },
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Pre-populate cache with user:2
+      cache.writeQuery({
+        query: USER_QUERY,
+        variables: { id: "2" },
+        data: { user: { id: "2", email: "bob@example.com" } },
+      });
+
+      // Refetch with new variables
+      await queryResult.refetch({ variables: { id: "2" } });
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Watcher should now be watching user:2
+      // Update user:2 in cache
+      cache.writeQuery({
+        query: USER_QUERY,
+        variables: { id: "2" },
+        data: { user: { id: "2", email: "bob-updated@example.com" } },
+      });
+
+      await nextTick();
+
+      // Should reflect the update
+      expect(queryResult.data.value).toMatchObject({ 
+        user: { id: "2", email: "bob-updated@example.com" } 
+      });
+    });
+
+    it("defaults to network-only cache policy (Apollo behavior)", async () => {
+      // Pre-populate cache
+      cache.writeQuery({
+        query: USER_QUERY,
+        variables: { id: "1" },
+        data: { user: { id: "1", email: "cached@example.com" } },
+      });
+
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: USER_QUERY,
+            variables: { id: "1" },
+            cachePolicy: "cache-first",
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Initial data from cache
+      expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "cached@example.com" } });
+      
+      mockTransport.http.mockClear();
+      mockTransport.http.mockResolvedValueOnce({
+        data: { user: { id: "1", email: "fresh@example.com" } },
+        error: null,
+      });
+
+      // Refetch should use network-only by default, not cache-first
+      await queryResult.refetch();
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Should have fetched from network
+      expect(mockTransport.http).toHaveBeenCalledTimes(1);
+      expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "fresh@example.com" } });
+    });
+
+    it("allows overriding cache policy for refetch", async () => {
+      // Pre-populate cache
+      cache.writeQuery({
+        query: USER_QUERY,
+        variables: { id: "1" },
+        data: { user: { id: "1", email: "cached@example.com" } },
+      });
+
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: USER_QUERY,
+            variables: { id: "1" },
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      mockTransport.http.mockClear();
+
+      // Refetch with cache-only policy - should not hit network
+      await queryResult.refetch({ cachePolicy: "cache-only" });
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Should NOT have made network request
+      expect(mockTransport.http).not.toHaveBeenCalled();
+      expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "cached@example.com" } });
+    });
+  });
+
   it("supports Suspense with then method", async () => {
     let queryResult: any;
     let thenCalled = false;
