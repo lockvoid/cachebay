@@ -132,7 +132,7 @@ function UsersList(props: {
   }, [hasNext, isLoadingNext, loadNext, props]);
 
   const first = useRef(true);
-  
+
   useEffect(() => {
     const totalUsers = edges.length;
 

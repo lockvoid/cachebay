@@ -175,7 +175,7 @@ export function createVueApolloNestedApp(
       watch(result, (v) => {
         const totalUsers = result.value?.users?.edges?.length ?? 0;
 
-          console.log(`Apollo total users:`, totalUsers);
+       //   console.log(`Apollo total users:`, totalUsers);
 
         globalThis.apollo.totalEntities += totalUsers;
       }, { immediate: true });
