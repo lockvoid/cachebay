@@ -4,6 +4,7 @@ import { relayPagination } from "@urql/exchange-graphcache/extras";
 import urql, { useQuery } from "@urql/vue";
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, ref, watch } from "vue";
+import { createDeferred } from "../utils/render";
 
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {
@@ -93,6 +94,8 @@ export function createVueUrqlNestedApp(
   let container: Element | null = null;
   let componentInstance: any = null;
 
+  let deferred = createDeferred();
+
   const NestedList = defineComponent({
     setup() {
       const variables = ref({ first: 10, after: null });
@@ -100,27 +103,41 @@ export function createVueUrqlNestedApp(
       const { data, executeQuery } = useQuery({
         query: USERS_QUERY,
         variables,
-        pause: true,
       });
 
       const endCursor = ref(null);
 
-      watch(data, () => {
+      watch(data, (v) => {
+        if (v) {
+          deferred.resolve();
+        }
+
         const totalUsers = data.value?.users?.edges?.length ?? 0;
 
-        console.log(`Loaded ${totalUsers} users`);
+        console.log(`URQL total users:`, totalUsers);
+
         globalThis.urql.totalEntities += totalUsers;
       }, { immediate: true });
+
+      watch(() => data.value?.users?.pageInfo?.endCursor, (v) => {
+        deferred.resolve();
+      });
 
       const loadNextPage = async () => {
         const t0 = performance.now();
 
-        await executeQuery({
-          variables: { first: 10, after: endCursor.value },
-          requestPolicy: mapCachePolicyToUrql(cachePolicy)
-        });
+        await deferred.promise;
 
-        endCursor.value = data.value?.users?.pageInfo?.endCursor ?? null;
+        deferred = createDeferred();
+
+        // Update reactive variables to trigger urql to fetch next page
+        variables.value = {
+          first: 10,
+          after: data.value.users.pageInfo.endCursor
+        };
+
+        // Wait for the new data to arrive (deferred will be resolved by watch)
+        await deferred.promise;
 
         const t2 = performance.now();
 

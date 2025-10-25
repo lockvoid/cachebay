@@ -64,7 +64,7 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
       throws: true,
       time: 0,
       warmupTime: 0,
-    });
+    });*/
 
     bench("apollo(vue)", async () => {
       globalThis.apollo.iteration++;
@@ -76,7 +76,7 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
       throws: true,
       warmupTime: 0,
       time: 0,
-    }); */
+    });
 
     bench("urql(vue)", async () => {
       globalThis.urql.iteration++;
