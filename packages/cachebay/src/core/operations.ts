@@ -365,9 +365,9 @@ export const createOperations = (
       }
     };
 
-    // SSR hydration or suspension window: return cached data immediately
+    // SSR hydration or suspension window: return cached data if available
     if (ssr.isHydrating() || isWithinSuspension(signature)) {
-      if (cached.source !== "none") {
+      if (cached && cached.source !== "none") {
         const result = { data: cached.data as TData, error: null };
         onSuccess?.(result.data);
         return result;
@@ -375,7 +375,7 @@ export const createOperations = (
     }
 
     if (effectiveCachePolicy === 'cache-only') {
-      if (cached.source === "none") {
+      if (!cached || cached.source === "none") {
         const error = new CombinedError({ networkError: new CacheMissError() });
         onError?.(error);
 
@@ -399,7 +399,7 @@ export const createOperations = (
     }
 
     if (effectiveCachePolicy === 'cache-first') {
-      if (cached.ok.canonical && cached.ok.strict) {
+      if (cached && cached.ok.canonical && cached.ok.strict) {
         // Notify watchers about cache hit with data and dependencies
         onQueryData?.({
           signature,
@@ -415,7 +415,7 @@ export const createOperations = (
     }
 
     if (effectiveCachePolicy === 'cache-and-network') {
-      if (cached.ok.canonical) {
+      if (cached && cached.ok.canonical) {
         // Notify watchers about cache hit with data and dependencies
         onQueryData?.({
           signature,
