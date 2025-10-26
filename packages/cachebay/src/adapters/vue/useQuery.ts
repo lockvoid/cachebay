@@ -110,12 +110,11 @@ export function useQuery<TData = any, TVars = any>(
         cachePolicy: policy,
         // onCachedData is called synchronously for cache hits (before Promise resolves)
         // This prevents loading flash for cache-only, cache-first, and shows stale data for cache-and-network
-        onCachedData: (cachedData) => {
-          console.log('onCachedData', cachedData);
+        onCachedData: (cachedData, { willFetchFromNetwork }) => {
           data.value = cachedData;
-          // For cache-and-network, keep isFetching true (network pending)
-          // For cache-only and cache-first, set to false (operation complete)
-          if (policy !== 'cache-and-network') {
+          // Only set isFetching to false if no network request will be made
+          // If network request is pending, keep isFetching true to show loading indicator
+          if (!willFetchFromNetwork) {
             isFetching.value = false;
           }
         },

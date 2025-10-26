@@ -99,19 +99,21 @@ function validateCachePolicy(policy: any, defaultPolicy: CachePolicy = 'cache-fi
  * };
  * ```
  */
-export interface Operation<TData = any, TVars = QueryVariables> {
-  /** GraphQL query string or DocumentNode */
-  query: string | DocumentNode;
-  /** Variables for the GraphQL operation */
+export interface Operation<TData = any, TVars = any> {
+  /** GraphQL query document */
+  query: DocumentNode | string;
+  /** Query variables */
   variables?: TVars;
-  /** Cache policy for this operation */
+  /** Cache policy (default: cache-first) */
   cachePolicy?: CachePolicy;
-  /** Callback when data is successfully fetched/read */
+  /** Canonical mode - read from canonical containers (default: true) */
+  canonical?: boolean;
+  /** Callback when operation succeeds */
   onSuccess?: (data: TData) => void;
   /** Callback when an error occurs */
   onError?: (error: CombinedError) => void;
   /** Callback for cached data (called synchronously before Promise resolves for cache hits) */
-  onCachedData?: (data: TData) => void;
+  onCachedData?: (data: TData, meta: { willFetchFromNetwork: boolean }) => void;
 }
 
 // CombinedError is now imported from ./errors
@@ -409,18 +411,13 @@ export const createOperations = (
     if (ssr.isHydrating() || isWithinSuspension(signature)) {
       if (cached && cached.source !== "none") {
         // Call onCachedData for SSR/suspension to set data synchronously
-        onCachedData?.(cached.data as TData);
+        // No network request will be made (early return)
+        onCachedData?.(cached.data as TData, { willFetchFromNetwork: false });
 
         const result = { data: cached.data as TData, error: null };
         onSuccess?.(result.data);
         return result;
       }
-    }
-
-    // Call onCachedData synchronously for all cache policies (except network-only) when we have cached data
-    // This prevents loading flash by setting data before first render
-    if (effectiveCachePolicy !== 'network-only' && cached && cached.data) {
-      onCachedData?.(cached.data as TData);
     }
 
     if (effectiveCachePolicy === 'cache-only') {
@@ -443,6 +440,7 @@ export const createOperations = (
       });
 
       const result = { data: cached.data as TData, error: null };
+      onCachedData?.(cached.data as TData, { willFetchFromNetwork: false });
       onSuccess?.(result.data);
       return result;
     }
@@ -454,7 +452,7 @@ export const createOperations = (
         // If strictSignature doesn't match, fetch from network (pagination changed)
         const strictSignature = plan.makeSignature(false, variables);
         const strictMatches = cached.ok.strictSignature === strictSignature;
-        
+
         if (strictMatches) {
           // Strict match: pagination args haven't changed, return cached data
           onQueryData?.({
@@ -465,6 +463,7 @@ export const createOperations = (
           });
 
           const result = { data: cached.data as TData, error: null };
+          onCachedData?.(cached.data as TData, { willFetchFromNetwork: false });
           onSuccess?.(result.data);
           return result;
         }
@@ -481,6 +480,8 @@ export const createOperations = (
           dependencies: cached.dependencies,
           cachePolicy: effectiveCachePolicy,
         });
+
+        onCachedData?.(cached.data as TData, { willFetchFromNetwork: true });
 
         // Return the network request Promise (resolves with fresh network data)
         return performRequest();

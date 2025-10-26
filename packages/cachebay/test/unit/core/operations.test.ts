@@ -497,7 +497,7 @@ describe("operations", () => {
         });
 
         // onCachedData should be called with cached data
-        expect(onCachedData).toHaveBeenCalledWith(cachedData);
+        expect(onCachedData).toHaveBeenCalledWith(cachedData, { willFetchFromNetwork: true });
 
         // Promise should resolve with network data
         expect(result.data).toEqual(networkData);
@@ -529,7 +529,7 @@ describe("operations", () => {
         });
 
         // onCachedData should be called with cached data
-        expect(onCachedData).toHaveBeenCalledWith(cachedData);
+        expect(onCachedData).toHaveBeenCalledWith(cachedData, { willFetchFromNetwork: true });
 
         // Promise should resolve with error (network failed)
         expect(result.data).toBeNull();
@@ -611,7 +611,7 @@ describe("operations", () => {
 
         // onCachedData should be called immediately with cached data
         expect(onCachedData).toHaveBeenCalledTimes(1);
-        expect(onCachedData).toHaveBeenCalledWith(cachedData);
+        expect(onCachedData).toHaveBeenCalledWith(cachedData, { willFetchFromNetwork: true });
 
         // Promise should resolve with network data
         expect(result.data).toEqual(networkData);
@@ -1184,6 +1184,219 @@ describe("operations", () => {
 
       expect(mockTransport.http).toHaveBeenCalled();
       expect(result.data).toEqual(networkData);
+    });
+  });
+
+  describe("onCachedData willFetchFromNetwork flag", () => {
+    const query = "query GetUser($id: ID!) { user(id: $id) { id name __typename } }";
+    const variables = { id: "1" };
+    const cachedData = { user: { id: "1", name: "Cached Alice", __typename: "User" } };
+    const networkData = { user: { id: "1", name: "Network Alice", __typename: "User" } };
+
+    it("cache-only with cache hit: willFetchFromNetwork = false", async () => {
+      // Pre-populate cache
+      mockDocuments.normalizeDocument({ data: cachedData });
+
+      const onCachedData = vi.fn();
+
+      await operations.executeQuery({
+        query,
+        variables,
+        cachePolicy: "cache-only",
+        onCachedData,
+      });
+
+      expect(onCachedData).toHaveBeenCalledWith(
+        expect.objectContaining(cachedData),
+        { willFetchFromNetwork: false }
+      );
+      expect(mockTransport.http).not.toHaveBeenCalled();
+    });
+
+    it("cache-first with cache hit: willFetchFromNetwork = false (cache is fresh)", async () => {
+      // Pre-populate cache
+      mockDocuments.normalizeDocument({ data: cachedData });
+
+      // Mock materializeDocument to return strict match
+      const strictSignature = "strict-sig-123";
+      vi.mocked(mockDocuments.materializeDocument).mockReturnValue({
+        data: cachedData,
+        source: "canonical",
+        ok: { 
+          canonical: true, 
+          strict: true,
+          strictSignature: strictSignature
+        },
+        dependencies: new Set(),
+      });
+
+      // Mock plan to return matching strict signature
+      const makeSignatureMock = vi.fn();
+      makeSignatureMock
+        .mockReturnValueOnce("canonical-sig-123") // 1st call: materialize (canonical)
+        .mockReturnValueOnce(strictSignature)     // 2nd call: willFetchFromNetwork check (strict) - matches!
+        .mockReturnValueOnce(strictSignature);    // 3rd call: cache-first logic (strict) - matches!
+      
+      vi.mocked(mockPlanner.getPlan).mockReturnValue({
+        compiled: true,
+        networkQuery: query,
+        makeSignature: makeSignatureMock,
+      });
+
+      const onCachedData = vi.fn();
+
+      await operations.executeQuery({
+        query,
+        variables,
+        cachePolicy: "cache-first",
+        onCachedData,
+      });
+
+      expect(onCachedData).toHaveBeenCalledWith(
+        expect.objectContaining(cachedData),
+        { willFetchFromNetwork: false }
+      );
+      // cache-first with cache hit doesn't fetch from network
+      expect(mockTransport.http).not.toHaveBeenCalled();
+    });
+
+    it("cache-first with cache miss: onCachedData not called (no cached data)", async () => {
+      const onCachedData = vi.fn();
+
+      const mockResult = { data: networkData, error: null };
+      vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+      await operations.executeQuery({
+        query,
+        variables,
+        cachePolicy: "cache-first",
+        onCachedData,
+      });
+
+      // No cached data, so onCachedData should not be called
+      expect(onCachedData).not.toHaveBeenCalled();
+      expect(mockTransport.http).toHaveBeenCalled();
+    });
+
+    it("cache-and-network with cache hit: willFetchFromNetwork = true", async () => {
+      // Pre-populate cache
+      mockDocuments.normalizeDocument({ data: cachedData });
+
+      const onCachedData = vi.fn();
+      const mockResult = { data: networkData, error: null };
+      vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+      await operations.executeQuery({
+        query,
+        variables,
+        cachePolicy: "cache-and-network",
+        onCachedData,
+      });
+
+      expect(onCachedData).toHaveBeenCalledWith(
+        expect.objectContaining(cachedData),
+        { willFetchFromNetwork: true }
+      );
+      expect(mockTransport.http).toHaveBeenCalled();
+    });
+
+    it("network-only: onCachedData not called (ignores cache)", async () => {
+      // Pre-populate cache
+      mockDocuments.normalizeDocument({ data: cachedData });
+
+      const onCachedData = vi.fn();
+      const mockResult = { data: networkData, error: null };
+      vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+      await operations.executeQuery({
+        query,
+        variables,
+        cachePolicy: "network-only",
+        onCachedData,
+      });
+
+      // network-only never calls onCachedData (ignores cache)
+      expect(onCachedData).not.toHaveBeenCalled();
+      expect(mockTransport.http).toHaveBeenCalled();
+    });
+
+    it("SSR hydration: willFetchFromNetwork = false (returns cached data)", async () => {
+      // Enable hydration
+      vi.mocked(mockSsr.isHydrating).mockReturnValue(true);
+
+      // Pre-populate cache
+      mockDocuments.normalizeDocument({ data: cachedData });
+
+      const onCachedData = vi.fn();
+
+      const result = await operations.executeQuery({
+        query,
+        variables,
+        cachePolicy: "network-only", // Even network-only uses cache during hydration
+        onCachedData,
+      });
+
+      expect(onCachedData).toHaveBeenCalledWith(
+        expect.objectContaining(cachedData),
+        { willFetchFromNetwork: false }
+      );
+      expect(mockTransport.http).not.toHaveBeenCalled();
+      expect(result.data).toEqual(cachedData);
+    });
+
+    it("suspension window: willFetchFromNetwork = false (returns cached data)", async () => {
+      // Pre-populate cache
+      mockDocuments.normalizeDocument({ data: cachedData });
+
+      // Mock materializeDocument to return strict match
+      const strictSignature = "strict-sig-456";
+      vi.mocked(mockDocuments.materializeDocument).mockReturnValue({
+        data: cachedData,
+        source: "canonical",
+        ok: { 
+          canonical: true, 
+          strict: true,
+          strictSignature: strictSignature
+        },
+        dependencies: new Set(),
+      });
+
+      // Mock plan to return matching strict signature
+      vi.mocked(mockPlanner.getPlan).mockReturnValue({
+        compiled: true,
+        networkQuery: query,
+        makeSignature: vi.fn()
+          .mockReturnValue("canonical-sig-456")  // First query
+          .mockReturnValue(strictSignature)      // Strict check
+          .mockReturnValue("canonical-sig-456")  // Second query (within suspension)
+          .mockReturnValue(strictSignature),     // Strict check
+      });
+
+      const onCachedData = vi.fn();
+
+      // First query - establishes suspension window
+      await operations.executeQuery({
+        query,
+        variables,
+        cachePolicy: "cache-first",
+      });
+
+      vi.mocked(mockTransport.http).mockClear();
+
+      // Second query within suspension window (< 1000ms)
+      const result = await operations.executeQuery({
+        query,
+        variables,
+        cachePolicy: "cache-first",
+        onCachedData,
+      });
+
+      expect(onCachedData).toHaveBeenCalledWith(
+        expect.objectContaining(cachedData),
+        { willFetchFromNetwork: false }
+      );
+      expect(mockTransport.http).not.toHaveBeenCalled();
+      expect(result.data).toEqual(cachedData);
     });
   });
 
