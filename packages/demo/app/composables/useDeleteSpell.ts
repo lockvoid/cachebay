@@ -17,7 +17,7 @@ export const useDeleteSpell = () => {
   const execute = async (variables) => {
     if (settings.optimistic) {
       const tx = cache.modifyOptimistic((o) => {
-        const keys = cache.inspect.connectionKeys({ parent: "Query", key: "spells" });
+        const keys = cache.inspect.getConnectionKeys({ parent: "Query", key: "spells" });
 
         keys.forEach((key) => {
           const c = o.connection(key);
