@@ -410,7 +410,7 @@ export const createOperations = (
       if (cached && cached.source !== "none") {
         // Call onCachedData for SSR/suspension to set data synchronously
         onCachedData?.(cached.data as TData);
-        
+
         const result = { data: cached.data as TData, error: null };
         onSuccess?.(result.data);
         return result;
@@ -420,16 +420,6 @@ export const createOperations = (
     // Call onCachedData synchronously for all cache policies (except network-only) when we have cached data
     // This prevents loading flash by setting data before first render
     if (effectiveCachePolicy !== 'network-only' && cached && cached.data) {
-      console.log('[operations] onCachedData called:', {
-        policy: effectiveCachePolicy,
-        signature,
-        source: cached.source,
-        ok: cached.ok,
-        dataKeys: cached.data ? Object.keys(cached.data) : [],
-        edgeCount: cached.data?.posts?.edges?.length,
-        edgeTitles: cached.data?.posts?.edges?.map((e: any) => e?.node?.title),
-        pageInfo: cached.data?.posts?.pageInfo,
-      });
       onCachedData?.(cached.data as TData);
     }
 
@@ -459,17 +449,26 @@ export const createOperations = (
 
     if (effectiveCachePolicy === 'cache-first') {
       if (cached && cached.ok.canonical && cached.ok.strict) {
-        // Notify watchers about cache hit with data and dependencies
-        onQueryData?.({
-          signature,
-          data: cached.data,
-          dependencies: cached.dependencies,
-          cachePolicy: effectiveCachePolicy,
-        });
+        // Check if strict signature matches (pagination args haven't changed)
+        // If strictSignature is present and matches, return cached data
+        // If strictSignature doesn't match, fetch from network (pagination changed)
+        const strictSignature = plan.makeSignature("strict", variables);
+        const strictMatches = cached.ok.strictSignature === strictSignature;
+        
+        if (strictMatches) {
+          // Strict match: pagination args haven't changed, return cached data
+          onQueryData?.({
+            signature,
+            data: cached.data,
+            dependencies: cached.dependencies,
+            cachePolicy: effectiveCachePolicy,
+          });
 
-        const result = { data: cached.data as TData, error: null };
-        onSuccess?.(result.data);
-        return result;
+          const result = { data: cached.data as TData, error: null };
+          onSuccess?.(result.data);
+          return result;
+        }
+        // No strict match: pagination args changed, fall through to network fetch
       }
     }
 

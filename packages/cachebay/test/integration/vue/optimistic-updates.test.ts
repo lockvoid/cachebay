@@ -15,8 +15,7 @@ describe("Optimistic updates", () => {
     tx.commit();
 
     const post_3 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
-    expect(post_3).toEqual({ __typename: "Post", id: "p1", title: "Post 1" });
-
+    expect(post_3).toEqual({ __version: 259429543, __typename: "Post", id: "p1", title: "Post 1", flags: undefined });
     tx.revert();
 
     const post_4 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });

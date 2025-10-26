@@ -304,7 +304,12 @@ describe("operations", () => {
         mockDocuments.materializeDocument.mockReturnValue({
           data: cachedData,
           source: "canonical",
-          ok: { canonical: true, strict: true },
+          ok: { 
+            canonical: true, 
+            strict: true,
+            strictSignature: "query-sig-123", // Includes pagination args
+            canonicalSignature: "query-sig-canonical", // Excludes pagination args
+          },
         });
 
         const onSuccess = vi.fn();
@@ -1079,7 +1084,12 @@ describe("operations", () => {
       mockDocuments.materializeDocument.mockReturnValue({
         data: cachedData,
         source: "canonical",
-        ok: { canonical: true, strict: true },
+        ok: { 
+          canonical: true, 
+          strict: true,
+          strictSignature: "query-sig-123", // Must match plan.makeSignature("strict", variables)
+          canonicalSignature: "query-sig-canonical",
+        },
       });
 
       const result = await operations.executeQuery({
@@ -1108,7 +1118,12 @@ describe("operations", () => {
       mockDocuments.materializeDocument.mockReturnValue({
         data: cachedData,
         source: "canonical",
-        ok: { canonical: true, strict: true },
+        ok: { 
+          canonical: true, 
+          strict: true,
+          strictSignature: "query-sig-123",
+          canonicalSignature: "query-sig-canonical",
+        },
       });
 
       const result = await opsWithDefaultPolicy.executeQuery({

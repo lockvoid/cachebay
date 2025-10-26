@@ -7,7 +7,7 @@ import { gql } from "graphql-tag";
 
 /**
  * Documents Performance Tests - Materialize Cache
- * 
+ *
  * Tests the WeakMap cache for materializeDocument to ensure:
  * 1. Cache hits return the same result object (reference equality)
  * 2. force: true bypasses cache and re-materializes

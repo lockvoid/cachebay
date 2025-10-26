@@ -12,9 +12,9 @@ describe("Inspect", () => {
     inspect = createInspect({ graph });
   });
 
-  describe("entityKeys", () => {
+  describe("getEntityKeys", () => {
     it("returns empty array for empty graph", () => {
-      expect(inspect.entityKeys()).toEqual([]);
+      expect(inspect.getEntityKeys()).toEqual([]);
     });
 
     it("filters entity records excluding pages and edges", () => {
@@ -36,7 +36,7 @@ describe("Inspect", () => {
         ],
       });
 
-      const entityRecordKeys = inspect.entityKeys().sort();
+      const entityRecordKeys = inspect.getEntityKeys().sort();
       expect(entityRecordKeys).toContain("User:u1");
       expect(entityRecordKeys).toContain("Post:p1");
       expect(entityRecordKeys).toContain("Post:p2");
@@ -50,15 +50,15 @@ describe("Inspect", () => {
       graph.putRecord("User:u2", { __typename: "User", id: "u2" });
       graph.putRecord("Post:p1", { __typename: "Post", id: "p1" });
 
-      expect(inspect.entityKeys("User")).toEqual(["User:u1", "User:u2"]);
-      expect(inspect.entityKeys("Post")).toEqual(["Post:p1"]);
-      expect(inspect.entityKeys("Comment")).toEqual([]);
+      expect(inspect.getEntityKeys("User")).toEqual(["User:u1", "User:u2"]);
+      expect(inspect.getEntityKeys("Post")).toEqual(["Post:p1"]);
+      expect(inspect.getEntityKeys("Comment")).toEqual([]);
     });
   });
 
-  describe("connectionKeys", () => {
+  describe("getConnectionKeys", () => {
     it("returns empty array for empty graph", () => {
-      expect(inspect.connectionKeys()).toEqual([]);
+      expect(inspect.getConnectionKeys()).toEqual([]);
     });
 
     it("maps root pages to @connection and strips pagination args", () => {
@@ -82,7 +82,7 @@ describe("Inspect", () => {
         edges: [{ __typename: "PostEdge", node: { __typename: "Post", id: "Post:l1" } }],
       });
 
-      const keys = inspect.connectionKeys({ parent: "Query", key: "posts" }).sort();
+      const keys = inspect.getConnectionKeys({ parent: "Query", key: "posts" }).sort();
 
       expect(keys).toEqual(
         ['@connection.posts({"category":"lifestyle"})', '@connection.posts({"category":"tech"})'].sort(),
@@ -113,8 +113,8 @@ describe("Inspect", () => {
         edges: [{ __typename: "PostEdge", node: { __typename: "Post", id: "Post:u2t1" } }],
       });
 
-      const user1 = inspect.connectionKeys({ parent: { __typename: "User", id: "u1" }, key: "posts" });
-      const user2 = inspect.connectionKeys({ parent: { __typename: "User", id: "u2" }, key: "posts" });
+      const user1 = inspect.getConnectionKeys({ parent: { __typename: "User", id: "u1" }, key: "posts" });
+      const user2 = inspect.getConnectionKeys({ parent: { __typename: "User", id: "u2" }, key: "posts" });
 
       expect(user1).toEqual(['@connection.User:u1.posts({"category":"tech"})']);
       expect(user2).toEqual(['@connection.User:u2.posts({"category":"tech"})']);
@@ -128,7 +128,7 @@ describe("Inspect", () => {
         edges: [],
       });
 
-      expect(inspect.connectionKeys({ parent: "Query", key: "posts" })).toEqual(["@connection.posts({})"]);
+      expect(inspect.getConnectionKeys({ parent: "Query", key: "posts" })).toEqual(["@connection.posts({})"]);
     });
 
     it("can be narrowed by argsFn predicate", () => {
@@ -146,7 +146,7 @@ describe("Inspect", () => {
         edges: [{ __typename: "PostEdge", node: { __typename: "Post", id: "Post:l1" } }],
       });
 
-      const onlyTech = inspect.connectionKeys({
+      const onlyTech = inspect.getConnectionKeys({
         parent: "Query",
         key: "posts",
         argsFn: (raw) => raw.includes('"category":"tech"'),
@@ -156,15 +156,15 @@ describe("Inspect", () => {
     });
   });
 
-  describe("record", () => {
+  describe("getRecord", () => {
     it("returns undefined for non-existent record", () => {
-      expect(inspect.record("User:nonexistent")).toBeUndefined();
+      expect(inspect.getRecord("User:nonexistent")).toBeUndefined();
     });
 
     it("returns raw snapshot", () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "a@example.com" });
 
-      const raw = inspect.record("User:u1");
+      const raw = inspect.getRecord("User:u1");
       expect(raw).toEqual({ __typename: "User", id: "u1", email: "a@example.com" });
     });
   });
