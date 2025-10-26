@@ -178,12 +178,26 @@ export function createVueApolloNestedApp(
       const loadNextPage = async () => {
         const t0 = performance.now();
 
-        // First call: execute the initial query
-        if (!result.value) {
-          await load();
-        } else {
-          // Subsequent calls: fetch more
-          await fetchMore({ variables: { after: result.value.users.pageInfo.endCursor } });
+        try {
+          // First call: execute the initial query
+          if (!result.value) {
+            await load();
+          } else {
+            // Subsequent calls: fetch more
+            const cursor = result.value.users.pageInfo.endCursor;
+            const hasNext = result.value.users.pageInfo.hasNextPage;
+            
+            if (!hasNext) {
+              console.warn('Apollo: No more pages to load');
+              return;
+            }
+            
+            await fetchMore({ variables: { after: cursor } });
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        } catch (error) {
+          console.error('Apollo loadNextPage error:', error);
+          throw error;
         }
 
         const t2 = performance.now();

@@ -49,6 +49,7 @@ const runScenario = async (
     for (let i = 0; i < PAGES_TO_LOAD - (appType ==='urql' ? 2 : 1); i++) {
       // console.log(`Loading page ${i + 1} of ${PAGES_TO_LOAD - 1}`);
 
+      console.log('Load page', i)
       const isLastPage = i === PAGES_TO_LOAD - 2;
 
       await app.loadNextPage(isLastPage);
