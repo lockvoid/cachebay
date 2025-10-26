@@ -282,13 +282,12 @@ export const createOperations = (
     // Read from cache using documents directly
     // Always read cache during SSR hydration, even for network-only
     let cached;
-
     if (effectiveCachePolicy !== 'network-only' || ssr.isHydrating()) {
       cached = documents.materializeDocument({
         document: query,
         variables,
         canonical: true,
-        fingerprint: true, // Get dependencies for watcher tracking
+        fingerprint: true,
         force: false,
       });
     }
@@ -421,6 +420,16 @@ export const createOperations = (
     // Call onCachedData synchronously for all cache policies (except network-only) when we have cached data
     // This prevents loading flash by setting data before first render
     if (effectiveCachePolicy !== 'network-only' && cached && cached.data) {
+      console.log('[operations] onCachedData called:', {
+        policy: effectiveCachePolicy,
+        signature,
+        source: cached.source,
+        ok: cached.ok,
+        dataKeys: cached.data ? Object.keys(cached.data) : [],
+        edgeCount: cached.data?.posts?.edges?.length,
+        edgeTitles: cached.data?.posts?.edges?.map((e: any) => e?.node?.title),
+        pageInfo: cached.data?.posts?.pageInfo,
+      });
       onCachedData?.(cached.data as TData);
     }
 

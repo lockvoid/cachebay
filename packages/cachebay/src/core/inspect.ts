@@ -155,7 +155,7 @@ const unique = <T,>(xs: T[]): T[] => {
  * @returns Inspect API with record, entityKeys, connectionKeys, config, and optimistic methods
  */
 export const createInspect = ({ graph, optimistic }: { graph: GraphInstance, optimistic: OptimisticInstance }) => {
-  const record = (id: string): any => {
+  const getRecord = (id: string): any => {
     return graph.getRecord(id);
   };
 
@@ -163,7 +163,7 @@ export const createInspect = ({ graph, optimistic }: { graph: GraphInstance, opt
    * List entity record ids (excludes root, pages, edges). Optional typename filter.
    * @param typename Optional typename prefix to filter, e.g. "User".
    */
-  const entityKeys = (typename?: string): string[] => {
+  const getEntityKeys = (typename?: string): string[] => {
     const all = graph.keys();
     const out: string[] = [];
 
@@ -187,7 +187,7 @@ export const createInspect = ({ graph, optimistic }: { graph: GraphInstance, opt
    * List canonical @connection keys for pages that match the filter.
    * Pagination args are removed; remaining args become the connection filters.
    */
-  const connectionKeys = (opts: ConnectionFilter = {}): string[] => {
+  const getConnectionKeys = (opts: ConnectionFilter = {}): string[] => {
     const all = graph.keys();
     const results: string[] = [];
 
@@ -252,9 +252,9 @@ export const createInspect = ({ graph, optimistic }: { graph: GraphInstance, opt
   };
 
   return {
-    record,
-    entityKeys,
-    connectionKeys,
+    getRecord,
+    getEntityKeys,
+    getConnectionKeys,
     config,
     optimistic: () => optimistic.inspect(),
   };
