@@ -1,4 +1,4 @@
-import { DefaultApolloClient, useLazyQuery } from "@vue/apollo-composable";
+import { DefaultApolloClient, useQuery } from "@vue/apollo-composable";
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, watch } from "vue";
 import { createUserProfileYoga } from "../server/user-profile-server";
@@ -61,23 +61,14 @@ export function createVueApolloUserProfileApp(
   const Component = defineComponent({
     setup() {
       console.log('[Apollo] setup() called');
-      
-      const { load, result, loading, error } = useLazyQuery(USER_QUERY, { id: "u1" });
-
-      console.log('[Apollo] after useLazyQuery, loading:', loading.value);
-
-      const loadUser = async (userId: string) => {
-        console.log('[Apollo] loadUser called with:', userId);
-        await load(USER_QUERY, { id: userId });
-        console.log('[Apollo] after load, result:', result.value?.user?.email || 'NO DATA', 'loading:', loading.value);
-        if (result.value?.user) {
-          console.log('[Apollo]', userId, '→', result.value.user.email);
-        }
-      };
+      const { result, loading, error } = useQuery(USER_QUERY, { id: "u1" });
+      console.log('[Apollo] after useQuery, loading:', loading.value);
 
       watch(result, () => {
-        console.log('[Apollo] result watch fired:', result.value?.user?.email || 'NO DATA');
-      });
+        if (result.value?.user) {
+          console.log('[Apollo]', result.value.user.id, '→', result.value.user.email);
+        }
+      }, { immediate: true });
 
       watch(error, () => {
         if (error.value) {
@@ -89,7 +80,6 @@ export function createVueApolloUserProfileApp(
         result,
         loading,
         error,
-        loadUser,
       };
     },
     template: `
@@ -138,11 +128,7 @@ export function createVueApolloUserProfileApp(
     },
 
     loadUser: async (userId: string) => {
-      if (!componentInstance) {
-        throw new Error("App not mounted");
-      }
-
-      await componentInstance.loadUser(userId);
+      // No-op: query loads automatically
       await nextTick();
     },
   };

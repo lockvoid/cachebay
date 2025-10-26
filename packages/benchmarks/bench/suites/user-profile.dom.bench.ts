@@ -69,130 +69,85 @@ describe('DOM User Profile (happy-dom): single entity with nested data', () => {
   const dataset = makeUserProfileDataset({ userCount: 1000 });
   const testUserId = 'u1'; // Always load the same user
 
-  bench('Cachebay - network-only', async () => {
-    const app = createVueCachebayUserProfileApp('network-only', 0);
-    await app.mount();
-    await app.unmount();
-  }, {
-    ...BENCH_OPTIONS,
-    setup: (task) => {
-      if (DEBUG && task.result) {
-        results.push({
-          name: 'Cachebay (network-only)',
-          mean: task.result.mean,
-          stdDev: task.result.stdDev ?? 0,
-          min: task.result.min ?? 0,
-          max: task.result.max ?? 0,
-        });
-      }
-    },
-  });
+  describe('network-only', () => {
+    bench('Cachebay (vue, network-only)', async () => {
+      const app = createVueCachebayUserProfileApp('network-only', 0);
+      await app.mount();
+      await app.unmount();
+    }, {
+      ...BENCH_OPTIONS,
+      setup: (task) => {
+        if (DEBUG && task.result) {
+          results.push({
+            name: 'Cachebay (network-only)',
+            mean: task.result.mean,
+            stdDev: task.result.stdDev ?? 0,
+            min: task.result.min ?? 0,
+            max: task.result.max ?? 0,
+          });
+        }
+      },
+    });
 
-  return;
-  // bench('Cachebay - cache-first', async () => {
-  //   const app = createVueCachebayUserProfileApp('cache-first', 0);
-  //   await app.mount();
-  //   await new Promise(resolve => setTimeout(resolve, 50)); // Wait for query to complete
-  //   await app.unmount();
-  // }, {
-  //   ...BENCH_OPTIONS,
-  //   setup: (task) => {
-  //     if (DEBUG && task.result) {
-  //       results.push({
-  //         name: 'Cachebay (cache-first)',
-  //         mean: task.result.mean,
-  //         stdDev: task.result.stdDev ?? 0,
-  //         min: task.result.min ?? 0,
-  //         max: task.result.max ?? 0,
-  //       });
-  //     }
-  //   },
-  // });
+    bench('Apollo (vue, network-only)', async () => {
+      const app = createVueApolloUserProfileApp('network-only', 0);
+      await app.mount();
+      await app.loadUser(testUserId);
+      await app.unmount();
+    }, {
+      ...BENCH_OPTIONS,
+      setup: (task) => {
+        if (DEBUG && task.result) {
+          results.push({
+            name: 'Apollo (network-only)',
+            mean: task.result.mean,
+            stdDev: task.result.stdDev ?? 0,
+            min: task.result.min ?? 0,
+            max: task.result.max ?? 0,
+          });
+        }
+      },
+    });
 
-  // bench('Cachebay - cache-and-network', async () => {
-  //   const app = createVueCachebayUserProfileApp('cache-and-network', 0);
-  //   await app.mount();
-  //   await new Promise(resolve => setTimeout(resolve, 50)); // Wait for query to complete
-  //   await app.unmount();
-  // }, {
-  //   ...BENCH_OPTIONS,
-  //   setup: (task) => {
-  //     if (DEBUG && task.result) {
-  //       results.push({
-  //         name: 'Cachebay (cache-and-network)',
-  //         mean: task.result.mean,
-  //         stdDev: task.result.stdDev ?? 0,
-  //         min: task.result.min ?? 0,
-  //         max: task.result.max ?? 0,
-  //       });
-  //     }
-  //   },
-  // });
+    bench('Urql (vue, network-only)', async () => {
+      const app = createVueUrqlUserProfileApp('network-only', 0);
+      await app.mount();
+      await app.loadUser(testUserId);
+      await app.unmount();
+    }, {
+      ...BENCH_OPTIONS,
+      setup: (task) => {
+        if (DEBUG && task.result) {
+          results.push({
+            name: 'Urql (network-only)',
+            mean: task.result.mean,
+            stdDev: task.result.stdDev ?? 0,
+            min: task.result.min ?? 0,
+            max: task.result.max ?? 0,
+          });
+        }
+      },
+    });
 
-  bench('Apollo - network-only', async () => {
-    const app = createVueApolloUserProfileApp('network-only', 0);
-    await app.mount();
-
-    await app.loadUser(testUserId);
-
-    await app.unmount();
-  }, {
-    ...BENCH_OPTIONS,
-    setup: (task) => {
-      if (DEBUG && task.result) {
-        results.push({
-          name: 'Apollo (network-only)',
-          mean: task.result.mean,
-          stdDev: task.result.stdDev ?? 0,
-          min: task.result.min ?? 0,
-          max: task.result.max ?? 0,
-        });
-      }
-    },
-  });
-
-  bench('Urql - network-only', async () => {
-    const app = createVueUrqlUserProfileApp('network-only', 0);
-    await app.mount();
-
-    await app.loadUser(testUserId);
-
-    await app.unmount();
-  }, {
-    ...BENCH_OPTIONS,
-    setup: (task) => {
-      if (DEBUG && task.result) {
-        results.push({
-          name: 'Urql (network-only)',
-          mean: task.result.mean,
-          stdDev: task.result.stdDev ?? 0,
-          min: task.result.min ?? 0,
-          max: task.result.max ?? 0,
-        });
-      }
-    },
-  });
-
-  bench('Relay - network-only', async () => {
-    const app = createReactRelayUserProfileApp('network-only', 0);
-    await app.mount();
-
-    await app.loadUser(testUserId);
-
-    await app.unmount();
-  }, {
-    ...BENCH_OPTIONS,
-    setup: (task) => {
-      if (DEBUG && task.result) {
-        results.push({
-          name: 'Relay (network-only)',
-          mean: task.result.mean,
-          stdDev: task.result.stdDev ?? 0,
-          min: task.result.min ?? 0,
-          max: task.result.max ?? 0,
-        });
-        printResultsTable();
-      }
-    },
+    bench('Relay (react, network-only)', async () => {
+      const app = createReactRelayUserProfileApp('network-only', 0);
+      await app.mount();
+      await app.loadUser(testUserId);
+      await app.unmount();
+    }, {
+      ...BENCH_OPTIONS,
+      setup: (task) => {
+        if (DEBUG && task.result) {
+          results.push({
+            name: 'Relay (network-only)',
+            mean: task.result.mean,
+            stdDev: task.result.stdDev ?? 0,
+            min: task.result.min ?? 0,
+            max: task.result.max ?? 0,
+          });
+          printResultsTable();
+        }
+      },
+    });
   });
 });

@@ -85,7 +85,19 @@ export function createVueCachebayUserProfileApp(
         query: USER_QUERY,
         variables: { id: 'u1' },
         cachePolicy,
-        lazy: true,
+        lazy: false,
+      });
+
+      watch(data, () => {
+        if (data.value?.user) {
+          console.log('[Cachebay] Data loaded:', data.value.user.id, data.value.user.email);
+        }
+      }, { immediate: true });
+
+      watch(error, () => {
+        if (error.value) {
+          console.log('[Cachebay] ERROR:', error.value);
+        }
       });
 
       return {
