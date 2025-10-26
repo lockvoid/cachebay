@@ -38,6 +38,7 @@ describe("queries API - Performance", () => {
 
   let normalizeCount = 0;
   let materializeCount = 0;
+  let mockTransport: any;
 
   beforeEach(() => {
     normalizeCount = 0;
@@ -62,13 +63,16 @@ describe("queries API - Performance", () => {
     // Create queries
     queries = createQueries({ documents, planner });
 
+    // Create mock transport
+    mockTransport = {
+      http: vi.fn().mockResolvedValue({ data: null, error: null }),
+      ws: vi.fn(),
+    };
+
     // Create operations with callback
     operations = createOperations(
       {
-        transport: {
-          http: vi.fn().mockResolvedValue({ data: null, error: null }),
-          ws: vi.fn(),
-        },
+        transport: mockTransport,
       },
       { planner, documents, ssr },
       {
@@ -312,6 +316,18 @@ describe("queries API - Performance", () => {
         }
       `;
 
+      // Mock transport to return user data
+      mockTransport.http.mockResolvedValueOnce({
+        data: {
+          user: {
+            __typename: "User",
+            id: "1",
+            name: "Alice",
+          },
+        },
+        error: null,
+      });
+
       // Reset counts
       normalizeCount = 0;
       materializeCount = 0;
@@ -325,29 +341,24 @@ describe("queries API - Performance", () => {
 
       await tick();
 
-      // OPTIMIZED: Only 1 materialize (watchQuery with immediate: true)
-      // No redundant materialize from propagateData or other sources
+      // OPTIMIZED: Only 1 materialize (watchQuery with immediate: true on cache miss)
+      // No data yet, so no emission
       expect(normalizeCount).toBe(0);
       expect(materializeCount).toBe(1);
       expect(emissions).toHaveLength(0);
 
-      // Setup: write data first
-      queries.writeQuery({
+      // Execute query via operations (simulates real network request)
+      await operations.executeQuery({
         query: QUERY,
         variables: { id: "1" },
-        data: {
-          user: {
-            __typename: "User",
-            id: "1",
-            name: "Alice",
-          },
-        },
       });
+
       await tick();
 
       expect(normalizeCount).toBe(1);
-      expect(materializeCount).toBe(2);
+      expect(materializeCount).toBe(2); // Target: 2, Current: 4
       expect(emissions).toHaveLength(1);
+      expect(emissions[0].user.name).toBe("Alice");
 
       handle.unsubscribe();
     });
