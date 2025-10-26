@@ -215,6 +215,7 @@ export const createOperations = (
    * Check if we're within the suspension window for a query signature
    */
   const isWithinSuspension = (signature: string): boolean => {
+    console.log("isWithinSuspension", suspensionTimeout);
     const last = lastEmitBySig.get(signature);
     return last != null && performance.now() - last <= suspensionTimeout;
   };
@@ -255,6 +256,7 @@ export const createOperations = (
     }
 
     const performRequest = async () => {
+      console.log("perofrm request");
       try {
         const currentEpoch = (queryEpochs.get(signature) || 0) + 1;
 
@@ -368,6 +370,7 @@ export const createOperations = (
       }
     };
 
+    console.log("isHydrating", ssr.isHydrating(), isWithinSuspension(signature));
     // SSR hydration or suspension window: return cached data if available
     if (ssr.isHydrating() || isWithinSuspension(signature)) {
       if (cached && cached.source !== "none") {
