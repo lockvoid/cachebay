@@ -323,6 +323,7 @@ describe("client API - Performance", () => {
       });
 
       await tick();
+      await tick();
 
       // OPTIMIZED: Only 1 materialize (watchQuery with immediate: true on cache miss)
       // No data yet, so no emission
@@ -337,6 +338,7 @@ describe("client API - Performance", () => {
         cachePolicy: 'network-only',
       });
 
+      await tick();
       await tick();
 
       // OPTIMIZATION TARGET:

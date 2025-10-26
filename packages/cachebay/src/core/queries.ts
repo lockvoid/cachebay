@@ -101,7 +101,6 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
         // Skip if recently emitted by handleQueryExecuted (coalescing)
         if (w.skipNextPropagate) {
-          w.skipNextPropagate = false; // Clear flag after checking
           continue;
         }
 
@@ -347,8 +346,8 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     dependencies: Set<string>;
     cachePolicy: string;
   }) => {
-    console.log('handleQueryExecuted');
     const watcherId = signatureToWatcher.get(signature);
+
     if (watcherId !== undefined) {
       const w = watchers.get(watcherId);
       if (!w) return;
@@ -365,6 +364,10 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
         // Set flag to skip next propagateData emission (coalescing)
         // This prevents double emission when normalize triggers graph.onChange
         w.skipNextPropagate = true;
+
+        Promise.resolve().then(() => {
+          w.skipNextPropagate = false;
+        });
 
         try {
           w.onData(recycled);

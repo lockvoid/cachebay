@@ -241,12 +241,16 @@ export const createOperations = (
     const signature = plan.makeSignature("canonical", variables);  // Always canonical
 
     // Read from cache using documents directly
-    const cached = documents.materializeDocument({
-      document: query,
-      variables,
-      canonical: true,
-      fingerprint: true, // Get dependencies for watcher tracking
-    });
+    let cached;
+
+    if (effectiveCachePolicy !== 'network-only') {
+      cached = documents.materializeDocument({
+        document: query,
+        variables,
+        canonical: true,
+        fingerprint: true, // Get dependencies for watcher tracking
+      });
+    }
 
     const performRequest = async () => {
       try {
@@ -282,6 +286,8 @@ export const createOperations = (
 
           // Read back from cache to get normalized/materialized data
           // This ensures the same reference as watchQuery would emit
+          //
+          console.log("Materializing 1")
           const cachedAfterWrite = documents.materializeDocument({
             document: query,
             variables,
@@ -294,7 +300,7 @@ export const createOperations = (
             signature,
             data: cachedAfterWrite.data,
             dependencies: cachedAfterWrite.dependencies,
-            cachePolicy: policy,
+            cachePolicy: effectiveCachePolicy,
           });
 
           // Validate that we can materialize the data we just wrote
