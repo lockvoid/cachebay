@@ -1,6 +1,7 @@
 // Performance counters (module-level for vi.mock access)
 let normalizeCount = 0;
-let materializeCount = 0;
+let materializeHotCount = 0;
+let materializeColdCount = 0;
 
 // Mock documents to inject performance counters
 vi.mock("@/src/core/documents", async () => {
@@ -18,11 +19,19 @@ vi.mock("@/src/core/documents", async () => {
         return origNormalize.apply(documents, args);
       }) as any;
 
-      // Wrap materialize to count calls
+      // Wrap materialize to count calls and track HOT vs COLD
       const origMaterialize = documents.materializeDocument;
       documents.materializeDocument = ((...args: any[]) => {
-        materializeCount++;
-        return origMaterialize.apply(documents, args);
+        const result = origMaterialize.apply(documents, args);
+
+        // Track HOT vs COLD based on the hot field
+        if (result.hot) {
+          materializeHotCount++;
+        } else {
+          materializeColdCount++;
+        }
+
+        return result;
       }) as any;
 
       return documents;
@@ -57,7 +66,8 @@ describe("operations API - Performance", () => {
   beforeEach(() => {
     // Reset counters
     normalizeCount = 0;
-    materializeCount = 0;
+    materializeHotCount = 0;
+    materializeColdCount = 0;
 
     // Create mock transport
     mockTransport = {
@@ -102,7 +112,8 @@ describe("operations API - Performance", () => {
 
       // Should skip cache check, normalize once, materialize once (read-back)
       expect(normalizeCount).toBe(1); // Write network response
-      expect(materializeCount).toBe(1); // Only read-back after normalize
+      expect(materializeColdCount).toBe(1); // COLD: read-back after normalize
+      expect(materializeHotCount).toBe(0);
     });
 
     it("cache-first with cache hit: should materialize 1 time (cache only)", async () => {
@@ -126,7 +137,8 @@ describe("operations API - Performance", () => {
 
       // Reset counts after cache population
       normalizeCount = 0;
-      materializeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
 
       // Execute query with cache-first
       await client.executeQuery({
@@ -137,7 +149,8 @@ describe("operations API - Performance", () => {
 
       // Should materialize once (cache hit, no network)
       expect(normalizeCount).toBe(0); // No network request
-      expect(materializeCount).toBe(1); // Only cache read
+      expect(materializeColdCount).toBe(1); // COLD: first read from cache
+      expect(materializeHotCount).toBe(0);
       expect(mockTransport.http).not.toHaveBeenCalled();
     });
 
@@ -167,7 +180,8 @@ describe("operations API - Performance", () => {
 
       // Should materialize twice: cache miss + after network
       expect(normalizeCount).toBe(1); // Write network response
-      expect(materializeCount).toBe(2); // Cache check + after normalize
+      expect(materializeColdCount).toBe(2); // COLD: cache miss + read-back
+      expect(materializeHotCount).toBe(0);
       expect(mockTransport.http).toHaveBeenCalled();
     });
 
@@ -193,7 +207,8 @@ describe("operations API - Performance", () => {
 
       // Reset counts
       normalizeCount = 0;
-      materializeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
 
       mockTransport.http = vi.fn().mockResolvedValue({
         data: networkData,
@@ -211,7 +226,8 @@ describe("operations API - Performance", () => {
 
       // Should materialize twice: cache + after network
       expect(normalizeCount).toBe(1); // Write network response
-      expect(materializeCount).toBe(2); // Cache read + after normalize
+      expect(materializeColdCount).toBe(2); // COLD: cache read + read-back
+      expect(materializeHotCount).toBe(0);
       expect(mockTransport.http).toHaveBeenCalled();
     });
 
@@ -236,7 +252,8 @@ describe("operations API - Performance", () => {
 
       // Reset counts
       normalizeCount = 0;
-      materializeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
 
       // Execute query with cache-only
       await client.executeQuery({
@@ -247,7 +264,8 @@ describe("operations API - Performance", () => {
 
       // Should materialize once (cache only), no normalize
       expect(normalizeCount).toBe(0);
-      expect(materializeCount).toBe(1);
+      expect(materializeColdCount).toBe(1); // COLD: cache read
+      expect(materializeHotCount).toBe(0);
       expect(mockTransport.http).not.toHaveBeenCalled();
     });
   });
@@ -281,8 +299,8 @@ describe("operations API - Performance", () => {
 
       // Should normalize 10 times, materialize 10 times (1 per query with network-only)
       expect(normalizeCount).toBe(10);
-      expect(materializeCount).toBe(10); // 1 per query (read-back only, no cache check)
-    });
+      expect(materializeColdCount).toBe(10); // COLD: 1 read-back per query
+      expect(materializeHotCount).toBe(0);    });
 
     it("pagination: 5 pages should normalize 5, materialize 5", async () => {
       const QUERY = gql`
@@ -319,8 +337,8 @@ describe("operations API - Performance", () => {
 
       // Should normalize 5 times, materialize 5 times (1 per page with network-only)
       expect(normalizeCount).toBe(5);
-      expect(materializeCount).toBe(5); // 1 per page (read-back only)
-    });
+      expect(materializeColdCount).toBe(5); // COLD: 1 read-back per page
+      expect(materializeHotCount).toBe(0);    });
   });
 
   describe("executeMutation", () => {
@@ -353,7 +371,7 @@ describe("operations API - Performance", () => {
       // Should normalize once (write mutation result)
       // Mutations don't materialize - they just write and return the network data
       expect(normalizeCount).toBe(1);
-      expect(materializeCount).toBe(0);
-    });
+      expect(materializeColdCount).toBe(0);
+      expect(materializeHotCount).toBe(0);    });
   });
 });

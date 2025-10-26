@@ -370,6 +370,8 @@ describe("useQuery Performance", () => {
       });
 
       normalizeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
 
       // PHASE 1: First query - COLD path
       await runInVueContext(() => {
@@ -385,10 +387,14 @@ describe("useQuery Performance", () => {
       // COLD path: normalize 1, materialize 2 (executeQuery cache + propagateData after network)
       expect(normalizeCount).toBe(1);
       expect(watchQueryCallCount).toBe(1);
+      expect(materializeColdCount).toBe(2);
+      expect(materializeHotCount).toBe(0);
       expect(mockFetch).toHaveBeenCalledTimes(1);
 
       // Reset counters
       normalizeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
 
       // PHASE 2: Second query - HOT path
       await runInVueContext(() => {
@@ -404,6 +410,8 @@ describe("useQuery Performance", () => {
       // HOT path: normalize 1, materialize 1
       expect(normalizeCount).toBe(1);
       expect(watchQueryCallCount).toBe(2); // Second useQuery creates new watcher
+      expect(materializeColdCount).toBe(1);
+      expect(materializeHotCount).toBe(1);
       expect(mockFetch).toHaveBeenCalledTimes(2);
     });
   });
@@ -458,7 +466,9 @@ describe("useQuery Performance", () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // PHASE 1: Initial query - 1 watchQuery call
-      expect(watchQueryCallCount).toBe(1);
+      expect(normalizeCount).toBe(1);
+      expect(materializeColdCount).toBe(1);
+      expect(materializeHotCount).toBe(0);
 
       // Reset counters
       normalizeCount = 0;
@@ -472,9 +482,8 @@ describe("useQuery Performance", () => {
       // Should normalize once (network response)
       // Should materialize twice: executeQuery + propagateData
       expect(normalizeCount).toBe(1);
-      expect(materializeColdCount).toBe(2);
+      expect(materializeColdCount).toBe(1);
       expect(materializeHotCount).toBe(0);
-      // Still only 1 watchQuery call (no remount)
       expect(watchQueryCallCount).toBe(1);
     });
   });
@@ -488,6 +497,8 @@ describe("useQuery Performance", () => {
         error: null,
       });
 
+      // phase 1
+
       await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
@@ -498,27 +509,38 @@ describe("useQuery Performance", () => {
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      const initialNormalize = normalizeCount;
+      expect(watchQueryCallCount).toBe(1);
+      expect(normalizeCount).toBe(1);
+      expect(materializeColdCount).toBe(1);
+      expect(materializeHotCount).toBe(0);
 
-      // Disable query
+      // Phase 2 Disable query
+
+      normalizeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
+
       enabled.value = false;
       await nextTick();
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Should NOT normalize or materialize when disabled
-      expect(normalizeCount).toBe(initialNormalize);
       // Watcher created once
       expect(watchQueryCallCount).toBe(1);
+      expect(normalizeCount).toBe(0);
+      expect(materializeColdCount).toBe(0);
+      expect(materializeHotCount).toBe(0);
 
-      // Re-enable
+      // Phase 3 Re-enable
       enabled.value = true;
       await nextTick();
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Should execute query again
-      expect(normalizeCount).toBeGreaterThan(initialNormalize);
-      // Watcher recreated on re-enable
       expect(watchQueryCallCount).toBe(2);
+      expect(normalizeCount).toBe(1);
+      expect(materializeColdCount).toBe(0);
+      expect(materializeHotCount).toBe(1);
     });
 
     it("cache policy change: triggers new executeQuery", async () => {
