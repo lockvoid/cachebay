@@ -392,11 +392,10 @@ export const createOperations = (
       } catch (error) {
         const combinedError = new CombinedError({ networkError: error as Error });
 
-        onError?.(combinedError);
-
-        // Only notify error callback if not a stale response
+        // Only notify error callbacks if not a stale response
         // Stale errors should be silently dropped
         if (!(error instanceof StaleResponseError)) {
+          onError?.(combinedError);
           onQueryError?.(signature, combinedError);
         }
 
