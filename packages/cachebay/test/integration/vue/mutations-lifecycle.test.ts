@@ -2,10 +2,10 @@
 import { mount } from "@vue/test-utils";
 import { defineComponent, h } from "vue";
 import { useQuery, useMutation } from "@/src/adapters/vue";
-import { createTestClient, seedCache, tick, fixtures, operations } from "@/test/helpers";
+import { createTestClient, seedCache, tick, delay,fixtures, operations } from "@/test/helpers";
 
 describe("Mutations", () => {
-  it("updates entity through normalization and returns mutation data", async () => {
+  it.only("updates entity through normalization and returns mutation data", async () => {
     const { cache, client, fx } = createTestClient({
       routes: [
         {
@@ -27,7 +27,7 @@ describe("Mutations", () => {
             };
           },
 
-          delay: 10,
+          delay: 15,
         },
       ],
     });
@@ -56,8 +56,6 @@ describe("Mutations", () => {
       },
     });
 
-    const wrapper = mount(Cmp, { global: { plugins: [client] } });
-
     await seedCache(cache, {
       query: operations.USER_QUERY,
 
@@ -71,12 +69,14 @@ describe("Mutations", () => {
       },
     });
 
-    await tick();
+    const wrapper = mount(Cmp, { global: { plugins: [client] } });
+
+    await delay(5);
     expect(wrapper.text()).toBe("u1@example.com");
 
     const response = await wrapper.vm.run();
 
-    await tick(2);
+    await delay(15);
     expect(response.error).toBeFalsy();
     expect(response.data.updateUser.user.email).toBe("u1+updated@example.com");
     expect(wrapper.text()).toBe("u1+updated@example.com");
