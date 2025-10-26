@@ -1,0 +1,104 @@
+name: Benchmark PR
+
+on:
+  pull_request:
+    paths:
+      - 'packages/cachebay/**'
+      - 'packages/benchmarks/**'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      
+      - name: Install Playwright
+        run: pnpm --filter benchmarks exec playwright install chromium
+      
+      - name: Download baseline from main
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: benchmark-main.yml
+          branch: main
+          name: benchmark-baseline
+          path: packages/benchmarks/.bench-results/
+          if_no_artifact_found: warn
+      
+      - name: Run DOM benchmarks (compare)
+        working-directory: packages/benchmarks
+        run: BENCH_NAME=nested-query pnpm bench:suite:compare bench/suites/nested-query.dom.bench.ts > .bench-results/suite-compare.txt || true
+      
+      - name: Run API benchmarks (current)
+        working-directory: packages/benchmarks
+        run: |
+          BENCH_FILE=normalizeDocument pnpm bench:api:compare
+          BENCH_FILE=materializeDocument pnpm bench:api:compare
+          BENCH_FILE=readQuery pnpm bench:api:compare
+          BENCH_FILE=watchQuery pnpm bench:api:compare
+      
+      - name: Comment PR with results
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            let comment = '## 📊 Benchmark Results\n\n';
+            
+            // DOM benchmarks
+            try {
+              const suiteCompare = fs.readFileSync('packages/benchmarks/.bench-results/suite-compare.txt', 'utf8');
+              const lines = suiteCompare.split('\n');
+              const summaryStart = lines.findIndex(l => l.includes('BENCH  Summary'));
+              const summary = lines.slice(summaryStart, summaryStart + 20).join('\n');
+              comment += '### DOM Benchmarks\n```\n' + summary + '\n```\n\n';
+            } catch (e) {
+              comment += '### DOM Benchmarks\n⚠️ No baseline found\n\n';
+            }
+            
+            // API benchmarks
+            try {
+              const apiCurrent = fs.readFileSync('packages/benchmarks/.bench-results/api-current.txt', 'utf8');
+              comment += '### API Benchmarks\n```\n' + apiCurrent.slice(0, 2000) + '\n```\n\n';
+            } catch (e) {
+              comment += '### API Benchmarks\n⚠️ Failed to run\n\n';
+            }
+            
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(c => 
+              c.user.type === 'Bot' && c.body.includes('📊 Benchmark Results')
+            );
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }

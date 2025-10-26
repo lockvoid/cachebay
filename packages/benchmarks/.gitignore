@@ -1,2 +1,4 @@
 dist
-.bench-results
+.bench-results/*-current.txt
+.bench-results/*-compare.txt
+.bench-results/suite-*.txt
