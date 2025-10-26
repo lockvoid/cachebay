@@ -81,12 +81,12 @@ describe("queries API", () => {
       });
 
       // Read it back (default = canonical true)
-      const readResult = queries.readQuery({
+      const result = queries.readQuery({
         query: QUERY,
         variables: { id: "1" },
       });
 
-      expect(readResult.data).toEqual({
+      expect(result).toEqual({
         __version: 192319067,
         user: {
           __typename: "User",
@@ -96,7 +96,6 @@ describe("queries API", () => {
           __version: 6,
         },
       });
-      expect(readResult.error).toBeUndefined();
     });
 
     it("returns no data but provides deps for missing data", () => {
@@ -114,10 +113,8 @@ describe("queries API", () => {
         variables: { id: "999" },
       });
 
-      expect(result.data).toBeUndefined();
-      // Should have error when data is missing
-      expect(result.error).toBeDefined();
-      expect(result.error?.name).toBe("CacheMissError");
+      // Should return null for missing data
+      expect(result).toBeNull();
     });
 
     it("reads written data successfully", () => {
@@ -143,8 +140,8 @@ describe("queries API", () => {
         query: QUERY,
         variables: { id: "1" },
       });
-      expect(result.data).toBeDefined();
-      expect(result.data).toEqual({
+      expect(result).toBeDefined();
+      expect(result).toEqual({
         __version: 209096686,
 
         user: {
@@ -154,7 +151,6 @@ describe("queries API", () => {
           __version: 5
         },
       });
-      expect(result.error).toBeUndefined();
     });
   });
 
