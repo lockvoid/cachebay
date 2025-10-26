@@ -1,7 +1,6 @@
 // src/core/queries.ts
 import type { DocumentsInstance } from "./documents";
 import type { PlannerInstance } from "./planner";
-import { CacheMissError } from "./errors";
 import { recycleSnapshots } from "./utils";
 import type { DocumentNode } from "graphql";
 
@@ -13,13 +12,6 @@ export type QueriesDependencies = {
 export type ReadQueryOptions = {
   query: DocumentNode | string;
   variables?: Record<string, any>;
-};
-
-export type ReadQueryResult<T = any> = {
-  /** Query data if available in cache */
-  data: T | undefined;
-  /** Error if query cannot be read from cache (e.g., missing required fields) */
-  error?: Error;
 };
 
 export type WriteQueryOptions = {
@@ -202,7 +194,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
   const readQuery = <T = any>({
     query,
     variables = {},
-  }: ReadQueryOptions): ReadQueryResult<T> => {
+  }: ReadQueryOptions): T | null => {
     const result = documents.materializeDocument({
       document: query,
       variables,
@@ -211,18 +203,10 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
       force: true, // Always read fresh data (rare operation, not hot path)
     });
 
-    if (result.source === "none") {
-      // No data available - create descriptive error
-      const error = new CacheMissError(
-        'Query cannot be read from cache. Required fields are missing.'
-      );
-      return { data: undefined, error };
+    if (result.source !== "none") {
+      return result.data as T;
     }
-
-    return {
-      data: result.data as T,
-      error: undefined,
-    };
+    return null;
   };
 
   const writeQuery = ({

@@ -905,29 +905,27 @@ describe("useQuery", () => {
       await nextTick();
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      // Pre-populate cache with user:2
-      cache.writeQuery({
-        query: USER_QUERY,
-        variables: { id: "2" },
-        data: { user: { id: "2", email: "bob@example.com" } },
-        cachePolicy: 'network-only',
+      // Mock response for user:2
+      mockTransport.http = vi.fn().mockResolvedValue({
+        data: { user: { __typename: "User", id: "2", email: "bob@example.com" } },
+        error: null,
       });
 
       // Refetch with new variables
       await queryResult.refetch({ variables: { id: "2" } });
       await nextTick();
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
       // Watcher should now be watching user:2
       // Update user:2 in cache
       cache.writeQuery({
         query: USER_QUERY,
         variables: { id: "2" },
-        data: { user: { id: "2", email: "bob-updated@example.com" } },
-        cachePolicy: 'network-only',
+        data: { user: { __typename: "User", id: "2", email: "bob-updated@example.com" } },
       });
 
       await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Should reflect the update
       expect(queryResult.data.value).toMatchObject({
