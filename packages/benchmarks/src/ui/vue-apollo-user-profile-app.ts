@@ -4,6 +4,7 @@ import { createApp, defineComponent, nextTick, watch } from "vue";
 import { createUserProfileYoga } from "../server/user-profile-server";
 import { makeUserProfileDataset } from "../utils/seed-user-profile";
 import { createApolloClient } from "../adapters";
+import { createDeferred } from "../utils/concurrency";
 
 try {
   const { loadErrorMessages, loadDevMessages } = require("@apollo/client/dev");
@@ -43,7 +44,7 @@ const USER_QUERY = gql`
 export type VueApolloUserProfileController = {
   mount(target?: Element): void;
   unmount(): void;
-  loadUser(userId: string): Promise<void>;
+  ready(): Promise<void>;
 };
 
 export function createVueApolloUserProfileApp(
@@ -58,10 +59,7 @@ export function createVueApolloUserProfileApp(
   let app: any = null;
   let componentInstance: any = null;
 
-  let loadingPromiseResolve: (() => void) | null = null;
-  const loadingPromise = new Promise<void>(resolve => {
-    loadingPromiseResolve = resolve;
-  });
+  const deferred = createDeferred();
 
   const Component = defineComponent({
     setup() {
@@ -74,9 +72,8 @@ export function createVueApolloUserProfileApp(
       }, { immediate: true });
 
       watch(loading, () => {
-        if (!loading.value && loadingPromiseResolve) {
-          loadingPromiseResolve();
-          loadingPromiseResolve = null;
+        if (!loading.value) {
+          deferred.resolve();
         }
       });
 
@@ -137,9 +134,9 @@ export function createVueApolloUserProfileApp(
       }
     },
 
-    loadUser: async (userId: string) => {
+    ready: async () => {
       // Wait for query to complete
-      await loadingPromise;
+      await deferred.promise;
     },
   };
 }
