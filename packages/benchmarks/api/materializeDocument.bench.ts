@@ -77,14 +77,14 @@ summary(() => {
           for (let i = 0; i < pages.length; i++) {
             cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
 
-            cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true });
+            cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
           }
 
           return cachebay;
         },
         bench(cachebay) {
-          const result = cachebay.__internals.documents.materializeDocument({ document: CACHEBAY_QUERY, variables: { first: USERS_PAGE_SIZE, after: null }, canonical: true, fingerprint: false });
-          sink(result.data);
+          const result = cachebay.__internals.documents.materializeDocument({ document: CACHEBAY_QUERY, variables: { first: USERS_PAGE_SIZE, after: null }, canonical: true, fingerprint: false, force: false });
+          //sink(result.data);
         },
       };
     });
@@ -97,14 +97,14 @@ summary(() => {
           for (let i = 0; i < pages.length; i++) {
             cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
 
-            cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true });
+            cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
           }
 
           return cachebay;
         },
         bench(cachebay) {
-          const result = cachebay.__internals.documents.materializeDocument({ document: CACHEBAY_QUERY, variables: { first: USERS_PAGE_SIZE, after: null }, canonical: true, fingerprint: true });
-          sink(result.data);
+          const result = cachebay.__internals.documents.materializeDocument({ document: CACHEBAY_QUERY, variables: { first: USERS_PAGE_SIZE, after: null }, canonical: true, fingerprint: true, force: false });
+          //sink(result.data);
         },
       };
     });

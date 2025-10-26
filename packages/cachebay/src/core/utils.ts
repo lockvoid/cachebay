@@ -1,6 +1,94 @@
 import { CONNECTION_FIELDS, ROOT_ID } from "./constants";
 import type { PlanField } from "../compiler/types";
 
+export class WeakStringMap {
+  constructor() {
+    this.objectToKey = new WeakMap();       // object -> string
+    this.keyToRef = new Map();              // string -> WeakRef(object)
+    this.registry = new FinalizationRegistry((key) => {
+      // Object was GC'd; drop the stale string->ref mapping
+      this.keyToRef.delete(key);
+    });
+  }
+
+  set(key, obj) {
+    // If this object was previously bound to another key, clear that old key.
+    const oldKey = this.objectToKey.get(obj);
+    if (oldKey && oldKey !== key) {
+      this.keyToRef.delete(oldKey);
+    }
+
+    // If this key was previously bound to another object, unlink it.
+    const prevRef = this.keyToRef.get(key);
+    const prevObj = prevRef?.deref();
+    if (prevObj && prevObj !== obj) {
+      this.objectToKey.delete(prevObj);
+      this.registry.unregister(prevObj);
+    }
+
+    this.objectToKey.set(obj, key);
+    this.keyToRef.set(key, new WeakRef(obj));
+
+    // Use the object itself as the unregister token (we don't keep a strong ref to it).
+    this.registry.register(obj, key, obj);
+  }
+
+  get(key) {
+    const ref = this.keyToRef.get(key);
+    if (!ref) {
+      return undefined;
+    }
+    const obj = ref.deref();
+    if (!obj) {
+      // Stale entry; prune eagerly.
+      this.keyToRef.delete(key);
+    }
+    return obj;
+  }
+
+  has(key) {
+    const ref = this.keyToRef.get(key);
+    if (!ref) {
+      return false;
+    }
+    const obj = ref.deref();
+    if (!obj) {
+      this.keyToRef.delete(key);
+      return false;
+    }
+    return true;
+  }
+
+  delete(key) {
+    const ref = this.keyToRef.get(key);
+    if (!ref) {
+      return false;
+    }
+    this.keyToRef.delete(key);
+
+    const obj = ref.deref();
+    if (obj) {
+      this.objectToKey.delete(obj);
+      this.registry.unregister(obj);
+    }
+    return true;
+  }
+
+  // Optional helper: retrieve the string key by object.
+  keyOf(obj) {
+    return this.objectToKey.get(obj);
+  }
+
+  // Optional: sweep all keys and prune any now-stale refs.
+  prune() {
+    for (const [k, ref] of this.keyToRef) {
+      if (!ref.deref()) {
+        this.keyToRef.delete(k);
+      }
+    }
+  }
+}
+
 export const isObject = (value: any): value is Record<string, any> => {
   return value !== null && typeof value === "object";
 };
@@ -242,7 +330,7 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
     for (let i = 0; i < nextArray.length; i++) {
       const nextItem = nextArray[i];
       const nextFp = (nextItem as any)?.[FINGERPRINT_KEY];
-      
+
       // Try to find matching item in prevArray by fingerprint
       let recycled = nextItem;
       if (nextFp !== undefined) {
@@ -290,26 +378,3 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
     return allEqual ? prevData : nextData;
   }
 }
-
-/**
- * Get canonical keys for all connections in a query
- * Used to determine if variables change affects the connection identity
- * Returns empty array for non-connection queries
- */
-export const getQueryCanonicalKeys = (
-  plan: { rootSelectionMap?: Map<string, PlanField> },
-  variables: Record<string, any>
-): string[] => {
-  const keys: string[] = [];
-
-  if (plan.rootSelectionMap) {
-    for (const field of plan.rootSelectionMap.values()) {
-      if (field.isConnection) {
-        const key = buildConnectionCanonicalKey(field, ROOT_ID, variables);
-        keys.push(key);
-      }
-    }
-  }
-
-  return keys;
-};
