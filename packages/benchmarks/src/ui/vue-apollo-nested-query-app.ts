@@ -164,15 +164,25 @@ export function createVueApolloNestedApp(
   let app: ReturnType<typeof createApp> | null = null;
   let container: Element | null = null;
 
+  let deferred = createDeferred();
+  let lastUserCount = 0;
+
   const NestedList = defineComponent({
     setup() {
       const { result, load, fetchMore, loading } = useLazyQuery(USERS_QUERY, { first: 30, after: null }, { fetchPolicy: cachePolicy });
 
+      // Single watch for both counting and deferred resolution
       watch(result, (v) => {
         const totalUsers = result.value?.users?.edges?.length ?? 0;
         console.log(`apollo total users:`, totalUsers);
 
         globalThis.apollo.totalEntities += totalUsers;
+
+        // Resolve deferred when count changes (cache merge completed)
+        if (totalUsers > lastUserCount) {
+          lastUserCount = totalUsers;
+          deferred.resolve();
+        }
       }, { immediate: true });
 
       const loadNextPage = async () => {
@@ -182,9 +192,9 @@ export function createVueApolloNestedApp(
           // First call: execute the initial query
           if (!result.value) {
             await load();
+
           } else {
             // Subsequent calls: fetch more
-            const currentCount = result.value.users.edges.length;
             const cursor = result.value.users.pageInfo.endCursor;
             const hasNext = result.value.users.pageInfo.hasNextPage;
 
@@ -193,23 +203,10 @@ export function createVueApolloNestedApp(
               return;
             }
 
-            // Start fetchMore
+            // Start fetchMore and wait for cache to update
             await fetchMore({ variables: { after: cursor } });
-            
-            // Wait for cache to actually update (result.value to change)
-            // This is necessary because fetchMore resolves before cache merge completes
-            await new Promise<void>((resolve) => {
-              const unwatch = watch(
-                () => result.value?.users?.edges?.length,
-                (newCount) => {
-                  if (newCount > currentCount) {
-                    unwatch();
-                    resolve();
-                  }
-                },
-                { immediate: true }
-              );
-            });
+            await deferred.promise;
+            deferred = createDeferred();
           }
         } catch (error) {
           console.error('Apollo loadNextPage error:', error);
