@@ -1,8 +1,8 @@
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, watch, ref } from "vue";
 import { createCachebay, useQuery } from "../../../cachebay/src/adapters/vue";
-import { createNestedYoga } from "../server/schema-nested";
-import { makeNestedDataset } from "../utils/seed-nested";
+import { createNestedYoga } from "../server/nested-query-server";
+import { makeNestedDataset } from "../utils/seed-nested-query";
 
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {

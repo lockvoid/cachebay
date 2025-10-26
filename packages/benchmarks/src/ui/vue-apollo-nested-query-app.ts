@@ -3,9 +3,9 @@ import { relayStylePagination } from "@apollo/client/utilities";
 import { DefaultApolloClient, useLazyQuery, useQuery } from "@vue/apollo-composable";
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, ref, watch } from "vue";
-import { createDeferred } from "../utils/render";
-import { createNestedYoga } from "../server/schema-nested";
-import { makeNestedDataset } from "../utils/seed-nested";
+import { createDeferred } from "../utils/concurrency";
+import { createNestedYoga } from "../server/nested-query-server";
+import { makeNestedDataset } from "../utils/seed-nested-query";
 
 try {
   const { loadErrorMessages, loadDevMessages } = require("@apollo/client/dev");

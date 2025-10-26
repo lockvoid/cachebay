@@ -7,8 +7,8 @@ import {
   useLazyLoadQuery,
   usePaginationFragment,
 } from 'react-relay';
-import { createNestedYoga } from '../server/schema-nested';
-import { makeNestedDataset } from '../utils/seed-nested';
+import { createNestedYoga } from '../server/nested-query-server';
+import { makeNestedDataset } from '../utils/seed-nested-query';
 
 export type ReactRelayNestedController = {
   mount(target?: Element): void;

@@ -1,5 +1,5 @@
 
-import type { Connection } from '../utils/render';
+import type { Connection } from '../utils/concurrency';
 
 export type FeedResult = Connection;
 

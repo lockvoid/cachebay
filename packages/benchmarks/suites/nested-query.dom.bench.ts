@@ -3,8 +3,8 @@ import { createReactRelayNestedApp } from "../src/ui/react-relay-nested-query-ap
 import { createVueApolloNestedApp } from "../src/ui/vue-apollo-nested-query-app";
 import { createVueCachebayNestedApp } from "../src/ui/vue-cachebay-nested-query-app";
 import { createVueUrqlNestedApp } from "../src/ui/vue-urql-nested-query-app";
-import { createNestedYoga } from "../src/server/schema-nested";
-import { makeNestedDataset } from "../src/utils/seed-nested";
+import { createNestedYoga } from "../src/server/nested-query-server";
+import { makeNestedDataset } from "../src/utils/seed-nested-query";
 import Table from 'cli-table3';
 
 const DEBUG = true;

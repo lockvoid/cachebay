@@ -4,9 +4,9 @@ import { relayPagination } from "@urql/exchange-graphcache/extras";
 import urql, { useQuery } from "@urql/vue";
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, ref, watch } from "vue";
-import { createDeferred } from "../utils/render";
-import { createNestedYoga } from "../server/schema-nested";
-import { makeNestedDataset } from "../utils/seed-nested";
+import { createDeferred } from "../utils/concurrency";
+import { createNestedYoga } from "../server/nested-query-server";
+import { makeNestedDataset } from "../utils/seed-nested-query";
 const DEBUG = process.env.DEBUG === 'true';
 
 const USERS_QUERY = gql`

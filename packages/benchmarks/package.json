@@ -7,9 +7,6 @@
   "type": "module",
   "scripts": {
     "relay": "relay-compiler",
-    "server:infinite-feed": "NODE_ENV=production tsx scripts/start-server-infinite-feed.ts",
-    "server:nested-query": "NODE_ENV=production tsx scripts/start-server-nested-query.ts",
-    "suite:infinite-feed": "NODE_ENV=production vitest bench --run --mode production suites/infinite-feed.dom.bench.ts",
     "suite:nested-query": "NODE_ENV=production vitest bench --run --mode production suites/nested-query.dom.bench.ts",
     "api:normalizeDocument": "vitest bench --run --compare=.results/normalize.json api/normalizeDocument.bench.ts",
     "api:normalizeDocument:baseline": "vitest bench --run --outputJson=.results/normalize.json api/normalizeDocument.bench.ts",

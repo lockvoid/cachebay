@@ -4,15 +4,6 @@ import { gql } from 'graphql-tag';
 import type { Adapter, FeedResult } from './types';
 import { createCachebay } from 'cachebay';
 
-const FEED = gql`
-  query Feed($first: Int!, $after: String) {
-    feed(first: $first, after: $after) @connection {
-      edges { cursor node { id title } }
-      pageInfo { endCursor hasNextPage }
-    }
-  }
-`;
-
 export function createCachebayAdapter(url: string): Adapter {
   const cachebay = createCachebay({});
 

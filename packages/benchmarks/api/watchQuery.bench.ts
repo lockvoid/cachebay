@@ -330,12 +330,6 @@ summary(() => {
 
       apollo.writeQuery({ query: APOLLO_QUERY, variables: pages[pageIndex2].variables, data: pages[pageIndex2].data });
     });
-
-    // Note: Relay pagination benchmark omitted
-    // Relay's connection pagination requires ConnectionHandler and proper
-    // configuration that's not directly comparable to Cachebay's approach.
-    // Relay is designed for React components with usePaginationFragment,
-    // not for imperative pagination via commitPayload.
   });
 });
 

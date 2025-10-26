@@ -3,15 +3,6 @@ import { ApolloClient, InMemoryCache, HttpLink, gql } from "@apollo/client/core"
 import { relayStylePagination } from "@apollo/client/utilities";
 import type { Adapter, FeedResult } from "./types";
 
-const FEED = gql`
-  query Feed($first: Int!, $after: String) {
-    feed(first: $first, after: $after) {
-      edges { cursor node { id title } }
-      pageInfo { endCursor hasNextPage }
-    }
-  }
-`;
-
 export function createApolloAdapter(url: string): Adapter {
   const client = new ApolloClient({
     cache: new InMemoryCache({
