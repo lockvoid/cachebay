@@ -65,7 +65,7 @@ import { ref, nextTick, defineComponent, h, createApp } from "vue";
 import { useQuery } from "@/src/adapters/vue/useQuery";
 import { createCachebay } from "@/src/core/client";
 import { provideCachebay } from "@/src/adapters/vue/plugin";
-import { operations } from "@/test/helpers";
+import { operations, tick, delay } from "@/test/helpers";
 import type { CachePolicy } from "@/src/core/operations";
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
@@ -450,9 +450,9 @@ describe("useQuery Performance", () => {
       expect(watchQueryCallCount).toBe(1);
     });
 
-    it("refetch with variables: normalize 1, materialize 2 (executeQuery + propagateData)", async () => {
+    it.only("refetch with variables: normalize 1, materialize 2 (executeQuery + propagateData)", async () => {
       mockFetch.mockResolvedValue({
-        data: { user: { __typename: "User", id: "2", name: "Bob" } },
+        data: { user: { __typename: "User", id: "2", email: "bob@example.com", name: "Bob" } },
         error: null,
       });
 
@@ -460,22 +460,28 @@ describe("useQuery Performance", () => {
         return useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
+          cachePolicy: "cache-first",
         });
       });
 
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await delay(20);
 
       // PHASE 1: Initial query - 1 watchQuery call
-      expect(normalizeCount).toBe(1);
-      expect(materializeColdCount).toBe(1);
-      expect(materializeHotCount).toBe(0);
-
-      // Reset counters
       normalizeCount = 0;
       materializeHotCount = 0;
       materializeColdCount = 0;
 
+      expect(normalizeCount).toBe(1);
+      expect(materializeColdCount).toBe(1);
+      expect(materializeHotCount).toBe(0);
+      expect(watchQueryCallCount).toBe(1);
+
       // PHASE 2: Refetch with new variables - watcher updates, doesn't remount
+
+      normalizeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
+
       await queryRef.refetch({ variables: { id: "2" } });
       await new Promise(resolve => setTimeout(resolve, 50));
 

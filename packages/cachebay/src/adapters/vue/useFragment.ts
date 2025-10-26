@@ -33,7 +33,7 @@ export function useFragment<TData = unknown>(options: UseFragmentOptions<TData>)
   }
 
   const data = shallowRef<TData | undefined>(undefined);
-  let unsubscribe: (() => void) | null = null;
+  let handle: ReturnType<typeof cache.watchFragment> | null = null;
 
   // Watch for changes to id and variables
   watch(
@@ -41,40 +41,38 @@ export function useFragment<TData = unknown>(options: UseFragmentOptions<TData>)
     ({ id, variables }) => {
       if (!id) {
         // Clean up watcher if id becomes empty
-        if (unsubscribe) {
-          unsubscribe();
-          unsubscribe = null;
+        if (handle) {
+          handle.unsubscribe();
+          handle = null;
         }
         data.value = undefined;
         return;
       }
 
-      // Clean up previous watcher if id or variables changed
-      if (unsubscribe) {
-        unsubscribe();
-        unsubscribe = null;
+      // Reuse watcher with update() instead of remounting
+      if (handle) {
+        handle.update({ id, variables });
+      } else {
+        // Create new watcher on first run
+        handle = cache.watchFragment({
+          id,
+          fragment: options.fragment,
+          fragmentName: options.fragmentName,
+          variables,
+          onData: (newData: TData) => {
+            data.value = newData;
+          },
+        });
       }
-
-      const handle = cache.watchFragment({
-        id,
-        fragment: options.fragment,
-        fragmentName: options.fragmentName,
-        variables,
-        onData: (newData: TData) => {
-          data.value = newData;
-        },
-      });
-
-      unsubscribe = handle.unsubscribe;
     },
     { immediate: true }
   );
 
   // Clean up on component unmount
   onScopeDispose(() => {
-    if (unsubscribe) {
-      unsubscribe();
-      unsubscribe = null;
+    if (handle) {
+      handle.unsubscribe();
+      handle = null;
     }
   });
 

@@ -120,7 +120,7 @@ describe("useFragment Performance", () => {
   };
 
   describe("initial watch", () => {
-    it.only("two-phase: COLD path (1 materialization) then HOT path (1 materialization)", async () => {
+    it("two-phase: COLD path (1 materialization) then HOT path (1 materialization)", async () => {
       // Pre-populate cache
       client.writeFragment({
         id: "User:1",
@@ -178,7 +178,7 @@ describe("useFragment Performance", () => {
   });
 
   describe("reactive id changes", () => {
-    it.only("update with new id: watcher reused, not remounted", async () => {
+    it("update with new id: watcher reused, not remounted", async () => {
       // Pre-populate cache with multiple users
       client.writeFragment({
         id: "User:1",
@@ -244,6 +244,14 @@ describe("useFragment Performance", () => {
         data: { __typename: "User", id: "2", email: "bob@example.com" },
       });
 
+      await tick();
+
+      // PHASE 1: Initial watch User:1
+
+      normalizeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
+
       const fragmentId = ref("User:1");
 
       const dataRef = await runInVueContext(() => {
@@ -255,30 +263,41 @@ describe("useFragment Performance", () => {
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      // PHASE 1: Initial watch User:1
+      expect(dataRef.value?.id).toBe("1");
+      expect(normalizeCount).toBe(0);
+      expect(materializeColdCount).toBe(1);
+      expect(materializeHotCount).toBe(0);
+      expect(watchFragmentCallCount).toBe(1);
       expect(dataRef.value?.id).toBe("1");
 
-      // Change to User:2
-      fragmentId.value = "User:2";
-      await nextTick();
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // PHASE 2: Change to User:2
 
-      expect(dataRef.value?.id).toBe("2");
-
-      // Reset counts
       normalizeCount = 0;
       materializeHotCount = 0;
       materializeColdCount = 0;
+      fragmentId.value = "User:2";
 
-      // PHASE 2: Change back to User:1 - should be HOT
+      await tick(2)
+
+      expect(normalizeCount).toBe(0);
+      expect(materializeColdCount).toBe(1); // All HOT from cache
+      expect(materializeHotCount).toBe(0); // Vue watch + watchFragment immediate both use cache
+      expect(watchFragmentCallCount).toBe(1);
+      expect(dataRef.value?.id).toBe("2");
+
+      // PHASE 3: Change back to User:1 - should be HOT
+
+      normalizeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
       fragmentId.value = "User:1";
-      await nextTick();
-      await new Promise(resolve => setTimeout(resolve, 50));
+
+      await tick(2)
 
       // Should materialize HOT (already in materializeCache)
       expect(normalizeCount).toBe(0);
       expect(materializeColdCount).toBe(0); // All HOT from cache
-      expect(materializeHotCount).toBe(2); // Vue watch + watchFragment immediate both use cache
+      expect(materializeHotCount).toBe(1); // Vue watch + watchFragment immediate both use cache
       expect(watchFragmentCallCount).toBe(1);
 
       expect(dataRef.value?.id).toBe("1");
@@ -294,6 +313,8 @@ describe("useFragment Performance", () => {
         data: { __typename: "User", id: "1", email: "alice@example.com" },
       });
 
+      await tick(2);
+
       const dataRef = await runInVueContext(() => {
         return useFragment({
           id: "User:1",
@@ -301,21 +322,23 @@ describe("useFragment Performance", () => {
         });
       });
 
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await tick(2);
 
       // PHASE 1: Initial watch
+
       expect(dataRef.value?.email).toBe("alice@example.com");
       expect(watchFragmentCallCount).toBe(1);
       expect(normalizeCount).toBe(1); // writeFragment (User:1)
-      expect(materializeColdCount).toBe(2); // Vue watch + watchFragment immediate
+      expect(materializeColdCount).toBe(1); // Vue watch + watchFragment immediate
       expect(materializeHotCount).toBe(0);
+
+      // PHASE 2: Update cache
 
       // Reset counts
       normalizeCount = 0;
       materializeHotCount = 0;
       materializeColdCount = 0;
 
-      // PHASE 2: Update cache
       client.writeFragment({
         id: "User:1",
         fragment: USER_FRAGMENT,
@@ -328,9 +351,7 @@ describe("useFragment Performance", () => {
       expect(normalizeCount).toBe(1);
       expect(materializeColdCount).toBe(1);
       expect(materializeHotCount).toBe(0);
-      // Still only 1 watchFragment
       expect(watchFragmentCallCount).toBe(1);
-
       expect(dataRef.value?.email).toBe("alice.updated@example.com");
     });
   });
@@ -413,6 +434,8 @@ describe("useFragment Performance", () => {
         data: { __typename: "User", id: "1", email: "alice@example.com" },
       });
 
+      await tick();
+
       // PHASE 1: First watcher - COLD
       await runInVueContext(() => {
         return useFragment({
@@ -421,10 +444,10 @@ describe("useFragment Performance", () => {
         });
       });
 
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await tick();
 
-      expect(normalizeCount).toBe(1); // writeFragment (User:1)
-      expect(materializeColdCount).toBe(2); // Vue watch + watchFragment immediate
+      expect(normalizeCount).toBe(1);
+      expect(materializeColdCount).toBe(1);
       expect(materializeHotCount).toBe(0);
       expect(watchFragmentCallCount).toBe(1);
 
