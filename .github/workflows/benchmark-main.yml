@@ -31,16 +31,10 @@ jobs:
         run: pnpm --filter benchmarks exec playwright install chromium
 
       - name: Run DOM benchmarks
-        working-directory: packages/benchmarks
-        run: BENCH_NAME=nested-query pnpm bench:suite:baseline bench/suites/nested-query.dom.bench.ts
+        run: pnpm --filter benchmarks bench:ci:baseline:suite
 
       - name: Run API benchmarks
-        working-directory: packages/benchmarks
-        run: |
-          BENCH_FILE=normalizeDocument pnpm bench:api:baseline
-          BENCH_FILE=materializeDocument pnpm bench:api:baseline
-          BENCH_FILE=readQuery pnpm bench:api:baseline
-          BENCH_FILE=watchQuery pnpm bench:api:baseline
+        run: pnpm --filter benchmarks bench:ci:baseline:api
 
       - name: Commit baseline results
         run: |

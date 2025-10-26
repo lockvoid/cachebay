@@ -95,6 +95,7 @@ export function useQuery<TData = any, TVars = any>(
     });
   };
 
+
   /**
    * Execute query with current variables
    */
@@ -110,6 +111,7 @@ export function useQuery<TData = any, TVars = any>(
         // onCachedData is called synchronously for cache hits (before Promise resolves)
         // This prevents loading flash for cache-only, cache-first, and shows stale data for cache-and-network
         onCachedData: (cachedData) => {
+          console.log('onCachedData', cachedData);
           data.value = cachedData;
           // For cache-and-network, keep isFetching true (network pending)
           // For cache-only and cache-first, set to false (operation complete)

@@ -28,17 +28,11 @@ jobs:
       - name: Install Playwright
         run: pnpm --filter benchmarks exec playwright install chromium
       
-      - name: Run DOM benchmarks (compare)
-        working-directory: packages/benchmarks
-        run: BENCH_NAME=nested-query pnpm bench:suite:compare bench/suites/nested-query.dom.bench.ts > .bench-results/suite-compare.txt || true
-      
-      - name: Run API benchmarks (current)
-        working-directory: packages/benchmarks
-        run: |
-          BENCH_FILE=normalizeDocument pnpm bench:api:compare
-          BENCH_FILE=materializeDocument pnpm bench:api:compare
-          BENCH_FILE=readQuery pnpm bench:api:compare
-          BENCH_FILE=watchQuery pnpm bench:api:compare
+      - name: Run DOM benchmarks
+        run: pnpm --filter benchmarks bench:ci:compare:suite
+
+      - name: Run API benchmarks
+        run: pnpm --filter benchmarks bench:ci:compare:api
       
       - name: Comment PR with results
         uses: actions/github-script@v7

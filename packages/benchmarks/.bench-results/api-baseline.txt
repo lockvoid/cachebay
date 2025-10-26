@@ -1,0 +1,94 @@
+
+> benchmarks@0.7.1 bench:api /Users/kochnev/Projects/Ferment/villus-cachebay/packages/benchmarks
+> pnpm relay && rsbuild build && node dist/bench.cjs
+
+
+> benchmarks@0.7.1 relay /Users/kochnev/Projects/Ferment/villus-cachebay/packages/benchmarks
+> relay-compiler
+
+[0m[34m[INFO] [0mQuerying files to compile...
+[0m[34m[INFO] [0m[default] compiling...
+[0m[34m[INFO] [0m[default] compiled documents: 4 reader, 3 normalization, 4 operation text
+[0m[34m[INFO] [0mCompilation completed.
+[0m[34m[INFO] [0mDone.
+Rsbuild v1.5.17
+
+info    build started...
+ready   built in 0.05 s
+
+File (node)                                       Size        
+dist/bench.cjs                                    8.4 kB   
+dist/bench_api_readQuery_bench_ts.cjs             1340.0 kB
+dist/bench_api_materializeDocument_bench_ts.cjs   1340.4 kB
+dist/bench_api_writeQuery_bench_ts.cjs            1345.6 kB
+dist/bench_api_normalizeDocument_bench_ts.cjs     1345.9 kB
+dist/bench_api_watchQuery_bench_ts.cjs            1348.0 kB
+
+                                         Total:   6728.4 kB
+
+[90mclk: ~3.47 GHz[0m
+[90mcpu: Apple M3 Max[0m
+[90mruntime: node 22.13.1 (arm64-darwin)[0m
+
+benchmark                                                     avg (min … max) p75 / p99    (min … top 1%)
+----------------------------------------------------------------------------- -------------------------------
+• watchQuery:initial:cold
+[90m----------------------------------------------------------------------------- -------------------------------[0m
+cachebay.watchQuery:initial:cold(1000 users (100 pages of 10)) [1m[33m   2.16 s[0m[1m/iter[0m [90m   2.24 s[0m [36m█ █         [0m[33m [0m[35m       █[0m
+                                                            [90m([0m[36m2.03 s[0m[90m … [0m[35m2.50 s[0m[90m)[0m [90m   2.25 s[0m [36m█ █    ▅▅   [0m[33m [0m[35m▅ ▅   ▅█[0m
+                                                      [90m([0m[33m 76.25 mb[0m[90m … [0m[33m463.60 mb[0m[90m) [0m[33m414.57 mb[0m [36m█▁█▁▁▁▁██▁▁▁[0m[33m▁[0m[35m█▁█▁▁▁██[0m
+
+relay.subscribe:initial:cold(1000 users (100 pages of 10))     [1m[33m   1.64 s[0m[1m/iter[0m [90m   1.73 s[0m [36m █         [0m[33m [0m[35m        █[0m
+                                                            [90m([0m[36m1.46 s[0m[90m … [0m[35m1.92 s[0m[90m)[0m [90m   1.80 s[0m [36m▅█    ▅ ▅▅▅[0m[33m [0m[35m▅   ▅   █[0m
+                                                      [90m([0m[33m180.40 mb[0m[90m … [0m[33m193.60 mb[0m[90m) [0m[33m188.88 mb[0m [36m██▁▁▁▁█▁███[0m[33m▁[0m[35m█▁▁▁█▁▁▁█[0m
+
+[1msummary[0m
+  [1m[36mrelay.subscribe:initial:cold(1000 users (100 pages of 10))[0m
+   [32m1.32[0mx faster than [1m[36mcachebay.watchQuery:initial:cold(1000 users (100 pages of 10))[0m
+
+• watchQuery:initial:hot
+[90m----------------------------------------------------------------------------- -------------------------------[0m
+cachebay.watchQuery:initial:hot(1000 users (100 pages of 10))  [1m[33m 11.10 ms[0m[1m/iter[0m [90m 10.51 ms[0m [36m █ [0m[33m [0m[35m                 [0m
+                                                         [90m([0m[36m9.41 ms[0m[90m … [0m[35m28.71 ms[0m[90m)[0m [90m 20.07 ms[0m [36m▅█▆[0m[33m [0m[35m                 [0m
+                                                      [90m([0m[33m  8.18 mb[0m[90m … [0m[33m 13.83 mb[0m[90m) [0m[33m 10.02 mb[0m [36m███[0m[33m▃[0m[35m▆▁▁▁▁▁▁▁▁▁▁▂▂▁▂▁▂[0m
+
+relay.subscribe:initial:hot(1000 users (100 pages of 10))      [1m[33m 28.35 ms[0m[1m/iter[0m [90m 28.67 ms[0m [36m▂ ▂ ▂█[0m[33m█[0m[35m              [0m
+                                                        [90m([0m[36m23.94 ms[0m[90m … [0m[35m44.22 ms[0m[90m)[0m [90m 39.44 ms[0m [36m█ █ ██[0m[33m█[0m[35m              [0m
+                                                      [90m([0m[33m  1.27 mb[0m[90m … [0m[33m 13.96 mb[0m[90m) [0m[33m  6.47 mb[0m [36m█▁█▇██[0m[33m█[0m[35m▁▁▁▁▁▁▁▁▁▁▁▁▁▇[0m
+
+[1msummary[0m
+  [1m[36mcachebay.watchQuery:initial:hot(1000 users (100 pages of 10))[0m
+   [32m2.55[0mx faster than [1m[36mrelay.subscribe:initial:hot(1000 users (100 pages of 10))[0m
+
+• watchQuery:reactive
+[90m----------------------------------------------------------------------------- -------------------------------[0m
+cachebay.watchQuery:reactive(1000 users (100 pages of 10))     [1m[33m 44.82 ms[0m[1m/iter[0m [90m 46.09 ms[0m [36m     █     [0m[33m [0m[35m         [0m
+                                                        [90m([0m[36m40.24 ms[0m[90m … [0m[35m51.31 ms[0m[90m)[0m [90m 48.35 ms[0m [36m▅    █ ▅▅ ▅[0m[33m▅[0m[35m  ▅▅    ▅[0m
+                                                      [90m([0m[33m458.06 kb[0m[90m … [0m[33m 14.26 mb[0m[90m) [0m[33m  8.64 mb[0m [36m█▁▁▁▁█▁██▁█[0m[33m█[0m[35m▁▁██▁▁▁▁█[0m
+
+apollo.watch:reactive(1000 users (100 pages of 10))            [1m[33m300.52 ms[0m[1m/iter[0m [90m303.60 ms[0m [36m █          [0m[33m [0m[35m        [0m
+                                                      [90m([0m[36m276.23 ms[0m[90m … [0m[35m401.41 ms[0m[90m)[0m [90m315.75 ms[0m [36m █          [0m[33m [0m[35m █      [0m
+                                                      [90m([0m[33m  2.46 mb[0m[90m … [0m[33m 37.03 mb[0m[90m) [0m[33m 16.20 mb[0m [36m██▁▁█▁█▁▁▁█▁[0m[33m▁[0m[35m██▁▁▁▁▁█[0m
+
+relay.subscribe:reactive(1000 users (100 pages of 10))         [1m[33m 36.74 ms[0m[1m/iter[0m [90m 37.00 ms[0m [36m█    █   █[0m[33m [0m[35m          [0m
+                                                        [90m([0m[36m30.78 ms[0m[90m … [0m[35m54.45 ms[0m[90m)[0m [90m 42.89 ms[0m [36m█  ▅▅█ ▅ █[0m[33m▅[0m[35m ▅  ▅    ▅[0m
+                                                      [90m([0m[33m  5.58 mb[0m[90m … [0m[33m  7.02 mb[0m[90m) [0m[33m  6.37 mb[0m [36m█▁▁███▁█▁█[0m[33m█[0m[35m▁█▁▁█▁▁▁▁█[0m
+
+[1msummary[0m
+  [1m[36mrelay.subscribe:reactive(1000 users (100 pages of 10))[0m
+   [32m1.22[0mx faster than [1m[36mcachebay.watchQuery:reactive(1000 users (100 pages of 10))[0m
+   [32m8.18[0mx faster than [1m[36mapollo.watch:reactive(1000 users (100 pages of 10))[0m
+
+• watchQuery:pagination
+[90m----------------------------------------------------------------------------- -------------------------------[0m
+cachebay.watchQuery:pagination(1000 users (100 pages of 10))   [1m[33m 13.77 ms[0m[1m/iter[0m [90m 17.26 ms[0m [36m        █  [0m[33m [0m[35m         [0m
+                                                         [90m([0m[36m4.79 ms[0m[90m … [0m[35m21.39 ms[0m[90m)[0m [90m 20.57 ms[0m [36m▅       █▅█[0m[33m▅[0m[35m█ █ █▅ ▅ [0m
+                                                      [90m([0m[33m303.59 kb[0m[90m … [0m[33m 14.50 mb[0m[90m) [0m[33m  5.64 mb[0m [36m█▁█▁▁█▁▅███[0m[33m█[0m[35m███▅██▅█▅[0m
+
+apollo.watch:pagination(1000 users (100 pages of 10))          [1m[33m 42.61 ms[0m[1m/iter[0m [90m 46.89 ms[0m [36m      █   [0m[33m [0m[35m          [0m
+                                                        [90m([0m[36m34.90 ms[0m[90m … [0m[35m51.32 ms[0m[90m)[0m [90m 50.64 ms[0m [36m      █   [0m[33m [0m[35m    █     [0m
+                                                      [90m([0m[33m533.27 kb[0m[90m … [0m[33m 14.17 mb[0m[90m) [0m[33m  7.04 mb[0m [36m█▁█▁███▁▁▁[0m[33m█[0m[35m▁▁▁▁█▁▁█▁█[0m
+
+[1msummary[0m
+  [1m[36mcachebay.watchQuery:pagination(1000 users (100 pages of 10))[0m
+   [32m3.09[0mx faster than [1m[36mapollo.watch:pagination(1000 users (100 pages of 10))[0m

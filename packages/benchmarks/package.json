@@ -12,7 +12,11 @@
     "bench:api:compare": "pnpm bench:api | tee .bench-results/api-current.txt && node scripts/compare-mitata.js",
     "bench:suite": "NODE_ENV=production vitest bench --run --mode production",
     "bench:suite:baseline": "mkdir -p .bench-results && pnpm bench:suite --outputJson .bench-results/${BENCH_NAME}-baseline.json",
-    "bench:suite:compare": "pnpm bench:suite --compare .bench-results/${BENCH_NAME}-baseline.json"
+    "bench:suite:compare": "pnpm bench:suite --compare .bench-results/${BENCH_NAME}-baseline.json",
+    "bench:ci:baseline:api": "bash scripts/ci-baseline-api.sh",
+    "bench:ci:baseline:suite": "bash scripts/ci-baseline-suite.sh",
+    "bench:ci:compare:api": "bash scripts/ci-compare-api.sh",
+    "bench:ci:compare:suite": "bash scripts/ci-compare-suite.sh"
   },
   "dependencies": {
     "@apollo/client": "^3.8.10",

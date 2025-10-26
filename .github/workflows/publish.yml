@@ -51,6 +51,15 @@ jobs:
         working-directory: packages/cachebay
         run: pnpm test
 
+      - name: Install Playwright
+        run: pnpm --filter benchmarks exec playwright install chromium
+
+      - name: Run DOM benchmarks
+        run: pnpm --filter benchmarks bench:ci:baseline:suite
+
+      - name: Run API benchmarks
+        run: pnpm --filter benchmarks bench:ci:baseline:api
+
       - name: Bump version
         run: pnpm bump ${{ github.event.inputs.version_type }}
 
