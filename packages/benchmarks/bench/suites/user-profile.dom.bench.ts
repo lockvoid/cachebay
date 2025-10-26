@@ -10,8 +10,8 @@ import Table from 'cli-table3';
 const DEBUG = true;
 
 const BENCH_OPTIONS = {
-  iterations: 10000,
-  warmupIterations: 10,
+  iterations: 5000,
+  warmupIterations: 50,
   throws: true,
   warmupTime: 0,
   time: 0,
