@@ -110,6 +110,8 @@ export interface Operation<TData = any, TVars = QueryVariables> {
   onSuccess?: (data: TData) => void;
   /** Callback when an error occurs */
   onError?: (error: CombinedError) => void;
+  /** Callback for stale/cached data (called for cache-and-network before network response) */
+  onStaleData?: (data: TData) => void;
 }
 
 // CombinedError is now imported from ./errors
@@ -270,6 +272,7 @@ export const createOperations = (
     cachePolicy,
     onSuccess,
     onError,
+    onStaleData,
   }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
     // Validate and normalize cache policy
     const rawPolicy = cachePolicy ?? defaultCachePolicy;
@@ -458,27 +461,11 @@ export const createOperations = (
 
     if (effectiveCachePolicy === 'cache-and-network') {
       if (cached && cached.ok.canonical) {
-        // Notify watchers about cache hit with data and dependencies
-        onQueryData?.({
-          signature,
-          data: cached.data,
-          dependencies: cached.dependencies,
-          cachePolicy: effectiveCachePolicy,
-        });
+        // Call onStaleData with cached data immediately
+        onStaleData?.(cached.data as TData);
 
-        performRequest().catch((err) => {
-          if (__DEV__) {
-            console.warn('Cachebay: Cache hit, but network request failed', err);
-          }
-        });
-
-        const result = {
-          data: cached.data as TData,
-          error: null,
-          meta: { source: 'cache' as const }
-        };
-        onSuccess?.(result.data);
-        return result;
+        // Return the network request Promise (resolves with fresh network data)
+        return performRequest();
       }
     }
 
