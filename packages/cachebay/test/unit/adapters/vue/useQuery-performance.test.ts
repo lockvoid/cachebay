@@ -2,6 +2,7 @@
 let normalizeCount = 0;
 let materializeHotCount = 0;
 let materializeColdCount = 0;
+let watchQueryCallCount = 0;
 
 vi.mock("@/src/core/documents", async () => {
   const actual = await vi.importActual<typeof import("@/src/core/documents")>("@/src/core/documents");
@@ -39,6 +40,26 @@ vi.mock("@/src/core/documents", async () => {
   };
 });
 
+vi.mock("@/src/core/queries", async () => {
+  const actual = await vi.importActual<typeof import("@/src/core/queries")>("@/src/core/queries");
+
+  return {
+    ...actual,
+    createQueries: (deps: any) => {
+      const queries = actual.createQueries(deps);
+
+      // Wrap watchQuery to count calls
+      const origWatchQuery = queries.watchQuery;
+      queries.watchQuery = ((...args: any[]) => {
+        watchQueryCallCount++;
+        return origWatchQuery.apply(queries, args);
+      }) as any;
+
+      return queries;
+    },
+  };
+});
+
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { ref, nextTick, defineComponent, h, createApp } from "vue";
 import { useQuery } from "@/src/adapters/vue/useQuery";
@@ -58,6 +79,7 @@ describe("useQuery Performance", () => {
     normalizeCount = 0;
     materializeHotCount = 0;
     materializeColdCount = 0;
+    watchQueryCallCount = 0;
 
     mockFetch = vi.fn();
 
@@ -75,10 +97,11 @@ describe("useQuery Performance", () => {
   });
 
   // Helper to run useQuery in Vue context
-  const runInVueContext = async (testFn: () => void | Promise<void>) => {
+  const runInVueContext = async <T = void>(testFn: () => T): Promise<T> => {
+    let result: T;
     const app = createApp({
       setup() {
-        testFn();
+        result = testFn();
         return () => h('div');
       },
     });
@@ -91,8 +114,8 @@ describe("useQuery Performance", () => {
 
     await tick();
 
-    // Return cleanup function
-    return () => app.unmount();
+    // Return the result from testFn (no cleanup needed - each test is isolated)
+    return result!;
   };
 
   describe("cache-first policy", () => {
@@ -104,7 +127,7 @@ describe("useQuery Performance", () => {
       });
 
       // PHASE 1: First query - COLD path
-      const cleanup1 = await runInVueContext(() => {
+      await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
@@ -118,8 +141,7 @@ describe("useQuery Performance", () => {
       expect(normalizeCount).toBe(1);
       expect(materializeColdCount).toBe(2);
       expect(materializeHotCount).toBe(0);
-
-      cleanup1();
+      expect(watchQueryCallCount).toBe(1);
 
       // Reset counters
       normalizeCount = 0;
@@ -127,7 +149,7 @@ describe("useQuery Performance", () => {
       materializeColdCount = 0;
 
       // PHASE 2: Second query with same variables - HOT path
-      const cleanup2 = await runInVueContext(() => {
+      await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
@@ -141,9 +163,8 @@ describe("useQuery Performance", () => {
       expect(normalizeCount).toBe(0);
       expect(materializeColdCount).toBe(0);
       expect(materializeHotCount).toBe(1);
+      expect(watchQueryCallCount).toBe(2); // Second useQuery call creates new watcher
       expect(mockFetch).toHaveBeenCalledTimes(1); // No additional network call
-
-      cleanup2();
     });
 
 
@@ -155,7 +176,7 @@ describe("useQuery Performance", () => {
         error: null,
       }));
 
-      const cleanup = await runInVueContext(() => {
+      await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
           variables,
@@ -169,6 +190,7 @@ describe("useQuery Performance", () => {
       expect(normalizeCount).toBe(1);
       expect(materializeColdCount).toBe(2);
       expect(materializeHotCount).toBe(0);
+      expect(watchQueryCallCount).toBe(1);
 
       // Reset counters
       normalizeCount = 0;
@@ -185,8 +207,8 @@ describe("useQuery Performance", () => {
       expect(normalizeCount).toBe(1);
       expect(materializeColdCount).toBe(2);
       expect(materializeHotCount).toBe(0);
-
-      cleanup();
+      // Still only 1 watchQuery (watcher updates, doesn't remount)
+      expect(watchQueryCallCount).toBe(1);
     });
   });
 
@@ -202,7 +224,7 @@ describe("useQuery Performance", () => {
       normalizeCount = 0;
 
       // PHASE 1: First query - COLD path
-      const cleanup1 = await runInVueContext(() => {
+      await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
@@ -214,9 +236,8 @@ describe("useQuery Performance", () => {
 
       // COLD path: normalize 0, materialize 1 (executeQuery cache check, no network)
       expect(normalizeCount).toBe(0);
+      expect(watchQueryCallCount).toBe(1);
       expect(mockFetch).not.toHaveBeenCalled();
-
-      cleanup1();
 
       // Reset counters
       normalizeCount = 0;
@@ -224,7 +245,7 @@ describe("useQuery Performance", () => {
       materializeColdCount = 0;
 
       // PHASE 2: Second query - HOT path (fingerprint matches)
-      const cleanup2 = await runInVueContext(() => {
+      await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
@@ -236,14 +257,13 @@ describe("useQuery Performance", () => {
 
       // HOT path: normalize 0, materialize 1 (returns cached fingerprint)
       expect(normalizeCount).toBe(0);
+      expect(watchQueryCallCount).toBe(2); // Second useQuery creates new watcher
       expect(mockFetch).not.toHaveBeenCalled();
-
-      cleanup2();
     });
 
     it("cache miss: always COLD (1 materialization each time)", async () => {
       // PHASE 1: First cache miss
-      const cleanup1 = await runInVueContext(() => {
+      await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "999" },
@@ -258,9 +278,8 @@ describe("useQuery Performance", () => {
       expect(normalizeCount).toBe(0);
       expect(materializeColdCount).toBe(1);
       expect(materializeHotCount).toBe(0);
+      expect(watchQueryCallCount).toBe(1);
       expect(mockFetch).not.toHaveBeenCalled();
-
-      cleanup1();
 
       // Reset counters
       normalizeCount = 0;
@@ -268,7 +287,7 @@ describe("useQuery Performance", () => {
       materializeColdCount = 0;
 
       // PHASE 2: Second cache miss with same variables - still COLD (cache misses aren't cached)
-      const cleanup2 = await runInVueContext(() => {
+      await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "999" },
@@ -282,9 +301,8 @@ describe("useQuery Performance", () => {
       expect(normalizeCount).toBe(0);
       expect(materializeColdCount).toBe(0);
       expect(materializeHotCount).toBe(1); // HOT because cache miss result is cached
+      expect(watchQueryCallCount).toBe(2); // Second useQuery creates new watcher
       expect(mockFetch).not.toHaveBeenCalled();
-
-      cleanup2();
     });
   });
 
@@ -296,7 +314,7 @@ describe("useQuery Performance", () => {
       });
 
       // PHASE 1: First query - COLD path
-      const cleanup1 = await runInVueContext(() => {
+      await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
@@ -310,8 +328,7 @@ describe("useQuery Performance", () => {
       expect(normalizeCount).toBe(1);
       expect(materializeColdCount).toBe(1);
       expect(materializeHotCount).toBe(0);
-
-      cleanup1();
+      expect(watchQueryCallCount).toBe(1);
 
       // Reset counters
       normalizeCount = 0;
@@ -319,7 +336,7 @@ describe("useQuery Performance", () => {
       materializeColdCount = 0;
 
       // PHASE 2: Second query - mixed (executeQuery HOT + propagateData COLD)
-      const cleanup2 = await runInVueContext(() => {
+      await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
@@ -333,9 +350,8 @@ describe("useQuery Performance", () => {
       expect(normalizeCount).toBe(1);
       expect(materializeColdCount).toBe(1);
       expect(materializeHotCount).toBe(0);
+      expect(watchQueryCallCount).toBe(2); // Second useQuery creates new watcher
       expect(mockFetch).toHaveBeenCalledTimes(2);
-
-      cleanup2();
     });
   });
 
@@ -356,7 +372,7 @@ describe("useQuery Performance", () => {
       normalizeCount = 0;
 
       // PHASE 1: First query - COLD path
-      const cleanup1 = await runInVueContext(() => {
+      await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
@@ -368,15 +384,14 @@ describe("useQuery Performance", () => {
 
       // COLD path: normalize 1, materialize 2 (executeQuery cache + propagateData after network)
       expect(normalizeCount).toBe(1);
+      expect(watchQueryCallCount).toBe(1);
       expect(mockFetch).toHaveBeenCalledTimes(1);
-
-      cleanup1();
 
       // Reset counters
       normalizeCount = 0;
 
       // PHASE 2: Second query - HOT path
-      const cleanup2 = await runInVueContext(() => {
+      await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
@@ -388,9 +403,8 @@ describe("useQuery Performance", () => {
 
       // HOT path: normalize 1, materialize 1
       expect(normalizeCount).toBe(1);
+      expect(watchQueryCallCount).toBe(2); // Second useQuery creates new watcher
       expect(mockFetch).toHaveBeenCalledTimes(2);
-
-      cleanup2();
     });
   });
 
@@ -401,9 +415,8 @@ describe("useQuery Performance", () => {
         error: null,
       });
 
-      let queryRef: any;
-      const cleanup = await runInVueContext(() => {
-        queryRef = useQuery({
+      const queryRef = await runInVueContext(() => {
+        return useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
           cachePolicy: "cache-first",
@@ -426,8 +439,7 @@ describe("useQuery Performance", () => {
       expect(normalizeCount).toBe(1);
       expect(materializeColdCount).toBe(1);
       expect(materializeHotCount).toBe(0);
-
-      cleanup();
+      expect(watchQueryCallCount).toBe(1);
     });
 
     it("refetch with variables: normalize 1, materialize 2 (executeQuery + propagateData)", async () => {
@@ -436,9 +448,8 @@ describe("useQuery Performance", () => {
         error: null,
       });
 
-      let queryRef: any;
-      const cleanup = await runInVueContext(() => {
-        queryRef = useQuery({
+      const queryRef = await runInVueContext(() => {
+        return useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
         });
@@ -446,12 +457,15 @@ describe("useQuery Performance", () => {
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
+      // PHASE 1: Initial query - 1 watchQuery call
+      expect(watchQueryCallCount).toBe(1);
+
       // Reset counters
       normalizeCount = 0;
       materializeHotCount = 0;
       materializeColdCount = 0;
 
-      // Refetch with new variables
+      // PHASE 2: Refetch with new variables - watcher updates, doesn't remount
       await queryRef.refetch({ variables: { id: "2" } });
       await new Promise(resolve => setTimeout(resolve, 50));
 
@@ -460,8 +474,8 @@ describe("useQuery Performance", () => {
       expect(normalizeCount).toBe(1);
       expect(materializeColdCount).toBe(2);
       expect(materializeHotCount).toBe(0);
-
-      cleanup();
+      // Still only 1 watchQuery call (no remount)
+      expect(watchQueryCallCount).toBe(1);
     });
   });
 
@@ -474,7 +488,7 @@ describe("useQuery Performance", () => {
         error: null,
       });
 
-      const cleanup = await runInVueContext(() => {
+      await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
@@ -493,6 +507,8 @@ describe("useQuery Performance", () => {
 
       // Should NOT normalize or materialize when disabled
       expect(normalizeCount).toBe(initialNormalize);
+      // Watcher created once
+      expect(watchQueryCallCount).toBe(1);
 
       // Re-enable
       enabled.value = true;
@@ -501,8 +517,8 @@ describe("useQuery Performance", () => {
 
       // Should execute query again
       expect(normalizeCount).toBeGreaterThan(initialNormalize);
-
-      cleanup();
+      // Watcher recreated on re-enable
+      expect(watchQueryCallCount).toBe(2);
     });
 
     it("cache policy change: triggers new executeQuery", async () => {
@@ -513,7 +529,7 @@ describe("useQuery Performance", () => {
         error: null,
       });
 
-      const cleanup = await runInVueContext(() => {
+      await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
@@ -537,14 +553,14 @@ describe("useQuery Performance", () => {
       expect(normalizeCount).toBe(1);
       expect(materializeColdCount).toBe(1);
       expect(materializeHotCount).toBe(0);
-
-      cleanup();
+      // Still only 1 watchQuery (watcher reused)
+      expect(watchQueryCallCount).toBe(1);
     });
   });
 
   describe("lazy mode performance", () => {
     it("lazy mode: no initial normalize/materialize", async () => {
-      const cleanup = await runInVueContext(() => {
+      await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
@@ -558,9 +574,8 @@ describe("useQuery Performance", () => {
       expect(normalizeCount).toBe(0);
       expect(materializeColdCount).toBe(0);
       expect(materializeHotCount).toBe(0);
+      expect(watchQueryCallCount).toBe(1);
       expect(mockFetch).not.toHaveBeenCalled();
-
-      cleanup();
     });
 
     it("lazy mode refetch: normalize 1, materialize 2", async () => {
@@ -569,9 +584,8 @@ describe("useQuery Performance", () => {
         error: null,
       });
 
-      let queryRef: any;
-      const cleanup = await runInVueContext(() => {
-        queryRef = useQuery({
+      const queryRef = await runInVueContext(() => {
+        return useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
           lazy: true,
@@ -589,8 +603,7 @@ describe("useQuery Performance", () => {
       expect(normalizeCount).toBe(1);
       expect(materializeColdCount).toBe(1);
       expect(materializeHotCount).toBe(0);
-
-      cleanup();
+      expect(watchQueryCallCount).toBe(1);
     });
   });
 
@@ -646,6 +659,7 @@ describe("useQuery Performance", () => {
       expect(normalizeCount).toBe(0);
       expect(materializeColdCount).toBe(0);
       expect(materializeHotCount).toBe(1);
+      expect(watchQueryCallCount).toBe(2);
     });
 
     it("immediate: false does NOT materialize on cache hit", async () => {
@@ -660,7 +674,7 @@ describe("useQuery Performance", () => {
       materializeHotCount = 0;
       materializeColdCount = 0;
 
-      const cleanup = await runInVueContext(() => {
+      await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
@@ -674,8 +688,7 @@ describe("useQuery Performance", () => {
       expect(normalizeCount).toBe(0);
       expect(materializeColdCount).toBe(0);
       expect(materializeHotCount).toBe(0);
-
-      cleanup();
+      expect(watchQueryCallCount).toBe(1);
     });
   });
 
@@ -687,7 +700,7 @@ describe("useQuery Performance", () => {
       });
 
       // First query hits network
-      const cleanup1 = await runInVueContext(() => {
+      await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
@@ -701,22 +714,21 @@ describe("useQuery Performance", () => {
       expect(normalizeCount).toBe(1);
       expect(materializeColdCount).toBe(2);
       expect(materializeHotCount).toBe(0);
+      expect(watchQueryCallCount).toBe(1);
 
       const normalizeAfterFirst = normalizeCount;
       const coldAfterFirst = materializeColdCount;
       const hotAfterFirst = materializeHotCount;
 
       // PHASE 2: Next 9 queries use cache - HOT
-      const cleanups = [];
       for (let i = 0; i < 9; i++) {
-        const cleanup = await runInVueContext(() => {
+        await runInVueContext(() => {
           useQuery({
             query: operations.USER_QUERY,
             variables: { id: "1" },
             cachePolicy: "cache-first",
           });
         });
-        cleanups.push(cleanup);
       }
 
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -727,10 +739,9 @@ describe("useQuery Performance", () => {
       // Should materialize 1 HOT time per cached query (9 queries * 1 = 9 additional)
       expect(materializeColdCount).toBe(coldAfterFirst);
       expect(materializeHotCount).toBe(hotAfterFirst + 9);
+      // Each useQuery creates a new watcher (10 total)
+      expect(watchQueryCallCount).toBe(10);
       expect(mockFetch).toHaveBeenCalledTimes(1);
-
-      cleanup1();
-      cleanups.forEach(c => c());
     });
   });
 });
