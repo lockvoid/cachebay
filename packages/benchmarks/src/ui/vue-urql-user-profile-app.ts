@@ -5,6 +5,7 @@ import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, ref, watch } from "vue";
 import { createUserProfileYoga } from "../server/user-profile-server";
 import { makeUserProfileDataset } from "../utils/seed-user-profile";
+import { createDeferred } from "../utils/concurrency";
 
 const USER_QUERY = gql`
   query GetUser($id: ID!) {
@@ -38,7 +39,7 @@ const USER_QUERY = gql`
 export type VueUrqlUserProfileController = {
   mount(target?: Element): void;
   unmount(): void;
-  loadUser(userId: string): Promise<void>;
+  ready(): Promise<void>;
 };
 
 export function createVueUrqlUserProfileApp(
@@ -47,7 +48,8 @@ export function createVueUrqlUserProfileApp(
   sharedYoga?: any,
 ): VueUrqlUserProfileController {
   const yoga = sharedYoga || createUserProfileYoga(makeUserProfileDataset({ userCount: 1000 }), delayMs);
-  console.log('[Urql] yoga:', typeof yoga, yoga ? 'defined' : 'undefined');
+
+  const deferred = createDeferred();
 
   const urqlClient = createUrqlClient({
     url: "http://localhost:4000/graphql",
@@ -80,6 +82,7 @@ export function createVueUrqlUserProfileApp(
       watch(data, () => {
         if (data.value?.user) {
           console.log('[Urql]', data.value.user.id, '→', data.value.user.email);
+          deferred.resolve();
         }
       }, { immediate: true });
 
@@ -139,13 +142,9 @@ export function createVueUrqlUserProfileApp(
       }
     },
 
-    loadUser: async (userId: string) => {
-      if (!componentInstance) {
-        throw new Error("App not mounted");
-      }
-
-      await componentInstance.loadUser(userId);
-      await nextTick();
+    ready: async () => {
+      // Wait for query to complete
+      await deferred.promise;
     },
   };
 }

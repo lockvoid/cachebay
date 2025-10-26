@@ -3,6 +3,7 @@ import { createApp, defineComponent, nextTick, ref, watch } from "vue";
 import { createCachebay, useQuery } from "../../../cachebay/src/adapters/vue";
 import { createUserProfileYoga } from "../server/user-profile-server";
 import { makeUserProfileDataset } from "../utils/seed-user-profile";
+import { createDeferred } from "../utils/concurrency";
 
 const USER_QUERY = gql`
   query GetUser($id: ID!) {
@@ -36,7 +37,7 @@ const USER_QUERY = gql`
 export type VueCachebayUserProfileController = {
   mount(target?: Element): void;
   unmount(): void;
-  loadUser(userId: string): Promise<void>;
+  ready(): Promise<void>;
 };
 
 export function createVueCachebayUserProfileApp(
@@ -46,6 +47,8 @@ export function createVueCachebayUserProfileApp(
 ): VueCachebayUserProfileController {
   // Use shared Yoga instance if provided, otherwise create new one
   const yoga = sharedYoga || createUserProfileYoga(makeUserProfileDataset({ userCount: 1000 }), delayMs);
+
+  const deferred = createDeferred();
 
   // Transport calls Yoga's fetch directly - no HTTP, no network, no serialization
   const transport = {
@@ -90,7 +93,8 @@ export function createVueCachebayUserProfileApp(
 
       watch(data, () => {
         if (data.value?.user) {
-          console.log('[Cachebay] Data loaded:', data.value.user.id, data.value.user.email);
+          console.log('[Cachebay]', data.value.user.id, '→', data.value.user.email);
+          deferred.resolve();
         }
       }, { immediate: true });
 
@@ -150,13 +154,9 @@ export function createVueCachebayUserProfileApp(
       }
     },
 
-    loadUser: async (userId: string) => {
-      if (!componentInstance) {
-        throw new Error("App not mounted");
-      }
-
-      await componentInstance.loadUser(userId);
-      await nextTick();
+    ready: async () => {
+      // Wait for query to complete
+      await deferred.promise;
     },
   };
 }
