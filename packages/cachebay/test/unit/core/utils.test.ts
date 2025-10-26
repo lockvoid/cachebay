@@ -412,6 +412,31 @@ describe("Utils", () => {
       expect(keyA).toBe(keyB);
       expect(keyA).toBe("@connection.posts({\"category\":\"tech\"})");
     });
+
+    it("filters out pagination fields even when explicitly included in connectionFilters", () => {
+      const plan = createTestPlan(operations.POSTS_QUERY);
+      const posts = plan.rootSelectionMap!.get("posts")!;
+
+      // Simulate a field where connectionFilters mistakenly includes pagination fields
+      // This could happen if someone writes: @connection(filters: ["category", "first"])
+      const postsWithBadFilters = {
+        ...posts,
+        connectionFilters: ["category", "first", "after", "sort"], // Includes pagination fields!
+      };
+
+      const key = buildConnectionCanonicalKey(postsWithBadFilters, ROOT_ID, {
+        category: "tech",
+        sort: "hot",
+        first: 10,
+        after: "cursor1",
+      });
+
+      // Should only include non-pagination fields (category, sort)
+      // Pagination fields (first, after) should be filtered out
+      expect(key).toBe("@connection.posts({\"category\":\"tech\",\"sort\":\"hot\"})");
+      expect(key).not.toContain("first");
+      expect(key).not.toContain("after");
+    });
   });
 
   describe("recycleSnapshots", () => {

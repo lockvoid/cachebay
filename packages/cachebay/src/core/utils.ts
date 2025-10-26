@@ -225,16 +225,17 @@ export const buildConnectionCanonicalKey = (
   variables: Record<string, any>,
 ): string => {
   const allArgs = field.buildArgs(variables) || {};
-
-  const filters =
-    Array.isArray(field.connectionFilters) && field.connectionFilters.length > 0
-      ? field.connectionFilters
-      : Object.keys(allArgs).filter((k) => !CONNECTION_FIELDS.has(k));
-
   const identity: Record<string, any> = {};
-  for (let i = 0; i < filters.length; i++) {
-    const name = filters[i];
-    if (name in allArgs) identity[name] = allArgs[name];
+
+  // Compiler always sets connectionFilters as an array (explicit or inferred)
+  // Note: Explicit filters from @connection directive could include pagination fields,
+  // so we must filter them out here
+  if (field.connectionFilters) {
+    for (let i = 0; i < field.connectionFilters.length; i++) {
+      const name = field.connectionFilters[i];
+      if (CONNECTION_FIELDS.has(name)) continue; // Skip pagination fields
+      if (name in allArgs) identity[name] = allArgs[name];
+    }
   }
 
   const keyPart = field.connectionKey || field.fieldName; // prefer directive key; fallback to field
