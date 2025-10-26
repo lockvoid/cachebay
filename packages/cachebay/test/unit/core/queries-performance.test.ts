@@ -289,7 +289,7 @@ describe("client API - Performance", () => {
       handle.unsubscribe();
     });
 
-    it.only("should rematerialize 1 on operation execute", async () => {
+    it("should rematerialize 1 on operation execute", async () => {
       const QUERY = gql`
         query GetUser($id: ID!) {
           user(id: $id) {

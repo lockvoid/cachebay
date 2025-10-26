@@ -134,10 +134,11 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
   /**
    * Propagate data changes to watchers tracking the given dependencies
    */
-  const propagateData = (touched?: Set<string> | string[]) => {
-    if (!touched) return;
-    const arr = Array.isArray(touched) ? touched : Array.from(touched);
-    for (const id of arr) pendingTouched.add(id);
+  const propagateData = (touched: Set<string>) => {
+    for (const value of touched) {
+      pendingTouched.add(value);
+    }
+
     scheduleFlush();
   };
 
@@ -148,7 +149,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     // Find all watchers with this signature
     const watcherSet = signatureToWatchers.get(signature);
     if (!watcherSet) return;
-    
+
     for (const watcherId of watcherSet) {
       const watcher = watchers.get(watcherId);
       if (watcher?.onError) {
@@ -257,7 +258,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
       lastData: undefined,
     };
     watchers.set(watcherId, watcher);
-    
+
     // Add to signature → watchers mapping (multiple watchers per signature)
     let watcherSet = signatureToWatchers.get(signature);
     if (!watcherSet) {
@@ -293,7 +294,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
       unsubscribe: () => {
         const w = watchers.get(watcherId);
         if (!w) return;
-        
+
         // Remove from dep index
         for (const d of w.deps) {
           const set = depIndex.get(d);
@@ -302,7 +303,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
             if (set.size === 0) depIndex.delete(d);
           }
         }
-        
+
         // Remove from signature → watchers mapping
         const watcherSet = signatureToWatchers.get(w.signature);
         if (watcherSet) {
@@ -311,7 +312,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
             signatureToWatchers.delete(w.signature);
           }
         }
-        
+
         watchers.delete(watcherId);
       },
 
@@ -334,7 +335,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
               signatureToWatchers.delete(w.signature);
             }
           }
-          
+
           // Add to new signature set
           w.signature = newSignature;
           let newSet = signatureToWatchers.get(newSignature);

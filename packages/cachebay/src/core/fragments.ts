@@ -109,10 +109,11 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     });
   };
 
-  const enqueueTouched = (touched?: Set<string> | string[]) => {
-    if (!touched) return;
-    const arr = Array.isArray(touched) ? touched : Array.from(touched);
-    for (const id of arr) pendingTouched.add(id);
+  const propagateData = (touched: Set<string>) => {
+    for (const value of touched) {
+      pendingTouched.add(value);
+    }
+
     scheduleFlush();
   };
 
@@ -251,7 +252,6 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     readFragment,
     writeFragment,
     watchFragment,
-    /** Propagate data changes to fragment watchers */
-    propagateData: enqueueTouched,
+    propagateData,
   };
 };

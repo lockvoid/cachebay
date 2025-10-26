@@ -207,13 +207,8 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
     keys: options.keys || {},
     interfaces: options.interfaces || {},
     onChange: (touchedIds) => {
-      // Defer propagation to microtask so onQueryData fires first
-      // This allows direct emission from executeQuery callback before propagateData
-      // The skipNextPropagate flag will prevent double emission
-      queueMicrotask(() => {
-        queries.propagateData(touchedIds);
-        fragments.propagateData(touchedIds);
-      });
+      queries.propagateData(touchedIds);
+      fragments.propagateData(touchedIds);
     },
   });
 
