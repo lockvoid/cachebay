@@ -9,7 +9,7 @@ export default defineConfig({
   output: {
     target: 'node',
     distPath: {
-      root: '.bench-dist',
+      root: '.dist',
     },
     minify: false,
     format: 'cjs',

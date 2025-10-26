@@ -1,5 +1,5 @@
 import { bench, group, run, summary } from "mitata";
-import { createCachebay as createCachebayClient } from "../../cachebay/src/core/client";
+import { createCachebay as createCachebayClient } from "../../../cachebay/src/core/client";
 import { InMemoryCache } from "@apollo/client/cache";
 import { relayStylePagination } from "@apollo/client/utilities";
 import { Environment, Network, RecordSource, Store, createOperationDescriptor } from "relay-runtime";

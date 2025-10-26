@@ -1,5 +1,5 @@
 import { gql } from "graphql-tag";
-
+import { graphql } from 'relay-runtime';
 // For fair perf (strip dev-only code in your lib if you gate by NODE_ENV)
 // process.env.NODE_ENV = "production"; // Set via environment variable instead
 
@@ -250,6 +250,54 @@ export const APOLLO_QUERY = gql`
         }
       }
       pageInfo { endCursor hasNextPage }
+    }
+  }
+`;
+
+export const RELAY_QUERY = graphql`
+  query apiRelayQuery($first: Int!, $after: String) {
+    users(first: $first, after: $after) @connection(key: "api_users") {
+      edges {
+        cursor
+        node {
+          id
+          name
+          avatar
+          posts(first: 5, after: null) @connection(key: "User_posts") {
+            edges {
+              cursor
+              node {
+                id
+                title
+                likeCount
+                comments(first: 3, after: null) @connection(key: "Post_comments") {
+                  edges {
+                    cursor
+                    node {
+                      id
+                      text
+                      author {
+                        id
+                        name
+                      }
+                    }
+                  }
+                  pageInfo {
+                    hasNextPage
+                  }
+                }
+              }
+            }
+            pageInfo {
+              hasNextPage
+            }
+          }
+        }
+      }
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
     }
   }
 `;
