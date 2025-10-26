@@ -101,7 +101,6 @@ export function createVueCachebayNestedApp(
 
 
   const plugin = createCachebay({
-    interfaces: { Node: ["User", "Post", "Comment"] },
     hydrationTimeout: 0,
     suspensionTimeout: 0,
     transport,

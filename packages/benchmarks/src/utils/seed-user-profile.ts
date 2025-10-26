@@ -46,7 +46,7 @@ export type MakeUserProfileDatasetOptions = {
 
 export function makeUserProfileDataset(options: MakeUserProfileDatasetOptions = {}): UserProfileDataset {
   const {
-    userCount = 1000,
+    userCount = 1,
     seed = 54321,
   } = options;
   const rnd = mulberry32(seed);

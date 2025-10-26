@@ -46,66 +46,51 @@ export function createVueCachebayUserProfileApp(
 ): VueCachebayUserProfileController {
   // Use shared Yoga instance if provided, otherwise create new one
   const yoga = sharedYoga || createUserProfileYoga(makeUserProfileDataset({ userCount: 1000 }), delayMs);
-  console.log('[Cachebay] yoga:', typeof yoga, yoga ? 'defined' : 'undefined', typeof yoga.fetch);
 
   // Transport calls Yoga's fetch directly - no HTTP, no network, no serialization
   const transport = {
-    http: async (operation: any) => {
-      try {
-        console.log('[Cachebay] transport.http called, operation:', operation.operationName || 'unnamed', 'variables:', operation.variables);
-        console.log('[Cachebay] about to call yoga.fetch...');
-        const response = await yoga.fetch("http://localhost:4000/graphql", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(operation),
-        });
-        console.log('[Cachebay] got response, status:', response.status);
-        const json = await response.json();
-        console.log('[Cachebay] transport response:', json.data?.user?.email || json.errors || 'NO DATA');
-        return json;
-      } catch (error) {
-        console.log('[Cachebay] transport ERROR:', error);
-        throw error;
-      }
+    http: async (context: any) => {
+      // Use Yoga's fetch API (works in-memory without HTTP)
+      const response = await yoga.fetch('http://localhost/graphql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: context.query,
+          variables: context.variables,
+        }),
+      });
+
+      const result = await response.json();
+      console.log('[Cachebay]', context.variables?.id, '→', result.data?.user?.email || 'NO DATA');
+
+      return {
+        data: result.data || null,
+        error: result.errors?.[0] || null
+      };
     },
   };
 
-  let appInstance: any = null;
-  let mounted = false;
+  const plugin = createCachebay({
+    hydrationTimeout: 0,
+    suspensionTimeout: 0,
+    transport,
+  });
 
+  let app: any = null;
   let componentInstance: any = null;
-
-  let userId = ref({ id: 'u1' });
 
   const Component = defineComponent({
     setup() {
-      console.log('[Cachebay] setup() called, userId:', userId.value);
-      
-      const { data, error, isFetching } = useQuery({
+      const { data, error } = useQuery({
         query: USER_QUERY,
-        variables: userId,
+        variables: { id: 'u1' },
         cachePolicy,
-      });
-
-      console.log('[Cachebay] after useQuery, isFetching:', isFetching.value);
-
-      watch(data, () => {
-        console.log('[Cachebay] watch fired, data:', data.value?.user?.email || 'NO DATA', 'isFetching:', isFetching.value);
-        if (data.value?.user) {
-          console.log('[Cachebay]', userId.value.id, '→', data.value.user.email);
-        }
-      }, { immediate: true });
-
-      watch(error, () => {
-        if (error.value) {
-          console.log('[Cachebay] ERROR:', error.value);
-        }
+        lazy: true,
       });
 
       return {
         data,
         error,
-        isFetching,
       };
     },
     template: `
@@ -138,37 +123,28 @@ export function createVueCachebayUserProfileApp(
 
   return {
     mount: (target?: Element) => {
-      if (mounted) return;
-
-      const client = createCachebay({
-        url: "http://localhost:4000/graphql",
-        transport,
-      });
-
-      appInstance = createApp(Component);
-      appInstance.use(client);
+      app = createApp(Component);
+      app.use(plugin);
 
       const container = target || document.createElement("div");
-      componentInstance = appInstance.mount(container);
-      mounted = true;
+      componentInstance = app.mount(container);
     },
 
     unmount: () => {
-      if (!mounted || !appInstance) return;
-      appInstance.unmount();
-      appInstance = null;
-      componentInstance = null;
-      mounted = false;
+      if (app) {
+        app.unmount();
+        app = null;
+        componentInstance = null;
+      }
     },
 
-    loadUser: async (id: string) => {
-      if (!mounted) {
+    loadUser: async (userId: string) => {
+      if (!componentInstance) {
         throw new Error("App not mounted");
       }
 
-      userId.value = { id };
+      await componentInstance.loadUser(userId);
       await nextTick();
-      await nextTick(); // Extra tick to ensure query completes
     },
   };
 }

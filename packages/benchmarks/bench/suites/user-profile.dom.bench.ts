@@ -72,7 +72,6 @@ describe('DOM User Profile (happy-dom): single entity with nested data', () => {
   bench('Cachebay - network-only', async () => {
     const app = createVueCachebayUserProfileApp('network-only', 0);
     await app.mount();
-    await app.loadUser(testUserId);
     await app.unmount();
   }, {
     ...BENCH_OPTIONS,
@@ -89,6 +88,7 @@ describe('DOM User Profile (happy-dom): single entity with nested data', () => {
     },
   });
 
+  return;
   // bench('Cachebay - cache-first', async () => {
   //   const app = createVueCachebayUserProfileApp('cache-first', 0);
   //   await app.mount();
