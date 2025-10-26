@@ -457,9 +457,21 @@ describe("Compiler metadata", () => {
       const deps = plan.getDependencies(true, { id: "u1", first: 10 });
 
       expect(deps.has('user({"id":"u1"})')).toBe(true);
-      // Nested posts connection should be included
+      // Nested posts connection should be included with proper parent context
+      // Since posts is nested under user field (not entity), it should be at root level
       expect(deps.has('@connection.posts({})')).toBe(true);
       expect(deps.size).toBe(2);
+    });
+
+    it("tracks parent context for nested connections", () => {
+      // This test should verify that nested connections track their parent properly
+      // For now, connections at query root should use "@" as parent
+      const plan = compilePlan(POSTS_QUERY);
+      const deps = plan.getDependencies(true, { category: "tech", first: 10 });
+
+      // Root-level connection should use @ as parent
+      expect(deps.has('@connection.posts({"category":"tech"})')).toBe(true);
+      expect(deps.size).toBe(1);
     });
 
     it("canonical mode excludes window args from connection keys", () => {
@@ -468,14 +480,17 @@ describe("Compiler metadata", () => {
       const strictDeps = plan.getDependencies(false, { category: "tech", sort: "hot", first: 10, after: "c1" });
       const canonicalDeps = plan.getDependencies(true, { category: "tech", sort: "hot", first: 10, after: "c1" });
 
-      // Both should have the connection with filters only (no pagination args)
-      // Connection keys use canonical form (filters only) regardless of mode
-      expect(strictDeps.has('@connection.posts({"category":"tech","sort":"hot"})')).toBe(true);
-      expect(canonicalDeps.has('@connection.posts({"category":"tech","sort":"hot"})')).toBe(true);
-      
-      // Should be same size (connections use canonical keys regardless of mode)
-      expect(strictDeps.size).toBe(canonicalDeps.size);
+      // Strict mode: includes pagination args in connection key
+      expect(strictDeps.has('@.posts({"category":"tech","sort":"hot","first":10,"after":"c1"})')).toBe(true);
       expect(strictDeps.size).toBe(1);
+      
+      // Canonical mode: excludes pagination args (filters only)
+      expect(canonicalDeps.has('@connection.posts({"category":"tech","sort":"hot"})')).toBe(true);
+      expect(canonicalDeps.size).toBe(1);
+      
+      // Keys should be different between strict and canonical
+      expect(strictDeps.has('@connection.posts({"category":"tech","sort":"hot"})')).toBe(false);
+      expect(canonicalDeps.has('@.posts({"category":"tech","sort":"hot","first":10,"after":"c1"})')).toBe(false);
     });
 
     it("includes fields even when arguments are null", () => {

@@ -10,7 +10,7 @@ import {
   type FieldNode,
 } from "graphql";
 import { lowerSelectionSet } from "./lowering/flatten";
-import { isCachePlan } from "./utils";
+import { isCachePlan, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey } from "./utils";
 import type { CachePlan, PlanField } from "./types";
 import { fingerprintPlan, hashFingerprint } from "./fingerprint";
 import { collectVarsFromSelectionSet, makeMaskedVarsKeyFn } from "./variables";
@@ -113,74 +113,47 @@ const computePlanMetadata = (
 
   // 7. Build blazing fast getDependencies
   // Collect connection fields and fields with arguments for dependency tracking
-  type DepField = { field: PlanField; isConnection: boolean };
+  type DepField = { field: PlanField; isConnection: boolean; parentTypename: string };
   const depFields: DepField[] = [];
-  
-  const collectDepFields = (fields: PlanField[]): void => {
+
+  const collectDepFields = (fields: PlanField[], parentTypename: string): void => {
     for (const field of fields) {
       // Collect connections and fields with arguments
       if (field.isConnection || field.expectedArgNames.length > 0) {
-        depFields.push({ field, isConnection: field.isConnection });
+        depFields.push({ field, isConnection: field.isConnection, parentTypename });
       }
-      
-      // Recurse into children
+
+      // Recurse into children with the field's typename as parent
       if (field.selectionSet) {
-        collectDepFields(field.selectionSet);
+        const childParent = field.typeName || parentTypename;
+        collectDepFields(field.selectionSet, childParent);
       }
     }
   };
-  collectDepFields(root);
+  collectDepFields(root, rootTypename);
 
   // Build getDependencies function - returns dependency keys for graph watching
   const getDependencies = (canonical: boolean, vars: Record<string, any>): Set<string> => {
     const deps = new Set<string>();
-    // Don't add rootTypename (Query/Mutation) - those are not graph entity keys
-    
-    // Iterate collected fields and build dependency keys
+
+    // Iterate collected fields and build dependency keys using optimized utility functions
     for (let i = 0; i < depFields.length; i++) {
-      const { field, isConnection } = depFields[i];
-      
+      const { field, isConnection, parentTypename } = depFields[i];
+
+      // Determine parentId: use "@" for root (Query/Mutation), otherwise use typename
+      const parentId = parentTypename === rootTypename ? "@" : parentTypename;
+
       if (isConnection) {
-        // For connections, use canonical key (filters only) regardless of mode
-        // This matches how connections are stored in the graph
-        const allArgs = field.buildArgs(vars) || {};
-        const filters = Array.isArray(field.connectionFilters) && field.connectionFilters.length > 0
-          ? field.connectionFilters
-          : Object.keys(allArgs).filter((k) => !windowArgs.has(k));
-        
-        // Build minimal filter object
-        const identity: Record<string, any> = {};
-        for (let j = 0; j < filters.length; j++) {
-          const name = filters[j];
-          if (name in allArgs) identity[name] = allArgs[name];
-        }
-        
-        const keyPart = field.connectionKey || field.fieldName;
-        const key = `@connection.${keyPart}(${JSON.stringify(identity)})`;
+        // For connections: use canonical (filters only) or strict (with pagination) based on mode
+        const key = canonical ? buildConnectionCanonicalKey(field, parentId, vars) : buildConnectionKey(field, parentId, vars);
         deps.add(key);
-      } else if (field.expectedArgNames.length > 0) {
-        // For fields with arguments, build field key
-        // In canonical mode, exclude window args
-        if (canonical) {
-          // Filter out window args from variables
-          const filteredVars: Record<string, any> = {};
-          for (const key in vars) {
-            if (!windowArgs.has(key)) {
-              filteredVars[key] = vars[key];
-            }
-          }
-          const argsStr = field.stringifyArgs(filteredVars);
-          const key = argsStr === "" || argsStr === "{}" ? field.fieldName : `${field.fieldName}(${argsStr})`;
-          deps.add(key);
-        } else {
-          // Strict mode: include all args
-          const argsStr = field.stringifyArgs(vars);
-          const key = argsStr === "" || argsStr === "{}" ? field.fieldName : `${field.fieldName}(${argsStr})`;
-          deps.add(key);
-        }
+      } else{
+        // For regular fields with arguments: use buildFieldKey
+        const key = buildFieldKey(field, vars);
+        deps.add(key);
       }
     }
-    
+
     return deps;
   };
 
@@ -204,14 +177,14 @@ function ensureTypename(ss: SelectionSetNode): SelectionSetNode {
     s => s.kind === Kind.FIELD && s.name.value === "__typename",
   );
   if (has) return ss;
-  
+
   const typenameField: FieldNode = { kind: Kind.FIELD, name: { kind: Kind.NAME, value: "__typename" } };
   const newSelections = new Array(ss.selections.length + 1);
   for (let i = 0; i < ss.selections.length; i++) {
     newSelections[i] = ss.selections[i];
   }
   newSelections[ss.selections.length] = typenameField;
-  
+
   return { kind: ss.kind, selections: newSelections };
 }
 
@@ -219,7 +192,7 @@ function ensureTypename(ss: SelectionSetNode): SelectionSetNode {
 function ensureTypenameRecursive(ss: SelectionSetNode): SelectionSetNode {
   // First add __typename to this level
   const withTypename = ensureTypename(ss);
-  
+
   // Then recursively process all field selections
   let hasChanges = false;
   const selections = new Array(withTypename.selections.length);
@@ -245,11 +218,11 @@ function ensureTypenameRecursive(ss: SelectionSetNode): SelectionSetNode {
       selections[i] = sel;
     }
   }
-  
+
   if (!hasChanges && selections === withTypename.selections) {
     return withTypename;
   }
-  
+
   return { kind: withTypename.kind, selections };
 }
 
@@ -280,11 +253,11 @@ function ensureTypenameNested(ss: SelectionSetNode): SelectionSetNode {
       selections[i] = sel;
     }
   }
-  
+
   if (!hasChanges) {
     return ss;
   }
-  
+
   return { kind: ss.kind, selections };
 }
 
@@ -296,12 +269,12 @@ function buildNetworkQuery(doc: DocumentNode): string {
         if (!node.directives || node.directives.length === 0) {
           return node;
         }
-        
+
         const directives = (node.directives || []).filter(d => d.name.value !== "connection");
         if (directives.length === node.directives.length) {
           return node; // No @connection found, return as-is
         }
-        
+
         // Avoid spread operator - create new object directly
         return {
           kind: node.kind,
@@ -314,7 +287,7 @@ function buildNetworkQuery(doc: DocumentNode): string {
       },
     },
   });
-  
+
   return print(cleaned);
 }
 
@@ -357,7 +330,7 @@ export const compilePlan = (
     const rootTypename = opRootTypename(operation);
 
     const selectionWithTypename = ensureTypenameNested(operation.selectionSet);
-    
+
     // Lower the selection set (it still has @connection) so we retain metadata
     const root = lowerSelectionSet(selectionWithTypename, rootTypename, fragmentsByName);
     const rootSelectionMap = indexByResponseKey(root);
@@ -373,7 +346,7 @@ export const compilePlan = (
       directives: operation.directives,
       selectionSet: selectionWithTypename,
     };
-    
+
     const newDefinitions = new Array(document.definitions.length);
     for (let i = 0; i < document.definitions.length; i++) {
       const d = document.definitions[i];
@@ -392,12 +365,12 @@ export const compilePlan = (
         newDefinitions[i] = d;
       }
     }
-    
+
     const docWithTypename: DocumentNode = {
       kind: document.kind,
       definitions: newDefinitions,
     };
-    
+
     const networkQuery = buildNetworkQuery(docWithTypename);
 
     // Compute plan metadata (id, varMask, makeVarsKey, windowArgs)
@@ -479,12 +452,12 @@ export const compilePlan = (
         newDefinitions[i] = d;
       }
     }
-    
+
     const docWithTypename: DocumentNode = {
       kind: document.kind,
       definitions: newDefinitions,
     };
-    
+
     const networkQuery = buildNetworkQuery(docWithTypename);
 
     // Compute plan metadata (id, varMask, makeVarsKey, windowArgs)
