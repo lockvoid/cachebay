@@ -5,35 +5,35 @@ on:
     branches:
       - main
     paths:
-      - 'packages/cachebay/**'
-      - 'packages/benchmarks/**'
+      - "packages/cachebay/**"
+      - "packages/benchmarks/**"
 
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: pnpm/action-setup@v4
         with:
           version: 9
-      
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
-      
+          node-version: "20"
+          cache: "pnpm"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      
+
       - name: Install Playwright
         run: pnpm --filter benchmarks exec playwright install chromium
-      
+
       - name: Run DOM benchmarks
         working-directory: packages/benchmarks
         run: BENCH_NAME=nested-query pnpm bench:suite:baseline bench/suites/nested-query.dom.bench.ts
-      
+
       - name: Run API benchmarks
         working-directory: packages/benchmarks
         run: |
@@ -41,21 +41,23 @@ jobs:
           BENCH_FILE=materializeDocument pnpm bench:api:baseline
           BENCH_FILE=readQuery pnpm bench:api:baseline
           BENCH_FILE=watchQuery pnpm bench:api:baseline
-      
-      - name: Upload baseline results
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-baseline
-          path: packages/benchmarks/.bench-results/
-          retention-days: 90
-      
+
+      - name: Commit baseline results
+        run: |
+          VERSION=$(node -p "require('./packages/cachebay/package.json').version")
+          git config user.name "LockVoid /dev/null"
+          git config user.email "dev@lockvoid.com"
+          git add packages/benchmarks/.bench-results/*-baseline.json packages/benchmarks/.bench-results/api-baseline.txt
+          git diff --staged --quiet || git commit -m "benchmark $VERSION"
+          git push
+
       - name: Comment on commit
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
             const apiBaseline = fs.readFileSync('packages/benchmarks/.bench-results/api-baseline.txt', 'utf8');
-            
+
             github.rest.repos.createCommitComment({
               owner: context.repo.owner,
               repo: context.repo.repo,

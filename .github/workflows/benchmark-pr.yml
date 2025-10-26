@@ -28,15 +28,6 @@ jobs:
       - name: Install Playwright
         run: pnpm --filter benchmarks exec playwright install chromium
       
-      - name: Download baseline from main
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          workflow: benchmark-main.yml
-          branch: main
-          name: benchmark-baseline
-          path: packages/benchmarks/.bench-results/
-          if_no_artifact_found: warn
-      
       - name: Run DOM benchmarks (compare)
         working-directory: packages/benchmarks
         run: BENCH_NAME=nested-query pnpm bench:suite:compare bench/suites/nested-query.dom.bench.ts > .bench-results/suite-compare.txt || true
