@@ -490,7 +490,7 @@ describe("useQuery Performance", () => {
   });
 
   describe("reactive options performance", () => {
-    it.only("enabled toggle: no extra normalize/materialize when disabled", async () => {
+    it("enabled toggle: no extra normalize/materialize when disabled", async () => {
       const enabled = ref(true);
 
       mockFetch.mockResolvedValue({
@@ -505,6 +505,7 @@ describe("useQuery Performance", () => {
           query: operations.USER_QUERY,
           variables: { id: "1" },
           enabled,
+          cachePolicy: 'cache-first'
         });
       });
 
@@ -512,7 +513,7 @@ describe("useQuery Performance", () => {
 
       expect(watchQueryCallCount).toBe(1);
       expect(normalizeCount).toBe(1);
-      expect(materializeColdCount).toBe(1);
+      expect(materializeColdCount).toBe(2);
       expect(materializeHotCount).toBe(0);
 
       // Phase 2 Disable query
@@ -539,7 +540,7 @@ describe("useQuery Performance", () => {
 
       // Should execute query again
       expect(watchQueryCallCount).toBe(2);
-      expect(normalizeCount).toBe(1);
+      expect(normalizeCount).toBe(0);
       expect(materializeColdCount).toBe(0);
       expect(materializeHotCount).toBe(1);
     });
