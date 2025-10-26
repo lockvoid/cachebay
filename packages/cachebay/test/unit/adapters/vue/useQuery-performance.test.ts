@@ -512,7 +512,7 @@ describe("useQuery Performance", () => {
 
       expect(watchQueryCallCount).toBe(1);
       expect(normalizeCount).toBe(1);
-      expect(materializeColdCount).toBe(2); // executeQuery + propagateData
+      expect(materializeColdCount).toBe(1);
       expect(materializeHotCount).toBe(0);
 
       // Phase 2 Disable query
