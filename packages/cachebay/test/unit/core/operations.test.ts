@@ -1171,27 +1171,42 @@ describe("operations", () => {
   describe("Performance", () => {
     let normalizeCount = 0;
     let materializeCount = 0;
-    let originalNormalize: any;
-    let originalMaterialize: any;
 
     beforeEach(() => {
       // Reset counts
       normalizeCount = 0;
       materializeCount = 0;
 
-      // Spy on normalizeDocument
-      originalNormalize = mockDocuments.normalizeDocument;
-      mockDocuments.normalizeDocument = vi.fn((...args: any[]) => {
+      // Save the original vi.fn() mocks created by outer beforeEach
+      const originalNormalize = mockDocuments.normalizeDocument;
+      const originalMaterialize = mockDocuments.materializeDocument;
+
+      // Wrap with counting spies
+      mockDocuments.normalizeDocument = (...args: any[]) => {
         normalizeCount++;
         return originalNormalize(...args);
-      });
+      };
 
-      // Spy on materializeDocument
-      originalMaterialize = mockDocuments.materializeDocument;
-      mockDocuments.materializeDocument = vi.fn((...args: any[]) => {
+      mockDocuments.materializeDocument = (...args: any[]) => {
         materializeCount++;
         return originalMaterialize(...args);
+      };
+
+      // Fix planner to return unique signatures based on variables
+      mockPlanner.getPlan = vi.fn().mockReturnValue({
+        compiled: true,
+        networkQuery: "query GetUser { user { id name __typename } }",
+        makeSignature: vi.fn((mode: string, vars: any) => {
+          // Create unique signature based on variables
+          return `query-sig-${JSON.stringify(vars)}`;
+        }),
       });
+
+      // Recreate operations instance with wrapped mocks
+      operations = createOperations(
+        { transport: mockTransport, suspensionTimeout: 1000 },
+        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr }
+      );
     });
 
     it("executeQuery (network-only): should materialize 2 times (before + after network)", async () => {
@@ -1220,12 +1235,16 @@ describe("operations", () => {
       const variables = { id: "1" };
       const cachedData = { user: { id: "1", name: "Cached Alice" } };
 
-      mockDocuments.materializeDocument.mockReturnValue({
-        data: cachedData,
-        source: "canonical",
-        ok: { canonical: true, strict: true },
-        dependencies: new Set(),
-      });
+      // Override materialize to return cached data
+      mockDocuments.materializeDocument = (...args: any[]) => {
+        materializeCount++;
+        return {
+          data: cachedData,
+          source: "canonical",
+          ok: { canonical: true, strict: true },
+          dependencies: new Set(),
+        };
+      };
 
       // Execute query with cache-first
       await operations.executeQuery({
@@ -1247,7 +1266,8 @@ describe("operations", () => {
 
       // First call: cache miss
       let callCount = 0;
-      mockDocuments.materializeDocument.mockImplementation(() => {
+      mockDocuments.materializeDocument = (...args: any[]) => {
+        materializeCount++;
         callCount++;
         if (callCount === 1) {
           return {
@@ -1264,7 +1284,7 @@ describe("operations", () => {
           ok: { canonical: true, strict: true },
           dependencies: new Set(),
         };
-      });
+      };
 
       mockTransport.http = vi.fn().mockResolvedValue({
         data: networkData,
@@ -1291,7 +1311,8 @@ describe("operations", () => {
       const networkData = { user: { id: "1", name: "Network Alice" } };
 
       let callCount = 0;
-      mockDocuments.materializeDocument.mockImplementation(() => {
+      mockDocuments.materializeDocument = (...args: any[]) => {
+        materializeCount++;
         callCount++;
         if (callCount === 1) {
           // First call: return cached data
@@ -1309,7 +1330,7 @@ describe("operations", () => {
           ok: { canonical: true, strict: true },
           dependencies: new Set(),
         };
-      });
+      };
 
       mockTransport.http = vi.fn().mockResolvedValue({
         data: networkData,
@@ -1372,7 +1393,7 @@ describe("operations", () => {
       expect(materializeCount).toBe(10);
     });
 
-    it("executeMutation: should normalize 1, materialize 1", async () => {
+    it("executeMutation: should normalize 1, materialize 0 (no read-back)", async () => {
       const mutation = "mutation CreateUser($name: String!) { createUser(name: $name) { id name } }";
       const variables = { name: "Bob" };
       const mutationData = { createUser: { id: "2", name: "Bob" } };
@@ -1389,21 +1410,25 @@ describe("operations", () => {
       });
 
       // Should normalize once (write mutation result)
-      // Should materialize once (read back after write)
+      // Mutations don't materialize - they just write and return the network data
       expect(normalizeCount).toBe(1);
-      expect(materializeCount).toBe(1);
+      expect(materializeCount).toBe(0);
     });
 
     it("cache-only: should materialize 1, normalize 0 (no network)", async () => {
       const query = "query GetUser { user { id name } }";
       const cachedData = { user: { id: "1", name: "Cached Alice" } };
 
-      mockDocuments.materializeDocument.mockReturnValue({
-        data: cachedData,
-        source: "canonical",
-        ok: { canonical: true, strict: true },
-        dependencies: new Set(),
-      });
+      // Override materialize to return cached data
+      mockDocuments.materializeDocument = (...args: any[]) => {
+        materializeCount++;
+        return {
+          data: cachedData,
+          source: "canonical",
+          ok: { canonical: true, strict: true },
+          dependencies: new Set(),
+        };
+      };
 
       // Execute query with cache-only
       await operations.executeQuery({
