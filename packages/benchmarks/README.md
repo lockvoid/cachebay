@@ -86,3 +86,82 @@ Current/compare results are gitignored.
 ### Mitata Output
 - Shows `ms/iter`, `min`, `max`, `mean`, `p75`, `p99`
 - Summary shows relative performance (e.g., "1.49x faster than relay")
+
+## Testing GitHub Workflows Locally
+
+You can simulate the CI workflow locally to test before pushing:
+
+### 1. Simulate Main Branch (Save Baseline)
+```bash
+cd packages/benchmarks
+
+# Install Playwright
+pnpm exec playwright install chromium
+
+# Run DOM benchmarks
+BENCH_NAME=nested-query pnpm bench:suite:baseline bench/suites/nested-query.dom.bench.ts
+
+# Run API benchmarks
+BENCH_FILE=normalizeDocument pnpm bench:api:baseline
+BENCH_FILE=materializeDocument pnpm bench:api:baseline
+BENCH_FILE=readQuery pnpm bench:api:baseline
+BENCH_FILE=watchQuery pnpm bench:api:baseline
+
+# Check results
+ls -la .bench-results/
+```
+
+### 2. Simulate PR (Compare Against Baseline)
+```bash
+# Make some code changes to cachebay...
+
+# Run DOM comparison
+BENCH_NAME=nested-query pnpm bench:suite:compare bench/suites/nested-query.dom.bench.ts
+
+# Run API comparison
+BENCH_FILE=normalizeDocument pnpm bench:api:compare
+BENCH_FILE=materializeDocument pnpm bench:api:compare
+BENCH_FILE=readQuery pnpm bench:api:compare
+BENCH_FILE=watchQuery pnpm bench:api:compare
+
+# Check comparison results
+cat .bench-results/api-current.txt
+```
+
+### 3. Using act (GitHub Actions locally)
+Install [act](https://github.com/nektos/act) to run workflows locally:
+
+```bash
+# Install act
+brew install act
+
+# Run main workflow
+act push -W .github/workflows/benchmark-main.yml
+
+# Run PR workflow
+act pull_request -W .github/workflows/benchmark-pr.yml
+```
+
+**Note:** `act` may have limitations with artifacts and some GitHub-specific features.
+
+## Troubleshooting
+
+### Playwright Installation
+If benchmarks fail with browser errors:
+```bash
+pnpm --filter benchmarks exec playwright install chromium
+```
+
+### Missing Baseline
+If comparison fails with "No baseline found":
+1. Run baseline script first
+2. Check `.bench-results/` directory exists
+3. Verify baseline files are present
+
+### Performance Variance
+Benchmarks can vary ±5-10% between runs due to:
+- System load
+- CPU throttling
+- Background processes
+
+Run multiple times and look for consistent trends.
