@@ -58,17 +58,27 @@ export function createVueApolloUserProfileApp(
   let app: any = null;
   let componentInstance: any = null;
 
+  let loadingPromiseResolve: (() => void) | null = null;
+  const loadingPromise = new Promise<void>(resolve => {
+    loadingPromiseResolve = resolve;
+  });
+
   const Component = defineComponent({
     setup() {
-      console.log('[Apollo] setup() called');
       const { result, loading, error } = useQuery(USER_QUERY, { id: "u1" });
-      console.log('[Apollo] after useQuery, loading:', loading.value);
 
       watch(result, () => {
         if (result.value?.user) {
           console.log('[Apollo]', result.value.user.id, '→', result.value.user.email);
         }
       }, { immediate: true });
+
+      watch(loading, () => {
+        if (!loading.value && loadingPromiseResolve) {
+          loadingPromiseResolve();
+          loadingPromiseResolve = null;
+        }
+      });
 
       watch(error, () => {
         if (error.value) {
@@ -128,8 +138,8 @@ export function createVueApolloUserProfileApp(
     },
 
     loadUser: async (userId: string) => {
-      // No-op: query loads automatically
-      await nextTick();
+      // Wait for query to complete
+      await loadingPromise;
     },
   };
 }

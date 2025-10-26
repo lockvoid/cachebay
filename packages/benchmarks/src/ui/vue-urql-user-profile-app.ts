@@ -72,30 +72,16 @@ export function createVueUrqlUserProfileApp(
 
   const Component = defineComponent({
     setup() {
-      console.log('[Urql] setup() called');
-      
-      const userId = ref({ id: "u1" });
-      const { data, error, executeQuery } = useQuery({
+      const { data, error } = useQuery({
         query: USER_QUERY,
-        variables: userId,
-        pause: true,
+        variables: { id: "u1" },
       });
-
-      console.log('[Urql] after useQuery');
-
-      const loadUser = async (id: string) => {
-        console.log('[Urql] loadUser called with:', id);
-        userId.value = { id };
-        const result = await executeQuery();
-        console.log('[Urql] after executeQuery, result:', result.data?.user?.email || 'NO DATA');
-        if (data.value?.user) {
-          console.log('[Urql]', id, '→', data.value.user.email);
-        }
-      };
 
       watch(data, () => {
-        console.log('[Urql] data watch fired:', data.value?.user?.email || 'NO DATA');
-      });
+        if (data.value?.user) {
+          console.log('[Urql]', data.value.user.id, '→', data.value.user.email);
+        }
+      }, { immediate: true });
 
       watch(error, () => {
         if (error.value) {
@@ -106,7 +92,6 @@ export function createVueUrqlUserProfileApp(
       return {
         data,
         error,
-        loadUser,
       };
     },
     template: `
