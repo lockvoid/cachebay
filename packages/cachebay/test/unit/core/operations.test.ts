@@ -1167,4 +1167,255 @@ describe("operations", () => {
       expect(result.data).toEqual(networkData);
     });
   });
+
+  describe("Performance", () => {
+    let normalizeCount = 0;
+    let materializeCount = 0;
+    let originalNormalize: any;
+    let originalMaterialize: any;
+
+    beforeEach(() => {
+      // Reset counts
+      normalizeCount = 0;
+      materializeCount = 0;
+
+      // Spy on normalizeDocument
+      originalNormalize = mockDocuments.normalizeDocument;
+      mockDocuments.normalizeDocument = vi.fn((...args: any[]) => {
+        normalizeCount++;
+        return originalNormalize(...args);
+      });
+
+      // Spy on materializeDocument
+      originalMaterialize = mockDocuments.materializeDocument;
+      mockDocuments.materializeDocument = vi.fn((...args: any[]) => {
+        materializeCount++;
+        return originalMaterialize(...args);
+      });
+    });
+
+    it("executeQuery (network-only): should materialize 2 times (before + after network)", async () => {
+      const query = "query GetUser { user { id name } }";
+      const variables = { id: "1" };
+      const networkData = { user: { id: "1", name: "Alice" } };
+
+      mockTransport.http = vi.fn().mockResolvedValue({
+        data: networkData,
+        error: null,
+      });
+
+      // Execute query with network-only (default)
+      await operations.executeQuery({
+        query,
+        variables,
+      });
+
+      // Should materialize twice: once before network (cache check), once after normalize
+      expect(normalizeCount).toBe(1); // Write network response
+      expect(materializeCount).toBe(2); // Before network + after normalize
+    });
+
+    it("executeQuery (cache-first with cache hit): should materialize 1 time (cache only)", async () => {
+      const query = "query GetUser { user { id name } }";
+      const variables = { id: "1" };
+      const cachedData = { user: { id: "1", name: "Cached Alice" } };
+
+      mockDocuments.materializeDocument.mockReturnValue({
+        data: cachedData,
+        source: "canonical",
+        ok: { canonical: true, strict: true },
+        dependencies: new Set(),
+      });
+
+      // Execute query with cache-first
+      await operations.executeQuery({
+        query,
+        variables,
+        cachePolicy: "cache-first",
+      });
+
+      // Should materialize once (cache hit, no network)
+      expect(normalizeCount).toBe(0); // No network request
+      expect(materializeCount).toBe(1); // Only cache read
+      expect(mockTransport.http).not.toHaveBeenCalled();
+    });
+
+    it("executeQuery (cache-first with cache miss): should materialize 2 times", async () => {
+      const query = "query GetUser { user { id name } }";
+      const variables = { id: "1" };
+      const networkData = { user: { id: "1", name: "Alice" } };
+
+      // First call: cache miss
+      let callCount = 0;
+      mockDocuments.materializeDocument.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return {
+            data: undefined,
+            source: "none",
+            ok: { canonical: false, strict: false },
+            dependencies: new Set(),
+          };
+        }
+        // After normalize
+        return {
+          data: networkData,
+          source: "canonical",
+          ok: { canonical: true, strict: true },
+          dependencies: new Set(),
+        };
+      });
+
+      mockTransport.http = vi.fn().mockResolvedValue({
+        data: networkData,
+        error: null,
+      });
+
+      // Execute query with cache-first
+      await operations.executeQuery({
+        query,
+        variables,
+        cachePolicy: "cache-first",
+      });
+
+      // Should materialize twice: cache miss + after network
+      expect(normalizeCount).toBe(1); // Write network response
+      expect(materializeCount).toBe(2); // Cache check + after normalize
+      expect(mockTransport.http).toHaveBeenCalled();
+    });
+
+    it("executeQuery (cache-and-network): should materialize 2 times (cache + network)", async () => {
+      const query = "query GetUser { user { id name } }";
+      const variables = { id: "1" };
+      const cachedData = { user: { id: "1", name: "Cached Alice" } };
+      const networkData = { user: { id: "1", name: "Network Alice" } };
+
+      let callCount = 0;
+      mockDocuments.materializeDocument.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          // First call: return cached data
+          return {
+            data: cachedData,
+            source: "canonical",
+            ok: { canonical: true, strict: true },
+            dependencies: new Set(),
+          };
+        }
+        // Second call: return network data after normalize
+        return {
+          data: networkData,
+          source: "canonical",
+          ok: { canonical: true, strict: true },
+          dependencies: new Set(),
+        };
+      });
+
+      mockTransport.http = vi.fn().mockResolvedValue({
+        data: networkData,
+        error: null,
+      });
+
+      // Execute query with cache-and-network
+      await operations.executeQuery({
+        query,
+        variables,
+        cachePolicy: "cache-and-network",
+      });
+
+      // Should materialize twice: cache + after network
+      expect(normalizeCount).toBe(1); // Write network response
+      expect(materializeCount).toBe(2); // Cache read + after normalize
+      expect(mockTransport.http).toHaveBeenCalled();
+    });
+
+    it("10 sequential queries (network-only): should normalize 10, materialize 20", async () => {
+      const query = "query GetUser { user { id name } }";
+      const networkData = { user: { id: "1", name: "Alice" } };
+
+      mockTransport.http = vi.fn().mockResolvedValue({
+        data: networkData,
+        error: null,
+      });
+
+      // Execute 10 queries
+      for (let i = 0; i < 10; i++) {
+        await operations.executeQuery({
+          query,
+          variables: { id: String(i + 1) },
+        });
+      }
+
+      // Should normalize 10 times, materialize 20 times (2 per query)
+      expect(normalizeCount).toBe(10);
+      expect(materializeCount).toBe(20); // 2 per query (before + after)
+    });
+
+    it("pagination: 5 pages should normalize 5, materialize 10", async () => {
+      const query = "query GetPosts($after: String) { posts(after: $after) { edges { node { id } } } }";
+
+      mockTransport.http = vi.fn().mockResolvedValue({
+        data: { posts: { edges: [{ node: { id: "1" } }] } },
+        error: null,
+      });
+
+      // Load 5 pages
+      for (let i = 0; i < 5; i++) {
+        await operations.executeQuery({
+          query,
+          variables: { after: i === 0 ? null : `cursor${i}` },
+        });
+      }
+
+      // Should normalize 5 times, materialize 10 times (2 per page)
+      expect(normalizeCount).toBe(5);
+      expect(materializeCount).toBe(10);
+    });
+
+    it("executeMutation: should normalize 1, materialize 1", async () => {
+      const mutation = "mutation CreateUser($name: String!) { createUser(name: $name) { id name } }";
+      const variables = { name: "Bob" };
+      const mutationData = { createUser: { id: "2", name: "Bob" } };
+
+      mockTransport.http = vi.fn().mockResolvedValue({
+        data: mutationData,
+        error: null,
+      });
+
+      // Execute mutation
+      await operations.executeMutation({
+        mutation,
+        variables,
+      });
+
+      // Should normalize once (write mutation result)
+      // Should materialize once (read back after write)
+      expect(normalizeCount).toBe(1);
+      expect(materializeCount).toBe(1);
+    });
+
+    it("cache-only: should materialize 1, normalize 0 (no network)", async () => {
+      const query = "query GetUser { user { id name } }";
+      const cachedData = { user: { id: "1", name: "Cached Alice" } };
+
+      mockDocuments.materializeDocument.mockReturnValue({
+        data: cachedData,
+        source: "canonical",
+        ok: { canonical: true, strict: true },
+        dependencies: new Set(),
+      });
+
+      // Execute query with cache-only
+      await operations.executeQuery({
+        query,
+        variables: {},
+        cachePolicy: "cache-only",
+      });
+
+      // Should materialize once (cache only), no normalize
+      expect(normalizeCount).toBe(0);
+      expect(materializeCount).toBe(1);
+      expect(mockTransport.http).not.toHaveBeenCalled();
+    });
+  });
 });
