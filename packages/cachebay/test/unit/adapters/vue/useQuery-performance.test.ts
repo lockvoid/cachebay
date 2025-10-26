@@ -15,7 +15,6 @@ vi.mock("@/src/core/documents", async () => {
       // Wrap normalize to count calls
       const origNormalize = documents.normalizeDocument;
       documents.normalizeDocument = ((...args: any[]) => {
-        console.log('MOCKED')
         normalizeCount++;
         return origNormalize.apply(documents, args);
       }) as any;
@@ -451,7 +450,7 @@ describe("useQuery Performance", () => {
       expect(watchQueryCallCount).toBe(1);
     });
 
-    it.only("refetch with variables: normalize 1, materialize 2 (executeQuery + propagateData)", async () => {
+    it("refetch with variables: normalize 1, materialize 2 (executeQuery + propagateData)", async () => {
       mockFetch.mockResolvedValue({
         data: { user: { __typename: "User", id: "2", email: "bob@example.com", name: "Bob" } },
         error: null,
@@ -468,17 +467,12 @@ describe("useQuery Performance", () => {
       await delay(20);
 
       // PHASE 1: Initial query - 1 watchQuery call
-      normalizeCount = 0;
-      materializeHotCount = 0;
-      materializeColdCount = 0;
-
       expect(normalizeCount).toBe(1);
-      expect(materializeColdCount).toBe(1);
+      expect(materializeColdCount).toBe(2); // executeQuery + propagateData
       expect(materializeHotCount).toBe(0);
       expect(watchQueryCallCount).toBe(1);
 
       // PHASE 2: Refetch with new variables - watcher updates, doesn't remount
-
       normalizeCount = 0;
       materializeHotCount = 0;
       materializeColdCount = 0;
@@ -489,14 +483,14 @@ describe("useQuery Performance", () => {
       // Should normalize once (network response)
       // Should materialize twice: executeQuery + propagateData
       expect(normalizeCount).toBe(1);
-      expect(materializeColdCount).toBe(1);
+      expect(materializeColdCount).toBe(2);
       expect(materializeHotCount).toBe(0);
       expect(watchQueryCallCount).toBe(1);
     });
   });
 
   describe("reactive options performance", () => {
-    it("enabled toggle: no extra normalize/materialize when disabled", async () => {
+    it.only("enabled toggle: no extra normalize/materialize when disabled", async () => {
       const enabled = ref(true);
 
       mockFetch.mockResolvedValue({
@@ -518,7 +512,7 @@ describe("useQuery Performance", () => {
 
       expect(watchQueryCallCount).toBe(1);
       expect(normalizeCount).toBe(1);
-      expect(materializeColdCount).toBe(1);
+      expect(materializeColdCount).toBe(2); // executeQuery + propagateData
       expect(materializeHotCount).toBe(0);
 
       // Phase 2 Disable query
