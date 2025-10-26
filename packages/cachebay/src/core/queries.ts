@@ -232,7 +232,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
     // Generate signature for error tracking (always canonical)
     const plan = planner.getPlan(query);
-    const signature = plan.makeSignature("canonical", variables);
+    const signature = plan.makeSignature(true, variables);
 
     const watcher: WatcherState = {
       query,
@@ -279,7 +279,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
       // Even with immediate: false, register basic dependencies from query plan
       // This ensures the watcher is notified when entities are added to the cache
       // Use canonical mode to match the signature mode (watchers use canonical signatures)
-      const basicDeps = plan.getDependencies("canonical", variables);
+      const basicDeps = plan.getDependencies(true, variables);
       updateWatcherDependencies(watcherId, basicDeps);
     }
 
@@ -316,7 +316,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
         // Update watcher state
         w.variables = newVariables;
         const plan = planner.getPlan(w.query);
-        const newSignature = plan.makeSignature("canonical", newVariables);
+        const newSignature = plan.makeSignature(true, newVariables);
 
         // Update signature mapping if signature changed
         if (w.signature !== newSignature) {

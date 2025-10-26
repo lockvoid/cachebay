@@ -277,7 +277,7 @@ export const createOperations = (
     const rawPolicy = cachePolicy ?? defaultCachePolicy;
     const effectiveCachePolicy = validateCachePolicy(rawPolicy, 'network-only');
     const plan = planner.getPlan(query);
-    const signature = plan.makeSignature("canonical", variables);  // Always canonical
+    const signature = plan.makeSignature(true, variables);  // Always canonical
 
     // Read from cache using documents directly
     // Always read cache during SSR hydration, even for network-only
@@ -452,7 +452,7 @@ export const createOperations = (
         // Check if strict signature matches (pagination args haven't changed)
         // If strictSignature is present and matches, return cached data
         // If strictSignature doesn't match, fetch from network (pagination changed)
-        const strictSignature = plan.makeSignature("strict", variables);
+        const strictSignature = plan.makeSignature(false, variables);
         const strictMatches = cached.ok.strictSignature === strictSignature;
         
         if (strictMatches) {

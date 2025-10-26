@@ -499,8 +499,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     // Get plan once at the start
     const plan = planner.getPlan(document);
 
-    const strictSignature = plan.makeSignature("strict", variables);
-    const canonicalSignature = canonical ? plan.makeSignature("canonical", variables) : undefined;
+    const strictSignature = plan.makeSignature(false, variables);
+    const canonicalSignature = canonical ? plan.makeSignature(true, variables) : undefined;
     const cacheKey = getMaterializeCacheKey({ signature: canonical ? canonicalSignature! : strictSignature, fingerprint, entityId });
 
     if (!force) {

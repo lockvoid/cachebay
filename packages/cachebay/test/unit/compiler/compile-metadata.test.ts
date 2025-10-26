@@ -64,9 +64,9 @@ describe("Compiler metadata", () => {
     const vars2 = { first: 10, category: "tech", after: "c1", sort: "hot" }; // different order
     const vars3 = { category: "tech", sort: "hot", first: 20, after: "c1" }; // different value
 
-    const key1 = plan.makeVarsKey("strict", vars1);
-    const key2 = plan.makeVarsKey("strict", vars2);
-    const key3 = plan.makeVarsKey("strict", vars3);
+    const key1 = plan.makeVarsKey(false, vars1);
+    const key2 = plan.makeVarsKey(false, vars2);
+    const key3 = plan.makeVarsKey(false, vars3);
 
     // Same vars, different order -> same key
     expect(key1).toBe(key2);
@@ -81,9 +81,9 @@ describe("Compiler metadata", () => {
     const vars2 = { category: "tech", sort: "hot", first: 20, after: "cursor2" };
     const vars3 = { category: "news", sort: "hot", first: 10, after: "cursor1" };
 
-    const key1 = plan.makeVarsKey("canonical", vars1);
-    const key2 = plan.makeVarsKey("canonical", vars2);
-    const key3 = plan.makeVarsKey("canonical", vars3);
+    const key1 = plan.makeVarsKey(true, vars1);
+    const key2 = plan.makeVarsKey(true, vars2);
+    const key3 = plan.makeVarsKey(true, vars3);
 
     // Same category/sort, different pagination -> same key
     expect(key1).toBe(key2);
@@ -297,11 +297,11 @@ describe("Compiler metadata", () => {
 
     const vars = { category: "tech", sort: "hot", first: 10, after: "c1" };
 
-    const strictSig = plan.makeSignature("strict", vars);
-    const canonicalSig = plan.makeSignature("canonical", vars);
+    const strictSig = plan.makeSignature(false, vars);
+    const canonicalSig = plan.makeSignature(true, vars);
 
-    expect(strictSig).toBe(`${plan.id}|strict|${plan.makeVarsKey("strict", vars)}`);
-    expect(canonicalSig).toBe(`${plan.id}|canonical|${plan.makeVarsKey("canonical", vars)}`);
+    expect(strictSig).toBe(`${plan.id}|strict|${plan.makeVarsKey(false, vars)}`);
+    expect(canonicalSig).toBe(`${plan.id}|canonical|${plan.makeVarsKey(true, vars)}`);
 
     // Strict and canonical should differ (pagination args included vs excluded)
     expect(strictSig).not.toBe(canonicalSig);
@@ -314,9 +314,9 @@ describe("Compiler metadata", () => {
     const vars2 = { category: "tech", sort: "hot", last: 10, before: "c2" };
     const vars3 = { category: "news", sort: "hot", first: 10, after: "c1" };
 
-    const key1 = plan.makeVarsKey("canonical", vars1);
-    const key2 = plan.makeVarsKey("canonical", vars2);
-    const key3 = plan.makeVarsKey("canonical", vars3);
+    const key1 = plan.makeVarsKey(true, vars1);
+    const key2 = plan.makeVarsKey(true, vars2);
+    const key3 = plan.makeVarsKey(true, vars3);
 
     // Same filters, different window direction -> same canonical key
     expect(key1).toBe(key2);
@@ -416,7 +416,7 @@ describe("Compiler metadata", () => {
       `;
 
       const plan = compilePlan(query);
-      const deps = plan.getDependencies("canonical", {});
+      const deps = plan.getDependencies(true, {});
 
       // No arguments or connections, so no dependencies
       expect(deps.size).toBe(0);
@@ -424,7 +424,7 @@ describe("Compiler metadata", () => {
 
     it("extracts field keys from id arguments", () => {
       const plan = compilePlan(USER_QUERY);
-      const deps = plan.getDependencies("canonical", { id: "u123" });
+      const deps = plan.getDependencies(true, { id: "u123" });
 
       expect(deps.has('user({"id":"u123"})')).toBe(true);
       expect(deps.size).toBe(1);
@@ -445,7 +445,7 @@ describe("Compiler metadata", () => {
       `;
 
       const plan = compilePlan(query);
-      const deps = plan.getDependencies("canonical", { userId: "u1", postId: "p1" });
+      const deps = plan.getDependencies(true, { userId: "u1", postId: "p1" });
 
       expect(deps.has('user({"id":"u1"})')).toBe(true);
       expect(deps.has('post({"id":"p1"})')).toBe(true);
@@ -454,7 +454,7 @@ describe("Compiler metadata", () => {
 
     it("handles nested fields with id arguments and connections", () => {
       const plan = compilePlan(USER_POSTS_QUERY);
-      const deps = plan.getDependencies("canonical", { id: "u1", first: 10 });
+      const deps = plan.getDependencies(true, { id: "u1", first: 10 });
 
       expect(deps.has('user({"id":"u1"})')).toBe(true);
       // Nested posts connection should be included
@@ -465,8 +465,8 @@ describe("Compiler metadata", () => {
     it("canonical mode excludes window args from connection keys", () => {
       const plan = compilePlan(POSTS_QUERY);
       
-      const strictDeps = plan.getDependencies("strict", { category: "tech", sort: "hot", first: 10, after: "c1" });
-      const canonicalDeps = plan.getDependencies("canonical", { category: "tech", sort: "hot", first: 10, after: "c1" });
+      const strictDeps = plan.getDependencies(false, { category: "tech", sort: "hot", first: 10, after: "c1" });
+      const canonicalDeps = plan.getDependencies(true, { category: "tech", sort: "hot", first: 10, after: "c1" });
 
       // Both should have the connection with filters only (no pagination args)
       // Connection keys use canonical form (filters only) regardless of mode
@@ -480,7 +480,7 @@ describe("Compiler metadata", () => {
 
     it("includes fields even when arguments are null", () => {
       const plan = compilePlan(USER_QUERY);
-      const deps = plan.getDependencies("canonical", { id: null });
+      const deps = plan.getDependencies(true, { id: null });
 
       // Field with null id is still included (null is a valid value)
       expect(deps.has('user({"id":null})')).toBe(true);
@@ -489,7 +489,7 @@ describe("Compiler metadata", () => {
 
     it("handles fragments correctly", () => {
       const plan = compilePlan(USER_POSTS_FRAGMENT, { fragmentName: "UserPosts" });
-      const deps = plan.getDependencies("canonical", { first: 10 });
+      const deps = plan.getDependencies(true, { first: 10 });
 
       // Fragment has posts connection
       expect(deps.has('@connection.posts({})')).toBe(true);

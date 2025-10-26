@@ -98,11 +98,17 @@ const computePlanMetadata = (
   // 5. Build masks and precompiled key function
   const strictMask = Array.from(strictVars);
   const canonicalMask = Array.from(canonicalVars);
-  const makeVarsKey = makeMaskedVarsKeyFn(strictMask, canonicalMask);
+  const internalMakeVarsKey = makeMaskedVarsKeyFn(strictMask, canonicalMask);
 
-  // 6. Build convenience signature helper
-  const makeSignature = (mode: "strict" | "canonical", vars: Record<string, any>): string => {
-    return `${id}|${mode}|${makeVarsKey(mode, vars)}`;
+  // 6. Build public API with canonical boolean
+  const makeVarsKey = (canonical: boolean, vars: Record<string, any>): string => {
+    const mode = canonical ? "canonical" : "strict";
+    return internalMakeVarsKey(mode, vars);
+  };
+
+  const makeSignature = (canonical: boolean, vars: Record<string, any>): string => {
+    const mode = canonical ? "canonical" : "strict";
+    return `${id}|${mode}|${internalMakeVarsKey(mode, vars)}`;
   };
 
   // 7. Build blazing fast getDependencies
@@ -126,7 +132,7 @@ const computePlanMetadata = (
   collectDepFields(root);
 
   // Build getDependencies function - returns dependency keys for graph watching
-  const getDependencies = (mode: "strict" | "canonical", vars: Record<string, any>): Set<string> => {
+  const getDependencies = (canonical: boolean, vars: Record<string, any>): Set<string> => {
     const deps = new Set<string>();
     // Don't add rootTypename (Query/Mutation) - those are not graph entity keys
     
@@ -155,7 +161,7 @@ const computePlanMetadata = (
       } else if (field.expectedArgNames.length > 0) {
         // For fields with arguments, build field key
         // In canonical mode, exclude window args
-        if (mode === "canonical") {
+        if (canonical) {
           // Filter out window args from variables
           const filteredVars: Record<string, any> = {};
           for (const key in vars) {

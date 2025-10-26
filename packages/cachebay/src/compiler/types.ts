@@ -61,21 +61,21 @@ export type CachePlan = {
   };
 
   /** Precompiled fast path to derive the masked vars key (no allocations except result). */
-  makeVarsKey: (mode: "strict" | "canonical", vars: Record<string, any>) => string;
+  makeVarsKey: (canonical: boolean, vars: Record<string, any>) => string;
 
   /**
    * Convenience helper to build a complete signature string for watcher/cache keys.
-   * Returns: `${plan.id}|${mode}|${plan.makeVarsKey(mode, vars)}`
+   * Returns: `${plan.id}|${canonical ? "canonical" : "strict"}|${plan.makeVarsKey(canonical, vars)}`
    */
-  makeSignature: (mode: "strict" | "canonical", vars: Record<string, any>) => string;
+  makeSignature: (canonical: boolean, vars: Record<string, any>) => string;
 
   /**
    * Get basic entity dependencies for this query based on variables.
    * Returns entity keys that this query will likely access (e.g., ["Query", "User:123"]).
    * Used for watcher dependency registration without materializing.
-   * Mode determines which variables are considered (strict includes pagination, canonical excludes it).
+   * Canonical determines which variables are considered (true excludes pagination, false includes it).
    */
-  getDependencies: (mode: "strict" | "canonical", vars: Record<string, any>) => Set<string>;
+  getDependencies: (canonical: boolean, vars: Record<string, any>) => Set<string>;
 
   /** Union of arg names recognized as pagination/window args across all connection fields in this plan. */
   windowArgs: Set<string>;
