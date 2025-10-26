@@ -214,6 +214,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     const res2 = documents.materializeDocument({
       document: QUERY,
       variables: { role: "admin", first: 2, after: null },
+      force: true, // Force re-materialization after graph update
     }) as any;
 
     // Fingerprint should change because node changed
@@ -279,6 +280,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     const res2 = documents.materializeDocument({
       document: QUERY,
       variables: { id: "u1", first: 1, after: null, category: "tech" },
+      force: true, // Force re-materialization after graph update
     }) as any;
 
     // All fingerprints in the chain should change
@@ -315,7 +317,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       // Write a change -> dependencies should still be tracked
       graph.putRecord("User:u1", { email: "b@example.com" });
 
-      const r2 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } }) as any;
+      const r2 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" }, force: true }) as any;
       expect(r2.dependencies).toEqual(new Set([
         `${ROOT_ID}.user({"id":"u1"})`,
         "User:u1",
@@ -360,6 +362,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       const res2 = documents.materializeDocument({
         document: QUERY,
         variables: { role: "admin", first: 2, after: null },
+        force: true, // Force re-materialization after graph update
       }) as any;
 
       expect(res2.dependencies).toEqual(new Set([
@@ -581,7 +584,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const c2 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } }) as any;
+      const c2 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" }, force: true }) as any;
       expect(c2.source).not.toBe("none");
       expect(c2.data.user).toEqual({
         __typename: "User",
@@ -677,6 +680,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       const c2 = documents.materializeDocument({
         document: USER_POSTS_QUERY,
         variables: { id: "u1", postsCategory: "tech", postsFirst: 10 },
+        force: true,
       }) as any;
 
       expect(c2.source).not.toBe("none");
@@ -773,7 +777,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const c2 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" } }) as any;
+      const c2 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" }, force: true }) as any;
       expect(c2.source).not.toBe("none");
       expect(c2.data.post.nested1.nested2.nested3.author).toEqual({
         __typename: "User",
@@ -903,7 +907,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const c2 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" } }) as any;
+      const c2 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" }, force: true }) as any;
       expect(c2.source).not.toBe("none");
       expect(c2.data.post.author).toEqual({
         __typename: "User",
@@ -1929,7 +1933,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const result2 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } });
+      const result2 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" }, force: true });
 
       expect((result1.data as any).__version).not.toBe((result2.data as any).__version);
       expect((result1.data as any).__version).toBeGreaterThan(0);
@@ -2013,7 +2017,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       // Update Post only
       graph.putRecord("Post:p1", { title: "Post 1 Updated" });
 
-      const r2 = documents.materializeDocument({ document: QUERY, variables: { userId: "u1", postId: "p1" } });
+      const r2 = documents.materializeDocument({ document: QUERY, variables: { userId: "u1", postId: "p1" }, force: true });
       // const userFp2 = (r2.data.user as any).__version;
       // const postFp2 = (r2.data.user.post as any).__version;
       // const commentFp2 = (r2.data.user.post.comment as any).__version;
@@ -2066,7 +2070,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       // Update one of the tags
       graph.putRecord("Tag:t1", { name: "Tag 1 Updated" });
 
-      const result2 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" } });
+      const result2 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" }, force: true });
 
       // Fingerprints should be different because array item changed
       expect((result1.data as any).__version).not.toBe((result2.data as any).__version);
