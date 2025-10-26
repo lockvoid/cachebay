@@ -1,1 +1,8 @@
 .dist
+
+# Relay Compiler generated files
+__generated__
+src/__generated__
+
+# Relay query definitions (benchmark utilities only)
+src/relayWriteQueryDef.ts
