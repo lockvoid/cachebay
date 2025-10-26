@@ -458,8 +458,16 @@ export const createOperations = (
 
     if (effectiveCachePolicy === 'cache-and-network') {
       if (cached && cached.ok.canonical) {
-        // Call onStaleData with cached data immediately
+        // Call onStaleData with cached data immediately (for useQuery to show stale data)
         onStaleData?.(cached.data as TData);
+
+        // Also notify watchers so lastData is set (prevents duplicate emission if network data is same)
+        onQueryData?.({
+          signature,
+          data: cached.data,
+          dependencies: cached.dependencies,
+          cachePolicy: effectiveCachePolicy,
+        });
 
         // Return the network request Promise (resolves with fresh network data)
         return performRequest();
