@@ -110,6 +110,7 @@ export function createVueUrqlNestedApp(
   let componentInstance: any = null;
 
   let deferred = createDeferred();
+  let isFirstCall = true;
 
   const NestedList = defineComponent({
     setup() {
@@ -124,6 +125,8 @@ export function createVueUrqlNestedApp(
 
       watch(data, (v) => {
         const totalUsers = data.value?.users?.edges?.length ?? 0;
+
+        console.log(`urql total users:`, totalUsers);
         globalThis.urql.totalEntities += totalUsers;
       }, { immediate: true });
 
@@ -132,7 +135,11 @@ export function createVueUrqlNestedApp(
       });
 
       const loadNextPage = async (isLastPage) => {
-        await deferred.promise;
+        // For first call, wait for initial data to be ready
+        if (isFirstCall) {
+          await deferred.promise;
+          isFirstCall = false;
+        }
 
         const t0 = performance.now();
 
@@ -144,7 +151,6 @@ export function createVueUrqlNestedApp(
           after: data.value.users.pageInfo.endCursor
         };
         await nextTick();
-
 
         // Wait for the new data to arrive (deferred will be resolved by watch)
         await deferred.promise;

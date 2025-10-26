@@ -46,7 +46,7 @@ const runScenario = async (
 
     app.mount();
 
-    for (let i = 0; i < PAGES_TO_LOAD - (appType ==='urql' ? 2 : 1); i++) {
+    for (let i = 0; i < PAGES_TO_LOAD - 1; i++) {
       // console.log(`Loading page ${i + 1} of ${PAGES_TO_LOAD - 1}`);
 
       console.log('Load page', i)
@@ -81,7 +81,7 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
    //  time: 0,
    //});
 
-    bench("apollo(vue)", async () => {
+   /* bench("apollo(vue)", async () => {
       globalThis.apollo.iteration++;
 
       if (DEBUG) {
@@ -95,7 +95,7 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
       throws: true,
       warmupTime: 0,
       time: 0,
-    });
+    }); */
 
     bench("urql(vue)", async () => {
       globalThis.urql.iteration++;
