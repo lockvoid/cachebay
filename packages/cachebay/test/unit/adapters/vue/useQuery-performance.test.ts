@@ -20,17 +20,17 @@ vi.mock("@/src/core/documents", async () => {
 
       // Wrap materialize to count calls and track HOT vs COLD
       const origMaterialize = documents.materializeDocument;
-      
+
       documents.materializeDocument = ((...args: any[]) => {
         const result = origMaterialize.apply(documents, args);
-        
+
         // Track HOT vs COLD based on the hot field
         if (result.hot) {
           materializeHotCount++;
         } else {
           materializeColdCount++;
         }
-        
+
         return result;
       }) as any;
 
@@ -123,7 +123,6 @@ describe("useQuery Performance", () => {
 
       // Reset counters
       normalizeCount = 0;
-      materializeCount = 0;
       materializeHotCount = 0;
       materializeColdCount = 0;
 
@@ -173,7 +172,6 @@ describe("useQuery Performance", () => {
 
       // Reset counters
       normalizeCount = 0;
-      materializeCount = 0;
       materializeHotCount = 0;
       materializeColdCount = 0;
 
@@ -202,7 +200,6 @@ describe("useQuery Performance", () => {
       });
 
       normalizeCount = 0;
-      materializeCount = 0;
 
       // PHASE 1: First query - COLD path
       const cleanup1 = await runInVueContext(() => {
@@ -223,7 +220,8 @@ describe("useQuery Performance", () => {
 
       // Reset counters
       normalizeCount = 0;
-      materializeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
 
       // PHASE 2: Second query - HOT path (fingerprint matches)
       const cleanup2 = await runInVueContext(() => {
@@ -266,7 +264,6 @@ describe("useQuery Performance", () => {
 
       // Reset counters
       normalizeCount = 0;
-      materializeCount = 0;
       materializeHotCount = 0;
       materializeColdCount = 0;
 
@@ -309,16 +306,15 @@ describe("useQuery Performance", () => {
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      // First query: normalize 1, materialize 2 COLD (executeQuery + propagateData)
+      // First query: normalize 1, materialize 1 COLD (executeQuery only, no watcher for propagateData)
       expect(normalizeCount).toBe(1);
-      expect(materializeColdCount).toBe(2);
+      expect(materializeColdCount).toBe(1);
       expect(materializeHotCount).toBe(0);
 
       cleanup1();
 
       // Reset counters
       normalizeCount = 0;
-      materializeCount = 0;
       materializeHotCount = 0;
       materializeColdCount = 0;
 
@@ -333,10 +329,10 @@ describe("useQuery Performance", () => {
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      // Second query: normalize 1, materialize 1 HOT (executeQuery cache check, no watcher so no propagateData)
+      // Second query: normalize 1, materialize 1 COLD (executeQuery, no watcher so no propagateData)
       expect(normalizeCount).toBe(1);
-      expect(materializeColdCount).toBe(0);
-      expect(materializeHotCount).toBe(1);  // executeQuery cache check is HOT
+      expect(materializeColdCount).toBe(1);
+      expect(materializeHotCount).toBe(0);
       expect(mockFetch).toHaveBeenCalledTimes(2);
 
       cleanup2();
@@ -358,7 +354,6 @@ describe("useQuery Performance", () => {
       });
 
       normalizeCount = 0;
-      materializeCount = 0;
 
       // PHASE 1: First query - COLD path
       const cleanup1 = await runInVueContext(() => {
@@ -379,7 +374,6 @@ describe("useQuery Performance", () => {
 
       // Reset counters
       normalizeCount = 0;
-      materializeCount = 0;
 
       // PHASE 2: Second query - HOT path
       const cleanup2 = await runInVueContext(() => {
@@ -420,7 +414,8 @@ describe("useQuery Performance", () => {
 
       // Reset counters after initial query
       normalizeCount = 0;
-      materializeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
 
       // Refetch (defaults to network-only)
       await queryRef.refetch();
@@ -429,6 +424,8 @@ describe("useQuery Performance", () => {
       // Should normalize once (network response)
       // Should materialize once (propagateData, executeQuery returns cached fingerprint)
       expect(normalizeCount).toBe(1);
+      expect(materializeColdCount).toBe(1);
+      expect(materializeHotCount).toBe(0);
 
       cleanup();
     });
@@ -451,7 +448,8 @@ describe("useQuery Performance", () => {
 
       // Reset counters
       normalizeCount = 0;
-      materializeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
 
       // Refetch with new variables
       await queryRef.refetch({ variables: { id: "2" } });
@@ -460,6 +458,8 @@ describe("useQuery Performance", () => {
       // Should normalize once (network response)
       // Should materialize twice: executeQuery + propagateData
       expect(normalizeCount).toBe(1);
+      expect(materializeColdCount).toBe(2);
+      expect(materializeHotCount).toBe(0);
 
       cleanup();
     });
@@ -485,7 +485,6 @@ describe("useQuery Performance", () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       const initialNormalize = normalizeCount;
-      const initialMaterialize = materializeCount;
 
       // Disable query
       enabled.value = false;
@@ -526,7 +525,8 @@ describe("useQuery Performance", () => {
 
       // Reset counters
       normalizeCount = 0;
-      materializeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
 
       // Change policy to network-only
       cachePolicy.value = "network-only";
@@ -535,6 +535,8 @@ describe("useQuery Performance", () => {
 
       // Should execute query with new policy (HOT path - fingerprint cached)
       expect(normalizeCount).toBe(1);
+      expect(materializeColdCount).toBe(1);
+      expect(materializeHotCount).toBe(0);
 
       cleanup();
     });
@@ -554,6 +556,8 @@ describe("useQuery Performance", () => {
 
       // Should NOT normalize or materialize in lazy mode
       expect(normalizeCount).toBe(0);
+      expect(materializeColdCount).toBe(0);
+      expect(materializeHotCount).toBe(0);
       expect(mockFetch).not.toHaveBeenCalled();
 
       cleanup();
@@ -583,37 +587,93 @@ describe("useQuery Performance", () => {
 
       // Should normalize once and materialize once (COLD path for first query)
       expect(normalizeCount).toBe(1);
+      expect(materializeColdCount).toBe(1);
+      expect(materializeHotCount).toBe(0);
 
       cleanup();
     });
   });
 
-  describe("watcher update with immediate: false", () => {
-    it("should update watcher without immediate materialization", async () => {
-      const variables = ref({ id: "1" });
-
-      mockFetch.mockResolvedValue({
-        data: { user: { __typename: "User", id: variables.value.id, name: `User ${variables.value.id}` } },
-        error: null,
+  describe("immediate option", () => {
+    it("immediate: true (default) materializes on cache hit", async () => {
+      // Pre-populate cache AND materialize it once to populate materializeCache
+      client.writeQuery({
+        query: operations.USER_QUERY,
+        variables: { id: "1" },
+        data: { user: { __typename: "User", id: "1", name: "Alice" } },
       });
 
-      const cleanup = await runInVueContext(() => {
+      // Phase 1
+
+      normalizeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
+
+      await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
-          variables,
+          variables: { id: "1" },
+          immediate: true, // explicit default
+          cachePolicy: "cache-first",
         });
       });
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      const initialMaterialize = materializeCount;
+      // Should materialize immediately from cache (1 HOT since materializeCache is populated)
+      expect(normalizeCount).toBe(0);
+      expect(materializeColdCount).toBe(1);
+      expect(materializeHotCount).toBe(0);
 
-      // Change variables - watcher.update() uses immediate: false
-      variables.value = { id: "2" };
-      await nextTick();
+      // Phase 2
+
+      normalizeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
+
+      await runInVueContext(() => {
+        useQuery({
+          query: operations.USER_QUERY,
+          variables: { id: "1" },
+          immediate: true, // explicit default
+          cachePolicy: "cache-first",
+        });
+      });
+
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      // Should materialize twice more: executeQuery + propagateData
+      // Should materialize immediately from cache (1 HOT since materializeCache is populated)
+      expect(normalizeCount).toBe(0);
+      expect(materializeColdCount).toBe(0);
+      expect(materializeHotCount).toBe(1);
+    });
+
+    it("immediate: false does NOT materialize on cache hit", async () => {
+      // Pre-populate cache
+      client.writeQuery({
+        query: operations.USER_QUERY,
+        variables: { id: "1" },
+        data: { user: { __typename: "User", id: "1", name: "Alice" } },
+      });
+
+      normalizeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
+
+      const cleanup = await runInVueContext(() => {
+        useQuery({
+          query: operations.USER_QUERY,
+          variables: { id: "1" },
+          immediate: false,
+        });
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Should NOT materialize (immediate: false)
+      expect(normalizeCount).toBe(0);
+      expect(materializeColdCount).toBe(0);
+      expect(materializeHotCount).toBe(0);
 
       cleanup();
     });
@@ -637,10 +697,16 @@ describe("useQuery Performance", () => {
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      const normalizeAfterFirst = normalizeCount;
-      const materializeAfterFirst = materializeCount;
+      // PHASE 1: First query - COLD
+      expect(normalizeCount).toBe(1);
+      expect(materializeColdCount).toBe(2);
+      expect(materializeHotCount).toBe(0);
 
-      // Next 9 queries use cache
+      const normalizeAfterFirst = normalizeCount;
+      const coldAfterFirst = materializeColdCount;
+      const hotAfterFirst = materializeHotCount;
+
+      // PHASE 2: Next 9 queries use cache - HOT
       const cleanups = [];
       for (let i = 0; i < 9; i++) {
         const cleanup = await runInVueContext(() => {
@@ -658,7 +724,9 @@ describe("useQuery Performance", () => {
       // Should normalize only once (first query)
       expect(normalizeCount).toBe(normalizeAfterFirst);
 
-      // Should materialize 1 time per cached query (9 queries * 1 = 9 additional)
+      // Should materialize 1 HOT time per cached query (9 queries * 1 = 9 additional)
+      expect(materializeColdCount).toBe(coldAfterFirst);
+      expect(materializeHotCount).toBe(hotAfterFirst + 9);
       expect(mockFetch).toHaveBeenCalledTimes(1);
 
       cleanup1();
