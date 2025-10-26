@@ -64,23 +64,25 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   globalThis.relay = { iteration: 0, name: 'relay', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
 
   describe("network-only", async () => {
-   bench("cachebay(vue)", async () => {
-      globalThis.cachebay.iteration++;
-      if (DEBUG) {
-        console.log("cachebay(vue) network-only iteration", globalThis.cachebay.iteration);
-      }
+   //bench("cachebay(vue)", async () => {
+   //  globalThis.cachebay.iteration++;
 
-      return await runScenario("cachebay", "network-only");
-    }, {
-      iterations: 10,
-      warmupIterations: 2,
-      throws: true,
-      warmupTime: 0,
-      time: 0,
-    });
+   //  if (DEBUG) {
+   //    console.log("cachebay(vue) network-only iteration", globalThis.cachebay.iteration);
+   //  }
+
+   //  return await runScenario("cachebay", "network-only");
+   //}, {
+   //  iterations: 10,
+   //  warmupIterations: 2,
+   //  throws: true,
+   //  warmupTime: 0,
+   //  time: 0,
+   //});
 
     bench("apollo(vue)", async () => {
       globalThis.apollo.iteration++;
+
       if (DEBUG) {
         console.log("apollo(vue) network-only iteration", globalThis.apollo.iteration);
       }
