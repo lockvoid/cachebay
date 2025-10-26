@@ -87,11 +87,13 @@ describe("queries API", () => {
       });
 
       expect(readResult.data).toEqual({
+        __version: 192319067,
         user: {
           __typename: "User",
           id: "1",
           name: "Alice",
           email: "alice@example.com",
+          __version: 6,
         },
       });
       expect(readResult.error).toBeUndefined();
@@ -143,7 +145,14 @@ describe("queries API", () => {
       });
       expect(result.data).toBeDefined();
       expect(result.data).toEqual({
-        user: { __typename: "User", id: "1", name: "Alice" },
+        __version: 209096686,
+
+        user: {
+          __typename: "User",
+          id: "1",
+          name: "Alice",
+          __version": 5
+        },
       });
       expect(result.error).toBeUndefined();
     });

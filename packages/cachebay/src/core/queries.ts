@@ -207,8 +207,8 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
       document: query,
       variables,
       canonical: true,  // Always use canonical mode
-      fingerprint: false,
-      force: false,
+      fingerprint: true, // Include version fingerprints
+      force: true, // Always read fresh data (rare operation, not hot path)
     });
 
     if (result.source === "none") {

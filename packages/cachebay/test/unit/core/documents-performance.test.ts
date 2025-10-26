@@ -587,4 +587,5 @@ describe("documents - materialize cache", () => {
       expect(result1.data.user.name).toBe(result2.data.user.name);
     });
   });
+
 });

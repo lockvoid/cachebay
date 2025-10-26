@@ -6,7 +6,8 @@ import { createPlanner } from "@/src/core/planner";
 import { createDocuments } from "@/src/core/documents";
 import { createCanonical } from "@/src/core/canonical";
 import { createOptimistic } from "@/src/core/optimistic";
-import { operations, writeConnectionPage, tick } from "@/test/helpers";
+import { operations, writeConnectionPage, tick, fixtures } from "@/test/helpers";
+import { gql } from "graphql-tag";
 
 describe("Fragments (documents-powered)", () => {
   let graph: ReturnType<typeof createGraph>;
@@ -30,7 +31,7 @@ describe("Fragments (documents-powered)", () => {
   });
 
   describe("readFragment (snapshot)", () => {
-    it("reads user fragment snapshot; re-read reflects updates", () => {
+    it("reads user fragment snapshot; re-read reflects updates", async () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
 
       const snap1 = fragments.readFragment({
@@ -39,11 +40,12 @@ describe("Fragments (documents-powered)", () => {
         variables: {},
       })!;
 
-      expect(snap1).toEqual({
+      expect(snap1).toMatchObject({
         __typename: "User",
         id: "u1",
         email: "u1@example.com",
       });
+      expect(snap1.__version).toBeDefined();
 
       graph.putRecord("User:u1", { email: "u1+updated@example.com" });
 
@@ -53,11 +55,12 @@ describe("Fragments (documents-powered)", () => {
         variables: {},
       })!;
 
-      expect(snap2).toEqual({
+      expect(snap2).toMatchObject({
         __typename: "User",
         id: "u1",
         email: "u1+updated@example.com",
       });
+      expect(snap2.__version).toBeDefined();
     });
 
     it("returns null when entity is missing", () => {
@@ -287,7 +290,7 @@ describe("Fragments (documents-powered)", () => {
   });
 
   describe("writeFragment", () => {
-    it("writes entity fields shallowly and re-reads show updates", () => {
+    it("writes entity fields shallowly and re-reads show updates", async () => {
       fragments.writeFragment({
         id: "User:u1",
         fragment: operations.USER_FRAGMENT,
@@ -299,12 +302,13 @@ describe("Fragments (documents-powered)", () => {
         fragment: operations.USER_FRAGMENT,
       })!;
       expect(graph.getRecord("User:u1")).toEqual({ __typename: "User", id: "u1", email: "seed@example.com" });
-      expect(snap1).toEqual({ __typename: "User", id: "u1", email: "seed@example.com" });
+      expect(snap1).toMatchObject({ __typename: "User", id: "u1", email: "seed@example.com" });
+      expect(snap1.__version).toBeDefined();
 
       fragments.writeFragment({
         id: "User:u1",
         fragment: operations.USER_FRAGMENT,
-        data: { email: "seed2@example.com" },
+        data: { __typename: "User", id: "u1", email: "seed2@example.com" },
       });
 
       const snap2 = fragments.readFragment({
@@ -312,7 +316,8 @@ describe("Fragments (documents-powered)", () => {
         fragment: operations.USER_FRAGMENT,
       })!;
       expect(graph.getRecord("User:u1")).toEqual({ __typename: "User", id: "u1", email: "seed2@example.com" });
-      expect(snap2).toEqual({ __typename: "User", id: "u1", email: "seed2@example.com" });
+      expect(snap2).toMatchObject({ __typename: "User", id: "u1", email: "seed2@example.com" });
+      expect(snap2.__version).toBeDefined();
     });
 
     it("writes a connection page; watcher sees edges/pageInfo/totalCount changes", async () => {
@@ -457,6 +462,226 @@ describe("Fragments (documents-powered)", () => {
       expect(last.posts.totalCount).toBe(4);
 
       sub.unsubscribe();
+    });
+  });
+
+  describe("update method", () => {
+    it("updates entity id and emits new data immediately", async () => {
+      // Setup two users
+      graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
+      graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "u2@example.com" });
+
+      const emissions: any[] = [];
+      const handle = fragments.watchFragment({
+        id: "User:u1",
+        fragment: operations.USER_FRAGMENT,
+        variables: {},
+        onData: (data) => {
+          emissions.push(data);
+        },
+      });
+
+      expect(emissions).toHaveLength(1);
+      expect(emissions[0].id).toBe("u1");
+      expect(emissions[0].email).toBe("u1@example.com");
+
+      // Update to watch different entity
+      handle.update({ id: "User:u2", immediate: true });
+
+      expect(emissions).toHaveLength(2);
+      expect(emissions[1].id).toBe("u2");
+      expect(emissions[1].email).toBe("u2@example.com");
+
+      handle.unsubscribe();
+    });
+
+    it("updates variables and emits new data", async () => {
+      // Setup user with posts
+      graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
+
+      const FRAGMENT_WITH_VARS = gql`
+        fragment UserWithCategory on User {
+          id
+          email
+          posts(category: $category) @connection {
+            edges { node { id title } }
+          }
+        }
+      `;
+
+      const postsKey1 = '@connection.User:u1.posts({"category":"tech"})';
+      const postsKey2 = '@connection.User:u1.posts({"category":"news"})';
+
+      writeConnectionPage(graph, postsKey1, fixtures.posts.buildConnection(
+        [{ id: "p1", title: "Tech Post" }],
+        { startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false }
+      ));
+
+      writeConnectionPage(graph, postsKey2, fixtures.posts.buildConnection(
+        [{ id: "p2", title: "News Post" }],
+        { startCursor: "p2", endCursor: "p2", hasNextPage: false, hasPreviousPage: false }
+      ));
+
+      const emissions: any[] = [];
+      const handle = fragments.watchFragment({
+        id: "User:u1",
+        fragment: FRAGMENT_WITH_VARS,
+        variables: { category: "tech" },
+        onData: (data) => {
+          emissions.push(data);
+        },
+      });
+
+      expect(emissions).toHaveLength(1);
+      expect(emissions[0].posts.edges[0].node.title).toBe("Tech Post");
+
+      // Update variables to watch different category
+      handle.update({ variables: { category: "news" }, immediate: true });
+
+      expect(emissions).toHaveLength(2);
+      expect(emissions[1].posts.edges[0].node.title).toBe("News Post");
+
+      handle.unsubscribe();
+    });
+
+    it("updates both id and variables together", async () => {
+      // Setup two users with different posts
+      graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
+      graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "u2@example.com" });
+
+      const FRAGMENT_WITH_VARS = gql`
+        fragment UserWithCategory on User {
+          id
+          email
+          posts(category: $category) @connection {
+            edges { node { id title } }
+          }
+        }
+      `;
+
+      const postsKey1 = '@connection.User:u1.posts({"category":"tech"})';
+      const postsKey2 = '@connection.User:u2.posts({"category":"news"})';
+
+      writeConnectionPage(graph, postsKey1, fixtures.posts.buildConnection(
+        [{ id: "p1", title: "U1 Tech Post" }],
+        { startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false }
+      ));
+
+      writeConnectionPage(graph, postsKey2, fixtures.posts.buildConnection(
+        [{ id: "p2", title: "U2 News Post" }],
+        { startCursor: "p2", endCursor: "p2", hasNextPage: false, hasPreviousPage: false }
+      ));
+
+      const emissions: any[] = [];
+      const handle = fragments.watchFragment({
+        id: "User:u1",
+        fragment: FRAGMENT_WITH_VARS,
+        variables: { category: "tech" },
+        onData: (data) => {
+          emissions.push(data);
+        },
+      });
+
+      expect(emissions).toHaveLength(1);
+      expect(emissions[0].id).toBe("u1");
+      expect(emissions[0].posts.edges[0].node.title).toBe("U1 Tech Post");
+
+      // Update both id and variables
+      handle.update({ id: "User:u2", variables: { category: "news" }, immediate: true });
+
+      expect(emissions).toHaveLength(2);
+      expect(emissions[1].id).toBe("u2");
+      expect(emissions[1].posts.edges[0].node.title).toBe("U2 News Post");
+
+      handle.unsubscribe();
+    });
+
+    it("does not emit if immediate is false", async () => {
+      graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
+      graph.putRecord("User:u2", { __typename: "User", id: "u2", email: "u2@example.com" });
+
+      const emissions: any[] = [];
+      const handle = fragments.watchFragment({
+        id: "User:u1",
+        fragment: operations.USER_FRAGMENT,
+        variables: {},
+        onData: (data) => {
+          emissions.push(data);
+        },
+      });
+
+      expect(emissions).toHaveLength(1);
+
+      // Update with immediate: false
+      handle.update({ id: "User:u2", immediate: false });
+
+      // Should not emit immediately
+      expect(emissions).toHaveLength(1);
+
+      // But should emit when data changes via propagateData
+      graph.putRecord("User:u2", { email: "u2+updated@example.com" });
+      await tick();
+
+      expect(emissions).toHaveLength(2);
+      expect(emissions[1].id).toBe("u2");
+      expect(emissions[1].email).toBe("u2+updated@example.com");
+
+      handle.unsubscribe();
+    });
+
+    it("does not emit if data hasn't changed", async () => {
+      graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
+
+      const emissions: any[] = [];
+      const handle = fragments.watchFragment({
+        id: "User:u1",
+        fragment: operations.USER_FRAGMENT,
+        variables: {},
+        onData: (data) => {
+          emissions.push(data);
+        },
+      });
+
+      expect(emissions).toHaveLength(1);
+
+      // Update with same id (data unchanged)
+      handle.update({ id: "User:u1", immediate: true });
+
+      // Should not emit because data is the same
+      expect(emissions).toHaveLength(1);
+
+      handle.unsubscribe();
+    });
+
+    it("handles cache miss gracefully", async () => {
+      graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "u1@example.com" });
+
+      const emissions: any[] = [];
+      const handle = fragments.watchFragment({
+        id: "User:u1",
+        fragment: operations.USER_FRAGMENT,
+        variables: {},
+        onData: (data) => {
+          emissions.push(data);
+        },
+      });
+
+      expect(emissions).toHaveLength(1);
+
+      // Update to non-existent entity
+      handle.update({ id: "User:u999", immediate: true });
+
+      // Should not emit on cache miss
+      expect(emissions).toHaveLength(1);
+
+      // Later when entity appears, should emit
+      graph.putRecord("User:u999", { __typename: "User", id: "u999", email: "u999@example.com" });
+      await tick();
+
+      expect(emissions).toHaveLength(2);
+      expect(emissions[1].id).toBe("u999");
+
+      handle.unsubscribe();
     });
   });
 });

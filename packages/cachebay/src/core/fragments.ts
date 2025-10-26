@@ -32,6 +32,7 @@ export type WatchFragmentOptions = {
 
 export type WatchFragmentHandle = {
   unsubscribe: () => void;
+  update: (options: { id?: string; variables?: Record<string, unknown>; immediate?: boolean }) => void;
 };
 
 export type WriteFragmentArgs<TData = unknown> = {
@@ -89,6 +90,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
           canonical: true,  // Always use canonical mode
           entityId: w.id,
           fingerprint: true,
+          force: true, // Always force in propagateData - data changed
         });
 
         updateWatcherDeps(k, result.dependencies);
@@ -161,7 +163,8 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
       variables: variables as Record<string, any>,
       canonical: true,  // Always use canonical mode
       entityId: id,
-      fingerprint: false,
+      fingerprint: true, // Include version fingerprints
+      force: true, // Always read fresh data (rare operation, not hot path)
     });
 
     if (result.source !== "none") {
@@ -244,6 +247,44 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
           }
         }
         watchers.delete(watcherId);
+      },
+
+      update: ({ id: newId, variables: newVariables, immediate = true }) => {
+        const w = watchers.get(watcherId);
+        if (!w) return;
+
+        // Update watcher state
+        if (newId !== undefined) w.id = newId;
+        if (newVariables !== undefined) w.variables = newVariables;
+
+        // If immediate, materialize and emit synchronously
+        if (immediate) {
+          const res = documents.materializeDocument({
+            document: planner.getPlan(w.fragment, { fragmentName: w.fragmentName }),
+            variables: w.variables as Record<string, any>,
+            canonical: true,
+            entityId: w.id,
+            fingerprint: true,
+            force: false, // Use cache - propagateData already updated it
+          });
+
+          updateWatcherDeps(watcherId, res.dependencies);
+
+          if (res.source !== "none") {
+            // recycleSnapshots automatically preserves object identity for unchanged parts
+            const recycled = recycleSnapshots(w.lastData, res.data);
+            // Only emit if data actually changed
+            if (recycled !== w.lastData) {
+              w.lastData = recycled;
+              try {
+                w.onData(recycled);
+              } catch (e) {
+                w.onError?.(e as Error);
+              }
+            }
+          }
+          // No else - watchers simply don't emit on cache miss, entity might not be loaded yet
+        }
       },
     };
   };
