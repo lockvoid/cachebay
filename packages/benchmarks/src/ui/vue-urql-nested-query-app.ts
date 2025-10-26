@@ -121,18 +121,15 @@ export function createVueUrqlNestedApp(
         variables,
       });
 
-      const endCursor = ref(null);
-
       watch(data, (v) => {
         const totalUsers = data.value?.users?.edges?.length ?? 0;
 
-        console.log(`urql total users:`, totalUsers);
+        //console.log(`urql total users:`, totalUsers);
         globalThis.urql.totalEntities += totalUsers;
-      }, { immediate: true });
 
-      watch(() => data.value?.users?.pageInfo?.endCursor, (v) => {
+        // Resolve deferred when data changes (cache merge completed)
         deferred.resolve();
-      });
+      }, { immediate: true });
 
       const loadNextPage = async (isLastPage) => {
         // For first call, wait for initial data to be ready
@@ -145,12 +142,14 @@ export function createVueUrqlNestedApp(
 
         deferred = createDeferred();
 
-        // Update reactive variables to trigger urql to fetch next page
+        // Update variables and explicitly execute query
         variables.value = {
           first: 30,
-          after: data.value.users.pageInfo.endCursor
+          after: data.value?.users?.pageInfo?.endCursor || null
         };
-        await nextTick();
+
+        // Execute query with network-only to force fetch
+        executeQuery({ requestPolicy: 'network-only' });
 
         // Wait for the new data to arrive (deferred will be resolved by watch)
         await deferred.promise;

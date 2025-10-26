@@ -49,7 +49,6 @@ const runScenario = async (
     for (let i = 0; i < PAGES_TO_LOAD - 1; i++) {
       // console.log(`Loading page ${i + 1} of ${PAGES_TO_LOAD - 1}`);
 
-      console.log('Load page', i)
       const isLastPage = i === PAGES_TO_LOAD - 2;
 
       await app.loadNextPage(isLastPage);
@@ -65,23 +64,23 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   globalThis.relay = { iteration: 0, name: 'relay', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
 
   describe("network-only", async () => {
-   //bench("cachebay(vue)", async () => {
-   //  globalThis.cachebay.iteration++;
+    bench("cachebay(vue)", async () => {
+      globalThis.cachebay.iteration++;
 
-   //  if (DEBUG) {
-   //    console.log("cachebay(vue) network-only iteration", globalThis.cachebay.iteration);
-   //  }
+      if (DEBUG) {
+        console.log("cachebay(vue) network-only iteration", globalThis.cachebay.iteration);
+      }
 
-   //  return await runScenario("cachebay", "network-only");
-   //}, {
-   //  iterations: 10,
-   //  warmupIterations: 2,
-   //  throws: true,
-   //  warmupTime: 0,
-   //  time: 0,
-   //});
+      return await runScenario("cachebay", "network-only");
+    }, {
+      iterations: 10,
+      warmupIterations: 2,
+      throws: true,
+      warmupTime: 0,
+      time: 0,
+    });
 
-   /* bench("apollo(vue)", async () => {
+    bench("apollo(vue)", async () => {
       globalThis.apollo.iteration++;
 
       if (DEBUG) {
@@ -95,7 +94,7 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
       throws: true,
       warmupTime: 0,
       time: 0,
-    }); */
+    });
 
     bench("urql(vue)", async () => {
       globalThis.urql.iteration++;
@@ -127,6 +126,7 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
       time: 0,
     });
   });
+
   /*
     describe("cache-first", () => {
       bench("cachebay(vue)", async () => {

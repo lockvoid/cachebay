@@ -174,7 +174,7 @@ export function createVueApolloNestedApp(
       // Single watch for both counting and deferred resolution
       watch(result, (v) => {
         const totalUsers = result.value?.users?.edges?.length ?? 0;
-        console.log(`apollo total users:`, totalUsers);
+       // console.log(`apollo total users:`, totalUsers);
 
         globalThis.apollo.totalEntities += totalUsers;
 
