@@ -286,8 +286,6 @@ export const createOperations = (
 
           // Read back from cache to get normalized/materialized data
           // This ensures the same reference as watchQuery would emit
-          //
-          console.log("Materializing 1")
           const cachedAfterWrite = documents.materializeDocument({
             document: query,
             variables,

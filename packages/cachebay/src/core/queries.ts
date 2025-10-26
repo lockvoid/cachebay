@@ -61,7 +61,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
   const watchers = new Map<number, WatcherState>();
   const depIndex = new Map<string, Set<number>>();
-  const signatureToWatcher = new Map<string, number>(); // Fast lookup by signature
+  const signatureToWatchers = new Map<string, Set<number>>(); // Multiple watchers per signature
   let watcherSeq = 1;
 
   // --- Batched broadcasting ---
@@ -142,14 +142,17 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
   };
 
   /**
-   * Propagate error to the watcher with the given signature
+   * Propagate error to all watchers with the given signature
    */
   const propagateError = (signature: string, error: Error) => {
-    // Find watcher with this signature
-    for (const [_, watcher] of watchers) {
-      if (watcher.signature === signature && watcher.onError) {
+    // Find all watchers with this signature
+    const watcherSet = signatureToWatchers.get(signature);
+    if (!watcherSet) return;
+    
+    for (const watcherId of watcherSet) {
+      const watcher = watchers.get(watcherId);
+      if (watcher?.onError) {
         watcher.onError(error);
-        break;  // Only one watcher per signature
       }
     }
   };
@@ -254,7 +257,14 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
       lastData: undefined,
     };
     watchers.set(watcherId, watcher);
-    signatureToWatcher.set(signature, watcherId);
+    
+    // Add to signature → watchers mapping (multiple watchers per signature)
+    let watcherSet = signatureToWatchers.get(signature);
+    if (!watcherSet) {
+      watcherSet = new Set();
+      signatureToWatchers.set(signature, watcherSet);
+    }
+    watcherSet.add(watcherId);
 
     // If immediate, materialize synchronously to get initial data
     if (immediate) {
@@ -283,6 +293,8 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
       unsubscribe: () => {
         const w = watchers.get(watcherId);
         if (!w) return;
+        
+        // Remove from dep index
         for (const d of w.deps) {
           const set = depIndex.get(d);
           if (set) {
@@ -290,6 +302,16 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
             if (set.size === 0) depIndex.delete(d);
           }
         }
+        
+        // Remove from signature → watchers mapping
+        const watcherSet = signatureToWatchers.get(w.signature);
+        if (watcherSet) {
+          watcherSet.delete(watcherId);
+          if (watcherSet.size === 0) {
+            signatureToWatchers.delete(w.signature);
+          }
+        }
+        
         watchers.delete(watcherId);
       },
 
@@ -302,10 +324,26 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
         const plan = planner.getPlan(w.query);
         const newSignature = plan.makeSignature("canonical", newVariables);
 
-        // Update signature mapping
-        signatureToWatcher.delete(w.signature);
-        w.signature = newSignature;
-        signatureToWatcher.set(newSignature, watcherId);
+        // Update signature mapping if signature changed
+        if (w.signature !== newSignature) {
+          // Remove from old signature set
+          const oldSet = signatureToWatchers.get(w.signature);
+          if (oldSet) {
+            oldSet.delete(watcherId);
+            if (oldSet.size === 0) {
+              signatureToWatchers.delete(w.signature);
+            }
+          }
+          
+          // Add to new signature set
+          w.signature = newSignature;
+          let newSet = signatureToWatchers.get(newSignature);
+          if (!newSet) {
+            newSet = new Set();
+            signatureToWatchers.set(newSignature, newSet);
+          }
+          newSet.add(watcherId);
+        }
 
         // If immediate, materialize and emit synchronously
         if (immediate) {
@@ -339,6 +377,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
   /**
    * Callback handler from operations - updates watcher dependencies and directly emits data
+   * Handles multiple watchers per signature
    */
   const handleQueryExecuted = ({ signature, data, dependencies }: {
     signature: string;
@@ -346,11 +385,14 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     dependencies: Set<string>;
     cachePolicy: string;
   }) => {
-    const watcherId = signatureToWatcher.get(signature);
+    // Find all watchers with this signature
+    const watcherSet = signatureToWatchers.get(signature);
+    if (!watcherSet) return;
 
-    if (watcherId !== undefined) {
+    // Emit to all watchers with this signature
+    for (const watcherId of watcherSet) {
       const w = watchers.get(watcherId);
-      if (!w) return;
+      if (!w) continue;
 
       // Update dependencies
       updateWatcherDependencies(watcherId, dependencies);
@@ -372,7 +414,9 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
         try {
           w.onData(recycled);
         } catch (e) {
-          w.onError?.(e as Error);
+          if (w.onError) {
+            w.onError(e as Error);
+          }
         }
       }
     }
