@@ -47,10 +47,10 @@ const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
 /**
  * Operations Performance Tests
- * 
+ *
  * These tests track normalize/materialize call counts for executeQuery and executeMutation
  * to ensure we're not doing redundant work.
- * 
+ *
  * KEY PRINCIPLES:
  * - network-only: materialize before (cache check) + after (read-back) = 2x
  * - cache-first (hit): materialize once (cache only) = 1x
@@ -342,7 +342,7 @@ describe("operations API - Performance", () => {
   });
 
   describe("executeMutation", () => {
-    it.skip("should normalize 1, materialize 0 (no read-back) - TODO: fix gql mock issue", async () => {
+    it("should normalize 1, materialize 0 (no read-back) - TODO: fix gql mock issue", async () => {
       const MUTATION = gql`
         mutation CreateUser($name: String!) {
           createUser(name: $name) {
@@ -364,7 +364,7 @@ describe("operations API - Performance", () => {
 
       // Execute mutation
       await client.executeMutation({
-        mutation: MUTATION,
+        query: MUTATION,
         variables: { name: "Bob" },
       });
 
@@ -372,6 +372,7 @@ describe("operations API - Performance", () => {
       // Mutations don't materialize - they just write and return the network data
       expect(normalizeCount).toBe(1);
       expect(materializeColdCount).toBe(0);
-      expect(materializeHotCount).toBe(0);    });
+      expect(materializeHotCount).toBe(0);
+    });
   });
 });

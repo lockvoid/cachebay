@@ -51,6 +51,40 @@ export const CACHE_FIRST = "cache-first" as const;
 export const CACHE_ONLY = "cache-only" as const;
 
 /**
+ * Valid cache policies
+ */
+const VALID_CACHE_POLICIES: readonly CachePolicy[] = [
+  "cache-and-network",
+  "network-only",
+  "cache-first",
+  "cache-only",
+] as const;
+
+/**
+ * Validate and normalize cache policy
+ * In dev: throws on invalid policy
+ * In prod: warns and returns default policy
+ */
+function validateCachePolicy(policy: any, defaultPolicy: CachePolicy = 'cache-first'): CachePolicy {
+  if (!policy) {
+    return defaultPolicy;
+  }
+
+  if (VALID_CACHE_POLICIES.includes(policy as CachePolicy)) {
+    return policy as CachePolicy;
+  }
+
+  const errorMessage = `Invalid cache policy: "${policy}". Valid policies are: ${VALID_CACHE_POLICIES.join(', ')}`;
+
+  if (__DEV__) {
+    throw new Error(errorMessage);
+  } else {
+    console.warn(`[cachebay] ${errorMessage}. Falling back to "${defaultPolicy}".`);
+    return defaultPolicy;
+  }
+}
+
+/**
  * GraphQL operation configuration
  *
  * @public
@@ -237,7 +271,9 @@ export const createOperations = (
     onSuccess,
     onError,
   }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
-    const effectiveCachePolicy = cachePolicy ?? defaultCachePolicy ?? 'network-only';
+    // Validate and normalize cache policy
+    const rawPolicy = cachePolicy ?? defaultCachePolicy;
+    const effectiveCachePolicy = validateCachePolicy(rawPolicy, 'network-only');
     const plan = planner.getPlan(query);
     const signature = plan.makeSignature("canonical", variables);  // Always canonical
 

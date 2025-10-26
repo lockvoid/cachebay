@@ -98,8 +98,7 @@ export function useQuery<TData = any, TVars = any>(
   /**
    * Execute query with current variables
    */
-  const executeQuery = async (vars: TVars): Promise<void> => {
-    const policy = toValue(options.cachePolicy);
+  const performQuery = async (vars: TVars, policy: CachePolicy): Promise<void> => {
     error.value = null;
     isFetching.value = true;
 
@@ -148,25 +147,11 @@ export function useQuery<TData = any, TVars = any>(
 
     // Update watcher with new variables if provided
     if (refetchOptions?.variables) {
-      watchHandle.update({ variables: vars, immediate: false }); // Don't materialize - executeQuery will handle it
+      watchHandle.update({ variables: vars, immediate: false }); // Don't materialize - performQuery will handle it
     }
 
-    // Execute query with refetch policy
-    error.value = null;
-    isFetching.value = true;
-
-    try {
-      const result = await client.executeQuery<TData, TVars>({
-        query: options.query,
-        variables: vars,
-        cachePolicy: refetchPolicy,
-      });
-
-      return result;
-    } catch (err) {
-      // Watcher already set error through onError callback
-      isFetching.value = false;
-    }
+    // Execute query with refetch policy using performQuery
+    return performQuery(vars, refetchPolicy);
   };
 
   // Watch for enabled changes
@@ -183,12 +168,12 @@ export function useQuery<TData = any, TVars = any>(
       } else {
         // Enable - recreate watcher
         const vars = toValue(options.variables) || ({} as TVars);
-        const policy = toValue(options.cachePolicy);
+        const policy = toValue(options.cachePolicy) || 'cache-first';
         if (!watchHandle) {
           setupWatcher(vars);
-          // Execute query unless lazy mode (executeQuery handles all policies)
+          // Execute query unless lazy mode
           if (!options.lazy) {
-            const promise = executeQuery(vars);
+            const promise = performQuery(vars, policy);
             // Capture the first execution for Suspense
             if (!initialExecutionPromise) {
               initialExecutionPromise = promise;
@@ -208,11 +193,11 @@ export function useQuery<TData = any, TVars = any>(
       if (!isEnabled) return;
 
       const vars = newVars || ({} as TVars);
-      const policy = toValue(options.cachePolicy);
+      const policy = toValue(options.cachePolicy) || 'cache-first';
 
       if (watchHandle) {
-        watchHandle.update({ variables: vars, immediate: false }); // Don't materialize - executeQuery will handle it
-        executeQuery(vars); // executeQuery handles all policies including cache-only
+        watchHandle.update({ variables: vars, immediate: false }); // Don't materialize - performQuery will handle it
+        performQuery(vars, policy); // performQuery handles all policies including cache-only
       }
     },
     { deep: true }
@@ -221,14 +206,15 @@ export function useQuery<TData = any, TVars = any>(
   // Watch for cache policy changes
   watch(
     () => toValue(options.cachePolicy),
-    () => {
+    (newPolicy) => {
       const isEnabled = toValue(options.enabled) ?? true;
       if (!isEnabled || !watchHandle) return;
 
       const vars = toValue(options.variables) || ({} as TVars);
+      const policy = newPolicy || 'cache-first';
 
-      // Re-execute query with new policy (executeQuery handles all policies)
-      executeQuery(vars);
+      // Re-execute query with new policy (performQuery handles all policies)
+      performQuery(vars, policy);
     }
   );
 

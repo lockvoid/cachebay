@@ -632,7 +632,7 @@ describe("useQuery Performance", () => {
   });
 
   describe("immediate option", () => {
-    it("immediate: true (default) materializes on cache hit", async () => {
+    it("default (not lazy) materializes on cache hit", async () => {
       // Pre-populate cache AND materialize it once to populate materializeCache
       client.writeQuery({
         query: operations.USER_QUERY,
@@ -650,7 +650,6 @@ describe("useQuery Performance", () => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
-          immediate: true, // explicit default
           cachePolicy: "cache-first",
         });
       });
@@ -672,7 +671,6 @@ describe("useQuery Performance", () => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
-          immediate: true, // explicit default
           cachePolicy: "cache-first",
         });
       });
@@ -686,7 +684,7 @@ describe("useQuery Performance", () => {
       expect(watchQueryCallCount).toBe(2);
     });
 
-    it("immediate: false does NOT materialize on cache hit", async () => {
+    it("lazy: true does NOT execute query on mount", async () => {
       // Pre-populate cache
       client.writeQuery({
         query: operations.USER_QUERY,
@@ -702,13 +700,13 @@ describe("useQuery Performance", () => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
-          immediate: false,
+          lazy: true,
         });
       });
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      // Should NOT materialize (immediate: false)
+      // Should NOT materialize (lazy: true)
       expect(normalizeCount).toBe(0);
       expect(materializeColdCount).toBe(0);
       expect(materializeHotCount).toBe(0);
