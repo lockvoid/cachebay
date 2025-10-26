@@ -35,23 +35,6 @@ import { gql } from "graphql-tag";
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
-/**
- * Performance Tests - Optimization Goals
- *
- * These tests track normalize/materialize call counts to ensure we're not doing redundant work.
- *
- * OPTIMIZATION TARGETS:
- * 1. watchQuery initial load: Should materialize ONCE (currently: 2x - NEEDS FIX)
- * 2. watchQuery + writeQuery: Should materialize 2x total (initial + update) (currently: 3x - NEEDS FIX)
- * 3. Multiple watchers: Each watcher should materialize once per update (currently: OK)
- * 4. Pagination: Each update should materialize once per watcher (currently: OK)
- *
- * KEY PRINCIPLE: Avoid redundant materializations
- * - writeQuery: normalize only (no materialize)
- * - readQuery: materialize only (no normalize)
- * - watchQuery: materialize once on initial load, once per update
- * - No double-materialize from propagateData when data hasn't changed
- */
 describe("client API - Performance", () => {
   let client: ReturnType<typeof createCachebay>;
   let mockTransport: any;

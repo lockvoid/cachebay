@@ -62,6 +62,7 @@ export type MaterializeDocumentOptions = {
   canonical?: boolean;
   entityId?: string;
   fingerprint?: boolean;
+  force?: boolean;
 };
 
 /**
@@ -85,6 +86,31 @@ export type DocumentsInstance = ReturnType<typeof createDocuments>;
  */
 export const createDocuments = (deps: DocumentsDependencies) => {
   const { graph, planner, canonical } = deps;
+
+  /**
+   * WeakMap cache for materialized documents
+   * Key: DocumentNode or CachePlan object
+   * Value: Map of signature -> MaterializeDocumentResult
+   */
+  const materializeCache = new WeakMap<DocumentNode | CachePlan, Map<string, MaterializeDocumentResult>>();
+
+  /**
+   * Create a cache signature from materialization options
+   */
+  const makeMaterializeSignature = (
+    variables: Record<string, any>,
+    canonical: boolean,
+    fingerprint: boolean,
+    entityId?: string
+  ): string => {
+    const parts = [
+      JSON.stringify(variables),
+      canonical ? 'c' : 's',
+      fingerprint ? 'f' : 'n'
+    ];
+    if (entityId) parts.push(entityId);
+    return parts.join('|');
+  };
 
   /**
    * Normalize a GraphQL response into the cache
@@ -455,9 +481,25 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   /**
    * Materialize a document from cache
    * Reads normalized data and reconstructs the GraphQL response shape
+   * 
+   * @param options.force - If false (default), returns cached result if available. If true, always re-materializes.
    */
   const materializeDocument = (options: MaterializeDocumentOptions): MaterializeDocumentResult => {
-    const { document, variables = {}, canonical = true, entityId, fingerprint = true } = options;
+    const { document, variables = {}, canonical = true, entityId, fingerprint = true, force = false } = options;
+
+    // Check cache if not forcing re-materialization
+    if (!force) {
+      const plan = planner.getPlan(document);
+      const signature = makeMaterializeSignature(variables, canonical, fingerprint, entityId);
+      
+      let docCache = materializeCache.get(plan);
+      if (docCache) {
+        const cached = docCache.get(signature);
+        if (cached) {
+          return cached;
+        }
+      }
+    }
 
     graph.flush();
 
@@ -939,21 +981,31 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       setFingerprint(data, rootFingerprint);
     }
 
-    if (!requestedOK) {
-      return {
-        data: undefined,
-        dependencies,
-        source: "none",
-        ok: { strict: strictOK, canonical: canonicalOK, miss: __DEV__ ? misses : undefined },
-      };
-    }
+    // Create result object (either "none" or with data)
+    const result: MaterializeDocumentResult = !requestedOK
+      ? {
+          data: undefined,
+          dependencies,
+          source: "none",
+          ok: { strict: strictOK, canonical: canonicalOK, miss: __DEV__ ? misses : undefined },
+        }
+      : {
+          data,
+          dependencies,
+          source: canonical ? "canonical" : "strict",
+          ok: { strict: strictOK, canonical: canonicalOK, miss: __DEV__ ? misses : undefined },
+        };
 
-    return {
-      data,
-      dependencies,
-      source: canonical ? "canonical" : "strict",
-      ok: { strict: strictOK, canonical: canonicalOK, miss: __DEV__ ? misses : undefined },
-    };
+    // Cache the result (including "none" results)
+    const signature = makeMaterializeSignature(variables, canonical, fingerprint, entityId);
+    let docCache = materializeCache.get(plan);
+    if (!docCache) {
+      docCache = new Map();
+      materializeCache.set(plan, docCache);
+    }
+    docCache.set(signature, result);
+
+    return result;
   };
 
   return {
