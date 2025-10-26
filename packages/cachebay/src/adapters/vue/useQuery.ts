@@ -78,7 +78,7 @@ export function useQuery<TData = any, TVars = any>(
    */
   const setupWatcher = (vars: TVars) => {
     const policy = toValue(options.cachePolicy);
-    
+
     watchHandle = client.watchQuery({
       query: options.query,
       variables: vars,
@@ -91,7 +91,7 @@ export function useQuery<TData = any, TVars = any>(
         error.value = err;
         isFetching.value = false;
       },
-      immediate: true, // Get initial cached data if available
+      immediate: false, // Don't materialize immediately - executeQuery will handle initial data
     });
   };
 
@@ -104,11 +104,13 @@ export function useQuery<TData = any, TVars = any>(
     isFetching.value = true;
 
     try {
+      console.log("Executing query1");
       const result = await client.executeQuery<TData, TVars>({
         query: options.query,
         variables: vars,
         cachePolicy: policy,
       });
+      console.log("Executing query2", result);
 
       // For cache-and-network with cached data, keep isFetching true
       // The watcher will be notified when network data arrives and set isFetching to false
@@ -206,7 +208,7 @@ export function useQuery<TData = any, TVars = any>(
       if (!isEnabled) return;
 
       const vars = newVars || ({} as TVars);
-      const policy = toValue(options.cachePolicy)
+      const policy = toValue(options.cachePolicy);
 
       if (watchHandle) {
         watchHandle.update({ variables: vars, immediate: false }); // Don't materialize - executeQuery will handle it
