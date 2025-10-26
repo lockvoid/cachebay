@@ -151,7 +151,7 @@ describe("queries API", () => {
           __typename: "User",
           id: "1",
           name: "Alice",
-          __version": 5
+          __version: 5
         },
       });
       expect(result.error).toBeUndefined();
