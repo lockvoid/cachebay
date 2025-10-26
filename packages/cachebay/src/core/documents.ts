@@ -73,6 +73,7 @@ export type MaterializeDocumentResult = {
   dependencies: Set<string>;
   source: "canonical" | "strict" | "none";
   ok: { strict: boolean; canonical: boolean; miss?: Miss[] };
+  hot: boolean; // true if result came from materializeCache, false if computed
 };
 
 /**
@@ -496,6 +497,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       if (docCache) {
         const cached = docCache.get(signature);
         if (cached) {
+          // Mark as hot and return the cached object
+          cached.hot = true;
           return cached;
         }
       }
@@ -988,12 +991,14 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           dependencies,
           source: "none",
           ok: { strict: strictOK, canonical: canonicalOK, miss: __DEV__ ? misses : undefined },
+          hot: false,
         }
       : {
           data,
           dependencies,
           source: canonical ? "canonical" : "strict",
           ok: { strict: strictOK, canonical: canonicalOK, miss: __DEV__ ? misses : undefined },
+          hot: false,
         };
 
     // Cache the result (including "none" results)

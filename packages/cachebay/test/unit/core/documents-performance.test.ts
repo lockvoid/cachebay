@@ -66,6 +66,9 @@ describe("documents - materialize cache", () => {
         canonical: true,
       });
 
+      // Check hot field immediately after first call
+      expect(result1.hot).toBe(false); // First call - COLD
+
       // Second materialize - should return cached result
       const result2 = documents.materializeDocument({
         document: QUERY,
@@ -73,7 +76,10 @@ describe("documents - materialize cache", () => {
         canonical: true,
       });
 
-      // Should be the exact same object reference
+      // Check hot field after second call
+      expect(result2.hot).toBe(true);  // Second call - HOT
+
+      // Should return exact same reference (cached)
       expect(result1).toBe(result2);
       expect(result1.data).toBe(result2.data);
       expect(result1.dependencies).toBe(result2.dependencies);
@@ -112,7 +118,11 @@ describe("documents - materialize cache", () => {
         force: true,
       });
 
-      // Should be different object references
+      // Check hot field
+      expect(result1.hot).toBe(false); // First call - COLD
+      expect(result2.hot).toBe(false); // force: true bypasses cache - COLD
+
+      // Should NOT return same reference (force bypasses cache)
       expect(result1).not.toBe(result2);
       // But data should be structurally equal
       expect(result1.data).toEqual(result2.data);
@@ -543,6 +553,10 @@ describe("documents - materialize cache", () => {
         fingerprint: true,
       });
 
+      // Check hot immediately
+      const result1Hot = result1.hot;
+      expect(result1Hot).toBe(false); // First call - COLD
+
       // Materialize with fingerprint: false
       const result2 = documents.materializeDocument({
         document: QUERY,
@@ -550,6 +564,10 @@ describe("documents - materialize cache", () => {
         canonical: true,
         fingerprint: false,
       });
+
+      // Check hot immediately
+      const result2Hot = result2.hot;
+      expect(result2Hot).toBe(false); // First call with different signature - COLD
 
       // Materialize with fingerprint: true again
       const result3 = documents.materializeDocument({
@@ -559,6 +577,9 @@ describe("documents - materialize cache", () => {
         fingerprint: true,
       });
 
+      // Check hot immediately
+      expect(result3.hot).toBe(true);  // Second call with same signature - HOT
+
       // Materialize with fingerprint: false again
       const result4 = documents.materializeDocument({
         document: QUERY,
@@ -566,6 +587,9 @@ describe("documents - materialize cache", () => {
         canonical: true,
         fingerprint: false,
       });
+
+      // Check hot immediately
+      expect(result4.hot).toBe(true);  // Second call with same signature - HOT
 
       // Same fingerprint option should return same reference
       expect(result1).toBe(result3);

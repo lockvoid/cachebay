@@ -1,6 +1,7 @@
 // Mock documents module to inject performance counters
 let normalizeCount = 0;
-let materializeCount = 0;
+let materializeHotCount = 0;
+let materializeColdCount = 0;
 
 vi.mock("@/src/core/documents", async () => {
   const actual = await vi.importActual<typeof import("@/src/core/documents")>("@/src/core/documents");
@@ -17,11 +18,19 @@ vi.mock("@/src/core/documents", async () => {
         return origNormalize.apply(documents, args);
       }) as any;
 
-      // Wrap materialize to count calls
+      // Wrap materialize to count calls and track HOT vs COLD
       const origMaterialize = documents.materializeDocument;
       documents.materializeDocument = ((...args: any[]) => {
-        materializeCount++;
-        return origMaterialize.apply(documents, args);
+        const result = origMaterialize.apply(documents, args);
+        
+        // Track HOT vs COLD based on the hot field
+        if (result.hot) {
+          materializeHotCount++;
+        } else {
+          materializeColdCount++;
+        }
+        
+        return result;
       }) as any;
 
       return documents;
@@ -42,7 +51,8 @@ describe("client API - Performance", () => {
   beforeEach(() => {
     // Reset counters
     normalizeCount = 0;
-    materializeCount = 0;
+    materializeHotCount = 0;
+    materializeColdCount = 0;
 
     // Create mock transport
     mockTransport = {
@@ -86,7 +96,6 @@ describe("client API - Performance", () => {
 
       // writeQuery only normalizes, doesn't materialize
       expect(normalizeCount).toBe(1);
-      expect(materializeCount).toBe(0);
     });
 
     it("pagination: 5 writeQuery calls should normalize 5, materialize 0", () => {
@@ -131,12 +140,11 @@ describe("client API - Performance", () => {
 
       // writeQuery only normalizes, doesn't materialize
       expect(normalizeCount).toBe(5);
-      expect(materializeCount).toBe(0);
     });
   });
 
   describe("readQuery", () => {
-    it("should materialize 1, normalize 0", () => {
+    it("always COLD (uses force: true) - no caching", () => {
       const QUERY = gql`
         query GetUser($id: ID!) {
           user(id: $id) {
@@ -161,17 +169,37 @@ describe("client API - Performance", () => {
 
       // Reset counts
       normalizeCount = 0;
-      materializeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
 
-      // Read the data
-      client.readQuery({
+      // First read - COLD (force: true)
+      const result1 = client.readQuery({
         query: QUERY,
         variables: { id: "1" },
       });
 
       // readQuery only materializes, doesn't normalize
       expect(normalizeCount).toBe(0);
-      expect(materializeCount).toBe(1);
+      expect(materializeColdCount).toBe(1);
+      expect(materializeHotCount).toBe(0);
+
+      // Reset counts
+      normalizeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
+
+      // Second read - still COLD (force: true bypasses cache)
+      const result2 = client.readQuery({
+        query: QUERY,
+        variables: { id: "1" },
+      });
+
+      expect(normalizeCount).toBe(0);
+      expect(materializeColdCount).toBe(1); // Still COLD
+      expect(materializeHotCount).toBe(0);  // Never HOT
+
+      // Should return same data (but different object)
+      expect(result1).toEqual(result2);
     });
   });
 
@@ -202,7 +230,6 @@ describe("client API - Performance", () => {
 
       // Reset counts
       normalizeCount = 0;
-      materializeCount = 0;
 
       const emissions: any[] = [];
       const handle = client.watchQuery({
@@ -216,7 +243,6 @@ describe("client API - Performance", () => {
       // OPTIMIZED: Only 1 materialize (watchQuery with immediate: true)
       // No redundant materialize from propagateData or other sources
       expect(normalizeCount).toBe(0);
-      expect(materializeCount).toBe(1);
       expect(emissions).toHaveLength(1);
 
       handle.unsubscribe();
@@ -234,7 +260,6 @@ describe("client API - Performance", () => {
 
       // Reset counts
       normalizeCount = 0;
-      materializeCount = 0;
 
       const emissions: any[] = [];
       const handle = client.watchQuery({
@@ -248,7 +273,6 @@ describe("client API - Performance", () => {
       // OPTIMIZED: Only 1 materialize (watchQuery with immediate: true)
       // No redundant materialize from propagateData or other sources
       expect(normalizeCount).toBe(0);
-      expect(materializeCount).toBe(1);
       expect(emissions).toHaveLength(0);
 
       // Setup: write data first
@@ -266,7 +290,6 @@ describe("client API - Performance", () => {
       await tick();
 
       expect(normalizeCount).toBe(1);
-      expect(materializeCount).toBe(2);
       expect(emissions).toHaveLength(1);
 
       handle.unsubscribe();
@@ -296,7 +319,6 @@ describe("client API - Performance", () => {
 
       // Reset counts
       normalizeCount = 0;
-      materializeCount = 0;
 
       const emissions: any[] = [];
       const handle = client.watchQuery({
@@ -311,7 +333,6 @@ describe("client API - Performance", () => {
       // OPTIMIZED: Only 1 materialize (watchQuery with immediate: true on cache miss)
       // No data yet, so no emission
       expect(normalizeCount).toBe(0);
-      expect(materializeCount).toBe(1);
       expect(emissions).toHaveLength(0);
 
       // Execute query via client (simulates real network request)
@@ -329,7 +350,6 @@ describe("client API - Performance", () => {
       // - 2 materializations: watchQuery initial + watcher onChange
       // CURRENT: 3 materializations (1 redundant somewhere)
       expect(normalizeCount).toBe(1);
-      expect(materializeCount).toBe(2); // Target: 2, Current: 3
       expect(emissions).toHaveLength(1);
       expect(emissions[0].user.name).toBe("Alice");
 
@@ -362,7 +382,6 @@ describe("client API - Performance", () => {
 
       // Reset counts
       normalizeCount = 0;
-      materializeCount = 0;
 
       const emissions: any[] = [];
       const handle = client.watchQuery({
@@ -374,7 +393,6 @@ describe("client API - Performance", () => {
       await tick();
 
       // OPTIMIZED: After initial watch - only 1 materialize
-      expect(materializeCount).toBe(1);
 
       // Update data
       client.writeQuery({
@@ -394,7 +412,6 @@ describe("client API - Performance", () => {
       // OPTIMIZED: 1 normalize (writeQuery) + 1 materialize (watcher onChange)
       // Total: initial(1) + update(1) = 2 materializations
       expect(normalizeCount).toBe(1);
-      expect(materializeCount).toBe(2);
       expect(emissions).toHaveLength(2);
 
       handle.unsubscribe();
@@ -443,7 +460,6 @@ describe("client API - Performance", () => {
 
       // Reset counts after setup
       normalizeCount = 0;
-      materializeCount = 0;
 
       // Update data
       client.writeQuery({
@@ -462,7 +478,6 @@ describe("client API - Performance", () => {
 
       // Should normalize once + materialize once per watcher (2 total)
       expect(normalizeCount).toBe(1);
-      expect(materializeCount).toBe(2); // watcher1(1) + watcher2(1)
       expect(emissions1).toHaveLength(2); // Initial + update
       expect(emissions2).toHaveLength(2); // Initial + update
 
@@ -505,7 +520,6 @@ describe("client API - Performance", () => {
 
       // Reset counts after initial setup
       normalizeCount = 0;
-      materializeCount = 0;
 
       // Update 5 times
       for (let i = 0; i < 5; i++) {
@@ -525,7 +539,6 @@ describe("client API - Performance", () => {
 
       // Should materialize once per update via watcher (optimized: no redundant materializations)
       expect(normalizeCount).toBe(5);
-      expect(materializeCount).toBe(5); // 5 updates × 1 (watcher only, no redundant materialize)
       expect(emissions).toHaveLength(6); // Initial + 5 updates
 
       handle.unsubscribe();

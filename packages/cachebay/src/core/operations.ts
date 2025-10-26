@@ -279,6 +279,7 @@ export const createOperations = (
           throw new StaleResponseError();
         }
 
+        console.log('NORMALIZE', result);
         // Write result to cache if we have data (even with partial errors)
         // This matches Relay/Apollo behavior: partial data is still useful
         if (result.data) {

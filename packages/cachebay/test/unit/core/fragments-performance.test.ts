@@ -1,4 +1,44 @@
-import { describe, it, expect, beforeEach } from "vitest";
+// Mock documents module to inject performance counters
+let normalizeCount = 0;
+let materializeHotCount = 0;
+let materializeColdCount = 0;
+
+vi.mock("@/src/core/documents", async () => {
+  const actual = await vi.importActual<typeof import("@/src/core/documents")>("@/src/core/documents");
+
+  return {
+    ...actual,
+    createDocuments: (deps: any) => {
+      const documents = actual.createDocuments(deps);
+
+      // Wrap normalize to count calls
+      const origNormalize = documents.normalizeDocument;
+      documents.normalizeDocument = ((...args: any[]) => {
+        normalizeCount++;
+        return origNormalize.apply(documents, args);
+      }) as any;
+
+      // Wrap materialize to count calls and track HOT vs COLD
+      const origMaterialize = documents.materializeDocument;
+      documents.materializeDocument = ((...args: any[]) => {
+        const result = origMaterialize.apply(documents, args);
+        
+        // Track HOT vs COLD based on the hot field
+        if (result.hot) {
+          materializeHotCount++;
+        } else {
+          materializeColdCount++;
+        }
+        
+        return result;
+      }) as any;
+
+      return documents;
+    },
+  };
+});
+
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createFragments } from "@/src/core/fragments";
 import { createGraph } from "@/src/core/graph";
 import { createPlanner } from "@/src/core/planner";
@@ -15,6 +55,11 @@ describe("Fragments Performance", () => {
   let fragments: ReturnType<typeof createFragments>;
 
   beforeEach(() => {
+    // Reset counters
+    normalizeCount = 0;
+    materializeHotCount = 0;
+    materializeColdCount = 0;
+
     graph = createGraph({
       interfaces: { Post: ["AudioPost", "VideoPost"] },
       onChange: (touchedIds) => {
@@ -29,9 +74,15 @@ describe("Fragments Performance", () => {
   });
 
   describe("readFragment", () => {
-    it("should use force: true and always read fresh data", () => {
+    it("always COLD (uses force: true) - no caching", () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "initial@example.com" });
 
+      // Reset counts
+      normalizeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
+
+      // First read - COLD (force: true)
       const read1 = fragments.readFragment({
         id: "User:u1",
         fragment: operations.USER_FRAGMENT,
@@ -45,10 +96,20 @@ describe("Fragments Performance", () => {
       });
       expect(read1.__version).toBeDefined();
 
+      // readFragment only materializes, doesn't normalize
+      expect(normalizeCount).toBe(0);
+      expect(materializeColdCount).toBe(1);
+      expect(materializeHotCount).toBe(0);
+
       // Update data directly in graph
       graph.putRecord("User:u1", { email: "updated@example.com" });
 
-      // Second read should get fresh data immediately (force: true)
+      // Reset counts
+      normalizeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
+
+      // Second read - still COLD (force: true bypasses cache)
       const read2 = fragments.readFragment({
         id: "User:u1",
         fragment: operations.USER_FRAGMENT,
@@ -62,6 +123,11 @@ describe("Fragments Performance", () => {
       });
       expect(read2.__version).toBeDefined();
       expect(read2.__version).not.toBe(read1.__version);
+
+      // Still COLD - force: true always bypasses cache
+      expect(normalizeCount).toBe(0);
+      expect(materializeColdCount).toBe(1);
+      expect(materializeHotCount).toBe(0);
     });
 
     it("should include __version fields with fingerprint: true", () => {
@@ -80,6 +146,53 @@ describe("Fragments Performance", () => {
   });
 
   describe("watchFragment with update method", () => {
+    it("two-phase: COLD path (1 materialization) then HOT path (1 materialization)", async () => {
+      graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "test@example.com" });
+
+      // Reset counts
+      normalizeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
+
+      const emissions: any[] = [];
+
+      // PHASE 1: First watch - COLD path
+      const handle = fragments.watchFragment({
+        id: "User:u1",
+        fragment: operations.USER_FRAGMENT,
+        variables: {},
+        onData: (data) => {
+          emissions.push(data);
+        },
+      });
+
+      expect(emissions).toHaveLength(1);
+      expect(emissions[0].id).toBe("u1");
+
+      // watchFragment materializes once (immediate: true)
+      expect(normalizeCount).toBe(0);
+      expect(materializeColdCount).toBe(1);
+      expect(materializeHotCount).toBe(0);
+
+      // Reset counts
+      normalizeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
+
+      // PHASE 2: Update to same entity with immediate: true - HOT path
+      handle.update({ id: "User:u1", immediate: true });
+
+      // Should use HOT path (materializeCache)
+      expect(normalizeCount).toBe(0);
+      expect(materializeColdCount).toBe(0);
+      expect(materializeHotCount).toBe(1);
+
+      // No new emission (data unchanged)
+      expect(emissions).toHaveLength(1);
+
+      handle.unsubscribe();
+    });
+
     it("should efficiently switch between entities without memory leaks", async () => {
       // Setup multiple users
       for (let i = 1; i <= 100; i++) {
