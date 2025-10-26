@@ -1,6 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createCachebay } from "@/src/core/client";
 import { gql } from "graphql-tag";
+
+// Mock instrumentation module for production test
+vi.mock("@/src/core/instrumentation", () => ({
+  __DEV__: true, // Default to dev mode
+}));
 
 describe("Cache Policy Validation", () => {
   let client: ReturnType<typeof createCachebay>;
@@ -90,30 +95,42 @@ describe("Cache Policy Validation", () => {
     });
 
     it("warns in prod mode for invalid policy", async () => {
-      // Mock production environment
-      const originalEnv = process.env.NODE_ENV;
-      const originalDev = (globalThis as any).__DEV__;
+      // Reset modules to clear cache
+      vi.resetModules();
       
-      try {
-        process.env.NODE_ENV = 'production';
-        (globalThis as any).__DEV__ = false;
+      // Mock __DEV__ as false for production behavior
+      vi.doMock("@/src/core/instrumentation", () => ({
+        __DEV__: false,
+      }));
 
-        await client.executeQuery({
-          query: QUERY,
-          variables: { id: "1" },
-          cachePolicy: "invalid-policy" as any,
-        });
+      // Re-import to get the mocked version
+      const { createCachebay: createCachebayProd } = await import("@/src/core/client");
+      
+      const prodClient = createCachebayProd({
+        transport: {
+          http: vi.fn().mockResolvedValue({ data: { user: { id: "1", name: "Alice" } }, error: null }),
+          ws: vi.fn(),
+        },
+      });
 
-        expect(consoleWarnSpy).toHaveBeenCalledWith(
-          expect.stringContaining('Invalid cache policy: "invalid-policy"')
-        );
-        expect(consoleWarnSpy).toHaveBeenCalledWith(
-          expect.stringContaining('Falling back to "network-only"')
-        );
-      } finally {
-        process.env.NODE_ENV = originalEnv;
-        (globalThis as any).__DEV__ = originalDev;
-      }
+      await prodClient.executeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        cachePolicy: "invalid-policy" as any,
+      });
+
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid cache policy: "invalid-policy"')
+      );
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Falling back to "network-only"')
+      );
+
+      // Reset modules and mock back to dev mode
+      vi.resetModules();
+      vi.doMock("@/src/core/instrumentation", () => ({
+        __DEV__: true,
+      }));
     });
 
     it("uses default policy when undefined", async () => {
