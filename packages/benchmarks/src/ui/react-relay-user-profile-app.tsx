@@ -10,9 +10,9 @@ import { createUserProfileYoga } from '../server/user-profile-server';
 import { makeUserProfileDataset } from '../utils/seed-user-profile';
 
 export type ReactRelayUserProfileController = {
-  mount(target?: Element): void;
+  mount(target?: Element): Promise<void>;
   unmount(): void;
-  loadUser(userId: string): Promise<void>;
+  ready(): Promise<void>;
 };
 
 type RelayFetchPolicy = "network-only" | "store-or-network" | "store-and-network";
@@ -146,15 +146,9 @@ export function createReactRelayUserProfileApp(
       }
     },
 
-    loadUser: async (userId: string) => {
-      console.log('[Relay] loadUser called with:', userId);
-      currentUserId = userId;
-      if (root) {
-        root.render(<App />);
-        // Wait for render to complete
-        await new Promise(resolve => setTimeout(resolve, 50));
-        console.log('[Relay] after re-render');
-      }
+    ready: async () => {
+      // Query loads automatically on mount, just wait a tick
+      await new Promise(resolve => setTimeout(resolve, 0));
     },
   };
 }

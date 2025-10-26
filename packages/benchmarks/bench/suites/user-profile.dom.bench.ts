@@ -133,7 +133,7 @@ describe('DOM User Profile (happy-dom): single entity with nested data', () => {
     bench('Relay (react, network-only)', async () => {
       const app = createReactRelayUserProfileApp('network-only', 0);
       await app.mount();
-      await app.loadUser(testUserId);
+      await app.ready();
       await app.unmount();
     }, {
       ...BENCH_OPTIONS,
