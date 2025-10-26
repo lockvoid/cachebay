@@ -29,9 +29,19 @@ describe("useFragment", () => {
   it("returns readonly ref with fragment data from cache", () => {
     // Mock watchFragment to call onData immediately
     const mockUnsubscribe = vi.fn();
+    const mockUpdate = vi.fn((opts: any) => {
+      // Call onData with updated data when update is called
+      if (opts.id) {
+        const userId = opts.id.split(':')[1];
+        opts.onData?.({ id: userId, email: `${userId}@example.com` });
+      }
+    });
     const watchFragmentSpy = vi.spyOn(cache as any, "watchFragment").mockImplementation((opts: any) => {
       opts.onData({ id: "u1", email: "test@example.com" });
-      return { unsubscribe: mockUnsubscribe };
+      return { 
+        unsubscribe: mockUnsubscribe,
+        update: mockUpdate
+      };
     });
 
     let fragmentData: any;
@@ -98,9 +108,13 @@ describe("useFragment", () => {
 
   it("reacts to changes in reactive id parameter", async () => {
     const mockUnsubscribe = vi.fn();
+    const mockUpdate = vi.fn();
     const watchFragmentSpy = vi.spyOn(cache as any, "watchFragment").mockImplementation((opts: any) => {
       opts.onData({ id: opts.id.split(":")[1], email: "test@example.com" });
-      return { unsubscribe: mockUnsubscribe };
+      return { 
+        unsubscribe: mockUnsubscribe,
+        update: mockUpdate
+      };
     });
 
     const userId = ref("User:u1");
@@ -137,18 +151,24 @@ describe("useFragment", () => {
     userId.value = "User:u2";
     await nextTick();
 
-    // 2. Verify old watcher was unsubscribed and new one created
-    expect(mockUnsubscribe).toHaveBeenCalledTimes(1);
-    expect(watchFragmentSpy).toHaveBeenCalledTimes(2);
+    // 2. Verify watcher was updated (not recreated)
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(mockUpdate).toHaveBeenCalledWith({ id: "User:u2", variables: {} });
+    expect(mockUnsubscribe).toHaveBeenCalledTimes(0); // Should NOT unsubscribe
+    expect(watchFragmentSpy).toHaveBeenCalledTimes(1); // Should NOT create new watcher
   });
 
   it("reacts to changes in reactive variables parameter", async () => {
     const testCache = createCachebay({ transport: mockTransport });
 
     const mockUnsubscribe = vi.fn();
+    const mockUpdate = vi.fn();
     const watchFragmentSpy = vi.spyOn(testCache as any, "watchFragment").mockImplementation((opts: any) => {
       opts.onData({ id: "u1", email: "test@example.com" });
-      return { unsubscribe: mockUnsubscribe };
+      return { 
+        unsubscribe: mockUnsubscribe,
+        update: mockUpdate
+      };
     });
 
     const variables = ref({ first: 10 });
@@ -185,9 +205,11 @@ describe("useFragment", () => {
     variables.value = { first: 20 };
     await nextTick();
 
-    // 2. Verify old watcher was unsubscribed and new one created
-    expect(mockUnsubscribe).toHaveBeenCalledTimes(1);
-    expect(watchFragmentSpy).toHaveBeenCalledTimes(2);
+    // 2. Verify watcher was updated (not recreated)
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(mockUpdate).toHaveBeenCalledWith({ id: "User:u1", variables: { first: 20 } });
+    expect(mockUnsubscribe).toHaveBeenCalledTimes(0); // Should NOT unsubscribe
+    expect(watchFragmentSpy).toHaveBeenCalledTimes(1); // Should NOT create new watcher
   });
 
   it("handles undefined variables by defaulting to empty object", () => {
@@ -195,7 +217,7 @@ describe("useFragment", () => {
 
     const watchFragmentSpy = vi.spyOn(testCache as any, "watchFragment").mockImplementation((opts: any) => {
       opts.onData({ id: "u1", email: "test@example.com" });
-      return { unsubscribe: vi.fn() };
+      return { unsubscribe: vi.fn(), update: vi.fn() };
     });
 
     let fragmentData: any;
