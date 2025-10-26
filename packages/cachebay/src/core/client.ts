@@ -237,6 +237,7 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
       transport: options.transport,
       suspensionTimeout: options.suspensionTimeout,
       onQueryError: (signature, error) => {
+        console.log('onQueryError', error);
         // Propagate errors to queries, which will notify watchers
         queries.propagateError(signature, error);
       },

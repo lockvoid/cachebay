@@ -403,7 +403,7 @@ export const createOperations = (
           dependencies: cached.dependencies,
           cachePolicy: effectiveCachePolicy,
         });
-        
+
         const result = { data: cached.data as TData, error: null };
         onSuccess?.(result.data);
         return result;
@@ -419,15 +419,15 @@ export const createOperations = (
           dependencies: cached.dependencies,
           cachePolicy: effectiveCachePolicy,
         });
-        
+
         performRequest().catch((err) => {
           if (__DEV__) {
             console.warn('Cachebay: Cache hit, but network request failed', err);
           }
         });
 
-        const result = { 
-          data: cached.data as TData, 
+        const result = {
+          data: cached.data as TData,
           error: null,
           meta: { source: 'cache' as const }
         };

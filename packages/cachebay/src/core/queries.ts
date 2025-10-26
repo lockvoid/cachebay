@@ -347,6 +347,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     dependencies: Set<string>;
     cachePolicy: string;
   }) => {
+    console.log('handleQueryExecuted');
     const watcherId = signatureToWatcher.get(signature);
     if (watcherId !== undefined) {
       const w = watchers.get(watcherId);

@@ -1,12 +1,36 @@
+// Mock documents module to inject performance counters
+let normalizeCount = 0;
+let materializeCount = 0;
+
+vi.mock("@/src/core/documents", async () => {
+  const actual = await vi.importActual<typeof import("@/src/core/documents")>("@/src/core/documents");
+
+  return {
+    ...actual,
+    createDocuments: (deps: any) => {
+      const documents = actual.createDocuments(deps);
+
+      // Wrap normalize to count calls
+      const origNormalize = documents.normalizeDocument;
+      documents.normalizeDocument = ((...args: any[]) => {
+        normalizeCount++;
+        return origNormalize.apply(documents, args);
+      }) as any;
+
+      // Wrap materialize to count calls
+      const origMaterialize = documents.materializeDocument;
+      documents.materializeDocument = ((...args: any[]) => {
+        materializeCount++;
+        return origMaterialize.apply(documents, args);
+      }) as any;
+
+      return documents;
+    },
+  };
+});
+
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { createQueries } from "@/src/core/queries";
-import { createGraph } from "@/src/core/graph";
-import { createPlanner } from "@/src/core/planner";
-import { createDocuments } from "@/src/core/documents";
-import { createCanonical } from "@/src/core/canonical";
-import { createOptimistic } from "@/src/core/optimistic";
-import { createOperations } from "@/src/core/operations";
-import { createSSR } from "@/src/core/ssr";
+import { createCachebay } from "@/src/core/client";
 import { gql } from "graphql-tag";
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
@@ -28,40 +52,14 @@ const tick = () => new Promise<void>((r) => queueMicrotask(r));
  * - watchQuery: materialize once on initial load, once per update
  * - No double-materialize from propagateData when data hasn't changed
  */
-describe("queries API - Performance", () => {
-  let graph: ReturnType<typeof createGraph>;
-  let planner: ReturnType<typeof createPlanner>;
-  let canonical: ReturnType<typeof createCanonical>;
-  let documents: ReturnType<typeof createDocuments>;
-  let queries: ReturnType<typeof createQueries>;
-  let operations: ReturnType<typeof createOperations>;
-
-  let normalizeCount = 0;
-  let materializeCount = 0;
+describe("client API - Performance", () => {
+  let client: ReturnType<typeof createCachebay>;
   let mockTransport: any;
 
   beforeEach(() => {
+    // Reset counters
     normalizeCount = 0;
     materializeCount = 0;
-
-    graph = createGraph({
-      keys: {
-        User: (u: any) => u.id,
-        Post: (p: any) => p.id,
-        Profile: (p: any) => p.id,
-      },
-      onChange: (touchedIds) => {
-        queries.propagateData(touchedIds);
-      },
-    });
-    planner = createPlanner();
-    const optimistic = createOptimistic({ graph });
-    canonical = createCanonical({ graph, optimistic });
-    documents = createDocuments({ graph, planner, canonical });
-    const ssr = createSSR({ hydrationTimeout: 100 }, { graph });
-
-    // Create queries
-    queries = createQueries({ documents, planner });
 
     // Create mock transport
     mockTransport = {
@@ -69,30 +67,15 @@ describe("queries API - Performance", () => {
       ws: vi.fn(),
     };
 
-    // Create operations with callback
-    operations = createOperations(
-      {
-        transport: mockTransport,
+    // Create client with mock transport
+    client = createCachebay({
+      transport: mockTransport,
+      keys: {
+        User: (u: any) => u.id,
+        Post: (p: any) => p.id,
+        Profile: (p: any) => p.id,
       },
-      { planner, documents, ssr },
-      {
-        onQueryExecuted: queries.handleQueryExecuted,
-      }
-    );
-
-    // Spy on normalize/materialize
-    const origNormalize = documents.normalizeDocument;
-    const origMaterialize = documents.materializeDocument;
-
-    documents.normalizeDocument = ((...args: any[]) => {
-      normalizeCount++;
-      return origNormalize.apply(documents, args);
-    }) as any;
-
-    documents.materializeDocument = ((...args: any[]) => {
-      materializeCount++;
-      return origMaterialize.apply(documents, args);
-    }) as any;
+    });
   });
 
   describe("writeQuery", () => {
@@ -106,7 +89,7 @@ describe("queries API - Performance", () => {
         }
       `;
 
-      queries.writeQuery({
+      client.writeQuery({
         query: QUERY,
         variables: { id: "1" },
         data: {
@@ -143,7 +126,7 @@ describe("queries API - Performance", () => {
 
       // Load 5 pages
       for (let i = 0; i < 5; i++) {
-        queries.writeQuery({
+        client.writeQuery({
           query: POSTS_QUERY,
           variables: { first: 2, after: i === 0 ? null : `cursor${i}` },
           data: {
@@ -181,7 +164,7 @@ describe("queries API - Performance", () => {
       `;
 
       // Setup: write data first
-      queries.writeQuery({
+      client.writeQuery({
         query: QUERY,
         variables: { id: "1" },
         data: {
@@ -198,7 +181,7 @@ describe("queries API - Performance", () => {
       materializeCount = 0;
 
       // Read the data
-      queries.readQuery({
+      client.readQuery({
         query: QUERY,
         variables: { id: "1" },
       });
@@ -221,7 +204,7 @@ describe("queries API - Performance", () => {
       `;
 
       // Setup: write data first
-      queries.writeQuery({
+      client.writeQuery({
         query: QUERY,
         variables: { id: "1" },
         data: {
@@ -239,7 +222,7 @@ describe("queries API - Performance", () => {
       materializeCount = 0;
 
       const emissions: any[] = [];
-      const handle = queries.watchQuery({
+      const handle = client.watchQuery({
         query: QUERY,
         variables: { id: "1" },
         onData: (data) => emissions.push(data),
@@ -256,7 +239,7 @@ describe("queries API - Performance", () => {
       handle.unsubscribe();
     });
 
-    it.only("should rematerialize 1 on cache update", async () => {
+    it("should rematerialize 1 on cache update", async () => {
       const QUERY = gql`
         query GetUser($id: ID!) {
           user(id: $id) {
@@ -271,7 +254,7 @@ describe("queries API - Performance", () => {
       materializeCount = 0;
 
       const emissions: any[] = [];
-      const handle = queries.watchQuery({
+      const handle = client.watchQuery({
         query: QUERY,
         variables: { id: "1" },
         onData: (data) => emissions.push(data),
@@ -286,7 +269,7 @@ describe("queries API - Performance", () => {
       expect(emissions).toHaveLength(0);
 
       // Setup: write data first
-      queries.writeQuery({
+      client.writeQuery({
         query: QUERY,
         variables: { id: "1" },
         data: {
@@ -333,7 +316,7 @@ describe("queries API - Performance", () => {
       materializeCount = 0;
 
       const emissions: any[] = [];
-      const handle = queries.watchQuery({
+      const handle = client.watchQuery({
         query: QUERY,
         variables: { id: "1" },
         onData: (data) => emissions.push(data),
@@ -347,16 +330,21 @@ describe("queries API - Performance", () => {
       expect(materializeCount).toBe(1);
       expect(emissions).toHaveLength(0);
 
-      // Execute query via operations (simulates real network request)
-      await operations.executeQuery({
+      // Execute query via client (simulates real network request)
+      await client.executeQuery({
         query: QUERY,
         variables: { id: "1" },
+        cachePolicy: 'network-only',
       });
 
       await tick();
 
+      // OPTIMIZATION TARGET:
+      // - 1 normalize (executeQuery writes network response)
+      // - 2 materializations: watchQuery initial + watcher onChange
+      // CURRENT: 3 materializations (1 redundant somewhere)
       expect(normalizeCount).toBe(1);
-      expect(materializeCount).toBe(2); // Target: 2, Current: 4
+      expect(materializeCount).toBe(2); // Target: 2, Current: 3
       expect(emissions).toHaveLength(1);
       expect(emissions[0].user.name).toBe("Alice");
 
@@ -374,7 +362,7 @@ describe("queries API - Performance", () => {
       `;
 
       // Setup: write initial data
-      queries.writeQuery({
+      client.writeQuery({
         query: QUERY,
         variables: { id: "1" },
         data: {
@@ -392,7 +380,7 @@ describe("queries API - Performance", () => {
       materializeCount = 0;
 
       const emissions: any[] = [];
-      const handle = queries.watchQuery({
+      const handle = client.watchQuery({
         query: QUERY,
         variables: { id: "1" },
         onData: (data) => emissions.push(data),
@@ -404,7 +392,7 @@ describe("queries API - Performance", () => {
       expect(materializeCount).toBe(1);
 
       // Update data
-      queries.writeQuery({
+      client.writeQuery({
         query: QUERY,
         variables: { id: "1" },
         data: {
@@ -438,7 +426,7 @@ describe("queries API - Performance", () => {
       `;
 
       // Setup: write initial data
-      queries.writeQuery({
+      client.writeQuery({
         query: QUERY,
         variables: { id: "1" },
         data: {
@@ -454,13 +442,13 @@ describe("queries API - Performance", () => {
       const emissions1: any[] = [];
       const emissions2: any[] = [];
 
-      const handle1 = queries.watchQuery({
+      const handle1 = client.watchQuery({
         query: QUERY,
         variables: { id: "1" },
         onData: (data) => emissions1.push(data),
       });
 
-      const handle2 = queries.watchQuery({
+      const handle2 = client.watchQuery({
         query: QUERY,
         variables: { id: "1" },
         onData: (data) => emissions2.push(data),
@@ -473,7 +461,7 @@ describe("queries API - Performance", () => {
       materializeCount = 0;
 
       // Update data
-      queries.writeQuery({
+      client.writeQuery({
         query: QUERY,
         variables: { id: "1" },
         data: {
@@ -508,7 +496,7 @@ describe("queries API - Performance", () => {
       `;
 
       // Setup: write initial data
-      queries.writeQuery({
+      client.writeQuery({
         query: USER_QUERY,
         variables: { id: "1" },
         data: {
@@ -522,7 +510,7 @@ describe("queries API - Performance", () => {
 
       // Setup watcher
       const emissions: any[] = [];
-      const handle = queries.watchQuery({
+      const handle = client.watchQuery({
         query: USER_QUERY,
         variables: { id: "1" },
         onData: (data) => emissions.push(data),
@@ -536,7 +524,7 @@ describe("queries API - Performance", () => {
 
       // Update 5 times
       for (let i = 0; i < 5; i++) {
-        queries.writeQuery({
+        client.writeQuery({
           query: USER_QUERY,
           variables: { id: "1" },
           data: {
@@ -570,7 +558,7 @@ describe("queries API - Performance", () => {
         `;
 
         // Pre-populate cache
-        queries.writeQuery({
+        client.writeQuery({
           query: QUERY,
           variables: { id: "1" },
           data: {
@@ -581,7 +569,7 @@ describe("queries API - Performance", () => {
         const emissions: any[] = [];
 
         // Watch with immediate: true (default)
-        const handle = queries.watchQuery({
+        const handle = client.watchQuery({
           query: QUERY,
           variables: { id: "1" },
           immediate: true,
@@ -608,7 +596,7 @@ describe("queries API - Performance", () => {
         `;
 
         // Pre-populate cache
-        queries.writeQuery({
+        client.writeQuery({
           query: QUERY,
           variables: { id: "1" },
           data: {
@@ -619,7 +607,7 @@ describe("queries API - Performance", () => {
         const emissions: any[] = [];
 
         // Watch with immediate: false
-        const handle = queries.watchQuery({
+        const handle = client.watchQuery({
           query: QUERY,
           variables: { id: "1" },
           immediate: false,
@@ -647,7 +635,7 @@ describe("queries API - Performance", () => {
         const emissions: any[] = [];
 
         // Watch with immediate: true but no cached data
-        const handle = queries.watchQuery({
+        const handle = client.watchQuery({
           query: QUERY,
           variables: { id: "999" },
           immediate: true,
@@ -673,7 +661,7 @@ describe("queries API - Performance", () => {
         `;
 
         // Pre-populate cache
-        queries.writeQuery({
+        client.writeQuery({
           query: QUERY,
           variables: { id: "1" },
           data: {
@@ -684,7 +672,7 @@ describe("queries API - Performance", () => {
         const emissions: any[] = [];
 
         // Watch with immediate: false
-        const handle = queries.watchQuery({
+        const handle = client.watchQuery({
           query: QUERY,
           variables: { id: "1" },
           immediate: false,
@@ -697,7 +685,7 @@ describe("queries API - Performance", () => {
         expect(emissions).toHaveLength(0);
 
         // Update data - watcher won't be notified because it has no dependencies yet
-        queries.writeQuery({
+        client.writeQuery({
           query: QUERY,
           variables: { id: "1" },
           data: {
@@ -718,7 +706,7 @@ describe("queries API - Performance", () => {
         expect(emissions[0].user.name).toBe("Bob");
 
         // Now watcher has dependencies, so future updates will trigger
-        queries.writeQuery({
+        client.writeQuery({
           query: QUERY,
           variables: { id: "1" },
           data: {
@@ -750,7 +738,7 @@ describe("queries API - Performance", () => {
         `;
 
         // Pre-populate cache with two users
-        queries.writeQuery({
+        client.writeQuery({
           query: QUERY,
           variables: { id: "1" },
           data: {
@@ -758,7 +746,7 @@ describe("queries API - Performance", () => {
           },
         });
 
-        queries.writeQuery({
+        client.writeQuery({
           query: QUERY,
           variables: { id: "2" },
           data: {
@@ -769,7 +757,7 @@ describe("queries API - Performance", () => {
         const emissions: any[] = [];
 
         // Watch user 1
-        const handle = queries.watchQuery({
+        const handle = client.watchQuery({
           query: QUERY,
           variables: { id: "1" },
           immediate: true,
@@ -802,7 +790,7 @@ describe("queries API - Performance", () => {
         `;
 
         // Pre-populate cache with two users
-        queries.writeQuery({
+        client.writeQuery({
           query: QUERY,
           variables: { id: "1" },
           data: {
@@ -810,7 +798,7 @@ describe("queries API - Performance", () => {
           },
         });
 
-        queries.writeQuery({
+        client.writeQuery({
           query: QUERY,
           variables: { id: "2" },
           data: {
@@ -821,7 +809,7 @@ describe("queries API - Performance", () => {
         const emissions: any[] = [];
 
         // Watch user 1
-        const handle = queries.watchQuery({
+        const handle = client.watchQuery({
           query: QUERY,
           variables: { id: "1" },
           immediate: true,
@@ -853,7 +841,7 @@ describe("queries API - Performance", () => {
         `;
 
         // Pre-populate cache
-        queries.writeQuery({
+        client.writeQuery({
           query: QUERY,
           variables: { id: "1" },
           data: {
@@ -864,7 +852,7 @@ describe("queries API - Performance", () => {
         const emissions: any[] = [];
 
         // Watch user 1
-        const handle = queries.watchQuery({
+        const handle = client.watchQuery({
           query: QUERY,
           variables: { id: "1" },
           immediate: true,
@@ -882,7 +870,7 @@ describe("queries API - Performance", () => {
         expect(emissions).toHaveLength(1);
 
         // Now update the cache to trigger propagateData
-        queries.writeQuery({
+        client.writeQuery({
           query: QUERY,
           variables: { id: "1" },
           data: {
@@ -910,7 +898,7 @@ describe("queries API - Performance", () => {
         `;
 
         // Pre-populate cache with user 1
-        queries.writeQuery({
+        client.writeQuery({
           query: QUERY,
           variables: { id: "1" },
           data: {
@@ -921,7 +909,7 @@ describe("queries API - Performance", () => {
         const emissions: any[] = [];
 
         // Watch user 1
-        const handle = queries.watchQuery({
+        const handle = client.watchQuery({
           query: QUERY,
           variables: { id: "1" },
           immediate: true,
