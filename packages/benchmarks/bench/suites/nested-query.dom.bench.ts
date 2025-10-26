@@ -8,7 +8,7 @@ import { makeNestedDataset } from "../../src/utils/seed-nested-query";
 import Table from 'cli-table3';
 
 const DEBUG = true;
-const PAGES_TO_LOAD = 25; // 1000 users / 10 per page = 100 pages
+const PAGES_TO_LOAD = 2; // 1000 users / 10 per page = 100 pages
 
 const BENCH_OPTIONS = {
   iterations: 10,
