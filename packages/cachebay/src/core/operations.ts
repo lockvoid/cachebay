@@ -409,6 +409,9 @@ export const createOperations = (
     // SSR hydration or suspension window: return cached data if available
     if (ssr.isHydrating() || isWithinSuspension(signature)) {
       if (cached && cached.source !== "none") {
+        // Call onCachedData for SSR/suspension to set data synchronously
+        onCachedData?.(cached.data as TData);
+        
         const result = { data: cached.data as TData, error: null };
         onSuccess?.(result.data);
         return result;

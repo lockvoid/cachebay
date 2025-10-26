@@ -403,4 +403,97 @@ describe("Compiler metadata", () => {
       expect(plan.windowArgs.has(arg)).toBe(true);
     }
   });
+
+  describe("getDependencies", () => {
+    it("returns empty set for queries without arguments or connections", () => {
+      const query = `
+        query GetPosts {
+          posts {
+            id
+            title
+          }
+        }
+      `;
+
+      const plan = compilePlan(query);
+      const deps = plan.getDependencies("canonical", {});
+
+      // No arguments or connections, so no dependencies
+      expect(deps.size).toBe(0);
+    });
+
+    it("extracts field keys from id arguments", () => {
+      const plan = compilePlan(USER_QUERY);
+      const deps = plan.getDependencies("canonical", { id: "u123" });
+
+      expect(deps.has('user({"id":"u123"})')).toBe(true);
+      expect(deps.size).toBe(1);
+    });
+
+    it("handles multiple fields with id arguments", () => {
+      const query = `
+        query GetUserAndPost($userId: ID!, $postId: ID!) {
+          user(id: $userId) {
+            id
+            name
+          }
+          post(id: $postId) {
+            id
+            title
+          }
+        }
+      `;
+
+      const plan = compilePlan(query);
+      const deps = plan.getDependencies("canonical", { userId: "u1", postId: "p1" });
+
+      expect(deps.has('user({"id":"u1"})')).toBe(true);
+      expect(deps.has('post({"id":"p1"})')).toBe(true);
+      expect(deps.size).toBe(2);
+    });
+
+    it("handles nested fields with id arguments and connections", () => {
+      const plan = compilePlan(USER_POSTS_QUERY);
+      const deps = plan.getDependencies("canonical", { id: "u1", first: 10 });
+
+      expect(deps.has('user({"id":"u1"})')).toBe(true);
+      // Nested posts connection should be included
+      expect(deps.has('@connection.posts({})')).toBe(true);
+      expect(deps.size).toBe(2);
+    });
+
+    it("canonical mode excludes window args from connection keys", () => {
+      const plan = compilePlan(POSTS_QUERY);
+      
+      const strictDeps = plan.getDependencies("strict", { category: "tech", sort: "hot", first: 10, after: "c1" });
+      const canonicalDeps = plan.getDependencies("canonical", { category: "tech", sort: "hot", first: 10, after: "c1" });
+
+      // Both should have the connection with filters only (no pagination args)
+      // Connection keys use canonical form (filters only) regardless of mode
+      expect(strictDeps.has('@connection.posts({"category":"tech","sort":"hot"})')).toBe(true);
+      expect(canonicalDeps.has('@connection.posts({"category":"tech","sort":"hot"})')).toBe(true);
+      
+      // Should be same size (connections use canonical keys regardless of mode)
+      expect(strictDeps.size).toBe(canonicalDeps.size);
+      expect(strictDeps.size).toBe(1);
+    });
+
+    it("includes fields even when arguments are null", () => {
+      const plan = compilePlan(USER_QUERY);
+      const deps = plan.getDependencies("canonical", { id: null });
+
+      // Field with null id is still included (null is a valid value)
+      expect(deps.has('user({"id":null})')).toBe(true);
+      expect(deps.size).toBe(1);
+    });
+
+    it("handles fragments correctly", () => {
+      const plan = compilePlan(USER_POSTS_FRAGMENT, { fragmentName: "UserPosts" });
+      const deps = plan.getDependencies("canonical", { first: 10 });
+
+      // Fragment has posts connection
+      expect(deps.has('@connection.posts({})')).toBe(true);
+      expect(deps.size).toBe(1);
+    });
+  });
 });

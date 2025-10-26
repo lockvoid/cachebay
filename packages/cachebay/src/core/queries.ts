@@ -275,6 +275,12 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
         }
       }
       // No else - watchers simply don't emit on cache miss, they wait for data
+    } else {
+      // Even with immediate: false, register basic dependencies from query plan
+      // This ensures the watcher is notified when entities are added to the cache
+      // Use canonical mode to match the signature mode (watchers use canonical signatures)
+      const basicDeps = plan.getDependencies("canonical", variables);
+      updateWatcherDependencies(watcherId, basicDeps);
     }
 
     return {
