@@ -1,7 +1,6 @@
 // src/core/queries.ts
 import type { DocumentsInstance } from "./documents";
 import type { PlannerInstance } from "./planner";
-import type { OperationsInstance } from "./operations";
 import { CacheMissError } from "./errors";
 import { recycleSnapshots } from "./utils";
 import type { DocumentNode } from "graphql";
@@ -9,7 +8,6 @@ import type { DocumentNode } from "graphql";
 export type QueriesDependencies = {
   documents: DocumentsInstance;
   planner: PlannerInstance;
-  operations: OperationsInstance;
 };
 
 export type ReadQueryOptions = {
@@ -47,9 +45,7 @@ export type WatchQueryHandle = {
 
 export type QueriesInstance = ReturnType<typeof createQueries>;
 
-export const createQueries = ({ documents, planner, operations: initialOperations }: QueriesDependencies) => {
-  // Operations reference (not used in queries, only for dependency injection pattern)
-  let operations = initialOperations;
+export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
   // --- Watcher state & indices ---
   type WatcherState = {
@@ -385,7 +381,5 @@ export const createQueries = ({ documents, planner, operations: initialOperation
     propagateData,
     propagateError,
     handleQueryExecuted, // Expose for operations to call
-    // Allow injecting operations after creation
-    _setOperations: (ops: any) => { operations = ops; },
   };
 };

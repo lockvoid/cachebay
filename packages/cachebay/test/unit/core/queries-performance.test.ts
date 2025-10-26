@@ -59,8 +59,8 @@ describe("queries API - Performance", () => {
     documents = createDocuments({ graph, planner, canonical });
     const ssr = createSSR({ hydrationTimeout: 100 }, { graph });
 
-    // Create queries first (without operations)
-    queries = createQueries({ documents, planner, operations: null as any });
+    // Create queries
+    queries = createQueries({ documents, planner });
 
     // Create operations with callback
     operations = createOperations(
@@ -75,9 +75,6 @@ describe("queries API - Performance", () => {
         onQueryExecuted: queries.handleQueryExecuted,
       }
     );
-
-    // Inject operations into queries
-    queries._setOperations(operations);
 
     // Spy on normalize/materialize
     const origNormalize = documents.normalizeDocument;
@@ -256,6 +253,56 @@ describe("queries API - Performance", () => {
     });
 
     it.only("should rematerialize 1 on cache update", async () => {
+      const QUERY = gql`
+        query GetUser($id: ID!) {
+          user(id: $id) {
+            id
+            name
+          }
+        }
+      `;
+
+      // Reset counts
+      normalizeCount = 0;
+      materializeCount = 0;
+
+      const emissions: any[] = [];
+      const handle = queries.watchQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        onData: (data) => emissions.push(data),
+      });
+
+      await tick();
+
+      // OPTIMIZED: Only 1 materialize (watchQuery with immediate: true)
+      // No redundant materialize from propagateData or other sources
+      expect(normalizeCount).toBe(0);
+      expect(materializeCount).toBe(1);
+      expect(emissions).toHaveLength(0);
+
+      // Setup: write data first
+      queries.writeQuery({
+        query: QUERY,
+        variables: { id: "1" },
+        data: {
+          user: {
+            __typename: "User",
+            id: "1",
+            name: "Alice",
+          },
+        },
+      });
+      await tick();
+
+      expect(normalizeCount).toBe(1);
+      expect(materializeCount).toBe(2);
+      expect(emissions).toHaveLength(1);
+
+      handle.unsubscribe();
+    });
+
+    it.only("should rematerialize 1 on operation execute", async () => {
       const QUERY = gql`
         query GetUser($id: ID!) {
           user(id: $id) {

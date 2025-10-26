@@ -36,8 +36,8 @@ describe("queries API", () => {
     documents = createDocuments({ graph, planner, canonical });
     const ssr = createSSR({ hydrationTimeout: 100 }, { graph });
 
-    // Create queries first (without operations)
-    queries = createQueries({ documents, planner, operations: null as any });
+    // Create queries
+    queries = createQueries({ documents, planner });
 
     // Create operations with callback
     operations = createOperations(
@@ -52,9 +52,6 @@ describe("queries API", () => {
         onQueryExecuted: queries.handleQueryExecuted,
       }
     );
-
-    // Inject operations into queries
-    queries._setOperations(operations);
   });
 
   describe("readQuery / writeQuery", () => {

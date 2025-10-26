@@ -224,11 +224,10 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
   documents = createDocuments({ graph, planner, canonical });
   fragments = createFragments({ graph, planner, documents });
 
-  // Create queries first (with placeholder operations)
+  // Create queries first
   queries = createQueries({
     documents,
     planner,
-    operations: null as any // Will be injected after operations is created
   });
 
   // Operations (always created since transport is required)
@@ -245,9 +244,6 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
     },
     { planner, documents, ssr }
   );
-
-  // Inject operations into queries
-  queries._setOperations(operations);
 
   const inspect = createInspect({ graph, optimistic });
 
