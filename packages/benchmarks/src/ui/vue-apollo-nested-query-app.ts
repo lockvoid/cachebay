@@ -184,16 +184,32 @@ export function createVueApolloNestedApp(
             await load();
           } else {
             // Subsequent calls: fetch more
+            const currentCount = result.value.users.edges.length;
             const cursor = result.value.users.pageInfo.endCursor;
             const hasNext = result.value.users.pageInfo.hasNextPage;
-            
+
             if (!hasNext) {
               console.warn('Apollo: No more pages to load');
               return;
             }
-            
+
+            // Start fetchMore
             await fetchMore({ variables: { after: cursor } });
-            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // Wait for cache to actually update (result.value to change)
+            // This is necessary because fetchMore resolves before cache merge completes
+            await new Promise<void>((resolve) => {
+              const unwatch = watch(
+                () => result.value?.users?.edges?.length,
+                (newCount) => {
+                  if (newCount > currentCount) {
+                    unwatch();
+                    resolve();
+                  }
+                },
+                { immediate: true }
+              );
+            });
           }
         } catch (error) {
           console.error('Apollo loadNextPage error:', error);
