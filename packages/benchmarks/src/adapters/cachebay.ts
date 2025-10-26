@@ -1,36 +1,43 @@
+import { createCachebay } from "../../../cachebay/src";
 
-import { createClient, cache as cachePlugin, fetch as fetchPlugin } from 'villus';
-import { gql } from 'graphql-tag';
-import type { Adapter, FeedResult } from './types';
-import { createCachebay } from 'cachebay';
+export type CachebayPluginConfig = {
+  yoga: any;
+  cachePolicy?: "network-only" | "cache-first" | "cache-and-network";
+};
 
-export function createCachebayAdapter(url: string): Adapter {
-  const cachebay = createCachebay({});
+/**
+ * Creates a Cachebay plugin configured for nested query benchmarks
+ * Uses Yoga directly (in-memory, no HTTP)
+ */
+export function createCachebayPlugin({ yoga, cachePolicy }: CachebayPluginConfig) {
+  // Transport calls Yoga's fetch directly - no HTTP, no network, no serialization
+  const transport = {
+    http: async (context: any) => {
+      // Use Yoga's fetch API (works in-memory without HTTP)
+      const response = await yoga.fetch('http://localhost/graphql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: context.query,
+          variables: context.variables,
+        }),
+      });
 
-  console.log('Cachebay adapter created', cachebay);
+      const result = await response.json();
 
-  const client = createClient({
-    url,
-
-    cachePolicy: 'cache-first',
-
-    use: [cachePlugin, fetchPlugin]
-  });
-
-  return {
-    name: 'cachebay',
-    async setup() {
-      return {};
-    },
-    async fetchPage({ first, after }): Promise<FeedResult> {
-      const { data, error } = await client.executeQuery({ query: FEED, variables: { first, after } });
-
-      if (error) throw error;
-
-      return data!.feed;
-    },
-    async teardown() {
-      // no-op
+      return {
+        data: result.data || null,
+        error: result.errors?.[0] || null
+      };
     },
   };
+
+  const plugin = createCachebay({
+    interfaces: { Node: ["User", "Post", "Comment"] },
+    hydrationTimeout: 0,
+    suspensionTimeout: 0,
+    transport,
+  });
+
+  return plugin;
 }
