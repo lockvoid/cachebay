@@ -8,7 +8,11 @@
   "scripts": {
     "relay": "relay-compiler",
     "bench:api": "pnpm relay && rsbuild build && node dist/bench.cjs",
-    "bench:suite": "NODE_ENV=production vitest bench --run --mode production"
+    "bench:api:baseline": "pnpm bench:api | tee .bench-results/api-baseline.txt",
+    "bench:api:compare": "pnpm bench:api | tee .bench-results/api-current.txt && node scripts/compare-mitata.js",
+    "bench:suite": "NODE_ENV=production vitest bench --run --mode production",
+    "bench:suite:baseline": "pnpm bench:suite --outputFile=.bench-results/baseline.json",
+    "bench:suite:compare": "pnpm bench:suite --compare=.bench-results/baseline.json"
   },
   "dependencies": {
     "@apollo/client": "^3.8.10",

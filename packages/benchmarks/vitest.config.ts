@@ -34,14 +34,12 @@ export default defineConfig(({ mode }) => ({
   test: {
     browser: {
       enabled: true,
+      name: 'chromium',
       provider: 'playwright',
       headless: process.env.HEADLESS !== 'false', // Set HEADLESS=false to see browser
-      instances: [
-        { browser: 'chromium' }
-      ],
     },
     globals: true,
-    include: ['bench/suites/**/*.dom.bench.ts'],
+    include: ['suites/**/*.dom.bench.ts'],
     benchmark: { time: 300, warmupTime: 150, minSamples: 5, concurrent: false },
     silent: false,  // Allow console output
     reporters: process.env.DEBUG === 'true' ? ['verbose'] : ['default'],
