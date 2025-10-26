@@ -49,7 +49,6 @@
           Load more
         </span>
       </button>
-      {{ spellsQuery.isFetching }}
     </div>
   </div>
 </template>
