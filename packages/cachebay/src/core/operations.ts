@@ -241,9 +241,10 @@ export const createOperations = (
     const signature = plan.makeSignature("canonical", variables);  // Always canonical
 
     // Read from cache using documents directly
+    // Always read cache during SSR hydration, even for network-only
     let cached;
 
-    if (effectiveCachePolicy !== 'network-only') {
+    if (effectiveCachePolicy !== 'network-only' || ssr.isHydrating()) {
       cached = documents.materializeDocument({
         document: query,
         variables,

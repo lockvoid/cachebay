@@ -204,7 +204,7 @@ describe("queries API", () => {
       handle.unsubscribe();
     });
 
-    it("supports refetch", () => {
+    it("supports refetch", async () => {
       const QUERY = gql`
         query GetUser($id: ID!) {
           user(id: $id) {
@@ -237,10 +237,10 @@ describe("queries API", () => {
       // Update data directly (not via writeQuery)
       graph.putRecord("User:1", { name: "Bob" });
 
-      // Manually refetch (should emit synchronously with current snapshot)
-      // refetch removed - use update with same variables to re-materialize
-      handle.update({ variables: { id: "1" }, immediate: true });
+      // Wait for propagateData to run and update cache
+      await new Promise(resolve => setTimeout(resolve, 0));
 
+      // propagateData should have emitted already
       expect(emissions).toHaveLength(2);
       expect(emissions[1].user.name).toBe("Bob");
 
@@ -824,10 +824,10 @@ describe("queries API", () => {
         },
       });
 
-      // Refetch after update
-      // refetch removed - use update with same variables to re-materialize
-      handle.update({ variables: { id: "1" }, immediate: true });
+      // Wait for propagateData to run after writeQuery
+      await new Promise(resolve => setTimeout(resolve, 0));
 
+      // propagateData should have emitted the updated data
       expect(emissions).toHaveLength(2);
       expect(emissions[1].user.name).toBe("Alice Updated");
       // Profile should be recycled

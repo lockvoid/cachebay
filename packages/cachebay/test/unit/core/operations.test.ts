@@ -28,27 +28,45 @@ describe("operations", () => {
 
     // Mock documents with proper cache simulation
     let cachedData: any = null;
+    const materializeCache = new Map<string, any>();
+    
     mockDocuments = {
       normalizeDocument: vi.fn((args) => {
         cachedData = args.data;
+        // Clear cache when data is written
+        materializeCache.clear();
       }),
       materializeDocument: vi.fn((args) => {
-        // If we have cached data
+        const { force = false, variables = {}, canonical = true } = args;
+        const cacheKey = JSON.stringify({ variables, canonical });
+        
+        // Check cache if not forcing
+        if (!force && materializeCache.has(cacheKey)) {
+          return materializeCache.get(cacheKey);
+        }
+        
+        // Materialize from cached data
+        let result;
         if (cachedData) {
-          return {
+          result = {
             data: cachedData,
             source: "canonical",
             ok: { canonical: true, strict: true },
             dependencies: new Set(),
           };
+        } else {
+          // No cache
+          result = {
+            data: undefined,
+            source: "none",
+            ok: { canonical: false, strict: false },
+            dependencies: new Set(),
+          };
         }
-        // No cache
-        return {
-          data: undefined,
-          source: "none",
-          ok: { canonical: false, strict: false },
-          dependencies: new Set(),
-        };
+        
+        // Cache the result
+        materializeCache.set(cacheKey, result);
+        return result;
       }),
     };
 
@@ -221,25 +239,8 @@ describe("operations", () => {
 
     describe("network-only (default)", () => {
       it("always fetches from network and ignores cache", async () => {
-        // Setup: First readQuery returns cached data, second returns network data after write
-        let readCount = 0;
-        mockDocuments.materializeDocument.mockImplementation(() => {
-          readCount++;
-          if (readCount === 1) {
-            // Initial read (before network fetch)
-            return {
-              data: cachedData,
-              source: "canonical",
-              ok: { canonical: true, strict: true },
-            };
-          }
-          // After write, return the network data
-          return {
-            data: networkData,
-            source: "canonical",
-            ok: { canonical: true, strict: true },
-          };
-        });
+        // Pre-populate cache with old data
+        mockDocuments.normalizeDocument({ data: cachedData });
 
         const mockResult: OperationResult = {
           data: networkData,
@@ -584,11 +585,8 @@ describe("operations", () => {
     describe("SSR hydration", () => {
       it("returns cached data during hydration for network-only", async () => {
         mockSsr.isHydrating.mockReturnValue(true);
-        mockDocuments.materializeDocument.mockReturnValue({
-          data: cachedData,
-          source: "canonical",
-          ok: { canonical: true, strict: true },
-        });
+        // Pre-populate cache
+        mockDocuments.normalizeDocument({ data: cachedData });
 
         const onSuccess = vi.fn();
         const result = await operations.executeQuery({
@@ -605,11 +603,8 @@ describe("operations", () => {
 
       it("returns cached data during hydration for cache-first", async () => {
         mockSsr.isHydrating.mockReturnValue(true);
-        mockDocuments.materializeDocument.mockReturnValue({
-          data: cachedData,
-          source: "canonical",
-          ok: { canonical: true, strict: true },
-        });
+        // Pre-populate cache
+        mockDocuments.normalizeDocument({ data: cachedData });
 
         const result = await operations.executeQuery({
           query,
@@ -623,11 +618,8 @@ describe("operations", () => {
 
       it("skips network request during hydration", async () => {
         mockSsr.isHydrating.mockReturnValue(true);
-        mockDocuments.materializeDocument.mockReturnValue({
-          data: cachedData,
-          source: "canonical",
-          ok: { canonical: true, strict: true },
-        });
+        // Pre-populate cache
+        mockDocuments.normalizeDocument({ data: cachedData });
 
         await operations.executeQuery({
           query,
@@ -1016,18 +1008,7 @@ describe("operations", () => {
     });
 
     it("sets meta.source to 'network' for network responses", async () => {
-      mockDocuments.materializeDocument
-        .mockReturnValueOnce({
-          data: undefined,
-          source: "none",
-          ok: { canonical: false, strict: false },
-        })
-        .mockReturnValueOnce({
-          data: networkData,
-          source: "canonical",
-          ok: { canonical: true, strict: true },
-        });
-
+      // No cache - will fetch from network
       vi.mocked(mockTransport.http).mockResolvedValue({
         data: networkData,
         error: null,
@@ -1095,22 +1076,8 @@ describe("operations", () => {
       );
 
       const networkData = { user: { id: "1", name: "Network Alice" } };
-      let readCount = 0;
-      mockDocuments.materializeDocument.mockImplementation(() => {
-        readCount++;
-        if (readCount === 1) {
-          return {
-            data: cachedData,
-            source: "canonical",
-            ok: { canonical: true, strict: true },
-          };
-        }
-        return {
-          data: networkData,
-          source: "canonical",
-          ok: { canonical: true, strict: true },
-        };
-      });
+      // Pre-populate cache
+      mockDocuments.normalizeDocument({ data: cachedData });
 
       const mockResult = {
         data: networkData,
@@ -1121,7 +1088,7 @@ describe("operations", () => {
       const result = await opsWithDefaultPolicy.executeQuery({
         query,
         variables,
-        cachePolicy: "network-only",
+        cachePolicy: "network-only", // This should override cache-first
       });
 
       expect(mockTransport.http).toHaveBeenCalled();
@@ -1135,22 +1102,8 @@ describe("operations", () => {
       );
 
       const networkData = { user: { id: "1", name: "Network Alice" } };
-      let readCount = 0;
-      mockDocuments.materializeDocument.mockImplementation(() => {
-        readCount++;
-        if (readCount === 1) {
-          return {
-            data: cachedData,
-            source: "canonical",
-            ok: { canonical: true, strict: true },
-          };
-        }
-        return {
-          data: networkData,
-          source: "canonical",
-          ok: { canonical: true, strict: true },
-        };
-      });
+      // Pre-populate cache
+      mockDocuments.normalizeDocument({ data: cachedData });
 
       const mockResult = {
         data: networkData,
