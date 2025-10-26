@@ -164,34 +164,25 @@ export function createVueApolloNestedApp(
   let app: ReturnType<typeof createApp> | null = null;
   let container: Element | null = null;
 
-  let deferred = createDeferred();
-
   const NestedList = defineComponent({
     setup() {
-      const { result, load, fetchMore, loading } = useQuery(USERS_QUERY, { first: 30, after: null }, { fetchPolicy: cachePolicy });
-
-      const endCursor = ref(null)
+      const { result, load, fetchMore, loading } = useLazyQuery(USERS_QUERY, { first: 30, after: null }, { fetchPolicy: cachePolicy });
 
       watch(result, (v) => {
         const totalUsers = result.value?.users?.edges?.length ?? 0;
-
-       //   console.log(`Apollo total users:`, totalUsers);
-
         globalThis.apollo.totalEntities += totalUsers;
       }, { immediate: true });
-
-      watch(() => result.value?.users?.pageInfo?.endCursor , (v) => {
-        deferred.resolve();
-      });
 
       const loadNextPage = async () => {
         const t0 = performance.now();
 
-        await deferred.promise;
-
-        deferred = createDeferred();
-
-        await fetchMore({ variables: { after: result.value.users.pageInfo.endCursor } });
+        // First call: execute the initial query
+        if (!result.value) {
+          await load();
+        } else {
+          // Subsequent calls: fetch more
+          await fetchMore({ variables: { after: result.value.users.pageInfo.endCursor } });
+        }
 
         const t2 = performance.now();
 

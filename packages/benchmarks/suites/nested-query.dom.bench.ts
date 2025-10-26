@@ -64,7 +64,7 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   globalThis.relay = { iteration: 0, name: 'relay', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
 
   describe("network-only", async () => {
-    bench("cachebay(vue)", async () => {
+   bench("cachebay(vue)", async () => {
       globalThis.cachebay.iteration++;
       if (DEBUG) {
         console.log("cachebay(vue) network-only iteration", globalThis.cachebay.iteration);
