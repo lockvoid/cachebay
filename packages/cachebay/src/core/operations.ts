@@ -110,8 +110,8 @@ export interface Operation<TData = any, TVars = QueryVariables> {
   onSuccess?: (data: TData) => void;
   /** Callback when an error occurs */
   onError?: (error: CombinedError) => void;
-  /** Callback for stale/cached data (called for cache-and-network before network response) */
-  onStaleData?: (data: TData) => void;
+  /** Callback for cached data (called synchronously before Promise resolves for cache hits) */
+  onCachedData?: (data: TData) => void;
 }
 
 // CombinedError is now imported from ./errors
@@ -271,7 +271,7 @@ export const createOperations = (
     cachePolicy,
     onSuccess,
     onError,
-    onStaleData,
+    onCachedData,
   }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
     // Validate and normalize cache policy
     const rawPolicy = cachePolicy ?? defaultCachePolicy;
@@ -416,6 +416,12 @@ export const createOperations = (
       }
     }
 
+    // Call onCachedData synchronously for all cache policies (except network-only) when we have cached data
+    // This prevents loading flash by setting data before first render
+    if (effectiveCachePolicy !== 'network-only' && cached && cached.data) {
+      onCachedData?.(cached.data as TData);
+    }
+
     if (effectiveCachePolicy === 'cache-only') {
       if (!cached || cached.source === "none") {
         const error = new CombinedError({ networkError: new CacheMissError() });
@@ -458,10 +464,7 @@ export const createOperations = (
 
     if (effectiveCachePolicy === 'cache-and-network') {
       if (cached && cached.ok.canonical) {
-        // Call onStaleData with cached data immediately (for useQuery to show stale data)
-        onStaleData?.(cached.data as TData);
-
-        // Also notify watchers so lastData is set (prevents duplicate emission if network data is same)
+        // Notify watchers so lastData is set (prevents duplicate emission if network data is same)
         onQueryData?.({
           signature,
           data: cached.data,

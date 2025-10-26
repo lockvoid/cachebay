@@ -462,7 +462,7 @@ describe("operations", () => {
     });
 
     describe("cache-and-network", () => {
-      it("returns network data after calling onStaleData with cached data", async () => {
+      it("returns network data after calling onCachedData with cached data", async () => {
         mockDocuments.materializeDocument.mockReturnValueOnce({
           data: cachedData,
           source: "canonical",
@@ -481,18 +481,18 @@ describe("operations", () => {
         };
         vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
 
-        const onStaleData = vi.fn();
+        const onCachedData = vi.fn();
         const onSuccess = vi.fn();
         const result = await operations.executeQuery({
           query,
           variables,
           cachePolicy: "cache-and-network",
-          onStaleData,
+          onCachedData,
           onSuccess,
         });
 
-        // onStaleData should be called with cached data
-        expect(onStaleData).toHaveBeenCalledWith(cachedData);
+        // onCachedData should be called with cached data
+        expect(onCachedData).toHaveBeenCalledWith(cachedData);
 
         // Promise should resolve with network data
         expect(result.data).toEqual(networkData);
@@ -513,18 +513,18 @@ describe("operations", () => {
         const networkError = new Error("Network fetch failed");
         vi.mocked(mockTransport.http).mockRejectedValue(networkError);
 
-        const onStaleData = vi.fn();
+        const onCachedData = vi.fn();
         const onError = vi.fn();
         const result = await operations.executeQuery({
           query,
           variables,
           cachePolicy: "cache-and-network",
-          onStaleData,
+          onCachedData,
           onError,
         });
 
-        // onStaleData should be called with cached data
-        expect(onStaleData).toHaveBeenCalledWith(cachedData);
+        // onCachedData should be called with cached data
+        expect(onCachedData).toHaveBeenCalledWith(cachedData);
 
         // Promise should resolve with error (network failed)
         expect(result.data).toBeNull();
@@ -574,7 +574,7 @@ describe("operations", () => {
         expect(mockTransport.http).toHaveBeenCalled();
       });
 
-      it("calls onStaleData with cached data and resolves with network data", async () => {
+      it("calls onCachedData with cached data and resolves with network data", async () => {
         mockDocuments.materializeDocument.mockReturnValueOnce({
           data: cachedData,
           source: "canonical",
@@ -593,20 +593,20 @@ describe("operations", () => {
         };
         vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
 
-        const onStaleData = vi.fn();
+        const onCachedData = vi.fn();
         const onSuccess = vi.fn();
 
         const result = await operations.executeQuery({
           query,
           variables,
           cachePolicy: "cache-and-network",
-          onStaleData,
+          onCachedData,
           onSuccess,
         });
 
-        // onStaleData should be called immediately with cached data
-        expect(onStaleData).toHaveBeenCalledTimes(1);
-        expect(onStaleData).toHaveBeenCalledWith(cachedData);
+        // onCachedData should be called immediately with cached data
+        expect(onCachedData).toHaveBeenCalledTimes(1);
+        expect(onCachedData).toHaveBeenCalledWith(cachedData);
 
         // Promise should resolve with network data
         expect(result.data).toEqual(networkData);
