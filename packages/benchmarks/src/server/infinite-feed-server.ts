@@ -1,6 +1,6 @@
 import { createYoga, createSchema } from 'graphql-yoga';
 import { createServer as createHttpServer } from 'http';
-import type { NestedDataset } from '../utils/seed-nested-query';
+import type { NestedDataset } from '../utils/seed-infinite-feed';
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 

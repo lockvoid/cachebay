@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<028e7975fd8b5647d937682e6a4bf159>>
+ * @generated SignedSource<<38d79e17983b6b74ac798ecba1cfb0a6>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -10,16 +10,16 @@
 
 import { ConcreteRequest, Query } from 'relay-runtime';
 import { FragmentRefs } from "relay-runtime";
-export type reactRelayNestedQueryAppUsersPaginationQuery$variables = {
+export type reactRelayInfiniteFeedAppUsersPaginationQuery$variables = {
   count: number;
   cursor?: string | null | undefined;
 };
-export type reactRelayNestedQueryAppUsersPaginationQuery$data = {
-  readonly " $fragmentSpreads": FragmentRefs<"reactRelayNestedQueryApp_UsersList_query">;
+export type reactRelayInfiniteFeedAppUsersPaginationQuery$data = {
+  readonly " $fragmentSpreads": FragmentRefs<"reactRelayInfiniteFeedApp_UsersList_query">;
 };
-export type reactRelayNestedQueryAppUsersPaginationQuery = {
-  response: reactRelayNestedQueryAppUsersPaginationQuery$data;
-  variables: reactRelayNestedQueryAppUsersPaginationQuery$variables;
+export type reactRelayInfiniteFeedAppUsersPaginationQuery = {
+  response: reactRelayInfiniteFeedAppUsersPaginationQuery$data;
+  variables: reactRelayInfiniteFeedAppUsersPaginationQuery$variables;
 };
 
 const node: ConcreteRequest = (function(){
@@ -92,7 +92,7 @@ return {
     "argumentDefinitions": (v0/*: any*/),
     "kind": "Fragment",
     "metadata": null,
-    "name": "reactRelayNestedQueryAppUsersPaginationQuery",
+    "name": "reactRelayInfiniteFeedAppUsersPaginationQuery",
     "selections": [
       {
         "args": [
@@ -108,7 +108,7 @@ return {
           }
         ],
         "kind": "FragmentSpread",
-        "name": "reactRelayNestedQueryApp_UsersList_query"
+        "name": "reactRelayInfiniteFeedApp_UsersList_query"
       }
     ],
     "type": "Query",
@@ -118,7 +118,7 @@ return {
   "operation": {
     "argumentDefinitions": (v0/*: any*/),
     "kind": "Operation",
-    "name": "reactRelayNestedQueryAppUsersPaginationQuery",
+    "name": "reactRelayInfiniteFeedAppUsersPaginationQuery",
     "selections": [
       {
         "alias": null,
@@ -333,16 +333,16 @@ return {
     ]
   },
   "params": {
-    "cacheID": "70eb8302cabec3ce5d0bc3b6b2e02f75",
+    "cacheID": "ec6b70d720382ed6ddc33ec287724abd",
     "id": null,
     "metadata": {},
-    "name": "reactRelayNestedQueryAppUsersPaginationQuery",
+    "name": "reactRelayInfiniteFeedAppUsersPaginationQuery",
     "operationKind": "query",
-    "text": "query reactRelayNestedQueryAppUsersPaginationQuery(\n  $count: Int!\n  $cursor: String\n) {\n  ...reactRelayNestedQueryApp_UsersList_query_1G22uz\n}\n\nfragment reactRelayNestedQueryApp_UsersList_query_1G22uz on Query {\n  users(first: $count, after: $cursor) {\n    edges {\n      cursor\n      node {\n        id\n        name\n        avatar\n        posts(first: 5) {\n          edges {\n            cursor\n            node {\n              id\n              title\n              likeCount\n              comments(first: 3) {\n                edges {\n                  cursor\n                  node {\n                    id\n                    text\n                    author {\n                      id\n                      name\n                    }\n                  }\n                }\n                pageInfo {\n                  hasNextPage\n                }\n              }\n            }\n          }\n          pageInfo {\n            hasNextPage\n          }\n        }\n        __typename\n      }\n    }\n    pageInfo {\n      startCursor\n      endCursor\n      hasPreviousPage\n      hasNextPage\n    }\n  }\n}\n"
+    "text": "query reactRelayInfiniteFeedAppUsersPaginationQuery(\n  $count: Int!\n  $cursor: String\n) {\n  ...reactRelayInfiniteFeedApp_UsersList_query_1G22uz\n}\n\nfragment reactRelayInfiniteFeedApp_UsersList_query_1G22uz on Query {\n  users(first: $count, after: $cursor) {\n    edges {\n      cursor\n      node {\n        id\n        name\n        avatar\n        posts(first: 5) {\n          edges {\n            cursor\n            node {\n              id\n              title\n              likeCount\n              comments(first: 3) {\n                edges {\n                  cursor\n                  node {\n                    id\n                    text\n                    author {\n                      id\n                      name\n                    }\n                  }\n                }\n                pageInfo {\n                  hasNextPage\n                }\n              }\n            }\n          }\n          pageInfo {\n            hasNextPage\n          }\n        }\n        __typename\n      }\n    }\n    pageInfo {\n      startCursor\n      endCursor\n      hasPreviousPage\n      hasNextPage\n    }\n  }\n}\n"
   }
 };
 })();
 
-(node as any).hash = "4775efdea836d3ecde22d3238d3ae8ca";
+(node as any).hash = "07a6624bf46cc85c969ecbb3ec3ee1fd";
 
 export default node;

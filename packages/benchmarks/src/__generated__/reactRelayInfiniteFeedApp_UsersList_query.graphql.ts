@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<f10ef6e1d67d78e2e2ceb61fe6e8ecba>>
+ * @generated SignedSource<<b4eb444c6fb31eeee074b79b5a4d7f2c>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -10,7 +10,7 @@
 
 import { ReaderFragment, RefetchableFragment } from 'relay-runtime';
 import { FragmentRefs } from "relay-runtime";
-export type reactRelayNestedQueryApp_UsersList_query$data = {
+export type reactRelayInfiniteFeedApp_UsersList_query$data = {
   readonly users: {
     readonly edges: ReadonlyArray<{
       readonly cursor: string;
@@ -56,14 +56,14 @@ export type reactRelayNestedQueryApp_UsersList_query$data = {
       readonly startCursor: string | null | undefined;
     };
   };
-  readonly " $fragmentType": "reactRelayNestedQueryApp_UsersList_query";
+  readonly " $fragmentType": "reactRelayInfiniteFeedApp_UsersList_query";
 };
-export type reactRelayNestedQueryApp_UsersList_query$key = {
-  readonly " $data"?: reactRelayNestedQueryApp_UsersList_query$data;
-  readonly " $fragmentSpreads": FragmentRefs<"reactRelayNestedQueryApp_UsersList_query">;
+export type reactRelayInfiniteFeedApp_UsersList_query$key = {
+  readonly " $data"?: reactRelayInfiniteFeedApp_UsersList_query$data;
+  readonly " $fragmentSpreads": FragmentRefs<"reactRelayInfiniteFeedApp_UsersList_query">;
 };
 
-import reactRelayNestedQueryAppUsersPaginationQuery_graphql from './reactRelayNestedQueryAppUsersPaginationQuery.graphql';
+import reactRelayInfiniteFeedAppUsersPaginationQuery_graphql from './reactRelayInfiniteFeedAppUsersPaginationQuery.graphql';
 
 const node: ReaderFragment = (function(){
 var v0 = [
@@ -142,10 +142,10 @@ return {
         "path": (v0/*: any*/)
       },
       "fragmentPathInResult": [],
-      "operation": reactRelayNestedQueryAppUsersPaginationQuery_graphql
+      "operation": reactRelayInfiniteFeedAppUsersPaginationQuery_graphql
     }
   },
-  "name": "reactRelayNestedQueryApp_UsersList_query",
+  "name": "reactRelayInfiniteFeedApp_UsersList_query",
   "selections": [
     {
       "alias": "users",
@@ -354,6 +354,6 @@ return {
 };
 })();
 
-(node as any).hash = "4775efdea836d3ecde22d3238d3ae8ca";
+(node as any).hash = "07a6624bf46cc85c969ecbb3ec3ee1fd";
 
 export default node;

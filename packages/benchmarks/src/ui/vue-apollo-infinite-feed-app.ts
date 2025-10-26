@@ -1,13 +1,16 @@
-import { createClient as createUrqlClient, fetchExchange } from "@urql/core";
-import { cacheExchange as graphcache } from "@urql/exchange-graphcache";
-import { relayPagination } from "@urql/exchange-graphcache/extras";
-import urql, { useQuery } from "@urql/vue";
+import { DefaultApolloClient, useLazyQuery, useQuery } from "@vue/apollo-composable";
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, ref, watch } from "vue";
 import { createDeferred } from "../utils/concurrency";
-import { createNestedYoga } from "../server/nested-query-server";
-import { makeNestedDataset } from "../utils/seed-nested-query";
-const DEBUG = process.env.DEBUG === 'true';
+import { createNestedYoga } from "../server/infinite-feed-server";
+import { makeNestedDataset } from "../utils/seed-infinite-feed";
+import { createApolloClient } from "../adapters";
+
+try {
+  const { loadErrorMessages, loadDevMessages } = require("@apollo/client/dev");
+  loadDevMessages?.();
+  loadErrorMessages?.();
+} catch { /* ignore */ }
 
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {
@@ -56,103 +59,85 @@ const USERS_QUERY = gql`
         }
       }
       pageInfo {
-        startCursor
-        endCursor
-        hasPreviousPage
-        hasNextPage
+      startCursor
+      endCursor
+      hasPreviousPage
+      hasNextPage
       }
     }
   }
 `;
 
-export type VueUrqlNestedController = {
+export type VueApolloNestedController = {
   mount(target?: Element): void;
   unmount(): void;
   loadNextPage(): Promise<void>;
 };
 
-function mapCachePolicyToUrql(policy: "network-only" | "cache-first" | "cache-and-network"): "network-only" | "cache-first" | "cache-and-network" {
-  return policy;
-}
-
-export function createVueUrqlNestedApp(
+export function createVueApolloNestedApp(
   serverUrl: string, // unused - kept for API compatibility
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  debug = false,
+  debug: boolean = false,
   sharedYoga?: any, // Optional shared Yoga instance
-): VueUrqlNestedController {
+): VueApolloNestedController {
   // Use shared Yoga instance if provided, otherwise create new one
   const yoga = sharedYoga || createNestedYoga(makeNestedDataset(), 0);
 
-  const cache = graphcache({
-    resolvers: {
-      Query: { users: relayPagination() },
-      User: { posts: relayPagination(), followers: relayPagination() },
-      Post: { comments: relayPagination() },
-    },
-  });
-
-  // Custom fetch using Yoga directly (in-memory, no HTTP)
-  const customFetch = async (url: string, options: any) => {
-    // urql uses GET with query params by default, we need to pass the full URL
-    return await yoga.fetch(url, options);
-  };
-
-  const client = createUrqlClient({
-    url: serverUrl,
-    requestPolicy: mapCachePolicyToUrql(cachePolicy),
-    exchanges: [cache, fetchExchange],
-    fetch: customFetch,
-  });
+  // Create Apollo client using adapter factory
+  const client = createApolloClient({ yoga, cachePolicy });
 
   let app: ReturnType<typeof createApp> | null = null;
   let container: Element | null = null;
-  let componentInstance: any = null;
 
   let deferred = createDeferred();
-  let isFirstCall = true;
+  let lastUserCount = 0;
 
   const NestedList = defineComponent({
     setup() {
-      const variables = ref({ first: 30, after: null });
+      const { result, load, fetchMore, loading } = useLazyQuery(USERS_QUERY, { first: 30, after: null }, { fetchPolicy: cachePolicy });
 
-      const { data, executeQuery } = useQuery({
-        query: USERS_QUERY,
-        variables,
-      });
+      // Single watch for both counting and deferred resolution
+      watch(result, (v) => {
+        const totalUsers = result.value?.users?.edges?.length ?? 0;
+       // console.log(`apollo total users:`, totalUsers);
 
-      watch(data, (v) => {
-        const totalUsers = data.value?.users?.edges?.length ?? 0;
+        globalThis.apollo.totalEntities += totalUsers;
 
-        //console.log(`urql total users:`, totalUsers);
-        globalThis.urql.totalEntities += totalUsers;
-
-        // Resolve deferred when data changes (cache merge completed)
-        deferred.resolve();
+        // Resolve deferred when count changes (cache merge completed)
+        if (totalUsers > lastUserCount) {
+          lastUserCount = totalUsers;
+          deferred.resolve();
+        }
       }, { immediate: true });
 
-      const loadNextPage = async (isLastPage) => {
-        // For first call, wait for initial data to be ready
-        if (isFirstCall) {
-          await deferred.promise;
-          isFirstCall = false;
-        }
-
+      const loadNextPage = async () => {
         const t0 = performance.now();
 
-        deferred = createDeferred();
+        try {
+          // First call: execute the initial query
+          if (!result.value) {
+            await load();
+            await deferred.promise;
+            deferred = createDeferred();
+          } else {
+            // Subsequent calls: fetch more
+            const cursor = result.value.users.pageInfo.endCursor;
+            const hasNext = result.value.users.pageInfo.hasNextPage;
 
-        // Update variables and explicitly execute query
-        variables.value = {
-          first: 30,
-          after: data.value?.users?.pageInfo?.endCursor || null
-        };
+            if (!hasNext) {
+              console.warn('Apollo: No more pages to load');
+              return;
+            }
 
-        // Execute query with network-only to force fetch
-        executeQuery({ requestPolicy: 'network-only' });
-
-        // Wait for the new data to arrive (deferred will be resolved by watch)
-        await deferred.promise;
+            // Start fetchMore and wait for cache to update
+            await fetchMore({ variables: { after: cursor } });
+            await deferred.promise;
+            deferred = createDeferred();
+          }
+        } catch (error) {
+          console.error('Apollo loadNextPage error:', error);
+          throw error;
+        }
 
         const t2 = performance.now();
 
@@ -160,16 +145,19 @@ export function createVueUrqlNestedApp(
 
         const t3 = performance.now();
 
-        globalThis.urql.totalRenderTime += (t3 - t0);
-        globalThis.urql.totalNetworkTime += (t2 - t0);
+        globalThis.apollo.totalRenderTime += (t3 - t0);
+        globalThis.apollo.totalNetworkTime += (t2 - t0);
       };
 
-      return { data, loadNextPage };
+      return {
+        result,
+        loadNextPage,
+      };
     },
 
     template: `
       <div>
-        <div v-for="userEdge in data?.users?.edges" :key="userEdge.node.id">
+        <div v-for="userEdge in result?.users?.edges" :key="userEdge.node.id">
           <h3>{{ userEdge.node.name }}</h3>
           <div v-for="postEdge in userEdge.node.posts?.edges" :key="postEdge.node.id">
             <h4>{{ postEdge.node.title }} ({{ postEdge.node.likeCount }} likes)</h4>
@@ -184,18 +172,22 @@ export function createVueUrqlNestedApp(
     `,
   });
 
+  let componentInstance: any = null;
+
   return {
     mount(target?: Element) {
       if (app) return;
+
       container = target ?? document.createElement("div");
       if (!target) document.body.appendChild(container);
+
       app = createApp(NestedList);
-      app.use(urql, client);
+      app.provide(DefaultApolloClient, client);
       componentInstance = app.mount(container);
     },
 
     async loadNextPage() {
-      await componentInstance?.loadNextPage?.();
+      await componentInstance.loadNextPage();
     },
 
     unmount() {

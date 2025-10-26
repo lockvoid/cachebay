@@ -1,14 +1,14 @@
 import { bench, describe } from "vitest";
-import { createReactRelayNestedApp } from "../../src/ui/react-relay-nested-query-app";
-import { createVueApolloNestedApp } from "../../src/ui/vue-apollo-nested-query-app";
-import { createVueCachebayNestedApp } from "../../src/ui/vue-cachebay-nested-query-app";
-import { createVueUrqlNestedApp } from "../../src/ui/vue-urql-nested-query-app";
-import { createNestedYoga } from "../../src/server/nested-query-server";
-import { makeNestedDataset } from "../../src/utils/seed-nested-query";
+import { createReactRelayNestedApp } from "../../src/ui/react-relay-infinite-feed-app";
+import { createVueApolloNestedApp } from "../../src/ui/vue-apollo-infinite-feed-app";
+import { createVueCachebayNestedApp } from "../../src/ui/vue-cachebay-infinite-feed-app";
+import { createVueUrqlNestedApp } from "../../src/ui/vue-urql-infinite-feed-app";
+import { createNestedYoga } from "../../src/server/infinite-feed-server";
+import { makeNestedDataset } from "../../src/utils/seed-infinite-feed";
 import Table from 'cli-table3';
 
 const DEBUG = true;
-const PAGES_TO_LOAD = 100; // 1000 users / 10 per page = 100 pages
+const PAGES_TO_LOAD = 2;
 
 const BENCH_OPTIONS = {
   iterations: 10,

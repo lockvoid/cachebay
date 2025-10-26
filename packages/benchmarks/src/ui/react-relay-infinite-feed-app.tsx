@@ -7,8 +7,8 @@ import {
   useLazyLoadQuery,
   usePaginationFragment,
 } from 'react-relay';
-import { createNestedYoga } from '../server/nested-query-server';
-import { makeNestedDataset } from '../utils/seed-nested-query';
+import { createNestedYoga } from '../server/infinite-feed-server';
+import { makeNestedDataset } from '../utils/seed-infinite-feed';
 
 export type ReactRelayNestedController = {
   mount(target?: Element): void;
@@ -41,14 +41,14 @@ function createRelayEnvironment(serverUrl: string, sharedYoga?: any) {
 }
 
 const UsersRootQuery = graphql`
-  query reactRelayNestedQueryAppUsersRootQuery($count: Int!, $cursor: String) {
-    ...reactRelayNestedQueryApp_UsersList_query @arguments(count: $count, cursor: $cursor)
+  query reactRelayInfiniteFeedAppUsersRootQuery($count: Int!, $cursor: String) {
+    ...reactRelayInfiniteFeedApp_UsersList_query @arguments(count: $count, cursor: $cursor)
   }
 `;
 
 const UsersListFragment = graphql`
-  fragment reactRelayNestedQueryApp_UsersList_query on Query
-  @refetchable(queryName: "reactRelayNestedQueryAppUsersPaginationQuery")
+  fragment reactRelayInfiniteFeedApp_UsersList_query on Query
+  @refetchable(queryName: "reactRelayInfiniteFeedAppUsersPaginationQuery")
   @argumentDefinitions(
     count: { type: "Int!" }
     cursor: { type: "String" }

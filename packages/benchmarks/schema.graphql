@@ -5,6 +5,7 @@ interface Node {
 type Query {
   feed(first: Int!, after: String): FeedConnection!
   users(first: Int!, after: String): UserConnection!
+  user(id: ID!): User
 }
 
 type FeedConnection {
@@ -57,9 +58,30 @@ type PageInfo {
 type User implements Node {
   id: ID!
   name: String!
+  email: String!
+  username: String!
+  phone: String!
+  website: String!
+  company: String!
+  bio: String!
   avatar: String!
+  createdAt: String!
+  profile: Profile!
   posts(first: Int!, after: String): PostConnection!
   followers(first: Int!, after: String): UserConnection!
+}
+
+type Profile {
+  id: ID!
+  bio: String!
+  avatar: String!
+  location: String!
+  website: String!
+  twitter: String!
+  github: String!
+  linkedin: String!
+  followers: Int!
+  following: Int!
 }
 
 type Post implements Node {

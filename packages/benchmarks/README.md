@@ -12,7 +12,7 @@ bench/
 │   ├── readQuery.bench.ts
 │   └── watchQuery.bench.ts
 └── suites/           # DOM benchmarks (vitest)
-    └── nested-query.dom.bench.ts
+    └── infinite-feed.dom.bench.ts
 ```
 
 ## Running Locally
@@ -32,13 +32,13 @@ BENCH_FILE=normalizeDocument pnpm bench:api:compare
 ### DOM Benchmarks (vitest)
 ```bash
 # Run benchmark
-pnpm bench:suite bench/suites/nested-query.dom.bench.ts
+pnpm bench:suite bench/suites/infinite-feed.dom.bench.ts
 
 # Save baseline
-BENCH_NAME=nested-query pnpm bench:suite:baseline bench/suites/nested-query.dom.bench.ts
+BENCH_NAME=infinite-feed pnpm bench:suite:baseline bench/suites/infinite-feed.dom.bench.ts
 
 # Compare against baseline (shows [1.27x] ⇑ or [0.98x] ⇓)
-BENCH_NAME=nested-query pnpm bench:suite:compare bench/suites/nested-query.dom.bench.ts
+BENCH_NAME=infinite-feed pnpm bench:suite:compare bench/suites/infinite-feed.dom.bench.ts
 ```
 
 ## CI Workflow
@@ -99,7 +99,7 @@ cd packages/benchmarks
 pnpm exec playwright install chromium
 
 # Run DOM benchmarks
-BENCH_NAME=nested-query pnpm bench:suite:baseline bench/suites/nested-query.dom.bench.ts
+BENCH_NAME=infinite-feed pnpm bench:suite:baseline bench/suites/infinite-feed.dom.bench.ts
 
 # Run API benchmarks
 BENCH_FILE=normalizeDocument pnpm bench:api:baseline
@@ -116,7 +116,7 @@ ls -la .bench-results/
 # Make some code changes to cachebay...
 
 # Run DOM comparison
-BENCH_NAME=nested-query pnpm bench:suite:compare bench/suites/nested-query.dom.bench.ts
+BENCH_NAME=infinite-feed pnpm bench:suite:compare bench/suites/infinite-feed.dom.bench.ts
 
 # Run API comparison
 BENCH_FILE=normalizeDocument pnpm bench:api:compare
