@@ -98,7 +98,7 @@ export function useQuery<TData = any, TVars = any>(
   /**
    * Execute query with current variables
    */
-  const performQuery = async (vars: TVars, policy: CachePolicy): Promise<void> => {
+  const performQuery = async (vars: TVars, policy: CachePolicy): Promise<OperationResult<TData> | undefined> => {
     error.value = null;
     isFetching.value = true;
 
@@ -115,14 +115,16 @@ export function useQuery<TData = any, TVars = any>(
       // The watcher will be notified when network data arrives and set isFetching to false
       if (policy === 'cache-and-network' && result.meta?.source === 'cache') {
         // Keep isFetching true - waiting for network data
-        return;
+        return result;
       }
 
       // For all other cases, set isFetching to false
       isFetching.value = false;
+      return result;
     } catch (err) {
       // Watcher already set error through onError callback
       isFetching.value = false;
+      return undefined;
     }
   };
 
