@@ -10,6 +10,14 @@ import Table from 'cli-table3';
 const DEBUG = true;
 const PAGES_TO_LOAD = 25; // 1000 users / 10 per page = 100 pages
 
+const BENCH_OPTIONS = {
+  iterations: 10,
+  warmupIterations: 2,
+  throws: true,
+  warmupTime: 0,
+  time: 0,
+};
+
 const serverUrl = process.env.BENCH_SERVER_URL || 'http://127.0.0.1:4001/graphql';
 
 // Create shared dataset and Yoga instance once for all benchmarks
@@ -64,7 +72,7 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   globalThis.relay = { iteration: 0, name: 'relay', totalRenderTime: 0, totalNetworkTime: 0, totalEntities: 0 }
 
   describe("network-only", async () => {
-    bench("cachebay(vue)", async () => {
+    bench("cachebay(vue, network-only)", async () => {
       globalThis.cachebay.iteration++;
 
       if (DEBUG) {
@@ -72,15 +80,9 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
       }
 
       return await runScenario("cachebay", "network-only");
-    }, {
-      iterations: 10,
-      warmupIterations: 2,
-      throws: true,
-      warmupTime: 0,
-      time: 0,
-    });
+    }, BENCH_OPTIONS);
 
-    bench("apollo(vue)", async () => {
+    bench("apollo(vue, network-only)", async () => {
       globalThis.apollo.iteration++;
 
       if (DEBUG) {
@@ -88,87 +90,94 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
       }
 
       return await runScenario("apollo", "network-only");
-    }, {
-      iterations: 10,
-      warmupIterations: 2,
-      throws: true,
-      warmupTime: 0,
-      time: 0,
-    });
+    }, BENCH_OPTIONS);
 
-    bench("urql(vue)", async () => {
+    bench("urql(vue, network-only)", async () => {
       globalThis.urql.iteration++;
       if (DEBUG) {
         console.log("urql(vue) network-only iteration", globalThis.urql.iteration);
       }
 
       return await runScenario("urql", "network-only");
-    }, {
-      iterations: 10,
-      warmupIterations: 2,
-      throws: true,
-      warmupTime: 0,
-      time: 0,
-    });
+    }, BENCH_OPTIONS);
 
-    bench("relay(react)", async () => {
+    bench("relay(react, network-only)", async () => {
       globalThis.relay.iteration++;
       if (DEBUG) {
         console.log("relay(react) network-only iteration", globalThis.relay.iteration);
       }
 
       return await runScenario("relay", "network-only");
-    }, {
-      iterations: 10,
-      warmupIterations: 2,
-      throws: true,
-      warmupTime: 0,
-      time: 0,
-    });
+    }, BENCH_OPTIONS);
   });
 
-  /*
-    describe("cache-first", () => {
-      bench("cachebay(vue)", async () => {
-        return await runScenario("cachebay", "cache-first");
-      });
+  describe("cache-first", () => {
+    bench("cachebay(vue, cache-first)", async () => {
+      globalThis.cachebay.iteration++;
+      if (DEBUG) {
+        console.log("cachebay(vue) cache-first iteration", globalThis.cachebay.iteration);
+      }
+      return await runScenario("cachebay", "cache-first");
+    }, BENCH_OPTIONS);
 
-      bench("apollo(vue)", async () => {
-        return await runScenario("apollo", "cache-first");
-      });
+    bench("apollo(vue, cache-first)", async () => {
+      globalThis.apollo.iteration++;
+      if (DEBUG) {
+        console.log("apollo(vue) cache-first iteration", globalThis.apollo.iteration);
+      }
+      return await runScenario("apollo", "cache-first");
+    }, BENCH_OPTIONS);
 
-      bench("urql(vue)", async () => {
-        return await runScenario("urql", "cache-first");
-      });
+    bench("urql(vue, cache-first)", async () => {
+      globalThis.urql.iteration++;
+      if (DEBUG) {
+        console.log("urql(vue) cache-first iteration", globalThis.urql.iteration);
+      }
+      return await runScenario("urql", "cache-first");
+    }, BENCH_OPTIONS);
 
-      bench("relay(react)", async () => {
-        return await runScenario("relay", "cache-first");
-      });
-    });
+    bench("relay(react, cache-first)", async () => {
+      globalThis.relay.iteration++;
+      if (DEBUG) {
+        console.log("relay(react) cache-first iteration", globalThis.relay.iteration);
+      }
+      return await runScenario("relay", "cache-first");
+    }, BENCH_OPTIONS);
+  });
 
-    describe("cache-and-network", () => {
+  describe("cache-and-network", () => {
+    bench("cachebay(vue, cache-and-network)", async () => {
+      globalThis.cachebay.iteration++;
+      if (DEBUG) {
+        console.log("cachebay(vue) cache-and-network iteration", globalThis.cachebay.iteration);
+      }
+      return await runScenario("cachebay", "cache-and-network");
+    }, BENCH_OPTIONS);
 
-      bench("cachebay(vue)", async () => {
-        return await runScenario("cachebay", "cache-and-network");
-      }, {
-        teardown() {
-          // console.log('Metrics');
-          // console.log(JSON.stringify(metrics, null, 2));
-        }
-      });
+    bench("apollo(vue, cache-and-network)", async () => {
+      globalThis.apollo.iteration++;
+      if (DEBUG) {
+        console.log("apollo(vue) cache-and-network iteration", globalThis.apollo.iteration);
+      }
+      return await runScenario("apollo", "cache-and-network");
+    }, BENCH_OPTIONS);
 
-      bench("apollo(vue)", async () => {
-        return await runScenario("apollo", "cache-and-network");
-      });
+    bench("urql(vue, cache-and-network)", async () => {
+      globalThis.urql.iteration++;
+      if (DEBUG) {
+        console.log("urql(vue) cache-and-network iteration", globalThis.urql.iteration);
+      }
+      return await runScenario("urql", "cache-and-network");
+    }, BENCH_OPTIONS);
 
-      bench("urql(vue)", async () => {
-        return await runScenario("urql", "cache-and-network");
-      });
-
-      bench("relay(react)", async () => {
-        return await runScenario("relay", "cache-and-network");
-      });
-      }); */
+    bench("relay(react, cache-and-network)", async () => {
+      globalThis.relay.iteration++;
+      if (DEBUG) {
+        console.log("relay(react) cache-and-network iteration", globalThis.relay.iteration);
+      }
+      return await runScenario("relay", "cache-and-network");
+    }, BENCH_OPTIONS);
+  });
 });
 
 afterAll(() => {
