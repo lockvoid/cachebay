@@ -9,71 +9,71 @@ describe("Optimistic updates", () => {
     expect(post_1).toBe(null);
 
     const tx = cache.modifyOptimistic((o) => {
-      o.patch("Post:p1", { __typename: "Post", id: "p1", title: "Post 1" });
+      o.patch("Post:p1", { __typename: "Post", id: "p1", title: "Post 1", flags: [] });
     });
 
     tx.commit();
 
     const post_3 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
-    expect(post_3).toEqual({ __version: 259429543, __typename: "Post", id: "p1", title: "Post 1", flags: undefined });
+    expect(post_3).toEqual({ __version: 259429543, __typename: "Post", id: "p1", title: "Post 1", flags: [] });
     tx.revert();
 
     const post_4 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
-    expect(post_4).toEqual({ __typename: "Post", id: "p1", title: "Post 1" });
+    expect(post_4).toEqual({ __version: 259429543, __typename: "Post", id: "p1", title: "Post 1", flags: [] });
   });
 
   it("layers entity transactions; commit persists, reverts after commit are no-ops", async () => {
     const { cache } = createTestClient();
 
     const tx1 = cache.modifyOptimistic((o) => {
-      o.patch("Post:p1", { __typename: "Post", id: "1", title: "Post A" });
+      o.patch("Post:p1", { __typename: "Post", id: "1", title: "Post A", flags: [] });
     });
 
     const tx2 = cache.modifyOptimistic((o) => {
-      o.patch("Post:p1", { __typename: "Post", id: "p1", title: "Post B" });
+      o.patch("Post:p1", { __typename: "Post", id: "p1", title: "Post B", flags: [] });
     });
 
     tx1.commit();
     tx2.commit();
 
     const post_1 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
-    expect(post_1).toEqual({ __typename: "Post", id: "p1", title: "Post B" });
+    expect(post_1).toEqual({ __version: 225874305, __typename: "Post", id: "p1", title: "Post B", flags: [] });
 
     tx1.revert();
     const post_2 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
-    expect(post_2).toEqual({ __typename: "Post", id: "p1", title: "Post B" });
+    expect(post_2).toEqual({ __version: 225874305, __typename: "Post", id: "p1", title: "Post B", flags: [] });
 
     tx2.revert();
     const post_3 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
-    expect(post_3).toEqual({ __typename: "Post", id: "p1", title: "Post B" });
+    expect(post_3).toEqual({ __version: 225874305, __typename: "Post", id: "p1", title: "Post B", flags: [] });
   });
 
   it("commit persists; reverting committed layers in any order does not change state", async () => {
     const { cache } = createTestClient();
 
     const tx1 = cache.modifyOptimistic((o) => {
-      o.patch("Post:p1", { __typename: "Post", id: "p1", title: "Post A" });
+      o.patch("Post:p1", { __typename: "Post", id: "p1", title: "Post A", flags: [] });
     });
 
     const tx2 = cache.modifyOptimistic((o) => {
-      o.patch("Post:p1", { __typename: "Post", id: "p1", title: "Post B" });
+      o.patch("Post:p1", { __typename: "Post", id: "p1", title: "Post B", flags: [] });
     });
 
     tx1.commit();
     tx2.commit();
 
     const post_1 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
-    expect(post_1).toEqual({ __typename: "Post", id: "p1", title: "Post B" });
+    expect(post_1).toEqual({ __version: 225874305, __typename: "Post", id: "p1", title: "Post B", flags: [] });
 
     tx2.revert();
 
     const post_2 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
-    expect(post_2).toEqual({ __typename: "Post", id: "p1", title: "Post B" });
+    expect(post_2).toEqual({ __version: 225874305, __typename: "Post", id: "p1", title: "Post B", flags: [] });
 
     tx1.revert();
 
     const post_3 = cache.readFragment({ id: "Post:p1", fragment: operations.POST_FRAGMENT });
-    expect(post_3).toEqual({ __typename: "Post", id: "p1", title: "Post B" });
+    expect(post_3).toEqual({ __version: 225874305, __typename: "Post", id: "p1", title: "Post B", flags: [] });
   });
 
   it("modifies canonical connection by adding, removing, and patching nodes with UI updates", async () => {
@@ -600,22 +600,22 @@ describe("Optimistic updates", () => {
     // Builder branches by data presence
     const tx = cache.modifyOptimistic((o: any, { data }: any) => {
       const title = data?.title ?? "Draft Title";
-      o.patch("Post:x1", { __typename: "Post", id: "x1", title }, { mode: "merge" });
+      o.patch("Post:x1", { __typename: "Post", id: "x1", title, flags: [1] }, { mode: "merge" });
     });
 
     // Optimistic visible
     expect(cache.readFragment({ id: "Post:x1", fragment: operations.POST_FRAGMENT }))
-      .toEqual({ __typename: "Post", id: "x1", title: "Draft Title" });
+      .toEqual({ __version: 276207162, __typename: "Post", id: "x1", title: "Draft Title", flags: [1] });
 
     // Commit final value
     tx.commit({ title: "Final Title" });
     expect(cache.readFragment({ id: "Post:x1", fragment: operations.POST_FRAGMENT }))
-      .toEqual({ __typename: "Post", id: "x1", title: "Final Title" });
+      .toEqual({ __version: 259429543, __typename: "Post", id: "x1", title: "Final Title", flags: [1] });
 
     // Revert after commit is a no-op
     tx.revert();
     expect(cache.readFragment({ id: "Post:x1", fragment: operations.POST_FRAGMENT }))
-      .toEqual({ __typename: "Post", id: "x1", title: "Final Title" });
+      .toEqual({ __version: 259429543, __typename: "Post", id: "x1", title: "Final Title", flags: [1] });
   });
 
   it("commit(data) applies connection patch and node add in the same builder", async () => {
