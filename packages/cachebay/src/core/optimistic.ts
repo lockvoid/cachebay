@@ -1,5 +1,5 @@
 import { ROOT_ID } from "./constants";
-import { buildConnectionCanonicalKey } from "./utils";
+import { buildConnectionCanonicalKey } from "../compiler/utils";
 import type { GraphInstance } from "./graph";
 
 type OptimisticDependencies = { graph: GraphInstance };

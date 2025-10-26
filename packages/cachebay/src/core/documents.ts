@@ -1,4 +1,5 @@
-import { buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey, fingerprintNodes } from "./utils";
+import { fingerprintNodes } from "./utils";
+import { buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey } from "../compiler/utils";
 import { ROOT_ID } from "./constants";
 import { __DEV__ } from "./instrumentation";
 import type { CachePlan, PlanField } from "../compiler";

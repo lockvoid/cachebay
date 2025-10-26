@@ -5,11 +5,14 @@ import {
   hasTypename,
   stableStringify,
   fingerprintNodes,
+  recycleSnapshots,
+  WeakStringMap,
+} from "@/src/core/utils";
+import {
   buildFieldKey,
   buildConnectionKey,
   buildConnectionCanonicalKey,
-  recycleSnapshots,
-} from "@/src/core/utils";
+} from "@/src/compiler/utils";
 import { operations, createTestPlan } from "@/test/helpers";
 
 describe("Utils", () => {

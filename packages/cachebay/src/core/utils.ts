@@ -1,6 +1,3 @@
-import { CONNECTION_FIELDS, ROOT_ID } from "./constants";
-import type { PlanField } from "../compiler/types";
-
 export class WeakStringMap {
   constructor() {
     this.objectToKey = new WeakMap();       // object -> string
@@ -185,62 +182,6 @@ export const stableStringify = (object: any): string => {
   } catch {
     return "";
   }
-};
-
-/**
- * Build a field link key used on a record snapshot, e.g.:
- *   user({"id":"u1"})
- *
- * NOTE: `field.stringifyArgs(vars)` expects RAW variables; it internally runs the compiled
- * `buildArgs` to map variable names → field-arg names and drops undefined.
- */
-export const buildFieldKey = (field: PlanField, variables: Record<string, any>): string => {
-  const args = field.stringifyArgs(variables);
-
-  return args === "" || args === "{}" ? field.fieldName : `${field.fieldName}(${args})`;
-};
-
-export const buildConnectionKey = (
-  field: PlanField,
-  parentId: string,
-  variables: Record<string, any>,
-): string => {
-  // parentId can be "@", "Type:id", "Type:id.container", or already absolute like "@.X.Y"
-  const base = parentId[0] === ROOT_ID ? parentId : `@.${parentId}`;
-  return `${base}.${field.fieldName}(${field.stringifyArgs(variables)})`;
-};
-
-/**
- * Build the canonical connection key (filters-only identity) under the `@connection.` namespace, e.g.:
- *   @connection.posts({"category":"tech"})
- *   @connection.User:u1.posts({"category":"tech","sort":"hot"})
- *
- * - Uses `field.connectionKey` (directive key) when available; falls back to the field name.
- * - If `field.connectionFilters` is present, use only those arg names (when present in args).
- * - Otherwise, include all non-pagination args derived from `buildArgs(vars)`.
- */
-export const buildConnectionCanonicalKey = (
-  field: PlanField,
-  parentId: string,
-  variables: Record<string, any>,
-): string => {
-  const allArgs = field.buildArgs(variables) || {};
-  const identity: Record<string, any> = {};
-
-  // Compiler always sets connectionFilters as an array (explicit or inferred)
-  // Note: Explicit filters from @connection directive could include pagination fields,
-  // so we must filter them out here
-  if (field.connectionFilters) {
-    for (let i = 0; i < field.connectionFilters.length; i++) {
-      const name = field.connectionFilters[i];
-      if (CONNECTION_FIELDS.has(name)) continue; // Skip pagination fields
-      if (name in allArgs) identity[name] = allArgs[name];
-    }
-  }
-
-  const keyPart = field.connectionKey || field.fieldName; // prefer directive key; fallback to field
-  const parentPart = parentId === ROOT_ID ? "@connection." : `@connection.${parentId}.`;
-  return `${parentPart}${keyPart}(${stableStringify(identity)})`;
 };
 
 /**
