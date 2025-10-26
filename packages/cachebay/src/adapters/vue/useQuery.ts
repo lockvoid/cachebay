@@ -66,12 +66,13 @@ export function useQuery<TData = any, TVars = any>(
 ): UseQueryReturn<TData, TVars> {
   const client = useCachebay();
 
-  const data = ref<TData | null | undefined>() as Ref<TData | null | undefined>;
+  const data = ref<TData | null | undefined>();
   const error = ref<Error | null>(null);
   const isFetching = ref(false);
 
   let watchHandle: ReturnType<typeof client.watchQuery> | null = null;
-  let initialExecutionPromise: Promise<void> | null = null;
+  let initialExecutionPromise: Promise<any> | null = null;
+  let isAwaitingNetworkForCacheAndNetwork = false;
 
   /**
    * Setup watcher (first time only)
@@ -85,10 +86,18 @@ export function useQuery<TData = any, TVars = any>(
       onData: (newData) => {
         data.value = newData as TData;
         error.value = null;
-        isFetching.value = false;
+        // For cache-and-network, keep isFetching true until network data arrives
+        // The flag will be true on first call (cache), false on second call (network)
+        if (!isAwaitingNetworkForCacheAndNetwork) {
+          isFetching.value = false;
+        } else {
+          // First call with cached data - clear flag for next call
+          isAwaitingNetworkForCacheAndNetwork = false;
+        }
       },
       onError: (err) => {
         error.value = err;
+        isAwaitingNetworkForCacheAndNetwork = false;
         isFetching.value = false;
       },
       immediate: false, // Don't materialize immediately - executeQuery will handle initial data
@@ -104,19 +113,33 @@ export function useQuery<TData = any, TVars = any>(
 
     try {
       console.log("Executing query1");
+      
+      // For cache-and-network, fire and forget - watcher will handle updates
+      if (policy === 'cache-and-network') {
+        isAwaitingNetworkForCacheAndNetwork = true;
+        const promise = client.executeQuery<TData, TVars>({
+          query: options.query,
+          variables: vars,
+          cachePolicy: policy,
+        });
+        
+        promise.then((result) => {
+          console.log("Executing query2 (cache-and-network)", result);
+        }).catch((err) => {
+          // Watcher already set error through onError callback
+        });
+        
+        // Don't await - return immediately and keep isFetching true
+        // Watcher will set isFetching to false when network data arrives
+        return undefined;
+      }
+      
       const result = await client.executeQuery<TData, TVars>({
         query: options.query,
         variables: vars,
         cachePolicy: policy,
       });
       console.log("Executing query2", result);
-
-      // For cache-and-network with cached data, keep isFetching true
-      // The watcher will be notified when network data arrives and set isFetching to false
-      if (policy === 'cache-and-network' && result.meta?.source === 'cache') {
-        // Keep isFetching true - waiting for network data
-        return result;
-      }
 
       // For all other cases, set isFetching to false
       isFetching.value = false;
