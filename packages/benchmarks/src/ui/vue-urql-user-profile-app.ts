@@ -63,7 +63,7 @@ export function createVueUrqlUserProfileApp(
       fetchExchange,
     ],
     fetch: async (url, options) => {
-      console.log('[Urql] fetch called');
+      // console.log('[Urql] fetch called');
       return await yoga.fetch(url, options);
     },
     requestPolicy: cachePolicy === "cache-first" ? "cache-first" : cachePolicy === "cache-and-network" ? "cache-and-network" : "network-only",
@@ -81,14 +81,14 @@ export function createVueUrqlUserProfileApp(
 
       watch(data, () => {
         if (data.value?.user) {
-          console.log('[Urql]', data.value.user.id, '→', data.value.user.email);
+          // console.log('[Urql]', data.value.user.id, '→', data.value.user.email);
           deferred.resolve();
         }
       }, { immediate: true });
 
       watch(error, () => {
         if (error.value) {
-          console.log('[Urql] ERROR:', error.value);
+          // console.log('[Urql] ERROR:', error.value);
         }
       });
 

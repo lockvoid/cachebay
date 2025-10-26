@@ -8,6 +8,7 @@ import {
 } from 'react-relay';
 import { createUserProfileYoga } from '../server/user-profile-server';
 import { makeUserProfileDataset } from '../utils/seed-user-profile';
+import { createDeferred } from '../utils/concurrency';
 
 export type ReactRelayUserProfileController = {
   mount(target?: Element): Promise<void>;
@@ -29,11 +30,11 @@ export function createReactRelayUserProfileApp(
   sharedYoga?: any,
 ): ReactRelayUserProfileController {
   const yoga = sharedYoga || createUserProfileYoga(makeUserProfileDataset({ userCount: 1000 }), delayMs);
-  console.log('[Relay] yoga:', typeof yoga, yoga ? 'defined' : 'undefined');
+
+  const deferred = createDeferred();
 
   const environment = new Environment({
     network: Network.create(async (params, variables) => {
-      console.log('[Relay] network fetch, variables:', variables);
       const response = await yoga.fetch("http://localhost:4000/graphql", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -43,16 +44,16 @@ export function createReactRelayUserProfileApp(
         }),
       });
       const json = await response.json();
-      console.log('[Relay] response:', json.data?.user?.email || 'NO DATA');
       return json;
     }),
     store: new Store(new RecordSource()),
   });
 
   let root: Root | null = null;
+  let dataLoaded = false;
 
   const UserProfile: React.FC<{ userId: string }> = ({ userId }) => {
-    console.log('[Relay] UserProfile render, userId:', userId);
+    //console.log('[Relay] UserProfile render, userId:', userId);
 
     const data = useLazyLoadQuery(
       graphql`
@@ -87,9 +88,15 @@ export function createReactRelayUserProfileApp(
       { fetchPolicy: mapCachePolicyToRelay(cachePolicy) }
     );
 
-    if (!data?.user) return <div>No user</div>;
+    useEffect(() => {
+      if (data?.user && !dataLoaded) {
+        // console.log('[Relay]', userId, '→', data.user.email);
+        dataLoaded = true;
+        deferred.resolve();
+      }
+    }, [data, userId]);
 
-    console.log('[Relay]', userId, '→', data.user.email);
+    if (!data?.user) return <div>No user</div>;
 
     return (
       <div>
@@ -135,8 +142,6 @@ export function createReactRelayUserProfileApp(
       const container = target || document.createElement("div");
       root = createRoot(container);
       root.render(<App />);
-      // Wait for initial render
-      return new Promise(resolve => setTimeout(resolve, 100));
     },
 
     unmount: () => {
@@ -147,8 +152,8 @@ export function createReactRelayUserProfileApp(
     },
 
     ready: async () => {
-      // Query loads automatically on mount, just wait a tick
-      await new Promise(resolve => setTimeout(resolve, 0));
+      // Wait for query to complete
+      await deferred.promise;
     },
   };
 }

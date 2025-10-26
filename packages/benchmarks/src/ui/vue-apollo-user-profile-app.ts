@@ -67,7 +67,7 @@ export function createVueApolloUserProfileApp(
 
       watch(result, () => {
         if (result.value?.user) {
-          console.log('[Apollo]', result.value.user.id, '→', result.value.user.email);
+          // console.log('[Apollo]', result.value.user.id, '→', result.value.user.email);
         }
       }, { immediate: true });
 
@@ -79,7 +79,7 @@ export function createVueApolloUserProfileApp(
 
       watch(error, () => {
         if (error.value) {
-          console.log('[Apollo] ERROR:', error.value);
+          // console.log('[Apollo] ERROR:', error.value);
         }
       });
 

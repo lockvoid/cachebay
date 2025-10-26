@@ -64,7 +64,7 @@ export function createVueCachebayUserProfileApp(
       });
 
       const result = await response.json();
-      console.log('[Cachebay]', context.variables?.id, '→', result.data?.user?.email || 'NO DATA');
+      // console.log('[Cachebay]', context.variables?.id, '→', result.data?.user?.email || 'NO DATA');
 
       return {
         data: result.data || null,
@@ -93,14 +93,14 @@ export function createVueCachebayUserProfileApp(
 
       watch(data, () => {
         if (data.value?.user) {
-          console.log('[Cachebay]', data.value.user.id, '→', data.value.user.email);
+          // console.log('[Cachebay]', data.value.user.id, '→', data.value.user.email);
           deferred.resolve();
         }
       }, { immediate: true });
 
       watch(error, () => {
         if (error.value) {
-          console.log('[Cachebay] ERROR:', error.value);
+          // console.log('[Cachebay] ERROR:', error.value);
         }
       });
 
