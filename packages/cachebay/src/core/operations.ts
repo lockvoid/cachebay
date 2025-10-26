@@ -183,6 +183,12 @@ export interface OperationsOptions {
   transport: Transport;
   suspensionTimeout?: number;
   onQueryError?: (signature: string, error: CombinedError) => void;
+  onQueryData?: (event: {
+    signature: string;
+    data: any;
+    dependencies: Set<string>;
+    cachePolicy: CachePolicy;
+  }) => void;
   cachePolicy?: CachePolicy;
 }
 
@@ -193,7 +199,7 @@ export interface OperationsDependencies {
 }
 
 export const createOperations = (
-  { transport, suspensionTimeout = 1000, onQueryError, cachePolicy: defaultCachePolicy }: OperationsOptions,
+  { transport, suspensionTimeout = 1000, onQueryError, onQueryData, cachePolicy: defaultCachePolicy }: OperationsOptions,
   { planner, documents, ssr }: OperationsDependencies
 ) => {
   // Track query epochs to prevent stale responses from notifying watchers
@@ -239,7 +245,7 @@ export const createOperations = (
       document: query,
       variables,
       canonical: true,
-      fingerprint: false,
+      fingerprint: true, // Get dependencies for watcher tracking
     });
 
     const performRequest = async () => {
@@ -280,7 +286,15 @@ export const createOperations = (
             document: query,
             variables,
             canonical: true,
-            fingerprint: false,
+            fingerprint: true, // Get dependencies for watcher tracking
+          });
+
+          // Notify watchers about query execution with data and dependencies
+          onQueryData?.({
+            signature,
+            data: cachedAfterWrite.data,
+            dependencies: cachedAfterWrite.dependencies,
+            cachePolicy: policy,
           });
 
           // Validate that we can materialize the data we just wrote
@@ -367,6 +381,14 @@ export const createOperations = (
         return { data: null, error };
       }
 
+      // Notify watchers about cache-only hit with data and dependencies
+      onQueryData?.({
+        signature,
+        data: cached.data,
+        dependencies: cached.dependencies,
+        cachePolicy: effectiveCachePolicy,
+      });
+
       const result = { data: cached.data as TData, error: null };
       onSuccess?.(result.data);
       return result;
@@ -374,6 +396,14 @@ export const createOperations = (
 
     if (effectiveCachePolicy === 'cache-first') {
       if (cached.ok.canonical && cached.ok.strict) {
+        // Notify watchers about cache hit with data and dependencies
+        onQueryData?.({
+          signature,
+          data: cached.data,
+          dependencies: cached.dependencies,
+          cachePolicy: effectiveCachePolicy,
+        });
+        
         const result = { data: cached.data as TData, error: null };
         onSuccess?.(result.data);
         return result;
@@ -382,6 +412,14 @@ export const createOperations = (
 
     if (effectiveCachePolicy === 'cache-and-network') {
       if (cached.ok.canonical) {
+        // Notify watchers about cache hit with data and dependencies
+        onQueryData?.({
+          signature,
+          data: cached.data,
+          dependencies: cached.dependencies,
+          cachePolicy: effectiveCachePolicy,
+        });
+        
         performRequest().catch((err) => {
           if (__DEV__) {
             console.warn('Cachebay: Cache hit, but network request failed', err);

@@ -207,9 +207,13 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
     keys: options.keys || {},
     interfaces: options.interfaces || {},
     onChange: (touchedIds) => {
-      // Propagate data changes to all subsystems
-      queries.propagateData(touchedIds);
-      fragments.propagateData(touchedIds);
+      // Defer propagation to microtask so onQueryData fires first
+      // This allows direct emission from executeQuery callback before propagateData
+      // The skipNextPropagate flag will prevent double emission
+      queueMicrotask(() => {
+        queries.propagateData(touchedIds);
+        fragments.propagateData(touchedIds);
+      });
     },
   });
 
@@ -219,7 +223,13 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
   const canonical = createCanonical({ graph, optimistic });
   documents = createDocuments({ graph, planner, canonical });
   fragments = createFragments({ graph, planner, documents });
-  queries = createQueries({ graph, documents, planner });
+
+  // Create queries first (with placeholder operations)
+  queries = createQueries({
+    documents,
+    planner,
+    operations: null as any // Will be injected after operations is created
+  });
 
   // Operations (always created since transport is required)
   const operations = createOperations(
@@ -231,9 +241,13 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
         // Propagate errors to queries, which will notify watchers
         queries.propagateError(signature, error);
       },
+      onQueryData: queries.handleQueryExecuted,
     },
     { planner, documents, ssr }
   );
+
+  // Inject operations into queries
+  queries._setOperations(operations);
 
   const inspect = createInspect({ graph, optimistic });
 

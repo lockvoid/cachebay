@@ -77,6 +77,8 @@ export function useQuery<TData = any, TVars = any>(
    * Setup watcher (first time only)
    */
   const setupWatcher = (vars: TVars) => {
+    const policy = toValue(options.cachePolicy);
+    
     watchHandle = client.watchQuery({
       query: options.query,
       variables: vars,
@@ -89,7 +91,7 @@ export function useQuery<TData = any, TVars = any>(
         error.value = err;
         isFetching.value = false;
       },
-      immediate: true,
+      immediate: true, // Get initial cached data if available
     });
   };
 
@@ -144,7 +146,7 @@ export function useQuery<TData = any, TVars = any>(
 
     // Update watcher with new variables if provided
     if (refetchOptions?.variables) {
-      watchHandle.update({ variables: vars });
+      watchHandle.update({ variables: vars, immediate: false }); // Don't materialize - executeQuery will handle it
     }
 
     // Execute query with refetch policy
@@ -182,8 +184,8 @@ export function useQuery<TData = any, TVars = any>(
         const policy = toValue(options.cachePolicy);
         if (!watchHandle) {
           setupWatcher(vars);
-          // Only execute query if not cache-only policy and not lazy
-          if (policy !== 'cache-only' && !options.lazy) {
+          // Execute query unless lazy mode (executeQuery handles all policies)
+          if (!options.lazy) {
             const promise = executeQuery(vars);
             // Capture the first execution for Suspense
             if (!initialExecutionPromise) {
@@ -207,10 +209,8 @@ export function useQuery<TData = any, TVars = any>(
       const policy = toValue(options.cachePolicy)
 
       if (watchHandle) {
-        watchHandle.update({ variables: vars });
-        if (policy !== 'cache-only') {
-          executeQuery(vars);
-        }
+        watchHandle.update({ variables: vars, immediate: false }); // Don't materialize - executeQuery will handle it
+        executeQuery(vars); // executeQuery handles all policies including cache-only
       }
     },
     { deep: true }
@@ -224,12 +224,9 @@ export function useQuery<TData = any, TVars = any>(
       if (!isEnabled || !watchHandle) return;
 
       const vars = toValue(options.variables) || ({} as TVars);
-      const policy = toValue(options.cachePolicy)
 
-      // Re-execute query with new policy (unless cache-only)
-      if (policy !== 'cache-only') {
-        executeQuery(vars);
-      }
+      // Re-execute query with new policy (executeQuery handles all policies)
+      executeQuery(vars);
     }
   );
 

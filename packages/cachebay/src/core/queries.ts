@@ -1,16 +1,15 @@
 // src/core/queries.ts
 import type { DocumentsInstance } from "./documents";
-import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
+import type { OperationsInstance } from "./operations";
 import { CacheMissError } from "./errors";
 import { recycleSnapshots } from "./utils";
-import { ROOT_ID } from "./constants";
 import type { DocumentNode } from "graphql";
 
 export type QueriesDependencies = {
-  graph: GraphInstance;
   documents: DocumentsInstance;
   planner: PlannerInstance;
+  operations: OperationsInstance;
 };
 
 export type ReadQueryOptions = {
@@ -42,14 +41,16 @@ export type WatchQueryOptions = {
 
 export type WatchQueryHandle = {
   unsubscribe: () => void;
-  refetch: () => void;
-  /** Update variables and refetch. Handles pagination recycling automatically. */
-  update: (options: { variables?: Record<string, any> }) => void;
+  /** Update variables. If immediate=true, materializes and emits immediately. */
+  update: (options: { variables?: Record<string, any>; immediate?: boolean }) => void;
 };
 
 export type QueriesInstance = ReturnType<typeof createQueries>;
 
-export const createQueries = ({ documents, planner, operations }: QueriesDependencies) => {
+export const createQueries = ({ documents, planner, operations: initialOperations }: QueriesDependencies) => {
+  // Operations reference (not used in queries, only for dependency injection pattern)
+  let operations = initialOperations;
+
   // --- Watcher state & indices ---
   type WatcherState = {
     query: DocumentNode | string;
@@ -59,10 +60,12 @@ export const createQueries = ({ documents, planner, operations }: QueriesDepende
     onError?: (error: Error) => void;
     deps: Set<string>;
     lastData: any | undefined;
+    skipNextPropagate?: boolean; // Flag to skip next propagateData emission (coalescing)
   };
 
   const watchers = new Map<number, WatcherState>();
   const depIndex = new Map<string, Set<number>>();
+  const signatureToWatcher = new Map<string, number>(); // Fast lookup by signature
   let watcherSeq = 1;
 
   // --- Batched broadcasting ---
@@ -100,10 +103,16 @@ export const createQueries = ({ documents, planner, operations }: QueriesDepende
         const w = watchers.get(k);
         if (!w) continue;
 
+        // Skip if recently emitted by handleQueryExecuted (coalescing)
+        if (w.skipNextPropagate) {
+          w.skipNextPropagate = false; // Clear flag after checking
+          continue;
+        }
+
         const result = documents.materializeDocument({
           document: w.query,
           variables: w.variables,
-          canonical: w.canonical,
+          canonical: true, // Always canonical for watchers
           fingerprint: true,
         });
 
@@ -250,28 +259,29 @@ export const createQueries = ({ documents, planner, operations }: QueriesDepende
       lastData: undefined,
     };
     watchers.set(watcherId, watcher);
+    signatureToWatcher.set(signature, watcherId);
 
-    const initial = documents.materializeDocument({
-      document: query,
-      variables,
-      canonical: true,  // Always use canonical mode
-      fingerprint: true,
-    });
+    // If immediate, materialize synchronously to get initial data
+    if (immediate) {
+      const initial = documents.materializeDocument({
+        document: query,
+        variables,
+        canonical: true,
+        fingerprint: true,
+      });
 
-    // Track deps even if initial data is missing
-    updateWatcherDependencies(watcherId, initial.dependencies);
+      // Track deps even if initial data is missing
+      updateWatcherDependencies(watcherId, initial.dependencies);
 
-    if (initial.source !== "none") {
-      watcher.lastData = recycleSnapshots(undefined, initial.data);
-      if (immediate) {
+      if (initial.source !== "none") {
+        watcher.lastData = initial.data;
         try {
           onData(initial.data);
         } catch (e) {
           onError?.(e as Error);
         }
       }
-    } else if (onError && immediate) {
-      onError(new CacheMissError());
+      // No else - watchers simply don't emit on cache miss, they wait for data
     }
 
     return {
@@ -288,65 +298,84 @@ export const createQueries = ({ documents, planner, operations }: QueriesDepende
         watchers.delete(watcherId);
       },
 
-      refetch: () => {
+      update: ({ variables: newVariables = {}, immediate = true }) => {
         const w = watchers.get(watcherId);
         if (!w) return;
 
-        const res = documents.materializeDocument({
-          document: w.query,
-          variables: w.variables,
-          canonical: true,  // Always use canonical mode
-          fingerprint: true,
-        });
-
-        updateWatcherDependencies(watcherId, res.dependencies);
-
-        if (res.source !== "none") {
-          const recycled = recycleSnapshots(w.lastData, res.data);
-          if (recycled !== w.lastData) {
-            w.lastData = recycled;
-            try {
-              w.onData(recycled);
-            } catch (e) {
-              w.onError?.(e as Error);
-            }
-          }
-        } else if (w.onError) {
-          w.onError(new Error("Refetch returned no data"));
-        }
-      },
-
-      update: ({ variables: newVariables = {} }) => {
-        const w = watchers.get(watcherId);
-        if (!w) return;
-
+        // Update watcher state
         w.variables = newVariables;
         const plan = planner.getPlan(w.query);
-        w.signature = plan.makeSignature("canonical", newVariables);
+        const newSignature = plan.makeSignature("canonical", newVariables);
 
-        const res = documents.materializeDocument({
-          document: w.query,
-          variables: newVariables,
-          canonical: true,  // Always use canonical mode
-          fingerprint: true,
-        });
+        // Update signature mapping
+        signatureToWatcher.delete(w.signature);
+        w.signature = newSignature;
+        signatureToWatcher.set(newSignature, watcherId);
 
-        updateWatcherDependencies(watcherId, res.dependencies);
+        // If immediate, materialize and emit synchronously
+        if (immediate) {
+          const res = documents.materializeDocument({
+            document: w.query,
+            variables: newVariables,
+            canonical: true,
+            fingerprint: true,
+          });
 
-        if (res.source !== "none") {
-          // recycleSnapshots automatically preserves object identity for unchanged parts
-          const recycled = recycleSnapshots(w.lastData, res.data);
-          w.lastData = recycled;
-          try {
-            w.onData(recycled);
-          } catch (e) {
-            w.onError?.(e as Error);
+          updateWatcherDependencies(watcherId, res.dependencies);
+
+          if (res.source !== "none") {
+            // recycleSnapshots automatically preserves object identity for unchanged parts
+            const recycled = recycleSnapshots(w.lastData, res.data);
+            // Only emit if data actually changed
+            if (recycled !== w.lastData) {
+              w.lastData = recycled;
+              try {
+                w.onData(recycled);
+              } catch (e) {
+                w.onError?.(e as Error);
+              }
+            }
           }
-        } else if (w.onError) {
-          w.onError(new Error("Update returned no data"));
+          // No else - watchers simply don't emit on cache miss, they wait for data
         }
       },
     };
+  };
+
+  /**
+   * Callback handler from operations - updates watcher dependencies and directly emits data
+   */
+  const handleQueryExecuted = ({ signature, data, dependencies }: {
+    signature: string;
+    data: any;
+    dependencies: Set<string>;
+    cachePolicy: string;
+  }) => {
+    const watcherId = signatureToWatcher.get(signature);
+    if (watcherId !== undefined) {
+      const w = watchers.get(watcherId);
+      if (!w) return;
+
+      // Update dependencies
+      updateWatcherDependencies(watcherId, dependencies);
+
+      // Directly emit data to watcher (avoid redundant materialize)
+      // recycleSnapshots to preserve object identity
+      const recycled = recycleSnapshots(w.lastData, data);
+      if (recycled !== w.lastData) {
+        w.lastData = recycled;
+
+        // Set flag to skip next propagateData emission (coalescing)
+        // This prevents double emission when normalize triggers graph.onChange
+        w.skipNextPropagate = true;
+
+        try {
+          w.onData(recycled);
+        } catch (e) {
+          w.onError?.(e as Error);
+        }
+      }
+    }
   };
 
   return {
@@ -355,5 +384,8 @@ export const createQueries = ({ documents, planner, operations }: QueriesDepende
     watchQuery,
     propagateData,
     propagateError,
+    handleQueryExecuted, // Expose for operations to call
+    // Allow injecting operations after creation
+    _setOperations: (ops: any) => { operations = ops; },
   };
 };

@@ -1713,6 +1713,266 @@ describe("useQuery", () => {
       expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "network@example.com" } });
     });
   });
+
+  describe("Performance", () => {
+    it("cache-first: should materialize once on cache hit (no redundant materialize)", async () => {
+      const normalizeSpy = vi.fn();
+      const materializeSpy = vi.fn();
+
+      // Create cache with spies
+      const cache = createCachebay({
+        transport: mockTransport,
+      });
+
+      // Spy on documents methods
+      const originalNormalize = (cache as any).__internals.documents.normalizeDocument;
+      const originalMaterialize = (cache as any).__internals.documents.materializeDocument;
+      (cache as any).__internals.documents.normalizeDocument = (...args: any[]) => {
+        normalizeSpy();
+        return originalNormalize.apply((cache as any).__internals.documents, args);
+      };
+      (cache as any).__internals.documents.materializeDocument = (...args: any[]) => {
+        materializeSpy();
+        return originalMaterialize.apply((cache as any).__internals.documents, args);
+      };
+
+      // Pre-populate cache
+      await cache.executeQuery({
+        query: USER_QUERY,
+        variables: { id: "1" },
+      });
+
+      // Reset spies after initial population
+      normalizeSpy.mockClear();
+      materializeSpy.mockClear();
+
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: USER_QUERY,
+            variables: { id: "1" },
+            cachePolicy: "cache-first",
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await nextTick(); // Wait for microtask (propagateData)
+
+      // Should have data from cache
+      expect(queryResult.data.value).toMatchObject({ user: { id: "1" } });
+
+      // Performance check: cache hit should only materialize once
+      // 1. watchQuery with immediate: true (initial materialize)
+      // 2. executeQuery reads from cache (calls onQueryData with data, skips propagateData via coalescing)
+      expect(normalizeSpy).toHaveBeenCalledTimes(0); // No network call
+      expect(materializeSpy).toHaveBeenCalledTimes(2); // watchQuery immediate + executeQuery cache read
+    });
+
+    it("network-only: should materialize twice (watchQuery + executeQuery)", async () => {
+      const normalizeSpy = vi.fn();
+      const materializeSpy = vi.fn();
+
+      const cache = createCachebay({
+        transport: mockTransport,
+      });
+
+      // Spy on documents methods
+      const originalNormalize = (cache as any).__internals.documents.normalizeDocument;
+      const originalMaterialize = (cache as any).__internals.documents.materializeDocument;
+      (cache as any).__internals.documents.normalizeDocument = (...args: any[]) => {
+        normalizeSpy();
+        return originalNormalize.apply((cache as any).__internals.documents, args);
+      };
+      (cache as any).__internals.documents.materializeDocument = (...args: any[]) => {
+        materializeSpy();
+        return originalMaterialize.apply((cache as any).__internals.documents, args);
+      };
+
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: USER_QUERY,
+            variables: { id: "1" },
+            cachePolicy: "network-only",
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick(); // Wait for component mount
+      await new Promise((resolve) => setTimeout(resolve, 100)); // Wait for async operations
+      await nextTick(); // Wait for microtask (propagateData from graph.onChange)
+      await nextTick(); // Wait for microtask (scheduleFlush)
+
+      // Should have data from network
+      expect(queryResult.data.value).toMatchObject({ user: { id: "1" } });
+
+      // Performance check:
+      // 1. watchQuery with immediate: true (cache miss, no emit)
+      // 2. executeQuery: network fetch + normalize + materialize (onQueryData emits, propagateData skipped via coalescing)
+      expect(normalizeSpy).toHaveBeenCalledTimes(1); // Network call
+      expect(materializeSpy).toHaveBeenCalledTimes(2); // watchQuery immediate + executeQuery after normalize
+    });
+
+    it("refetch: should not cause redundant materialization", async () => {
+      const normalizeSpy = vi.fn();
+      const materializeSpy = vi.fn();
+
+      const cache = createCachebay({
+        transport: mockTransport,
+      });
+
+      // Spy on documents methods
+      const originalNormalize = (cache as any).__internals.documents.normalizeDocument;
+      const originalMaterialize = (cache as any).__internals.documents.materializeDocument;
+      (cache as any).__internals.documents.normalizeDocument = (...args: any[]) => {
+        normalizeSpy();
+        return originalNormalize.apply((cache as any).__internals.documents, args);
+      };
+      (cache as any).__internals.documents.materializeDocument = (...args: any[]) => {
+        materializeSpy();
+        return originalMaterialize.apply((cache as any).__internals.documents, args);
+      };
+
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: USER_QUERY,
+            variables: { id: "1" },
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Reset spies after initial load
+      normalizeSpy.mockClear();
+      materializeSpy.mockClear();
+
+      // Refetch
+      await queryResult.refetch();
+      await nextTick(); // Wait for microtask (propagateData)
+
+      // Performance check: refetch should not cause redundant materialization
+      // 1. update({ immediate: false }) - no materialize
+      // 2. executeQuery: network fetch + normalize + materialize (onQueryData emits, propagateData skipped via coalescing)
+      expect(normalizeSpy).toHaveBeenCalledTimes(1); // Network call
+      expect(materializeSpy).toHaveBeenCalledTimes(1); // Only executeQuery materialize (no redundant materialize from update or propagateData)
+    });
+
+    it("variable change: should not cause redundant materialization", async () => {
+      const normalizeSpy = vi.fn();
+      const materializeSpy = vi.fn();
+
+      const cache = createCachebay({
+        transport: mockTransport,
+      });
+
+      // Spy on documents methods
+      const originalNormalize = (cache as any).__internals.documents.normalizeDocument;
+      const originalMaterialize = (cache as any).__internals.documents.materializeDocument;
+      (cache as any).__internals.documents.normalizeDocument = (...args: any[]) => {
+        normalizeSpy();
+        return originalNormalize.apply((cache as any).__internals.documents, args);
+      };
+      (cache as any).__internals.documents.materializeDocument = (...args: any[]) => {
+        materializeSpy();
+        return originalMaterialize.apply((cache as any).__internals.documents, args);
+      };
+
+      const variables = ref({ id: "1" });
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: USER_QUERY,
+            variables,
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Reset spies after initial load
+      normalizeSpy.mockClear();
+      materializeSpy.mockClear();
+
+      // Change variables
+      mockTransport.http = vi.fn().mockResolvedValue({
+        data: { user: { id: "2", email: "bob@example.com" } },
+        error: null,
+      });
+      variables.value = { id: "2" };
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await nextTick(); // Wait for microtask (propagateData)
+
+      // Performance check: variable change should not cause redundant materialization
+      // 1. update({ immediate: false }) - no materialize
+      // 2. executeQuery: network fetch + normalize + materialize (onQueryData emits, propagateData skipped via coalescing)
+      expect(normalizeSpy).toHaveBeenCalledTimes(1); // Network call
+      expect(materializeSpy).toHaveBeenCalledTimes(1); // Only executeQuery materialize (no redundant materialize from update or propagateData)
+    });
+  });
 });
 
 

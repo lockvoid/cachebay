@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createQueries, getQueryCanonicalKeys } from "@/src/core/queries";
 import { createGraph } from "@/src/core/graph";
 import { createPlanner } from "@/src/core/planner";
 import { createDocuments } from "@/src/core/documents";
 import { createCanonical } from "@/src/core/canonical";
 import { createOptimistic } from "@/src/core/optimistic";
+import { createOperations } from "@/src/core/operations";
+import { createSSR } from "@/src/core/ssr";
 import { gql } from "graphql-tag";
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
@@ -15,6 +17,7 @@ describe("queries API", () => {
   let canonical: ReturnType<typeof createCanonical>;
   let documents: ReturnType<typeof createDocuments>;
   let queries: ReturnType<typeof createQueries>;
+  let operations: ReturnType<typeof createOperations>;
 
   beforeEach(() => {
     graph = createGraph({
@@ -31,7 +34,27 @@ describe("queries API", () => {
     const optimistic = createOptimistic({ graph });
     canonical = createCanonical({ graph, optimistic });
     documents = createDocuments({ graph, planner, canonical });
-    queries = createQueries({ graph, documents, planner });
+    const ssr = createSSR({ hydrationTimeout: 100 }, { graph });
+
+    // Create queries first (without operations)
+    queries = createQueries({ documents, planner, operations: null as any });
+
+    // Create operations with callback
+    operations = createOperations(
+      {
+        transport: {
+          http: vi.fn().mockResolvedValue({ data: null, error: null }),
+          ws: vi.fn(),
+        },
+      },
+      { planner, documents, ssr },
+      {
+        onQueryExecuted: queries.handleQueryExecuted,
+      }
+    );
+
+    // Inject operations into queries
+    queries._setOperations(operations);
   });
 
   describe("readQuery / writeQuery", () => {
@@ -218,7 +241,8 @@ describe("queries API", () => {
       graph.putRecord("User:1", { name: "Bob" });
 
       // Manually refetch (should emit synchronously with current snapshot)
-      handle.refetch();
+      // refetch removed - use update with same variables to re-materialize
+      handle.update({ variables: { id: "1" }, immediate: true });
 
       expect(emissions).toHaveLength(2);
       expect(emissions[1].user.name).toBe("Bob");
@@ -778,7 +802,8 @@ describe("queries API", () => {
       expect(emissions).toHaveLength(1);
 
       // Refetch (data unchanged)
-      handle.refetch();
+      // refetch removed - use update with same variables to re-materialize
+      handle.update({ variables: { id: "1" }, immediate: true });
 
       expect(emissions).toHaveLength(1); // No new emission (data identical)
 
@@ -803,7 +828,8 @@ describe("queries API", () => {
       });
 
       // Refetch after update
-      handle.refetch();
+      // refetch removed - use update with same variables to re-materialize
+      handle.update({ variables: { id: "1" }, immediate: true });
 
       expect(emissions).toHaveLength(2);
       expect(emissions[1].user.name).toBe("Alice Updated");
