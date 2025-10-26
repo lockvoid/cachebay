@@ -192,7 +192,8 @@ export function createVueApolloNestedApp(
           // First call: execute the initial query
           if (!result.value) {
             await load();
-
+            await deferred.promise;
+            deferred = createDeferred();
           } else {
             // Subsequent calls: fetch more
             const cursor = result.value.users.pageInfo.endCursor;
