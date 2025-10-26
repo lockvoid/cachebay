@@ -4,7 +4,8 @@ import { InMemoryCache } from "@apollo/client/cache";
 import { relayStylePagination } from "@apollo/client/utilities";
 import { Environment, Network, RecordSource, Store, createOperationDescriptor } from "relay-runtime";
 import type { ConcreteRequest } from "relay-runtime";
-import { makeResponse, buildPages, CACHEBAY_QUERY, APOLLO_QUERY, RELAY_QUERY } from "../../src/utils/api";
+import { makeResponse, buildPages, CACHEBAY_QUERY, APOLLO_QUERY } from "../../src/utils/api";
+import RELAY_QUERY from "../../src/__generated__/apiRelayQuery.graphql";
 
 let __sink = 0;
 

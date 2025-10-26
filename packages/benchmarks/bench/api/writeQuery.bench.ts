@@ -4,8 +4,8 @@ import { InMemoryCache } from "@apollo/client/cache";
 import { relayStylePagination } from "@apollo/client/utilities";
 import { Environment, Network, RecordSource, Store, createOperationDescriptor } from "relay-runtime";
 import type { ConcreteRequest } from "relay-runtime";
-import RelayWriteQuery from "../src/__generated__/relayWriteQueryDefRelayWriteQuery.graphql";
-import { makeResponse, buildPages, CACHEBAY_QUERY, APOLLO_QUERY } from "./utils";
+import { makeResponse, buildPages, CACHEBAY_QUERY, APOLLO_QUERY } from "../../src/utils/api";
+import RELAY_QUERY from "../../src/__generated__/apiRelayQuery.graphql";
 
 let __sink = 0;
 
@@ -111,7 +111,7 @@ summary(() => {
           for (let i = 0; i < pages.length; i++) {
             const page = pages[i];
 
-            relay.commitPayload(createOperationDescriptor(RelayWriteQuery as ConcreteRequest, page.variables), page.data);
+            relay.commitPayload(createOperationDescriptor(RELAY_QUERY as ConcreteRequest, page.variables), page.data);
           }
           sink();
         },
@@ -169,14 +169,14 @@ summary(() => {
     for (let i = 0; i < pages.length; i++) {
       const page = pages[i];
 
-      relay.commitPayload(createOperationDescriptor(RelayWriteQuery as ConcreteRequest, page.variables), page.data);
+      relay.commitPayload(createOperationDescriptor(RELAY_QUERY as ConcreteRequest, page.variables), page.data);
     }
 
     bench(`relay.commitPayload:hot(${getLabel()})`, () => {
       for (let i = 0; i < pages.length; i++) {
         const page = pages[i];
 
-        relay.commitPayload(createOperationDescriptor(RelayWriteQuery as ConcreteRequest, page.variables), page.data);
+        relay.commitPayload(createOperationDescriptor(RELAY_QUERY as ConcreteRequest, page.variables), page.data);
       }
       sink();
     });
@@ -224,7 +224,7 @@ summary(() => {
           return createRelayEnvironment();
         },
         bench(relay) {
-          relay.commitPayload(createOperationDescriptor(RelayWriteQuery as ConcreteRequest, { first: USERS_PAGE, after: null }), singlePage);
+          relay.commitPayload(createOperationDescriptor(RELAY_QUERY as ConcreteRequest, { first: USERS_PAGE, after: null }), singlePage);
           sink();
         },
       };
@@ -259,10 +259,10 @@ summary(() => {
     // Relay: write single page (hot)
     const relay = createRelayEnvironment();
 
-    relay.commitPayload(createOperationDescriptor(RelayWriteQuery as ConcreteRequest, { first: USERS_PAGE, after: null }), singlePage);
+    relay.commitPayload(createOperationDescriptor(RELAY_QUERY as ConcreteRequest, { first: USERS_PAGE, after: null }), singlePage);
 
     bench(`relay.commitPayload:single-page:hot(${LABEL})`, () => {
-      relay.commitPayload(createOperationDescriptor(RelayWriteQuery as ConcreteRequest, { first: USERS_PAGE, after: null }), singlePage);
+      relay.commitPayload(createOperationDescriptor(RELAY_QUERY as ConcreteRequest, { first: USERS_PAGE, after: null }), singlePage);
       sink();
     });
   });

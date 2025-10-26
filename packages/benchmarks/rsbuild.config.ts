@@ -3,13 +3,13 @@ import { defineConfig } from '@rsbuild/core';
 export default defineConfig({
   source: {
     entry: {
-      bench: './api/materializeDocument.bench.ts',
+      bench: './bench/api/index.ts',
     },
   },
   output: {
     target: 'node',
     distPath: {
-      root: '.dist',
+      root: 'dist',
     },
     minify: false,
     format: 'cjs',

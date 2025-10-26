@@ -7,20 +7,8 @@
   "type": "module",
   "scripts": {
     "relay": "relay-compiler",
-    "suite:nested-query": "NODE_ENV=production vitest bench --run --mode production bench/suites/nested-query.dom.bench.ts",
-    "api:normalizeDocument": "vitest bench --run --compare=.results/normalize.json bench/api/normalizeDocument.bench.ts",
-    "api:normalizeDocument:baseline": "vitest bench --run --outputJson=.results/normalize.json bench/api/normalizeDocument.bench.ts",
-    "api:materializeDocument": "vitest bench --run --compare=.results/normalize.json bench/api/materializeDocument.bench.ts",
-    "api:materializeDocument:baseline": "vitest bench --run --outputJson=.results/normalize.json bench/api/materializeDocument.bench.ts",
-    "api:readQuery": "vitest bench --run --compare=.results/normalize.json bench/api/readQuery.bench.ts",
-    "api:readQuery:baseline": "vitest bench --run --outputJson=.results/normalize.json bench/api/readQuery.bench.ts",
-    "api:writeQuery": "vitest bench --run --compare=.results/normalize.json bench/api/writeQuery.bench.ts",
-    "api:writeQuery:baseline": "vitest bench --run --outputJson=.results/normalize.json bench/api/writeQuery.bench.ts",
-    "api:watchQuery": "vitest bench --run --compare=.results/normalize.json bench/api/watchQuery.bench.ts",
-    "api:watchQuery:baseline": "vitest bench --run --outputJson=.results/normalize.json bench/api/watchQuery.bench.ts",
-    "bench": "bash scripts/bench.sh",
-    "profile:write": "pnpm relay && rsbuild build && node .bench-dist/bench.cjs",
-    "analyze:write": "pnpm relay && rsbuild build --config rsbuild.config.ts && node .bench-dist/bench.cjs"
+    "bench:api": "pnpm relay && rsbuild build && node dist/bench.cjs",
+    "bench:suite": "NODE_ENV=production vitest bench --run --mode production"
   },
   "dependencies": {
     "@apollo/client": "^3.8.10",
