@@ -15,6 +15,7 @@ vi.mock("@/src/core/documents", async () => {
       // Wrap normalize to count calls
       const origNormalize = documents.normalizeDocument;
       documents.normalizeDocument = ((...args: any[]) => {
+        console.log('MOCKED')
         normalizeCount++;
         return origNormalize.apply(documents, args);
       }) as any;
