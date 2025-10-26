@@ -69,14 +69,6 @@ export type CachePlan = {
    */
   makeSignature: (mode: "strict" | "canonical", vars: Record<string, any>) => string;
 
-  /**
-   * Get basic entity dependencies for this query based on variables.
-   * Returns entity keys that this query will likely access (e.g., ["Query", "User:123"]).
-   * Used for watcher dependency registration without materializing.
-   * Mode determines which variables are considered (strict includes pagination, canonical excludes it).
-   */
-  getDependencies: (mode: "strict" | "canonical", vars: Record<string, any>) => Set<string>;
-
   /** Union of arg names recognized as pagination/window args across all connection fields in this plan. */
   windowArgs: Set<string>;
 

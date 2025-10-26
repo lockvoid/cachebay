@@ -504,7 +504,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const cacheKey = getMaterializeCacheKey({ signature: canonical ? canonicalSignature! : strictSignature, fingerprint, entityId });
 
     if (!force) {
-      let cached = materializeCache.has(cacheKey);
+      let cached = materializeCache.get(cacheKey);
 
       if (cached) {
         cached.hot = true;

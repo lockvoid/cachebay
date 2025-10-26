@@ -105,85 +105,11 @@ const computePlanMetadata = (
     return `${id}|${mode}|${makeVarsKey(mode, vars)}`;
   };
 
-  // 7. Build blazing fast getDependencies
-  // Collect connection fields and fields with arguments for dependency tracking
-  type DepField = { field: PlanField; isConnection: boolean };
-  const depFields: DepField[] = [];
-  
-  const collectDepFields = (fields: PlanField[]): void => {
-    for (const field of fields) {
-      // Collect connections and fields with arguments
-      if (field.isConnection || field.expectedArgNames.length > 0) {
-        depFields.push({ field, isConnection: field.isConnection });
-      }
-      
-      // Recurse into children
-      if (field.selectionSet) {
-        collectDepFields(field.selectionSet);
-      }
-    }
-  };
-  collectDepFields(root);
-
-  // Build getDependencies function - returns dependency keys for graph watching
-  const getDependencies = (mode: "strict" | "canonical", vars: Record<string, any>): Set<string> => {
-    const deps = new Set<string>();
-    // Don't add rootTypename (Query/Mutation) - those are not graph entity keys
-    
-    // Iterate collected fields and build dependency keys
-    for (let i = 0; i < depFields.length; i++) {
-      const { field, isConnection } = depFields[i];
-      
-      if (isConnection) {
-        // For connections, use canonical key (filters only) regardless of mode
-        // This matches how connections are stored in the graph
-        const allArgs = field.buildArgs(vars) || {};
-        const filters = Array.isArray(field.connectionFilters) && field.connectionFilters.length > 0
-          ? field.connectionFilters
-          : Object.keys(allArgs).filter((k) => !windowArgs.has(k));
-        
-        // Build minimal filter object
-        const identity: Record<string, any> = {};
-        for (let j = 0; j < filters.length; j++) {
-          const name = filters[j];
-          if (name in allArgs) identity[name] = allArgs[name];
-        }
-        
-        const keyPart = field.connectionKey || field.fieldName;
-        const key = `@connection.${keyPart}(${JSON.stringify(identity)})`;
-        deps.add(key);
-      } else if (field.expectedArgNames.length > 0) {
-        // For fields with arguments, build field key
-        // In canonical mode, exclude window args
-        if (mode === "canonical") {
-          // Filter out window args from variables
-          const filteredVars: Record<string, any> = {};
-          for (const key in vars) {
-            if (!windowArgs.has(key)) {
-              filteredVars[key] = vars[key];
-            }
-          }
-          const argsStr = field.stringifyArgs(filteredVars);
-          const key = argsStr === "" || argsStr === "{}" ? field.fieldName : `${field.fieldName}(${argsStr})`;
-          deps.add(key);
-        } else {
-          // Strict mode: include all args
-          const argsStr = field.stringifyArgs(vars);
-          const key = argsStr === "" || argsStr === "{}" ? field.fieldName : `${field.fieldName}(${argsStr})`;
-          deps.add(key);
-        }
-      }
-    }
-    
-    return deps;
-  };
-
   return {
     id,
     varMask: { strict: strictMask, canonical: canonicalMask },
     makeVarsKey,
     makeSignature,
-    getDependencies,
     windowArgs,
     selectionFingerprint,
   };
@@ -414,7 +340,6 @@ export const compilePlan = (
       varMask: metadata.varMask,
       makeVarsKey: metadata.makeVarsKey,
       makeSignature: metadata.makeSignature,
-      getDependencies: metadata.getDependencies,
       windowArgs: metadata.windowArgs,
       selectionFingerprint: metadata.selectionFingerprint,
     };
@@ -501,7 +426,6 @@ export const compilePlan = (
       varMask: metadata.varMask,
       makeVarsKey: metadata.makeVarsKey,
       makeSignature: metadata.makeSignature,
-      getDependencies: metadata.getDependencies,
       windowArgs: metadata.windowArgs,
       selectionFingerprint: metadata.selectionFingerprint,
     };
