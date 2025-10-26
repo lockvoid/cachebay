@@ -109,6 +109,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
           variables: w.variables,
           canonical: true, // Always canonical for watchers
           fingerprint: true,
+          force: true,
         });
 
         // Always refresh deps so missing -> fulfilled transitions trigger
@@ -207,6 +208,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
       variables,
       canonical: true,  // Always use canonical mode
       fingerprint: false,
+      force: false,
     });
 
     if (result.source === "none") {
@@ -274,6 +276,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
         variables,
         canonical: true,
         fingerprint: true,
+        force: false,
       });
 
       // Track deps even if initial data is missing
@@ -353,6 +356,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
             variables: newVariables,
             canonical: true,
             fingerprint: true,
+            force: false,
           });
 
           updateWatcherDependencies(watcherId, res.dependencies);

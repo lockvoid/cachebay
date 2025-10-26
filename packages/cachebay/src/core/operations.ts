@@ -249,6 +249,7 @@ export const createOperations = (
         variables,
         canonical: true,
         fingerprint: true, // Get dependencies for watcher tracking
+        force: false,
       });
     }
 
@@ -291,6 +292,7 @@ export const createOperations = (
             variables,
             canonical: true,
             fingerprint: true, // Get dependencies for watcher tracking
+            force: true,
           });
 
           // Notify watchers about query execution with data and dependencies
