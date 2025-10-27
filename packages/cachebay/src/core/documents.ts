@@ -85,6 +85,17 @@ export type materializeResult = {
 };
 
 /**
+ * Options for invalidating a materialized document from cache
+ */
+export type invalidateOptions = {
+  document: DocumentNode | CachePlan;
+  variables?: Record<string, any>;
+  canonical?: boolean;
+  entityId?: string;
+  fingerprint?: boolean;
+};
+
+/**
  * Documents instance type
  */
 export type DocumentsInstance = ReturnType<typeof createDocuments>;
@@ -1028,8 +1039,26 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     return result;
   };
 
+  /**
+   * Invalidate a materialized document from cache
+   * Removes the cached result for the given document/variables combination
+   * 
+   * @param options - Options matching the materialization parameters
+   */
+  const invalidate = (options: invalidateOptions): void => {
+    const { document, variables = {}, canonical = true, entityId, fingerprint = true } = options;
+
+    // Get plan and build cache key the same way as materialize
+    const plan = planner.getPlan(document);
+    const signature = canonical ? plan.makeSignature(true, variables) : plan.makeSignature(false, variables);
+    const cacheKey = getMaterializeCacheKey({ signature, fingerprint, entityId });
+
+    materializeCache.delete(cacheKey);
+  };
+
   return {
     normalize,
     materialize,
+    invalidate,
   };
 };

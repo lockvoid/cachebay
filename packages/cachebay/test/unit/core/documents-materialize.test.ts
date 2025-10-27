@@ -2114,4 +2114,358 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       expect(Object.keys(result.data.user)).toEqual(["__typename", "id", "email"]);
     });
   });
+
+  describe("invalidate", () => {
+    it("invalidates cached materialized result", () => {
+      const QUERY = planner.getPlan(USER_QUERY);
+
+      documents.normalize({
+        document: QUERY,
+        variables: { id: "u1" },
+        data: {
+          user: users[0],
+        },
+      });
+
+      // First materialization - should cache
+      const result1 = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        force: false,
+      });
+
+      expect(result1.hot).toBe(false); // First time, not from cache
+
+      // Second materialization - should hit cache
+      const result2 = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        force: false,
+      });
+
+      expect(result2.hot).toBe(true); // From cache
+
+      // Invalidate the cache
+      documents.invalidate({
+        document: QUERY,
+        variables: { id: "u1" },
+      });
+
+      // Third materialization - cache was invalidated, should recompute
+      const result3 = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        force: false,
+      });
+
+      expect(result3.hot).toBe(false); // Not from cache, recomputed
+      expect(result3.data).toEqual(result1.data); // Same data
+    });
+
+    it("invalidates specific cache entry without affecting others", () => {
+      const QUERY = planner.getPlan(USER_QUERY);
+
+      // Normalize data for two users
+      documents.normalize({
+        document: QUERY,
+        variables: { id: "u1" },
+        data: { user: users[0] },
+      });
+
+      documents.normalize({
+        document: QUERY,
+        variables: { id: "u2" },
+        data: { user: users[1] },
+      });
+
+      // Materialize both queries
+      documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        force: false,
+      });
+
+      documents.materialize({
+        document: QUERY,
+        variables: { id: "u2" },
+        force: false,
+      });
+
+      // Both should be cached now
+      const cached1 = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        force: false,
+      });
+
+      const cached2 = documents.materialize({
+        document: QUERY,
+        variables: { id: "u2" },
+        force: false,
+      });
+
+      expect(cached1.hot).toBe(true);
+      expect(cached2.hot).toBe(true);
+
+      // Invalidate only u1's cache
+      documents.invalidate({
+        document: QUERY,
+        variables: { id: "u1" },
+      });
+
+      // u1 should be recomputed
+      const afterInvalidate1 = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        force: false,
+      });
+
+      expect(afterInvalidate1.hot).toBe(false); // Recomputed
+
+      // u2 should still be cached
+      const afterInvalidate2 = documents.materialize({
+        document: QUERY,
+        variables: { id: "u2" },
+        force: false,
+      });
+
+      expect(afterInvalidate2.hot).toBe(true); // Still cached
+    });
+
+    it("handles invalidating non-existent cache gracefully", () => {
+      const QUERY = planner.getPlan(USER_QUERY);
+
+      // Invalidate before any materialization
+      documents.invalidate({
+        document: QUERY,
+        variables: { id: "u1" },
+      });
+
+      // Should not throw and subsequent materialization should work
+      documents.normalize({
+        document: QUERY,
+        variables: { id: "u1" },
+        data: { user: users[0] },
+      });
+
+      const result = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        force: false,
+      });
+
+      expect(result.hot).toBe(false);
+      expect(result.data).toBeDefined();
+    });
+
+    it("respects canonical option when invalidating", () => {
+      const QUERY = planner.getPlan(USER_QUERY);
+
+      documents.normalize({
+        document: QUERY,
+        variables: { id: "u1" },
+        data: { user: users[0] },
+      });
+
+      // Materialize with canonical: true (default)
+      documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        canonical: true,
+        force: false,
+      });
+
+      // Materialize with canonical: false (different cache key)
+      documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        canonical: false,
+        force: false,
+      });
+
+      // Both should be cached
+      const cachedCanonical = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        canonical: true,
+        force: false,
+      });
+
+      const cachedStrict = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        canonical: false,
+        force: false,
+      });
+
+      expect(cachedCanonical.hot).toBe(true);
+      expect(cachedStrict.hot).toBe(true);
+
+      // Invalidate only canonical cache
+      documents.invalidate({
+        document: QUERY,
+        variables: { id: "u1" },
+        canonical: true,
+      });
+
+      // Canonical should be recomputed
+      const afterCanonical = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        canonical: true,
+        force: false,
+      });
+
+      expect(afterCanonical.hot).toBe(false);
+
+      // Strict should still be cached
+      const afterStrict = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        canonical: false,
+        force: false,
+      });
+
+      expect(afterStrict.hot).toBe(true);
+    });
+
+    it("respects fingerprint option when invalidating", () => {
+      const QUERY = planner.getPlan(USER_QUERY);
+
+      documents.normalize({
+        document: QUERY,
+        variables: { id: "u1" },
+        data: { user: users[0] },
+      });
+
+      // Materialize with fingerprint: true (default)
+      documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        fingerprint: true,
+        force: false,
+      });
+
+      // Materialize with fingerprint: false (different cache key)
+      documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        fingerprint: false,
+        force: false,
+      });
+
+      // Both should be cached
+      const withFingerprint = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        fingerprint: true,
+        force: false,
+      });
+
+      const withoutFingerprint = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        fingerprint: false,
+        force: false,
+      });
+
+      expect(withFingerprint.hot).toBe(true);
+      expect(withoutFingerprint.hot).toBe(true);
+
+      // Invalidate only fingerprint: true cache
+      documents.invalidate({
+        document: QUERY,
+        variables: { id: "u1" },
+        fingerprint: true,
+      });
+
+      // With fingerprint should be recomputed
+      const afterWithFingerprint = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        fingerprint: true,
+        force: false,
+      });
+
+      expect(afterWithFingerprint.hot).toBe(false);
+
+      // Without fingerprint should still be cached
+      const afterWithoutFingerprint = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        fingerprint: false,
+        force: false,
+      });
+
+      expect(afterWithoutFingerprint.hot).toBe(true);
+    });
+
+    it("respects entityId option when invalidating", () => {
+      const QUERY = planner.getPlan(USER_QUERY);
+
+      documents.normalize({
+        document: QUERY,
+        variables: { id: "u1" },
+        data: { user: users[0] },
+      });
+
+      // Materialize with entityId
+      documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        entityId: "User:u1",
+        force: false,
+      });
+
+      // Materialize without entityId (different cache key)
+      documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        force: false,
+      });
+
+      // Both should be cached
+      const withEntityId = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        entityId: "User:u1",
+        force: false,
+      });
+
+      const withoutEntityId = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        force: false,
+      });
+
+      expect(withEntityId.hot).toBe(true);
+      expect(withoutEntityId.hot).toBe(true);
+
+      // Invalidate only entityId cache
+      documents.invalidate({
+        document: QUERY,
+        variables: { id: "u1" },
+        entityId: "User:u1",
+      });
+
+      // With entityId should be recomputed
+      const afterWithEntityId = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        entityId: "User:u1",
+        force: false,
+      });
+
+      expect(afterWithEntityId.hot).toBe(false);
+
+      // Without entityId should still be cached
+      const afterWithoutEntityId = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        force: false,
+      });
+
+      expect(afterWithoutEntityId.hot).toBe(true);
+    });
+  });
 });
