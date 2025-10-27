@@ -89,43 +89,43 @@ summary(() => {
       };
     });
 
-    bench(`cachebay.materializeDocument:canonical:fingerprint(${getLabel()})`, function* () {
-      yield {
-        [0]() {
-          const cachebay = createCachebay();
+    //bench(`cachebay.materializeDocument:canonical:fingerprint(${getLabel()})`, function* () {
+    //  yield {
+    //    [0]() {
+    //      const cachebay = createCachebay();
+    //
+    //      for (let i = 0; i < pages.length; i++) {
+    //        cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
+    //
+    //        cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
+    //      }
+    //
+    //      return cachebay;
+    //    },
+    //    bench(cachebay) {
+    //      const result = cachebay.__internals.documents.materializeDocument({ document: CACHEBAY_QUERY, variables: { first: USERS_PAGE_SIZE, after: null }, canonical: true, fingerprint: true, force: false });
+    //      //sink(result.data);
+    //    },
+    //  };
+    //});
 
-          for (let i = 0; i < pages.length; i++) {
-            cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
-
-            cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
-          }
-
-          return cachebay;
-        },
-        bench(cachebay) {
-          const result = cachebay.__internals.documents.materializeDocument({ document: CACHEBAY_QUERY, variables: { first: USERS_PAGE_SIZE, after: null }, canonical: true, fingerprint: true, force: false });
-          //sink(result.data);
-        },
-      };
-    });
-
-    bench(`apollo.readQuery(${getLabel()})`, function* () {
-      yield {
-        [0]() {
-          const apollo = createApolloCache(false);
-
-          for (let i = 0; i < pages.length; i++) {
-            apollo.writeQuery({ query: APOLLO_QUERY, variables: pages[i].variables, data: pages[i].data });
-          }
-
-          return apollo;
-        },
-        bench(apollo) {
-          const result = apollo.readQuery({ query: APOLLO_QUERY, variables: { first: USERS_PAGE_SIZE, after: null } });
-          sink(result);
-        },
-      };
-    });
+   // bench(`apollo.readQuery(${getLabel()})`, function* () {
+   //   yield {
+   //     [0]() {
+   //       const apollo = createApolloCache(false);
+   //
+   //       for (let i = 0; i < pages.length; i++) {
+   //         apollo.writeQuery({ query: APOLLO_QUERY, variables: pages[i].variables, data: pages[i].data });
+   //       }
+   //
+   //       return apollo;
+   //     },
+   //     bench(apollo) {
+   //       const result = apollo.readQuery({ query: APOLLO_QUERY, variables: { first: USERS_PAGE_SIZE, after: null } });
+   //       sink(result);
+   //     },
+   //   };
+   // });
 
     bench(`relay.lookup(${getLabel()})`, function* () {
       yield {

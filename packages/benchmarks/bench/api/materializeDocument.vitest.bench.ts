@@ -84,7 +84,7 @@ describe('materializeDocument – Paginated', () => {
     }
   });
 
-  bench('cachebay - materializeDocument (canonical + fingerprint)', () => {
+  /* bench('cachebay - materializeDocument (canonical + fingerprint)', () => {
     const { cachebay } = iterations.pop();
 
     for (let i = 0; i < pages.length; i++) {
@@ -116,7 +116,7 @@ describe('materializeDocument – Paginated', () => {
         iterations.push({ cachebay });
       }
     }
-  });
+    }); */
 
   bench('apollo - readQuery', () => {
     const { apollo } = iterations.pop();
