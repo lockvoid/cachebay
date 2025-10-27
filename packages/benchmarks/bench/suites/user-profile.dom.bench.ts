@@ -151,4 +151,170 @@ describe('DOM User Profile (happy-dom): single entity with nested data', () => {
       },
     });
   });
+
+  describe('cache-first', () => {
+    bench('Cachebay (vue, cache-first)', async () => {
+      const app = createVueCachebayUserProfileApp('cache-first', 0);
+      await app.mount();
+      await app.ready();
+      await app.unmount();
+    }, {
+      ...BENCH_OPTIONS,
+      setup: (task) => {
+        if (DEBUG && task.result) {
+          results.push({
+            name: 'Cachebay (cache-first)',
+            mean: task.result.mean,
+            stdDev: task.result.stdDev ?? 0,
+            min: task.result.min ?? 0,
+            max: task.result.max ?? 0,
+          });
+        }
+      },
+    });
+
+    bench('Apollo (vue, cache-first)', async () => {
+      const app = createVueApolloUserProfileApp('cache-first', 0);
+      await app.mount();
+      await app.ready();
+      await app.unmount();
+    }, {
+      ...BENCH_OPTIONS,
+      setup: (task) => {
+        if (DEBUG && task.result) {
+          results.push({
+            name: 'Apollo (cache-first)',
+            mean: task.result.mean,
+            stdDev: task.result.stdDev ?? 0,
+            min: task.result.min ?? 0,
+            max: task.result.max ?? 0,
+          });
+        }
+      },
+    });
+
+    bench('Urql (vue, cache-first)', async () => {
+      const app = createVueUrqlUserProfileApp('cache-first', 0);
+      await app.mount();
+      await app.ready();
+      await app.unmount();
+    }, {
+      ...BENCH_OPTIONS,
+      setup: (task) => {
+        if (DEBUG && task.result) {
+          results.push({
+            name: 'Urql (cache-first)',
+            mean: task.result.mean,
+            stdDev: task.result.stdDev ?? 0,
+            min: task.result.min ?? 0,
+            max: task.result.max ?? 0,
+          });
+        }
+      },
+    });
+
+    bench('Relay (react, cache-first)', async () => {
+      const app = createReactRelayUserProfileApp('cache-first', 0);
+      await app.mount();
+      await app.ready();
+      await app.unmount();
+    }, {
+      ...BENCH_OPTIONS,
+      setup: (task) => {
+        if (DEBUG && task.result) {
+          results.push({
+            name: 'Relay (cache-first)',
+            mean: task.result.mean,
+            stdDev: task.result.stdDev ?? 0,
+            min: task.result.min ?? 0,
+            max: task.result.max ?? 0,
+          });
+          printResultsTable();
+        }
+      },
+    });
+  });
+
+  describe('cache-and-network', () => {
+    bench('Cachebay (vue, cache-and-network)', async () => {
+      const app = createVueCachebayUserProfileApp('cache-and-network', 0);
+      await app.mount();
+      await app.ready();
+      await app.unmount();
+    }, {
+      ...BENCH_OPTIONS,
+      setup: (task) => {
+        if (DEBUG && task.result) {
+          results.push({
+            name: 'Cachebay (cache-and-network)',
+            mean: task.result.mean,
+            stdDev: task.result.stdDev ?? 0,
+            min: task.result.min ?? 0,
+            max: task.result.max ?? 0,
+          });
+        }
+      },
+    });
+
+    bench('Apollo (vue, cache-and-network)', async () => {
+      const app = createVueApolloUserProfileApp('cache-and-network', 0);
+      await app.mount();
+      await app.ready();
+      await app.unmount();
+    }, {
+      ...BENCH_OPTIONS,
+      setup: (task) => {
+        if (DEBUG && task.result) {
+          results.push({
+            name: 'Apollo (vue, cache-and-network)',
+            mean: task.result.mean,
+            stdDev: task.result.stdDev ?? 0,
+            min: task.result.min ?? 0,
+            max: task.result.max ?? 0,
+          });
+        }
+      },
+    });
+
+    bench('Urql (vue, cache-and-network)', async () => {
+      const app = createVueUrqlUserProfileApp('cache-and-network', 0);
+      await app.mount();
+      await app.ready();
+      await app.unmount();
+    }, {
+      ...BENCH_OPTIONS,
+      setup: (task) => {
+        if (DEBUG && task.result) {
+          results.push({
+            name: 'Urql (vue, cache-and-network)',
+            mean: task.result.mean,
+            stdDev: task.result.stdDev ?? 0,
+            min: task.result.min ?? 0,
+            max: task.result.max ?? 0,
+          });
+        }
+      },
+    });
+
+    bench('Relay (react, cache-and-network)', async () => {
+      const app = createReactRelayUserProfileApp('cache-and-network', 0);
+      await app.mount();
+      await app.ready();
+      await app.unmount();
+    }, {
+      ...BENCH_OPTIONS,
+      setup: (task) => {
+        if (DEBUG && task.result) {
+          results.push({
+            name: 'Relay (cache-first)',
+            mean: task.result.mean,
+            stdDev: task.result.stdDev ?? 0,
+            min: task.result.min ?? 0,
+            max: task.result.max ?? 0,
+          });
+          printResultsTable();
+        }
+      },
+    });
+  });
 });
