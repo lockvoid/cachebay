@@ -69,7 +69,7 @@ export const buildUsersResponse = ({ users = 1000, posts = 5, comments = 3 }) =>
   };
 }
 
-export const buildPages = ({ data: ResponseShape, pageSize: number }) => {
+export const buildPages = ({ data, pageSize }) => {
   const edges = data.users.edges;
   const pages: Page[] = [];
   const total = edges.length;

@@ -47,8 +47,8 @@ const createRelay = () => {
 };
 
 describe('normalizeDocument – Paginated (COLD)', () => {
-  const pages = buildPages({ data: buildUsersResponse({ users: 1000, posts: 5, comments: 3 }), pageSize: 10 });
-
+  const response = buildUsersResponse({ users: 1000, posts: 5, comments: 3 });
+  const pages = buildPages({ data: response, pageSize: 10 });
   const cachebayIterations: { cachebay: any }[] = [];
 
   bench('cachebay - normalizeDocument', () => {
@@ -65,6 +65,7 @@ describe('normalizeDocument – Paginated (COLD)', () => {
     iterations: ITERATIONS,
 
     setup() {
+      cachebayIterations.length = 0;
       for (let i = 0; i < ITERATIONS + 10; i++) {
         const cachebay = createCachebay();
 
@@ -89,6 +90,7 @@ describe('normalizeDocument – Paginated (COLD)', () => {
     iterations: ITERATIONS,
 
     setup() {
+      apolloIterations.length = 0;
       for (let i = 0; i < ITERATIONS + 10; i++) {
         const apollo = createApollo();
 
@@ -111,6 +113,7 @@ describe('normalizeDocument – Paginated (COLD)', () => {
     iterations: ITERATIONS,
 
     setup() {
+      relayIterations.length = 0;
       for (let i = 0; i < ITERATIONS + 10; i++) {
         const relay = createRelay();
         relayIterations.push({ relay });
