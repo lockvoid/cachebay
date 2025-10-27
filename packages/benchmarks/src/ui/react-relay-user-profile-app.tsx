@@ -45,7 +45,7 @@ export const createReactRelayUserProfileApp = (
 ) => {
   const deferred = createDeferred();
 
-  const environment = createRelayEnvironment();
+  const environment = createRelayEnvironment(yoga);
 
   let root: Root | null = null;
   let dataLoaded = false;
