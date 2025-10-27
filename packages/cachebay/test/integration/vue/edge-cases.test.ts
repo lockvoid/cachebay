@@ -2,6 +2,7 @@ import { mount } from "@vue/test-utils";
 import { defineComponent, h, computed, watch, Suspense } from "vue";
 import { createTestClient, createConnectionComponent, getEdges, fixtures, operations, delay, tick } from "@/test/helpers";
 import { useQuery } from "@/src/adapters/vue/useQuery";
+import { useFragment } from "@/src/adapters/vue/useFragment";
 
 describe("Edge cases", () => {
   it("reflects in-place entity updates across all edges (no union dedup)", async () => {
@@ -247,5 +248,157 @@ describe("Edge cases", () => {
     await delay(10);
 
     expect(fx.calls.length).toBe(2);
+  });
+
+  it("invalidates query cache when last watcher unmounts and remount gets fresh data", async () => {
+    const { cache, client } = createTestClient();
+
+    // Write initial connection data
+    cache.writeQuery({
+      query: operations.POSTS_QUERY,
+      variables: { first: 3 },
+      data: {
+        __typename: "Query",
+        posts: fixtures.posts.buildConnection([
+          { id: "p1", title: "Post 1" },
+          { id: "p2", title: "Post 2" },
+          { id: "p3", title: "Post 3" },
+        ]),
+      },
+    });
+
+    const PostsComponent = defineComponent({
+      name: "PostsComponent",
+      setup() {
+        const { data } = useQuery({
+          query: operations.POSTS_QUERY,
+          variables: { first: 3 },
+          cachePolicy: "cache-only",
+        });
+
+        return () => {
+          const titles = data.value?.posts?.edges?.map((e: any) => e.node.title) || [];
+          return h("div", { class: "posts" }, titles.join(", "));
+        };
+      },
+    });
+
+    // 1. Mount app with watcher
+    const wrapper = mount(PostsComponent, {
+      global: { plugins: [client] },
+    });
+
+    await tick();
+
+    // 2. Verify initial data
+    expect(wrapper.find(".posts").text()).toBe("Post 1, Post 2, Post 3");
+
+    // 3. Update data while mounted (using optimistic removeNode)
+    const tx1 = cache.modifyOptimistic((o) => {
+      const c = o.connection({ parent: "Query", key: "posts" });
+      c.removeNode({ __typename: "Post", id: "p2" });
+    });
+    tx1.commit?.();
+
+    await tick();
+
+    // Check data changed (Post 2 removed)
+    expect(wrapper.find(".posts").text()).toBe("Post 1, Post 3");
+
+    // 4. Unmount (should invalidate cache)
+    wrapper.unmount();
+
+    // 5. Update data while unmounted (using optimistic addNode)
+    const tx2 = cache.modifyOptimistic((o) => {
+      const c = o.connection({ parent: "Query", key: "posts" });
+      c.addNode({ __typename: "Post", id: "p4", title: "Post 4" }, { position: "end" });
+    });
+    tx2.commit?.();
+
+    await tick();
+
+    // 6. Remount app - should get fresh data (not stale cached version)
+    const wrapper2 = mount(PostsComponent, {
+      global: { plugins: [client] },
+    });
+
+    await tick();
+
+    // Data should be fresh: Post 1, Post 3 (from step 3), Post 4 (from step 5)
+    // NOT the stale cache from step 3 which was just "Post 1, Post 3"
+    expect(wrapper2.find(".posts").text()).toBe("Post 1, Post 3, Post 4");
+  });
+
+  it("invalidates fragment cache when last watcher unmounts and remount gets fresh data", async () => {
+    const { cache, client } = createTestClient();
+
+    // Write initial fragment data
+    cache.writeFragment({
+      id: "User:u1",
+      fragment: operations.USER_FRAGMENT,
+      data: fixtures.users.buildNode({ id: "u1", email: "initial@example.com" }),
+    });
+
+    const UserFragmentComponent = defineComponent({
+      name: "UserFragmentComponent",
+      setup() {
+        const data = useFragment({
+          id: "User:u1",
+          fragment: operations.USER_FRAGMENT,
+        });
+
+        return () => h("div", { class: "user-email" }, data.value?.email || "");
+      },
+    });
+
+    // 1. Mount app with watcher
+    const wrapper = mount(UserFragmentComponent, {
+      global: { plugins: [client] },
+    });
+
+    await tick();
+
+    // 2. Verify initial data
+    expect(wrapper.find(".user-email").text()).toBe("initial@example.com");
+
+    // 3. Update data while mounted (using optimistic update)
+    const tx1 = cache.modifyOptimistic((o) => {
+      o.patch("User:u1", {
+        __typename: "User",
+        id: "u1",
+        email: "updated@example.com",
+      });
+    });
+    tx1.commit?.();
+
+    await tick();
+
+    // Check data changed
+    expect(wrapper.find(".user-email").text()).toBe("updated@example.com");
+
+    // 4. Unmount (should invalidate cache)
+    wrapper.unmount();
+
+    // 5. Update data while unmounted (using optimistic update)
+    const tx2 = cache.modifyOptimistic((o) => {
+      o.patch("User:u1", {
+        __typename: "User",
+        id: "u1",
+        email: "fresh@example.com",
+      });
+    });
+    tx2.commit?.();
+
+    await tick();
+
+    // 6. Remount app - should get fresh data (not stale cached version)
+    const wrapper2 = mount(UserFragmentComponent, {
+      global: { plugins: [client] },
+    });
+
+    await tick();
+
+    // Data should be fresh because cache was invalidated on unmount
+    expect(wrapper2.find(".user-email").text()).toBe("fresh@example.com");
   });
 });

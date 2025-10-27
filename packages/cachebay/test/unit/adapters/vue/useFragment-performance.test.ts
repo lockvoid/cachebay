@@ -231,7 +231,7 @@ describe("useFragment Performance", () => {
       expect(dataRef.value?.id).toBe("2");
     });
 
-    it.only("update to same id again: uses COLS path if no other watcher is mounted", async () => {
+    it("update to same id again: uses COLS path if no other watcher is mounted", async () => {
       // Pre-populate cache with multiple users
       client.writeFragment({
         id: "User:1",
@@ -303,7 +303,7 @@ describe("useFragment Performance", () => {
       expect(dataRef.value?.id).toBe("1");
     });
 
-    it.only("update to same id again: uses HOT path if other watcher is mounted", async () => {
+    it("update to same id again: uses HOT path if other watcher is mounted", async () => {
       // Pre-populate cache with multiple users
       client.writeFragment({
         id: "User:1",

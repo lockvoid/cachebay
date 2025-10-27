@@ -304,6 +304,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
         // Remove from signature → watchers mapping
         const watcherSet = signatureToWatchers.get(w.signature);
+
         if (watcherSet) {
           watcherSet.delete(watcherId);
           if (watcherSet.size === 0) {
@@ -342,6 +343,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
             if (oldSet.size === 0) {
               // Last watcher for old signature - invalidate cache with OLD variables
               signatureToWatchers.delete(w.signature);
+
               documents.invalidate({
                 document: w.query,
                 variables: oldVariables,

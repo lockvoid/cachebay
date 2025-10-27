@@ -319,6 +319,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
             if (oldSet.size === 0) {
               // Last watcher for old signature - invalidate cache
               signatureToWatchers.delete(w.signature);
+
               documents.invalidate({
                 document: planner.getPlan(w.fragment, { fragmentName: w.fragmentName }),
                 variables: oldVariables as Record<string, any>,
