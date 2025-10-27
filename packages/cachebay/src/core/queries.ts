@@ -327,7 +327,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
         // Save old variables for invalidation
         const oldVariables = w.variables;
-        
+
         // Update watcher state
         w.variables = newVariables;
         const plan = planner.getPlan(w.query);
@@ -461,7 +461,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     watchQuery,
     propagateData,
     propagateError,
-    handleQueryExecuted, // Expose for operations to call
+    handleQueryExecuted,
     inspect, // Expose for debugging and testing
   };
 };

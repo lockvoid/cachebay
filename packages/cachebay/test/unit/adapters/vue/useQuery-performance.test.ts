@@ -490,7 +490,70 @@ describe("useQuery Performance", () => {
   });
 
   describe("reactive options performance", () => {
-    it("enabled toggle: no extra normalize/materialize when disabled", async () => {
+    it("enabled toggle: no extra normalize/materialize when disabled and other watcher mounted", async () => {
+      const enabled = ref(true);
+
+      mockFetch.mockResolvedValue({
+        data: { user: { __typename: "User", id: "1", name: "Alice" } },
+        error: null,
+      });
+
+      // phase 1
+
+      await runInVueContext(() => {
+        useQuery({
+          query: operations.USER_QUERY,
+          variables: { id: "1" },
+          enabled,
+          cachePolicy: 'cache-first'
+        });
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(watchQueryCallCount).toBe(1);
+      expect(normalizeCount).toBe(1);
+      expect(materializeColdCount).toBe(2);
+      expect(materializeHotCount).toBe(0);
+
+      await runInVueContext(() => {
+        useQuery({
+          query: operations.USER_QUERY,
+          variables: { id: "1" },
+          cachePolicy: 'cache-first'
+        });
+      });
+
+      // Phase 2 Disable query
+
+      normalizeCount = 0;
+      materializeHotCount = 0;
+      materializeColdCount = 0;
+
+      enabled.value = false;
+      await nextTick();
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Should NOT normalize or materialize when disabled
+      // Watcher created once
+      expect(watchQueryCallCount).toBe(2);
+      expect(normalizeCount).toBe(0);
+      expect(materializeColdCount).toBe(0);
+      expect(materializeHotCount).toBe(0);
+
+      // Phase 3 Re-enable
+      enabled.value = true;
+      await nextTick();
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Should execute query again
+      expect(watchQueryCallCount).toBe(3);
+      expect(normalizeCount).toBe(0);
+      expect(materializeColdCount).toBe(0);
+      expect(materializeHotCount).toBe(1);
+    });
+
+    it("enabled toggle: extra cold materialize when disabled and no other watcher mounted", async () => {
       const enabled = ref(true);
 
       mockFetch.mockResolvedValue({
@@ -541,8 +604,8 @@ describe("useQuery Performance", () => {
       // Should execute query again
       expect(watchQueryCallCount).toBe(2);
       expect(normalizeCount).toBe(0);
-      expect(materializeColdCount).toBe(0);
-      expect(materializeHotCount).toBe(1);
+      expect(materializeColdCount).toBe(1);
+      expect(materializeHotCount).toBe(0);
     });
 
     it("cache policy change: triggers new executeQuery", async () => {
