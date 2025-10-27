@@ -1,9 +1,9 @@
 import type { DocumentNode, GraphQLError } from "graphql";
-import { print } from "graphql";
 import type { PlannerInstance } from "./planner";
 import type { DocumentsInstance } from "./documents";
 import type { SSRInstance } from "./ssr";
 import { __DEV__ } from "./instrumentation";
+import { validateCachePolicy } from "./utils";
 import { StaleResponseError, CombinedError, CacheMissError } from "./errors";
 
 /**
@@ -25,64 +25,6 @@ import { StaleResponseError, CombinedError, CacheMissError } from "./errors";
  */
 export type QueryVariables = Record<string, any>;
 
-/**
- * Cache policy determines how the cache interacts with the network
- *
- * @public
- * - `cache-first`: Return cached data if available, otherwise fetch from network
- * - `cache-only`: Only return cached data, never fetch from network (throws if not cached)
- * - `network-only`: Always fetch from network, ignore cache
- * - `cache-and-network`: Return cached data immediately, then fetch from network and update
- *
- * @example
- * ```typescript
- * const policy: CachePolicy = "cache-first";
- *
- * // Or use constants
- * import { CACHE_POLICIES } from 'cachebay';
- * const policy = CACHE_POLICIES.CACHE_FIRST;
- * ```
- */
-export type CachePolicy = "cache-and-network" | "network-only" | "cache-first" | "cache-only";
-
-export const CACHE_AND_NETWORK = "cache-and-network" as const;
-export const NETWORK_ONLY = "network-only" as const;
-export const CACHE_FIRST = "cache-first" as const;
-export const CACHE_ONLY = "cache-only" as const;
-
-/**
- * Valid cache policies
- */
-const VALID_CACHE_POLICIES: readonly CachePolicy[] = [
-  "cache-and-network",
-  "network-only",
-  "cache-first",
-  "cache-only",
-] as const;
-
-/**
- * Validate and normalize cache policy
- * In dev: throws on invalid policy
- * In prod: warns and returns default policy
- */
-function validateCachePolicy(policy: any, defaultPolicy: CachePolicy = 'cache-first'): CachePolicy {
-  if (!policy) {
-    return defaultPolicy;
-  }
-
-  if (VALID_CACHE_POLICIES.includes(policy as CachePolicy)) {
-    return policy as CachePolicy;
-  }
-
-  const errorMessage = `Invalid cache policy: "${policy}". Valid policies are: ${VALID_CACHE_POLICIES.join(', ')}`;
-
-  if (__DEV__) {
-    throw new Error(errorMessage);
-  } else {
-    console.warn(`[cachebay] ${errorMessage}. Falling back to "${defaultPolicy}".`);
-    return defaultPolicy;
-  }
-}
 
 /**
  * GraphQL operation configuration
@@ -276,15 +218,14 @@ export const createOperations = (
     onCachedData,
   }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
     // Validate and normalize cache policy
-    const rawPolicy = cachePolicy ?? defaultCachePolicy;
-    const effectiveCachePolicy = validateCachePolicy(rawPolicy, 'network-only');
+    const finalCachePolicy = validateCachePolicy(cachePolicy ?? defaultCachePolicy, 'network-only');
     const plan = planner.getPlan(query);
     const signature = plan.makeSignature(true, variables);  // Always canonical
 
     // Read from cache using documents directly
     // Always read cache during SSR hydration, even for network-only
     let cached;
-    if (effectiveCachePolicy !== 'network-only' || ssr.isHydrating()) {
+    if (finalCachePolicy !== 'network-only' || ssr.isHydrating()) {
       cached = documents.materialize({
         document: query,
         variables,
@@ -341,7 +282,7 @@ export const createOperations = (
             signature,
             data: cachedAfterWrite.data,
             dependencies: cachedAfterWrite.dependencies,
-            cachePolicy: effectiveCachePolicy,
+            cachePolicy: finalCachePolicy,
           });
 
           // Validate that we can materialize the data we just wrote
@@ -420,7 +361,7 @@ export const createOperations = (
       }
     }
 
-    if (effectiveCachePolicy === 'cache-only') {
+    if (finalCachePolicy === 'cache-only') {
       if (!cached || cached.source === "none") {
         const error = new CombinedError({ networkError: new CacheMissError() });
         onError?.(error);
@@ -436,7 +377,7 @@ export const createOperations = (
         signature,
         data: cached.data,
         dependencies: cached.dependencies,
-        cachePolicy: effectiveCachePolicy,
+        cachePolicy: finalCachePolicy,
       });
 
       const result = { data: cached.data as TData, error: null };
@@ -445,7 +386,7 @@ export const createOperations = (
       return result;
     }
 
-    if (effectiveCachePolicy === 'cache-first') {
+    if (finalCachePolicy === 'cache-first') {
       if (cached && cached.ok.canonical && cached.ok.strict) {
         // Check if strict signature matches (pagination args haven't changed)
         // If strictSignature is present and matches, return cached data
@@ -459,7 +400,7 @@ export const createOperations = (
             signature,
             data: cached.data,
             dependencies: cached.dependencies,
-            cachePolicy: effectiveCachePolicy,
+            cachePolicy: finalCachePolicy,
           });
 
           const result = { data: cached.data as TData, error: null };
@@ -471,14 +412,14 @@ export const createOperations = (
       }
     }
 
-    if (effectiveCachePolicy === 'cache-and-network') {
+    if (finalCachePolicy === 'cache-and-network') {
       if (cached && cached.ok.canonical) {
         // Notify watchers so lastData is set (prevents duplicate emission if network data is same)
         onQueryData?.({
           signature,
           data: cached.data,
           dependencies: cached.dependencies,
-          cachePolicy: effectiveCachePolicy,
+          cachePolicy: finalCachePolicy,
         });
 
         onCachedData?.(cached.data as TData, { willFetchFromNetwork: true });

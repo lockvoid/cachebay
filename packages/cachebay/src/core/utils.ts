@@ -1,3 +1,5 @@
+import { __DEV__ } from "./instrumentation";
+
 export const isObject = (value: any): value is Record<string, any> => {
   return value !== null && typeof value === "object";
 };
@@ -230,5 +232,39 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
     }
 
     return allEqual ? prevData : nextData;
+  }
+}
+
+/**
+ * Valid cache policies
+ */
+const VALID_CACHE_POLICIES: readonly CachePolicy[] = [
+  "cache-and-network",
+  "network-only",
+  "cache-first",
+  "cache-only",
+] as const;
+
+/**
+ * Validate and normalize cache policy
+ * In dev: throws on invalid policy
+ * In prod: warns and returns default policy
+ */
+export const validateCachePolicy = (policy: any, defaultPolicy: CachePolicy = 'cache-first'): CachePolicy => {
+  if (!policy) {
+    return defaultPolicy;
+  }
+
+  if (VALID_CACHE_POLICIES.includes(policy as CachePolicy)) {
+    return policy as CachePolicy;
+  }
+
+  const errorMessage = `Invalid cache policy: "${policy}". Valid policies are: ${VALID_CACHE_POLICIES.join(', ')}`;
+
+  if (__DEV__) {
+    throw new Error(errorMessage);
+  } else {
+    console.warn(`[cachebay] ${errorMessage}. Falling back to "${defaultPolicy}".`);
+    return defaultPolicy;
   }
 }

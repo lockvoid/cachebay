@@ -25,11 +25,11 @@ export type {
   PageInfo,
   Edge,
   Connection,
+  CachePolicy,
 } from '../../core/types';
 
 export type { CachebayInstance } from '../../core/client';
 
-export type { CachePolicy } from '../../core/operations';
-export { CACHE_AND_NETWORK, NETWORK_ONLY, CACHE_FIRST, CACHE_ONLY } from '../../core/operations';
+export { CACHE_AND_NETWORK, NETWORK_ONLY, CACHE_FIRST, CACHE_ONLY } from '../../core/constants';
 
 export { CacheMissError, StaleResponseError, CombinedError } from '../../core/errors';

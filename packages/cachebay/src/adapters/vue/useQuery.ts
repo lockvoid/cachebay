@@ -1,7 +1,8 @@
 import { ref, watch, onBeforeUnmount, type Ref, type MaybeRefOrGetter, toValue } from "vue";
 import { useCachebay } from "./useCachebay";
-import type { CachePolicy } from "../../core/operations";
+import type { CachePolicy } from "../../core/types";
 import type { DocumentNode } from "graphql";
+import { createDeferred } from "./utils";
 
 /**
  * useQuery options
@@ -71,7 +72,7 @@ export function useQuery<TData = any, TVars = any>(
   const isFetching = ref(false);
 
   let watchHandle: ReturnType<typeof client.watchQuery> | null = null;
-  let initialExecutionPromise: Promise<any> | null = null;
+  const suspensionPromise = createDeferred();
 
   /**
    * Setup watcher (first time only)
@@ -112,6 +113,9 @@ export function useQuery<TData = any, TVars = any>(
         // This prevents loading flash for cache-only, cache-first, and shows stale data for cache-and-network
         onCachedData: (cachedData, { willFetchFromNetwork }) => {
           data.value = cachedData;
+
+          suspensionPromise.resolve(cachedData);
+
           // Only set isFetching to false if no network request will be made
           // If network request is pending, keep isFetching true to show loading indicator
           if (!willFetchFromNetwork) {
@@ -177,16 +181,16 @@ export function useQuery<TData = any, TVars = any>(
       } else {
         // Enable - recreate watcher
         const vars = toValue(options.variables) || ({} as TVars);
-        const policy = toValue(options.cachePolicy) || 'cache-first';
+        const policy = toValue(options.cachePolicy);
         if (!watchHandle) {
           setupWatcher(vars);
           // Execute query unless lazy mode
           if (!options.lazy) {
             const promise = performQuery(vars, policy);
-            // Capture the first execution for Suspense
-            if (!initialExecutionPromise) {
-              initialExecutionPromise = promise;
-            }
+
+            promise.then(result => {
+              suspensionPromise.resolve(result);
+            });
           }
         }
       }
@@ -202,7 +206,7 @@ export function useQuery<TData = any, TVars = any>(
       if (!isEnabled) return;
 
       const vars = newVars || ({} as TVars);
-      const policy = toValue(options.cachePolicy) || 'cache-first';
+      const policy = toValue(options.cachePolicy);
 
       if (watchHandle) {
         watchHandle.update({ variables: vars, immediate: false }); // Don't materialize - performQuery will handle it
@@ -251,10 +255,7 @@ export function useQuery<TData = any, TVars = any>(
     async then(
       onFulfilled: (value: BaseUseQueryReturn<TData>) => any
     ): Promise<BaseUseQueryReturn<TData>> {
-      // Wait for initial execution to complete
-      if (initialExecutionPromise) {
-        await initialExecutionPromise;
-      }
+      await suspensionPromise.promise;
 
       return onFulfilled(api);
     },

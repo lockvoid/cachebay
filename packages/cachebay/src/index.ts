@@ -12,12 +12,12 @@ export type {
   EdgeRef,
   ConnectionRecord,
   ConnectionRef,
+  CachePolicy,
 } from "./core/types";
 
 export type {
   Operation,
   OperationResult,
-  CachePolicy,
   QueryVariables,
   Transport,
   HttpTransport,
@@ -28,7 +28,7 @@ export type {
   ObserverLike,
 } from "./core/operations";
 
-export { CACHE_AND_NETWORK, NETWORK_ONLY, CACHE_FIRST, CACHE_ONLY } from "./core/operations";
+export { CACHE_AND_NETWORK, NETWORK_ONLY, CACHE_FIRST, CACHE_ONLY } from "./core/constants";
 
 export type {
   ReadFragmentArgs,
