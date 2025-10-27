@@ -7,7 +7,7 @@ import { generateUserProfileDataset } from "../../src/utils/seed-user-profile";
 import { createUserProfileYoga } from "../../src/server/user-profile-server";
 
 const BENCH_OPTIONS = {
-  iterations: 20,
+  iterations: 250,
   warmupIterations: 20,
   throws: true,
   warmupTime: 0,

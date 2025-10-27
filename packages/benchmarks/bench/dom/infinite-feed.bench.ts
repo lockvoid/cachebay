@@ -7,7 +7,7 @@ import { createVueCachebayNestedApp } from "../../src/ui/vue-cachebay-infinite-f
 import { createVueUrqlNestedApp } from "../../src/ui/vue-urql-infinite-feed-app";
 import { generateInfiniteFeedDataset } from "../../src/utils/seed-infinite-feed";
 
-const PAGES_TO_LOAD = 2;
+const PAGES_TO_LOAD = 25;
 
 const BENCH_OPTIONS = {
   iterations: 10,

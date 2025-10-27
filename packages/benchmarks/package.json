@@ -8,7 +8,7 @@
   "scripts": {
     "relay": "relay-compiler",
     "bench:api": "NODE_ENV=production vitest bench --run --mode production --config vitest.happydom.config.ts bench/api",
-    "bench:dom": "NODE_ENV=production vitest bench --run --mode production --config vitest.config.ts bench/dom",
+    "bench:dom": "NODE_ENV=production vitest bench --run --mode production --config vitest.chromium.config.ts bench/dom",
     "bench:happydom": "NODE_ENV=production vitest bench --run --mode production --config vitest.happydom.config.ts",
     "bench:chromium": "NODE_ENV=production vitest bench --run --mode production --config vitest.chromium.config.ts"
   },
