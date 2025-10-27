@@ -1,29 +1,24 @@
-import { bench, group, run, summary } from "mitata";
+import { bench, describe } from 'vitest';
 import { createCachebay as createCachebayClient } from "../../../cachebay/src/core/client";
 import { InMemoryCache } from "@apollo/client/cache";
 import { relayStylePagination } from "@apollo/client/utilities";
 import { Environment, Network, RecordSource, Store, createOperationDescriptor } from "relay-runtime";
-import type { ConcreteRequest } from "relay-runtime";
 import { buildUsersResponse, buildPages, USERS_CACHEBAY_QUERY, USERS_APOLLO_QUERY } from "../../src/utils/api";
 import USERS_RELAY_QUERY from "../../src/__generated__/apiUsersRelayQuery.graphql";
 
-let __sink = 0;
-
-const sink = (o: any) => {
-  __sink ^= (o?.users?.edges?.length ?? 0) | 0;
-};
+const ITERATIONS = 10;
 
 const createCachebay = () => {
   return createCachebayClient({
     transport: {
-      http: async () => ({ data: {} }),
+      http: async () => ({ data: {}, error: null }),
     },
   });
 }
 
-const createApolloCache = (resultCaching = false) => {
+const createApollo = () => {
   return new InMemoryCache({
-    resultCaching,
+    resultCaching: false,
 
     typePolicies: {
       Query: {
@@ -33,120 +28,220 @@ const createApolloCache = (resultCaching = false) => {
       },
 
       User: {
-        keyFields: ["id"],
-
         fields: {
           posts: relayStylePagination(),
         },
       },
 
       Post: {
-        keyFields: ["id"],
-
         fields: {
           comments: relayStylePagination(),
         },
-      },
-
-      Comment: {
-        keyFields: ["id"],
       },
     },
   });
 }
 
-const createRelayEnvironment = () => {
-  return new Environment({ network: Network.create(() => Promise.resolve({ data: {} })), store: new Store(new RecordSource()) });
-}
+const createRelay = () => {
+  return new Environment({ network: Network.create(async () => ({})), store: new Store(new RecordSource()) });
+};
 
-summary(() => {
-  const TOTAL_USERS = 500;
-  const USERS_PAGE_SIZE = 10;
-  const pages = buildPages({ data: buildUsersResponse({ users: TOTAL_USERS, posts: 5, comments: 3 }), pageSize: USERS_PAGE_SIZE });
+describe('materializeDocument (single page)', () => {
+  const pages = buildPages({ data: buildUsersResponse({ users: 500, posts: 5, comments: 3 }), pageSize: 10 });
+  const iterations = [];
 
-  const getLabel = () => {
-    return `${TOTAL_USERS} users (${pages.length} pages of ${USERS_PAGE_SIZE})`;
-  };
+  bench('cachebay - materializeDocument (canonical)', () => {
+    const { cachebay } = iterations.pop();
 
-  group("materializeDocument", () => {
-    bench(`cachebay.materializeDocument:canonical(${getLabel()})`, function* () {
-      yield {
-        [0]() {
-          const cachebay = createCachebay();
-
-          for (let i = 0; i < pages.length; i++) {
-            cachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
-
-            cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
-          }
-
-          return cachebay;
-        },
-        bench(cachebay) {
-          const result = cachebay.__internals.documents.materializeDocument({ document: USERS_CACHEBAY_QUERY, variables: { first: USERS_PAGE_SIZE, after: null }, canonical: true, fingerprint: false, force: false });
-          //sink(result.data);
-        },
-      };
+    const result = cachebay.__internals.documents.materializeDocument({
+      document: USERS_CACHEBAY_QUERY,
+      variables: { first: 10, after: null },
+      canonical: true,
+      fingerprint: false,
+      force: false
     });
+  }, {
+    iterations: ITERATIONS,
+    warmupIterations: 2,
 
-    bench(`cachebay.materializeDocument:canonical:fingerprint(${getLabel()})`, function* () {
-      yield {
-        [0]() {
-          const cachebay = createCachebay();
+    setup() {
+      iterations.length = 0;
 
-          for (let i = 0; i < pages.length; i++) {
-            cachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
+      for (let i = 0; i < (ITERATIONS + 10) * 5; i++) {
+        const cachebay = createCachebay();
 
-            cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
-          }
+        for (let j = 0; j < pages.length; j++) {
+          cachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[j].variables, data: pages[j].data });
 
-          return cachebay;
-        },
-        bench(cachebay) {
-          const result = cachebay.__internals.documents.materializeDocument({ document: USERS_CACHEBAY_QUERY, variables: { first: USERS_PAGE_SIZE, after: null }, canonical: true, fingerprint: true, force: false });
-          //sink(result.data);
-        },
-      };
+          cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
+        }
+
+        iterations.push({ cachebay });
+      }
+    }
+  });
+
+  bench('cachebay - materializeDocument (canonical + fingerprint)', () => {
+    const { cachebay } = iterations.pop();
+
+    const result = cachebay.__internals.documents.materializeDocument({
+      document: USERS_CACHEBAY_QUERY,
+      variables: { first: 10, after: null },
+      canonical: true,
+      fingerprint: true,
+      force: false
     });
+  }, {
+    iterations: ITERATIONS,
+    warmupIterations: 2,
 
-   // bench(`apollo.readQuery(${getLabel()})`, function* () {
-   //   yield {
-   //     [0]() {
-   //       const apollo = createApolloCache(false);
-   //
-   //       for (let i = 0; i < pages.length; i++) {
-   //         apollo.writeQuery({ query: USERS_APOLLO_QUERY, variables: pages[i].variables, data: pages[i].data });
-   //       }
-   //
-   //       return apollo;
-   //     },
-   //     bench(apollo) {
-   //       const result = apollo.readQuery({ query: USERS_APOLLO_QUERY, variables: { first: USERS_PAGE_SIZE, after: null } });
-   //       sink(result);
-   //     },
-   //   };
-   // });
+    setup() {
+      iterations.length = 0;
 
-    bench(`relay.lookup(${getLabel()})`, function* () {
-      yield {
-        [0]() {
-          const relay = createRelayEnvironment();
+      for (let i = 0; i < (ITERATIONS + 10) * 5; i++) {
+        const cachebay = createCachebay();
 
-          for (let i = 0; i < pages.length; i++) {
-            relay.commitPayload(createOperationDescriptor(USERS_RELAY_QUERY as ConcreteRequest, pages[i].variables), pages[i].data);
-          }
+        for (let j = 0; j < pages.length; j++) {
+          cachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[j].variables, data: pages[j].data });
 
-          return relay;
-        },
-        bench(relay) {
-          const result = relay.lookup(createOperationDescriptor(USERS_RELAY_QUERY as ConcreteRequest, { first: USERS_PAGE_SIZE, after: null }).fragment);
-          sink(result.data);
-        },
-      };
-    });
+          cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
+        }
+
+        iterations.push({ cachebay });
+      }
+    }
+  });
+
+  bench('relay - lookup', () => {
+    const { relay } = iterations.pop();
+
+    const result = relay.lookup(createOperationDescriptor(USERS_RELAY_QUERY, { first: 10, after: null }).fragment);
+  }, {
+    iterations: ITERATIONS,
+    warmupIterations: 2,
+
+    setup() {
+      iterations.length = 0;
+
+      for (let i = 0; i < (ITERATIONS + 10) * 5; i++) {
+        const relay = createRelay();
+
+        for (let j = 0; j < pages.length; j++) {
+          relay.commitPayload(createOperationDescriptor(USERS_RELAY_QUERY, pages[j].variables), pages[j].data);
+        }
+
+        iterations.push({ relay });
+      }
+    }
   });
 });
 
-(globalThis as any).__bench_sink = __sink;
+describe('materializeDocument (all pages)', () => {
+  const pages = buildPages({ data: buildUsersResponse({ users: 500, posts: 5, comments: 3 }), pageSize: 10 });
+  const iterations = [];
 
-await run();
+  bench('cachebay - materializeDocument (canonical)', () => {
+    const { cachebay, sourceCachebay } = iterations.pop();
+
+    for (let i = 0; i < pages.length; i++) {
+      const page = pages[i];
+
+      Object.assign(cachebay.__internals.graph, sourceCachebay.__internals.graph);
+
+      const result = cachebay.__internals.documents.materializeDocument({
+        document: USERS_CACHEBAY_QUERY,
+        variables: page.variables,
+        canonical: true,
+        fingerprint: false,
+        force: true
+      });
+    }
+  }, {
+    iterations: ITERATIONS,
+    warmupIterations: 2,
+
+    setup() {
+      iterations.length = 0;
+
+      const sourceCachebay = createCachebay();
+
+      for (let j = 0; j < pages.length; j++) {
+        sourceCachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[j].variables, data: pages[j].data });
+      }
+
+      for (let i = 0; i < (ITERATIONS + 10) * 5; i++) {
+        const cachebay = createCachebay();
+
+        cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
+
+        iterations.push({ cachebay, sourceCachebay });
+      }
+    }
+  });
+
+  bench('cachebay - materializeDocument (canonical + fingerprint)', () => {
+    const { cachebay, sourceCachebay } = iterations.pop();
+
+    for (let i = 0; i < pages.length; i++) {
+      const page = pages[i];
+
+      Object.assign(cachebay.__internals.graph, sourceCachebay.__internals.graph);
+
+      const result = cachebay.__internals.documents.materializeDocument({
+        document: USERS_CACHEBAY_QUERY,
+        variables: page.variables,
+        canonical: true,
+        fingerprint: true,
+        force: true
+      });
+    }
+  }, {
+    iterations: ITERATIONS,
+    warmupIterations: 2,
+
+    setup() {
+      iterations.length = 0;
+
+      const sourceCachebay = createCachebay();
+
+      for (let j = 0; j < pages.length; j++) {
+        sourceCachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[j].variables, data: pages[j].data });
+      }
+
+      for (let i = 0; i < (ITERATIONS + 10) * 5; i++) {
+        const cachebay = createCachebay();
+
+        cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
+
+        iterations.push({ cachebay, sourceCachebay });
+      }
+    }
+  });
+
+  bench('relay - lookup', () => {
+    const { relay } = iterations.pop();
+
+    for (let i = 0; i < pages.length; i++) {
+      const page = pages[i];
+
+      const result = relay.lookup(createOperationDescriptor(USERS_RELAY_QUERY, page.variables).fragment);
+    }
+  }, {
+    iterations: ITERATIONS,
+    warmupIterations: 2,
+
+    setup() {
+      iterations.length = 0;
+
+      for (let i = 0; i < (ITERATIONS + 10) * 5; i++) {
+        const relay = createRelay();
+
+        for (let j = 0; j < pages.length; j++) {
+          relay.commitPayload(createOperationDescriptor(USERS_RELAY_QUERY, pages[j].variables), pages[j].data);
+        }
+
+        iterations.push({ relay });
+      }
+    }
+  });
+});
