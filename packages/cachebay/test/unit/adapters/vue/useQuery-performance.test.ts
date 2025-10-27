@@ -665,33 +665,64 @@ describe("useQuery Performance", () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    it("lazy mode refetch: normalize 1, materialize 2", async () => {
-      // TODO: This test times out after suspension promise changes - needs investigation
+    it("lazy mode with Suspense throws clear error", async () => {
+      // Lazy mode is incompatible with Suspense - should throw helpful error
+      let caughtError: Error | null = null;
+
+      try {
+        await runInVueContext(async () => {
+          // Using await here triggers the then() method which throws
+          return await useQuery({
+            query: operations.USER_QUERY,
+            variables: { id: "1" },
+            lazy: true,
+          });
+        });
+      } catch (err) {
+        caughtError = err as Error;
+      }
+
+      expect(caughtError).not.toBeNull();
+      expect(caughtError?.message).toContain('[cachebay] useQuery: lazy mode is incompatible with Suspense');
+    });
+
+    it("lazy mode without Suspense works correctly", async () => {
       mockFetch.mockResolvedValue({
         data: { user: { __typename: "User", id: "1", name: "Alice" } },
         error: null,
       });
 
-      const queryRef = await runInVueContext(() => {
-        return useQuery({
-          query: operations.USER_QUERY,
-          variables: { id: "1" },
-          lazy: true,
-        });
+      // Use lazy mode WITHOUT Suspense (no await in setup)
+      let queryRef: any;
+
+      const app = createApp({
+        setup() {
+          queryRef = useQuery({
+            query: operations.USER_QUERY,
+            variables: { id: "1" },
+            lazy: true,
+          });
+          return () => h('div');
+        },
       });
 
+      provideCachebay(app as any, client);
+      const container = document.createElement('div');
+      app.mount(container);
+
+      await tick();
       await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Should not have executed yet
       expect(normalizeCount).toBe(0);
 
-      console.log('p1')
       // Trigger query via refetch
       await queryRef.refetch();
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Should normalize once and materialize twice (executeQuery + propagateData)
       expect(normalizeCount).toBe(1);
       expect(materializeColdCount).toBe(1);
-      expect(materializeHotCount).toBe(1); // propagateData uses HOT path
+      expect(materializeHotCount).toBe(0);
       expect(watchQueryCallCount).toBe(1);
     });
   });

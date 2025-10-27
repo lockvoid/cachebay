@@ -165,10 +165,10 @@ export function useQuery<TData = any, TVars = any>(
 
     // Execute query with refetch policy using performQuery
     const result = await performQuery(vars, refetchPolicy);
-    
+
     // Resolve suspension promise for lazy mode refetch
     suspensionPromise.resolve(result);
-    
+
     return result;
   };
 
@@ -258,11 +258,36 @@ export function useQuery<TData = any, TVars = any>(
      * Usage: await useQuery({ query, variables })
      */
     async then(
-      onFulfilled: (value: BaseUseQueryReturn<TData>) => any
+      onFulfilled?: (value: BaseUseQueryReturn<TData>) => any,
+      onRejected?: (reason: any) => any
     ): Promise<BaseUseQueryReturn<TData>> {
-      await suspensionPromise.promise;
+      // Throw if lazy mode is used with Suspense (async setup)
+      // This makes lazy and Suspense mutually exclusive
+      if (options.lazy) {
+        const error = new Error(
+          '[cachebay] useQuery: lazy mode is incompatible with Suspense (async setup). ' +
+          'Either remove "lazy: true" or don\'t use "await useQuery()" in async setup(). ' +
+          'Use regular setup() and call refetch() manually instead.'
+        );
 
-      return onFulfilled(api);
+        if (onRejected) {
+          return onRejected(error);
+        }
+
+        throw error;
+      }
+
+      try {
+        await suspensionPromise.promise;
+
+        return onFulfilled ? onFulfilled(api) : api;
+      } catch (err) {
+        if (onRejected) {
+          return onRejected(err);
+        }
+
+        throw err;
+      }
     },
   };
 }
