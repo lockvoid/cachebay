@@ -1,8 +1,8 @@
-export const delay = (ms: number): Promise<void> => {
-  return new Promise(resolve => setTimeout(resolve, ms));
+export const delay = (ms: number) => {
+  return new Promise<void>(resolve => setTimeout(resolve, ms));
 };
 
-export const encodeCursor = (index: number): string => {
+export const encodeCursor = (index: number) => {
   if (typeof btoa !== 'undefined') {
     return btoa(`cursor:${index}`);
   }
@@ -10,7 +10,7 @@ export const encodeCursor = (index: number): string => {
   return Buffer.from(`cursor:${index}`, 'utf8').toString('base64');
 };
 
-export const decodeCursor = (cursor: string | null | undefined): number => {
+export const decodeCursor = (cursor: string | null | undefined) => {
   if (!cursor) {
     return -1;
   }
