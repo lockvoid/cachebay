@@ -2,68 +2,13 @@ import { createClient as createUrqlClient, fetchExchange } from "@urql/core";
 import { cacheExchange as graphcache } from "@urql/exchange-graphcache";
 import { relayPagination } from "@urql/exchange-graphcache/extras";
 import urql, { useQuery } from "@urql/vue";
-import { gql } from "graphql-tag";
-import { createApp, defineComponent, nextTick, ref, watch } from "vue";
+import { createApp, defineComponent, ref, watch } from "vue";
 import { createInfiniteFeedYoga } from "../server/infinite-feed-server";
 import { createDeferred } from "../utils/concurrency";
 import { makeNestedDataset } from "../utils/seed-infinite-feed";
-const DEBUG = process.env.DEBUG === "true";
+import { USERS_APOLLO_QUERY } from "../utils/queries";
 
-const USERS_QUERY = gql`
-  query Users($first: Int!, $after: String) {
-    users(first: $first, after: $after) {
-      edges {
-        cursor
-        node {
-          id
-          name
-          avatar
-          posts(first: 5, after: null) {
-            edges {
-              cursor
-              node {
-                id
-                title
-                likeCount
-                comments(first: 3, after: null) {
-                  edges {
-                    cursor
-                    node {
-                      id
-                      text
-                      author {
-                        id
-                        name
-                      }
-                    }
-                  }
-                  pageInfo {
-                    startCursor
-                    endCursor
-                    hasPreviousPage
-                    hasNextPage
-                  }
-                }
-              }
-            }
-            pageInfo {
-              startCursor
-              endCursor
-              hasPreviousPage
-              hasNextPage
-            }
-          }
-        }
-      }
-      pageInfo {
-        startCursor
-        endCursor
-        hasPreviousPage
-        hasNextPage
-      }
-    }
-  }
-`;
+const DEBUG = process.env.DEBUG === "true";
 
 export type VueUrqlNestedController = {
   mount(target?: Element): void;
@@ -71,17 +16,15 @@ export type VueUrqlNestedController = {
   loadNextPage(): Promise<void>;
 };
 
-function mapCachePolicyToUrql(policy: "network-only" | "cache-first" | "cache-and-network"): "network-only" | "cache-first" | "cache-and-network" {
+const mapCachePolicyToUrql = (policy: "network-only" | "cache-first" | "cache-and-network"): "network-only" | "cache-first" | "cache-and-network" => {
   return policy;
-}
+};
 
-export function createVueUrqlNestedApp(
-  serverUrl: string, // unused - kept for API compatibility
+export const createVueUrqlNestedApp = (
+  serverUrl: string,
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  debug = false,
-  sharedYoga?: any, // Optional shared Yoga instance
-): VueUrqlNestedController {
-  // Use shared Yoga instance if provided, otherwise create new one
+  sharedYoga?: any
+): VueUrqlNestedController => {
   const yoga = sharedYoga || createInfiniteFeedYoga(makeNestedDataset(), 0);
 
   const cache = graphcache({
@@ -92,9 +35,7 @@ export function createVueUrqlNestedApp(
     },
   });
 
-  // Custom fetch using Yoga directly (in-memory, no HTTP)
   const customFetch = async (url: string, options: any) => {
-    // urql uses GET with query params by default, we need to pass the full URL
     return await yoga.fetch(url, options);
   };
 
@@ -117,22 +58,19 @@ export function createVueUrqlNestedApp(
       const variables = ref({ first: 30, after: null });
 
       const { data, executeQuery } = useQuery({
-        query: USERS_QUERY,
+        query: USERS_APOLLO_QUERY,
         variables,
       });
 
       watch(data, (v) => {
         const totalUsers = data.value?.users?.edges?.length ?? 0;
 
-        //console.log(`urql total users:`, totalUsers);
         globalThis.urql.totalEntities += totalUsers;
 
-        // Resolve deferred when data changes (cache merge completed)
         deferred.resolve();
       }, { immediate: true });
 
       const loadNextPage = async (isLastPage) => {
-        // For first call, wait for initial data to be ready
         if (isFirstCall) {
           await deferred.promise;
           isFirstCall = false;
@@ -142,16 +80,13 @@ export function createVueUrqlNestedApp(
 
         deferred = createDeferred();
 
-        // Update variables and explicitly execute query
         variables.value = {
           first: 30,
           after: data.value?.users?.pageInfo?.endCursor || null,
         };
 
-        // Execute query with network-only to force fetch
         executeQuery({ requestPolicy: "network-only" });
 
-        // Wait for the new data to arrive (deferred will be resolved by watch)
         await deferred.promise;
 
         const t2 = performance.now();

@@ -1,4 +1,4 @@
-export const likeCount = (i, j) => {
+export const getLikeCount = (i, j) => {
   return ((i * 131 + j * 977) % 100) | 0;
 };
 
@@ -24,7 +24,7 @@ export const buildUsersResponse = ({ users = 1000, posts = 5, comments = 3 }) =>
                 __typename: "Post",
                 id: `p-${i + 1}-${j + 1}`,
                 title: `Post ${j + 1} by User ${i + 1}`,
-                likeCount: likeCount(i + 1, j + 1),
+                likeCount: getLikeCount(i + 1, j + 1),
                 comments: {
                   __typename: "CommentConnection",
                   edges: Array.from({ length: comments }, (_, k) => ({

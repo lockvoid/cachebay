@@ -18,18 +18,22 @@ export type ReactRelayNestedController = {
 
 type RelayFetchPolicy = "network-only" | "store-or-network" | "store-and-network";
 
-function mapCachePolicyToRelay(policy: "network-only" | "cache-first" | "cache-and-network"): RelayFetchPolicy {
-  if (policy === "cache-first") return "store-or-network";
-  if (policy === "cache-and-network") return "store-and-network";
-  return "network-only";
-}
+const mapCachePolicyToRelay = (policy: "network-only" | "cache-first" | "cache-and-network"): RelayFetchPolicy => {
+  if (policy === "cache-first") {
+    return "store-or-network";
+  }
 
-function createRelayEnvironment(serverUrl: string, sharedYoga?: any) {
-  // Use shared Yoga instance if provided, otherwise create new one
+  if (policy === "cache-and-network") {
+    return "store-and-network";
+  }
+
+  return "network-only";
+};
+
+const createRelayEnvironment = (serverUrl: string, sharedYoga?: any) => {
   const yoga = sharedYoga || createInfiniteFeedYoga(makeNestedDataset(), 0);
 
   const network = Network.create(async (operation, variables) => {
-    // Use Yoga's fetch directly (in-memory, no HTTP)
     const response = await yoga.fetch('http://localhost/graphql', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -101,12 +105,12 @@ const UsersListFragment = graphql`
   }
 `;
 
-function UsersList(props: {
+const UsersList = (props: {
   onAfterRender: () => void;
   onUpdateCount: (n: number) => void;
   setLoadNext: (fn: () => Promise<void>) => void;
   fetchPolicy: RelayFetchPolicy;
-}) {
+}) => {
   const rootData = useLazyLoadQuery(
     UsersRootQuery,
     { count: 30, cursor: null },
@@ -127,7 +131,6 @@ function UsersList(props: {
           loadNext(30, { onComplete: (err) => (err ? reject(err) : resolve()) });
         });
       }
-      // If no more data, resolve immediately
     });
   }, [hasNext, isLoadingNext, loadNext, props]);
 
@@ -136,8 +139,8 @@ function UsersList(props: {
   useEffect(() => {
     const totalUsers = edges.length;
 
-    // Add total count (not delta) to match other libraries
     globalThis.relay.totalEntities += totalUsers;
+
     props.onUpdateCount(totalUsers);
 
     if (first.current) {
@@ -168,14 +171,14 @@ function UsersList(props: {
       ))}
     </div>
   );
-}
+};
 
-export function createReactRelayNestedApp(
+export const createReactRelayNestedApp = (
   serverUrl: string,
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  debug: boolean = false,
-  sharedYoga?: any, // Optional shared Yoga instance
-): ReactRelayNestedController {
+  debug = false,
+  sharedYoga?: any
+): ReactRelayNestedController => {
   const environment = createRelayEnvironment(serverUrl, sharedYoga);
   const fetchPolicy = mapCachePolicyToRelay(cachePolicy);
 
@@ -184,17 +187,19 @@ export function createReactRelayNestedApp(
   let lastCount = 0;
   let loadNextFn: (() => Promise<void>) | null = null;
   let resolveRender: (() => void) | null = null;
-
-  // Ready gate: resolved once UsersList exposes loadNext
   let readyResolve: (() => void) | null = null;
   const ready = new Promise<void>(r => { readyResolve = r; });
 
   return {
     mount(target?: Element) {
-      if (root) return;
+      if (root) {
+        return;
+      }
 
       container = target ?? document.createElement('div');
-      if (!target) document.body.appendChild(container);
+      if (!target) {
+        document.body.appendChild(container);
+      }
 
       root = createRoot(container);
 
@@ -216,7 +221,10 @@ export function createReactRelayNestedApp(
 
     async loadNextPage() {
       await ready;
-      if (!loadNextFn) return;
+
+      if (!loadNextFn) {
+        return;
+      }
 
       const t0 = performance.now();
 

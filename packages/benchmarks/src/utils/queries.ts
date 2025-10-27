@@ -116,3 +116,32 @@ export const USERS_RELAY_QUERY = graphql`
     }
   }
 `;
+
+export const USER_PROFILE_QUERY = gql`
+  query GetUser($id: ID!) {
+    user(id: $id) {
+      id
+      name
+      email
+      username
+      phone
+      website
+      company
+      bio
+      avatar
+      createdAt
+      profile {
+        id
+        bio
+        avatar
+        location
+        website
+        twitter
+        github
+        linkedin
+        followers
+        following
+      }
+    }
+  }
+`;

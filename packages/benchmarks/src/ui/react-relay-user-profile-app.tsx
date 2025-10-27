@@ -18,17 +18,23 @@ export type ReactRelayUserProfileController = {
 
 type RelayFetchPolicy = "network-only" | "store-or-network" | "store-and-network";
 
-function mapCachePolicyToRelay(policy: "network-only" | "cache-first" | "cache-and-network"): RelayFetchPolicy {
-  if (policy === "cache-first") return "store-or-network";
-  if (policy === "cache-and-network") return "store-and-network";
-  return "network-only";
-}
+const mapCachePolicyToRelay = (policy: "network-only" | "cache-first" | "cache-and-network"): RelayFetchPolicy => {
+  if (policy === "cache-first") {
+    return "store-or-network";
+  }
 
-export function createReactRelayUserProfileApp(
+  if (policy === "cache-and-network") {
+    return "store-and-network";
+  }
+
+  return "network-only";
+};
+
+export const createReactRelayUserProfileApp = (
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
   delayMs = 0,
-  sharedYoga?: any,
-): ReactRelayUserProfileController {
+  sharedYoga?: any
+): ReactRelayUserProfileController => {
   const yoga = sharedYoga || createUserProfileYoga(makeUserProfileDataset({ userCount: 1000 }), delayMs);
 
   const deferred = createDeferred();
@@ -53,8 +59,6 @@ export function createReactRelayUserProfileApp(
   let dataLoaded = false;
 
   const UserProfile: React.FC<{ userId: string }> = ({ userId }) => {
-    //console.log('[Relay] UserProfile render, userId:', userId);
-
     const data = useLazyLoadQuery(
       graphql`
         query reactRelayUserProfileAppUserQuery($id: ID!) {
@@ -90,13 +94,14 @@ export function createReactRelayUserProfileApp(
 
     useEffect(() => {
       if (data?.user && !dataLoaded) {
-        // console.log('[Relay]', userId, '→', data.user.email);
         dataLoaded = true;
         deferred.resolve();
       }
     }, [data, userId]);
 
-    if (!data?.user) return <div>No user</div>;
+    if (!data?.user) {
+      return <div>No user</div>;
+    }
 
     return (
       <div>
@@ -138,7 +143,7 @@ export function createReactRelayUserProfileApp(
   );
 
   return {
-    mount: (target?: Element) => {
+    mount: async (target?: Element) => {
       const container = target || document.createElement("div");
       root = createRoot(container);
       root.render(<App />);
@@ -152,7 +157,6 @@ export function createReactRelayUserProfileApp(
     },
 
     ready: async () => {
-      // Wait for query to complete
       await deferred.promise;
     },
   };

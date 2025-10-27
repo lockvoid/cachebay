@@ -1,86 +1,17 @@
-import { gql } from "graphql-tag";
-import { createApp, defineComponent, nextTick, watch, ref } from "vue";
+import { createApp, defineComponent, watch, ref } from "vue";
 import { createCachebay, useQuery } from "../../../cachebay/src/adapters/vue";
 import { createInfiniteFeedYoga } from "../server/infinite-feed-server";
 import { makeNestedDataset } from "../utils/seed-infinite-feed";
+import { USERS_CACHEBAY_QUERY } from "../utils/queries";
 
-const USERS_QUERY = gql`
-  query Users($first: Int!, $after: String) {
-    users(first: $first, after: $after) @connection {
-      edges {
-        cursor
-        node {
-          id
-          name
-          avatar
-          posts(first: 5, after: null) @connection {
-            edges {
-              cursor
-              node {
-                id
-                title
-                likeCount
-                comments(first: 3, after: null) @connection {
-                  edges {
-                    cursor
-                    node {
-                      id
-                      text
-                      author {
-                        id
-                        name
-                      }
-                    }
-                  }
-                  pageInfo {
-                    startCursor
-                    endCursor
-                    hasPreviousPage
-                    hasNextPage
-                  }
-                }
-              }
-            }
-            pageInfo {
-              startCursor
-              endCursor
-              hasPreviousPage
-              hasNextPage
-            }
-          }
-        }
-      }
-      pageInfo {
-        startCursor
-        endCursor
-        hasPreviousPage
-        hasNextPage
-      }
-    }
-  }
-`;
-
-export type VueCachebayNestedController = {
-  mount(target?: Element): void;
-  unmount(): void;
-  loadNextPage(): Promise<void>;
-  getCount(): number;
-  getTotalRenderTime(): number;
-};
-
-export function createVueCachebayNestedApp(
-  serverUrl: string, // unused - kept for API compatibility
+export const createVueCachebayNestedApp = (
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  debug?: boolean,
-  sharedYoga?: any, // Optional shared Yoga instance
-): VueCachebayNestedController {
-  // Use shared Yoga instance if provided, otherwise create new one
+  sharedYoga?: any
+) => {
   const yoga = sharedYoga || createInfiniteFeedYoga(makeNestedDataset(), 0);
 
-  // Transport calls Yoga's fetch directly - no HTTP, no network, no serialization
   const transport = {
     http: async (context: any) => {
-      // Use Yoga's fetch API (works in-memory without HTTP)
       const response = await yoga.fetch("http://localhost/graphql", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -92,13 +23,9 @@ export function createVueCachebayNestedApp(
 
       const result = await response.json();
 
-      return {
-        data: result.data || null,
-        error: result.errors?.[0] || null,
-      };
+      return { data: result.data, error: result.errors?.[0] };
     },
   };
-
 
   const plugin = createCachebay({
     hydrationTimeout: 0,
@@ -106,21 +33,19 @@ export function createVueCachebayNestedApp(
     transport,
   });
 
-  const totalRenderTime = 0;
   let app: any = null;
   let container: Element | null = null;
   let componentInstance: any = null;
 
   const NestedList = defineComponent({
     setup() {
-      const { data, error, refetch, isFetching } = useQuery({ query: USERS_QUERY, variables: { first: 30, after: null }, cachePolicy, lazy: true });
+      const { data, error, refetch, isFetching } = useQuery({ query: USERS_CACHEBAY_QUERY, variables: { first: 30, after: null }, cachePolicy, lazy: true });
 
       const endCursor = ref(null);
 
       watch(data, () => {
         const totalUsers = data.value?.users?.edges?.length ?? 0;
 
-        // console.log(`Cachebay total users:`, totalUsers);
         globalThis.cachebay.totalEntities += totalUsers;
       }, { immediate: true });
 

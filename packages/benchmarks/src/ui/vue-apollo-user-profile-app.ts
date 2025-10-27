@@ -1,57 +1,16 @@
 import { DefaultApolloClient, useQuery } from "@vue/apollo-composable";
-import { gql } from "graphql-tag";
-import { createApp, defineComponent, nextTick, watch } from "vue";
+import { createApp, defineComponent, watch } from "vue";
 import { createUserProfileYoga } from "../server/user-profile-server";
 import { makeUserProfileDataset } from "../utils/seed-user-profile";
 import { createApolloClient } from "../adapters";
 import { createDeferred } from "../utils/concurrency";
+import { USER_PROFILE_QUERY } from "../utils/queries";
 
-try {
-  const { loadErrorMessages, loadDevMessages } = require("@apollo/client/dev");
-  loadDevMessages?.();
-  loadErrorMessages?.();
-} catch { /* ignore */ }
-
-const USER_QUERY = gql`
-  query GetUser($id: ID!) {
-    user(id: $id) {
-      id
-      name
-      email
-      username
-      phone
-      website
-      company
-      bio
-      avatar
-      createdAt
-      profile {
-        id
-        bio
-        avatar
-        location
-        website
-        twitter
-        github
-        linkedin
-        followers
-        following
-      }
-    }
-  }
-`;
-
-export type VueApolloUserProfileController = {
-  mount(target?: Element): void;
-  unmount(): void;
-  ready(): Promise<void>;
-};
-
-export function createVueApolloUserProfileApp(
+export const createVueApolloUserProfileApp = (
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
   delayMs = 0,
   sharedYoga?: any,
-): VueApolloUserProfileController {
+) => {
   const yoga = sharedYoga || createUserProfileYoga(makeUserProfileDataset({ userCount: 1000 }), delayMs);
 
   const apolloClient = createApolloClient({ yoga, cachePolicy });
@@ -63,11 +22,10 @@ export function createVueApolloUserProfileApp(
 
   const Component = defineComponent({
     setup() {
-      const { result, loading, error } = useQuery(USER_QUERY, { id: "u1" });
+      const { result, loading, error } = useQuery(USER_PROFILE_QUERY, { id: "u1" });
 
       watch(result, () => {
         if (result.value?.user) {
-          // console.log('[Apollo]', result.value.user.id, '→', result.value.user.email);
         }
       }, { immediate: true });
 
@@ -79,7 +37,6 @@ export function createVueApolloUserProfileApp(
 
       watch(error, () => {
         if (error.value) {
-          // console.log('[Apollo] ERROR:', error.value);
         }
       });
 
@@ -91,7 +48,6 @@ export function createVueApolloUserProfileApp(
     },
     template: `
       <div>
-        <div v-if="error" class="error">{{ error.message }}</div>
         <div v-if="result?.user" class="user">
           <div class="user-name">{{ result.user.name }}</div>
           <div class="user-email">{{ result.user.email }}</div>
@@ -135,7 +91,6 @@ export function createVueApolloUserProfileApp(
     },
 
     ready: async () => {
-      // Wait for query to complete
       await deferred.promise;
     },
   };

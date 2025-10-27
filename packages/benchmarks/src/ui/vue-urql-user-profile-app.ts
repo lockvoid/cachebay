@@ -1,52 +1,17 @@
 import { createClient as createUrqlClient, fetchExchange } from "@urql/core";
 import { cacheExchange } from "@urql/exchange-graphcache";
 import urql, { useQuery } from "@urql/vue";
-import { gql } from "graphql-tag";
-import { createApp, defineComponent, nextTick, ref, watch } from "vue";
+import { createApp, defineComponent, watch } from "vue";
 import { createUserProfileYoga } from "../server/user-profile-server";
 import { makeUserProfileDataset } from "../utils/seed-user-profile";
 import { createDeferred } from "../utils/concurrency";
-
-const USER_QUERY = gql`
-  query GetUser($id: ID!) {
-    user(id: $id) {
-      id
-      name
-      email
-      username
-      phone
-      website
-      company
-      bio
-      avatar
-      createdAt
-      profile {
-        id
-        bio
-        avatar
-        location
-        website
-        twitter
-        github
-        linkedin
-        followers
-        following
-      }
-    }
-  }
-`;
-
-export type VueUrqlUserProfileController = {
-  mount(target?: Element): void;
-  unmount(): void;
-  ready(): Promise<void>;
-};
+import { USER_PROFILE_QUERY } from "../utils/queries";
 
 export function createVueUrqlUserProfileApp(
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
   delayMs = 0,
   sharedYoga?: any,
-): VueUrqlUserProfileController {
+) {
   const yoga = sharedYoga || createUserProfileYoga(makeUserProfileDataset({ userCount: 1000 }), delayMs);
 
   const deferred = createDeferred();
@@ -63,7 +28,6 @@ export function createVueUrqlUserProfileApp(
       fetchExchange,
     ],
     fetch: async (url, options) => {
-      // console.log('[Urql] fetch called');
       return await yoga.fetch(url, options);
     },
     requestPolicy: cachePolicy === "cache-first" ? "cache-first" : cachePolicy === "cache-and-network" ? "cache-and-network" : "network-only",
@@ -75,20 +39,18 @@ export function createVueUrqlUserProfileApp(
   const Component = defineComponent({
     setup() {
       const { data, error } = useQuery({
-        query: USER_QUERY,
+        query: USER_PROFILE_QUERY,
         variables: { id: "u1" },
       });
 
       watch(data, () => {
         if (data.value?.user) {
-          // console.log('[Urql]', data.value.user.id, '→', data.value.user.email);
           deferred.resolve();
         }
       }, { immediate: true });
 
       watch(error, () => {
         if (error.value) {
-          // console.log('[Urql] ERROR:', error.value);
         }
       });
 
@@ -99,7 +61,6 @@ export function createVueUrqlUserProfileApp(
     },
     template: `
       <div>
-        <div v-if="error" class="error">{{ error.message }}</div>
         <div v-if="data?.user" class="user">
           <div class="user-name">{{ data.user.name }}</div>
           <div class="user-email">{{ data.user.email }}</div>
@@ -143,7 +104,6 @@ export function createVueUrqlUserProfileApp(
     },
 
     ready: async () => {
-      // Wait for query to complete
       await deferred.promise;
     },
   };

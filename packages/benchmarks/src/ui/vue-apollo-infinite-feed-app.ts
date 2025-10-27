@@ -1,89 +1,17 @@
-import { DefaultApolloClient, useLazyQuery, useQuery } from "@vue/apollo-composable";
-import { gql } from "graphql-tag";
-import { createApp, defineComponent, nextTick, ref, watch } from "vue";
+import { DefaultApolloClient, useLazyQuery } from "@vue/apollo-composable";
+import { createApp, defineComponent, ref, watch } from "vue";
 import { createApolloClient } from "../adapters";
 import { createInfiniteFeedYoga } from "../server/infinite-feed-server";
 import { createDeferred } from "../utils/concurrency";
 import { makeNestedDataset } from "../utils/seed-infinite-feed";
+import { USERS_APOLLO_QUERY } from "../utils/queries";
 
-try {
-  const { loadErrorMessages, loadDevMessages } = require("@apollo/client/dev");
-  loadDevMessages?.();
-  loadErrorMessages?.();
-} catch { /* ignore */ }
-
-const USERS_QUERY = gql`
-  query Users($first: Int!, $after: String) {
-    users(first: $first, after: $after) {
-      edges {
-        cursor
-        node {
-          id
-          name
-          avatar
-          posts(first: 5, after: null) {
-            edges {
-              cursor
-              node {
-                id
-                title
-                likeCount
-                comments(first: 3, after: null) {
-                  edges {
-                    cursor
-                    node {
-                      id
-                      text
-                      author {
-                        id
-                        name
-                      }
-                    }
-                  }
-                  pageInfo {
-                    startCursor
-                    endCursor
-                    hasPreviousPage
-                    hasNextPage
-                  }
-                }
-              }
-            }
-            pageInfo {
-              startCursor
-              endCursor
-              hasPreviousPage
-              hasNextPage
-            }
-          }
-        }
-      }
-      pageInfo {
-      startCursor
-      endCursor
-      hasPreviousPage
-      hasNextPage
-      }
-    }
-  }
-`;
-
-export type VueApolloNestedController = {
-  mount(target?: Element): void;
-  unmount(): void;
-  loadNextPage(): Promise<void>;
-};
-
-export function createVueApolloNestedApp(
-  serverUrl: string, // unused - kept for API compatibility
+export const createVueApolloNestedApp = (
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  debug: boolean = false,
-  sharedYoga?: any, // Optional shared Yoga instance
-): VueApolloNestedController {
-  // Use shared Yoga instance if provided, otherwise create new one
+  sharedYoga?: any
+) => {
   const yoga = sharedYoga || createInfiniteFeedYoga(makeNestedDataset(), 0);
 
-  // Create Apollo client using adapter factory
   const client = createApolloClient({ yoga, cachePolicy });
 
   let app: ReturnType<typeof createApp> | null = null;
@@ -94,16 +22,13 @@ export function createVueApolloNestedApp(
 
   const NestedList = defineComponent({
     setup() {
-      const { result, load, fetchMore, loading } = useLazyQuery(USERS_QUERY, { first: 30, after: null }, { fetchPolicy: cachePolicy });
+      const { result, load, fetchMore, loading } = useLazyQuery(USERS_APOLLO_QUERY, { first: 30, after: null }, { fetchPolicy: cachePolicy });
 
-      // Single watch for both counting and deferred resolution
       watch(result, (v) => {
         const totalUsers = result.value?.users?.edges?.length ?? 0;
-        // console.log(`apollo total users:`, totalUsers);
 
         globalThis.apollo.totalEntities += totalUsers;
 
-        // Resolve deferred when count changes (cache merge completed)
         if (totalUsers > lastUserCount) {
           lastUserCount = totalUsers;
           deferred.resolve();
@@ -114,13 +39,12 @@ export function createVueApolloNestedApp(
         const t0 = performance.now();
 
         try {
-          // First call: execute the initial query
           if (!result.value) {
             await load();
+
             await deferred.promise;
             deferred = createDeferred();
           } else {
-            // Subsequent calls: fetch more
             const cursor = result.value.users.pageInfo.endCursor;
             const hasNext = result.value.users.pageInfo.hasNextPage;
 
@@ -129,8 +53,8 @@ export function createVueApolloNestedApp(
               return;
             }
 
-            // Start fetchMore and wait for cache to update
             await fetchMore({ variables: { after: cursor } });
+
             await deferred.promise;
             deferred = createDeferred();
           }
