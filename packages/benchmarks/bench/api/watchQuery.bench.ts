@@ -68,7 +68,6 @@ const createRelayEnvironment = () => {
   return new Environment({ network: Network.create(() => Promise.resolve({ data: {} })), store: new Store(new RecordSource()) });
 }
 
-
 summary(() => {
   const TOTAL_USERS = 1000;
   const USERS_PAGE_SIZE = 10;

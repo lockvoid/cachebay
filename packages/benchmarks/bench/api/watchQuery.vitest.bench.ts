@@ -57,7 +57,7 @@ const createApollo = () => {
 const createRelay = () => {
   return new Environment({ network: Network.create(async () => ({})), store: new Store(new RecordSource()) });
 };
-
+/*
 describe('watchQuery (initial:cold)', () => {
   const pages = buildPages({ data: buildUsersResponse({ users: 1000, posts: 5, comments: 3 }), pageSize: 10 });
   const iterations = [];
@@ -116,12 +116,12 @@ describe('watchQuery (initial:cold)', () => {
       }
     }
   });
-});
+});*/
 
 describe('watchQuery (initial:hot)', () => {
   const pages = buildPages({ data: buildUsersResponse({ users: 1000, posts: 5, comments: 3 }), pageSize: 10 });
   const iterations = [];
-
+/*
   bench('cachebay - watchQuery', () => {
     const { cachebay } = iterations.pop();
 
@@ -151,14 +151,19 @@ describe('watchQuery (initial:hot)', () => {
       }
     }
   });
-
+*/
   bench('apollo - watch', () => {
     const { apollo } = iterations.pop();
+    console.log('1')
 
-    apollo.watch({
+    const subscription = apollo.watch({
       query: USERS_APOLLO_QUERY,
       variables: { first: 10, after: null },
+      onData: () => {
+        console.log('3')
+      }
     });
+    console.log('2')
   }, {
     iterations: ITERATIONS,
     warmupIterations: 2,
@@ -166,6 +171,7 @@ describe('watchQuery (initial:hot)', () => {
     setup() {
       iterations.length = 0;
 
+      console.log('tttt')
       for (let i = 0; i < (ITERATIONS + 10) * 5; i++) {
         const apollo = createApollo();
 
@@ -177,7 +183,7 @@ describe('watchQuery (initial:hot)', () => {
       }
     }
   });
-
+/*
   bench('relay - subscribe', () => {
     const { relay, operation } = iterations.pop();
 
@@ -206,5 +212,5 @@ describe('watchQuery (initial:hot)', () => {
         iterations.push({ relay, operation });
       }
     }
-  });
+    }); */
 });
