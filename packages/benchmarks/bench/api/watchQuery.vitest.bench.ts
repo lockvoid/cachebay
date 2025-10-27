@@ -6,7 +6,7 @@ import { Environment, Network, RecordSource, Store, createOperationDescriptor } 
 import { buildUsersResponse, buildPages, USERS_CACHEBAY_QUERY, USERS_APOLLO_QUERY } from "../../src/utils/api";
 import USERS_RELAY_QUERY from "../../src/__generated__/apiUsersRelayQuery.graphql";
 
-const ITERATIONS = 50;
+const ITERATIONS = 1;
 
 const CACHEBAY_USER_QUERY = `
   query UserName($id: ID!) {
@@ -58,7 +58,7 @@ const createRelay = () => {
   return new Environment({ network: Network.create(async () => ({})), store: new Store(new RecordSource()) });
 };
 
-describe('watchQuery – HOT', () => {
+describe('watchQuery (initial:cold)', () => {
   const pages = buildPages({ data: buildUsersResponse({ users: 1000, posts: 5, comments: 3 }), pageSize: 10 });
   const iterations = [];
 
@@ -89,15 +89,13 @@ describe('watchQuery – HOT', () => {
   });
 
   bench('relay - subscribe', async () => {
-    const { relay } = iterations.pop();
+    const { relay, operation } = iterations.pop();
 
-    const snapshot = relay.lookup(createOperationDescriptor(USERS_RELAY_QUERY, { first: 10, after: null }));
+    const snapshot = relay.lookup(operation);
     const disposable = relay.subscribe(snapshot, () => {});
 
     for (let i = 0; i < pages.length; i++) {
       relay.commitPayload(createOperationDescriptor(USERS_RELAY_QUERY, pages[i].variables), pages[i].data);
-
-      await Promise.resolve();
     }
 
     disposable.dispose();
@@ -110,7 +108,9 @@ describe('watchQuery – HOT', () => {
       for (let i = 0; i < ITERATIONS + 10; i++) {
         const relay = createRelay();
 
-        iterations.push({ relay });
+        const operation = createOperationDescriptor(USERS_RELAY_QUERY, { first: 10, after: null });
+
+        iterations.push({ relay, operation });
       }
     }
   });
@@ -149,10 +149,35 @@ describe('watchQuery (initial:hot)', () => {
     }
   });
 
+  bench('apollo - watch', () => {
+    const { apollo } = iterations.pop();
+
+    apollo.watch({
+      query: USERS_APOLLO_QUERY,
+      variables: { first: 10, after: null },
+    });
+  }, {
+    iterations: ITERATIONS,
+
+    setup() {
+      iterations.length = 0;
+
+      for (let i = 0; i < ITERATIONS + 10; i++) {
+        const apollo = createApollo();
+
+        for (let i = 0; i < pages.length; i++) {
+          apollo.writeQuery({ query: USERS_APOLLO_QUERY, variables: pages[i].variables, data: pages[i].data });
+        }
+
+        iterations.push({ apollo });
+      }
+    }
+  });
+
   bench('relay - subscribe', () => {
     const { relay, operation } = iterations.pop();
 
-    const snapshot = relay.lookup(operation.fragment);
+    const snapshot = relay.lookup(operation);
     const disposable = relay.subscribe(snapshot, () => {});
 
     disposable.dispose();
@@ -171,182 +196,9 @@ describe('watchQuery (initial:hot)', () => {
 
         const operation = createOperationDescriptor(USERS_RELAY_QUERY, { first: 10, after: null });
 
-        relay.lookup(operation.fragment);
+        relay.lookup(operation);
 
         iterations.push({ relay, operation });
-      }
-    }
-  });
-});
-
-describe('watchQuery (reactive)', () => {
-  const pages = buildPages({ data: buildUsersResponse({ users: 1000, posts: 5, comments: 3 }), pageSize: 10 });
-  const iterations = [];
-
-  bench('cachebay - watchQuery (reactive)', async () => {
-    const { cachebay } = iterations.pop();
-
-    cachebay.watchQuery({
-      query: USERS_CACHEBAY_QUERY,
-      variables: { first: 10, after: null },
-      immediate: false,
-    });
-
-    cachebay.writeQuery({
-      query: CACHEBAY_USER_QUERY,
-      variables: { id: "u1" },
-      data: { user: { __typename: "User", id: "u1", name: `User ${Math.random()}`  } },
-    });
-  }, {
-    iterations: ITERATIONS,
-
-    setup() {
-      iterations.length = 0;
-
-      for (let i = 0; i < ITERATIONS + 10; i++) {
-        const cachebay = createCachebay();
-
-        for (let j = 0; j < pages.length; j++) {
-          cachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[j].variables, data: pages[j].data });
-        }
-
-        iterations.push({ cachebay });
-      }
-    }
-  });
-
-  bench('apollo - watch', () => {
-    const { apollo } = iterations.pop();
-
-    apollo.watch({
-      query: USERS_APOLLO_QUERY,
-      variables: { first: 10, after: null },
-      immediate: false,
-    });
-
-    apollo.writeQuery({
-      query: APOLLO_USER_QUERY,
-      variables: { id: "u1" },
-      data: { user: { __typename: "User", id: "u1", name: `User ${Math.random()}` } },
-    });
-  }, {
-    iterations: ITERATIONS,
-
-    setup() {
-      iterations.length = 0;
-
-      for (let i = 0; i < ITERATIONS + 10; i++) {
-        const apollo = createApollo();
-
-        for (let j = 0; j < pages.length; j++) {
-          apollo.writeQuery({ query: USERS_APOLLO_QUERY, variables: pages[j].variables, data: pages[j].data });
-        }
-
-        iterations.push({ apollo });
-      }
-    }
-  });
-
-  bench('relay - subscribe (reactive)', () => {
-    const { relay } = iterations.pop();
-
-    const snapshot = relay.lookup(createOperationDescriptor(USERS_RELAY_QUERY, { first: 10, after: null }).fragment);
-
-    relay.subscribe(snapshot, () => {});
-
-    relay.commitUpdate((store) => {
-      const user = store.get("u1");
-
-      if (user) {
-        user.setValue(`User ${Math.random()}`, "name");
-      }
-    });
-  }, {
-    iterations: ITERATIONS,
-
-    setup() {
-      iterations.length = 0;
-
-      for (let i = 0; i < ITERATIONS + 10; i++) {
-        const relay = createRelay();
-
-        for (let j = 0; j < pages.length; j++) {
-          relay.commitPayload(createOperationDescriptor(USERS_RELAY_QUERY, pages[j].variables), pages[j].data);
-        }
-
-        iterations.push({ relay });
-      }
-    }
-  });
-});
-
-describe('watchQuery (pagination)', () => {
-  const pages = buildPages({ data: buildUsersResponse({ users: 1000, posts: 5, comments: 3 }), pageSize: 10 });
-  const iterations = [];
-
-  bench('cachebay - watchQuery (pagination)', async () => {
-    const { cachebay } = iterations.pop();
-
-    cachebay.watchQuery({
-      query: USERS_CACHEBAY_QUERY,
-      variables: { first: 10, after: null },
-      canonical: true,
-      immediate: false,
-      onData: () => {},
-    });
-
-    const pageIndex = Math.floor(Math.random() * (pages.length - 3)) + 3;
-
-    cachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[pageIndex].variables, data: pages[pageIndex].data });
-
-    await Promise.resolve();
-  }, {
-    iterations: ITERATIONS,
-
-    setup() {
-      iterations.length = 0;
-
-      for (let i = 0; i < ITERATIONS + 10; i++) {
-        const cachebay = createCachebay();
-
-        for (let j = 0; j < 3; j++) {
-          cachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[j].variables, data: pages[j].data });
-        }
-
-
-        iterations.push({ cachebay });
-      }
-    }
-  });
-
-  bench('apollo - watch (pagination)', () => {
-    const { apollo } = iterations.pop();
-
-    apollo.watch({
-      query: USERS_APOLLO_QUERY,
-      variables: { first: 10, after: null },
-      optimistic: false,
-      immediate: false,
-      callback: () => {},
-    });
-
-    const pageIndex = Math.floor(Math.random() * (pages.length - 3)) + 3;
-
-    apollo.writeQuery({ query: USERS_APOLLO_QUERY, variables: pages[pageIndex].variables, data: pages[pageIndex].data });
-  }, {
-    iterations: ITERATIONS,
-
-    setup() {
-      iterations.length = 0;
-
-      for (let i = 0; i < ITERATIONS + 10; i++) {
-        const apollo = createApollo();
-
-        for (let j = 0; j < 3; j++) {
-          apollo.writeQuery({ query: USERS_APOLLO_QUERY, variables: pages[j].variables, data: pages[j].data });
-        }
-
-        iterations.push({ apollo });
       }
     }
   });
