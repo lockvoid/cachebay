@@ -40,7 +40,6 @@ export type {
 export type {
   ReadQueryOptions,
   WriteQueryOptions,
-  ReadQueryResult,
   WatchQueryOptions,
   WatchQueryHandle,
 } from "./core/queries";
