@@ -164,7 +164,12 @@ export function useQuery<TData = any, TVars = any>(
     }
 
     // Execute query with refetch policy using performQuery
-    return performQuery(vars, refetchPolicy);
+    const result = await performQuery(vars, refetchPolicy);
+    
+    // Resolve suspension promise for lazy mode refetch
+    suspensionPromise.resolve(result);
+    
+    return result;
   };
 
   // Watch for enabled changes

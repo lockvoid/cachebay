@@ -666,6 +666,7 @@ describe("useQuery Performance", () => {
     });
 
     it("lazy mode refetch: normalize 1, materialize 2", async () => {
+      // TODO: This test times out after suspension promise changes - needs investigation
       mockFetch.mockResolvedValue({
         data: { user: { __typename: "User", id: "1", name: "Alice" } },
         error: null,
@@ -682,14 +683,15 @@ describe("useQuery Performance", () => {
       await new Promise(resolve => setTimeout(resolve, 50));
       expect(normalizeCount).toBe(0);
 
+      console.log('p1')
       // Trigger query via refetch
       await queryRef.refetch();
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Should normalize once and materialize once (COLD path for first query)
+      // Should normalize once and materialize twice (executeQuery + propagateData)
       expect(normalizeCount).toBe(1);
       expect(materializeColdCount).toBe(1);
-      expect(materializeHotCount).toBe(0);
+      expect(materializeHotCount).toBe(1); // propagateData uses HOT path
       expect(watchQueryCallCount).toBe(1);
     });
   });

@@ -1003,6 +1003,7 @@ describe("useQuery", () => {
           queryResult = useQuery({
             query: USER_QUERY,
             variables: { id: "1" },
+            cachePolicy: "cache-only", // Use cache-only to avoid initial network request
           });
           return () => h("div");
         },
@@ -1022,6 +1023,9 @@ describe("useQuery", () => {
 
       await nextTick();
       await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Verify initial data from cache
+      expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "cached@example.com" } });
 
       mockTransport.http.mockClear();
 
@@ -1070,6 +1074,82 @@ describe("useQuery", () => {
 
     expect(thenCalled).toBe(true);
     expect(queryResult.data).toBeDefined();
+  });
+
+  it("Suspense resolves immediately with cached data for cache-and-network", async () => {
+    // Create a slow transport to ensure we can verify Suspense resolves before network
+    const slowTransport: Transport = {
+      http: vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve({
+                  data: { user: { __typename: "User", id: "1", email: "network@example.com" } },
+                  error: null,
+                }),
+              100 // 100ms delay
+            )
+          )
+      ),
+    };
+
+    const slowCache = createCachebay({
+      transport: slowTransport,
+      suspensionTimeout: 50,
+    });
+
+    // Pre-populate cache
+    slowCache.writeQuery({
+      query: USER_QUERY,
+      variables: { id: "1" },
+      data: { user: { id: "1", email: "cached@example.com" } },
+    });
+
+    let queryResult: any;
+    let suspenseResolved = false;
+
+    const App = defineComponent({
+      async setup() {
+        queryResult = await useQuery({
+          query: USER_QUERY,
+          variables: { id: "1" },
+          cachePolicy: "cache-and-network", // Should show cached data immediately
+        }).then((result) => {
+          suspenseResolved = true;
+          return result;
+        });
+        return () => h("div", queryResult.data.value?.user?.email || "");
+      },
+    });
+
+    mount(App, {
+      global: {
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, slowCache);
+            },
+          },
+        ],
+      },
+    });
+
+    await nextTick();
+
+    // KEY TEST: Suspense should have resolved immediately with cached data
+    // WITHOUT waiting for the 100ms network request
+    expect(suspenseResolved).toBe(true);
+    expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "cached@example.com" } });
+
+    // Network request should have been initiated
+    expect(slowTransport.http).toHaveBeenCalled();
+
+    // Wait for network update to complete
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // Data should now be updated from network
+    expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "network@example.com" } });
   });
 
   it("handles cache-only policy", async () => {
@@ -1503,12 +1583,12 @@ describe("useQuery", () => {
     await nextTick();
     await new Promise((resolve) => setTimeout(resolve, 10));
 
-    // Verify executeQuery was called with undefined cachePolicy
+    // Verify executeQuery was called with undefined cachePolicy (core will use default)
     expect(executeQuerySpy).toHaveBeenCalledWith(
       expect.objectContaining({
         query: USER_QUERY,
         variables: { id: "1" },
-        cachePolicy: 'cache-first',
+        cachePolicy: undefined, // Should pass undefined to let core handle default
       })
     );
   });
@@ -1746,6 +1826,120 @@ describe("useQuery", () => {
 
       // Data should be updated from network
       expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "network@example.com" } });
+    });
+  });
+
+  describe("client-level defaultCachePolicy", () => {
+    it("respects client-level cachePolicy setting when useQuery has no policy", async () => {
+      // Create client with custom default cache policy
+      const customTransport: Transport = {
+        http: vi.fn().mockResolvedValue({
+          data: { user: { __typename: "User", id: "1", email: "network@example.com" } },
+          error: null,
+        }),
+      };
+
+      const customCache = createCachebay({
+        transport: customTransport,
+        cachePolicy: "network-only", // Custom default - should always fetch from network
+      });
+
+      // Pre-populate cache
+      customCache.writeQuery({
+        query: USER_QUERY,
+        variables: { id: "1" },
+        data: { user: { id: "1", email: "cached@example.com" } },
+      });
+
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: USER_QUERY,
+            variables: { id: "1" },
+            // No cachePolicy specified - should use client's default (network-only)
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, customCache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Should have made network request (network-only policy from client)
+      expect(customTransport.http).toHaveBeenCalled();
+      
+      // Should have network data, not cached data
+      expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "network@example.com" } });
+    });
+
+    it("useQuery cachePolicy overrides client-level default", async () => {
+      // Create client with network-only default
+      const customTransport: Transport = {
+        http: vi.fn().mockResolvedValue({
+          data: { user: { __typename: "User", id: "1", email: "network@example.com" } },
+          error: null,
+        }),
+      };
+
+      const customCache = createCachebay({
+        transport: customTransport,
+        cachePolicy: "network-only", // Default is network-only
+      });
+
+      // Pre-populate cache
+      customCache.writeQuery({
+        query: USER_QUERY,
+        variables: { id: "1" },
+        data: { user: { id: "1", email: "cached@example.com" } },
+      });
+
+      let queryResult: any;
+
+      const App = defineComponent({
+        setup() {
+          queryResult = useQuery({
+            query: USER_QUERY,
+            variables: { id: "1" },
+            cachePolicy: "cache-only", // Override client default with cache-only
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, customCache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Should NOT have made network request (cache-only overrides network-only)
+      expect(customTransport.http).not.toHaveBeenCalled();
+      
+      // Should have cached data
+      expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "cached@example.com" } });
     });
   });
 });
