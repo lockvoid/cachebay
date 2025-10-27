@@ -7,7 +7,7 @@ import {
   useLazyLoadQuery,
   usePaginationFragment,
 } from 'react-relay';
-import { createNestedYoga } from '../server/infinite-feed-server';
+import { createInfiniteFeedYoga } from '../server/infinite-feed-server';
 import { makeNestedDataset } from '../utils/seed-infinite-feed';
 
 export type ReactRelayNestedController = {
@@ -26,7 +26,7 @@ function mapCachePolicyToRelay(policy: "network-only" | "cache-first" | "cache-a
 
 function createRelayEnvironment(serverUrl: string, sharedYoga?: any) {
   // Use shared Yoga instance if provided, otherwise create new one
-  const yoga = sharedYoga || createNestedYoga(makeNestedDataset(), 0);
+  const yoga = sharedYoga || createInfiniteFeedYoga(makeNestedDataset(), 0);
 
   const network = Network.create(async (operation, variables) => {
     // Use Yoga's fetch directly (in-memory, no HTTP)

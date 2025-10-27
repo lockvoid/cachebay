@@ -1,9 +1,9 @@
 import { gql } from "graphql-tag";
-import { graphql } from 'relay-runtime';
+import { graphql } from "relay-runtime";
 
 export const likeCount = (i: number, j: number) => {
   return ((i * 131 + j * 977) % 100) | 0;
-}
+};
 
 export const buildUsersResponse = ({ users = 1000, posts = 5, comments = 3 }) => {
   return {
@@ -17,7 +17,7 @@ export const buildUsersResponse = ({ users = 1000, posts = 5, comments = 3 }) =>
           __typename: "User",
           id: "u" + (i + 1),
           name: "User " + (i + 1),
-          avatar: `https://i.pravatar.cc/150?u=${i + 1}`,
+          avatar: `https://i.example.com/150?u=${i + 1}`,
           posts: {
             __typename: "PostConnection",
             edges: Array.from({ length: posts }, (_, j) => ({
@@ -47,7 +47,7 @@ export const buildUsersResponse = ({ users = 1000, posts = 5, comments = 3 }) =>
                   pageInfo: {
                     __typename: "PageInfo",
                     endCursor: comments > 0 ? "c" + comments : null,
-                    hasNextPage: false
+                    hasNextPage: false,
                   },
                 },
               },
@@ -55,7 +55,7 @@ export const buildUsersResponse = ({ users = 1000, posts = 5, comments = 3 }) =>
             pageInfo: {
               __typename: "PageInfo",
               endCursor: posts > 0 ? "p" + posts : null,
-              hasNextPage: false
+              hasNextPage: false,
             },
           },
         },
@@ -67,7 +67,7 @@ export const buildUsersResponse = ({ users = 1000, posts = 5, comments = 3 }) =>
       },
     },
   };
-}
+};
 
 export const buildPages = ({ data, pageSize }) => {
   const edges = data.users.edges;
@@ -103,7 +103,7 @@ export const buildPages = ({ data, pageSize }) => {
   }
 
   return pages;
-}
+};
 
 export const USERS_CACHEBAY_QUERY = gql`
   query Users($first: Int!, $after: String) {

@@ -1,7 +1,7 @@
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, watch, ref } from "vue";
 import { createCachebay, useQuery } from "../../../cachebay/src/adapters/vue";
-import { createNestedYoga } from "../server/infinite-feed-server";
+import { createInfiniteFeedYoga } from "../server/infinite-feed-server";
 import { makeNestedDataset } from "../utils/seed-infinite-feed";
 
 const USERS_QUERY = gql`
@@ -75,15 +75,15 @@ export function createVueCachebayNestedApp(
   sharedYoga?: any, // Optional shared Yoga instance
 ): VueCachebayNestedController {
   // Use shared Yoga instance if provided, otherwise create new one
-  const yoga = sharedYoga || createNestedYoga(makeNestedDataset(), 0);
+  const yoga = sharedYoga || createInfiniteFeedYoga(makeNestedDataset(), 0);
 
   // Transport calls Yoga's fetch directly - no HTTP, no network, no serialization
   const transport = {
     http: async (context: any) => {
       // Use Yoga's fetch API (works in-memory without HTTP)
-      const response = await yoga.fetch('http://localhost/graphql', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await yoga.fetch("http://localhost/graphql", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: context.query,
           variables: context.variables,
@@ -94,7 +94,7 @@ export function createVueCachebayNestedApp(
 
       return {
         data: result.data || null,
-        error: result.errors?.[0] || null
+        error: result.errors?.[0] || null,
       };
     },
   };
@@ -106,7 +106,7 @@ export function createVueCachebayNestedApp(
     transport,
   });
 
-  let totalRenderTime = 0;
+  const totalRenderTime = 0;
   let app: any = null;
   let container: Element | null = null;
   let componentInstance: any = null;
@@ -115,12 +115,12 @@ export function createVueCachebayNestedApp(
     setup() {
       const { data, error, refetch, isFetching } = useQuery({ query: USERS_QUERY, variables: { first: 30, after: null }, cachePolicy, lazy: true });
 
-      const endCursor = ref(null)
+      const endCursor = ref(null);
 
       watch(data, () => {
         const totalUsers = data.value?.users?.edges?.length ?? 0;
 
-       // console.log(`Cachebay total users:`, totalUsers);
+        // console.log(`Cachebay total users:`, totalUsers);
         globalThis.cachebay.totalEntities += totalUsers;
       }, { immediate: true });
 

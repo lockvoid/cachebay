@@ -4,10 +4,10 @@ import { relayPagination } from "@urql/exchange-graphcache/extras";
 import urql, { useQuery } from "@urql/vue";
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, ref, watch } from "vue";
+import { createInfiniteFeedYoga } from "../server/infinite-feed-server";
 import { createDeferred } from "../utils/concurrency";
-import { createNestedYoga } from "../server/infinite-feed-server";
 import { makeNestedDataset } from "../utils/seed-infinite-feed";
-const DEBUG = process.env.DEBUG === 'true';
+const DEBUG = process.env.DEBUG === "true";
 
 const USERS_QUERY = gql`
   query Users($first: Int!, $after: String) {
@@ -82,7 +82,7 @@ export function createVueUrqlNestedApp(
   sharedYoga?: any, // Optional shared Yoga instance
 ): VueUrqlNestedController {
   // Use shared Yoga instance if provided, otherwise create new one
-  const yoga = sharedYoga || createNestedYoga(makeNestedDataset(), 0);
+  const yoga = sharedYoga || createInfiniteFeedYoga(makeNestedDataset(), 0);
 
   const cache = graphcache({
     resolvers: {
@@ -145,11 +145,11 @@ export function createVueUrqlNestedApp(
         // Update variables and explicitly execute query
         variables.value = {
           first: 30,
-          after: data.value?.users?.pageInfo?.endCursor || null
+          after: data.value?.users?.pageInfo?.endCursor || null,
         };
 
         // Execute query with network-only to force fetch
-        executeQuery({ requestPolicy: 'network-only' });
+        executeQuery({ requestPolicy: "network-only" });
 
         // Wait for the new data to arrive (deferred will be resolved by watch)
         await deferred.promise;

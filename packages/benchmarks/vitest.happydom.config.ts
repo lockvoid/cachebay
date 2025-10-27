@@ -1,8 +1,10 @@
-import { defineConfig } from 'vitest/config';
-import relay from 'vite-plugin-relay';
+import relay from "vite-plugin-relay";
+import { defineConfig } from "vitest/config";
 
 export default defineConfig(({ mode }) => ({
-  mode: mode || 'production',
+  mode: mode || "production",
+
+  globals: true,
 
   plugins: [
     relay,
@@ -14,25 +16,25 @@ export default defineConfig(({ mode }) => ({
   },
 
   build: {
-    minify: 'esbuild',
-    target: 'esnext',
+    minify: "esbuild",
+    target: "esnext",
   },
 
   define: {
-    'process.env.NODE_ENV': '"production"',
-    '__DEV__': false,
+    "process.env.NODE_ENV": '"production"',
+    "__DEV__": false,
   },
 
   resolve: {
-    conditions: ['production', 'default'],
+    conditions: ["production", "default"],
   },
 
   test: {
-    environment: 'happy-dom',
+    environment: "happy-dom",
     globals: true,
 
     include: [
-      'bench/api/**/*.vitest.bench.ts',
+      "bench/api/**/*.vitest.bench.ts",
     ],
 
     benchmark: {
@@ -40,6 +42,6 @@ export default defineConfig(({ mode }) => ({
       concurrent: false,
     },
 
-    reporters: process.env.DEBUG === 'true' ? ['verbose'] : ['default'],
+    reporters: process.env.DEBUG === "true" ? ["verbose"] : ["default"],
   },
 }));

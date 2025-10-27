@@ -1,9 +1,8 @@
 import { createYoga, createSchema } from 'graphql-yoga';
 import type { UserProfileDataset } from '../utils/seed-user-profile';
+import { delay } from '../utils/graphql';
 
-const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
-
-export function createUserProfileYoga(dataset: UserProfileDataset, delayMs = 0) {
+export const createUserProfileYoga = (dataset: UserProfileDataset, delayMs = 0) => {
   return createYoga({
     schema: createSchema({
       typeDefs: `
@@ -41,7 +40,10 @@ export function createUserProfileYoga(dataset: UserProfileDataset, delayMs = 0) 
       resolvers: {
         Query: {
           user: async (_: any, { id }: { id: string }) => {
-            if (delayMs > 0) await delay(delayMs);
+            if (delayMs > 0) {
+              await delay(delayMs);
+            }
+
             return dataset.users.get(id) || null;
           },
         },

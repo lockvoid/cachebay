@@ -1,10 +1,10 @@
 import { DefaultApolloClient, useLazyQuery, useQuery } from "@vue/apollo-composable";
 import { gql } from "graphql-tag";
 import { createApp, defineComponent, nextTick, ref, watch } from "vue";
-import { createDeferred } from "../utils/concurrency";
-import { createNestedYoga } from "../server/infinite-feed-server";
-import { makeNestedDataset } from "../utils/seed-infinite-feed";
 import { createApolloClient } from "../adapters";
+import { createInfiniteFeedYoga } from "../server/infinite-feed-server";
+import { createDeferred } from "../utils/concurrency";
+import { makeNestedDataset } from "../utils/seed-infinite-feed";
 
 try {
   const { loadErrorMessages, loadDevMessages } = require("@apollo/client/dev");
@@ -81,7 +81,7 @@ export function createVueApolloNestedApp(
   sharedYoga?: any, // Optional shared Yoga instance
 ): VueApolloNestedController {
   // Use shared Yoga instance if provided, otherwise create new one
-  const yoga = sharedYoga || createNestedYoga(makeNestedDataset(), 0);
+  const yoga = sharedYoga || createInfiniteFeedYoga(makeNestedDataset(), 0);
 
   // Create Apollo client using adapter factory
   const client = createApolloClient({ yoga, cachePolicy });
@@ -99,7 +99,7 @@ export function createVueApolloNestedApp(
       // Single watch for both counting and deferred resolution
       watch(result, (v) => {
         const totalUsers = result.value?.users?.edges?.length ?? 0;
-       // console.log(`apollo total users:`, totalUsers);
+        // console.log(`apollo total users:`, totalUsers);
 
         globalThis.apollo.totalEntities += totalUsers;
 
@@ -125,7 +125,7 @@ export function createVueApolloNestedApp(
             const hasNext = result.value.users.pageInfo.hasNextPage;
 
             if (!hasNext) {
-              console.warn('Apollo: No more pages to load');
+              console.warn("Apollo: No more pages to load");
               return;
             }
 
@@ -135,7 +135,7 @@ export function createVueApolloNestedApp(
             deferred = createDeferred();
           }
         } catch (error) {
-          console.error('Apollo loadNextPage error:', error);
+          console.error("Apollo loadNextPage error:", error);
           throw error;
         }
 

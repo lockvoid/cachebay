@@ -1,36 +1,23 @@
 import { ApolloClient, InMemoryCache, ApolloLink, Observable } from "@apollo/client/core";
 import { relayStylePagination } from "@apollo/client/utilities";
+import { createYogaFetcher } from '../utils/graphql';
 
 export type ApolloClientConfig = {
   yoga: any;
   cachePolicy: "network-only" | "cache-first" | "cache-and-network";
 };
 
-/**
- * Creates an Apollo Client configured for nested query benchmarks
- * Uses Yoga directly (in-memory, no HTTP)
- */
-export function createApolloClient({ yoga, cachePolicy }: ApolloClientConfig) {
-  // Custom Apollo Link using Yoga directly (in-memory, no HTTP)
+export const createApolloClient = ({ yoga, cachePolicy }: ApolloClientConfig) => {
+  const fetcher = createYogaFetcher(yoga, 'http://localhost/graphql');
+
   const yogaLink = new ApolloLink((operation) => {
     return new Observable((observer) => {
       (async () => {
         try {
-          // Use print from graphql to convert the query AST to string
           const { print } = await import('graphql');
           const query = print(operation.query);
+          const result = await fetcher(query, operation.variables);
 
-          const response = await yoga.fetch('http://localhost/graphql', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              query,
-              variables: operation.variables,
-              operationName: operation.operationName,
-            }),
-          });
-
-          const result = await response.json();
           observer.next(result);
           observer.complete();
         } catch (error) {
@@ -65,20 +52,25 @@ export function createApolloClient({ yoga, cachePolicy }: ApolloClientConfig) {
     defaultOptions: { query: { fetchPolicy: cachePolicy } },
   });
 
-  // Keep client behavior unchanged - strip canonizeResults
   const stripCanon = (o?: Record<string, unknown>) => {
-    if (!o) return;
+    if (!o) {
+      return;
+    }
+
     if ("canonizeResults" in o) {
-      try { delete (o as any).canonizeResults; }
-      catch { (o as any).canonizeResults = undefined; }
+      try {
+        delete (o as any).canonizeResults;
+      } catch {
+        (o as any).canonizeResults = undefined;
+      }
     }
   };
-  
+
   const _query = client.query.bind(client);
-  client.query = (opts: any) => {
-    stripCanon(opts);
-    return _query(opts);
+  client.query = (options: any) => {
+    stripCanon(options);
+    return _query(options);
   };
 
   return client;
-}
+};

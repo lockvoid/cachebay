@@ -8,15 +8,11 @@ export type UrqlClientConfig = {
   cachePolicy: "network-only" | "cache-first" | "cache-and-network";
 };
 
-function mapCachePolicyToUrql(policy: "network-only" | "cache-first" | "cache-and-network"): "network-only" | "cache-first" | "cache-and-network" {
+const mapCachePolicyToUrql = (policy: "network-only" | "cache-first" | "cache-and-network"): "network-only" | "cache-first" | "cache-and-network" => {
   return policy;
-}
+};
 
-/**
- * Creates a urql Client configured for nested query benchmarks
- * Uses Yoga directly (in-memory, no HTTP)
- */
-export function createUrqlClient({ yoga, serverUrl, cachePolicy }: UrqlClientConfig) {
+export const createUrqlClient = ({ yoga, serverUrl, cachePolicy }: UrqlClientConfig) => {
   const cache = graphcache({
     resolvers: {
       Query: { users: relayPagination() },
@@ -25,7 +21,6 @@ export function createUrqlClient({ yoga, serverUrl, cachePolicy }: UrqlClientCon
     },
   });
 
-  // Custom fetch using Yoga directly (in-memory, no HTTP)
   const customFetch = async (url: string, options: any) => {
     return await yoga.fetch(url, options);
   };

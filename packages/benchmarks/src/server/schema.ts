@@ -1,34 +1,17 @@
 import { createYoga, createSchema } from 'graphql-yoga';
 import { createServer as createHttpServer } from 'http';
-import { Buffer } from 'buffer';
 import type { Post } from '../utils/seed';
-
-const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
-
-function encodeCursor(index: number): string {
-  return Buffer.from(`cursor:${index}`, 'utf8').toString('base64');
-}
-
-function decodeCursor(cursor: string | null | undefined): number {
-  if (!cursor) return -1;
-  try {
-    const s = Buffer.from(cursor, 'base64').toString('utf8');
-    const m = s.match(/^cursor:(\d+)$/);
-    return m ? parseInt(m[1], 10) : -1;
-  } catch {
-    return -1;
-  }
-}
+import { delay, encodeCursor, decodeCursor } from '../utils/graphql';
 
 export type ServerCtrl = {
   url: string;
   stop: () => Promise<void>;
 };
 
-export async function startServer(
+export const startServer = async (
   dataset: Post[],
   opts: { artificialDelayMs?: number; port?: number } = {}
-): Promise<ServerCtrl> {
+): Promise<ServerCtrl> => {
   const port = opts.port || 4000;
 
   const yoga = createYoga({
@@ -59,7 +42,7 @@ export async function startServer(
       resolvers: {
         Query: {
           feed: async (_parent, { first, after }) => {
-            if (opts.artificialDelayMs) await delay(opts.artificialDelayMs);
+            if (options.artificialDelayMs) await delay(options.artificialDelayMs);
 
             const startIndex = after ? decodeCursor(after) + 1 : 0;
             const endIndex = Math.min(startIndex + first - 1, dataset.length - 1);
@@ -87,10 +70,9 @@ export async function startServer(
     }),
   });
 
-  // ✅ Use named import to avoid "default.createServer is not a function"
   const server = createHttpServer(yoga);
 
-  await new Promise<void>(resolve => server.listen(port, '127.0.0.1', resolve));
+  await new Promise<void>(resolve => server.listen(port, "127.0.0.1", resolve));
 
   const url = `http://127.0.0.1:${port}/graphql`;
 
@@ -98,7 +80,7 @@ export async function startServer(
     url,
     stop: () =>
       new Promise<void>((resolve, reject) =>
-        server.close(err => (err ? reject(err) : resolve()))
+        server.close(err => (err ? reject(err) : resolve())),
       ),
   };
-}
+};

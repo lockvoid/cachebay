@@ -1,29 +1,17 @@
 import { createCachebay } from "../../../cachebay/src";
+import { createYogaFetcher } from '../utils/graphql';
 
 export type CachebayPluginConfig = {
   yoga: any;
   cachePolicy?: "network-only" | "cache-first" | "cache-and-network";
 };
 
-/**
- * Creates a Cachebay plugin configured for nested query benchmarks
- * Uses Yoga directly (in-memory, no HTTP)
- */
-export function createCachebayPlugin({ yoga, cachePolicy }: CachebayPluginConfig) {
-  // Transport calls Yoga's fetch directly - no HTTP, no network, no serialization
+export const createCachebayPlugin = ({ yoga, cachePolicy }: CachebayPluginConfig) => {
+  const fetcher = createYogaFetcher(yoga, 'http://localhost/graphql');
+
   const transport = {
     http: async (context: any) => {
-      // Use Yoga's fetch API (works in-memory without HTTP)
-      const response = await yoga.fetch('http://localhost/graphql', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: context.query,
-          variables: context.variables,
-        }),
-      });
-
-      const result = await response.json();
+      const result = await fetcher(context.query, context.variables);
 
       return {
         data: result.data || null,
