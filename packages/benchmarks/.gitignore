@@ -1,3 +1,4 @@
 dist
-.bench-results/*-current.txt
-.bench-results/suite-compare.txt
+
+# All benchmark results (CodSpeed tracks performance automatically)
+.bench-results/

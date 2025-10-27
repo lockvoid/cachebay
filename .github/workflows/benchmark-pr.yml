@@ -1,42 +1,52 @@
-name: Benchmark PR
+name: CodSpeed Benchmarks
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
-    paths:
-      - "packages/cachebay/**"
-      - "packages/benchmarks/**"
+  workflow_dispatch:
 
 jobs:
-  benchmark:
+  benchmarks:
+    name: Run benchmarks
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
-      - uses: actions/setup-node@v4
+      - name: Install Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: 22
           cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build cachebay
+        working-directory: packages/cachebay
+        run: pnpm build
+
       - name: Install Playwright
         run: pnpm --filter benchmarks exec playwright install chromium
 
-      - name: Run DOM benchmarks
-        run: pnpm --filter benchmarks bench:ci:compare:dom
-
       - name: Run API benchmarks
-        run: pnpm --filter benchmarks bench:ci:compare:api
-
-      - name: Comment PR with results
-        uses: actions/github-script@v7
+        uses: CodSpeedHQ/action@v4
         with:
-          script: |
-            const { run } = await import('${{ github.workspace }}/packages/benchmarks/scripts/post-benchmark-comment.js');
-            await run({ github, context });
+          mode: instrumentation
+          run: pnpm --filter benchmarks bench:api
+          token: ${{ secrets.CODSPEED_TOKEN }}
+
+      - name: Run DOM benchmarks
+        uses: CodSpeedHQ/action@v4
+        with:
+          mode: instrumentation
+          run: pnpm --filter benchmarks bench:chromium
+          token: ${{ secrets.CODSPEED_TOKEN }}

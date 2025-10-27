@@ -7,10 +7,6 @@
   "type": "module",
   "scripts": {
     "relay": "relay-compiler",
-    "bench:ci:baseline:api": "bash scripts/ci-baseline-api.sh",
-    "bench:ci:baseline:dom": "bash scripts/ci-baseline-dom.sh",
-    "bench:ci:compare:api": "bash scripts/ci-compare-api.sh",
-    "bench:ci:compare:dom": "bash scripts/ci-compare-dom.sh",
     "bench:api": "NODE_ENV=production vitest bench --run --mode production --config vitest.happydom.config.ts bench/api",
     "bench:dom": "NODE_ENV=production vitest bench --run --mode production --config vitest.config.ts bench/dom",
     "bench:happydom": "NODE_ENV=production vitest bench --run --mode production --config vitest.happydom.config.ts",
