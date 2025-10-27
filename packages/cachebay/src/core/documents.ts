@@ -7,7 +7,6 @@ import type { CanonicalInstance } from "./canonical";
 import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
 import type { DocumentNode } from "graphql";
-import { WeakStringMap } from "./utils";
 
 /**
  * Dependencies required by documents instance
@@ -113,7 +112,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
    * Key: DocumentNode or CachePlan object
    * Value: Map of signature -> materializeResult
    */
-  const materializeCache = new WeakStringMap();
+  const materializeCache = new Map();
 
   /**
    * Helper to build materialize cache key
@@ -1042,7 +1041,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   /**
    * Invalidate a materialized document from cache
    * Removes the cached result for the given document/variables combination
-   * 
+   *
    * @param options - Options matching the materialization parameters
    */
   const invalidate = (options: invalidateOptions): void => {
