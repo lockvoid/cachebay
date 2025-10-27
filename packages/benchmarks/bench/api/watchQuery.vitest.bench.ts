@@ -119,9 +119,9 @@ describe('watchQuery (initial:cold)', () => {
 });*/
 
 describe('watchQuery (initial:hot)', () => {
-  const pages = buildPages({ data: buildUsersResponse({ users: 1000, posts: 5, comments: 3 }), pageSize: 10 });
+  const pages = buildPages({ data: buildUsersResponse({ users: 100, posts: 5, comments: 3 }), pageSize: 10 });
   const iterations = [];
-/*
+
   bench('cachebay - watchQuery', () => {
     const { cachebay } = iterations.pop();
 
@@ -151,19 +151,19 @@ describe('watchQuery (initial:hot)', () => {
       }
     }
   });
-*/
+
   bench('apollo - watch', () => {
     const { apollo } = iterations.pop();
-    console.log('1')
 
-    const subscription = apollo.watch({
+    const observable = apollo.watch({
       query: USERS_APOLLO_QUERY,
       variables: { first: 10, after: null },
-      onData: () => {
-        console.log('3')
-      }
+      optimistic: false,
     });
-    console.log('2')
+
+    const subscription = observable.subscribe(() => {});
+
+    subscription.unsubscribe()
   }, {
     iterations: ITERATIONS,
     warmupIterations: 2,
@@ -183,7 +183,7 @@ describe('watchQuery (initial:hot)', () => {
       }
     }
   });
-/*
+
   bench('relay - subscribe', () => {
     const { relay, operation } = iterations.pop();
 
@@ -212,5 +212,5 @@ describe('watchQuery (initial:hot)', () => {
         iterations.push({ relay, operation });
       }
     }
-    }); */
+  });
 });
