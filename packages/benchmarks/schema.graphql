@@ -3,19 +3,8 @@ interface Node {
 }
 
 type Query {
-  feed(first: Int!, after: String): FeedConnection!
   users(first: Int!, after: String): UserConnection!
   user(id: ID!): User
-}
-
-type FeedConnection {
-  edges: [FeedEdge!]!
-  pageInfo: PageInfo!
-}
-
-type FeedEdge {
-  cursor: String!
-  node: Post!
 }
 
 type UserConnection {

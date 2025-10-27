@@ -6,7 +6,7 @@ import { Environment, Network, RecordSource, Store, createOperationDescriptor } 
 import { buildUsersResponse, buildPages, USERS_CACHEBAY_QUERY, USERS_APOLLO_QUERY } from "../../src/utils/api";
 import USERS_RELAY_QUERY from "../../src/__generated__/apiUsersRelayQuery.graphql";
 
-const ITERATIONS = 100;
+const ITERATIONS = 50;
 
 const createCachebay = () => {
   return createCachebayClient({

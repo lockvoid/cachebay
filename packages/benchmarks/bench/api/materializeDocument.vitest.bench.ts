@@ -6,7 +6,7 @@ import { Environment, Network, RecordSource, Store, createOperationDescriptor } 
 import { buildUsersResponse, buildPages, USERS_CACHEBAY_QUERY, USERS_APOLLO_QUERY } from "../../src/utils/api";
 import USERS_RELAY_QUERY from "../../src/__generated__/apiUsersRelayQuery.graphql";
 
-const ITERATIONS = 100;
+const ITERATIONS = 10;
 
 const createCachebay = () => {
   return createCachebayClient({
@@ -49,7 +49,7 @@ const createRelay = () => {
 describe('materializeDocument – Paginated', () => {
   const pages = buildPages({ data: buildUsersResponse({ users: 500, posts: 5, comments: 3 }), pageSize: 10 });
   const iterations = [];
-
+/*
   bench('cachebay - materializeDocument (canonical)', () => {
     const { cachebay } = iterations.pop();
 
@@ -84,7 +84,7 @@ describe('materializeDocument – Paginated', () => {
     }
   });
 
-  /* bench('cachebay - materializeDocument (canonical + fingerprint)', () => {
+  bench('cachebay - materializeDocument (canonical + fingerprint)', () => {
     const { cachebay } = iterations.pop();
 
     for (let i = 0; i < pages.length; i++) {
@@ -116,7 +116,7 @@ describe('materializeDocument – Paginated', () => {
         iterations.push({ cachebay });
       }
     }
-    }); */
+  });
 
   bench('apollo - readQuery', () => {
     const { apollo } = iterations.pop();
@@ -143,14 +143,14 @@ describe('materializeDocument – Paginated', () => {
       }
     }
   });
-
+*/
   bench('relay - lookup', () => {
     const { relay } = iterations.pop();
 
     for (let i = 0; i < pages.length; i++) {
       const page = pages[i];
 
-      relay.lookup(createOperationDescriptor(USERS_RELAY_QUERY, page.variables).fragment);
+      const result = relay.lookup(createOperationDescriptor(USERS_RELAY_QUERY, page.variables).fragment);
     }
   }, {
     iterations: ITERATIONS,
