@@ -1,78 +1,11 @@
 import { gql } from "graphql-tag";
 import { graphql } from 'relay-runtime';
-// For fair perf (strip dev-only code in your lib if you gate by NODE_ENV)
-// process.env.NODE_ENV = "production"; // Set via environment variable instead
 
-// -----------------------------------------------------------------------------
-// Deterministic fixtures
-// -----------------------------------------------------------------------------
-function likeCount(i: number, j: number) {
+export const likeCount = (i: number, j: number) => {
   return ((i * 131 + j * 977) % 100) | 0;
 }
 
-export type ResponseShape = {
-  __typename: "Query";
-  users: {
-    __typename: "UserConnection";
-    edges: Array<{
-      __typename: "UserEdge";
-      cursor: string;
-      node: {
-        __typename: "User";
-        id: string;
-        name: string;
-        avatar: string;
-        posts: {
-          __typename: "PostConnection";
-          edges: Array<{
-            __typename: "PostEdge";
-            cursor: string;
-            node: {
-              __typename: "Post";
-              id: string;
-              title: string;
-              likeCount: number;
-              comments: {
-                __typename: "CommentConnection";
-                edges: Array<{
-                  __typename: "CommentEdge";
-                  cursor: string;
-                  node: {
-                    __typename: "Comment";
-                    id: string;
-                    text: string;
-                    author: {
-                      __typename: "User";
-                      id: string;
-                      name: string;
-                    };
-                  };
-                }>;
-                pageInfo: { __typename: "PageInfo"; hasNextPage: boolean };
-              };
-            };
-          }>;
-          pageInfo: { __typename: "PageInfo"; hasNextPage: boolean };
-        };
-      };
-    }>;
-    pageInfo: {
-      __typename: "PageInfo";
-      endCursor: string | null;
-      hasNextPage: boolean;
-    };
-  };
-};
-
-export function makeResponse({
-  users = 10,
-  posts = 5,
-  comments = 3,
-}: {
-  users: number;
-  posts: number;
-  comments: number;
-}): ResponseShape {
+export const buildUsersResponse = ({ users = 1000, posts = 5, comments = 3 }) => {
   return {
     __typename: "Query",
     users: {
@@ -136,17 +69,8 @@ export function makeResponse({
   };
 }
 
-// -----------------------------------------------------------------------------
-// Helpers: paginate once, reuse everywhere
-// -----------------------------------------------------------------------------
-export type Page = {
-  data: ResponseShape;
-  after: string | null;
-  variables: { first: number; after: string | null };
-};
-
-export const buildPages = (all: ResponseShape, pageSize: number): Page[] => {
-  const edges = all.users.edges;
+export const buildPages = ({ data: ResponseShape, pageSize: number }) => {
+  const edges = data.users.edges;
   const pages: Page[] = [];
   const total = edges.length;
 
@@ -169,7 +93,8 @@ export const buildPages = (all: ResponseShape, pageSize: number): Page[] => {
       },
     };
 
-    Object.freeze(pageData); // prevent accidental mutation
+    Object.freeze(pageData);
+
     pages.push({
       data: pageData,
       after,
@@ -180,12 +105,7 @@ export const buildPages = (all: ResponseShape, pageSize: number): Page[] => {
   return pages;
 }
 
-// -----------------------------------------------------------------------------
-// GraphQL Queries
-// -----------------------------------------------------------------------------
-
-// ---- Cachebay query: explicit keys for nested connections ----
-export const CACHEBAY_QUERY = gql`
+export const USERS_CACHEBAY_QUERY = gql`
   query Users($first: Int!, $after: String) {
     users(first: $first, after: $after) @connection {
       edges {
@@ -219,8 +139,7 @@ export const CACHEBAY_QUERY = gql`
   }
 `;
 
-// ---- Apollo query: same selection (no directives) ----
-export const APOLLO_QUERY = gql`
+export const USERS_APOLLO_QUERY = gql`
   query Users($first: Int!, $after: String) {
     users(first: $first, after: $after) {
       edges {
@@ -254,8 +173,8 @@ export const APOLLO_QUERY = gql`
   }
 `;
 
-export const RELAY_QUERY = graphql`
-  query apiRelayQuery($first: Int!, $after: String) {
+export const USERS_RELAY_QUERY = graphql`
+  query apiUsersRelayQuery($first: Int!, $after: String) {
     users(first: $first, after: $after) @connection(key: "api_users") {
       edges {
         cursor

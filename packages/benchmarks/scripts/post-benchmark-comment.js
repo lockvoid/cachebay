@@ -21,10 +21,10 @@ function buildComment() {
 
   // DOM benchmarks
   try {
-    const suiteCompare = readFileSync(join(RESULTS_DIR, 'suite-compare.txt'), 'utf8');
-    const lines = suiteCompare.split('\n');
+    const domCompare = readFileSync(join(RESULTS_DIR, 'dom-compare.txt'), 'utf8');
+    const lines = domCompare.split('\n');
     const summaryStart = lines.findIndex(l => l.includes('BENCH  Summary'));
-    
+
     if (summaryStart !== -1) {
       const summary = lines.slice(summaryStart, summaryStart + 20).join('\n');
       comment += '### DOM Benchmarks\n```\n' + summary + '\n```\n\n';
@@ -39,7 +39,7 @@ function buildComment() {
   try {
     const apiCurrent = readFileSync(join(RESULTS_DIR, 'api-current.txt'), 'utf8');
     comment += '### API Benchmarks\n```\n' + apiCurrent.slice(0, 2000) + '\n```\n\n';
-    
+
     if (apiCurrent.length > 2000) {
       comment += '*Output truncated to 2000 characters*\n\n';
     }
@@ -48,7 +48,7 @@ function buildComment() {
   }
 
   comment += '\n---\n*Benchmarks run on commit ' + process.env.GITHUB_SHA?.slice(0, 7) + '*';
-  
+
   return comment;
 }
 
@@ -63,7 +63,7 @@ async function postComment(github, context, comment) {
     issue_number: context.issue.number,
   });
 
-  const botComment = comments.find(c => 
+  const botComment = comments.find(c =>
     c.user.type === 'Bot' && c.body.includes('📊 Benchmark Results')
   );
 

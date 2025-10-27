@@ -8,7 +8,7 @@ import { makeNestedDataset } from "../../src/utils/seed-infinite-feed";
 import Table from 'cli-table3';
 
 const DEBUG = true;
-const PAGES_TO_LOAD = 2;
+const PAGES_TO_LOAD = 25;
 
 const BENCH_OPTIONS = {
   iterations: 10,

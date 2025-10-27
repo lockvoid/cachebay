@@ -55,7 +55,7 @@ jobs:
         run: pnpm --filter benchmarks exec playwright install chromium
 
       - name: Run DOM benchmarks
-        run: pnpm --filter benchmarks bench:ci:baseline:suite
+        run: pnpm --filter benchmarks bench:ci:baseline:dom
 
       - name: Run API benchmarks
         run: pnpm --filter benchmarks bench:ci:baseline:api

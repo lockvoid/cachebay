@@ -32,13 +32,13 @@ BENCH_FILE=normalizeDocument pnpm bench:api:compare
 ### DOM Benchmarks (vitest)
 ```bash
 # Run benchmark
-pnpm bench:suite bench/suites/infinite-feed.dom.bench.ts
+pnpm bench:dom bench/dom/infinite-feed.dom.bench.ts
 
 # Save baseline
-BENCH_NAME=infinite-feed pnpm bench:suite:baseline bench/suites/infinite-feed.dom.bench.ts
+BENCH_NAME=infinite-feed pnpm bench:dom:baseline bench/dom/infinite-feed.dom.bench.ts
 
 # Compare against baseline (shows [1.27x] ⇑ or [0.98x] ⇓)
-BENCH_NAME=infinite-feed pnpm bench:suite:compare bench/suites/infinite-feed.dom.bench.ts
+BENCH_NAME=infinite-feed pnpm bench:dom:compare bench/dom/infinite-feed.dom.bench.ts
 ```
 
 ## CI Workflow
@@ -72,7 +72,7 @@ Current/compare results are gitignored.
 3. Add to CI workflows in `.github/workflows/`
 
 ### DOM Benchmark
-1. Create `bench/suites/my-benchmark.dom.bench.ts`
+1. Create `bench/dom/my-benchmark.dom.bench.ts`
 2. Use vitest: `import { bench } from 'vitest'`
 3. Update CI with new `BENCH_NAME`
 
@@ -99,7 +99,7 @@ cd packages/benchmarks
 pnpm exec playwright install chromium
 
 # Run DOM benchmarks
-BENCH_NAME=infinite-feed pnpm bench:suite:baseline bench/suites/infinite-feed.dom.bench.ts
+BENCH_NAME=infinite-feed pnpm bench:dom:baseline bench/dom/infinite-feed.dom.bench.ts
 
 # Run API benchmarks
 BENCH_FILE=normalizeDocument pnpm bench:api:baseline
@@ -116,7 +116,7 @@ ls -la .bench-results/
 # Make some code changes to cachebay...
 
 # Run DOM comparison
-BENCH_NAME=infinite-feed pnpm bench:suite:compare bench/suites/infinite-feed.dom.bench.ts
+BENCH_NAME=infinite-feed pnpm bench:dom:compare bench/dom/infinite-feed.dom.bench.ts
 
 # Run API comparison
 BENCH_FILE=normalizeDocument pnpm bench:api:compare

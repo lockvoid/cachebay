@@ -10,7 +10,7 @@ import Table from 'cli-table3';
 const DEBUG = true;
 
 const BENCH_OPTIONS = {
-  iterations: 5000,
+  iterations: 20,
   warmupIterations: 50,
   throws: true,
   warmupTime: 0,
@@ -70,7 +70,7 @@ describe('DOM User Profile (happy-dom): single entity with nested data', () => {
   const testUserId = 'u1'; // Always load the same user
 
   describe('network-only', () => {
-    bench('Cachebay (vue, network-only)', async () => {
+    bench('Cachebay (vue, network-only)', async (a, f) => {
       const app = createVueCachebayUserProfileApp('network-only', 0);
       await app.mount();
       await app.ready();
