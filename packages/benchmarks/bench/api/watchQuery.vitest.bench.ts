@@ -46,11 +46,11 @@ const createRelay = () => {
   return new Environment({ network: Network.create(async () => ({})), store: new Store(new RecordSource()) });
 };
 
-describe('materializeDocument – Paginated', () => {
+describe('readQuery – Paginated', () => {
   const pages = buildPages({ data: buildUsersResponse({ users: 500, posts: 5, comments: 3 }), pageSize: 10 });
   const iterations = [];
 
-  bench('cachebay - materializeDocument (canonical)', () => {
+  bench('cachebay - readQuery (canonical)', () => {
     const { cachebay, sourceCachebay } = iterations.pop();
 
     for (let i = 0; i < pages.length; i++) {
@@ -58,50 +58,9 @@ describe('materializeDocument – Paginated', () => {
 
       Object.assign(cachebay.__internals.graph, sourceCachebay.__internals.graph);
 
-      const result = cachebay.__internals.documents.materializeDocument({
-        document: USERS_CACHEBAY_QUERY,
+      const result = cachebay.readQuery({
+        query: USERS_CACHEBAY_QUERY,
         variables: page.variables,
-        canonical: true,
-        fingerprint: false,
-        force: true
-      });
-    }
-  }, {
-    iterations: ITERATIONS,
-
-    setup() {
-      iterations.length = 0;
-
-      const sourceCachebay = createCachebay();
-
-      for (let j = 0; j < pages.length; j++) {
-        sourceCachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[j].variables, data: pages[j].data });
-      }
-
-      for (let i = 0; i < ITERATIONS + 10; i++) {
-        const cachebay = createCachebay();
-
-        cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
-
-        iterations.push({ cachebay, sourceCachebay });
-      }
-    }
-  });
-
-  bench('cachebay - materializeDocument (canonical + fingerprint)', () => {
-    const { cachebay, sourceCachebay } = iterations.pop();
-
-    for (let i = 0; i < pages.length; i++) {
-      const page = pages[i];
-
-      Object.assign(cachebay.__internals.graph, sourceCachebay.__internals.graph);
-
-      const result = cachebay.__internals.documents.materializeDocument({
-        document: USERS_CACHEBAY_QUERY,
-        variables: page.variables,
-        canonical: true,
-        fingerprint: true,
-        force: true
       });
     }
   }, {

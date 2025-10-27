@@ -10,14 +10,16 @@
     "bench:api": "pnpm relay && rsbuild build && node dist/bench.cjs",
     "bench:api:baseline": "pnpm bench:api | tee .bench-results/api-baseline.txt",
     "bench:api:compare": "pnpm bench:api | tee .bench-results/api-current.txt && node scripts/compare-mitata.js",
-    "bench:dom": "NODE_ENV=production vitest bench --run --mode production",
+    "bench:dom": "NODE_ENV=production vitest bench --run --mode production --config vitest.config.ts",
     "bench:dom:baseline": "mkdir -p .bench-results && pnpm bench:dom --outputJson .bench-results/${BENCH_NAME}-baseline.json",
     "bench:dom:compare": "pnpm bench:dom --compare .bench-results/${BENCH_NAME}-baseline.json",
+    "bench:api:vitest": "NODE_ENV=production vitest bench --run --mode production --config vitest.api.config.ts",
     "bench:ci:baseline:api": "bash scripts/ci-baseline-api.sh",
     "bench:ci:baseline:dom": "bash scripts/ci-baseline-dom.sh",
     "bench:ci:compare:api": "bash scripts/ci-compare-api.sh",
     "bench:ci:compare:dom": "bash scripts/ci-compare-dom.sh",
-    "bench": "NODE_ENV=production vitest bench --run --mode production"
+    "bench:happydom": "NODE_ENV=production vitest bench --run --mode production --config vitest.happydom.config.ts",
+    "bench:chromium": "NODE_ENV=production vitest bench --run --mode production --config vitest.chromium.config.ts"
   },
   "dependencies": {
     "@apollo/client": "^3.8.10",
