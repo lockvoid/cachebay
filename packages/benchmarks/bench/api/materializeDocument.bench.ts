@@ -3,7 +3,8 @@ import { createCachebay as createCachebayClient } from "../../../cachebay/src/co
 import { InMemoryCache } from "@apollo/client/cache";
 import { relayStylePagination } from "@apollo/client/utilities";
 import { Environment, Network, RecordSource, Store, createOperationDescriptor } from "relay-runtime";
-import { buildUsersResponse, buildPages, USERS_CACHEBAY_QUERY, USERS_APOLLO_QUERY } from "../../src/utils/api";
+import { buildUsersResponse, buildPages } from "../../src/utils/data-generator";
+import { USERS_CACHEBAY_QUERY, USERS_APOLLO_QUERY } from "../../src/utils/queries";
 import USERS_RELAY_QUERY from "../../src/__generated__/apiUsersRelayQuery.graphql";
 
 const ITERATIONS = 10;
