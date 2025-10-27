@@ -1,9 +1,12 @@
 #!/bin/bash
 set -e
 
-echo "🌐 Running DOM benchmarks and comparing against baselines..."
+echo "🌐 Running DOM benchmarks (current)..."
 
-BENCH_NAME=infinite-feed pnpm bench:dom:compare bench/dom/infinite-feed.dom.bench.ts
-BENCH_NAME=user-profile pnpm bench:dom:compare bench/dom/user-profile.dom.bench.ts
+mkdir -p .bench-results
 
-echo "✅ DOM comparison complete! Check results above."
+pnpm bench:chromium bench/dom/infinite-feed.bench.ts > .bench-results/infinite-feed-current.txt
+pnpm bench:chromium bench/dom/user-profile.bench.ts > .bench-results/user-profile-current.txt
+
+echo ""
+echo "✅ DOM benchmarks complete! Compare baseline vs current in .bench-results/"
