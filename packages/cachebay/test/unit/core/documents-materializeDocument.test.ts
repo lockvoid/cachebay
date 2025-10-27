@@ -22,7 +22,7 @@ import {
   MULTIPLE_USERS_QUERY,
 } from "@/test/helpers/operations";
 
-describe("documents.materializeDocument (plain materialization + source/ok + dependencies)", () => {
+describe("documents.materialize (plain materialization + source/ok + dependencies)", () => {
   let graph: ReturnType<typeof createGraph>;
   let optimistic: ReturnType<typeof createOptimistic>;
   let planner: ReturnType<typeof createPlanner>;
@@ -71,7 +71,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       }
     `);
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: QUERY,
       variables: { id: "u1" },
       data: {
@@ -79,7 +79,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       },
     });
 
-    const res = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } }) as any;
+    const res = documents.materialize({ document: QUERY, variables: { id: "u1" } }) as any;
     expect(res.source).not.toBe("none");
     expect(res.data).toEqual({
       __version: expect.any(Number),
@@ -108,7 +108,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       ['user({"id":"u2"})']: { __ref: "User:u2" },
     });
 
-    const res = documents.materializeDocument({ document: QUERY, variables: { id: "u2" } }) as any;
+    const res = documents.materialize({ document: QUERY, variables: { id: "u2" } }) as any;
     expect(res.source).toBe("none");
     expect(res.data).toBeUndefined();
 
@@ -130,7 +130,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       }
     `);
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: QUERY,
       variables: {},
       data: {
@@ -143,7 +143,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       },
     });
 
-    const res = documents.materializeDocument({ document: QUERY, variables: {} }) as any;
+    const res = documents.materialize({ document: QUERY, variables: {} }) as any;
     expect(res.source).not.toBe("none");
     expect(res.data).toEqual({
       __version: expect.any(Number),
@@ -182,7 +182,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     );
     writeConnectionPage(graph, canonicalKey, data);
 
-    const res = documents.materializeDocument({
+    const res = documents.materialize({
       document: QUERY,
       variables: { role: "admin", first: 2, after: null },
     }) as any;
@@ -211,7 +211,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     // Update a user node
     graph.putRecord("User:u1", { email: "u1+updated@example.com" });
 
-    const res2 = documents.materializeDocument({
+    const res2 = documents.materialize({
       document: QUERY,
       variables: { role: "admin", first: 2, after: null },
       force: true, // Force re-materialization after graph update
@@ -246,7 +246,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     );
     writeConnectionPage(graph, postsCanonicalKey, postsData);
 
-    const res = documents.materializeDocument({
+    const res = documents.materialize({
       document: QUERY,
       variables: { id: "u1", first: 1, after: null, category: "tech" },
     }) as any;
@@ -277,7 +277,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     // Update the post node
     graph.putRecord("Post:p1", { title: "Post 1 Updated" });
 
-    const res2 = documents.materializeDocument({
+    const res2 = documents.materialize({
       document: QUERY,
       variables: { id: "u1", first: 1, after: null, category: "tech" },
       force: true, // Force re-materialization after graph update
@@ -302,13 +302,13 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         }
       `);
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "u1" },
         data: { user: { __typename: "User", id: "u1", email: "a@example.com" } },
       });
 
-      const r1 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } }) as any;
+      const r1 = documents.materialize({ document: QUERY, variables: { id: "u1" } }) as any;
       expect(r1.dependencies).toEqual(new Set([
         `${ROOT_ID}.user({"id":"u1"})`,
         "User:u1",
@@ -317,7 +317,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       // Write a change -> dependencies should still be tracked
       graph.putRecord("User:u1", { email: "b@example.com" });
 
-      const r2 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" }, force: true }) as any;
+      const r2 = documents.materialize({ document: QUERY, variables: { id: "u1" }, force: true }) as any;
       expect(r2.dependencies).toEqual(new Set([
         `${ROOT_ID}.user({"id":"u1"})`,
         "User:u1",
@@ -344,7 +344,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       );
       writeConnectionPage(graph, connKey, data);
 
-      const res = documents.materializeDocument({
+      const res = documents.materialize({
         document: QUERY,
         variables: { role: "admin", first: 2, after: null },
       }) as any;
@@ -359,7 +359,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       // Mutate an edge (simulate new cursor) -> dependencies should still be tracked
       graph.putRecord(`${connKey}.edges.0`, { cursor: "u1-new" });
 
-      const res2 = documents.materializeDocument({
+      const res2 = documents.materialize({
         document: QUERY,
         variables: { role: "admin", first: 2, after: null },
         force: true, // Force re-materialization after graph update
@@ -384,12 +384,12 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
           }
         }
       `;
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "e1" },
         data: { entity: { __typename: "Entity", id: "e1", data: "string" } },
       });
-      const c = documents.materializeDocument({ document: QUERY, variables: { id: "e1" } }) as any;
+      const c = documents.materialize({ document: QUERY, variables: { id: "e1" } }) as any;
       expect(c.source).not.toBe("none");
       expect(c.data).toEqual({ __version: expect.any(Number), entity: { __typename: "Entity", id: "e1", data: "string", __version: expect.any(Number) } });
 
@@ -408,12 +408,12 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
           }
         }
       `;
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "e1" },
         data: { entity: { __typename: "Entity", id: "e1", data: 123 } },
       });
-      const c = documents.materializeDocument({ document: QUERY, variables: { id: "e1" } }) as any;
+      const c = documents.materialize({ document: QUERY, variables: { id: "e1" } }) as any;
       expect(c.source).not.toBe("none");
       expect(c.data).toEqual({ __version: expect.any(Number), entity: { __typename: "Entity", id: "e1", data: 123, __version: expect.any(Number) } });
 
@@ -432,12 +432,12 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
           }
         }
       `;
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "e1" },
         data: { entity: { __typename: "Entity", id: "e1", data: true } },
       });
-      const c = documents.materializeDocument({ document: QUERY, variables: { id: "e1" } }) as any;
+      const c = documents.materialize({ document: QUERY, variables: { id: "e1" } }) as any;
       expect(c.source).not.toBe("none");
       expect(c.data).toEqual({ __version: expect.any(Number), entity: { __typename: "Entity", id: "e1", data: true, __version: expect.any(Number) } });
 
@@ -456,12 +456,12 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
           }
         }
       `;
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "e1" },
         data: { entity: { __typename: "Entity", id: "e1", data: null } },
       });
-      const c = documents.materializeDocument({ document: QUERY, variables: { id: "e1" } }) as any;
+      const c = documents.materialize({ document: QUERY, variables: { id: "e1" } }) as any;
       expect(c.source).not.toBe("none");
       expect(c.data).toEqual({ __version: expect.any(Number), entity: { __typename: "Entity", id: "e1", data: null, __version: expect.any(Number) } });
 
@@ -480,12 +480,12 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
           }
         }
       `;
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "e1" },
         data: { entity: { __typename: "Entity", id: "e1", data: { foo: { bar: "baz" } } } },
       });
-      const c = documents.materializeDocument({ document: QUERY, variables: { id: "e1" } }) as any;
+      const c = documents.materialize({ document: QUERY, variables: { id: "e1" } }) as any;
       expect(c.source).not.toBe("none");
       expect(c.data).toEqual({ __version: expect.any(Number), entity: { __typename: "Entity", id: "e1", data: { foo: { bar: "baz" } }, __version: expect.any(Number) } });
 
@@ -507,7 +507,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
           }
         }
       `;
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "e1" },
         data: {
@@ -519,7 +519,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
           },
         },
       });
-      const c = documents.materializeDocument({ document: QUERY, variables: { id: "e1" } }) as any;
+      const c = documents.materialize({ document: QUERY, variables: { id: "e1" } }) as any;
       expect(c.source).not.toBe("none");
       expect(c.data).toEqual({
         __version: expect.any(Number),
@@ -550,7 +550,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         }
       `;
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "u1" },
         data: {
@@ -562,7 +562,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const c1 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } }) as any;
+      const c1 = documents.materialize({ document: QUERY, variables: { id: "u1" } }) as any;
       expect(c1.source).not.toBe("none");
       expect(c1.data.user).toEqual({
         __typename: "User",
@@ -572,7 +572,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       });
 
       // Update the user
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "u1" },
         data: {
@@ -584,7 +584,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const c2 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" }, force: true }) as any;
+      const c2 = documents.materialize({ document: QUERY, variables: { id: "u1" }, force: true }) as any;
       expect(c2.source).not.toBe("none");
       expect(c2.data.user).toEqual({
         __typename: "User",
@@ -624,13 +624,13 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       };
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: USER_POSTS_QUERY,
         variables: { id: "u1", postsCategory: "tech", postsFirst: 10 },
         data: data1,
       });
 
-      const c1 = documents.materializeDocument({
+      const c1 = documents.materialize({
         document: USER_POSTS_QUERY,
         variables: { id: "u1", postsCategory: "tech", postsFirst: 10 },
       }) as any;
@@ -665,7 +665,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       });
 
       // Update the user
-      documents.normalizeDocument({
+      documents.normalize({
         document: USER_QUERY,
         variables: { id: "u1" },
         data: {
@@ -677,7 +677,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const c2 = documents.materializeDocument({
+      const c2 = documents.materialize({
         document: USER_POSTS_QUERY,
         variables: { id: "u1", postsCategory: "tech", postsFirst: 10 },
         force: true,
@@ -732,7 +732,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         }
       `;
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "p1" },
         data: {
@@ -755,7 +755,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const c1 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" } }) as any;
+      const c1 = documents.materialize({ document: QUERY, variables: { id: "p1" } }) as any;
       expect(c1.source).not.toBe("none");
       expect(c1.data.post.nested1.nested2.nested3.author).toEqual({
         __typename: "User",
@@ -765,7 +765,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       });
 
       // Update the user
-      documents.normalizeDocument({
+      documents.normalize({
         document: USER_QUERY,
         variables: { id: "u1" },
         data: {
@@ -777,7 +777,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const c2 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" }, force: true }) as any;
+      const c2 = documents.materialize({ document: QUERY, variables: { id: "p1" }, force: true }) as any;
       expect(c2.source).not.toBe("none");
       expect(c2.data.post.nested1.nested2.nested3.author).toEqual({
         __typename: "User",
@@ -813,13 +813,13 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       };
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "p1" },
         data: data1,
       });
 
-      const c = documents.materializeDocument({ document: QUERY, variables: { id: "p1" } }) as any;
+      const c = documents.materialize({ document: QUERY, variables: { id: "p1" } }) as any;
       expect(c.source).not.toBe("none");
       expect(c.data.post.tags).toHaveLength(2);
       expect(c.data.post.tags[0]).toEqual({
@@ -849,7 +849,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         }
       `;
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "p1" },
         data: {
@@ -861,7 +861,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const c = documents.materializeDocument({ document: QUERY, variables: { id: "p1" } }) as any;
+      const c = documents.materialize({ document: QUERY, variables: { id: "p1" } }) as any;
       expect(c.source).toBe("none");
     });
 
@@ -879,7 +879,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       `;
 
       // First normalize with missing author
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "p1" },
         data: {
@@ -891,11 +891,11 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const c1 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" } }) as any;
+      const c1 = documents.materialize({ document: QUERY, variables: { id: "p1" } }) as any;
       expect(c1.source).toBe("none");
 
       // Now normalize with author present
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "p1" },
         data: {
@@ -907,7 +907,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const c2 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" }, force: true }) as any;
+      const c2 = documents.materialize({ document: QUERY, variables: { id: "p1" }, force: true }) as any;
       expect(c2.source).not.toBe("none");
       expect(c2.data.post.author).toEqual({
         __typename: "User",
@@ -918,7 +918,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
     });
 
     it("returns consistent data for same query and variables", () => {
-      documents.normalizeDocument({
+      documents.normalize({
         document: USER_QUERY,
         variables: { id: "u1" },
         data: {
@@ -926,8 +926,8 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const c1 = documents.materializeDocument({ document: USER_QUERY, variables: { id: "u1" } }) as any;
-      const c2 = documents.materializeDocument({ document: USER_QUERY, variables: { id: "u1" } }) as any;
+      const c1 = documents.materialize({ document: USER_QUERY, variables: { id: "u1" } }) as any;
+      const c2 = documents.materialize({ document: USER_QUERY, variables: { id: "u1" } }) as any;
 
       expect(c1.source).not.toBe("none");
       expect(c2.source).not.toBe("none");
@@ -942,7 +942,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         { startCursor: "p1", endCursor: "p1", hasNextPage: false },
       );
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: POSTS_QUERY,
         variables: { id: "u1" },
         data: {
@@ -950,7 +950,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const d = documents.materializeDocument({ document: POSTS_QUERY, variables: { id: "u1" } }) as any;
+      const d = documents.materialize({ document: POSTS_QUERY, variables: { id: "u1" } }) as any;
 
       expect(d.source).not.toBe("none");
 
@@ -1017,7 +1017,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       },
     };
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: USER_POSTS_COMMENTS_QUERY,
       variables: {
         id: "u1",
@@ -1030,7 +1030,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       data: data1,
     });
 
-    const d = documents.materializeDocument({
+    const d = documents.materialize({
       document: USER_POSTS_COMMENTS_QUERY,
       variables: {
         id: "u1",
@@ -1205,7 +1205,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       { startCursor: "u1", endCursor: "u2", hasNextPage: false, hasPreviousPage: false },
     );
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: USERS_POSTS_COMMENTS_QUERY,
       variables: {
         usersRole: "admin",
@@ -1222,7 +1222,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       },
     });
 
-    const d = documents.materializeDocument({
+    const d = documents.materialize({
       document: USERS_POSTS_COMMENTS_QUERY,
       variables: {
         usersRole: "admin",
@@ -1399,7 +1399,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       { startCursor: "u2", endCursor: "u4", hasNextPage: true, hasPreviousPage: false },
     );
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: MULTIPLE_USERS_QUERY,
       variables: {
         userId: "u1",
@@ -1413,7 +1413,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       },
     });
 
-    const d = documents.materializeDocument({
+    const d = documents.materialize({
       document: MULTIPLE_USERS_QUERY,
       variables: {
         userId: "u1",
@@ -1540,7 +1540,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       tags: connectionTags,
     };
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: POSTS_WITH_AGGREGATIONS_QUERY,
       variables: {
         category: "tech",
@@ -1553,7 +1553,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       },
     });
 
-    const d = documents.materializeDocument({
+    const d = documents.materialize({
       document: POSTS_WITH_AGGREGATIONS_QUERY,
       variables: {
         category: "tech",
@@ -1767,7 +1767,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
   describe("canonical flag & ok/source behavior", () => {
     describe("1-level nested (USER_QUERY)", () => {
       it("MISSING: no data exists", () => {
-        const result = documents.materializeDocument({
+        const result = documents.materialize({
           document: USER_QUERY,
           variables: { id: "u1" },
           canonical: false,
@@ -1780,7 +1780,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       });
 
       it("FULFILLED strict read when canonical: false", () => {
-        documents.normalizeDocument({
+        documents.normalize({
           document: USER_QUERY,
           variables: { id: "u1" },
           data: {
@@ -1794,7 +1794,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
           },
         });
 
-        const result = documents.materializeDocument({
+        const result = documents.materialize({
           document: USER_QUERY,
           variables: { id: "u1" },
           canonical: false,
@@ -1806,7 +1806,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       });
 
       it("FULFILLED canonical read when server data exists", () => {
-        documents.normalizeDocument({
+        documents.normalize({
           document: USER_QUERY,
           variables: { id: "u2" },
           data: {
@@ -1819,7 +1819,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
           },
         });
 
-        const result = documents.materializeDocument({
+        const result = documents.materialize({
           document: USER_QUERY,
           variables: { id: "u2" },
           canonical: true,
@@ -1843,7 +1843,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         );
         writeConnectionPage(graph, canonicalKey, connectionData);
 
-        const result = documents.materializeDocument({
+        const result = documents.materialize({
           document: POSTS_QUERY,
           variables: {},
           canonical: true,
@@ -1864,7 +1864,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         );
         writeConnectionPage(graph, canonicalKey, connectionData);
 
-        const result = documents.materializeDocument({
+        const result = documents.materialize({
           document: POSTS_QUERY,
           variables: {},
           canonical: false,
@@ -1889,7 +1889,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         }
       `);
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "u1" },
         data: {
@@ -1897,8 +1897,8 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const result1 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } });
-      const result2 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } });
+      const result1 = documents.materialize({ document: QUERY, variables: { id: "u1" } });
+      const result2 = documents.materialize({ document: QUERY, variables: { id: "u1" } });
 
       expect((result1.data as any).__version).toBe((result2.data as any).__version);
       expect((result1.data as any).__version).toBeGreaterThan(0);
@@ -1914,7 +1914,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         }
       `);
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "u1" },
         data: {
@@ -1922,10 +1922,10 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const result1 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } });
+      const result1 = documents.materialize({ document: QUERY, variables: { id: "u1" } });
 
       // Update the user
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "u1" },
         data: {
@@ -1933,7 +1933,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const result2 = documents.materializeDocument({ document: QUERY, variables: { id: "u1" }, force: true });
+      const result2 = documents.materialize({ document: QUERY, variables: { id: "u1" }, force: true });
 
       expect((result1.data as any).__version).not.toBe((result2.data as any).__version);
       expect((result1.data as any).__version).toBeGreaterThan(0);
@@ -1950,7 +1950,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         }
       `);
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "u1" },
         data: {
@@ -1958,7 +1958,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const result = documents.materializeDocument({ document: QUERY, variables: { id: "u1" } });
+      const result = documents.materialize({ document: QUERY, variables: { id: "u1" } });
 
       // Fingerprint should be accessible via __version property
       // const userFp = (result.data.user as any).__version;
@@ -1987,7 +1987,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         }
       `);
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { userId: "u1", postId: "p1" },
         data: {
@@ -2009,7 +2009,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const r1 = documents.materializeDocument({ document: QUERY, variables: { userId: "u1", postId: "p1" } });
+      const r1 = documents.materialize({ document: QUERY, variables: { userId: "u1", postId: "p1" } });
       // const userFp1 = (r1.data.user as any).__version;
       // const postFp1 = (r1.data.user.post as any).__version;
       // const commentFp1 = (r1.data.user.post.comment as any).__version;
@@ -2017,7 +2017,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
       // Update Post only
       graph.putRecord("Post:p1", { title: "Post 1 Updated" });
 
-      const r2 = documents.materializeDocument({ document: QUERY, variables: { userId: "u1", postId: "p1" }, force: true });
+      const r2 = documents.materialize({ document: QUERY, variables: { userId: "u1", postId: "p1" }, force: true });
       // const userFp2 = (r2.data.user as any).__version;
       // const postFp2 = (r2.data.user.post as any).__version;
       // const commentFp2 = (r2.data.user.post.comment as any).__version;
@@ -2049,7 +2049,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         }
       `);
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "p1" },
         data: {
@@ -2065,12 +2065,12 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const result1 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" } });
+      const result1 = documents.materialize({ document: QUERY, variables: { id: "p1" } });
 
       // Update one of the tags
       graph.putRecord("Tag:t1", { name: "Tag 1 Updated" });
 
-      const result2 = documents.materializeDocument({ document: QUERY, variables: { id: "p1" }, force: true });
+      const result2 = documents.materialize({ document: QUERY, variables: { id: "p1" }, force: true });
 
       // Fingerprints should be different because array item changed
       expect((result1.data as any).__version).not.toBe((result2.data as any).__version);
@@ -2092,7 +2092,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         }
       `);
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "u1" },
         data: {
@@ -2100,7 +2100,7 @@ describe("documents.materializeDocument (plain materialization + source/ok + dep
         },
       });
 
-      const result = documents.materializeDocument({
+      const result = documents.materialize({
         document: QUERY,
         variables: { id: "u1" },
         fingerprint: false,

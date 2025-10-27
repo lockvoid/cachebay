@@ -6,7 +6,7 @@ import { createPlanner } from "@/src/core/planner";
 import { operations } from "@/test/helpers";
 import { users, posts, comments, tags, medias } from "@/test/helpers/fixtures";
 
-describe("documents.normalizeDocument", () => {
+describe("documents.normalize", () => {
   let graph: ReturnType<typeof createGraph>;
   let optimistic: ReturnType<typeof createOptimistic>;
   let planner: ReturnType<typeof createPlanner>;
@@ -38,7 +38,7 @@ describe("documents.normalizeDocument", () => {
 
   describe('primitives', () => {
     it('normalizes string', () => {
-      documents.normalizeDocument({
+      documents.normalize({
         document: `
           query {
             entity(id: "e1") {
@@ -65,7 +65,7 @@ describe("documents.normalizeDocument", () => {
     });
 
     it('normalizes number', () => {
-      documents.normalizeDocument({
+      documents.normalize({
         document: `
           query {
             entity(id: "e1") {
@@ -92,7 +92,7 @@ describe("documents.normalizeDocument", () => {
     });
 
     it('normalizes boolean', () => {
-      documents.normalizeDocument({
+      documents.normalize({
         document: `
           query {
             entity(id: "e1") {
@@ -119,7 +119,7 @@ describe("documents.normalizeDocument", () => {
     });
 
     it('normalizes null', () => {
-      documents.normalizeDocument({
+      documents.normalize({
         document: `
           query {
             entity(id: "e1") {
@@ -146,7 +146,7 @@ describe("documents.normalizeDocument", () => {
     });
 
     it('normalizes json', () => {
-      documents.normalizeDocument({
+      documents.normalize({
         document: `
           query {
             entity(id: "e1") {
@@ -175,7 +175,7 @@ describe("documents.normalizeDocument", () => {
 
   describe('aliases', () => {
     it('normalizes without aliases', () => {
-      documents.normalizeDocument({
+      documents.normalize({
         document: `
           query {
             entity(id: "e1") {
@@ -206,7 +206,7 @@ describe("documents.normalizeDocument", () => {
   });
 
   it("normalizes root users connection with edge records", () => {
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.USERS_QUERY,
       variables: {
         role: "admin",
@@ -232,7 +232,7 @@ describe("documents.normalizeDocument", () => {
       },
     });
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.USERS_QUERY,
       variables: {
         role: "admin",
@@ -406,13 +406,13 @@ describe("documents.normalizeDocument", () => {
     userPostsLifestyle.user.posts.edges[0].score = 0.3;
     userPostsLifestyle.user.posts.edges[1].score = 0.6;
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.USER_POSTS_QUERY,
       variables: { id: "u1", postsCategory: "tech", postsFirst: 2, postsAfter: null },
       data: userPostsTech,
     });
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.USER_POSTS_QUERY,
       variables: { id: "u1", postsCategory: "lifestyle", postsFirst: 2, postsAfter: null },
       data: userPostsLifestyle,
@@ -536,7 +536,7 @@ describe("documents.normalizeDocument", () => {
       },
     );
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.USERS_POSTS_QUERY,
       variables: {
         usersRole: "dj",
@@ -715,7 +715,7 @@ describe("documents.normalizeDocument", () => {
       },
     ]);
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.USER_POSTS_COMMENTS_QUERY,
       variables: {
         id: "u1",
@@ -728,7 +728,7 @@ describe("documents.normalizeDocument", () => {
       data: userPostsComments_page1,
     });
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.USER_POSTS_COMMENTS_QUERY,
       variables: {
         id: "u1",
@@ -895,7 +895,7 @@ describe("documents.normalizeDocument", () => {
       },
     ]);
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.USERS_POSTS_COMMENTS_QUERY,
       variables: {
         usersRole: "admin",
@@ -1018,7 +1018,7 @@ describe("documents.normalizeDocument", () => {
       },
     };
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.UPDATE_USER_MUTATION,
       variables: {
         input: {
@@ -1057,7 +1057,7 @@ describe("documents.normalizeDocument", () => {
       },
     };
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.USER_UPDATED_SUBSCRIPTION,
       variables: {
         id: "u1",
@@ -1105,7 +1105,7 @@ describe("documents.normalizeDocument", () => {
       ),
     };
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.POSTS_QUERY,
       variables: {
         category: "tech",
@@ -1160,7 +1160,7 @@ describe("documents.normalizeDocument", () => {
       ),
     };
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.POSTS_QUERY,
       variables: {
         category: "tech",
@@ -1214,7 +1214,7 @@ describe("documents.normalizeDocument", () => {
       ),
     };
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.POSTS_QUERY,
       variables: {
         category: "tech",
@@ -1371,7 +1371,7 @@ describe("documents.normalizeDocument", () => {
       totalCount: 2,
     };
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.USER_POSTS_COMMENTS_QUERY,
       variables: {
         id: "u1",
@@ -1416,7 +1416,7 @@ describe("documents.normalizeDocument", () => {
       totalCount: 3,
     };
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.USER_POSTS_COMMENTS_QUERY,
       variables: {
         id: "u1",
@@ -1505,7 +1505,7 @@ describe("documents.normalizeDocument", () => {
       },
     };
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.POST_COMMENTS_QUERY,
       variables: {
         postId: "p9",
@@ -1577,7 +1577,7 @@ describe("documents.normalizeDocument", () => {
       },
     };
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.POST_COMMENTS_QUERY,
       variables: {
         postId: "p9",
@@ -1643,7 +1643,7 @@ describe("documents.normalizeDocument", () => {
     };
     post9CommentsBeforeData.post.comments.totalCount = 1;
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.POST_COMMENTS_QUERY,
       variables: {
         postId: "p9",
@@ -1709,7 +1709,7 @@ describe("documents.normalizeDocument", () => {
       },
     );
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.USER_POSTS_COMMENTS_WITH_KEY_QUERY,
       variables: {
         id: "u1",
@@ -1749,7 +1749,7 @@ describe("documents.normalizeDocument", () => {
       },
     );
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.USER_POSTS_COMMENTS_WITH_KEY_QUERY,
       variables: {
         id: "u1",
@@ -1783,7 +1783,7 @@ describe("documents.normalizeDocument", () => {
       },
     ]);
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.USER_POSTS_COMMENTS_WITH_KEY_QUERY,
       variables: {
         id: "u1",
@@ -1817,7 +1817,7 @@ describe("documents.normalizeDocument", () => {
       },
     ]);
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.USER_POSTS_COMMENTS_WITH_KEY_QUERY,
       variables: {
         id: "u1",
@@ -1904,7 +1904,7 @@ describe("documents.normalizeDocument", () => {
       }
     `;
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: PROFILE_QUERY,
       variables: {
         slug: "dimitri",
@@ -1931,7 +1931,7 @@ describe("documents.normalizeDocument", () => {
   });
 
   it("normalizes aggregations connections (containers remain non-canonical)", () => {
-    documents.normalizeDocument({
+    documents.normalize({
       document: operations.POSTS_WITH_AGGREGATIONS_QUERY,
       variables: {
         first: 2,
@@ -2255,7 +2255,7 @@ describe("documents.normalizeDocument", () => {
       },
     };
 
-    documents.normalizeDocument({
+    documents.normalize({
       document: QUERY,
       variables: { id: "p1" },
       data: data1,

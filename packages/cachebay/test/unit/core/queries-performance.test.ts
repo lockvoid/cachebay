@@ -12,24 +12,24 @@ vi.mock("@/src/core/documents", async () => {
       const documents = actual.createDocuments(deps);
 
       // Wrap normalize to count calls
-      const origNormalize = documents.normalizeDocument;
-      documents.normalizeDocument = ((...args: any[]) => {
+      const origNormalize = documents.normalize;
+      documents.normalize = ((...args: any[]) => {
         normalizeCount++;
         return origNormalize.apply(documents, args);
       }) as any;
 
       // Wrap materialize to count calls and track HOT vs COLD
-      const origMaterialize = documents.materializeDocument;
-      documents.materializeDocument = ((...args: any[]) => {
+      const origMaterialize = documents.materialize;
+      documents.materialize = ((...args: any[]) => {
         const result = origMaterialize.apply(documents, args);
-        
+
         // Track HOT vs COLD based on the hot field
         if (result.hot) {
           materializeHotCount++;
         } else {
           materializeColdCount++;
         }
-        
+
         return result;
       }) as any;
 

@@ -47,14 +47,14 @@ const createRelay = () => {
   return new Environment({ network: Network.create(async () => ({})), store: new Store(new RecordSource()) });
 };
 
-describe('materializeDocument (single page)', () => {
+describe('materialize (single page)', () => {
   const pages = buildPages({ data: buildUsersResponse({ users: 500, posts: 5, comments: 3 }), pageSize: 10 });
   const iterations = [];
 
-  bench('cachebay - materializeDocument (canonical)', () => {
+  bench('cachebay - materialize (canonical)', () => {
     const { cachebay } = iterations.pop();
 
-    const result = cachebay.__internals.documents.materializeDocument({
+    const result = cachebay.__internals.documents.materialize({
       document: USERS_CACHEBAY_QUERY,
       variables: { first: 10, after: null },
       canonical: true,
@@ -74,7 +74,7 @@ describe('materializeDocument (single page)', () => {
         for (let j = 0; j < pages.length; j++) {
           cachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[j].variables, data: pages[j].data });
 
-          cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
+          cachebay.__internals.documents.materialize({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
         }
 
         iterations.push({ cachebay });
@@ -82,10 +82,10 @@ describe('materializeDocument (single page)', () => {
     }
   });
 
-  bench('cachebay - materializeDocument (canonical + fingerprint)', () => {
+  bench('cachebay - materialize (canonical + fingerprint)', () => {
     const { cachebay } = iterations.pop();
 
-    const result = cachebay.__internals.documents.materializeDocument({
+    const result = cachebay.__internals.documents.materialize({
       document: USERS_CACHEBAY_QUERY,
       variables: { first: 10, after: null },
       canonical: true,
@@ -105,7 +105,7 @@ describe('materializeDocument (single page)', () => {
         for (let j = 0; j < pages.length; j++) {
           cachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[j].variables, data: pages[j].data });
 
-          cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
+          cachebay.__internals.documents.materialize({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
         }
 
         iterations.push({ cachebay });
@@ -137,11 +137,11 @@ describe('materializeDocument (single page)', () => {
   });
 });
 
-describe('materializeDocument (all pages)', () => {
+describe('materialize (all pages)', () => {
   const pages = buildPages({ data: buildUsersResponse({ users: 500, posts: 5, comments: 3 }), pageSize: 10 });
   const iterations = [];
 
-  bench('cachebay - materializeDocument (canonical)', () => {
+  bench('cachebay - materialize (canonical)', () => {
     const { cachebay, sourceCachebay } = iterations.pop();
 
     for (let i = 0; i < pages.length; i++) {
@@ -149,7 +149,7 @@ describe('materializeDocument (all pages)', () => {
 
       Object.assign(cachebay.__internals.graph, sourceCachebay.__internals.graph);
 
-      const result = cachebay.__internals.documents.materializeDocument({
+      const result = cachebay.__internals.documents.materialize({
         document: USERS_CACHEBAY_QUERY,
         variables: page.variables,
         canonical: true,
@@ -173,14 +173,14 @@ describe('materializeDocument (all pages)', () => {
       for (let i = 0; i < (ITERATIONS + 10) * 5; i++) {
         const cachebay = createCachebay();
 
-        cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
+        cachebay.__internals.documents.materialize({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
 
         iterations.push({ cachebay, sourceCachebay });
       }
     }
   });
 
-  bench('cachebay - materializeDocument (canonical + fingerprint)', () => {
+  bench('cachebay - materialize (canonical + fingerprint)', () => {
     const { cachebay, sourceCachebay } = iterations.pop();
 
     for (let i = 0; i < pages.length; i++) {
@@ -188,7 +188,7 @@ describe('materializeDocument (all pages)', () => {
 
       Object.assign(cachebay.__internals.graph, sourceCachebay.__internals.graph);
 
-      const result = cachebay.__internals.documents.materializeDocument({
+      const result = cachebay.__internals.documents.materialize({
         document: USERS_CACHEBAY_QUERY,
         variables: page.variables,
         canonical: true,
@@ -212,7 +212,7 @@ describe('materializeDocument (all pages)', () => {
       for (let i = 0; i < (ITERATIONS + 10) * 5; i++) {
         const cachebay = createCachebay();
 
-        cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
+        cachebay.__internals.documents.materialize({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
 
         iterations.push({ cachebay, sourceCachebay });
       }

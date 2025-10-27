@@ -285,7 +285,7 @@ export const createOperations = (
     // Always read cache during SSR hydration, even for network-only
     let cached;
     if (effectiveCachePolicy !== 'network-only' || ssr.isHydrating()) {
-      cached = documents.materializeDocument({
+      cached = documents.materialize({
         document: query,
         variables,
         canonical: true,
@@ -320,7 +320,7 @@ export const createOperations = (
         // Write result to cache if we have data (even with partial errors)
         // This matches Relay/Apollo behavior: partial data is still useful
         if (result.data) {
-          documents.normalizeDocument({
+          documents.normalize({
             document: query,
             variables,
             data: result.data,
@@ -328,7 +328,7 @@ export const createOperations = (
 
           // Read back from cache to get normalized/materialized data
           // This ensures the same reference as watchQuery would emit
-          const cachedAfterWrite = documents.materializeDocument({
+          const cachedAfterWrite = documents.materialize({
             document: query,
             variables,
             canonical: true,
@@ -514,7 +514,7 @@ export const createOperations = (
 
       // Write successful mutation result to cache
       if (result.data && !result.error) {
-        documents.normalizeDocument({
+        documents.normalize({
           document: query,
           variables: vars,
           data: result.data,
@@ -565,7 +565,7 @@ export const createOperations = (
             next: (result: OperationResult<TData>) => {
               // Write successful subscription data to cache
               if (result.data && !result.error) {
-                documents.normalizeDocument({
+                documents.normalize({
                   document: query,
                   variables: vars,
                   data: result.data,

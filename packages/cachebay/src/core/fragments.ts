@@ -84,7 +84,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
         const w = watchers.get(k);
         if (!w) continue;
 
-        const result = documents.materializeDocument({
+        const result = documents.materialize({
           document: planner.getPlan(w.fragment, { fragmentName: w.fragmentName }),
           variables: w.variables as Record<string, any>,
           canonical: true,  // Always use canonical mode
@@ -158,7 +158,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     fragmentName,
     variables = {},
   }: ReadFragmentArgs): T | null => {
-    const result = documents.materializeDocument({
+    const result = documents.materialize({
       document: planner.getPlan(fragment, { fragmentName }),
       variables: variables as Record<string, any>,
       canonical: true,  // Always use canonical mode
@@ -181,7 +181,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     variables = {},
   }: WriteFragmentArgs): void => {
     const plan = planner.getPlan(fragment, { fragmentName });
-    documents.normalizeDocument({
+    documents.normalize({
       document: plan,
       variables: variables as Record<string, any>,
       data,
@@ -213,7 +213,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     };
     watchers.set(watcherId, watcher);
 
-    const initial = documents.materializeDocument({
+    const initial = documents.materialize({
       document: planner.getPlan(fragment, { fragmentName }),
       variables: variables as Record<string, any>,
       canonical: true,  // Always use canonical mode
@@ -259,7 +259,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
 
         // If immediate, materialize and emit synchronously
         if (immediate) {
-          const res = documents.materializeDocument({
+          const res = documents.materialize({
             document: planner.getPlan(w.fragment, { fragmentName: w.fragmentName }),
             variables: w.variables as Record<string, any>,
             canonical: true,

@@ -29,22 +29,22 @@ describe("operations", () => {
     // Mock documents with proper cache simulation
     let cachedData: any = null;
     const materializeCache = new Map<string, any>();
-    
+
     mockDocuments = {
-      normalizeDocument: vi.fn((args) => {
+      normalize: vi.fn((args) => {
         cachedData = args.data;
         // Clear cache when data is written
         materializeCache.clear();
       }),
-      materializeDocument: vi.fn((args) => {
+      materialize: vi.fn((args) => {
         const { force = false, variables = {}, canonical = true } = args;
         const cacheKey = JSON.stringify({ variables, canonical });
-        
+
         // Check cache if not forcing
         if (!force && materializeCache.has(cacheKey)) {
           return materializeCache.get(cacheKey);
         }
-        
+
         // Materialize from cached data
         let result;
         if (cachedData) {
@@ -63,7 +63,7 @@ describe("operations", () => {
             dependencies: new Set(),
           };
         }
-        
+
         // Cache the result
         materializeCache.set(cacheKey, result);
         return result;
@@ -147,7 +147,7 @@ describe("operations", () => {
           compiledQuery: expect.objectContaining({ compiled: true }),
         })
       );
-      expect(mockDocuments.normalizeDocument).toHaveBeenCalledWith({
+      expect(mockDocuments.normalize).toHaveBeenCalledWith({
         document: query,
         variables,
         data: mockResult.data,
@@ -167,7 +167,7 @@ describe("operations", () => {
       const result = await operations.executeQuery({ query, variables });
 
       expect(result).toEqual(mockResult);
-      expect(mockDocuments.normalizeDocument).not.toHaveBeenCalled();
+      expect(mockDocuments.normalize).not.toHaveBeenCalled();
     });
 
     it("handles network errors", async () => {
@@ -179,7 +179,7 @@ describe("operations", () => {
       expect(result.data).toBeNull();
       expect(result.error).toBeInstanceOf(CombinedError);
       expect(result.error?.networkError).toBe(networkError);
-      expect(mockDocuments.normalizeDocument).not.toHaveBeenCalled();
+      expect(mockDocuments.normalize).not.toHaveBeenCalled();
     });
 
     it("uses empty object for missing variables", async () => {
@@ -208,7 +208,7 @@ describe("operations", () => {
       vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
 
       // Mock readQuery to return source: "none" (materialization failure)
-      mockDocuments.materializeDocument.mockReturnValue({
+      mockDocuments.materialize.mockReturnValue({
         data: undefined,
         source: "none",
         ok: {
@@ -227,7 +227,7 @@ describe("operations", () => {
       expect(result.error).toBeInstanceOf(CombinedError);
       expect(result.error?.message).toContain("Failed to materialize query after write");
       expect(result.error?.networkError?.message).toContain("missing required fields");
-      expect(mockDocuments.normalizeDocument).toHaveBeenCalled();
+      expect(mockDocuments.normalize).toHaveBeenCalled();
     });
   });
 
@@ -240,7 +240,7 @@ describe("operations", () => {
     describe("network-only (default)", () => {
       it("always fetches from network and ignores cache", async () => {
         // Pre-populate cache with old data
-        mockDocuments.normalizeDocument({ data: cachedData });
+        mockDocuments.normalize({ data: cachedData });
 
         const mockResult: OperationResult = {
           data: networkData,
@@ -301,11 +301,11 @@ describe("operations", () => {
 
     describe("cache-first", () => {
       it("returns cached data when canonical and strict cache hit", async () => {
-        mockDocuments.materializeDocument.mockReturnValue({
+        mockDocuments.materialize.mockReturnValue({
           data: cachedData,
           source: "canonical",
-          ok: { 
-            canonical: true, 
+          ok: {
+            canonical: true,
             strict: true,
             strictSignature: "query-sig-123", // Includes pagination args
             canonicalSignature: "query-sig-canonical", // Excludes pagination args
@@ -328,7 +328,7 @@ describe("operations", () => {
 
       it("fetches from network when strict cache hit but canonical cache miss", async () => {
         let readCount = 0;
-        mockDocuments.materializeDocument.mockImplementation(() => {
+        mockDocuments.materialize.mockImplementation(() => {
           readCount++;
           if (readCount === 1) {
             // Initial cache miss
@@ -367,7 +367,7 @@ describe("operations", () => {
 
       it("fetches from network when canonical cache hit but strict cache miss", async () => {
         let readCount = 0;
-        mockDocuments.materializeDocument.mockImplementation(() => {
+        mockDocuments.materialize.mockImplementation(() => {
           readCount++;
           if (readCount === 1) {
             // Initial cache miss
@@ -407,7 +407,7 @@ describe("operations", () => {
 
     describe("cache-only", () => {
       it("returns cached data when available", async () => {
-        mockDocuments.materializeDocument.mockReturnValue({
+        mockDocuments.materialize.mockReturnValue({
           data: cachedData,
           source: "canonical",
           ok: { canonical: true, strict: true },
@@ -428,7 +428,7 @@ describe("operations", () => {
       });
 
       it("returns CacheMissError when no cache", async () => {
-        mockDocuments.materializeDocument.mockReturnValue({
+        mockDocuments.materialize.mockReturnValue({
           data: undefined,
           source: "none",
           ok: { canonical: false, strict: false },
@@ -450,7 +450,7 @@ describe("operations", () => {
       });
 
       it("never makes network request", async () => {
-        mockDocuments.materializeDocument.mockReturnValue({
+        mockDocuments.materialize.mockReturnValue({
           data: cachedData,
           source: "canonical",
           ok: { canonical: true, strict: true },
@@ -468,7 +468,7 @@ describe("operations", () => {
 
     describe("cache-and-network", () => {
       it("returns network data after calling onCachedData with cached data", async () => {
-        mockDocuments.materializeDocument.mockReturnValueOnce({
+        mockDocuments.materialize.mockReturnValueOnce({
           data: cachedData,
           source: "canonical",
           ok: { canonical: true, strict: true },
@@ -508,7 +508,7 @@ describe("operations", () => {
       });
 
       it("handles network fetch errors and returns error", async () => {
-        mockDocuments.materializeDocument.mockReturnValue({
+        mockDocuments.materialize.mockReturnValue({
           data: cachedData,
           source: "canonical",
           ok: { canonical: true, strict: true },
@@ -545,7 +545,7 @@ describe("operations", () => {
 
       it("fetches from network when no cache available", async () => {
         let readCount = 0;
-        mockDocuments.materializeDocument.mockImplementation(() => {
+        mockDocuments.materialize.mockImplementation(() => {
           readCount++;
           if (readCount === 1) {
             // Initial cache miss
@@ -580,7 +580,7 @@ describe("operations", () => {
       });
 
       it("calls onCachedData with cached data and resolves with network data", async () => {
-        mockDocuments.materializeDocument.mockReturnValueOnce({
+        mockDocuments.materialize.mockReturnValueOnce({
           data: cachedData,
           source: "canonical",
           ok: { canonical: true, strict: true },
@@ -629,7 +629,7 @@ describe("operations", () => {
       it("returns cached data during hydration for network-only", async () => {
         mockSsr.isHydrating.mockReturnValue(true);
         // Pre-populate cache
-        mockDocuments.normalizeDocument({ data: cachedData });
+        mockDocuments.normalize({ data: cachedData });
 
         const onSuccess = vi.fn();
         const result = await operations.executeQuery({
@@ -647,7 +647,7 @@ describe("operations", () => {
       it("returns cached data during hydration for cache-first", async () => {
         mockSsr.isHydrating.mockReturnValue(true);
         // Pre-populate cache
-        mockDocuments.normalizeDocument({ data: cachedData });
+        mockDocuments.normalize({ data: cachedData });
 
         const result = await operations.executeQuery({
           query,
@@ -662,7 +662,7 @@ describe("operations", () => {
       it("skips network request during hydration", async () => {
         mockSsr.isHydrating.mockReturnValue(true);
         // Pre-populate cache
-        mockDocuments.normalizeDocument({ data: cachedData });
+        mockDocuments.normalize({ data: cachedData });
 
         await operations.executeQuery({
           query,
@@ -775,7 +775,7 @@ describe("operations", () => {
           compiledQuery: expect.objectContaining({ compiled: true }),
         })
       );
-      expect(mockDocuments.normalizeDocument).toHaveBeenCalledWith({
+      expect(mockDocuments.normalize).toHaveBeenCalledWith({
         document: mutation,
         variables,
         data: mockResult.data,
@@ -795,7 +795,7 @@ describe("operations", () => {
       const result = await operations.executeMutation({ query: mutation, variables });
 
       expect(result).toEqual(mockResult);
-      expect(mockDocuments.normalizeDocument).not.toHaveBeenCalled();
+      expect(mockDocuments.normalize).not.toHaveBeenCalled();
     });
 
     it("handles network errors", async () => {
@@ -807,7 +807,7 @@ describe("operations", () => {
       expect(result.data).toBeNull();
       expect(result.error).toBeInstanceOf(CombinedError);
       expect(result.error?.networkError).toBe(networkError);
-      expect(mockDocuments.normalizeDocument).not.toHaveBeenCalled();
+      expect(mockDocuments.normalize).not.toHaveBeenCalled();
     });
   });
 
@@ -875,7 +875,7 @@ describe("operations", () => {
       };
       capturedObserver.next(result);
 
-      expect(mockDocuments.normalizeDocument).toHaveBeenCalledWith({
+      expect(mockDocuments.normalize).toHaveBeenCalledWith({
         document: subscription,
         variables,
         data: result.data,
@@ -905,7 +905,7 @@ describe("operations", () => {
       };
       capturedObserver.next(result);
 
-      expect(mockDocuments.normalizeDocument).not.toHaveBeenCalled();
+      expect(mockDocuments.normalize).not.toHaveBeenCalled();
       expect(observer.next).toHaveBeenCalledWith(result);
     });
 
@@ -975,7 +975,7 @@ describe("operations", () => {
         { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr }
       );
 
-      mockDocuments.materializeDocument.mockReturnValue({
+      mockDocuments.materialize.mockReturnValue({
         data: undefined,
         source: "none",
         ok: { canonical: false, strict: false },
@@ -1033,7 +1033,7 @@ describe("operations", () => {
     const networkData = { user: { id: "1", name: "Network Alice" } };
 
     it("sets meta.source to 'network' for cache-and-network (resolves with network data)", async () => {
-      mockDocuments.materializeDocument.mockReturnValueOnce({
+      mockDocuments.materialize.mockReturnValueOnce({
         data: cachedData,
         source: "canonical",
         ok: { canonical: true, strict: true },
@@ -1081,11 +1081,11 @@ describe("operations", () => {
     });
 
     it("does not set meta.source for cache-first with cache hit", async () => {
-      mockDocuments.materializeDocument.mockReturnValue({
+      mockDocuments.materialize.mockReturnValue({
         data: cachedData,
         source: "canonical",
-        ok: { 
-          canonical: true, 
+        ok: {
+          canonical: true,
           strict: true,
           strictSignature: "query-sig-123", // Must match plan.makeSignature("strict", variables)
           canonicalSignature: "query-sig-canonical",
@@ -1115,11 +1115,11 @@ describe("operations", () => {
         { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr }
       );
 
-      mockDocuments.materializeDocument.mockReturnValue({
+      mockDocuments.materialize.mockReturnValue({
         data: cachedData,
         source: "canonical",
-        ok: { 
-          canonical: true, 
+        ok: {
+          canonical: true,
           strict: true,
           strictSignature: "query-sig-123",
           canonicalSignature: "query-sig-canonical",
@@ -1143,7 +1143,7 @@ describe("operations", () => {
 
       const networkData = { user: { id: "1", name: "Network Alice" } };
       // Pre-populate cache
-      mockDocuments.normalizeDocument({ data: cachedData });
+      mockDocuments.normalize({ data: cachedData });
 
       const mockResult = {
         data: networkData,
@@ -1169,7 +1169,7 @@ describe("operations", () => {
 
       const networkData = { user: { id: "1", name: "Network Alice" } };
       // Pre-populate cache
-      mockDocuments.normalizeDocument({ data: cachedData });
+      mockDocuments.normalize({ data: cachedData });
 
       const mockResult = {
         data: networkData,
@@ -1195,7 +1195,7 @@ describe("operations", () => {
 
     it("cache-only with cache hit: willFetchFromNetwork = false", async () => {
       // Pre-populate cache
-      mockDocuments.normalizeDocument({ data: cachedData });
+      mockDocuments.normalize({ data: cachedData });
 
       const onCachedData = vi.fn();
 
@@ -1215,15 +1215,15 @@ describe("operations", () => {
 
     it("cache-first with cache hit: willFetchFromNetwork = false (cache is fresh)", async () => {
       // Pre-populate cache
-      mockDocuments.normalizeDocument({ data: cachedData });
+      mockDocuments.normalize({ data: cachedData });
 
-      // Mock materializeDocument to return strict match
+      // Mock materialize to return strict match
       const strictSignature = "strict-sig-123";
-      vi.mocked(mockDocuments.materializeDocument).mockReturnValue({
+      vi.mocked(mockDocuments.materialize).mockReturnValue({
         data: cachedData,
         source: "canonical",
-        ok: { 
-          canonical: true, 
+        ok: {
+          canonical: true,
           strict: true,
           strictSignature: strictSignature
         },
@@ -1236,7 +1236,7 @@ describe("operations", () => {
         .mockReturnValueOnce("canonical-sig-123") // 1st call: materialize (canonical)
         .mockReturnValueOnce(strictSignature)     // 2nd call: willFetchFromNetwork check (strict) - matches!
         .mockReturnValueOnce(strictSignature);    // 3rd call: cache-first logic (strict) - matches!
-      
+
       vi.mocked(mockPlanner.getPlan).mockReturnValue({
         compiled: true,
         networkQuery: query,
@@ -1280,7 +1280,7 @@ describe("operations", () => {
 
     it("cache-and-network with cache hit: willFetchFromNetwork = true", async () => {
       // Pre-populate cache
-      mockDocuments.normalizeDocument({ data: cachedData });
+      mockDocuments.normalize({ data: cachedData });
 
       const onCachedData = vi.fn();
       const mockResult = { data: networkData, error: null };
@@ -1302,7 +1302,7 @@ describe("operations", () => {
 
     it("network-only: onCachedData not called (ignores cache)", async () => {
       // Pre-populate cache
-      mockDocuments.normalizeDocument({ data: cachedData });
+      mockDocuments.normalize({ data: cachedData });
 
       const onCachedData = vi.fn();
       const mockResult = { data: networkData, error: null };
@@ -1325,7 +1325,7 @@ describe("operations", () => {
       vi.mocked(mockSsr.isHydrating).mockReturnValue(true);
 
       // Pre-populate cache
-      mockDocuments.normalizeDocument({ data: cachedData });
+      mockDocuments.normalize({ data: cachedData });
 
       const onCachedData = vi.fn();
 
@@ -1346,15 +1346,15 @@ describe("operations", () => {
 
     it("suspension window: willFetchFromNetwork = false (returns cached data)", async () => {
       // Pre-populate cache
-      mockDocuments.normalizeDocument({ data: cachedData });
+      mockDocuments.normalize({ data: cachedData });
 
-      // Mock materializeDocument to return strict match
+      // Mock materialize to return strict match
       const strictSignature = "strict-sig-456";
-      vi.mocked(mockDocuments.materializeDocument).mockReturnValue({
+      vi.mocked(mockDocuments.materialize).mockReturnValue({
         data: cachedData,
         source: "canonical",
-        ok: { 
-          canonical: true, 
+        ok: {
+          canonical: true,
           strict: true,
           strictSignature: strictSignature
         },

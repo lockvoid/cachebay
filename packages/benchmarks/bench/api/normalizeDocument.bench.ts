@@ -47,17 +47,17 @@ const createRelay = () => {
   return new Environment({ network: Network.create(async () => ({})), store: new Store(new RecordSource()) });
 };
 
-describe('normalizeDocument – Paginated (COLD)', () => {
+describe('normalize – Paginated (COLD)', () => {
   const pages = buildPages({ data: buildUsersResponse({ users: 1000, posts: 5, comments: 3 }), pageSize: 10 });
   const iterations = [];
 
-  bench('cachebay - normalizeDocument', () => {
+  bench('cachebay - normalize', () => {
     const { cachebay } = iterations.pop();
 
     for (let i = 0; i < pages.length; i++) {
       const page = pages[i];
 
-      cachebay.__internals.documents.normalizeDocument({ document: USERS_CACHEBAY_QUERY, variables: page.variables, data: page.data });
+      cachebay.__internals.documents.normalize({ document: USERS_CACHEBAY_QUERY, variables: page.variables, data: page.data });
     }
 
   }, {
@@ -121,17 +121,17 @@ describe('normalizeDocument – Paginated (COLD)', () => {
   });
 });
 
-describe('normalizeDocument – Paginated (HOT)', () => {
+describe('normalize – Paginated (HOT)', () => {
   const pages = buildPages({ data: buildUsersResponse({ users: 1000, posts: 5, comments: 3 }), pageSize: 10 });
   const iterations = [];
 
-  bench('cachebay - normalizeDocument', () => {
+  bench('cachebay - normalize', () => {
     const { cachebay } = iterations.pop();
 
     for (let i = 0; i < pages.length; i++) {
       const page = pages[i];
 
-      cachebay.__internals.documents.normalizeDocument({ document: USERS_CACHEBAY_QUERY, variables: page.variables, data: page.data });
+      cachebay.__internals.documents.normalize({ document: USERS_CACHEBAY_QUERY, variables: page.variables, data: page.data });
     }
   }, {
     iterations: ITERATIONS,
@@ -145,7 +145,7 @@ describe('normalizeDocument – Paginated (HOT)', () => {
         for (let i = 0; i < pages.length; i++) {
           const page = pages[i];
 
-          cachebay.__internals.documents.normalizeDocument({ document: USERS_CACHEBAY_QUERY, variables: page.variables, data: page.data });
+          cachebay.__internals.documents.normalize({ document: USERS_CACHEBAY_QUERY, variables: page.variables, data: page.data });
         }
 
         iterations.push({ cachebay });

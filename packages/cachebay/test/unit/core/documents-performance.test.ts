@@ -8,7 +8,7 @@ import { gql } from "graphql-tag";
 /**
  * Documents Performance Tests - Materialize Cache
  *
- * Tests the WeakMap cache for materializeDocument to ensure:
+ * Tests the WeakMap cache for materialize to ensure:
  * 1. Cache hits return the same result object (reference equality)
  * 2. force: true bypasses cache and re-materializes
  * 3. Different options create separate cache entries:
@@ -53,14 +53,14 @@ describe("documents - materialize cache", () => {
       const data = { user: { __typename: "User", id: "1", name: "Alice" } };
 
       // Write data to cache
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "1" },
         data,
       });
 
       // First materialize
-      const result1 = documents.materializeDocument({
+      const result1 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
@@ -70,7 +70,7 @@ describe("documents - materialize cache", () => {
       expect(result1.hot).toBe(false); // First call - COLD
 
       // Second materialize - should return cached result
-      const result2 = documents.materializeDocument({
+      const result2 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
@@ -97,21 +97,21 @@ describe("documents - materialize cache", () => {
 
       const data = { user: { __typename: "User", id: "1", name: "Alice" } };
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "1" },
         data,
       });
 
       // First materialize
-      const result1 = documents.materializeDocument({
+      const result1 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
       });
 
       // Second materialize with force: true - should create new result
-      const result2 = documents.materializeDocument({
+      const result2 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
@@ -141,41 +141,41 @@ describe("documents - materialize cache", () => {
       const data1 = { user: { __typename: "User", id: "1", name: "Alice" } };
       const data2 = { user: { __typename: "User", id: "2", name: "Bob" } };
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "1" },
         data: data1,
       });
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "2" },
         data: data2,
       });
 
       // Materialize with id: "1"
-      const result1a = documents.materializeDocument({
+      const result1a = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
       });
 
       // Materialize with id: "2"
-      const result2a = documents.materializeDocument({
+      const result2a = documents.materialize({
         document: QUERY,
         variables: { id: "2" },
         canonical: true,
       });
 
       // Materialize with id: "1" again - should be cached
-      const result1b = documents.materializeDocument({
+      const result1b = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
       });
 
       // Materialize with id: "2" again - should be cached
-      const result2b = documents.materializeDocument({
+      const result2b = documents.materialize({
         document: QUERY,
         variables: { id: "2" },
         canonical: true,
@@ -203,35 +203,35 @@ describe("documents - materialize cache", () => {
 
       const data = { user: { __typename: "User", id: "1", name: "Alice" } };
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "1" },
         data,
       });
 
       // Materialize in canonical mode
-      const canonicalResult1 = documents.materializeDocument({
+      const canonicalResult1 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
       });
 
       // Materialize in strict mode
-      const strictResult1 = documents.materializeDocument({
+      const strictResult1 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: false,
       });
 
       // Materialize in canonical mode again
-      const canonicalResult2 = documents.materializeDocument({
+      const canonicalResult2 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
       });
 
       // Materialize in strict mode again
-      const strictResult2 = documents.materializeDocument({
+      const strictResult2 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: false,
@@ -261,7 +261,7 @@ describe("documents - materialize cache", () => {
       graph.putRecord("User:2", { __typename: "User", id: "2", name: "Bob" });
 
       // Materialize fragment for User:1
-      const result1a = documents.materializeDocument({
+      const result1a = documents.materialize({
         document: FRAGMENT,
         variables: {},
         canonical: true,
@@ -269,7 +269,7 @@ describe("documents - materialize cache", () => {
       });
 
       // Materialize fragment for User:2
-      const result2a = documents.materializeDocument({
+      const result2a = documents.materialize({
         document: FRAGMENT,
         variables: {},
         canonical: true,
@@ -277,7 +277,7 @@ describe("documents - materialize cache", () => {
       });
 
       // Materialize fragment for User:1 again - should be cached
-      const result1b = documents.materializeDocument({
+      const result1b = documents.materialize({
         document: FRAGMENT,
         variables: {},
         canonical: true,
@@ -309,14 +309,14 @@ describe("documents - materialize cache", () => {
       const updatedData = { user: { __typename: "User", id: "1", name: "Alice Updated" } };
 
       // Write initial data
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "1" },
         data: initialData,
       });
 
       // First materialize - gets cached
-      const result1 = documents.materializeDocument({
+      const result1 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
@@ -325,14 +325,14 @@ describe("documents - materialize cache", () => {
       expect(result1.data.user.name).toBe("Alice");
 
       // Update data in cache
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "1" },
         data: updatedData,
       });
 
       // Materialize without force - returns OLD cached result
-      const result2 = documents.materializeDocument({
+      const result2 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
@@ -342,7 +342,7 @@ describe("documents - materialize cache", () => {
       expect(result2.data.user.name).toBe("Alice"); // Old data
 
       // Materialize with force: true - gets NEW data and updates cache
-      const result3 = documents.materializeDocument({
+      const result3 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
@@ -353,7 +353,7 @@ describe("documents - materialize cache", () => {
       expect(result3.data.user.name).toBe("Alice Updated"); // New data
 
       // Subsequent calls without force should return the updated cached result
-      const result4 = documents.materializeDocument({
+      const result4 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
@@ -384,21 +384,21 @@ describe("documents - materialize cache", () => {
         ],
       };
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: {},
         data,
       });
 
       // First call - does actual materialization work
-      const result1 = documents.materializeDocument({
+      const result1 = documents.materialize({
         document: QUERY,
         variables: {},
         canonical: true,
       });
 
       // Second call - should be instant (cache hit)
-      const result2 = documents.materializeDocument({
+      const result2 = documents.materialize({
         document: QUERY,
         variables: {},
         canonical: true,
@@ -422,7 +422,7 @@ describe("documents - materialize cache", () => {
 
       // Populate cache with 10 different users
       for (let i = 1; i <= 10; i++) {
-        documents.normalizeDocument({
+        documents.normalize({
           document: QUERY,
           variables: { id: String(i) },
           data: { user: { __typename: "User", id: String(i), name: `User ${i}` } },
@@ -433,7 +433,7 @@ describe("documents - materialize cache", () => {
       const firstResults = [];
       for (let i = 1; i <= 10; i++) {
         firstResults.push(
-          documents.materializeDocument({
+          documents.materialize({
             document: QUERY,
             variables: { id: String(i) },
             canonical: true,
@@ -445,7 +445,7 @@ describe("documents - materialize cache", () => {
       const secondResults = [];
       for (let i = 1; i <= 10; i++) {
         secondResults.push(
-          documents.materializeDocument({
+          documents.materialize({
             document: QUERY,
             variables: { id: String(i) },
             canonical: true,
@@ -472,14 +472,14 @@ describe("documents - materialize cache", () => {
       `;
 
       // Materialize without writing data first (cache miss)
-      const result1 = documents.materializeDocument({
+      const result1 = documents.materialize({
         document: QUERY,
         variables: { id: "999" },
         canonical: true,
       });
 
       // Second call should also return cached "none" result
-      const result2 = documents.materializeDocument({
+      const result2 = documents.materialize({
         document: QUERY,
         variables: { id: "999" },
         canonical: true,
@@ -504,21 +504,21 @@ describe("documents - materialize cache", () => {
         users: [{ __typename: "User", id: "1", name: "Alice" }],
       };
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: {},
         data,
       });
 
       // Materialize with empty object
-      const result1 = documents.materializeDocument({
+      const result1 = documents.materialize({
         document: QUERY,
         variables: {},
         canonical: true,
       });
 
       // Materialize with undefined (defaults to {})
-      const result2 = documents.materializeDocument({
+      const result2 = documents.materialize({
         document: QUERY,
         canonical: true,
       });
@@ -539,14 +539,14 @@ describe("documents - materialize cache", () => {
 
       const data = { user: { __typename: "User", id: "1", name: "Alice" } };
 
-      documents.normalizeDocument({
+      documents.normalize({
         document: QUERY,
         variables: { id: "1" },
         data,
       });
 
       // Materialize with fingerprint: true
-      const result1 = documents.materializeDocument({
+      const result1 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
@@ -558,7 +558,7 @@ describe("documents - materialize cache", () => {
       expect(result1Hot).toBe(false); // First call - COLD
 
       // Materialize with fingerprint: false
-      const result2 = documents.materializeDocument({
+      const result2 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
@@ -570,7 +570,7 @@ describe("documents - materialize cache", () => {
       expect(result2Hot).toBe(false); // First call with different signature - COLD
 
       // Materialize with fingerprint: true again
-      const result3 = documents.materializeDocument({
+      const result3 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
@@ -581,7 +581,7 @@ describe("documents - materialize cache", () => {
       expect(result3.hot).toBe(true);  // Second call with same signature - HOT
 
       // Materialize with fingerprint: false again
-      const result4 = documents.materializeDocument({
+      const result4 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,

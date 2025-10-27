@@ -96,7 +96,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
           continue;
         }
 
-        const result = documents.materializeDocument({
+        const result = documents.materialize({
           document: w.query,
           variables: w.variables,
           canonical: true, // Always canonical for watchers
@@ -195,7 +195,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     query,
     variables = {},
   }: ReadQueryOptions): T | null => {
-    const result = documents.materializeDocument({
+    const result = documents.materialize({
       document: query,
       variables,
       canonical: true,  // Always use canonical mode
@@ -214,7 +214,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     variables = {},
     data,
   }: WriteQueryOptions): void => {
-    documents.normalizeDocument({
+    documents.normalize({
       document: query,
       variables,
       data,
@@ -255,7 +255,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
     // If immediate, materialize synchronously to get initial data
     if (immediate) {
-      const initial = documents.materializeDocument({
+      const initial = documents.materialize({
         document: query,
         variables,
         canonical: true,
@@ -341,7 +341,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
         // If immediate, materialize and emit synchronously
         if (immediate) {
-          const res = documents.materializeDocument({
+          const res = documents.materialize({
             document: w.query,
             variables: newVariables,
             canonical: true,

@@ -12,24 +12,24 @@ vi.mock("@/src/core/documents", async () => {
       const documents = actual.createDocuments(deps);
 
       // Wrap normalize to count calls
-      const origNormalize = documents.normalizeDocument;
-      documents.normalizeDocument = ((...args: any[]) => {
+      const origNormalize = documents.normalize;
+      documents.normalize = ((...args: any[]) => {
         normalizeCount++;
         return origNormalize.apply(documents, args);
       }) as any;
 
       // Wrap materialize to count calls and track HOT vs COLD
-      const origMaterialize = documents.materializeDocument;
-      documents.materializeDocument = ((...args: any[]) => {
+      const origMaterialize = documents.materialize;
+      documents.materialize = ((...args: any[]) => {
         const result = origMaterialize.apply(documents, args);
-        
+
         // Track HOT vs COLD based on the hot field
         if (result.hot) {
           materializeHotCount++;
         } else {
           materializeColdCount++;
         }
-        
+
         return result;
       }) as any;
 
@@ -256,7 +256,7 @@ describe("Fragments Performance", () => {
 
       // Should complete 100 variable updates in reasonable time (< 20ms)
       expect(duration).toBeLessThan(20);
-      
+
       // Since USER_FRAGMENT doesn't use variables, data doesn't change
       // So we still only have 1 emission (the initial one)
       expect(emissions).toHaveLength(1);
@@ -430,7 +430,7 @@ describe("Fragments Performance", () => {
 
       // After unsubscribe, updates should not trigger emissions
       graph.putRecord("User:u1", { email: "updated@example.com" });
-      
+
       // Give time for any potential async updates
       setTimeout(() => {
         expect(emissions).toHaveLength(1); // Still only initial emission
@@ -441,14 +441,14 @@ describe("Fragments Performance", () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "test@example.com" });
 
       const startTime = performance.now();
-      
+
       // Rapidly create and destroy 1000 watchers
       for (let i = 0; i < 1000; i++) {
         const handle = fragments.watchFragment({
           id: "User:u1",
           fragment: operations.USER_FRAGMENT,
           variables: {},
-          onData: () => {},
+          onData: () => { },
         });
         handle.unsubscribe();
       }

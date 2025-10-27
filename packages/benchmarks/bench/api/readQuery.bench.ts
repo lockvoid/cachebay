@@ -79,7 +79,7 @@ describe('readQuery', () => {
       for (let i = 0; i < ITERATIONS + 10; i++) {
         const cachebay = createCachebay();
 
-        cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
+        cachebay.__internals.documents.materialize({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
 
         iterations.push({ cachebay, sourceCachebay });
       }

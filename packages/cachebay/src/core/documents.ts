@@ -43,7 +43,7 @@ export type Miss =
 /**
  * Options for normalizing a document into cache
  */
-export type NormalizeDocumentOptions = {
+export type normalizeOptions = {
   document: DocumentNode | CachePlan;
   variables?: Record<string, any>;
   data: any;
@@ -53,12 +53,12 @@ export type NormalizeDocumentOptions = {
 /**
  * Result of normalizing a document (void for now, may add stats later)
  */
-export type NormalizeDocumentResult = void;
+export type normalizeResult = void;
 
 /**
  * Options for materializing a document from cache
  */
-export type MaterializeDocumentOptions = {
+export type materializeOptions = {
   document: DocumentNode | CachePlan;
   variables?: Record<string, any>;
   canonical?: boolean;
@@ -70,7 +70,7 @@ export type MaterializeDocumentOptions = {
 /**
  * Result of materializing a document from cache
  */
-export type MaterializeDocumentResult = {
+export type materializeResult = {
   data: any;
   dependencies: Set<string>;
   source: "canonical" | "strict" | "none";
@@ -100,7 +100,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   /**
    * WeakMap cache for materialized documents
    * Key: DocumentNode or CachePlan object
-   * Value: Map of signature -> MaterializeDocumentResult
+   * Value: Map of signature -> materializeResult
    */
   const materializeCache = new WeakStringMap();
 
@@ -126,7 +126,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
    * Normalize a GraphQL response into the cache
    * Writes entities, connections, and links to the graph store
    */
-  const normalizeDocument = (options: NormalizeDocumentOptions) => {
+  const normalize = (options: normalizeOptions) => {
     const { document, variables = {}, data, rootId } = options;
 
     const put = (id: string, patch: Record<string, any>) => {
@@ -494,7 +494,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
    *
    * @param options.force - If false (default), returns cached result if available. If true, always re-materializes.
    */
-  const materializeDocument = (options: MaterializeDocumentOptions): MaterializeDocumentResult => {
+  const materialize = (options: materializeOptions): materializeResult => {
     const { document, variables = {}, canonical = true, entityId, fingerprint = true, force = false } = options;
 
     // Get plan once at the start
@@ -995,33 +995,33 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     }
 
     // Create result object (either "none" or with data)
-    const result: MaterializeDocumentResult = !requestedOK
+    const result: materializeResult = !requestedOK
       ? {
-          data: undefined,
-          dependencies,
-          source: "none",
-          ok: {
-            strict: strictOK,
-            canonical: canonicalOK,
-            miss: __DEV__ ? misses : undefined,
-            strictSignature,
-            canonicalSignature,
-          },
-          hot: false,
-        }
+        data: undefined,
+        dependencies,
+        source: "none",
+        ok: {
+          strict: strictOK,
+          canonical: canonicalOK,
+          miss: __DEV__ ? misses : undefined,
+          strictSignature,
+          canonicalSignature,
+        },
+        hot: false,
+      }
       : {
-          data,
-          dependencies,
-          source: canonical ? "canonical" : "strict",
-          ok: {
-            strict: strictOK,
-            canonical: canonicalOK,
-            miss: __DEV__ ? misses : undefined,
-            strictSignature,
-            canonicalSignature,
-          },
-          hot: false,
-        };
+        data,
+        dependencies,
+        source: canonical ? "canonical" : "strict",
+        ok: {
+          strict: strictOK,
+          canonical: canonicalOK,
+          miss: __DEV__ ? misses : undefined,
+          strictSignature,
+          canonicalSignature,
+        },
+        hot: false,
+      };
 
     materializeCache.set(cacheKey, result);
 
@@ -1029,7 +1029,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   };
 
   return {
-    normalizeDocument,
-    materializeDocument,
+    normalize,
+    materialize,
   };
 };

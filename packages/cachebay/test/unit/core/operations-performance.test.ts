@@ -13,15 +13,15 @@ vi.mock("@/src/core/documents", async () => {
       const documents = actual.createDocuments(deps);
 
       // Wrap normalize to count calls
-      const origNormalize = documents.normalizeDocument;
-      documents.normalizeDocument = ((...args: any[]) => {
+      const origNormalize = documents.normalize;
+      documents.normalize = ((...args: any[]) => {
         normalizeCount++;
         return origNormalize.apply(documents, args);
       }) as any;
 
       // Wrap materialize to count calls and track HOT vs COLD
-      const origMaterialize = documents.materializeDocument;
-      documents.materializeDocument = ((...args: any[]) => {
+      const origMaterialize = documents.materialize;
+      documents.materialize = ((...args: any[]) => {
         const result = origMaterialize.apply(documents, args);
 
         // Track HOT vs COLD based on the hot field
@@ -300,7 +300,8 @@ describe("operations API - Performance", () => {
       // Should normalize 10 times, materialize 10 times (1 per query with network-only)
       expect(normalizeCount).toBe(10);
       expect(materializeColdCount).toBe(10); // COLD: 1 read-back per query
-      expect(materializeHotCount).toBe(0);    });
+      expect(materializeHotCount).toBe(0);
+    });
 
     it("pagination: 5 pages should normalize 5, materialize 5", async () => {
       const QUERY = gql`
@@ -338,7 +339,8 @@ describe("operations API - Performance", () => {
       // Should normalize 5 times, materialize 5 times (1 per page with network-only)
       expect(normalizeCount).toBe(5);
       expect(materializeColdCount).toBe(5); // COLD: 1 read-back per page
-      expect(materializeHotCount).toBe(0);    });
+      expect(materializeHotCount).toBe(0);
+    });
   });
 
   describe("executeMutation", () => {
