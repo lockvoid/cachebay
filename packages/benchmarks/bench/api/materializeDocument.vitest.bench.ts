@@ -46,7 +46,7 @@ const createRelay = () => {
   return new Environment({ network: Network.create(async () => ({})), store: new Store(new RecordSource()) });
 };
 
-describe('materializeDocument – Paginated', () => {
+describe('materializeDocument', () => {
   const pages = buildPages({ data: buildUsersResponse({ users: 500, posts: 5, comments: 3 }), pageSize: 10 });
   const iterations = [];
 
