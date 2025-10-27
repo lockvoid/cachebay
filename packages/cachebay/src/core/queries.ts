@@ -195,12 +195,17 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     query,
     variables = {},
   }: ReadQueryOptions): T | null => {
+    // Check if there's an active watcher for this query+variables
+    const plan = planner.getPlan(query);
+    const signature = plan.makeSignature(true, variables);
+    const hasActiveWatcher = signatureToWatchers.has(signature);
+
     const result = documents.materialize({
       document: query,
       variables,
       canonical: true,  // Always use canonical mode
       fingerprint: true, // Include version fingerprints
-      force: true, // Always read fresh data (rare operation, not hot path)
+      force: !hasActiveWatcher, // Use cache if watcher exists, otherwise force fresh
     });
 
     if (result.source !== "none") {
@@ -302,7 +307,14 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
         if (watcherSet) {
           watcherSet.delete(watcherId);
           if (watcherSet.size === 0) {
+            // Last watcher for this signature - invalidate cache
             signatureToWatchers.delete(w.signature);
+            documents.invalidate({
+              document: w.query,
+              variables: w.variables,
+              canonical: true,
+              fingerprint: true,
+            });
           }
         }
 
@@ -313,6 +325,9 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
         const w = watchers.get(watcherId);
         if (!w) return;
 
+        // Save old variables for invalidation
+        const oldVariables = w.variables;
+        
         // Update watcher state
         w.variables = newVariables;
         const plan = planner.getPlan(w.query);
@@ -325,7 +340,14 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
           if (oldSet) {
             oldSet.delete(watcherId);
             if (oldSet.size === 0) {
+              // Last watcher for old signature - invalidate cache with OLD variables
               signatureToWatchers.delete(w.signature);
+              documents.invalidate({
+                document: w.query,
+                variables: oldVariables,
+                canonical: true,
+                fingerprint: true,
+              });
             }
           }
 
@@ -417,6 +439,22 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     }
   };
 
+  /**
+   * Inspect current query watcher state
+   * Returns total watcher count and method to get count for specific query
+   */
+  const inspect = () => {
+    return {
+      watchersCount: watchers.size,
+      getQueryWatchers: (query: DocumentNode | string, variables: Record<string, any> = {}): number => {
+        const plan = planner.getPlan(query);
+        const signature = plan.makeSignature(true, variables);
+        const watcherSet = signatureToWatchers.get(signature);
+        return watcherSet ? watcherSet.size : 0;
+      },
+    };
+  };
+
   return {
     readQuery,
     writeQuery,
@@ -424,5 +462,6 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     propagateData,
     propagateError,
     handleQueryExecuted, // Expose for operations to call
+    inspect, // Expose for debugging and testing
   };
 };

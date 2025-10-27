@@ -1,15 +1,60 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createGraph } from "@/src/core/graph";
+import { createPlanner } from "@/src/core/planner";
+import { createCanonical } from "@/src/core/canonical";
+import { createOptimistic } from "@/src/core/optimistic";
+import { createDocuments } from "@/src/core/documents";
+import { createQueries } from "@/src/core/queries";
+import { createFragments } from "@/src/core/fragments";
 import { createInspect } from "@/src/core/inspect";
 import { writeConnectionPage } from "@/test/helpers/unit";
+import { ROOT_ID } from "@/src/core/constants";
+import { users } from "@/test/helpers/fixtures";
+import { USER_QUERY, USER_FRAGMENT } from "@/test/helpers/operations";
 
 describe("Inspect", () => {
   let graph: ReturnType<typeof createGraph>;
+  let planner: ReturnType<typeof createPlanner>;
+  let canonicalLayer: ReturnType<typeof createCanonical>;
+  let optimistic: ReturnType<typeof createOptimistic>;
+  let documents: ReturnType<typeof createDocuments>;
+  let queries: ReturnType<typeof createQueries>;
+  let fragments: ReturnType<typeof createFragments>;
   let inspect: ReturnType<typeof createInspect>;
 
   beforeEach(() => {
-    graph = createGraph();
-    inspect = createInspect({ graph });
+    planner = createPlanner();
+
+    graph = createGraph({
+      keys: {
+        User: (u) => u.id,
+      },
+      onChange: () => {},
+    });
+
+    graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
+
+    canonicalLayer = createCanonical({ graph });
+    optimistic = createOptimistic({ graph, canonical: canonicalLayer });
+
+    documents = createDocuments({
+      graph,
+      planner,
+      canonical: canonicalLayer,
+    });
+
+    queries = createQueries({
+      documents,
+      planner,
+    });
+
+    fragments = createFragments({
+      graph,
+      planner,
+      documents,
+    });
+
+    inspect = createInspect({ graph, optimistic, queries, fragments });
   });
 
   describe("getEntityKeys", () => {
@@ -178,6 +223,90 @@ describe("Inspect", () => {
       expect(cfg).toHaveProperty("interfaces");
       expect(typeof cfg.keys).toBe("object");
       expect(typeof cfg.interfaces).toBe("object");
+    });
+  });
+
+  describe("queries", () => {
+    it("returns queries inspect data", () => {
+      const QUERY = planner.getPlan(USER_QUERY);
+
+      documents.normalize({
+        document: QUERY,
+        variables: { id: "u1" },
+        data: {
+          user: users.buildNode({ id: "u1", email: "u1@example.com" }),
+        },
+      });
+
+      graph.flush();
+
+      // Create watchers
+      const handle1 = queries.watchQuery({
+        query: QUERY,
+        variables: { id: "u1" },
+        onData: () => {},
+      });
+
+      const handle2 = queries.watchQuery({
+        query: QUERY,
+        variables: { id: "u1" },
+        onData: () => {},
+      });
+
+      const queriesInspect = inspect.queries();
+
+      expect(queriesInspect.watchersCount).toBe(2);
+      expect(queriesInspect.getQueryWatchers(QUERY, { id: "u1" })).toBe(2);
+
+      handle1.unsubscribe();
+      handle2.unsubscribe();
+    });
+
+    it("returns empty state when no query watchers", () => {
+      const queriesInspect = inspect.queries();
+
+      expect(queriesInspect.watchersCount).toBe(0);
+    });
+  });
+
+  describe("fragments", () => {
+    it("returns fragments inspect data", () => {
+      const FRAGMENT = planner.getPlan(USER_FRAGMENT);
+
+      fragments.writeFragment({
+        id: "User:u1",
+        fragment: FRAGMENT,
+        data: users.buildNode({ id: "u1", email: "u1@example.com" }),
+      });
+
+      graph.flush();
+
+      // Create watchers
+      const handle1 = fragments.watchFragment({
+        id: "User:u1",
+        fragment: FRAGMENT,
+        onData: () => {},
+      });
+
+      const handle2 = fragments.watchFragment({
+        id: "User:u1",
+        fragment: FRAGMENT,
+        onData: () => {},
+      });
+
+      const fragmentsInspect = inspect.fragments();
+
+      expect(fragmentsInspect.watchersCount).toBe(2);
+      expect(fragmentsInspect.getFragmentWatchers("User:u1", FRAGMENT)).toBe(2);
+
+      handle1.unsubscribe();
+      handle2.unsubscribe();
+    });
+
+    it("returns empty state when no fragment watchers", () => {
+      const fragmentsInspect = inspect.fragments();
+
+      expect(fragmentsInspect.watchersCount).toBe(0);
     });
   });
 });

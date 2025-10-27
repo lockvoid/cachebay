@@ -2,6 +2,8 @@ import { ROOT_ID } from "../core/constants";
 import { buildConnectionCanonicalKey } from "../compiler/utils";
 import type { GraphInstance } from "../core/graph";
 import type { OptimisticInstance } from "../core/optimistic";
+import type { QueriesInstance } from "../core/queries";
+import type { FragmentsInstance } from "../core/fragments";
 
 /**
  * Inspect API instance type
@@ -150,11 +152,21 @@ const unique = <T,>(xs: T[]): T[] => {
 
 /**
  * Create debug inspection API for cache internals
- * Provides methods to inspect entities, connections, and optimistic state
- * @param deps - Required dependencies (graph, optimistic)
- * @returns Inspect API with record, entityKeys, connectionKeys, config, and optimistic methods
+ * Provides methods to inspect entities, connections, optimistic state, queries, and fragments
+ * @param deps - Required dependencies (graph, optimistic, queries, fragments)
+ * @returns Inspect API with record, entityKeys, connectionKeys, config, optimistic, queries, and fragments methods
  */
-export const createInspect = ({ graph, optimistic }: { graph: GraphInstance, optimistic: OptimisticInstance }) => {
+export const createInspect = ({ 
+  graph, 
+  optimistic,
+  queries,
+  fragments,
+}: { 
+  graph: GraphInstance;
+  optimistic: OptimisticInstance;
+  queries: QueriesInstance;
+  fragments: FragmentsInstance;
+}) => {
   const getRecord = (id: string): any => {
     return graph.getRecord(id);
   };
@@ -257,5 +269,7 @@ export const createInspect = ({ graph, optimistic }: { graph: GraphInstance, opt
     getConnectionKeys,
     config,
     optimistic: () => optimistic.inspect(),
+    queries: () => queries.inspect(),
+    fragments: () => fragments.inspect(),
   };
 };

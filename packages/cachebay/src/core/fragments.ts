@@ -43,6 +43,8 @@ export type WriteFragmentArgs<TData = unknown> = {
   variables?: Record<string, unknown>;
 };
 
+export type FragmentsInstance = ReturnType<typeof createFragments>;
+
 export const createFragments = ({ graph, planner, documents }: FragmentsDependencies) => {
   // --- Watchers (same shape and batching strategy as queries) ---
   type WatcherState = {
@@ -50,6 +52,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     fragment: DocumentNode | CachePlan;
     fragmentName?: string;
     variables: Record<string, unknown>;
+    signature: string;  // Fragment signature (entityId|fragmentSignature)
     onData: (data: any) => void;
     onError?: (error: Error) => void;
     deps: Set<string>;
@@ -58,6 +61,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
 
   const watchers = new Map<number, WatcherState>();
   const depIndex = new Map<string, Set<number>>();
+  const signatureToWatchers = new Map<string, Set<number>>(); // Multiple watchers per signature (entityId|signature)
   let watcherSeq = 1;
 
   let pendingTouched = new Set<string>();
@@ -152,19 +156,31 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
 
   // --- Public API ---
 
+  // --- Helper: Build signature for reference counting ---
+  const buildSignature = (id: string, fragment: DocumentNode | CachePlan, fragmentName: string | undefined, variables: Record<string, unknown>): string => {
+    const plan = planner.getPlan(fragment, { fragmentName });
+    const sig = plan.makeSignature(true, variables as Record<string, any>);
+    // Format: entityId|signature
+    return `${id}|${sig}`;
+  };
+
   const readFragment = <T = any>({
     id,
     fragment,
     fragmentName,
     variables = {},
   }: ReadFragmentArgs): T | null => {
+    // Check if there's an active watcher for this fragment
+    const signature = buildSignature(id, fragment, fragmentName, variables);
+    const hasActiveWatcher = signatureToWatchers.has(signature);
+
     const result = documents.materialize({
       document: planner.getPlan(fragment, { fragmentName }),
       variables: variables as Record<string, any>,
       canonical: true,  // Always use canonical mode
       entityId: id,
       fingerprint: true, // Include version fingerprints
-      force: true, // Always read fresh data (rare operation, not hot path)
+      force: !hasActiveWatcher, // Use cache if watcher exists, otherwise force fresh
     });
 
     if (result.source !== "none") {
@@ -201,17 +217,29 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
   }: WatchFragmentOptions): WatchFragmentHandle => {
     const watcherId = watcherSeq++;
 
+    // Build signature
+    const signature = buildSignature(id, fragment, fragmentName, variables);
+
     const watcher: WatcherState = {
       id,
       fragment,
       fragmentName,
       variables: variables || {},
+      signature,
       onData,
       onError,
       deps: new Set(),
       lastData: undefined,
     };
     watchers.set(watcherId, watcher);
+
+    // Add to signature → watchers mapping
+    let watcherSet = signatureToWatchers.get(signature);
+    if (!watcherSet) {
+      watcherSet = new Set();
+      signatureToWatchers.set(signature, watcherSet);
+    }
+    watcherSet.add(watcherId);
 
     const initial = documents.materialize({
       document: planner.getPlan(fragment, { fragmentName }),
@@ -239,6 +267,24 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
       unsubscribe: () => {
         const w = watchers.get(watcherId);
         if (!w) return;
+
+        // Remove from signature → watchers mapping
+        const watcherSet = signatureToWatchers.get(w.signature);
+        if (watcherSet) {
+          watcherSet.delete(watcherId);
+          if (watcherSet.size === 0) {
+            // Last watcher for this signature - invalidate cache
+            signatureToWatchers.delete(w.signature);
+            documents.invalidate({
+              document: planner.getPlan(w.fragment, { fragmentName: w.fragmentName }),
+              variables: w.variables as Record<string, any>,
+              canonical: true,
+              entityId: w.id,
+              fingerprint: true,
+            });
+          }
+        }
+
         for (const d of w.deps) {
           const set = depIndex.get(d);
           if (set) {
@@ -253,9 +299,45 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
         const w = watchers.get(watcherId);
         if (!w) return;
 
+        // Save old values for invalidation
+        const oldId = w.id;
+        const oldVariables = w.variables;
+
         // Update watcher state
         if (newId !== undefined) w.id = newId;
         if (newVariables !== undefined) w.variables = newVariables;
+
+        // Build new signature
+        const newSignature = buildSignature(w.id, w.fragment, w.fragmentName, w.variables);
+
+        // Update signature mapping if signature changed
+        if (w.signature !== newSignature) {
+          // Remove from old signature set
+          const oldSet = signatureToWatchers.get(w.signature);
+          if (oldSet) {
+            oldSet.delete(watcherId);
+            if (oldSet.size === 0) {
+              // Last watcher for old signature - invalidate cache
+              signatureToWatchers.delete(w.signature);
+              documents.invalidate({
+                document: planner.getPlan(w.fragment, { fragmentName: w.fragmentName }),
+                variables: oldVariables as Record<string, any>,
+                canonical: true,
+                entityId: oldId,
+                fingerprint: true,
+              });
+            }
+          }
+
+          // Add to new signature set
+          w.signature = newSignature;
+          let newSet = signatureToWatchers.get(newSignature);
+          if (!newSet) {
+            newSet = new Set();
+            signatureToWatchers.set(newSignature, newSet);
+          }
+          newSet.add(watcherId);
+        }
 
         // If immediate, materialize and emit synchronously
         if (immediate) {
@@ -289,10 +371,26 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     };
   };
 
+  /**
+   * Inspect current fragment watcher state
+   * Returns total watcher count and method to get count for specific fragment
+   */
+  const inspect = () => {
+    return {
+      watchersCount: watchers.size,
+      getFragmentWatchers: (id: string, fragment: DocumentNode | CachePlan, fragmentName?: string, variables: Record<string, unknown> = {}): number => {
+        const signature = buildSignature(id, fragment, fragmentName, variables);
+        const watcherSet = signatureToWatchers.get(signature);
+        return watcherSet ? watcherSet.size : 0;
+      },
+    };
+  };
+
   return {
     readFragment,
     writeFragment,
     watchFragment,
     propagateData,
+    inspect,
   };
 };
