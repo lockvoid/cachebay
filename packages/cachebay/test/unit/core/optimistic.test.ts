@@ -5,9 +5,11 @@ import { readCanonicalEdges } from "@/test/helpers/unit";
 describe("Optimistic", () => {
   let graph: ReturnType<typeof createGraph>;
   let optimistic: ReturnType<typeof createOptimistic>;
+  let onChangeSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    graph = createGraph();
+    onChangeSpy = vi.fn();
+    graph = createGraph({ onChange: onChangeSpy });
     optimistic = createOptimistic({ graph });
   });
 
@@ -345,16 +347,46 @@ describe("Optimistic", () => {
       it("removes node by reference", () => {
         const key = "@connection.posts({})";
 
+        graph.putRecord(key, {
+          __typename: "PostConnection",
+          totalCount: 2,
+          pageInfo: { __ref: `${key}.pageInfo` },
+          edges: { __refs: [`${key}.edges.0`] },
+        });
+
+        graph.putRecord(`${key}.pageInfo`, {
+          __typename: "PageInfo",
+          endCursor: "c2",
+          hasNextPage: true,
+        });
+
+        graph.putRecord(`${key}.edges.0`, {
+          __typename: "Edge",
+          node: { __ref: "Post:p1" },
+          cursor: "c1",
+        });
+
+        graph.putRecord("Post:p1", {
+          __typename: "Post",
+          id: "p1",
+          title: "Post 1",
+        });
+
+        expect(readCanonicalEdges(graph, key).length).toBe(1);
+
+        graph.flush();
+
         const tx = optimistic.modifyOptimistic((o) => {
           const c = o.connection({ parent: "Query", key: "posts" });
-          c.addNode({ __typename: "Post", id: "p1", title: "Post 1" }, { position: "end" });
+
           c.removeNode("Post:p1");
         });
 
-        tx.commit();
-
         expect(readCanonicalEdges(graph, key).length).toBe(0);
-        expect(graph.getRecord("Post:p1")).toBeTruthy();
+
+        const optimisticChanges = Array.from(onChangeSpy.mock.calls.flatMap(call => Array.from(call[0] as Set<string>)));
+
+        expect(optimisticChanges).toContain(key);
       });
 
       it("treats missing nodes as no-op", () => {
