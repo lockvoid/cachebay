@@ -46,19 +46,18 @@ const createRelay = () => {
   return new Environment({ network: Network.create(async () => ({})), store: new Store(new RecordSource()) });
 };
 
-describe('normalizeDocument – Paginated (COLD)', () => {
+describe('materializeDocument– Paginated (COLD)', () => {
   const pages = buildPages({ data: buildUsersResponse({ users: 1000, posts: 5, comments: 3 }), pageSize: 10 });
 
   const cachebayIterations: { cachebay: any }[] = [];
 
-  bench('cachebay - normalizeDocument', () => {
+  bench('cachebay - materializeDocument', () => {
     const { cachebay } = cachebayIterations.pop();
 
     for (let i = 0; i < pages.length; i++) {
       const page = pages[i];
 
-
-      cachebay.__internals.documents.normalizeDocument({ document: USERS_CACHEBAY_QUERY, variables: page.variables, data: page.data });
+      cachebay.__internals.documents.materializeDocument({ document: USERS_CACHEBAY_QUERY, variables: page.variables, , canonical: true, fingerprint: false, force: true });
     }
 
   }, {
@@ -70,7 +69,9 @@ describe('normalizeDocument – Paginated (COLD)', () => {
       for (let i = 0; i < ITERATIONS + 10; i++) {
         const cachebay = createCachebay();
 
-        cachebay.__internals.planner.getPlan(USERS_CACHEBAY_QUERY);
+        cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
+
+        cachebay.__internals.documents.materializeDocument({ document: `query JIT { LFG }`, variables: {}, canonical: true, force: true });
 
         cachebayIterations.push({ cachebay });
       }
