@@ -36,13 +36,13 @@ const runScenario = async (
 
   switch (appType) {
     case "cachebay":
-      app = createVueCachebayNestedApp(serverUrl, cachePolicy || "network-only", DEBUG, sharedYoga);
+      app = createVueCachebayNestedApp(cachePolicy || "network-only", sharedYoga);
       break;
     case "apollo":
-      app = createVueApolloNestedApp(serverUrl, cachePolicy || "network-only", DEBUG, sharedYoga);
+      app = createVueApolloNestedApp(cachePolicy || "network-only", sharedYoga);
       break;
     case "urql":
-      app = createVueUrqlNestedApp(serverUrl, cachePolicy || "network-only", DEBUG, sharedYoga);
+      app = createVueUrqlNestedApp(serverUrl, cachePolicy || "network-only", sharedYoga);
       break;
     case "relay":
       app = createReactRelayNestedApp(serverUrl, cachePolicy || "network-only", DEBUG, sharedYoga);

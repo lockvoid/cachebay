@@ -2,17 +2,14 @@ import { createClient as createUrqlClient, fetchExchange } from "@urql/core";
 import { cacheExchange } from "@urql/exchange-graphcache";
 import urql, { useQuery } from "@urql/vue";
 import { createApp, defineComponent, watch } from "vue";
-import { createUserProfileYoga } from "../server/user-profile-server";
-import { makeUserProfileDataset } from "../utils/seed-user-profile";
 import { createDeferred } from "../utils/concurrency";
 import { USER_PROFILE_QUERY } from "../utils/queries";
 
-export function createVueUrqlUserProfileApp(
+export const createVueUrqlUserProfileApp = (
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  delayMs = 0,
-  sharedYoga?: any,
-) {
-  const yoga = sharedYoga || createUserProfileYoga(makeUserProfileDataset({ userCount: 1000 }), delayMs);
+  sharedYoga: any
+) => {
+  const yoga = sharedYoga;
 
   const deferred = createDeferred();
 

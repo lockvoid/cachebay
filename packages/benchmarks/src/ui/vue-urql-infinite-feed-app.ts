@@ -2,10 +2,8 @@ import { createClient as createUrqlClient, fetchExchange } from "@urql/core";
 import { cacheExchange as graphcache } from "@urql/exchange-graphcache";
 import { relayPagination } from "@urql/exchange-graphcache/extras";
 import urql, { useQuery } from "@urql/vue";
-import { createApp, defineComponent, ref, watch } from "vue";
-import { createInfiniteFeedYoga } from "../server/infinite-feed-server";
+import { createApp, defineComponent, ref, watch, nextTick } from "vue";
 import { createDeferred } from "../utils/concurrency";
-import { makeNestedDataset } from "../utils/seed-infinite-feed";
 import { USERS_APOLLO_QUERY } from "../utils/queries";
 
 const DEBUG = process.env.DEBUG === "true";
@@ -23,9 +21,9 @@ const mapCachePolicyToUrql = (policy: "network-only" | "cache-first" | "cache-an
 export const createVueUrqlNestedApp = (
   serverUrl: string,
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  sharedYoga?: any
+  sharedYoga: any
 ): VueUrqlNestedController => {
-  const yoga = sharedYoga || createInfiniteFeedYoga(makeNestedDataset(), 0);
+  const yoga = sharedYoga;
 
   const cache = graphcache({
     resolvers: {

@@ -1,14 +1,12 @@
-import { createApp, defineComponent, watch, ref } from "vue";
+import { createApp, defineComponent, watch, ref, nextTick } from "vue";
 import { createCachebay, useQuery } from "../../../cachebay/src/adapters/vue";
-import { createInfiniteFeedYoga } from "../server/infinite-feed-server";
-import { makeNestedDataset } from "../utils/seed-infinite-feed";
 import { USERS_CACHEBAY_QUERY } from "../utils/queries";
 
 export const createVueCachebayNestedApp = (
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  sharedYoga?: any
+  sharedYoga: any
 ) => {
-  const yoga = sharedYoga || createInfiniteFeedYoga(makeNestedDataset(), 0);
+  const yoga = sharedYoga;
 
   const transport = {
     http: async (context: any) => {
@@ -53,7 +51,7 @@ export const createVueCachebayNestedApp = (
         const t0 = performance.now();
 
         await refetch({ variables: { first: 30, after: endCursor.value } }).then((result) => {
-          endCursor.value = result.data.users.pageInfo.endCursor;
+          endCursor.value = result.data?.users?.pageInfo?.endCursor;
         });
 
         const t2 = performance.now();

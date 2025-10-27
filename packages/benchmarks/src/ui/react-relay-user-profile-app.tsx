@@ -6,8 +6,6 @@ import {
   graphql,
   useLazyLoadQuery,
 } from 'react-relay';
-import { createUserProfileYoga } from '../server/user-profile-server';
-import { makeUserProfileDataset } from '../utils/seed-user-profile';
 import { createDeferred } from '../utils/concurrency';
 
 export type ReactRelayUserProfileController = {
@@ -32,10 +30,9 @@ const mapCachePolicyToRelay = (policy: "network-only" | "cache-first" | "cache-a
 
 export const createReactRelayUserProfileApp = (
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  delayMs = 0,
-  sharedYoga?: any
+  sharedYoga: any
 ): ReactRelayUserProfileController => {
-  const yoga = sharedYoga || createUserProfileYoga(makeUserProfileDataset({ userCount: 1000 }), delayMs);
+  const yoga = sharedYoga;
 
   const deferred = createDeferred();
 

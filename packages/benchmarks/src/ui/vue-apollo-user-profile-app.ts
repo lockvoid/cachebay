@@ -1,17 +1,14 @@
 import { DefaultApolloClient, useQuery } from "@vue/apollo-composable";
 import { createApp, defineComponent, watch } from "vue";
-import { createUserProfileYoga } from "../server/user-profile-server";
-import { makeUserProfileDataset } from "../utils/seed-user-profile";
 import { createApolloClient } from "../adapters";
 import { createDeferred } from "../utils/concurrency";
 import { USER_PROFILE_QUERY } from "../utils/queries";
 
 export const createVueApolloUserProfileApp = (
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  delayMs = 0,
-  sharedYoga?: any,
+  sharedYoga: any
 ) => {
-  const yoga = sharedYoga || createUserProfileYoga(makeUserProfileDataset({ userCount: 1000 }), delayMs);
+  const yoga = sharedYoga;
 
   const apolloClient = createApolloClient({ yoga, cachePolicy });
 

@@ -1,16 +1,14 @@
 import { DefaultApolloClient, useLazyQuery } from "@vue/apollo-composable";
-import { createApp, defineComponent, ref, watch } from "vue";
+import { createApp, defineComponent, ref, watch, nextTick } from "vue";
 import { createApolloClient } from "../adapters";
-import { createInfiniteFeedYoga } from "../server/infinite-feed-server";
 import { createDeferred } from "../utils/concurrency";
-import { makeNestedDataset } from "../utils/seed-infinite-feed";
 import { USERS_APOLLO_QUERY } from "../utils/queries";
 
 export const createVueApolloNestedApp = (
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  sharedYoga?: any
+  sharedYoga: any
 ) => {
-  const yoga = sharedYoga || createInfiniteFeedYoga(makeNestedDataset(), 0);
+  const yoga = sharedYoga;
 
   const client = createApolloClient({ yoga, cachePolicy });
 

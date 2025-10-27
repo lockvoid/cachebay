@@ -7,8 +7,6 @@ import {
   useLazyLoadQuery,
   usePaginationFragment,
 } from 'react-relay';
-import { createInfiniteFeedYoga } from '../server/infinite-feed-server';
-import { makeNestedDataset } from '../utils/seed-infinite-feed';
 
 export type ReactRelayNestedController = {
   mount(target?: Element): void;
@@ -30,8 +28,8 @@ const mapCachePolicyToRelay = (policy: "network-only" | "cache-first" | "cache-a
   return "network-only";
 };
 
-const createRelayEnvironment = (serverUrl: string, sharedYoga?: any) => {
-  const yoga = sharedYoga || createInfiniteFeedYoga(makeNestedDataset(), 0);
+const createRelayEnvironment = (serverUrl: string, sharedYoga: any) => {
+  const yoga = sharedYoga;
 
   const network = Network.create(async (operation, variables) => {
     const response = await yoga.fetch('http://localhost/graphql', {

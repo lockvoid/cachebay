@@ -1,16 +1,13 @@
 import { createApp, defineComponent, watch } from "vue";
 import { createCachebay, useQuery } from "../../../cachebay/src/adapters/vue";
-import { createUserProfileYoga } from "../server/user-profile-server";
-import { makeUserProfileDataset } from "../utils/seed-user-profile";
 import { createDeferred } from "../utils/concurrency";
 import { USER_PROFILE_QUERY } from "../utils/queries";
 
 export const createVueCachebayUserProfileApp = (
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "cache-first",
-  delayMs = 0,
-  sharedYoga?: any
+  sharedYoga: any
 ) => {
-  const yoga = sharedYoga || createUserProfileYoga(makeUserProfileDataset({ userCount: 1000 }), delayMs);
+  const yoga = sharedYoga;
 
   const deferred = createDeferred();
 
