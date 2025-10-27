@@ -8,12 +8,6 @@ import {
 } from 'react-relay';
 import { createDeferred } from '../utils/concurrency';
 
-export type ReactRelayUserProfileController = {
-  mount(target?: Element): Promise<void>;
-  unmount(): void;
-  ready(): Promise<void>;
-};
-
 type RelayFetchPolicy = "network-only" | "store-or-network" | "store-and-network";
 
 const mapCachePolicyToRelay = (policy: "network-only" | "cache-first" | "cache-and-network"): RelayFetchPolicy => {
@@ -28,29 +22,30 @@ const mapCachePolicyToRelay = (policy: "network-only" | "cache-first" | "cache-a
   return "network-only";
 };
 
+const createRelayEnvironment = (yoga: any) => {
+  const network = Network.create(async (params, variables) => {
+    const response = await yoga.fetch("http://localhost:4000/graphql", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: params.text,
+        variables,
+      }),
+    });
+
+    return response.json();
+  });
+
+  return new Environment({ network,  store: new Store(new RecordSource())  });
+};
+
 export const createReactRelayUserProfileApp = (
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  sharedYoga: any
-): ReactRelayUserProfileController => {
-  const yoga = sharedYoga;
-
+  yoga: any
+) => {
   const deferred = createDeferred();
 
-  const environment = new Environment({
-    network: Network.create(async (params, variables) => {
-      const response = await yoga.fetch("http://localhost:4000/graphql", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query: params.text,
-          variables,
-        }),
-      });
-      const json = await response.json();
-      return json;
-    }),
-    store: new Store(new RecordSource()),
-  });
+  const environment = createRelayEnvironment();
 
   let root: Root | null = null;
   let dataLoaded = false;
@@ -131,7 +126,7 @@ export const createReactRelayUserProfileApp = (
 
   let currentUserId = "u1";
 
-  const App: React.FC = () => (
+  const App = () => (
     <RelayEnvironmentProvider environment={environment}>
       <React.Suspense fallback={<div>Loading...</div>}>
         <UserProfile userId={currentUserId} />

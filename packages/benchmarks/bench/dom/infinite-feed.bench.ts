@@ -5,9 +5,8 @@ import { createReactRelayNestedApp } from "../../src/ui/react-relay-infinite-fee
 import { createVueApolloNestedApp } from "../../src/ui/vue-apollo-infinite-feed-app";
 import { createVueCachebayNestedApp } from "../../src/ui/vue-cachebay-infinite-feed-app";
 import { createVueUrqlNestedApp } from "../../src/ui/vue-urql-infinite-feed-app";
-import { makeNestedDataset } from "../../src/utils/seed-infinite-feed";
+import { generateInfiniteFeedDataset } from "../../src/utils/seed-infinite-feed";
 
-const DEBUG = true;
 const PAGES_TO_LOAD = 2;
 
 const BENCH_OPTIONS = {
@@ -18,15 +17,8 @@ const BENCH_OPTIONS = {
   time: 0,
 };
 
-const serverUrl = process.env.BENCH_SERVER_URL || "http://127.0.0.1:4001/graphql";
-
-const sharedDataset = makeNestedDataset();
-const sharedYoga = createInfiniteFeedYoga(sharedDataset, 0);
-
-if (DEBUG) {
-  console.log(`Using server at: ${serverUrl}`);
-  console.log(`Shared dataset created with ${sharedDataset.users.size} users`);
-}
+const sharedDataset = generateInfiniteFeedDataset();
+const yoga = createInfiniteFeedYoga(sharedDataset, 0);
 
 const runScenario = async (
   appType: "cachebay" | "apollo" | "urql" | "relay",
@@ -36,16 +28,16 @@ const runScenario = async (
 
   switch (appType) {
     case "cachebay":
-      app = createVueCachebayNestedApp(cachePolicy || "network-only", sharedYoga);
+      app = createVueCachebayNestedApp(cachePolicy || "network-only", yoga);
       break;
     case "apollo":
-      app = createVueApolloNestedApp(cachePolicy || "network-only", sharedYoga);
+      app = createVueApolloNestedApp(cachePolicy || "network-only", yoga);
       break;
     case "urql":
-      app = createVueUrqlNestedApp(serverUrl, cachePolicy || "network-only", sharedYoga);
+      app = createVueUrqlNestedApp(cachePolicy || "network-only", yoga);
       break;
     case "relay":
-      app = createReactRelayNestedApp(serverUrl, cachePolicy || "network-only", DEBUG, sharedYoga);
+      app = createReactRelayNestedApp(cachePolicy || "network-only", yoga);
       break;
     default:
       throw new Error(`Unknown app type: ${appType}`);
@@ -74,37 +66,23 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
     bench("cachebay(vue, network-only)", async () => {
       globalThis.cachebay.iteration++;
 
-      if (DEBUG) {
-        console.log("cachebay(vue) network-only iteration", globalThis.cachebay.iteration);
-      }
-
       return await runScenario("cachebay", "network-only");
     }, BENCH_OPTIONS);
 
     bench("apollo(vue, network-only)", async () => {
       globalThis.apollo.iteration++;
 
-      if (DEBUG) {
-        console.log("apollo(vue) network-only iteration", globalThis.apollo.iteration);
-      }
-
       return await runScenario("apollo", "network-only");
     }, BENCH_OPTIONS);
 
     bench("urql(vue, network-only)", async () => {
       globalThis.urql.iteration++;
-      if (DEBUG) {
-        console.log("urql(vue) network-only iteration", globalThis.urql.iteration);
-      }
 
       return await runScenario("urql", "network-only");
     }, BENCH_OPTIONS);
 
     bench("relay(react, network-only)", async () => {
       globalThis.relay.iteration++;
-      if (DEBUG) {
-        console.log("relay(react) network-only iteration", globalThis.relay.iteration);
-      }
 
       return await runScenario("relay", "network-only");
     }, BENCH_OPTIONS);
@@ -113,33 +91,25 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   describe("cache-first", () => {
     bench("cachebay(vue, cache-first)", async () => {
       globalThis.cachebay.iteration++;
-      if (DEBUG) {
-        console.log("cachebay(vue) cache-first iteration", globalThis.cachebay.iteration);
-      }
+
       return await runScenario("cachebay", "cache-first");
     }, BENCH_OPTIONS);
 
     bench("apollo(vue, cache-first)", async () => {
       globalThis.apollo.iteration++;
-      if (DEBUG) {
-        console.log("apollo(vue) cache-first iteration", globalThis.apollo.iteration);
-      }
+
       return await runScenario("apollo", "cache-first");
     }, BENCH_OPTIONS);
 
     bench("urql(vue, cache-first)", async () => {
       globalThis.urql.iteration++;
-      if (DEBUG) {
-        console.log("urql(vue) cache-first iteration", globalThis.urql.iteration);
-      }
+
       return await runScenario("urql", "cache-first");
     }, BENCH_OPTIONS);
 
     bench("relay(react, cache-first)", async () => {
       globalThis.relay.iteration++;
-      if (DEBUG) {
-        console.log("relay(react) cache-first iteration", globalThis.relay.iteration);
-      }
+
       return await runScenario("relay", "cache-first");
     }, BENCH_OPTIONS);
   });
@@ -147,33 +117,25 @@ describe("DOM Nested query (happy-dom): interfaces, custom keys, nested paginati
   describe("cache-and-network", () => {
     bench("cachebay(vue, cache-and-network)", async () => {
       globalThis.cachebay.iteration++;
-      if (DEBUG) {
-        console.log("cachebay(vue) cache-and-network iteration", globalThis.cachebay.iteration);
-      }
+
       return await runScenario("cachebay", "cache-and-network");
     }, BENCH_OPTIONS);
 
     bench("apollo(vue, cache-and-network)", async () => {
       globalThis.apollo.iteration++;
-      if (DEBUG) {
-        console.log("apollo(vue) cache-and-network iteration", globalThis.apollo.iteration);
-      }
+
       return await runScenario("apollo", "cache-and-network");
     }, BENCH_OPTIONS);
 
     bench("urql(vue, cache-and-network)", async () => {
       globalThis.urql.iteration++;
-      if (DEBUG) {
-        console.log("urql(vue) cache-and-network iteration", globalThis.urql.iteration);
-      }
+
       return await runScenario("urql", "cache-and-network");
     }, BENCH_OPTIONS);
 
     bench("relay(react, cache-and-network)", async () => {
       globalThis.relay.iteration++;
-      if (DEBUG) {
-        console.log("relay(react) cache-and-network iteration", globalThis.relay.iteration);
-      }
+
       return await runScenario("relay", "cache-and-network");
     }, BENCH_OPTIONS);
   });

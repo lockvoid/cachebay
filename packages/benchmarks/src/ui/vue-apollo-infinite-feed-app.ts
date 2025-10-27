@@ -6,11 +6,9 @@ import { USERS_APOLLO_QUERY } from "../utils/queries";
 
 export const createVueApolloNestedApp = (
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  sharedYoga: any
+  yoga: any
 ) => {
-  const yoga = sharedYoga;
-
-  const client = createApolloClient({ yoga, cachePolicy });
+    const client = createApolloClient({ yoga, cachePolicy });
 
   let app: ReturnType<typeof createApp> | null = null;
   let container: Element | null = null;

@@ -4,11 +4,9 @@ import { USERS_CACHEBAY_QUERY } from "../utils/queries";
 
 export const createVueCachebayNestedApp = (
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  sharedYoga: any
+  yoga: any
 ) => {
-  const yoga = sharedYoga;
-
-  const transport = {
+    const transport = {
     http: async (context: any) => {
       const response = await yoga.fetch("http://localhost/graphql", {
         method: "POST",

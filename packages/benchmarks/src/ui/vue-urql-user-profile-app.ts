@@ -7,11 +7,9 @@ import { USER_PROFILE_QUERY } from "../utils/queries";
 
 export const createVueUrqlUserProfileApp = (
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  sharedYoga: any
+  yoga: any
 ) => {
-  const yoga = sharedYoga;
-
-  const deferred = createDeferred();
+    const deferred = createDeferred();
 
   const urqlClient = createUrqlClient({
     url: "http://localhost:4000/graphql",

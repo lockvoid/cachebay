@@ -44,7 +44,7 @@ export type MakeUserProfileDatasetOptions = {
   seed?: number;
 };
 
-export function makeUserProfileDataset(options: MakeUserProfileDatasetOptions = {}): UserProfileDataset {
+export function generateUserProfileDataset(options: MakeUserProfileDatasetOptions = {}): UserProfileDataset {
   const {
     userCount = 1,
     seed = 54321,

@@ -3,7 +3,7 @@ import { createReactRelayUserProfileApp } from "../../src/ui/react-relay-user-pr
 import { createVueApolloUserProfileApp } from "../../src/ui/vue-apollo-user-profile-app";
 import { createVueCachebayUserProfileApp } from "../../src/ui/vue-cachebay-user-profile-app";
 import { createVueUrqlUserProfileApp } from "../../src/ui/vue-urql-user-profile-app";
-import { makeUserProfileDataset } from "../../src/utils/seed-user-profile";
+import { generateUserProfileDataset } from "../../src/utils/seed-user-profile";
 
 const BENCH_OPTIONS = {
   iterations: 20,
@@ -14,7 +14,7 @@ const BENCH_OPTIONS = {
 };
 
 describe("DOM User Profile (happy-dom): single entity with nested data", () => {
-  const dataset = makeUserProfileDataset({ userCount: 1000 });
+  const dataset = generateUserProfileDataset({ userCount: 1000 });
   const testUserId = "u1";
 
   describe("network-only", () => {

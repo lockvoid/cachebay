@@ -4,7 +4,6 @@ import { relayPagination } from "@urql/exchange-graphcache/extras";
 
 export type UrqlClientConfig = {
   yoga: any;
-  serverUrl: string;
   cachePolicy: "network-only" | "cache-first" | "cache-and-network";
 };
 

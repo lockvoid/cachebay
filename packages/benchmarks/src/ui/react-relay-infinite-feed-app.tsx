@@ -28,17 +28,17 @@ const mapCachePolicyToRelay = (policy: "network-only" | "cache-first" | "cache-a
   return "network-only";
 };
 
-const createRelayEnvironment = (serverUrl: string, sharedYoga: any) => {
-  const yoga = sharedYoga;
-
+const createRelayEnvironment = (yoga: any) => {
   const network = Network.create(async (operation, variables) => {
     const response = await yoga.fetch('http://localhost/graphql', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ query: operation.text, variables }),
     });
-    return await response.json();
+
+    return response.json();
   });
+
   return new Environment({ network, store: new Store(new RecordSource()) });
 }
 
@@ -172,12 +172,10 @@ const UsersList = (props: {
 };
 
 export const createReactRelayNestedApp = (
-  serverUrl: string,
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  debug = false,
-  sharedYoga?: any
+  yoga: any
 ): ReactRelayNestedController => {
-  const environment = createRelayEnvironment(serverUrl, sharedYoga);
+  const environment = createRelayEnvironment(yoga);
   const fetchPolicy = mapCachePolicyToRelay(cachePolicy);
 
   let root: Root | null = null;

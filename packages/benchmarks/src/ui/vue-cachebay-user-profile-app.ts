@@ -5,11 +5,9 @@ import { USER_PROFILE_QUERY } from "../utils/queries";
 
 export const createVueCachebayUserProfileApp = (
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "cache-first",
-  sharedYoga: any
+  yoga: any
 ) => {
-  const yoga = sharedYoga;
-
-  const deferred = createDeferred();
+    const deferred = createDeferred();
 
   const transport = {
     http: async (context: any) => {

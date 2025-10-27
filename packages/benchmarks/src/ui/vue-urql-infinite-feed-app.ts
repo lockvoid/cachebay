@@ -6,26 +6,11 @@ import { createApp, defineComponent, ref, watch, nextTick } from "vue";
 import { createDeferred } from "../utils/concurrency";
 import { USERS_APOLLO_QUERY } from "../utils/queries";
 
-const DEBUG = process.env.DEBUG === "true";
-
-export type VueUrqlNestedController = {
-  mount(target?: Element): void;
-  unmount(): void;
-  loadNextPage(): Promise<void>;
-};
-
-const mapCachePolicyToUrql = (policy: "network-only" | "cache-first" | "cache-and-network"): "network-only" | "cache-first" | "cache-and-network" => {
-  return policy;
-};
-
 export const createVueUrqlNestedApp = (
-  serverUrl: string,
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  sharedYoga: any
-): VueUrqlNestedController => {
-  const yoga = sharedYoga;
-
-  const cache = graphcache({
+  yoga: any
+) => {
+    const cache = graphcache({
     resolvers: {
       Query: { users: relayPagination() },
       User: { posts: relayPagination(), followers: relayPagination() },
@@ -38,8 +23,8 @@ export const createVueUrqlNestedApp = (
   };
 
   const client = createUrqlClient({
-    url: serverUrl,
-    requestPolicy: mapCachePolicyToUrql(cachePolicy),
+    url: 'http://localhost/graphql',
+    requestPolicy: cachePolicy,
     exchanges: [cache, fetchExchange],
     fetch: customFetch,
   });

@@ -6,10 +6,8 @@ import { USER_PROFILE_QUERY } from "../utils/queries";
 
 export const createVueApolloUserProfileApp = (
   cachePolicy: "network-only" | "cache-first" | "cache-and-network" = "network-only",
-  sharedYoga: any
+  yoga: any
 ) => {
-  const yoga = sharedYoga;
-
   const apolloClient = createApolloClient({ yoga, cachePolicy });
 
   let app: any = null;
