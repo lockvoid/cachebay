@@ -76,11 +76,12 @@ describe('watchQuery (initial:cold)', () => {
     subscription.unsubscribe();
   }, {
     iterations: ITERATIONS,
+    warmupIterations: 2,
 
     setup() {
       iterations.length = 0;
 
-      for (let i = 0; i < ITERATIONS + 10; i++) {
+      for (let i = 0; i < (ITERATIONS + 10) * 5; i++) {
         const cachebay = createCachebay();
 
         iterations.push({ cachebay });
@@ -91,7 +92,7 @@ describe('watchQuery (initial:cold)', () => {
   bench('relay - subscribe', async () => {
     const { relay, operation } = iterations.pop();
 
-    const snapshot = relay.lookup(operation);
+    const snapshot = relay.lookup(operation.fragment);
     const disposable = relay.subscribe(snapshot, () => {});
 
     for (let i = 0; i < pages.length; i++) {
@@ -101,11 +102,12 @@ describe('watchQuery (initial:cold)', () => {
     disposable.dispose();
   }, {
     iterations: ITERATIONS,
+    warmupIterations: 2,
 
     setup() {
       iterations.length = 0;
 
-      for (let i = 0; i < ITERATIONS + 10; i++) {
+      for (let i = 0; i < (ITERATIONS + 10) * 5; i++) {
         const relay = createRelay();
 
         const operation = createOperationDescriptor(USERS_RELAY_QUERY, { first: 10, after: null });
@@ -131,11 +133,12 @@ describe('watchQuery (initial:hot)', () => {
     subscription.unsubscribe();
   }, {
     iterations: ITERATIONS,
+    warmupIterations: 2,
 
     setup() {
       iterations.length = 0;
 
-      for (let i = 0; i < ITERATIONS + 10; i++) {
+      for (let i = 0; i < (ITERATIONS + 10) * 5; i++) {
         const cachebay = createCachebay();
 
         for (let j = 0; j < pages.length; j++) {
@@ -158,11 +161,12 @@ describe('watchQuery (initial:hot)', () => {
     });
   }, {
     iterations: ITERATIONS,
+    warmupIterations: 2,
 
     setup() {
       iterations.length = 0;
 
-      for (let i = 0; i < ITERATIONS + 10; i++) {
+      for (let i = 0; i < (ITERATIONS + 10) * 5; i++) {
         const apollo = createApollo();
 
         for (let i = 0; i < pages.length; i++) {
@@ -177,17 +181,18 @@ describe('watchQuery (initial:hot)', () => {
   bench('relay - subscribe', () => {
     const { relay, operation } = iterations.pop();
 
-    const snapshot = relay.lookup(operation);
+    const snapshot = relay.lookup(operation.fragment);
     const disposable = relay.subscribe(snapshot, () => {});
 
     disposable.dispose();
   }, {
     iterations: ITERATIONS,
+    warmupIterations: 2,
 
     setup() {
       iterations.length = 0;
 
-      for (let i = 0; i < ITERATIONS + 10; i++) {
+      for (let i = 0; i < (ITERATIONS + 10) * 5; i++) {
         const relay = createRelay();
 
         for (let j = 0; j < pages.length; j++) {
@@ -196,7 +201,7 @@ describe('watchQuery (initial:hot)', () => {
 
         const operation = createOperationDescriptor(USERS_RELAY_QUERY, { first: 10, after: null });
 
-        relay.lookup(operation);
+        relay.lookup(operation.fragment);
 
         iterations.push({ relay, operation });
       }

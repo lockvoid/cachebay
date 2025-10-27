@@ -4,8 +4,8 @@ import { InMemoryCache } from "@apollo/client/cache";
 import { relayStylePagination } from "@apollo/client/utilities";
 import { Environment, Network, RecordSource, Store, createOperationDescriptor } from "relay-runtime";
 import type { ConcreteRequest } from "relay-runtime";
-import { makeResponse, buildPages, CACHEBAY_QUERY, APOLLO_QUERY } from "../../src/utils/api";
-import RELAY_QUERY from "../../src/__generated__/apiRelayQuery.graphql";
+import { buildUsersResponse, buildPages, USERS_CACHEBAY_QUERY, USERS_APOLLO_QUERY } from "../../src/utils/api";
+import USERS_RELAY_QUERY from "../../src/__generated__/apiUsersRelayQuery.graphql";
 
 let __sink = 0;
 
@@ -62,7 +62,7 @@ const createRelayEnvironment = () => {
 summary(() => {
   const TOTAL_USERS = 500;
   const USERS_PAGE_SIZE = 10;
-  const pages = buildPages(makeResponse({ users: TOTAL_USERS, posts: 5, comments: 3 }), USERS_PAGE_SIZE);
+  const pages = buildPages({ data: buildUsersResponse({ users: TOTAL_USERS, posts: 5, comments: 3 }), pageSize: USERS_PAGE_SIZE });
 
   const getLabel = () => {
     return `${TOTAL_USERS} users (${pages.length} pages of ${USERS_PAGE_SIZE})`;
@@ -75,7 +75,7 @@ summary(() => {
           const cachebay = createCachebay();
 
           for (let i = 0; i < pages.length; i++) {
-            cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
+            cachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
 
             cachebay.readQuery({ query: `query JIT { LFG }`, variables: {}, canonical: true });
           }
@@ -83,7 +83,7 @@ summary(() => {
           return cachebay;
         },
         bench(cachebay) {
-          const result = cachebay.readQuery({ query: CACHEBAY_QUERY, variables: { first: USERS_PAGE_SIZE, after: null }, canonical: true, fingerprint: false });
+          const result = cachebay.readQuery({ query: USERS_CACHEBAY_QUERY, variables: { first: USERS_PAGE_SIZE, after: null }, canonical: true, fingerprint: false });
           sink(result.data);
         },
       };
@@ -95,7 +95,7 @@ summary(() => {
           const cachebay = createCachebay();
 
           for (let i = 0; i < pages.length; i++) {
-            cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
+            cachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
 
             cachebay.readQuery({ query: `query JIT { LFG }`, variables: {}, canonical: true });
           }
@@ -103,7 +103,7 @@ summary(() => {
           return cachebay;
         },
         bench(cachebay) {
-          const result = cachebay.readQuery({ query: CACHEBAY_QUERY, variables: { first: USERS_PAGE_SIZE, after: null }, canonical: true, fingerprint: true });
+          const result = cachebay.readQuery({ query: USERS_CACHEBAY_QUERY, variables: { first: USERS_PAGE_SIZE, after: null }, canonical: true, fingerprint: true });
           sink(result.data);
         },
       };
@@ -115,13 +115,13 @@ summary(() => {
           const apollo = createApolloCache(false);
 
           for (let i = 0; i < pages.length; i++) {
-            apollo.writeQuery({ query: APOLLO_QUERY, variables: pages[i].variables, data: pages[i].data });
+            apollo.writeQuery({ query: USERS_APOLLO_QUERY, variables: pages[i].variables, data: pages[i].data });
           }
 
           return apollo;
         },
         bench(apollo) {
-          const result = apollo.readQuery({ query: APOLLO_QUERY, variables: { first: USERS_PAGE_SIZE, after: null } });
+          const result = apollo.readQuery({ query: USERS_APOLLO_QUERY, variables: { first: USERS_PAGE_SIZE, after: null } });
           sink(result);
         },
       };
@@ -133,13 +133,13 @@ summary(() => {
           const relay = createRelayEnvironment();
 
           for (let i = 0; i < pages.length; i++) {
-            relay.commitPayload(createOperationDescriptor(RELAY_QUERY as ConcreteRequest, pages[i].variables), pages[i].data);
+            relay.commitPayload(createOperationDescriptor(USERS_RELAY_QUERY as ConcreteRequest, pages[i].variables), pages[i].data);
           }
 
           return relay;
         },
         bench(relay) {
-          const result = relay.lookup(createOperationDescriptor(RELAY_QUERY as ConcreteRequest, { first: USERS_PAGE_SIZE, after: null }).fragment);
+          const result = relay.lookup(createOperationDescriptor(USERS_RELAY_QUERY as ConcreteRequest, { first: USERS_PAGE_SIZE, after: null }).fragment);
           sink(result.data);
         },
       };

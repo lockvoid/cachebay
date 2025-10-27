@@ -4,8 +4,8 @@ import { InMemoryCache } from "@apollo/client/cache";
 import { relayStylePagination } from "@apollo/client/utilities";
 import { Environment, Network, RecordSource, Store, createOperationDescriptor } from "relay-runtime";
 import type { ConcreteRequest } from "relay-runtime";
-import { makeResponse, buildPages, CACHEBAY_QUERY, APOLLO_QUERY } from "../../src/utils/api";
-import RELAY_QUERY from "../../src/__generated__/apiRelayQuery.graphql";
+import { buildUsersResponse, buildPages, USERS_CACHEBAY_QUERY, USERS_APOLLO_QUERY } from "../../src/utils/api";
+import USERS_RELAY_QUERY from "../../src/__generated__/apiUsersRelayQuery.graphql";
 import { parse } from "graphql";
 
 const CACHEBAY_USER_QUERY = parse(/* GraphQL */ `
@@ -72,7 +72,7 @@ const createRelayEnvironment = () => {
 summary(() => {
   const TOTAL_USERS = 1000;
   const USERS_PAGE_SIZE = 10;
-  const pages = buildPages(makeResponse({ users: TOTAL_USERS, posts: 5, comments: 3 }), USERS_PAGE_SIZE);
+  const pages = buildPages({ data: buildUsersResponse({ users: TOTAL_USERS, posts: 5, comments: 3 }), pageSize: USERS_PAGE_SIZE });
 
   const getLabel = () => {
     return `${TOTAL_USERS} users (${pages.length} pages of ${USERS_PAGE_SIZE})`;
@@ -83,19 +83,19 @@ summary(() => {
       yield {
         [0]() {
           const cachebay = createCachebay();
-          cachebay.__internals.planner.getPlan(CACHEBAY_QUERY);
+          cachebay.__internals.planner.getPlan(USERS_CACHEBAY_QUERY);
           return cachebay;
         },
         async bench(cachebay) {
           const sub = cachebay.watchQuery({
-            query: CACHEBAY_QUERY,
+            query: USERS_CACHEBAY_QUERY,
             variables: { first: USERS_PAGE_SIZE, after: null },
             canonical: true,
             onData: (d) => sink(d),
           });
 
           for (let i = 0; i < pages.length; i++) {
-            cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
+            cachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
             await Promise.resolve();
           }
 
@@ -110,14 +110,14 @@ summary(() => {
           return createRelayEnvironment();
         },
         async bench(relay) {
-          const operation = createOperationDescriptor(RELAY_QUERY as ConcreteRequest, { first: USERS_PAGE_SIZE, after: null });
+          const operation = createOperationDescriptor(USERS_RELAY_QUERY as ConcreteRequest, { first: USERS_PAGE_SIZE, after: null });
           const snapshot = relay.lookup(operation.fragment);
           const disposable = relay.subscribe(snapshot, (newSnapshot) => {
             sink(newSnapshot.data);
           });
 
           for (let i = 0; i < pages.length; i++) {
-            relay.commitPayload(createOperationDescriptor(RELAY_QUERY as ConcreteRequest, pages[i].variables), pages[i].data);
+            relay.commitPayload(createOperationDescriptor(USERS_RELAY_QUERY as ConcreteRequest, pages[i].variables), pages[i].data);
             await Promise.resolve();
           }
 
@@ -131,7 +131,7 @@ summary(() => {
 summary(() => {
   const TOTAL_USERS = 1000;
   const USERS_PAGE_SIZE = 10;
-  const pages = buildPages(makeResponse({ users: TOTAL_USERS, posts: 5, comments: 3 }), USERS_PAGE_SIZE);
+  const pages = buildPages({ data: buildUsersResponse({ users: TOTAL_USERS, posts: 5, comments: 3 }), pageSize: USERS_PAGE_SIZE });
 
   const getLabel = () => {
     return `${TOTAL_USERS} users (${pages.length} pages of ${USERS_PAGE_SIZE})`;
@@ -141,14 +141,14 @@ summary(() => {
     const cachebay = createCachebay();
 
     for (let i = 0; i < pages.length; i++) {
-      cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
+      cachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
     }
 
-    cachebay.readQuery({ query: CACHEBAY_QUERY, variables: { first: USERS_PAGE_SIZE, after: null }, canonical: true });
+    cachebay.readQuery({ query: USERS_CACHEBAY_QUERY, variables: { first: USERS_PAGE_SIZE, after: null }, canonical: true });
 
     bench(`cachebay.watchQuery:initial:hot(${getLabel()})`, () => {
       const sub = cachebay.watchQuery({
-        query: CACHEBAY_QUERY,
+        query: USERS_CACHEBAY_QUERY,
         variables: { first: USERS_PAGE_SIZE, after: null },
         canonical: true,
         onData: (d) => sink(d),
@@ -159,10 +159,10 @@ summary(() => {
     const relay = createRelayEnvironment();
 
     for (let i = 0; i < pages.length; i++) {
-      relay.commitPayload(createOperationDescriptor(RELAY_QUERY as ConcreteRequest, pages[i].variables), pages[i].data);
+      relay.commitPayload(createOperationDescriptor(USERS_RELAY_QUERY as ConcreteRequest, pages[i].variables), pages[i].data);
     }
 
-    const operation = createOperationDescriptor(RELAY_QUERY as ConcreteRequest, { first: USERS_PAGE_SIZE, after: null });
+    const operation = createOperationDescriptor(USERS_RELAY_QUERY as ConcreteRequest, { first: USERS_PAGE_SIZE, after: null });
     relay.lookup(operation.fragment);
 
     bench(`relay.subscribe:initial:hot(${getLabel()})`, () => {
@@ -178,7 +178,7 @@ summary(() => {
 summary(() => {
   const TOTAL_USERS = 1000;
   const USERS_PAGE_SIZE = 10;
-  const pages = buildPages(makeResponse({ users: TOTAL_USERS, posts: 5, comments: 3 }), USERS_PAGE_SIZE);
+  const pages = buildPages({ data: buildUsersResponse({ users: TOTAL_USERS, posts: 5, comments: 3 }), pageSize: USERS_PAGE_SIZE });
 
   const getLabel = () => {
     return `${TOTAL_USERS} users (${pages.length} pages of ${USERS_PAGE_SIZE})`;
@@ -188,11 +188,11 @@ summary(() => {
     const cachebay = createCachebay();
 
     for (let i = 0; i < pages.length; i++) {
-      cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
+      cachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
     }
 
     cachebay.watchQuery({
-      query: CACHEBAY_QUERY,
+      query: USERS_CACHEBAY_QUERY,
       variables: { first: USERS_PAGE_SIZE, after: null },
       canonical: true,
       immediate: false,
@@ -217,11 +217,11 @@ summary(() => {
     const apollo = createApolloCache();
 
     for (let i = 0; i < pages.length; i++) {
-      apollo.writeQuery({ query: APOLLO_QUERY, variables: pages[i].variables, data: pages[i].data });
+      apollo.writeQuery({ query: USERS_APOLLO_QUERY, variables: pages[i].variables, data: pages[i].data });
     }
 
     apollo.watch({
-      query: APOLLO_QUERY,
+      query: USERS_APOLLO_QUERY,
       variables: { first: USERS_PAGE_SIZE, after: null },
       optimistic: false,
       immediate: false,
@@ -244,10 +244,10 @@ summary(() => {
     const relay = createRelayEnvironment();
 
     for (let i = 0; i < pages.length; i++) {
-      relay.commitPayload(createOperationDescriptor(RELAY_QUERY as ConcreteRequest, pages[i].variables), pages[i].data);
+      relay.commitPayload(createOperationDescriptor(USERS_RELAY_QUERY as ConcreteRequest, pages[i].variables), pages[i].data);
     }
 
-    const operation = createOperationDescriptor(RELAY_QUERY as ConcreteRequest, { first: USERS_PAGE_SIZE, after: null });
+    const operation = createOperationDescriptor(USERS_RELAY_QUERY as ConcreteRequest, { first: USERS_PAGE_SIZE, after: null });
     const snapshot = relay.lookup(operation.fragment);
     relay.subscribe(snapshot, (newSnapshot) => {
       sink(newSnapshot.data);
@@ -272,7 +272,7 @@ summary(() => {
 summary(() => {
   const TOTAL_USERS = 1000;
   const USERS_PAGE_SIZE = 10;
-  const pages = buildPages(makeResponse({ users: TOTAL_USERS, posts: 5, comments: 3 }), USERS_PAGE_SIZE);
+  const pages = buildPages({ data: buildUsersResponse({ users: TOTAL_USERS, posts: 5, comments: 3 }), pageSize: USERS_PAGE_SIZE });
 
   const getLabel = () => {
     return `${TOTAL_USERS} users (${pages.length} pages of ${USERS_PAGE_SIZE})`;
@@ -282,12 +282,12 @@ summary(() => {
     const cachebay = createCachebay();
 
     for (let i = 0; i < 3; i++) {
-      cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
+      cachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[i].variables, data: pages[i].data });
     }
 
     let emissionCount = 0;
     cachebay.watchQuery({
-      query: CACHEBAY_QUERY,
+      query: USERS_CACHEBAY_QUERY,
       variables: { first: USERS_PAGE_SIZE, after: null },
       canonical: true,
       immediate: false,
@@ -303,7 +303,7 @@ summary(() => {
       pageIndex = (pageIndex + 1) % pages.length;
       if (pageIndex === 0) pageIndex = 3;
 
-      cachebay.writeQuery({ query: CACHEBAY_QUERY, variables: pages[pageIndex].variables, data: pages[pageIndex].data });
+      cachebay.writeQuery({ query: USERS_CACHEBAY_QUERY, variables: pages[pageIndex].variables, data: pages[pageIndex].data });
 
       await Promise.resolve();
     });
@@ -311,11 +311,11 @@ summary(() => {
     const apollo = createApolloCache();
 
     for (let i = 0; i < 3; i++) {
-      apollo.writeQuery({ query: APOLLO_QUERY, variables: pages[i].variables, data: pages[i].data });
+      apollo.writeQuery({ query: USERS_APOLLO_QUERY, variables: pages[i].variables, data: pages[i].data });
     }
 
     apollo.watch({
-      query: APOLLO_QUERY,
+      query: USERS_APOLLO_QUERY,
       variables: { first: USERS_PAGE_SIZE, after: null },
       optimistic: false,
       immediate: false,
@@ -328,7 +328,7 @@ summary(() => {
       pageIndex2 = (pageIndex2 + 1) % pages.length;
       if (pageIndex2 === 0) pageIndex2 = 3;
 
-      apollo.writeQuery({ query: APOLLO_QUERY, variables: pages[pageIndex2].variables, data: pages[pageIndex2].data });
+      apollo.writeQuery({ query: USERS_APOLLO_QUERY, variables: pages[pageIndex2].variables, data: pages[pageIndex2].data });
     });
   });
 });
