@@ -8,7 +8,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsdown",
+    "build": "tsdown --minify",
     "coverage": "vitest --run --coverage",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
