@@ -21,14 +21,11 @@ export default defineConfig(({ mode }) => ({
   define: {
     'process.env.NODE_ENV': '"production"',
     '__DEV__': false,
-    'import.meta.env.DEV': false,
-    'import.meta.env.PROD': true,
   },
   resolve: {
     conditions: ['production', 'default'],
   },
   optimizeDeps: {
-    // Don't try to optimize Node.js built-ins
     exclude: ['node:http', 'node:buffer', 'node:stream'],
   },
   test: {

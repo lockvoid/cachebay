@@ -1,3 +1,4 @@
+import { bench, describe } from 'vitest';
 import { createCachebay as createCachebayClient } from "../../../cachebay/src/core/client";
 import { InMemoryCache } from "@apollo/client/cache";
 import { relayStylePagination } from "@apollo/client/utilities";
@@ -10,7 +11,7 @@ const ITERATIONS = 100;
 const createCachebay = () => {
   return createCachebayClient({
     transport: {
-      http: async () => ({ data: {} }),
+      http: async () => ({ data: {}, error: null }),
     },
   });
 }
@@ -48,13 +49,14 @@ const createRelay = () => {
 describe('normalizeDocument – Paginated (COLD)', () => {
   const pages = buildPages({ data: buildUsersResponse({ users: 1000, posts: 5, comments: 3 }), pageSize: 10 });
 
-  const cachebayIterations = [];
+  const cachebayIterations: { cachebay: any }[] = [];
 
   bench('cachebay - normalizeDocument', () => {
     const { cachebay } = cachebayIterations.pop();
 
     for (let i = 0; i < pages.length; i++) {
       const page = pages[i];
+
 
       cachebay.__internals.documents.normalizeDocument({ document: USERS_CACHEBAY_QUERY, variables: page.variables, data: page.data });
     }
@@ -73,7 +75,7 @@ describe('normalizeDocument – Paginated (COLD)', () => {
     }
   });
 
-  const apolloIterations = [];
+  const apolloIterations: { apollo: any }[] = [];
 
   bench('apollo - writeQuery', () => {
     const { apollo } = apolloIterations.pop();
@@ -95,7 +97,7 @@ describe('normalizeDocument – Paginated (COLD)', () => {
     }
   });
 
-  const relayIterations = [];
+  const relayIterations: { relay: any }[] = [];
 
   bench('relay - commitPayload', () => {
     const { relay } = relayIterations.pop();
@@ -111,9 +113,8 @@ describe('normalizeDocument – Paginated (COLD)', () => {
     setup() {
       for (let i = 0; i < ITERATIONS + 10; i++) {
         const relay = createRelay();
-
         relayIterations.push({ relay });
       }
     }
-    });
+  });
 });
