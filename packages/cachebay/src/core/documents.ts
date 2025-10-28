@@ -69,9 +69,9 @@ export type materializeOptions = {
   canonical?: boolean;
   entityId?: string;
   fingerprint?: boolean;
-  /** If true, try to read from cache first, fallback to full materialization. Default: false (always materialize) */
+  /** If true, try to read from cache first, fallback to full materialization. Default: true (prefer cache) */
   preferCache?: boolean;
-  /** If true, update the materialize cache with the result. Default: true */
+  /** If true, update the materialize cache with the result. Default: false (don't pollute cache) */
   updateCache?: boolean;
 };
 
@@ -511,11 +511,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
    * Materialize a document from cache
    * Reads normalized data and reconstructs the GraphQL response shape
    *
-   * @param options.preferCache - If true, try to read from cache first, fallback to full materialization. Default: false
-   * @param options.updateCache - If true, update the materialize cache with the result. Default: true
+   * @param options.preferCache - If true, try to read from cache first, fallback to full materialization. Default: true
+   * @param options.updateCache - If true, update the materialize cache with the result. Default: false
    */
   const materialize = (options: materializeOptions): materializeResult => {
-    const { document, variables = {}, canonical = true, entityId, fingerprint = true, preferCache = false, updateCache = true } = options;
+    const { document, variables = {}, canonical = true, entityId, fingerprint = true, preferCache = true, updateCache = false } = options;
 
     // Get plan once at the start
     const plan = planner.getPlan(document);

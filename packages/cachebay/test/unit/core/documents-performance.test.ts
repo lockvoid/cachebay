@@ -10,13 +10,13 @@ import { createPlanner } from "@/src/core/planner";
  *
  * Tests the WeakMap cache for materialize to ensure:
  * 1. Cache hits return the same result object (reference equality)
- * 2. force: true bypasses cache and re-materializes
+ * 2. preferCache: false bypasses cache and re-materializes
  * 3. Different options create separate cache entries:
  *    - variables
  *    - canonical mode (canonical vs strict)
  *    - fingerprint option (true vs false)
  *    - entityId (for fragments)
- * 4. Cache invalidation works correctly with force: true
+ * 4. Cache invalidation works correctly with preferCache: false
  */
 describe("documents - materialize cache", () => {
   let graph: ReturnType<typeof createGraph>;
@@ -64,6 +64,8 @@ describe("documents - materialize cache", () => {
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
+        preferCache: false,
+        updateCache: true,
       });
 
       // Check hot field immediately after first call
@@ -74,6 +76,8 @@ describe("documents - materialize cache", () => {
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
+        preferCache: true,
+        updateCache: true,
       });
 
       // Check hot field after second call
@@ -108,19 +112,22 @@ describe("documents - materialize cache", () => {
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
+        preferCache: false,
+        updateCache: true,
       });
 
-      // Second materialize with force: true - should create new result
+      // Second materialize with preferCache: false - should create new result
       const result2 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
-        force: true,
+        preferCache: false,
+        updateCache: true,
       });
 
       // Check hot field
       expect(result1.hot).toBe(false); // First call - COLD
-      expect(result2.hot).toBe(false); // force: true bypasses cache - COLD
+      expect(result2.hot).toBe(false); // preferCache: false bypasses cache - COLD
 
       // Should NOT return same reference (force bypasses cache)
       expect(result1).not.toBe(result2);
@@ -158,6 +165,8 @@ describe("documents - materialize cache", () => {
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
+        preferCache: false,
+        updateCache: true,
       });
 
       // Materialize with id: "2"
@@ -165,6 +174,8 @@ describe("documents - materialize cache", () => {
         document: QUERY,
         variables: { id: "2" },
         canonical: true,
+        preferCache: false,
+        updateCache: true,
       });
 
       // Materialize with id: "1" again - should be cached
@@ -172,6 +183,8 @@ describe("documents - materialize cache", () => {
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
+        preferCache: true,
+        updateCache: true,
       });
 
       // Materialize with id: "2" again - should be cached
@@ -179,6 +192,8 @@ describe("documents - materialize cache", () => {
         document: QUERY,
         variables: { id: "2" },
         canonical: true,
+        preferCache: true,
+        updateCache: true,
       });
 
       // Same variables should return same reference
@@ -214,6 +229,8 @@ describe("documents - materialize cache", () => {
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
+        preferCache: false,
+        updateCache: true,
       });
 
       // Materialize in strict mode
@@ -221,6 +238,8 @@ describe("documents - materialize cache", () => {
         document: QUERY,
         variables: { id: "1" },
         canonical: false,
+        preferCache: false,
+        updateCache: true,
       });
 
       // Materialize in canonical mode again
@@ -228,6 +247,8 @@ describe("documents - materialize cache", () => {
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
+        preferCache: true,
+        updateCache: true,
       });
 
       // Materialize in strict mode again
@@ -235,6 +256,8 @@ describe("documents - materialize cache", () => {
         document: QUERY,
         variables: { id: "1" },
         canonical: false,
+        preferCache: true,
+        updateCache: true,
       });
 
       // Same mode should return same reference
@@ -266,6 +289,8 @@ describe("documents - materialize cache", () => {
         variables: {},
         canonical: true,
         entityId: "User:1",
+        preferCache: false,
+        updateCache: true,
       });
 
       // Materialize fragment for User:2
@@ -274,6 +299,8 @@ describe("documents - materialize cache", () => {
         variables: {},
         canonical: true,
         entityId: "User:2",
+        preferCache: false,
+        updateCache: true,
       });
 
       // Materialize fragment for User:1 again - should be cached
@@ -282,6 +309,8 @@ describe("documents - materialize cache", () => {
         variables: {},
         canonical: true,
         entityId: "User:1",
+        preferCache: true,
+        updateCache: true,
       });
 
       // Same entityId should return same reference
@@ -320,6 +349,8 @@ describe("documents - materialize cache", () => {
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
+        preferCache: false,
+        updateCache: true,
       });
 
       expect(result1.data.user.name).toBe("Alice");
@@ -331,32 +362,37 @@ describe("documents - materialize cache", () => {
         data: updatedData,
       });
 
-      // Materialize without force - returns OLD cached result
+      // Materialize with preferCache - returns OLD cached result
       const result2 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
+        preferCache: true,
+        updateCache: true,
       });
 
       expect(result2).toBe(result1); // Same reference
       expect(result2.data.user.name).toBe("Alice"); // Old data
 
-      // Materialize with force: true - gets NEW data and updates cache
+      // Materialize with preferCache: false - gets NEW data and updates cache
       const result3 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
-        force: true,
+        preferCache: false,
+        updateCache: true,
       });
 
       expect(result3).not.toBe(result1); // Different reference
       expect(result3.data.user.name).toBe("Alice Updated"); // New data
 
-      // Subsequent calls without force should return the updated cached result
+      // Subsequent calls with preferCache should return the updated cached result
       const result4 = documents.materialize({
         document: QUERY,
         variables: { id: "1" },
         canonical: true,
+        preferCache: true,
+        updateCache: true,
       });
 
       expect(result4).toBe(result3); // Same reference as force: true result
@@ -395,6 +431,8 @@ describe("documents - materialize cache", () => {
         document: QUERY,
         variables: {},
         canonical: true,
+        preferCache: false,
+        updateCache: true,
       });
 
       // Second call - should be instant (cache hit)
@@ -402,6 +440,8 @@ describe("documents - materialize cache", () => {
         document: QUERY,
         variables: {},
         canonical: true,
+        preferCache: true,
+        updateCache: true,
       });
 
       // Should return exact same reference (proves cache hit)
@@ -437,6 +477,8 @@ describe("documents - materialize cache", () => {
             document: QUERY,
             variables: { id: String(i) },
             canonical: true,
+            preferCache: false,
+            updateCache: true,
           }),
         );
       }
@@ -449,6 +491,8 @@ describe("documents - materialize cache", () => {
             document: QUERY,
             variables: { id: String(i) },
             canonical: true,
+            preferCache: true,
+            updateCache: true,
           }),
         );
       }
@@ -476,6 +520,8 @@ describe("documents - materialize cache", () => {
         document: QUERY,
         variables: { id: "999" },
         canonical: true,
+        preferCache: false,
+        updateCache: true,
       });
 
       // Second call should also return cached "none" result
@@ -483,6 +529,8 @@ describe("documents - materialize cache", () => {
         document: QUERY,
         variables: { id: "999" },
         canonical: true,
+        preferCache: true,
+        updateCache: true,
       });
 
       expect(result1.source).toBe("none");
@@ -515,12 +563,16 @@ describe("documents - materialize cache", () => {
         document: QUERY,
         variables: {},
         canonical: true,
+        preferCache: false,
+        updateCache: true,
       });
 
       // Materialize with undefined (defaults to {})
       const result2 = documents.materialize({
         document: QUERY,
         canonical: true,
+        preferCache: true,
+        updateCache: true,
       });
 
       // Should return same cached result
@@ -551,6 +603,8 @@ describe("documents - materialize cache", () => {
         variables: { id: "1" },
         canonical: true,
         fingerprint: true,
+        preferCache: false,
+        updateCache: true,
       });
 
       // Check hot immediately
@@ -563,6 +617,8 @@ describe("documents - materialize cache", () => {
         variables: { id: "1" },
         canonical: true,
         fingerprint: false,
+        preferCache: false,
+        updateCache: true,
       });
 
       // Check hot immediately
@@ -575,6 +631,8 @@ describe("documents - materialize cache", () => {
         variables: { id: "1" },
         canonical: true,
         fingerprint: true,
+        preferCache: true,
+        updateCache: true,
       });
 
       // Check hot immediately
@@ -586,6 +644,8 @@ describe("documents - materialize cache", () => {
         variables: { id: "1" },
         canonical: true,
         fingerprint: false,
+        preferCache: true,
+        updateCache: true,
       });
 
       // Check hot immediately

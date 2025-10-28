@@ -2528,7 +2528,7 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
   });
 
   describe("preferCache and updateCache options", () => {
-    it("preferCache: false (default) always materializes fresh data", () => {
+    it("preferCache: true (default) tries cache first, updateCache: false (default) doesn't pollute cache", () => {
       const QUERY = planner.getPlan(USER_QUERY);
 
       documents.normalize({
@@ -2539,23 +2539,23 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
         },
       });
 
-      // First materialization
+      // First materialization with defaults (preferCache: true, updateCache: false)
       const result1 = documents.materialize({
         document: QUERY,
         variables: { id: "u1" },
-        preferCache: false, // Default: always materialize
       });
 
-      // Second materialization - should create new result (not cached)
+      expect(result1.hot).toBe(false); // Cache miss, materialized fresh
+      expect(result1.source).not.toBe("none");
+
+      // Second materialization with defaults - should NOT be cached (updateCache: false)
       const result2 = documents.materialize({
         document: QUERY,
         variables: { id: "u1" },
-        preferCache: false,
       });
 
-      expect(result1.hot).toBe(false); // Not from cache
-      expect(result2.hot).toBe(false); // Not from cache
-      expect(result2).not.toBe(result1); // Different references
+      expect(result2.hot).toBe(false); // Still cache miss (first call didn't cache)
+      expect(result2).not.toBe(result1); // Different references (not cached)
     });
 
     it("preferCache: true returns cached result if available", () => {
@@ -2643,7 +2643,7 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       expect(result2).not.toBe(result1); // Different references
     });
 
-    it("updateCache: true (default) caches the result", () => {
+    it("updateCache: true (explicit) caches the result", () => {
       const QUERY = planner.getPlan(USER_QUERY);
 
       documents.normalize({
@@ -2654,19 +2654,19 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
         },
       });
 
-      // First materialization with updateCache: true (default)
+      // First materialization with explicit updateCache: true
       const result1 = documents.materialize({
         document: QUERY,
         variables: { id: "u1" },
+        updateCache: true,
       });
 
       expect(result1.hot).toBe(false);
 
-      // Second materialization with preferCache: true
+      // Second materialization with defaults (preferCache: true by default)
       const result2 = documents.materialize({
         document: QUERY,
         variables: { id: "u1" },
-        preferCache: true,
       });
 
       expect(result2.hot).toBe(true); // Cache hit
