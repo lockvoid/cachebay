@@ -450,10 +450,16 @@ describe("operations API - Performance", () => {
         // Verify no invalidation yet
         expect(invalidateSpy).not.toHaveBeenCalled();
 
-        // 3. Unsubscribe watcher
+        // 3. Unsubscribe watcher - this triggers invalidation
         handle.unsubscribe();
 
-        // 4. Execute query without watcher - should invalidate
+        // Verify unsubscribe triggered invalidation
+        expect(invalidateSpy).toHaveBeenCalledTimes(1);
+
+        // Reset spy to test the next executeQuery
+        invalidateSpy.mockClear();
+
+        // 4. Execute query without watcher - should ALSO invalidate
         mockTransport.http = vi.fn().mockResolvedValue({ data: userData, error: null });
         await client.executeQuery({
           query: QUERY,
@@ -461,7 +467,7 @@ describe("operations API - Performance", () => {
           cachePolicy: "network-only",
         });
 
-        // 5. Verify invalidate WAS called (no watcher to prevent it)
+        // 5. Verify invalidate WAS called AGAIN (no watcher to prevent it)
         expect(invalidateSpy).toHaveBeenCalledTimes(1);
       });
     });
@@ -521,17 +527,23 @@ describe("operations API - Performance", () => {
         // Verify no invalidation yet
         expect(invalidateSpy).not.toHaveBeenCalled();
 
-        // 2. Unsubscribe watcher
+        // 2. Unsubscribe watcher - this triggers invalidation
         handle.unsubscribe();
 
-        // 3. Execute cache-first without watcher - should invalidate
+        // Verify unsubscribe triggered invalidation
+        expect(invalidateSpy).toHaveBeenCalledTimes(1);
+
+        // Reset spy to test the next executeQuery
+        invalidateSpy.mockClear();
+
+        // 3. Execute cache-first without watcher - should ALSO invalidate
         await client.executeQuery({
           query: QUERY,
           variables: { id: "1" },
           cachePolicy: "cache-first",
         });
 
-        // 4. Verify invalidate WAS called
+        // 4. Verify invalidate WAS called AGAIN
         expect(invalidateSpy).toHaveBeenCalledTimes(1);
       });
     });
@@ -590,17 +602,23 @@ describe("operations API - Performance", () => {
         // Verify no invalidation yet
         expect(invalidateSpy).not.toHaveBeenCalled();
 
-        // 2. Unsubscribe watcher
+        // 2. Unsubscribe watcher - this triggers invalidation
         handle.unsubscribe();
 
-        // 3. Execute cache-only without watcher - should invalidate
+        // Verify unsubscribe triggered invalidation
+        expect(invalidateSpy).toHaveBeenCalledTimes(1);
+
+        // Reset spy to test the next executeQuery
+        invalidateSpy.mockClear();
+
+        // 3. Execute cache-only without watcher - should ALSO invalidate
         await client.executeQuery({
           query: QUERY,
           variables: { id: "1" },
           cachePolicy: "cache-only",
         });
 
-        // 4. Verify invalidate WAS called
+        // 4. Verify invalidate WAS called AGAIN
         expect(invalidateSpy).toHaveBeenCalledTimes(1);
       });
     });
@@ -660,10 +678,16 @@ describe("operations API - Performance", () => {
         // Verify no invalidation yet
         expect(invalidateSpy).not.toHaveBeenCalled();
 
-        // 2. Unsubscribe watcher
+        // 2. Unsubscribe watcher - this triggers invalidation
         handle.unsubscribe();
 
-        // 3. Execute cache-and-network without watcher - should invalidate
+        // Verify unsubscribe triggered invalidation
+        expect(invalidateSpy).toHaveBeenCalledTimes(1);
+
+        // Reset spy to test the next executeQuery
+        invalidateSpy.mockClear();
+
+        // 3. Execute cache-and-network without watcher - should ALSO invalidate
         mockTransport.http = vi.fn().mockResolvedValue({ data: userData, error: null });
         await client.executeQuery({
           query: QUERY,
@@ -671,8 +695,8 @@ describe("operations API - Performance", () => {
           cachePolicy: "cache-and-network",
         });
 
-        // 4. Verify invalidate WAS called (twice: cached data + network data)
-        expect(invalidateSpy).toHaveBeenCalled();
+        // 4. Verify invalidate WAS called AGAIN (for network data)
+        expect(invalidateSpy).toHaveBeenCalledTimes(1);
       });
     });
   });
