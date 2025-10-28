@@ -14,7 +14,12 @@ import {
   type ArgumentNode,
   type ValueNode,
 } from "graphql";
-import { ROOT_ID, CONNECTION_FIELDS } from "../core/constants";
+import {
+  ROOT_ID,
+  CONNECTION_FIELDS,
+  TYPENAME_FIELD,
+  CONNECTION_DIRECTIVE
+} from "../core/constants";
 import { lowerSelectionSet } from "./lowering/flatten";
 import { isCachePlan, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey } from "./utils";
 import type { CachePlan, PlanField } from "./types";
@@ -180,11 +185,11 @@ const computePlanMetadata = (
 
 function ensureTypename(ss: SelectionSetNode): SelectionSetNode {
   const has = ss.selections.some(
-    s => s.kind === Kind.FIELD && s.name.value === "__typename",
+    s => s.kind === Kind.FIELD && s.name.value === TYPENAME_FIELD,
   );
   if (has) return ss;
 
-  const typenameField: FieldNode = { kind: Kind.FIELD, name: { kind: Kind.NAME, value: "__typename" } };
+  const typenameField: FieldNode = { kind: Kind.FIELD, name: { kind: Kind.NAME, value: TYPENAME_FIELD } };
   const newSelections = new Array(ss.selections.length + 1);
   for (let i = 0; i < ss.selections.length; i++) {
     newSelections[i] = ss.selections[i];
@@ -276,7 +281,7 @@ function buildNetworkQuery(doc: DocumentNode): string {
           return node;
         }
 
-        const directives = (node.directives || []).filter(d => d.name.value !== "connection");
+        const directives = (node.directives || []).filter(d => d.name.value !== CONNECTION_DIRECTIVE);
         if (directives.length === node.directives.length) {
           return node; // No @connection found, return as-is
         }

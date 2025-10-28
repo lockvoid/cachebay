@@ -10,6 +10,15 @@ import {
 import type { PlanField } from "../types";
 import { fingerprintField } from "../fingerprint";
 import { collectFieldVars } from "../variables";
+import {
+  CONNECTION_FIRST_FIELD,
+  CONNECTION_LAST_FIELD,
+  CONNECTION_AFTER_FIELD,
+  CONNECTION_BEFORE_FIELD,
+  CONNECTION_DIRECTIVE,
+  CONNECTION_MODE_INFINITE,
+  CONNECTION_MODE_PAGE
+} from "../../core/constants";
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /* helpers                                                                   */
@@ -134,7 +143,7 @@ const parseConnectionDirective = (field: FieldNode): {
   mode?: "infinite" | "page";
 } => {
   if (!field.directives) return { isConnection: false };
-  const dir = field.directives.find(d => d.name.value === "connection");
+  const dir = field.directives.find(d => d.name.value === CONNECTION_DIRECTIVE);
   if (!dir) return { isConnection: false };
 
   let key: string | undefined;
@@ -153,7 +162,7 @@ const parseConnectionDirective = (field: FieldNode): {
       }
     } else if (name === "mode") {
       const v = String(valueToJS(arg.value));
-      if (v === "infinite" || v === "page") mode = v;
+      if (v === CONNECTION_MODE_INFINITE || v === CONNECTION_MODE_PAGE) mode = v;
     }
   }
 
@@ -162,7 +171,7 @@ const parseConnectionDirective = (field: FieldNode): {
     key,
     filters,
     // ✅ default to "infinite"
-    mode: mode ?? "infinite",
+    mode: mode ?? CONNECTION_MODE_INFINITE,
   };
 };
 
@@ -213,13 +222,13 @@ export const lowerSelectionSet = (
       let connectionMode: "infinite" | "page" | undefined;
       let pageArgs: string[] | undefined;
 
-      if (fieldNode.directives?.some(d => d.name.value === "connection")) {
+      if (fieldNode.directives?.some(d => d.name.value === CONNECTION_DIRECTIVE)) {
         const meta = parseConnectionDirective(fieldNode);
         isConnection = meta.isConnection;
         connectionKey = meta.key || fieldName;
 
         // If filters not provided: infer from field args excluding pagination args.
-        const paginationArgs = new Set(["first", "last", "after", "before"]);
+        const paginationArgs = new Set([CONNECTION_FIRST_FIELD, CONNECTION_LAST_FIELD, CONNECTION_AFTER_FIELD, CONNECTION_BEFORE_FIELD]);
         if (meta.filters && meta.filters.length > 0) {
           connectionFilters = meta.filters.slice();
         } else {
@@ -228,7 +237,7 @@ export const lowerSelectionSet = (
             .filter(n => !paginationArgs.has(n));
         }
 
-        connectionMode = meta.mode || "infinite"; // meta already defaults; keep for clarity
+        connectionMode = meta.mode || CONNECTION_MODE_INFINITE; // meta already defaults; keep for clarity
 
         // Collect window/pagination args for this connection
         pageArgs = (fieldNode.arguments || [])

@@ -22,6 +22,8 @@ export const CONNECTION_EDGES_FIELD = "edges" as const;
 
 export const CONNECTION_PAGE_INFO_FIELD = "pageInfo" as const;
 
+export const CONNECTION_NODE_FIELD = "node" as const;
+
 export const CONNECTION_FIRST_FIELD = "first" as const;
 
 export const CONNECTION_LAST_FIELD = "last" as const;

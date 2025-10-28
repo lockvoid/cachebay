@@ -1,6 +1,12 @@
 import { fingerprintNodes } from "./utils";
 import { buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey } from "../compiler/utils";
-import { ROOT_ID } from "./constants";
+import {
+  ROOT_ID,
+  TYPENAME_FIELD,
+  CONNECTION_EDGES_FIELD,
+  CONNECTION_PAGE_INFO_FIELD,
+  CONNECTION_NODE_FIELD
+} from "./constants";
 import { __DEV__ } from "./instrumentation";
 import type { CachePlan, PlanField } from "../compiler";
 import type { CanonicalInstance } from "./canonical";
@@ -260,7 +266,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         for (let i = 0; i < keys.length; i++) {
           const key = keys[i];
 
-          if (key === "__typename" || key === "edges" || key === "pageInfo") {
+          if (key === TYPENAME_FIELD || key === CONNECTION_EDGES_FIELD || key === CONNECTION_PAGE_INFO_FIELD) {
             continue;
           }
 
@@ -358,7 +364,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     };
 
     const normalizeArray = (arr: any[], responseKey: string | number, field: PlanField | undefined, frame: Frame) => {
-      if (frame.insideConnection && responseKey === "edges" && typeof frame.pageKey === "string") {
+      if (frame.insideConnection && responseKey === CONNECTION_EDGES_FIELD && typeof frame.pageKey === "string") {
         normalizeEdgesArray(frame.pageKey, arr, field, frame);
         return;
       }
@@ -394,8 +400,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         put(frame.parentId, { [containerFieldKey]: { __ref: containerKey } });
       }
 
-      if (frame.insideConnection && containerFieldKey === "pageInfo" && frame.pageKey) {
-        put(frame.pageKey, { pageInfo: { __ref: containerKey } });
+      if (frame.insideConnection && containerFieldKey === CONNECTION_PAGE_INFO_FIELD && frame.pageKey) {
+        put(frame.pageKey, { [CONNECTION_PAGE_INFO_FIELD]: { __ref: containerKey } });
       }
 
       const nextFrame = {
@@ -422,11 +428,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         put(entityId, {});
       }
 
-      if (field && !(frame.insideConnection && field.responseKey === "node")) {
+      if (field && !(frame.insideConnection && field.responseKey === CONNECTION_NODE_FIELD)) {
         linkTo(frame.parentId, field, entityId);
       }
 
-      const fromNode = !!field && field.responseKey === "node";
+      const fromNode = !!field && field.responseKey === CONNECTION_NODE_FIELD;
       const nextFrame = {
         parentId: entityId,
         fields: field?.selectionSet,
@@ -591,7 +597,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     };
 
     const readScalar = (record: any, field: PlanField, out: any, outKey: string, parentId: string, path: string) => {
-      if (field.fieldName === "__typename") {
+      if (field.fieldName === TYPENAME_FIELD) {
         const typeName = record ? (record as any).__typename : undefined;
         out[outKey] = typeName;
         return;
@@ -759,7 +765,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
 
       const selection = field.selectionSet || [];
-      const nodePlan = (field as any).selectionMap ? (field as any).selectionMap.get("node") : undefined;
+      const nodePlan = (field as any).selectionMap ? (field as any).selectionMap.get(CONNECTION_NODE_FIELD) : undefined;
 
       let nodeFingerprint;
 
@@ -767,19 +773,19 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const f = selection[i];
         const outKey = f.responseKey;
 
-        if (outKey === "node") {
+        if (outKey === CONNECTION_NODE_FIELD) {
           const nlink = (record as any).node;
 
           if (!nlink || !nlink.__ref) {
             outEdge.node = nlink === null ? null : undefined;
             strictOK = false;
             canonicalOK = false;
-            miss({ kind: EDGE_NODE_MISSING, at: addPath(path, "node"), edgeId });
+            miss({ kind: EDGE_NODE_MISSING, at: addPath(path, CONNECTION_NODE_FIELD), edgeId });
           } else {
             const nodeId = nlink.__ref as string;
             const nodeOut: any = {};
             outEdge.node = nodeOut;
-            readEntity(nodeId, nodePlan as PlanField, nodeOut, addPath(path, "node"));
+            readEntity(nodeId, nodePlan as PlanField, nodeOut, addPath(path, CONNECTION_NODE_FIELD));
             nodeFingerprint = getFingerprint(nodeOut);
           }
         } else if (!f.selectionSet) {
@@ -843,21 +849,21 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       const edgeFingerprints = [];
 
       for (const [responseKey, childField] of selMap) {
-        if (responseKey === "pageInfo") {
+        if (responseKey === CONNECTION_PAGE_INFO_FIELD) {
           const pageInfoLink = page.pageInfo;
 
           if (pageInfoLink && pageInfoLink.__ref) {
-            pageInfoFingerprint = readPageInfo(pageInfoLink.__ref as string, childField, conn, addPath(path, "pageInfo"));
+            pageInfoFingerprint = readPageInfo(pageInfoLink.__ref as string, childField, conn, addPath(path, CONNECTION_PAGE_INFO_FIELD));
           } else {
             conn.pageInfo = {};
             strictOK = false;
             canonicalOK = false;
-            miss({ kind: PAGE_INFO_MISSING, at: addPath(path, "pageInfo"), pageId: baseKey + ".pageInfo" });
+            miss({ kind: PAGE_INFO_MISSING, at: addPath(path, CONNECTION_PAGE_INFO_FIELD), pageId: baseKey + "." + CONNECTION_PAGE_INFO_FIELD });
           }
           continue;
         }
 
-        if (responseKey === "edges") {
+        if (responseKey === CONNECTION_EDGES_FIELD) {
           const refs = page.edges.__refs;
           const outArr = new Array(refs.length);
           conn.edges = outArr;

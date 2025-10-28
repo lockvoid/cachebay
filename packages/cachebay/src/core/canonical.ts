@@ -1,4 +1,11 @@
 import { buildConnectionCanonicalKey } from "../compiler/utils";
+import {
+  TYPENAME_FIELD,
+  CONNECTION_EDGES_FIELD,
+  CONNECTION_PAGE_INFO_FIELD,
+  CONNECTION_TYPENAME,
+  CONNECTION_PAGE_INFO_TYPENAME
+} from "./constants";
 import type { GraphInstance } from "./graph";
 import type { PlanField } from "../compiler";
 import type { OptimisticInstance } from "./optimistic";
@@ -89,7 +96,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
 
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
-      if (key === "edges" || key === "pageInfo" || key === "__typename") {
+      if (key === CONNECTION_EDGES_FIELD || key === CONNECTION_PAGE_INFO_FIELD || key === TYPENAME_FIELD) {
         continue;
       }
       extras[key] = connection[key];
@@ -121,7 +128,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
 
     const pageInfoKey = `${canonicalKey}.pageInfo`;
     graph.putRecord(pageInfoKey, {
-      __typename: "PageInfo",
+      __typename: CONNECTION_PAGE_INFO_TYPENAME,
       startCursor: null,
       endCursor: null,
       hasPreviousPage: false,
@@ -129,7 +136,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
     });
 
     graph.putRecord(canonicalKey, {
-      __typename: "Connection",
+      __typename: CONNECTION_TYPENAME,
       edges: { __refs: [] },
       pageInfo: { __ref: pageInfoKey },
     });
@@ -161,7 +168,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
 
       const pageInfoKey = `${canonicalKey}.pageInfo`;
       graph.putRecord(pageInfoKey, {
-        __typename: pageInfoData?.__typename || "PageInfo",
+        __typename: pageInfoData?.__typename || CONNECTION_PAGE_INFO_TYPENAME,
         startCursor: pageInfoData?.startCursor ?? null,
         endCursor: pageInfoData?.endCursor ?? null,
         hasPreviousPage: !!pageInfoData?.hasPreviousPage,
@@ -169,7 +176,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
       });
 
       graph.putRecord(canonicalKey, {
-        __typename: normalizedPage.__typename || "Connection",
+        __typename: normalizedPage.__typename || CONNECTION_TYPENAME,
         edges: { __refs: incomingEdgeRefs },
         pageInfo: { __ref: pageInfoKey },
         ...getExtras(normalizedPage),
@@ -370,7 +377,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
     }
 
     // Ensure pageInfo has required fields
-    pageInfo.__typename = pageInfo.__typename || "PageInfo";
+    pageInfo.__typename = pageInfo.__typename || CONNECTION_PAGE_INFO_TYPENAME;
     pageInfo.startCursor = pageInfo.startCursor ?? null;
     pageInfo.endCursor = pageInfo.endCursor ?? null;
     pageInfo.hasPreviousPage = !!pageInfo.hasPreviousPage;
@@ -389,7 +396,7 @@ export const createCanonical = ({ graph, optimistic }: CanonicalDependencies) =>
 
     // Write canonical
     graph.putRecord(canonicalKey, {
-      __typename: normalizedPage.__typename || existing?.__typename || "Connection",
+      __typename: normalizedPage.__typename || existing?.__typename || CONNECTION_TYPENAME,
       edges: { __refs: mergedEdges },
       pageInfo: { __ref: pageInfoKey },
       ...existingExtras,

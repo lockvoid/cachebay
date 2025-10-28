@@ -1,4 +1,11 @@
-import { ROOT_ID, TYPENAME_FIELD, ID_FIELD } from "./constants";
+import {
+  ROOT_ID,
+  TYPENAME_FIELD,
+  ID_FIELD,
+  CONNECTION_PAGE_INFO_FIELD,
+  CONNECTION_TYPENAME,
+  CONNECTION_PAGE_INFO_TYPENAME
+} from "./constants";
 import { buildConnectionCanonicalKey } from "../compiler/utils";
 import type { GraphInstance } from "./graph";
 
@@ -404,7 +411,7 @@ const removeEdge = (graph: GraphInstance, canonicalKey: string, canonical: any, 
 
 const createEmptyCanonical = (canonicalKey: string): any => {
   return {
-    __typename: "Connection",
+    __typename: CONNECTION_TYPENAME,
     edges: { __refs: [] },
     pageInfo: { __ref: `${canonicalKey}.pageInfo` },
   };
@@ -421,7 +428,7 @@ const cloneCanonical = (canonical: any): any => {
 const ensurePageInfo = (graph: GraphInstance, canonicalKey: string): void => {
   const pageInfoKey = `${canonicalKey}.pageInfo`;
   if (!graph.getRecord(pageInfoKey)) {
-    graph.putRecord(pageInfoKey, { __typename: "PageInfo" });
+    graph.putRecord(pageInfoKey, { __typename: CONNECTION_PAGE_INFO_TYPENAME });
   }
 };
 
@@ -537,7 +544,7 @@ const applyConnectionOp = (graph: GraphInstance, op: ConnectionOp): void => {
     }
 
     for (const key in op.patch) {
-      if (key !== "pageInfo") {
+      if (key !== CONNECTION_PAGE_INFO_FIELD) {
         canonical[key] = op.patch[key];
       }
     }
@@ -648,7 +655,7 @@ const revertConnectionOp = (layer: Layer, graph: GraphInstance, op: ConnectionOp
     }
 
     for (const key in op.patch) {
-      if (key === "pageInfo") {
+      if (key === CONNECTION_PAGE_INFO_FIELD) {
         continue;
       }
 
