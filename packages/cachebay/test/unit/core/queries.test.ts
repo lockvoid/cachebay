@@ -27,7 +27,7 @@ describe("queries API", () => {
         Profile: (p: any) => p.id,
       },
       onChange: (touchedIds) => {
-        queries.propagateData(touchedIds);
+        queries.notifyDataByDependencies(touchedIds);
       },
     });
     planner = createPlanner();

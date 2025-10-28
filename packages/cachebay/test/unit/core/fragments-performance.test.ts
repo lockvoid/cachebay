@@ -63,7 +63,7 @@ describe("Fragments Performance", () => {
     graph = createGraph({
       interfaces: { Post: ["AudioPost", "VideoPost"] },
       onChange: (touchedIds) => {
-        fragments.propagateData(touchedIds);
+        fragments.notifyDataByDependencies(touchedIds);
       },
     });
     planner = createPlanner();

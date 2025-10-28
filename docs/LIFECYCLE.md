@@ -100,8 +100,8 @@ documents.normalize({
 graph.onChange(touchedIds)  // Synchronously!
   ↓
 queueMicrotask(() => {
-  queries.propagateData(touchedIds)  // Deferred to microtask
-  fragments.propagateData(touchedIds)
+  queries.notifyDataByDependencies(touchedIds)  // Deferred to microtask
+  fragments.notifyDataByDependencies(touchedIds)
 })
 ```
 

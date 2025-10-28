@@ -20,7 +20,7 @@ describe("Fragments (documents-powered)", () => {
     graph = createGraph({
       interfaces: { Post: ["AudioPost", "VideoPost"] },
       onChange: (touchedIds) => {
-        fragments.propagateData(touchedIds);
+        fragments.notifyDataByDependencies(touchedIds);
       },
     });
     planner = createPlanner();
@@ -119,7 +119,7 @@ describe("Fragments (documents-powered)", () => {
       // Note: no strict link from User.posts(...) needed for canonical reads.
 
       // Nudge the watcher (in case your graph.onChange didn’t already)
-      fragments.propagateData(new Set(["User:u1", canonicalKey]));
+      fragments.notifyDataByDependencies(new Set(["User:u1", canonicalKey]));
       await tick(); // flush microtask
 
       // Now we should have data
@@ -134,13 +134,13 @@ describe("Fragments (documents-powered)", () => {
 
       // Update a node → reactive update
       graph.putRecord("Post:p1", { title: "P1 (Updated)" });
-      fragments.propagateData(new Set(["Post:p1"]));
+      fragments.notifyDataByDependencies(new Set(["Post:p1"]));
       await tick();
       expect(last.posts.edges[0].node.title).toBe("P1 (Updated)");
 
       // Update pageInfo
       graph.putRecord(`${canonicalKey}.pageInfo`, { endCursor: "p3", hasNextPage: false });
-      fragments.propagateData(new Set([`${canonicalKey}.pageInfo`]));
+      fragments.notifyDataByDependencies(new Set([`${canonicalKey}.pageInfo`]));
       await tick();
       expect(last.posts.pageInfo).toMatchObject({
         __typename: "PageInfo",
@@ -152,7 +152,7 @@ describe("Fragments (documents-powered)", () => {
 
       // Update page container (e.g. totalCount)
       graph.putRecord(canonicalKey, { totalCount: 3 });
-      fragments.propagateData(new Set([canonicalKey]));
+      fragments.notifyDataByDependencies(new Set([canonicalKey]));
       await tick();
       expect(last.posts.totalCount).toBe(3);
 
@@ -203,13 +203,13 @@ describe("Fragments (documents-powered)", () => {
 
       // Update a node → notify touched entity
       graph.putRecord("Post:p1", { title: "P1 (Updated)" });
-      fragments.propagateData(new Set(["Post:p1"]));
+      fragments.notifyDataByDependencies(new Set(["Post:p1"]));
       await tick();
       expect(last.posts.edges[0].node.title).toBe("P1 (Updated)");
 
       // Update canonical pageInfo
       graph.putRecord(`${canonicalKey}.pageInfo`, { endCursor: "p3", hasNextPage: false });
-      fragments.propagateData(new Set([`${canonicalKey}.pageInfo`]));
+      fragments.notifyDataByDependencies(new Set([`${canonicalKey}.pageInfo`]));
       await tick();
       expect(last.posts.pageInfo).toMatchObject({
         __typename: "PageInfo",
@@ -221,7 +221,7 @@ describe("Fragments (documents-powered)", () => {
 
       // Update container-level field (e.g. totalCount)
       graph.putRecord(canonicalKey, { totalCount: 3 });
-      fragments.propagateData(new Set([canonicalKey]));
+      fragments.notifyDataByDependencies(new Set([canonicalKey]));
       await tick();
       expect(last.posts.totalCount).toBe(3);
 
@@ -257,7 +257,7 @@ describe("Fragments (documents-powered)", () => {
       });
 
       // Nudge the watcher
-      fragments.propagateData(new Set(["Post:p1", canonicalKey]));
+      fragments.notifyDataByDependencies(new Set(["Post:p1", canonicalKey]));
       await tick();
 
       expect(last.comments.pageInfo).toMatchObject({
@@ -275,7 +275,7 @@ describe("Fragments (documents-powered)", () => {
       });
 
       graph.putRecord("Comment:c1", { text: "Comment 1 (Updated)" });
-      fragments.propagateData(new Set(["Comment:c1"]));
+      fragments.notifyDataByDependencies(new Set(["Comment:c1"]));
       await tick();
 
       expect(last.comments.edges[0].node).toMatchObject({
