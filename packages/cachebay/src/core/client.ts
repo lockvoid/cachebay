@@ -184,16 +184,13 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
 
   const planner = createPlanner();
 
-  let documents: ReturnType<typeof createDocuments>;
-  let queries: ReturnType<typeof createQueries>;
-  let fragments: ReturnType<typeof createFragments>;
-
   const graph = createGraph({
     keys: options.keys || {},
     interfaces: options.interfaces || {},
+
     onChange: (touchedIds) => {
-      queries.propagateData(touchedIds);
-      fragments.propagateData(touchedIds);
+      queries.notifyDataByDependencies(touchedIds);
+      fragments.notifyDataByDependencies(touchedIds);
     },
   });
 
@@ -201,14 +198,9 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
   const optimistic = createOptimistic({ graph });
   const ssr = createSSR({ hydrationTimeout: options.hydrationTimeout }, { graph });
   const canonical = createCanonical({ graph, optimistic });
-  documents = createDocuments({ graph, planner, canonical });
-  fragments = createFragments({ graph, planner, documents });
-
-  // Create queries first
-  queries = createQueries({
-    documents,
-    planner,
-  });
+  const documents = createDocuments({ graph, planner, canonical });
+  const fragments = createFragments({ planner, documents });
+  const queries = createQueries({ planner, documents });
 
   // Operations (always created since transport is required)
   const operations = createOperations(
@@ -216,13 +208,22 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
       cachePolicy: options.cachePolicy,
       transport: options.transport,
       suspensionTimeout: options.suspensionTimeout,
-      onQueryError: (signature, error) => {
-        // Propagate errors to queries, which will notify watchers
-        queries.propagateError(signature, error);
+
+      onQueryNetworkData: (signature, data) => {
+        queries.notifyDataBySignature(signature, data);
       },
-      onQueryData: queries.handleQueryExecuted,
+
+      onQueryNetworkError: (signature, error) => {
+        // Propagate errors to queries, which will notify watchers
+        queries.notifyErrorBySignature(signature, error);
+      },
     },
-    { planner, documents, ssr },
+
+    {
+      planner,
+      documents,
+      ssr,
+    },
   );
 
   const inspect = createInspect({ graph, optimistic });

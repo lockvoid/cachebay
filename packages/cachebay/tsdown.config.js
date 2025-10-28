@@ -31,7 +31,7 @@ export default defineConfig({
     return ["vue", "graphql", "graphql-tag"].includes(id);
   },
 
-  onSuccess: async () => {
+  onNetworkData: async () => {
     const rewriteImports = (filePath) => {
       const sourcePath = join(process.cwd(), "dist", filePath);
 

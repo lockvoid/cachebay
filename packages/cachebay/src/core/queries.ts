@@ -49,7 +49,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     onError?: (error: Error) => void;
     deps: Set<string>;
     lastData: any | undefined;
-    skipNextPropagate?: boolean; // Flag to skip next propagateData emission (coalescing)
+    skipNextPropagate?: boolean; // Flag to skip next notifyDataByDependencies emission (coalescing)
   };
 
   const watchers = new Map<number, WatcherState>();
@@ -93,7 +93,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
         const w = watchers.get(k);
         if (!w) continue;
 
-        // Skip if recently emitted by handleQueryExecuted (coalescing)
+        // Skip if recently emitted by notifyDataBySignature (coalescing)
         if (w.skipNextPropagate) {
           continue;
         }
@@ -130,7 +130,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
   /**
    * Propagate data changes to watchers tracking the given dependencies
    */
-  const propagateData = (touched: Set<string>) => {
+  const notifyDataByDependencies = (touched: Set<string>) => {
     for (const value of touched) {
       pendingTouched.add(value);
     }
@@ -141,7 +141,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
   /**
    * Propagate error to all watchers with the given signature
    */
-  const propagateError = (signature: string, error: Error) => {
+  const notifyErrorBySignature = (signature: string, error: Error) => {
     // Find all watchers with this signature
     const watcherSet = signatureToWatchers.get(signature);
     if (!watcherSet) return;
@@ -395,16 +395,17 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
   /**
    * Callback handler from operations - updates watcher dependencies and directly emits data
    * Handles multiple watchers per signature
+   * Returns true if watchers caught the data, false otherwise
    */
-  const handleQueryExecuted = ({ signature, data, dependencies }: {
+  const notifyDataBySignature = ({ signature, data, dependencies }: {
     signature: string;
     data: any;
     dependencies: Set<string>;
     cachePolicy: string;
-  }) => {
+  }): boolean => {
     // Find all watchers with this signature
     const watcherSet = signatureToWatchers.get(signature);
-    if (!watcherSet) return;
+    if (!watcherSet || watcherSet.size === 0) return false;
 
     // Emit to all watchers with this signature
     for (const watcherId of watcherSet) {
@@ -420,7 +421,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
       if (recycled !== w.lastData) {
         w.lastData = recycled;
 
-        // Set flag to skip next propagateData emission (coalescing)
+        // Set flag to skip next notifyDataByDependencies emission (coalescing)
         // This prevents double emission when normalize triggers graph.onChange
         w.skipNextPropagate = true;
 
@@ -437,6 +438,8 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
         }
       }
     }
+
+    return true;  // Watchers caught the data
   };
 
   /**
@@ -459,9 +462,9 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     readQuery,
     writeQuery,
     watchQuery,
-    propagateData,
-    propagateError,
-    handleQueryExecuted,
+    notifyDataByDependencies,
+    notifyErrorBySignature,
+    notifyDataBySignature,
     inspect, // Expose for debugging and testing
   };
 };

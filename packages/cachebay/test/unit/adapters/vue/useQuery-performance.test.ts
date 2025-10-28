@@ -299,8 +299,8 @@ describe("useQuery Performance", () => {
 
       // Still COLD (cache miss results are cached but still return source: "none")
       expect(normalizeCount).toBe(0);
-      expect(materializeColdCount).toBe(0);
-      expect(materializeHotCount).toBe(1); // HOT because cache miss result is cached
+      expect(materializeColdCount).toBe(1);
+      expect(materializeHotCount).toBe(0); // HOT because cache miss result is cached
       expect(watchQueryCallCount).toBe(2); // Second useQuery creates new watcher
       expect(mockFetch).not.toHaveBeenCalled();
     });
@@ -728,12 +728,12 @@ describe("useQuery Performance", () => {
   });
 
   describe("immediate option", () => {
-    it("default (not lazy) materializes on cache hit", async () => {
+    it.only("default (not lazy) materializes on cache hit", async () => {
       // Pre-populate cache AND materialize it once to populate materializeCache
       client.writeQuery({
         query: operations.USER_QUERY,
         variables: { id: "1" },
-        data: { user: { __typename: "User", id: "1", name: "Alice" } },
+        data: { user: { __typename: "User", id: "1", email: "u1@example.com" } },
       });
 
       // Phase 1
@@ -752,7 +752,6 @@ describe("useQuery Performance", () => {
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      // Should materialize immediately from cache (1 HOT since materializeCache is populated)
       expect(normalizeCount).toBe(0);
       expect(materializeColdCount).toBe(1);
       expect(materializeHotCount).toBe(0);

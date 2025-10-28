@@ -49,7 +49,7 @@ describe("queries API", () => {
       },
       { planner, documents, ssr },
       {
-        onQueryExecuted: queries.handleQueryExecuted,
+        onQueryExecuted: queries.notifyDataBySignature,
       },
     );
   });

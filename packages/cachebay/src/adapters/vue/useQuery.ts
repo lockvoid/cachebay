@@ -105,13 +105,14 @@ export function useQuery<TData = any, TVars = any>(
     isFetching.value = true;
 
     try {
+      console.log('Performing request2');
       const result = await client.executeQuery<TData, TVars>({
         query: options.query,
         variables: vars,
         cachePolicy: policy,
-        // onCachedData is called synchronously for cache hits (before Promise resolves)
+        // onCacheData is called synchronously for cache hits (before Promise resolves)
         // This prevents loading flash for cache-only, cache-first, and shows stale data for cache-and-network
-        onCachedData: (cachedData, { willFetchFromNetwork }) => {
+        onCacheData: (cachedData, { willFetchFromNetwork }) => {
           data.value = cachedData;
 
           suspensionPromise.resolve(cachedData);
@@ -129,6 +130,7 @@ export function useQuery<TData = any, TVars = any>(
           isFetching.value = false; // Set synchronously to prevent loading flash
         },
       });
+      console.log(result);
 
       // Promise resolves with fresh data, set isFetching to false
       isFetching.value = false;
@@ -191,6 +193,7 @@ export function useQuery<TData = any, TVars = any>(
           setupWatcher(vars);
           // Execute query unless lazy mode
           if (!options.lazy) {
+            console.log('PERFORM')
             const promise = performQuery(vars, policy);
 
             promise.then(result => {
@@ -238,6 +241,7 @@ export function useQuery<TData = any, TVars = any>(
 
   // Cleanup on unmount
   onBeforeUnmount(() => {
+    console.log("Unmounting useQuery");
     if (watchHandle) {
       watchHandle.unsubscribe();
       watchHandle = null;

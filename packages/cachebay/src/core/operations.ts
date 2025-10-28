@@ -54,11 +54,11 @@ export interface Operation<TData = any, TVars = any> {
   /** Canonical mode - read from canonical containers (default: true) */
   canonical?: boolean;
   /** Callback when operation succeeds */
-  onSuccess?: (data: TData) => void;
+  onNetworkData?: (data: TData) => void;
   /** Callback when an error occurs */
   onError?: (error: CombinedError) => void;
   /** Callback for cached data (called synchronously before Promise resolves for cache hits) */
-  onCachedData?: (data: TData, meta: { willFetchFromNetwork: boolean }) => void;
+  onCacheData?: (data: TData, meta: { willFetchFromNetwork: boolean }) => void;
 }
 
 // CombinedError is now imported from ./errors
@@ -164,15 +164,10 @@ export interface WsContext {
 
 export interface OperationsOptions {
   transport: Transport;
-  suspensionTimeout?: number;
-  onQueryError?: (signature: string, error: CombinedError) => void;
-  onQueryData?: (event: {
-    signature: string;
-    data: any;
-    dependencies: Set<string>;
-    cachePolicy: CachePolicy;
-  }) => void;
   cachePolicy?: CachePolicy;
+  suspensionTimeout?: number;
+  onQueryNetworkError?: (signature: string, error: CombinedError) => boolean; // Returns true if watchers caught the error, false otherwise
+  onQueryNetworkData?: (signature: string; data: any;) => boolean; // Returns true if watchers caught the data, false otherwise
 }
 
 export interface OperationsDependencies {
@@ -182,7 +177,7 @@ export interface OperationsDependencies {
 }
 
 export const createOperations = (
-  { transport, suspensionTimeout = 1000, onQueryError, onQueryData, cachePolicy: defaultCachePolicy }: OperationsOptions,
+  { transport, suspensionTimeout = 1000, onQueryNetworkData, onQueryNetworkError, cachePolicy: defaultCachePolicy }: OperationsOptions,
   { planner, documents, ssr }: OperationsDependencies,
 ) => {
   // Track query epochs to prevent stale responses from notifying watchers
@@ -192,13 +187,14 @@ export const createOperations = (
   // Suspension tracking: last terminal emit time per query signature
   const lastEmitBySig = new Map<string, number>();
 
-  // No need for error tracking maps - just call onQueryError callback
+  // No need for error tracking maps - just call onQueryNetworkError callback
 
   /**
    * Check if we're within the suspension window for a query signature
    */
   const isWithinSuspension = (signature: string): boolean => {
     const last = lastEmitBySig.get(signature);
+
     return last != null && performance.now() - last <= suspensionTimeout;
   };
 
@@ -216,20 +212,15 @@ export const createOperations = (
     query,
     variables = {},
     cachePolicy,
-    onSuccess,
+    onNetworkData,
+    onCacheData,
     onError,
-    onCachedData,
   }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
-    // Validate and normalize cache policy
     const finalCachePolicy = validateCachePolicy(cachePolicy ?? defaultCachePolicy, NETWORK_ONLY);
     const plan = planner.getPlan(query);
+    const canonicalSignature = plan.makeSignature(true, variables);
+    const strictSignature = plan.makeSignature(false, variables);
 
-    // Calculate both signatures upfront
-    const canonicalSignature = plan.makeSignature(true, variables);  // For watchers (excludes pagination)
-    const strictSignature = plan.makeSignature(false, variables);     // For suspension & epochs (includes pagination)
-
-    // Read from cache using documents directly
-    // Always read cache during SSR hydration, even for network-only
     let cached;
 
     if (finalCachePolicy !== NETWORK_ONLY || ssr.isHydrating()) {
@@ -239,7 +230,7 @@ export const createOperations = (
         canonical: true,
         fingerprint: true,
         preferCache: true,
-        updateCache: false,
+        updateCache: true,
       });
     }
 
@@ -249,9 +240,8 @@ export const createOperations = (
 
         queryEpochs.set(canonicalSignature, currentEpoch);
 
-        // Network fetch
         const context: HttpContext = {
-          query: plan.networkQuery, // Use the pre-compiled network-safe query string
+          query: plan.networkQuery,
           variables,
           operationType: "query",
           compiledQuery: plan,
@@ -261,7 +251,6 @@ export const createOperations = (
 
         const isStale = queryEpochs.get(canonicalSignature) !== currentEpoch;
 
-        // If stale, return null data with StaleResponseError wrapped in CombinedError
         if (isStale) {
           throw new StaleResponseError();
         }
@@ -272,53 +261,42 @@ export const createOperations = (
           documents.normalize({
             document: query,
             variables,
-            data: result.data,
+            data,
           });
 
-          // Read back from cache to get normalized/materialized data
-          // This ensures the same reference as watchQuery would emit
-          const cachedAfterWrite = documents.materialize({
+          // Materialize to update cache and get dependencies for watcher tracking
+          const freshMaterialization = documents.materialize({
             document: query,
             variables,
             canonical: true,
-            fingerprint: true, // Get dependencies for watcher tracking
+            fingerprint: true,
             preferCache: false,
             updateCache: true,
           });
 
-          // Notify watchers about query execution with data and dependencies
-          onQueryData?.({
-            signature: canonicalSignature,
-            data: cachedAfterWrite.data,
-            dependencies: cachedAfterWrite.dependencies,
-            cachePolicy: finalCachePolicy,
-          });
+          if (onQueryNetworkData) {
+            const wasCaught = onQueryNetworkData(canonicalSignature, freshMaterialization.data);
 
-          // Validate that we can materialize the data we just wrote
-          if (cachedAfterWrite.source === "none") {
-            if (__DEV__ && cachedAfterWrite.ok.miss) {
-              console.error("[cachebay] Query materialization failed: missing required fields in response", cachedAfterWrite.ok.miss);
+            if (!wasCaught) {
+              documents.invalidate({ document: query, variables, canonical: true, fingerprint: true });
             }
-            return {
-              data: null,
-              error: new CombinedError({
-                networkError: new Error(
-                  "Failed to materialize query after write. " +
-                  "The response may be missing required fields like __typename or id.",
-                ),
-              }),
-            };
+          }
+
+          if (freshMaterialization.source === "none") {
+            const errorMessage = "[cachebay] Query materialization failed: missing required fields in response";
+
+            if (__DEV__ && freshMaterialization.ok.miss) {
+              console.error(errorMessage, freshMaterialization.ok.miss);
+            }
+
+            return { data: null, error: new CombinedError({ networkError: new Error(errorMessage), }) };
           }
 
           markEmitted(strictSignature);
 
-          const successResult = {
-            data: cachedAfterWrite.data as TData,
-            error: result.error || null,
-            meta: { source: "network" as const },
-          };
-          onSuccess?.(successResult.data);
-          return successResult;
+          onNetworkData?.(freshMaterialization.data);
+
+          return { data: freshMaterialization.data || null, error: result.error || null, meta: { source: "network" }, };
         }
 
         // Mark as emitted for suspension tracking
@@ -326,23 +304,19 @@ export const createOperations = (
 
         // If we have an error but no data, propagate the error
         if (result.error) {
-          const combinedError = result.error instanceof CombinedError
-            ? result.error
-            : new CombinedError({ networkError: result.error as Error });
+          const combinedError = new CombinedError({ networkError: result.error as Error });
 
           onError?.(combinedError);
-          onQueryError?.(canonicalSignature, combinedError);
+          onQueryNetworkError?.(canonicalSignature, combinedError);
         }
 
-        return result as OperationResult<TData>;
+        return result;
       } catch (error) {
         const combinedError = new CombinedError({ networkError: error as Error });
 
-        // Only notify error callbacks if not a stale response
-        // Stale errors should be silently dropped
         if (!(error instanceof StaleResponseError)) {
           onError?.(combinedError);
-          onQueryError?.(canonicalSignature, combinedError);
+          onQueryNetworkError?.(canonicalSignature, combinedError);
         }
 
         return {
@@ -352,87 +326,54 @@ export const createOperations = (
       }
     };
 
-    // SSR hydration or suspension window: return cached data if available
     if (ssr.isHydrating() || isWithinSuspension(strictSignature)) {
       if (cached && cached.source !== "none") {
-        // Call onCachedData for SSR/suspension to set data synchronously
-        // No network request will be made (early return)
-        onCachedData?.(cached.data as TData, { willFetchFromNetwork: false });
+        onCacheData?.(cached.data, { willFetchFromNetwork: false });
+        onNetworkData?.(cached.data);
 
-        const result = { data: cached.data as TData, error: null };
-        onSuccess?.(result.data);
-        return result;
+        return { data: cached.data, error: null };
       }
     }
 
     if (finalCachePolicy === CACHE_ONLY) {
       if (!cached || cached.source === "none") {
         const error = new CombinedError({ networkError: new CacheMissError() });
-        onError?.(error);
 
-        // Notify error callback
-        onQueryError?.(canonicalSignature, error);
+        onError?.(error);
+        onQueryNetworkError?.(canonicalSignature, error);
 
         return { data: null, error };
       }
 
-      // Notify watchers about cache-only hit with data and dependencies
-      onQueryData?.({
-        signature: canonicalSignature,
-        data: cached.data,
-        dependencies: cached.dependencies,
-        cachePolicy: finalCachePolicy,
-      });
+      onCacheData?.(cached.data, { willFetchFromNetwork: false });
+      onNetworkData?.(cached.data);
+      onQueryNetworkData?.(canonicalSignature, cached.data);
 
-      const result = { data: cached.data as TData, error: null };
-      onCachedData?.(cached.data as TData, { willFetchFromNetwork: false });
-      onSuccess?.(result.data);
-      return result;
+      return { data: cached.data as TData, error: null };
     }
 
     if (finalCachePolicy === CACHE_FIRST) {
-      if (cached && cached.ok.canonical && cached.ok.strict) {
-        // Check if strict signature matches (pagination args haven't changed)
-        // If strictSignature is present and matches, return cached data
-        // If strictSignature doesn't match, fetch from network (pagination changed)
-        const strictMatches = cached.ok.strictSignature === strictSignature;
+      if (cached && cached.ok.canonical && cached.ok.strict && cached.ok.strictSignature === strictSignature) {
+        onCacheData?.(cached.data, { willFetchFromNetwork: false });
+        onNetworkData?.(cached.data);
+        onQueryNetworkData?.(canonicalSignature, cached.data)
 
-        if (strictMatches) {
-          // Strict match: pagination args haven't changed, return cached data
-          onQueryData?.({
-            signature: canonicalSignature,
-            data: cached.data,
-            dependencies: cached.dependencies,
-            cachePolicy: finalCachePolicy,
-          });
-
-          const result = { data: cached.data as TData, error: null };
-          onCachedData?.(cached.data as TData, { willFetchFromNetwork: false });
-          onSuccess?.(result.data);
-          return result;
-        }
-        // No strict match: pagination args changed, fall through to network fetch
+        return { data: cached.data as TData, error: null };
       }
     }
 
     if (finalCachePolicy === CACHE_AND_NETWORK) {
       if (cached && cached.ok.canonical) {
-        // Notify watchers so lastData is set (prevents duplicate emission if network data is same)
-        onQueryData?.({
-          signature: canonicalSignature,
-          data: cached.data,
-          dependencies: cached.dependencies,
-          cachePolicy: finalCachePolicy,
-        });
+        onCacheData?.(cached.data as TData, { willFetchFromNetwork: true });
+        onQueryCacheData?.(canonicalSignature, cached.data);
 
-        onCachedData?.(cached.data as TData, { willFetchFromNetwork: true });
-
-        // Return the network request Promise (resolves with fresh network data)
         return performRequest();
       }
     }
 
-    return performRequest();
+    if (finalCachePolicy === NETWORK_ONLY) {
+      return performRequest();
+    }
   };
 
   /**
@@ -455,13 +396,15 @@ export const createOperations = (
     try {
       const result = await transport.http(context);
 
-      // Write successful mutation result to cache
+      // Write successful mutation result to cache and notify watchers
       if (result.data && !result.error) {
-        documents.normalize({
-          document: query,
-          variables: vars,
-          data: result.data,
-        });
+        const freshMaterialization = normalizeAndNotify(query, vars, result.data, "cache-first");
+
+        // Return materialized data - mutations can contain connections and complex structures
+        return {
+          data: freshMaterialization.data as TData,
+          error: result.error,
+        };
       }
 
       return result as OperationResult<TData>;
@@ -506,18 +449,22 @@ export const createOperations = (
         subscribe(observer: Partial<ObserverLike<OperationResult<TData>>>) {
           return observable.subscribe({
             next: (result: OperationResult<TData>) => {
-              // Write successful subscription data to cache
+              // Write successful subscription data to cache and notify watchers
               if (result.data && !result.error) {
-                documents.normalize({
-                  document: query,
-                  variables: vars,
-                  data: result.data,
-                });
-              }
+                const freshMaterialization = normalizeAndNotify(query, vars, result.data, "cache-first");
 
-              // Forward to observer
-              if (observer.next) {
-                observer.next(result);
+                // Forward materialized data (normalized), not raw network response
+                if (observer.next) {
+                  observer.next({
+                    data: freshMaterialization.data as TData,
+                    error: result.error,
+                  });
+                }
+              } else {
+                // Forward errors as-is
+                if (observer.next) {
+                  observer.next(result);
+                }
               }
             },
             error: (err: any) => {

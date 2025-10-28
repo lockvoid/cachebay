@@ -24,7 +24,7 @@ The cache uses a reactive dependency system to notify watchers when data changes
 └──────┬──────┘
        │
        ├─► watchQuery: Creates watcher, tracks dependencies
-       ├─► handleQueryExecuted: Receives data from executeQuery
+       ├─► notifyDataBySignature: Receives data from executeQuery
        └─► propagateData: Notifies watchers when cache changes
 
 ┌─────────────┐
@@ -32,7 +32,7 @@ The cache uses a reactive dependency system to notify watchers when data changes
 └──────┬──────┘
        │
        ├─► executeQuery: Fetches data, normalizes, materializes
-       └─► onQueryData callback: Sends data + deps to queries
+       └─► onQueryNetworkData callback: Sends data + deps to queries
 
 ┌─────────────┐
 │    graph    │ (Normalized cache)
@@ -114,8 +114,8 @@ const result = documents.materialize({
   fingerprint: true
 })
 
-// Immediately call onQueryData (synchronous!)
-onQueryData({
+// Immediately call onQueryNetworkData (synchronous!)
+onQueryNetworkData({
   signature,
   data: result.data,
   dependencies: result.dependencies,
@@ -123,11 +123,11 @@ onQueryData({
 })
 ```
 
-### 3. Watcher Notification (handleQueryExecuted)
+### 3. Watcher Notification (notifyDataBySignature)
 
 ```typescript
 // queries.ts
-handleQueryExecuted({ signature, data, dependencies }) {
+notifyDataBySignature({ signature, data, dependencies }) {
   const watcherId = signatureToWatcher.get(signature)
   const watcher = watchers.get(watcherId)
 
@@ -165,7 +165,7 @@ scheduleFlush() {
       // Check coalescing flag
       if (watcher.skipNextPropagate) {
         watcher.skipNextPropagate = false
-        continue  // Skip! Already emitted by handleQueryExecuted
+        continue  // Skip! Already emitted by notifyDataBySignature
       }
 
       // Re-materialize and emit
@@ -188,7 +188,7 @@ scheduleFlush() {
 
 ## Coalescing Logic
 
-The coalescing system prevents double emissions when both `onQueryData` and `propagateData` would notify the same watcher.
+The coalescing system prevents double emissions when both `onQueryNetworkData` and `propagateData` would notify the same watcher.
 
 ### Problem Without Coalescing
 
@@ -197,7 +197,7 @@ executeQuery
   ↓
 normalize → graph.onChange → propagateData (emit 1) ❌
   ↓
-materialize → onQueryData → direct emit (emit 2) ❌
+materialize → onQueryNetworkData → direct emit (emit 2) ❌
 ```
 
 Result: **2 emissions, 2 materializations** (redundant!)
@@ -209,7 +209,7 @@ executeQuery
   ↓
 normalize → graph.onChange → queueMicrotask(propagateData)
   ↓
-materialize → onQueryData → direct emit + set skipNextPropagate
+materialize → onQueryNetworkData → direct emit + set skipNextPropagate
   ↓
 [microtask] propagateData → check skipNextPropagate → SKIP ✅
 ```
@@ -219,25 +219,25 @@ Result: **1 emission, 1 materialization** (optimized!)
 ### Timing
 
 1. **Synchronous**: `normalize` → `graph.onChange` → `queueMicrotask`
-2. **Synchronous**: `materialize` → `onQueryData` → emit + set flag
+2. **Synchronous**: `materialize` → `onQueryNetworkData` → emit + set flag
 3. **Microtask 1**: `propagateData` called
 4. **Microtask 2**: `scheduleFlush` → check flag → skip
 
 ## Key Optimizations
 
 ### 1. Direct Data Emission
-- `onQueryData` receives already-materialized data
+- `onQueryNetworkData` receives already-materialized data
 - No need to re-materialize in watcher
 - **Savings**: 1 materialize per query
 
 ### 2. Microtask Deferral
 - `graph.onChange` defers `propagateData` to microtask
-- Allows `onQueryData` to set `skipNextPropagate` flag first
+- Allows `onQueryNetworkData` to set `skipNextPropagate` flag first
 - **Savings**: Prevents redundant materialize from propagateData
 
 ### 3. Coalescing Flag
 - `skipNextPropagate` prevents double emission
-- Flag is set by `onQueryData`, checked by `propagateData`
+- Flag is set by `onQueryNetworkData`, checked by `propagateData`
 - **Savings**: 1 materialize per query execution
 
 ### 4. Object Identity Preservation
@@ -249,23 +249,23 @@ Result: **1 emission, 1 materialization** (optimized!)
 
 ### cache-first
 1. `watchQuery(immediate: true)` → materialize (cache hit)
-2. `executeQuery` → check cache → `onQueryData` → emit
+2. `executeQuery` → check cache → `onQueryNetworkData` → emit
 3. **Total**: 2 materializations (both needed)
 
 ### cache-only
 1. `watchQuery(immediate: true)` → materialize (cache hit)
-2. `executeQuery` → check cache → `onQueryData` → emit
+2. `executeQuery` → check cache → `onQueryNetworkData` → emit
 3. **Total**: 2 materializations (no network)
 
 ### network-only
 1. `watchQuery(immediate: true)` → materialize (cache miss, no emit)
-2. `executeQuery` → network → normalize → materialize → `onQueryData` → emit
+2. `executeQuery` → network → normalize → materialize → `onQueryNetworkData` → emit
 3. `propagateData` → SKIPPED (coalescing)
 4. **Total**: 2 materializations (1 wasted on cache miss, 1 after network)
 
 ### cache-and-network
 1. `watchQuery(immediate: true)` → materialize (cache hit) → emit
-2. `executeQuery` → return cached → background network → normalize → materialize → `onQueryData` → emit
+2. `executeQuery` → return cached → background network → normalize → materialize → `onQueryNetworkData` → emit
 3. `propagateData` → SKIPPED (coalescing)
 4. **Total**: 3 materializations (initial + cache check + network)
 
@@ -279,7 +279,7 @@ refetch() {
 
   // Execute query
   await executeQuery({ query, variables, cachePolicy: 'network-only' })
-  // → normalize → materialize → onQueryData → emit
+  // → normalize → materialize → onQueryNetworkData → emit
   // → propagateData → SKIPPED (coalescing)
 }
 ```
@@ -295,7 +295,7 @@ watch(variables, (newVars) => {
 
   // Execute query
   executeQuery({ query, variables: newVars })
-  // → normalize → materialize → onQueryData → emit
+  // → normalize → materialize → onQueryNetworkData → emit
   // → propagateData → SKIPPED (coalescing)
 })
 ```
@@ -313,7 +313,7 @@ watch(variables, (newVars) => {
 
 **Timeline**:
 1. `normalize` → `graph.onChange` → `queueMicrotask(propagateData)` [queued]
-2. `onQueryData` → set `skipNextPropagate` → emit
+2. `onQueryNetworkData` → set `skipNextPropagate` → emit
 3. [Microtask 1] `propagateData` → `scheduleFlush` → `queueMicrotask` [queued]
 4. [Microtask 2] `scheduleFlush` → check `skipNextPropagate` → should skip but doesn't?
 

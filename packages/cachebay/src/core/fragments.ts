@@ -1,12 +1,10 @@
 import { recycleSnapshots } from "./utils";
 import type { CachePlan } from "../compiler";
 import type { DocumentsInstance } from "./documents";
-import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
 import type { DocumentNode } from "graphql";
 
 export type FragmentsDependencies = {
-  graph: GraphInstance;
   planner: PlannerInstance;
   documents: DocumentsInstance;
 };
@@ -44,7 +42,7 @@ export type WriteFragmentArgs<TData = unknown> = {
 
 export type FragmentsInstance = ReturnType<typeof createFragments>;
 
-export const createFragments = ({ graph, planner, documents }: FragmentsDependencies) => {
+export const createFragments = ({ planner, documents }: FragmentsDependencies) => {
   // --- Watchers (same shape and batching strategy as queries) ---
   type WatcherState = {
     id: string;
@@ -115,7 +113,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     });
   };
 
-  const propagateData = (touched: Set<string>) => {
+  const notifyDataByDependencies = (touched: Set<string>) => {
     for (const value of touched) {
       pendingTouched.add(value);
     }
@@ -391,7 +389,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     readFragment,
     writeFragment,
     watchFragment,
-    propagateData,
+    notifyDataByDependencies,
     inspect,
   };
 };
