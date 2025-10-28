@@ -132,13 +132,13 @@ export const collectVarsFromSelectionSet = (
 export const makeMaskedVarsKeyFn = (
   strictMask: string[],
   canonicalMask: string[],
-): ((mode: "strict" | "canonical", vars: Record<string, any>) => string) => {
+): ((canonical: boolean, vars: Record<string, any>) => string) => {
   // Pre-sort masks for stable output
   const strictSorted = strictMask.slice().sort();
   const canonicalSorted = canonicalMask.slice().sort();
 
-  return (mode: "strict" | "canonical", vars: Record<string, any>): string => {
-    const mask = mode === "strict" ? strictSorted : canonicalSorted;
+  return (canonical: boolean, vars: Record<string, any>): string => {
+    const mask = canonical ? canonicalSorted : strictSorted;
     if (mask.length === 0) return "{}";
 
     const pairs: string[] = [];

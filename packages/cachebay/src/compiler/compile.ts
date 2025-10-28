@@ -103,17 +103,12 @@ const computePlanMetadata = (
   // 5. Build masks and precompiled key function
   const strictMask = Array.from(strictVars);
   const canonicalMask = Array.from(canonicalVars);
-  const internalMakeVarsKey = makeMaskedVarsKeyFn(strictMask, canonicalMask);
+  const makeVarsKey = makeMaskedVarsKeyFn(strictMask, canonicalMask);
 
-  // 6. Build public API with canonical boolean
-  const makeVarsKey = (canonical: boolean, vars: Record<string, any>): string => {
-    const mode = canonical ? "canonical" : "strict";
-    return internalMakeVarsKey(mode, vars);
-  };
-
+  // 6. Build signature function
   const makeSignature = (canonical: boolean, vars: Record<string, any>): string => {
     const mode = canonical ? "canonical" : "strict";
-    return `${id}|${mode}|${internalMakeVarsKey(mode, vars)}`;
+    return `${id}|${mode}|${makeVarsKey(canonical, vars)}`;
   };
 
   // 7. Build blazing fast getDependencies
