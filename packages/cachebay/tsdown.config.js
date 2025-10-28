@@ -1,17 +1,36 @@
 import { defineConfig } from "tsdown";
 
 export default defineConfig({
-  entry: [
-    "src/index.ts",
-    "src/adapters/vue/index.ts"
-  ],
-  format: ["esm"],
+  outDir: "dist",
   dts: true,
   sourcemap: true,
-  outDir: "dist",
-  external: [
-    "vue",
-    "graphql",
-    "graphql-tag",
+
+  entry: [
+    "src/core/index.ts",
+    "src/compiler/index.ts",
+    "src/adapters/vue/index.ts",
   ],
+
+  format: [
+    "esm",
+  ],
+
+  external: (id, importer) => {
+    if (importer?.includes("adapters/vue")) {
+      if (id.startsWith("../../core")) {
+        return true;
+      }
+    }
+
+    if (importer?.includes("core")) {
+
+      if (id.startsWith("../compiler")) {
+        console.log(id);
+
+        return true;
+      }
+    }
+
+    return ["vue", "graphql", "graphql-tag"].includes(id);
+  },
 });

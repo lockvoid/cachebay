@@ -48,8 +48,12 @@
   },
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "import": "./dist/core/index.js",
+      "types": "./dist/core/index.d.ts"
+    },
+    "./compiler": {
+      "import": "./dist/compiler/index.js",
+      "types": "./dist/compiler/index.d.ts"
     },
     "./vue": {
       "import": "./dist/adapters/vue/index.js",
