@@ -1,6 +1,5 @@
 import { unref, watch, readonly, type Ref, shallowRef, onScopeDispose } from "vue";
 import { useCachebay } from "./useCachebay";
-import { getQueryCanonicalKeys } from "../../core/utils";
 
 /**
  * Options for useFragment composable
@@ -29,7 +28,7 @@ export function useFragment<TData = unknown>(options: UseFragmentOptions<TData>)
   const cache = useCachebay();
 
   if (typeof cache.watchFragment !== "function") {
-    throw new Error("[useFragment] cache must expose watchFragment()");
+    throw new Error("[cachebay] useFragment: cache.watchFragment() is required");
   }
 
   const data = shallowRef<TData | undefined>(undefined);
@@ -65,7 +64,7 @@ export function useFragment<TData = unknown>(options: UseFragmentOptions<TData>)
         });
       }
     },
-    { immediate: true }
+    { immediate: true },
   );
 
   // Clean up on component unmount

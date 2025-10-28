@@ -16,20 +16,3 @@ export { useFragment } from './useFragment';
 export type { UseFragmentOptions } from './useFragment';
 
 export { CACHEBAY_KEY } from './constants';
-
-export type {
-  CachebayOptions,
-  KeysConfig,
-  InterfacesConfig,
-  KeyFunction,
-  PageInfo,
-  Edge,
-  Connection,
-  CachePolicy,
-} from '../../core/types';
-
-export type { CachebayInstance } from '../../core/client';
-
-export { CACHE_AND_NETWORK, NETWORK_ONLY, CACHE_FIRST, CACHE_ONLY } from '../../core/constants';
-
-export { CacheMissError, StaleResponseError, CombinedError } from '../../core/errors';

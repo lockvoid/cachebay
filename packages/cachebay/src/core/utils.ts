@@ -22,7 +22,7 @@ export const isDataDeepEqual = (a: any, b: any): boolean => {
   if (typeA !== typeB) return false;
 
   // Fast path: primitives (already handled by a === b above, but helps V8 optimize)
-  if (typeA !== 'object') return false;
+  if (typeA !== "object") return false;
 
   // Special case: __ref objects (very common in normalized cache)
   if (a.__ref !== undefined && b.__ref !== undefined) {
@@ -70,34 +70,6 @@ export const hasTypename = (value: any): boolean => {
   return !!(value && typeof value === "object" && typeof value.__typename === "string");
 };
 
-export const stableStringify = (object: any): string => {
-  const walk = (object: any): any => {
-    if (!isObject(object)) {
-      return object;
-    }
-
-    if (Array.isArray(object)) {
-      return object.map(walk);
-    }
-
-    const result: Record<string, any> = {};
-
-    for (let i = 0, keys = Object.keys(object).sort(); i < keys.length; i++) {
-      const key = keys[i];
-
-      result[key] = walk(object[key]);
-    }
-
-    return result;
-  };
-
-  try {
-    return JSON.stringify(walk(object));
-  } catch {
-    return "";
-  }
-};
-
 /**
  * FNV-1a hash utilities for fingerprinting
  * 32-bit FNV-1a style mixer; fast & stable enough for fingerprints
@@ -121,7 +93,7 @@ export const fingerprintNodes = (baseNode: number, childNodes: number[]): number
   return h >>> 0;
 };
 
-const FINGERPRINT_KEY = '__version';
+const FINGERPRINT_KEY = "__version";
 
 /**
  * Recycles subtrees from prevData by replacing equal subtrees in nextData.
@@ -141,9 +113,9 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
 
   // Only recycle objects and arrays
   if (
-    typeof prevData !== 'object' ||
+    typeof prevData !== "object" ||
     !prevData ||
-    typeof nextData !== 'object' ||
+    typeof nextData !== "object" ||
     !nextData
   ) {
     return nextData;
@@ -250,7 +222,7 @@ const VALID_CACHE_POLICIES: readonly CachePolicy[] = [
  * In dev: throws on invalid policy
  * In prod: warns and returns default policy
  */
-export const validateCachePolicy = (policy: any, defaultPolicy: CachePolicy = 'cache-first'): CachePolicy => {
+export const validateCachePolicy = (policy: any, defaultPolicy: CachePolicy = "cache-first"): CachePolicy => {
   if (!policy) {
     return defaultPolicy;
   }
@@ -259,7 +231,7 @@ export const validateCachePolicy = (policy: any, defaultPolicy: CachePolicy = 'c
     return policy as CachePolicy;
   }
 
-  const errorMessage = `Invalid cache policy: "${policy}". Valid policies are: ${VALID_CACHE_POLICIES.join(', ')}`;
+  const errorMessage = `Invalid cache policy: "${policy}". Valid policies are: ${VALID_CACHE_POLICIES.join(", ")}`;
 
   if (__DEV__) {
     throw new Error(errorMessage);
@@ -267,4 +239,4 @@ export const validateCachePolicy = (policy: any, defaultPolicy: CachePolicy = 'c
     console.warn(`[cachebay] ${errorMessage}. Falling back to "${defaultPolicy}".`);
     return defaultPolicy;
   }
-}
+};

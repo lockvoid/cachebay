@@ -1,6 +1,5 @@
 import { ref, watch, onBeforeUnmount, type Ref, type MaybeRefOrGetter, toValue } from "vue";
 import { useCachebay } from "./useCachebay";
-import type { Operation, OperationResult } from "../../core/operations";
 import type { DocumentNode } from "graphql";
 
 /**
@@ -33,7 +32,7 @@ export interface UseSubscriptionReturn<TData = any> {
  * @returns Reactive subscription state
  */
 export function useSubscription<TData = any, TVars = any>(
-  options: UseSubscriptionOptions<TData, TVars>
+  options: UseSubscriptionOptions<TData, TVars>,
 ): UseSubscriptionReturn<TData> {
   const client = useCachebay();
 
@@ -102,7 +101,7 @@ export function useSubscription<TData = any, TVars = any>(
     () => {
       setupSubscription();
     },
-    { immediate: true, deep: true }
+    { immediate: true, deep: true },
   );
 
   // Cleanup on unmount

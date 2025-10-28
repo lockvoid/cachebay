@@ -171,30 +171,15 @@ export type CachebayInstance = {
 export function createCachebay(options: CachebayOptions): CachebayInstance {
   // Validate transport configuration
   if (!options.transport) {
-    throw new Error(
-      "Cachebay: 'transport' is required. Please provide a transport object with 'http' function.\n" +
-      "Example:\n" +
-      "  createCachebay({\n" +
-      "    transport: {\n" +
-      "      http: async (context) => { /* HTTP implementation */ },\n" +
-      "      ws: async (context) => { /* WebSocket implementation (optional) */ }\n" +
-      "    }\n" +
-      "  })"
-    );
+    throw new Error("Missing required 'transport' with 'http' function. Example: { transport: { http: async (ctx) => { ... } } }");
   }
 
   if (typeof options.transport.http !== "function") {
-    throw new Error(
-      "Cachebay: 'transport.http' must be a function.\n" +
-      "Expected: async (context: HttpContext) => Promise<OperationResult>"
-    );
+    throw new Error("'transport.http' must be a function: async (ctx) => Promise<OperationResult>");
   }
 
   if (options.transport.ws && typeof options.transport.ws !== "function") {
-    throw new Error(
-      "Cachebay: 'transport.ws' must be a function if provided.\n" +
-      "Expected: async (context: WsContext) => Promise<ObservableLike<OperationResult>>"
-    );
+    throw new Error("'transport.ws' must be a function: async (ctx) => Promise<ObservableLike<OperationResult>>");
   }
 
   const planner = createPlanner();

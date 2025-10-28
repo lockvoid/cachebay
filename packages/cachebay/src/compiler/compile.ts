@@ -412,18 +412,12 @@ export const compilePlan = (
     } else {
       if (!opts?.fragmentName) {
         const names = fragmentDefs.map(f => f.name.value).join(", ");
-        throw new Error(
-          `compilePlan: document contains multiple fragments [${names}]; ` +
-          'pass { fragmentName: "<one-of>" }',
-        );
+        throw new Error(`Multiple fragments found [${names}], specify fragmentName`);
       }
       frag = fragmentDefs.find(f => f.name.value === opts.fragmentName);
       if (!frag) {
         const names = fragmentDefs.map(f => f.name.value).join(", ");
-        throw new Error(
-          `compilePlan: fragment "${opts.fragmentName}" not found. ` +
-          `Available: [${names}]`,
-        );
+        throw new Error(`Fragment "${opts.fragmentName}" not found. Available: [${names}]`);
       }
     }
 
@@ -486,5 +480,5 @@ export const compilePlan = (
     };
   }
 
-  throw new Error("compilePlan: document has no OperationDefinition.");
+  throw new Error("No operation found in document");
 };

@@ -1,6 +1,6 @@
 import { ref, type Ref } from "vue";
+import type { OperationResult } from "@/src/core/operations";
 import { useCachebay } from "./useCachebay";
-import type { Operation, OperationResult } from "../../core/operations";
 import type { DocumentNode } from "graphql";
 
 /**
@@ -23,7 +23,7 @@ export interface UseMutationReturn<TData = any, TVars = any> {
  * @returns Mutation state and execute function
  */
 export function useMutation<TData = any, TVars = any>(
-  mutation: DocumentNode | string
+  mutation: DocumentNode | string,
 ): UseMutationReturn<TData, TVars> {
   const client = useCachebay();
 

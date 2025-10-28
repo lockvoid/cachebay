@@ -1,8 +1,8 @@
 import { ref, watch, onBeforeUnmount, type Ref, type MaybeRefOrGetter, toValue } from "vue";
+import type { CachePolicy } from "@/src/core";
 import { useCachebay } from "./useCachebay";
-import type { CachePolicy } from "../../core/types";
-import type { DocumentNode } from "graphql";
 import { createDeferred } from "./utils";
+import type { DocumentNode } from "graphql";
 
 /**
  * useQuery options
@@ -63,7 +63,7 @@ export interface UseQueryReturn<TData = any, TVars = any> extends BaseUseQueryRe
  * @returns Reactive query state
  */
 export function useQuery<TData = any, TVars = any>(
-  options: UseQueryOptions<TData, TVars>
+  options: UseQueryOptions<TData, TVars>,
 ): UseQueryReturn<TData, TVars> {
   const client = useCachebay();
 
@@ -156,7 +156,7 @@ export function useQuery<TData = any, TVars = any>(
       : currentVars;
 
     // Default to network-only if no cache policy specified (Apollo behavior)
-    const refetchPolicy = refetchOptions?.cachePolicy || 'network-only';
+    const refetchPolicy = refetchOptions?.cachePolicy || "network-only";
 
     // Update watcher with new variables if provided
     if (refetchOptions?.variables) {
@@ -200,7 +200,7 @@ export function useQuery<TData = any, TVars = any>(
         }
       }
     },
-    { immediate: true }
+    { immediate: true },
   );
 
   // Watch for variable changes
@@ -218,7 +218,7 @@ export function useQuery<TData = any, TVars = any>(
         performQuery(vars, policy); // performQuery handles all policies including cache-only
       }
     },
-    { deep: true }
+    { deep: true },
   );
 
   // Watch for cache policy changes
@@ -229,11 +229,11 @@ export function useQuery<TData = any, TVars = any>(
       if (!isEnabled || !watchHandle) return;
 
       const vars = toValue(options.variables) || ({} as TVars);
-      const policy = newPolicy || 'cache-first';
+      const policy = newPolicy || "cache-first";
 
       // Re-execute query with new policy (performQuery handles all policies)
       performQuery(vars, policy);
-    }
+    },
   );
 
   // Cleanup on unmount
@@ -259,15 +259,15 @@ export function useQuery<TData = any, TVars = any>(
      */
     async then(
       onFulfilled?: (value: BaseUseQueryReturn<TData>) => any,
-      onRejected?: (reason: any) => any
+      onRejected?: (reason: any) => any,
     ): Promise<BaseUseQueryReturn<TData>> {
       // Throw if lazy mode is used with Suspense (async setup)
       // This makes lazy and Suspense mutually exclusive
       if (options.lazy) {
         const error = new Error(
-          '[cachebay] useQuery: lazy mode is incompatible with Suspense (async setup). ' +
+          "[cachebay] useQuery: lazy mode is incompatible with Suspense (async setup). " +
           'Either remove "lazy: true" or don\'t use "await useQuery()" in async setup(). ' +
-          'Use regular setup() and call refetch() manually instead.'
+          "Use regular setup() and call refetch() manually instead.",
         );
 
         if (onRejected) {

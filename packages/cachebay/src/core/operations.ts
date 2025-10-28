@@ -288,12 +288,7 @@ export const createOperations = (
           // Validate that we can materialize the data we just wrote
           if (cachedAfterWrite.source === "none") {
             if (__DEV__ && cachedAfterWrite.ok.miss) {
-              console.error(
-                '[cachebay] Failed to materialize query after network response.\n' +
-                'This usually means the response is missing required fields.\n' +
-                'Missing data:',
-                cachedAfterWrite.ok.miss
-              );
+              console.error('[cachebay] Query materialization failed: missing required fields in response', cachedAfterWrite.ok.miss);
             }
             return {
               data: null,

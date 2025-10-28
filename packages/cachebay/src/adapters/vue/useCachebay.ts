@@ -1,6 +1,6 @@
 import { inject } from "vue";
+import type { CachebayInstance } from "@/src/core";
 import { CACHEBAY_KEY } from "./constants";
-import type { CachebayInstance } from "../../core/client";
 
 /**
  * Get the Cachebay instance from Vue context
@@ -11,10 +11,7 @@ import type { CachebayInstance } from "../../core/client";
 export function useCachebay(): CachebayInstance {
   const instance = inject<CachebayInstance | null>(CACHEBAY_KEY, null);
   if (!instance) {
-    throw new Error(
-      "[cachebay] useCachebay() called before cache setup. " +
-      "Make sure to call app.use(cachebayPlugin) or provideCachebay(app, cache) first."
-    );
+    throw new Error("[cachebay] useCachebay() called before setup. Call app.use(cachebayPlugin) first");
   }
   return instance;
 }
