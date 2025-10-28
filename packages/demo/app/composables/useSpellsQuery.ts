@@ -64,7 +64,9 @@ export const useSpellsQuery = async () => {
   const query = await useQuery({ query: settings.relayMode === "infinite" ? SPELLS_QUERY_INFINITE_MODE : SPELLS_QUERY_PAGE_MODE, variables });
 
   watch(pagination.filter, () => {
-    activity.isFetching = true;
+    setTimeout(() => {
+      activity.isFetching = query.isFetching.value;
+    }, 0);
   });
 
   watch(query.isFetching, (isFetching) => {
