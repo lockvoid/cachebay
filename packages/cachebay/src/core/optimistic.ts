@@ -701,26 +701,13 @@ export const createOptimistic = ({ graph }: OptimisticDependencies) => {
         return null;
       }
 
-      // Avoid no-op writes (perf): if node only has __typename/id, skip the merge
-      const patch: any = {};
-      for (const key in node) {
-        if (key !== TYPENAME_FIELD && key !== ID_FIELD) {
-          patch[key] = node[key];
-        }
-      }
-      const hasFields = Object.keys(patch).length > 0;
-
-      const op: EntityOp = { kind: ENTITY_WRITE, recordId: entityKey, patch, policy: "merge" };
+      const op: EntityOp = { kind: ENTITY_WRITE, recordId: entityKey, patch: node, policy: "merge" };
 
       if (recording) {
-        if (hasFields) {
-          layer.entityOps.push(op);
-          recordOp(layer, graph, op);
-        }
+        layer.entityOps.push(op);
+        recordOp(layer, graph, op);
       } else {
-        if (hasFields) {
-          writeEntity(graph, entityKey, patch, "merge");
-        }
+        writeEntity(graph, entityKey, node, "merge");
       }
 
       return entityKey;

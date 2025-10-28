@@ -36,18 +36,6 @@ const commitChanges = (currentSnapshot: Record<string, any>, partialSnapshot: Re
       continue;
     }
 
-    if (fieldName === ID_FIELD) {
-      const normalizedId = incomingValue ? String(incomingValue) : null;
-
-      if (currentSnapshot[ID_FIELD] === normalizedId) {
-        continue;
-      }
-
-      currentSnapshot[ID_FIELD] = normalizedId;
-      hasChanges = true;
-      continue;
-    }
-
     const currentValue = currentSnapshot[fieldName];
 
     // Fast path: reference equality (handles primitives and same object references)
