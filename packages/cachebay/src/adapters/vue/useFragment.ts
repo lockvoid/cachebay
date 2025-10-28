@@ -1,5 +1,6 @@
 import { unref, watch, readonly, type Ref, shallowRef, onScopeDispose } from "vue";
 import { useCachebay } from "./useCachebay";
+import type { CachePolicy } from "../../core";
 
 /**
  * Options for useFragment composable
@@ -9,7 +10,7 @@ export type UseFragmentOptions<TData = unknown> = {
   /** Entity ID (typename:id) or reactive ref to ID */
   id: string | Ref<string>;
   /** GraphQL fragment document or compiled plan */
-  fragment: unknown;
+  fragment: CachePolicy | string;
   /** Fragment name if document contains multiple fragments */
   fragmentName?: string;
   /** GraphQL variables or reactive ref to variables */
