@@ -212,7 +212,8 @@ describe("fragments - cache reference counting", () => {
         canonical: true,
         entityId: "User:u1",
         fingerprint: true,
-        force: false,
+        preferCache: false,
+        updateCache: true,
       });
 
       // Verify cache works
@@ -222,7 +223,8 @@ describe("fragments - cache reference counting", () => {
         canonical: true,
         entityId: "User:u1",
         fingerprint: true,
-        force: false,
+        preferCache: true,
+        updateCache: true,
       });
 
       expect(cached2).toBe(cached1); // Same reference = cached
@@ -244,7 +246,8 @@ describe("fragments - cache reference counting", () => {
         canonical: true,
         entityId: "User:u1",
         fingerprint: true,
-        force: false,
+        preferCache: true,
+        updateCache: true,
       });
 
       expect(afterInvalidate).not.toBe(cached1); // Different reference = invalidated
@@ -268,7 +271,8 @@ describe("fragments - cache reference counting", () => {
         canonical: true,
         entityId: "User:u1",
         fingerprint: true,
-        force: false,
+        preferCache: false,
+        updateCache: true,
       });
 
       // Create two watchers
@@ -294,7 +298,8 @@ describe("fragments - cache reference counting", () => {
         canonical: true,
         entityId: "User:u1",
         fingerprint: true,
-        force: false,
+        preferCache: true,
+        updateCache: true,
       });
 
       expect(stillCached).toBe(cached); // Same reference = still cached
@@ -309,7 +314,8 @@ describe("fragments - cache reference counting", () => {
         canonical: true,
         entityId: "User:u1",
         fingerprint: true,
-        force: false,
+        preferCache: true,
+        updateCache: true,
       });
 
       expect(afterInvalidate).not.toBe(cached); // Different reference = invalidated
@@ -376,7 +382,8 @@ describe("fragments - cache reference counting", () => {
         canonical: true,
         entityId: "User:u1",
         fingerprint: true,
-        force: false,
+        preferCache: false,
+        updateCache: true,
       });
 
       // Create watcher for u1
@@ -396,7 +403,8 @@ describe("fragments - cache reference counting", () => {
         canonical: true,
         entityId: "User:u1",
         fingerprint: true,
-        force: false,
+        preferCache: true,
+        updateCache: true,
       });
 
       expect(u1_after).not.toBe(u1_cached); // Different reference = invalidated
@@ -428,7 +436,8 @@ describe("fragments - cache reference counting", () => {
         canonical: true,
         entityId: "User:u1",
         fingerprint: true,
-        force: false,
+        preferCache: false,
+        updateCache: true,
       });
 
       // Create two watchers for u1
@@ -460,7 +469,8 @@ describe("fragments - cache reference counting", () => {
         canonical: true,
         entityId: "User:u1",
         fingerprint: true,
-        force: false,
+        preferCache: true,
+        updateCache: true,
       });
 
       expect(u1_after).toBe(u1_cached); // Same reference = still cached

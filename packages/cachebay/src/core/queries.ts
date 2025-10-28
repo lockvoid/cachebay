@@ -103,8 +103,8 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
           variables: w.variables,
           canonical: true,
           fingerprint: true,
-          preferCache: false,
-          updateCache: true,
+          preferCache: false,  // Data just changed - need fresh materialization
+          updateCache: true,   // Update cache with fresh data
         });
 
         // Always refresh deps so missing -> fulfilled transitions trigger
@@ -261,8 +261,8 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
         document: query,
         variables,
         canonical: true,
-        preferCache: true,
-        updateCache: false,
+        preferCache: true,   // Try cache first
+        updateCache: true,   // Watchers cache their results
       });
 
       // Track deps even if initial data is missing
@@ -368,7 +368,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
             canonical: true,
             fingerprint: true,
             preferCache: true,
-            updateCache: false,
+            updateCache: true,  // Watchers cache their results
           });
 
           updateWatcherDependencies(watcherId, res.dependencies);

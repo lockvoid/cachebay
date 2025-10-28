@@ -93,8 +93,8 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
           canonical: true,  // Always use canonical mode
           entityId: w.id,
           fingerprint: true,
-          preferCache: true,
-          updateCache: false,
+          preferCache: false,  // Data just changed - need fresh materialization
+          updateCache: true,   // Update cache with fresh data
         });
 
         updateWatcherDeps(k, result.dependencies);
@@ -244,8 +244,8 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
       canonical: true,  // Always use canonical mode
       entityId: id,
       fingerprint: true,
-      preferCache: true,
-      updateCache: false,
+      preferCache: true,   // Try cache first
+      updateCache: true,   // Watchers cache their results
     });
 
     updateWatcherDeps(watcherId, initial.dependencies);
@@ -347,8 +347,8 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
             canonical: true,
             entityId: w.id,
             fingerprint: true,
-            preferCache: true,
-            updateCache: false,
+            preferCache: true,   // Try cache first
+            updateCache: true,   // Watchers cache their results
           });
 
           updateWatcherDeps(watcherId, res.dependencies);

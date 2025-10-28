@@ -441,7 +441,6 @@ export const createOperations = (
   const executeMutation = async <TData = any, TVars = QueryVariables>({
     query,
     variables,
-    ...restOptions
   }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
     const vars = variables || ({} as TVars);
     const compiledQuery = planner.getPlan(query);
