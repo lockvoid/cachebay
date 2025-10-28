@@ -93,7 +93,8 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
           canonical: true,  // Always use canonical mode
           entityId: w.id,
           fingerprint: true,
-          force: true, // Always force in propagateData - data changed
+          preferCache: true,
+          updateCache: false,
         });
 
         updateWatcherDeps(k, result.dependencies);
@@ -169,17 +170,14 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
     fragmentName,
     variables = {},
   }: ReadFragmentArgs): T | null => {
-    // Check if there's an active watcher for this fragment
-    const signature = buildSignature(id, fragment, fragmentName, variables);
-    const hasActiveWatcher = signatureToWatchers.has(signature);
-
     const result = documents.materialize({
+      entityId: id,
       document: planner.getPlan(fragment, { fragmentName }),
       variables: variables as Record<string, any>,
-      canonical: true,  // Always use canonical mode
-      entityId: id,
-      fingerprint: true, // Include version fingerprints
-      force: !hasActiveWatcher, // Use cache if watcher exists, otherwise force fresh
+      canonical: true,
+      fingerprint: true,
+      preferCache: true,
+      updateCache: false,
     });
 
     if (result.source !== "none") {
@@ -246,6 +244,8 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
       canonical: true,  // Always use canonical mode
       entityId: id,
       fingerprint: true,
+      preferCache: true,
+      updateCache: false,
     });
 
     updateWatcherDeps(watcherId, initial.dependencies);
@@ -347,7 +347,8 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
             canonical: true,
             entityId: w.id,
             fingerprint: true,
-            force: false, // Use cache - propagateData already updated it
+            preferCache: true,
+            updateCache: false,
           });
 
           updateWatcherDeps(watcherId, res.dependencies);

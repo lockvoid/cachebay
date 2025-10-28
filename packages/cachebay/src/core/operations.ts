@@ -223,7 +223,7 @@ export const createOperations = (
     // Validate and normalize cache policy
     const finalCachePolicy = validateCachePolicy(cachePolicy ?? defaultCachePolicy, NETWORK_ONLY);
     const plan = planner.getPlan(query);
-    
+
     // Calculate both signatures upfront
     const canonicalSignature = plan.makeSignature(true, variables);  // For watchers (excludes pagination)
     const strictSignature = plan.makeSignature(false, variables);     // For suspension & epochs (includes pagination)
@@ -231,13 +231,15 @@ export const createOperations = (
     // Read from cache using documents directly
     // Always read cache during SSR hydration, even for network-only
     let cached;
+
     if (finalCachePolicy !== NETWORK_ONLY || ssr.isHydrating()) {
       cached = documents.materialize({
         document: query,
         variables,
         canonical: true,
         fingerprint: true,
-        force: false,
+        preferCache: true,
+        updateCache: false,
       });
     }
 
@@ -280,7 +282,8 @@ export const createOperations = (
             variables,
             canonical: true,
             fingerprint: true, // Get dependencies for watcher tracking
-            force: true,
+            preferCache: false,
+            updateCache: true,
           });
 
           // Notify watchers about query execution with data and dependencies

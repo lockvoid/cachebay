@@ -77,6 +77,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
       pendingTouched.clear();
 
       const affected = new Set<number>();
+
       for (const id of touched) {
         const ws = depIndex.get(id);
         if (ws) {
@@ -100,9 +101,10 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
         const result = documents.materialize({
           document: w.query,
           variables: w.variables,
-          canonical: true, // Always canonical for watchers
+          canonical: true,
           fingerprint: true,
-          force: true,
+          preferCache: false,
+          updateCache: true,
         });
 
         // Always refresh deps so missing -> fulfilled transitions trigger
@@ -192,26 +194,20 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
   // --- Public API ---
 
-  const readQuery = <T = any>({
-    query,
-    variables = {},
-  }: ReadQueryOptions): T | null => {
-    // Check if there's an active watcher for this query+variables
-    const plan = planner.getPlan(query);
-    const signature = plan.makeSignature(true, variables);
-    const hasActiveWatcher = signatureToWatchers.has(signature);
-
+  const readQuery = <T = any>({ query, variables = {} }: ReadQueryOptions): T | null => {
     const result = documents.materialize({
       document: query,
       variables,
-      canonical: true,  // Always use canonical mode
-      fingerprint: true, // Include version fingerprints
-      force: !hasActiveWatcher, // Use cache if watcher exists, otherwise force fresh
+      canonical: true,
+      fingerprint: true,
+      preferCache: true,
+      updateCache: false,
     });
 
     if (result.source !== "none") {
       return result.data as T;
     }
+
     return null;
   };
 
@@ -265,8 +261,8 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
         document: query,
         variables,
         canonical: true,
-        fingerprint: true,
-        force: false,
+        preferCache: true,
+        updateCache: false,
       });
 
       // Track deps even if initial data is missing
@@ -371,7 +367,8 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
             variables: newVariables,
             canonical: true,
             fingerprint: true,
-            force: false,
+            preferCache: true,
+            updateCache: false,
           });
 
           updateWatcherDependencies(watcherId, res.dependencies);
