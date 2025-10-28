@@ -1,6 +1,6 @@
+import { gql } from "graphql-tag";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createCachebay } from "@/src/core/client";
-import { gql } from "graphql-tag";
 
 // Mock instrumentation module for production test
 vi.mock("@/src/core/instrumentation", () => ({
@@ -19,7 +19,7 @@ describe("Cache Policy Validation", () => {
       },
     });
 
-    consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
   const QUERY = gql`
@@ -38,7 +38,7 @@ describe("Cache Policy Validation", () => {
           query: QUERY,
           variables: { id: "1" },
           cachePolicy: "cache-first",
-        })
+        }),
       ).resolves.toBeDefined();
     });
 
@@ -55,7 +55,7 @@ describe("Cache Policy Validation", () => {
           query: QUERY,
           variables: { id: "1" },
           cachePolicy: "cache-only",
-        })
+        }),
       ).resolves.toBeDefined();
     });
 
@@ -65,7 +65,7 @@ describe("Cache Policy Validation", () => {
           query: QUERY,
           variables: { id: "1" },
           cachePolicy: "network-only",
-        })
+        }),
       ).resolves.toBeDefined();
     });
 
@@ -75,7 +75,7 @@ describe("Cache Policy Validation", () => {
           query: QUERY,
           variables: { id: "1" },
           cachePolicy: "cache-and-network",
-        })
+        }),
       ).resolves.toBeDefined();
     });
   });
@@ -83,13 +83,13 @@ describe("Cache Policy Validation", () => {
   describe("invalid cache policies", () => {
     it("throws in dev mode for invalid policy", async () => {
       // This test assumes __DEV__ is true in test environment
-      if (process.env.NODE_ENV !== 'production') {
+      if (process.env.NODE_ENV !== "production") {
         await expect(
           client.executeQuery({
             query: QUERY,
             variables: { id: "1" },
             cachePolicy: "invalid-policy" as any,
-          })
+          }),
         ).rejects.toThrow('Invalid cache policy: "invalid-policy"');
       }
     });
@@ -120,10 +120,10 @@ describe("Cache Policy Validation", () => {
       });
 
       expect(consoleWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Invalid cache policy: "invalid-policy"')
+        expect.stringContaining('Invalid cache policy: "invalid-policy"'),
       );
       expect(consoleWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Falling back to "network-only"')
+        expect.stringContaining('Falling back to "network-only"'),
       );
 
       // Reset modules and mock back to dev mode

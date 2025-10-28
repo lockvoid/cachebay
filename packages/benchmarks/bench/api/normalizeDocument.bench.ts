@@ -1,5 +1,5 @@
 import { bench, describe } from 'vitest';
-import { createCachebay as createCachebayClient } from "../../../cachebay/src/core/client";
+import { createCachebay as createCachebayClient } from "../../../cachebay/src/core";
 import { InMemoryCache } from "@apollo/client/cache";
 import { relayStylePagination } from "@apollo/client/utilities";
 import { Environment, Network, RecordSource, Store, createOperationDescriptor } from "relay-runtime";

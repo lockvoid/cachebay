@@ -44,7 +44,7 @@ export const fingerprintField = (field: PlanField, argNames: string[]): string =
       return cmp !== 0 ? cmp : a.fieldName.localeCompare(b.fieldName);
     });
     const childFingerprints = sortedChildren.map(child => child.selId || "");
-    parts.push(`{${childFingerprints.join(",")}}`)
+    parts.push(`{${childFingerprints.join(",")}}`);
   }
 
   return parts.join(":");

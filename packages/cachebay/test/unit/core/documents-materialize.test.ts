@@ -1833,7 +1833,7 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
 
       it("FULFILLED canonical read for connection with only canonical data", () => {
         // Seed canonical connection data
-        const canonicalKey = '@connection.posts({})';
+        const canonicalKey = "@connection.posts({})";
         const connectionData = posts.buildConnection(
           [
             { id: "p1", title: "Post 1" },
@@ -1857,7 +1857,7 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
 
       it("MISSING with canonical: false when only canonical connection exists (no strict data)", () => {
         // Seed canonical connection data (no strict/server data for this specific query)
-        const canonicalKey = '@connection.posts({})';
+        const canonicalKey = "@connection.posts({})";
         const connectionData = posts.buildConnection(
           [{ id: "p3", title: "Post 3" }],
           { startCursor: "p3", endCursor: "p3", hasNextPage: false, hasPreviousPage: false },

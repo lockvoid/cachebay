@@ -595,7 +595,7 @@ describe("Optimistic updates", () => {
     const { cache } = createTestClient();
 
     // Starts empty
-    expect(cache.readFragment({ id: "Post:x1", fragment: operations.POST_FRAGMENT })).toBe(null)
+    expect(cache.readFragment({ id: "Post:x1", fragment: operations.POST_FRAGMENT })).toBe(null);
 
     // Builder branches by data presence
     const tx = cache.modifyOptimistic((o: any, { data }: any) => {

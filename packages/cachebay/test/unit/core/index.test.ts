@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import * as Cachebay from "@/src/index";
+import * as Cachebay from "@/src/core";
 
 describe("Core Package Exports", () => {
   describe("Function exports", () => {

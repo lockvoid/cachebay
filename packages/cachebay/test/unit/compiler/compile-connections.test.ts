@@ -23,11 +23,11 @@ describe("Compiler x Connections", () => {
     expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
 
-  it("defaults mode to 'infinite' and args to all non-pagination args when omitted", () => {
+  it("defaults mode to 'undrefined' and args to all non-pagination args when omitted", () => {
     const plan = compilePlan(operations.POSTS_WITH_DEFAULTS_QUERY);
     const posts = plan.rootSelectionMap!.get("posts")!;
     expect(posts.isConnection).toBe(true);
-    expect(posts.connectionMode).toBe("infinite");
+    expect(posts.connectionMode).toBe(undefined);
     expect(posts.connectionFilters!.sort()).toEqual(["category", "sort"]);
 
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
@@ -79,7 +79,7 @@ describe("Compiler x Connections", () => {
     expect(comments.isConnection).toBe(true);
     expect(comments.connectionKey).toBe("PostComments");
     expect(comments.connectionFilters).toEqual([]);
-    expect(comments.connectionMode).toBe("infinite");
+    expect(comments.connectionMode).toBe(undefined);
 
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
     expect(hasTypenames(plan.networkQuery)).toBe(true);

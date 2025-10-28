@@ -1,7 +1,7 @@
 import { ref, watch, onBeforeUnmount, type Ref, type MaybeRefOrGetter, toValue } from "vue";
-import type { CachePolicy } from "@/src/core";
 import { useCachebay } from "./useCachebay";
 import { createDeferred } from "./utils";
+import type { CachePolicy } from "../../core";
 import type { DocumentNode } from "graphql";
 
 /**

@@ -459,7 +459,7 @@ describe("Compiler metadata", () => {
       expect(deps.has('user({"id":"u1"})')).toBe(true);
       // Nested posts connection should be included with proper parent context
       // Since posts is nested under user field (not entity), it should be at root level
-      expect(deps.has('@connection.posts({})')).toBe(true);
+      expect(deps.has("@connection.posts({})")).toBe(true);
       expect(deps.size).toBe(2);
     });
 
@@ -507,7 +507,7 @@ describe("Compiler metadata", () => {
       const deps = plan.getDependencies(true, { first: 10 });
 
       // Fragment has posts connection
-      expect(deps.has('@connection.posts({})')).toBe(true);
+      expect(deps.has("@connection.posts({})")).toBe(true);
       expect(deps.size).toBe(1);
     });
   });

@@ -44,7 +44,7 @@ describe("Compiler x Operations", () => {
     expect(users.isConnection).toBe(true);
     expect(users.connectionKey).toBe("users");
     expect(users.connectionFilters).toEqual(["role"]);
-    expect(users.connectionMode).toBe("infinite");
+    expect(users.connectionMode).toBe(undefined);
 
     const usersArgs = users.buildArgs({ role: "admin", first: 2, after: undefined });
     expect(usersArgs).toEqual({ role: "admin", first: 2 });
@@ -69,7 +69,7 @@ describe("Compiler x Operations", () => {
     expect(posts.isConnection).toBe(true);
     expect(posts.connectionKey).toBe("posts");
     expect(posts.connectionFilters).toEqual(["category", "sort"]);
-    expect(posts.connectionMode).toBe("infinite");
+    expect(posts.connectionMode).toBe(undefined);
 
     const userArgs = user.buildArgs({ id: "u1" });
     expect(userArgs).toEqual({ id: "u1" });
@@ -105,7 +105,7 @@ describe("Compiler x Operations", () => {
     expect(users.isConnection).toBe(true);
     expect(users.connectionKey).toBe("users");
     expect(users.connectionFilters).toEqual(["role"]);
-    expect(users.connectionMode).toBe("infinite");
+    expect(users.connectionMode).toBe(undefined);
 
     const userEdges = findField(users.selectionSet!, "edges")!;
     const userNode = findField(userEdges.selectionSet!, "node")!;
@@ -114,7 +114,7 @@ describe("Compiler x Operations", () => {
     expect(posts.isConnection).toBe(true);
     expect(posts.connectionKey).toBe("posts");
     expect(posts.connectionFilters).toEqual(["category"]);
-    expect(posts.connectionMode).toBe("infinite");
+    expect(posts.connectionMode).toBe(undefined);
 
     const postEdges = findField(posts.selectionSet!, "edges")!;
     const postNode = findField(postEdges.selectionSet!, "node")!;
@@ -123,7 +123,7 @@ describe("Compiler x Operations", () => {
     expect(comments.isConnection).toBe(true);
     expect(comments.connectionKey).toBe("comments");
     expect(comments.connectionFilters).toEqual([]);
-    expect(comments.connectionMode).toBe("infinite");
+    expect(comments.connectionMode).toBe(undefined);
 
     const usersArgs = users.buildArgs({ usersRole: "dj", usersFirst: 2, usersAfter: "u1" });
     expect(usersArgs).toEqual({ role: "dj", first: 2, after: "u1" });
@@ -278,7 +278,7 @@ describe("Compiler x Operations", () => {
         hasNextPage
         hasPreviousPage
       }
-      
+
       query Posts($first: Int) {
         posts(first: $first) @connection {
           pageInfo {
@@ -293,16 +293,16 @@ describe("Compiler x Operations", () => {
     `;
 
     const plan = compilePlan(DOC);
-    
+
     const posts = plan.rootSelectionMap!.get("posts")!;
     expect(posts.isConnection).toBe(true);
-    
+
     const pageInfo = posts.selectionMap!.get("pageInfo")!;
     expect(pageInfo).toBeDefined();
-    
+
     // CRITICAL: pageInfo selection should include __typename even when using fragment spread
     expect(pageInfo.selectionMap!.has("__typename")).toBe(true);
-    
+
     // Verify network query has typenames everywhere
     expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
@@ -326,27 +326,27 @@ describe("Compiler x Operations", () => {
 
   it("compiles UPDATE_USER_MUTATION: parses mutation type and adds __typename", () => {
     const plan = compilePlan(operations.UPDATE_USER_MUTATION);
-    
+
     expect(plan.kind).toBe("CachePlan");
     expect(plan.operation).toBe("mutation");
     expect(plan.rootTypename).toBe("Mutation");
-    
+
     const updateUser = findField(plan.root, "updateUser")!;
     expect(updateUser).toBeTruthy();
     expect(updateUser.fieldName).toBe("updateUser");
-    
+
     const user = findField(updateUser.selectionSet!, "user")!;
     expect(user).toBeTruthy();
-    
+
     const id = findField(user.selectionSet!, "id");
     const email = findField(user.selectionSet!, "email");
     expect(id).toBeTruthy();
     expect(email).toBeTruthy();
-    
+
     const posts = findField(user.selectionSet!, "posts")!;
     expect(posts.isConnection).toBe(true);
     expect(posts.connectionKey).toBe("posts");
-    
+
     // Verify __typename is added throughout
     expect(hasTypenames(plan.networkQuery)).toBe(true);
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
@@ -354,27 +354,27 @@ describe("Compiler x Operations", () => {
 
   it("compiles USER_UPDATED_SUBSCRIPTION: parses subscription type and adds __typename", () => {
     const plan = compilePlan(operations.USER_UPDATED_SUBSCRIPTION);
-    
+
     expect(plan.kind).toBe("CachePlan");
     expect(plan.operation).toBe("subscription");
     expect(plan.rootTypename).toBe("Subscription");
-    
+
     const userUpdated = findField(plan.root, "userUpdated")!;
     expect(userUpdated).toBeTruthy();
     expect(userUpdated.fieldName).toBe("userUpdated");
-    
+
     const userUpdatedArgs = userUpdated.buildArgs({ id: "u1" });
     expect(userUpdatedArgs).toEqual({ id: "u1" });
     expect(userUpdated.expectedArgNames).toEqual(["id"]);
-    
+
     const user = findField(userUpdated.selectionSet!, "user")!;
     expect(user).toBeTruthy();
-    
+
     const id = findField(user.selectionSet!, "id");
     const email = findField(user.selectionSet!, "email");
     expect(id).toBeTruthy();
     expect(email).toBeTruthy();
-    
+
     // Verify __typename is added throughout
     expect(hasTypenames(plan.networkQuery)).toBe(true);
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);

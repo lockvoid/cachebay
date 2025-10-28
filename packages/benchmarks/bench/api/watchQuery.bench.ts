@@ -1,5 +1,5 @@
 import { bench, describe } from 'vitest';
-import { createCachebay as createCachebayClient } from "../../../cachebay/src/core/client";
+import { createCachebay as createCachebayClient } from "../../../cachebay/src/core";
 import { InMemoryCache } from "@apollo/client/cache";
 import { relayStylePagination } from "@apollo/client/utilities";
 import { Environment, Network, RecordSource, Store, createOperationDescriptor } from "relay-runtime";
@@ -96,7 +96,7 @@ describe('watchQuery', () => {
     const cleanup = apollo.watch({
       query: USERS_APOLLO_QUERY,
       variables: { first: 10, after: null },
-      callback: () => {},
+      callback: () => { },
     });
 
     for (let i = 0; i < pages.length; i++) {
@@ -123,7 +123,7 @@ describe('watchQuery', () => {
     const { relay, operation } = iterations.pop();
 
     const snapshot = relay.lookup(operation.fragment);
-    const disposable = relay.subscribe(snapshot, () => {});
+    const disposable = relay.subscribe(snapshot, () => { });
 
     for (let i = 0; i < pages.length; i++) {
       relay.commitPayload(createOperationDescriptor(USERS_RELAY_QUERY, pages[i].variables), pages[i].data);

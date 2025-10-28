@@ -60,12 +60,12 @@ vi.mock("@/src/core/fragments", async () => {
   };
 });
 
+import { gql } from "graphql-tag";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { ref, nextTick, createApp, h } from "vue";
+import { provideCachebay } from "@/src/adapters/vue/plugin";
 import { useFragment } from "@/src/adapters/vue/useFragment";
 import { createCachebay } from "@/src/core/client";
-import { provideCachebay } from "@/src/adapters/vue/plugin";
-import { gql } from "graphql-tag";
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
@@ -103,14 +103,14 @@ describe("useFragment Performance", () => {
     const app = createApp({
       setup() {
         result = testFn();
-        return () => h('div');
+        return () => h("div");
       },
     });
 
     // Provide cachebay BEFORE mounting
     provideCachebay(app as any, client);
 
-    const container = document.createElement('div');
+    const container = document.createElement("div");
     app.mount(container);
 
     await tick();
@@ -277,7 +277,7 @@ describe("useFragment Performance", () => {
       materializeColdCount = 0;
       fragmentId.value = "User:2";
 
-      await tick(2)
+      await tick(2);
 
       expect(normalizeCount).toBe(0);
       expect(materializeColdCount).toBe(1); // All HOT from cache
@@ -292,7 +292,7 @@ describe("useFragment Performance", () => {
       materializeColdCount = 0;
       fragmentId.value = "User:1";
 
-      await tick(2)
+      await tick(2);
 
       // Should materialize HOT (already in materializeCache)
       expect(normalizeCount).toBe(0);
@@ -345,7 +345,7 @@ describe("useFragment Performance", () => {
       // Mount other watcher
       await runInVueContext(() => {
         return useFragment({
-          id: 'User:1',
+          id: "User:1",
           fragment: USER_FRAGMENT,
         });
       });
@@ -357,7 +357,7 @@ describe("useFragment Performance", () => {
       materializeColdCount = 0;
       fragmentId.value = "User:2";
 
-      await tick(2)
+      await tick(2);
 
       expect(normalizeCount).toBe(0);
       expect(materializeColdCount).toBe(1); // All HOT from cache
@@ -372,7 +372,7 @@ describe("useFragment Performance", () => {
       materializeColdCount = 0;
       fragmentId.value = "User:1";
 
-      await tick(2)
+      await tick(2);
 
       // Should materialize HOT (already in materializeCache)
       expect(normalizeCount).toBe(0);

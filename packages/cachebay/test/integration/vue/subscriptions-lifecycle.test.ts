@@ -212,7 +212,7 @@ describe("Subscriptions", () => {
       cache.executeSubscription({
         query: operations.USER_UPDATED_SUBSCRIPTION,
         variables: { id: "u1" },
-      })
+      }),
     ).rejects.toThrow("WebSocket transport is not configured");
   });
 });

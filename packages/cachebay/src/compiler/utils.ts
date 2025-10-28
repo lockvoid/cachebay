@@ -1,10 +1,9 @@
+import { ROOT_ID, CONNECTION_FIELDS } from "./constants";
 import type { CachePlan, PlanField } from "./types";
 
 export const isCachePlan = (v: any): v is CachePlan => {
   return v && typeof v === "object" && v.kind === "CachePlan";
 };
-
-import { ROOT_ID, CONNECTION_FIELDS } from "../core/constants";
 
 /**
  * Stable JSON stringify with sorted keys for consistent output.

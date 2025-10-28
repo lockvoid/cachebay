@@ -1,9 +1,9 @@
+import { buildConnectionCanonicalKey } from "../compiler";
 import { ROOT_ID } from "../core/constants";
-import { buildConnectionCanonicalKey } from "../compiler/utils";
+import type { FragmentsInstance } from "../core/fragments";
 import type { GraphInstance } from "../core/graph";
 import type { OptimisticInstance } from "../core/optimistic";
 import type { QueriesInstance } from "../core/queries";
-import type { FragmentsInstance } from "../core/fragments";
 
 /**
  * Inspect API instance type
@@ -156,12 +156,12 @@ const unique = <T,>(xs: T[]): T[] => {
  * @param deps - Required dependencies (graph, optimistic, queries, fragments)
  * @returns Inspect API with record, entityKeys, connectionKeys, config, optimistic, queries, and fragments methods
  */
-export const createInspect = ({ 
-  graph, 
+export const createInspect = ({
+  graph,
   optimistic,
   queries,
   fragments,
-}: { 
+}: {
   graph: GraphInstance;
   optimistic: OptimisticInstance;
   queries: QueriesInstance;

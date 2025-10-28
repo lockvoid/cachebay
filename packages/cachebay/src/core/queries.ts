@@ -1,7 +1,8 @@
 // src/core/queries.ts
+import { recycleSnapshots } from "./utils";
 import type { DocumentsInstance } from "./documents";
 import type { PlannerInstance } from "./planner";
-import { recycleSnapshots } from "./utils";
+import type { CachePlan } from "../compiler";
 import type { DocumentNode } from "graphql";
 
 export type QueriesDependencies = {
@@ -10,18 +11,18 @@ export type QueriesDependencies = {
 };
 
 export type ReadQueryOptions = {
-  query: DocumentNode | string;
+  query: CachePlan | DocumentNode | string;
   variables?: Record<string, any>;
 };
 
 export type WriteQueryOptions = {
-  query: DocumentNode | string;
+  query: CachePlan | DocumentNode | string;
   variables?: Record<string, any>;
   data: any;
 };
 
 export type WatchQueryOptions = {
-  query: DocumentNode | string;
+  query: CachePlan | DocumentNode | string;
   variables?: Record<string, any>;
   onData: (data: any) => void;
   onError?: (error: Error) => void;
@@ -41,7 +42,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
   // --- Watcher state & indices ---
   type WatcherState = {
-    query: DocumentNode | string;
+    query: CachePlan | DocumentNode | string;
     variables: Record<string, any>;
     signature: string;  // Query signature for error tracking
     onData: (data: any) => void;
@@ -57,7 +58,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
   let watcherSeq = 1;
 
   // --- Batched broadcasting ---
-  let pendingTouched = new Set<string>();
+  const pendingTouched = new Set<string>();
   let flushScheduled = false;
 
   const scheduleFlush = () => {

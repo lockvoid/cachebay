@@ -1,13 +1,13 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { createQueries, getQueryCanonicalKeys } from "@/src/core/queries";
-import { createGraph } from "@/src/core/graph";
-import { createPlanner } from "@/src/core/planner";
-import { createDocuments } from "@/src/core/documents";
-import { createCanonical } from "@/src/core/canonical";
-import { createOptimistic } from "@/src/core/optimistic";
-import { createOperations } from "@/src/core/operations";
-import { createSSR } from "@/src/core/ssr";
 import { gql } from "graphql-tag";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createCanonical } from "@/src/core/canonical";
+import { createDocuments } from "@/src/core/documents";
+import { createGraph } from "@/src/core/graph";
+import { createOperations } from "@/src/core/operations";
+import { createOptimistic } from "@/src/core/optimistic";
+import { createPlanner } from "@/src/core/planner";
+import { createQueries, getQueryCanonicalKeys } from "@/src/core/queries";
+import { createSSR } from "@/src/core/ssr";
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
@@ -50,7 +50,7 @@ describe("queries API", () => {
       { planner, documents, ssr },
       {
         onQueryExecuted: queries.handleQueryExecuted,
-      }
+      },
     );
   });
 
@@ -148,7 +148,7 @@ describe("queries API", () => {
           __typename: "User",
           id: "1",
           name: "Alice",
-          __version: 5
+          __version: 5,
         },
       });
     });

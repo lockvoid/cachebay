@@ -39,9 +39,9 @@ vi.mock("@/src/core/documents", async () => {
   };
 });
 
+import { gql } from "graphql-tag";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createCachebay } from "@/src/core/client";
-import { gql } from "graphql-tag";
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
 

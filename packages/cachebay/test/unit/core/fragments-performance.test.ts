@@ -39,12 +39,12 @@ vi.mock("@/src/core/documents", async () => {
 });
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createCanonical } from "@/src/core/canonical";
+import { createDocuments } from "@/src/core/documents";
 import { createFragments } from "@/src/core/fragments";
 import { createGraph } from "@/src/core/graph";
-import { createPlanner } from "@/src/core/planner";
-import { createDocuments } from "@/src/core/documents";
-import { createCanonical } from "@/src/core/canonical";
 import { createOptimistic } from "@/src/core/optimistic";
+import { createPlanner } from "@/src/core/planner";
 import { operations, tick } from "@/test/helpers";
 
 describe("Fragments Performance", () => {

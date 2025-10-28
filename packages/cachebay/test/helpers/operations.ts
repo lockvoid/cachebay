@@ -77,7 +77,7 @@ export const USER_POSTS_FRAGMENT = `
   fragment UserPosts on User {
     ...UserFields
 
-    posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"]) {
+    posts(category: $postsCategory, first: $postsFirst, after: $postsAfter) @connection(args: ["category"], mode: "infinite") {
       totalCount
 
       pageInfo {
@@ -214,7 +214,7 @@ export const POSTS_QUERY = `
   ${POST_FRAGMENT}
 
   query Posts($category: String, $sort: String, $first: Int, $after: String, $last: Int, $before: String) {
-    posts(category: $category, sort: $sort, first: $first, after: $after, last: $last, before: $before) @connection(filters: ["category", "sort"]) {
+    posts(category: $category, sort: $sort, first: $first, after: $after, last: $last, before: $before) @connection(filters: ["category", "sort"], mode: "infinite") {
       pageInfo {
         ...PageInfoFields
       }

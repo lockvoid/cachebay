@@ -1,12 +1,9 @@
 import { createCachebay } from "cachebay/vue";
 import type { HttpContext, WsContext, OperationResult } from "cachebay";
 import * as sse from 'graphql-sse';
-import { print, type DocumentNode } from 'graphql';
 
 const createHttpTransport = (url: string) => {
   return async (ctx: HttpContext): Promise<OperationResult> => {
-    const query = typeof ctx.query === 'string' ? ctx.query : print(ctx.query as DocumentNode);
-
     try {
       const result = await $fetch(url, {
         method: 'POST',
@@ -14,20 +11,14 @@ const createHttpTransport = (url: string) => {
           'Content-Type': 'application/json',
         },
         body: {
-          query,
+          query: ctx.query,
           variables: ctx.variables,
         },
       });
 
-      return {
-        data: result.data,
-        error: result.errors?.[0] ? new Error(result.errors[0].message) : null,
-      };
-    } catch (error: any) {
-      return {
-        data: null,
-        error: error instanceof Error ? error : new Error(String(error)),
-      };
+      return { data: result.data, error: result.errors };
+    } catch (error) {
+      return { data: null, error };
     }
   };
 };
@@ -79,7 +70,6 @@ export default defineNuxtPlugin((nuxtApp) => {
   });
 
   nuxtApp.vueApp.use(cachebay);
-
   nuxtApp.provide("cachebay", cachebay);
 
   if (import.meta.server) {

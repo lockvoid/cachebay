@@ -8,23 +8,17 @@ import {
   type FragmentDefinitionNode,
   type SelectionSetNode,
   type FieldNode,
-  type InlineFragmentNode,
-  type FragmentSpreadNode,
-  type VariableDefinitionNode,
-  type ArgumentNode,
-  type ValueNode,
 } from "graphql";
 import {
   ROOT_ID,
-  CONNECTION_FIELDS,
   TYPENAME_FIELD,
-  CONNECTION_DIRECTIVE
-} from "../core/constants";
+  CONNECTION_DIRECTIVE,
+} from "./constants";
+import { fingerprintPlan, hashFingerprint } from "./fingerprint";
 import { lowerSelectionSet } from "./lowering/flatten";
 import { isCachePlan, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey } from "./utils";
-import type { CachePlan, PlanField } from "./types";
-import { fingerprintPlan, hashFingerprint } from "./fingerprint";
 import { collectVarsFromSelectionSet, makeMaskedVarsKeyFn } from "./variables";
+import type { CachePlan, PlanField } from "./types";
 
 /** Build a Map of fragment name -> fragment definition for lowering. */
 const indexFragments = (doc: DocumentNode): Map<string, FragmentDefinitionNode> => {
@@ -158,7 +152,7 @@ const computePlanMetadata = (
         // For connections: use canonical (filters only) or strict (with pagination) based on mode
         const key = canonical ? buildConnectionCanonicalKey(field, parentId, vars) : buildConnectionKey(field, parentId, vars);
         deps.add(key);
-      } else{
+      } else {
         // For regular fields with arguments: use buildFieldKey
         const key = buildFieldKey(field, vars);
         deps.add(key);

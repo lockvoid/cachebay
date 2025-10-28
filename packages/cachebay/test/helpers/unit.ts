@@ -100,7 +100,7 @@ export function readCanonicalEdges(graph: ReturnType<typeof createGraph>, canoni
 }
 
 export const collectConnectionDirectives = (doc: DocumentNode | string): string[] => {
-  const parsed = typeof doc === 'string' ? parse(doc) : doc;
+  const parsed = typeof doc === "string" ? parse(doc) : doc;
   const hits: string[] = [];
   visit(parsed, {
     Field(node) {
@@ -124,7 +124,7 @@ export const selectionSetHasTypename = (node: { selectionSet?: SelectionSetNode 
 };
 
 export const hasTypenames = (doc: DocumentNode | string): boolean => {
-  const parsed = typeof doc === 'string' ? parse(doc) : doc;
+  const parsed = typeof doc === "string" ? parse(doc) : doc;
   let ok = true;
 
   visit(parsed, {

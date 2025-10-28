@@ -50,7 +50,7 @@ describe("Compiler x Fragments", () => {
         hasNextPage
         hasPreviousPage
       }
-      
+
       fragment UserPosts on User {
         posts(first: $first) @connection {
           pageInfo {
@@ -65,13 +65,13 @@ describe("Compiler x Fragments", () => {
     `;
 
     const plan = compilePlan(FRAGMENT, { fragmentName: "UserPosts" });
-    
+
     const posts = plan.rootSelectionMap!.get("posts")!;
     expect(posts.isConnection).toBe(true);
-    
+
     const pageInfo = posts.selectionMap!.get("pageInfo")!;
     expect(pageInfo).toBeDefined();
-    
+
     expect(pageInfo.selectionMap!.has("__typename")).toBe(true);
     expect(hasTypenames(plan.networkQuery)).toBe(true);
   });
@@ -165,7 +165,7 @@ describe("Compiler x Fragments", () => {
     expect(feed.isConnection).toBe(true);
     expect(feed.connectionKey).toBe("UserPosts");
     expect(feed.connectionFilters).toEqual(["category"]);
-    expect(feed.connectionMode).toBe("infinite");
+    expect(feed.connectionMode).toBe(undefined);
 
     expect(collectConnectionDirectives(plan.networkQuery)).toEqual([]);
     expect(hasTypenames(plan.networkQuery)).toBe(true);

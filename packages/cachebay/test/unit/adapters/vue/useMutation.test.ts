@@ -1,12 +1,12 @@
 import { mount } from "@vue/test-utils";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { defineComponent, h, nextTick } from "vue";
+import { provideCachebay } from "@/src/adapters/vue/plugin";
 import { useMutation } from "@/src/adapters/vue/useMutation";
 import { createCachebay } from "@/src/core/client";
-import { provideCachebay } from "@/src/adapters/vue/plugin";
 import type { Transport } from "@/src/core/operations";
 
-const MUTATION = `mutation CreateUser($name: String!) { createUser(name: $name) { id name } }`;
+const MUTATION = "mutation CreateUser($name: String!) { createUser(name: $name) { id name } }";
 
 describe("useMutation", () => {
   let mockTransport: Transport;
@@ -78,7 +78,7 @@ describe("useMutation", () => {
       expect.objectContaining({
         operationType: "mutation",
         variables: { name: "Alice" },
-      })
+      }),
     );
     expect(result.data).toEqual({ createUser: { id: "1", name: "Alice" } });
     expect(result.error).toBeNull();

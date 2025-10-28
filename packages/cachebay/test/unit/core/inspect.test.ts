@@ -1,16 +1,16 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createGraph } from "@/src/core/graph";
-import { createPlanner } from "@/src/core/planner";
 import { createCanonical } from "@/src/core/canonical";
-import { createOptimistic } from "@/src/core/optimistic";
-import { createDocuments } from "@/src/core/documents";
-import { createQueries } from "@/src/core/queries";
-import { createFragments } from "@/src/core/fragments";
-import { createInspect } from "@/src/core/inspect";
-import { writeConnectionPage } from "@/test/helpers/unit";
 import { ROOT_ID } from "@/src/core/constants";
+import { createDocuments } from "@/src/core/documents";
+import { createFragments } from "@/src/core/fragments";
+import { createGraph } from "@/src/core/graph";
+import { createInspect } from "@/src/core/inspect";
+import { createOptimistic } from "@/src/core/optimistic";
+import { createPlanner } from "@/src/core/planner";
+import { createQueries } from "@/src/core/queries";
 import { users } from "@/test/helpers/fixtures";
 import { USER_QUERY, USER_FRAGMENT } from "@/test/helpers/operations";
+import { writeConnectionPage } from "@/test/helpers/unit";
 
 describe("Inspect", () => {
   let graph: ReturnType<typeof createGraph>;

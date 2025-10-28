@@ -1,12 +1,12 @@
 import { mount } from "@vue/test-utils";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { defineComponent, h, ref, nextTick } from "vue";
+import { provideCachebay } from "@/src/adapters/vue/plugin";
 import { useSubscription } from "@/src/adapters/vue/useSubscription";
 import { createCachebay } from "@/src/core/client";
-import { provideCachebay } from "@/src/adapters/vue/plugin";
 import type { Transport, ObservableLike, OperationResult } from "@/src/core/operations";
 
-const SUBSCRIPTION = `subscription OnMessage { messageAdded { id text } }`;
+const SUBSCRIPTION = "subscription OnMessage { messageAdded { id text } }";
 
 describe("useSubscription", () => {
   let mockTransport: Transport;
@@ -91,7 +91,7 @@ describe("useSubscription", () => {
       expect.objectContaining({
         operationType: "subscription",
         variables: { roomId: "1" },
-      })
+      }),
     );
     expect(mockObservable.subscribe).toHaveBeenCalled();
   });
@@ -277,7 +277,7 @@ describe("useSubscription", () => {
     expect(mockTransport.ws).toHaveBeenCalledWith(
       expect.objectContaining({
         variables: { roomId: "1" },
-      })
+      }),
     );
 
     // Change variables - should trigger new subscription
@@ -289,7 +289,7 @@ describe("useSubscription", () => {
     expect(mockTransport.ws).toHaveBeenCalledWith(
       expect.objectContaining({
         variables: { roomId: "2" },
-      })
+      }),
     );
   });
 

@@ -1,7 +1,7 @@
-import type { App, Plugin } from "vue";
-import { createCachebay as createAgnosticCachebay, type CachebayInstance } from "../../core/client";
-import type { CachebayOptions } from "../../core/types";
+import { createCachebay as createAgnosticCachebay } from "../../core";
 import { CACHEBAY_KEY } from "./constants";
+import type { CachebayOptions, CachebayInstance } from "../../core";
+import type { App, Plugin } from "vue";
 
 /**
  * Cachebay Vue plugin instance

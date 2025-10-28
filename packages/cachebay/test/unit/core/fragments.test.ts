@@ -1,13 +1,13 @@
 // test/fragments.spec.ts
+import { gql } from "graphql-tag";
 import { describe, it, expect, beforeEach } from "vitest";
+import { createCanonical } from "@/src/core/canonical";
+import { createDocuments } from "@/src/core/documents";
 import { createFragments } from "@/src/core/fragments";
 import { createGraph } from "@/src/core/graph";
-import { createPlanner } from "@/src/core/planner";
-import { createDocuments } from "@/src/core/documents";
-import { createCanonical } from "@/src/core/canonical";
 import { createOptimistic } from "@/src/core/optimistic";
+import { createPlanner } from "@/src/core/planner";
 import { operations, writeConnectionPage, tick, fixtures } from "@/test/helpers";
-import { gql } from "graphql-tag";
 
 describe("Fragments (documents-powered)", () => {
   let graph: ReturnType<typeof createGraph>;
@@ -235,7 +235,7 @@ describe("Fragments (documents-powered)", () => {
       graph.putRecord("User:u2", { __typename: "User", id: "u2", name: "User 2" });
       graph.putRecord("User:u3", { __typename: "User", id: "u3", name: "User 3" });
 
-      const canonicalKey = '@connection.Post:p1.PostComments({})';
+      const canonicalKey = "@connection.Post:p1.PostComments({})";
       writeConnectionPage(graph, canonicalKey, {
         __typename: "CommentConnection",
         pageInfo: { startCursor: "c1", endCursor: "c2", hasNextPage: false, hasPreviousPage: false },
@@ -514,12 +514,12 @@ describe("Fragments (documents-powered)", () => {
 
       writeConnectionPage(graph, postsKey1, fixtures.posts.buildConnection(
         [{ id: "p1", title: "Tech Post" }],
-        { startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false }
+        { startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false },
       ));
 
       writeConnectionPage(graph, postsKey2, fixtures.posts.buildConnection(
         [{ id: "p2", title: "News Post" }],
-        { startCursor: "p2", endCursor: "p2", hasNextPage: false, hasPreviousPage: false }
+        { startCursor: "p2", endCursor: "p2", hasNextPage: false, hasPreviousPage: false },
       ));
 
       const emissions: any[] = [];
@@ -564,12 +564,12 @@ describe("Fragments (documents-powered)", () => {
 
       writeConnectionPage(graph, postsKey1, fixtures.posts.buildConnection(
         [{ id: "p1", title: "U1 Tech Post" }],
-        { startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false }
+        { startCursor: "p1", endCursor: "p1", hasNextPage: false, hasPreviousPage: false },
       ));
 
       writeConnectionPage(graph, postsKey2, fixtures.posts.buildConnection(
         [{ id: "p2", title: "U2 News Post" }],
-        { startCursor: "p2", endCursor: "p2", hasNextPage: false, hasPreviousPage: false }
+        { startCursor: "p2", endCursor: "p2", hasNextPage: false, hasPreviousPage: false },
       ));
 
       const emissions: any[] = [];

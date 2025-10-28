@@ -124,7 +124,7 @@ describe("Fragments lifecycle", () => {
           hasNextPage: true,
           hasPreviousPage: false,
           endCursor: "c2",
-          startCursor: "c1"
+          startCursor: "c1",
         },
       });
     });

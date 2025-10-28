@@ -62,11 +62,11 @@ vi.mock("@/src/core/queries", async () => {
 
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { ref, nextTick, defineComponent, h, createApp } from "vue";
+import { provideCachebay } from "@/src/adapters/vue/plugin";
 import { useQuery } from "@/src/adapters/vue/useQuery";
 import { createCachebay } from "@/src/core/client";
-import { provideCachebay } from "@/src/adapters/vue/plugin";
-import { operations, tick, delay } from "@/test/helpers";
 import type { CachePolicy } from "@/src/core/operations";
+import { operations, tick, delay } from "@/test/helpers";
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
@@ -102,14 +102,14 @@ describe("useQuery Performance", () => {
     const app = createApp({
       setup() {
         result = testFn();
-        return () => h('div');
+        return () => h("div");
       },
     });
 
     // Provide cachebay BEFORE mounting
     provideCachebay(app as any, client);
 
-    const container = document.createElement('div');
+    const container = document.createElement("div");
     app.mount(container);
 
     await tick();
@@ -505,7 +505,7 @@ describe("useQuery Performance", () => {
           query: operations.USER_QUERY,
           variables: { id: "1" },
           enabled,
-          cachePolicy: 'cache-first'
+          cachePolicy: "cache-first",
         });
       });
 
@@ -520,7 +520,7 @@ describe("useQuery Performance", () => {
         useQuery({
           query: operations.USER_QUERY,
           variables: { id: "1" },
-          cachePolicy: 'cache-first'
+          cachePolicy: "cache-first",
         });
       });
 
@@ -568,7 +568,7 @@ describe("useQuery Performance", () => {
           query: operations.USER_QUERY,
           variables: { id: "1" },
           enabled,
-          cachePolicy: 'cache-first'
+          cachePolicy: "cache-first",
         });
       });
 
@@ -683,7 +683,7 @@ describe("useQuery Performance", () => {
       }
 
       expect(caughtError).not.toBeNull();
-      expect(caughtError?.message).toContain('[cachebay] useQuery: lazy mode is incompatible with Suspense');
+      expect(caughtError?.message).toContain("[cachebay] useQuery: lazy mode is incompatible with Suspense");
     });
 
     it("lazy mode without Suspense works correctly", async () => {
@@ -702,12 +702,12 @@ describe("useQuery Performance", () => {
             variables: { id: "1" },
             lazy: true,
           });
-          return () => h('div');
+          return () => h("div");
         },
       });
 
       provideCachebay(app as any, client);
-      const container = document.createElement('div');
+      const container = document.createElement("div");
       app.mount(container);
 
       await tick();

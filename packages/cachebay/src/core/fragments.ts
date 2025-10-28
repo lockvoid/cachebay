@@ -1,10 +1,9 @@
-import type { CachePlan } from "@/src/compiler";
+import { recycleSnapshots } from "./utils";
+import type { CachePlan } from "../compiler";
+import type { DocumentsInstance } from "./documents";
 import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
-import type { DocumentsInstance } from "./documents";
 import type { DocumentNode } from "graphql";
-import { CacheMissError } from "./errors";
-import { recycleSnapshots } from "./utils";
 
 export type FragmentsDependencies = {
   graph: GraphInstance;
@@ -14,14 +13,14 @@ export type FragmentsDependencies = {
 
 export type ReadFragmentArgs<TData = unknown> = {
   id: string;
-  fragment: DocumentNode | CachePlan;
+  fragment: DocumentNode | CachePlan | string;
   fragmentName?: string;
   variables?: Record<string, unknown>;
 };
 
 export type WatchFragmentOptions = {
   id: string;
-  fragment: DocumentNode | CachePlan;
+  fragment: DocumentNode | CachePlan | string;
   fragmentName?: string;
   variables?: Record<string, unknown>;
   onData: (data: any) => void;
@@ -37,7 +36,7 @@ export type WatchFragmentHandle = {
 
 export type WriteFragmentArgs<TData = unknown> = {
   id: string;
-  fragment: DocumentNode | CachePlan;
+  fragment: DocumentNode | CachePlan | string;
   fragmentName?: string;
   data: TData;
   variables?: Record<string, unknown>;
@@ -64,7 +63,7 @@ export const createFragments = ({ graph, planner, documents }: FragmentsDependen
   const signatureToWatchers = new Map<string, Set<number>>(); // Multiple watchers per signature (entityId|signature)
   let watcherSeq = 1;
 
-  let pendingTouched = new Set<string>();
+  const pendingTouched = new Set<string>();
   let flushScheduled = false;
 
   const scheduleFlush = () => {

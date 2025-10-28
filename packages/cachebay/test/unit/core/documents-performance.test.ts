@@ -1,9 +1,9 @@
+import { gql } from "graphql-tag";
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createCanonical } from "@/src/core/canonical";
 import { createDocuments } from "@/src/core/documents";
 import { createGraph } from "@/src/core/graph";
 import { createPlanner } from "@/src/core/planner";
-import { createCanonical } from "@/src/core/canonical";
-import { gql } from "graphql-tag";
 
 /**
  * Documents Performance Tests - Materialize Cache
@@ -437,7 +437,7 @@ describe("documents - materialize cache", () => {
             document: QUERY,
             variables: { id: String(i) },
             canonical: true,
-          })
+          }),
         );
       }
 
@@ -449,7 +449,7 @@ describe("documents - materialize cache", () => {
             document: QUERY,
             variables: { id: String(i) },
             canonical: true,
-          })
+          }),
         );
       }
 

@@ -1,11 +1,13 @@
-import type { DocumentNode, GraphQLError } from "graphql";
-import type { PlannerInstance } from "./planner";
-import type { DocumentsInstance } from "./documents";
-import type { SSRInstance } from "./ssr";
-import { __DEV__ } from "./instrumentation";
 import { CACHE_AND_NETWORK, NETWORK_ONLY, CACHE_FIRST, CACHE_ONLY } from "./constants";
-import { validateCachePolicy } from "./utils";
 import { StaleResponseError, CombinedError, CacheMissError } from "./errors";
+import { __DEV__ } from "./instrumentation";
+import { validateCachePolicy } from "./utils";
+import type { DocumentsInstance } from "./documents";
+import type { PlannerInstance } from "./planner";
+import type { SSRInstance } from "./ssr";
+import type { CachePlan } from "../compiler";
+import type { CachePolicy } from "./types";
+import type { DocumentNode } from "graphql";
 
 /**
  * Types
@@ -44,7 +46,7 @@ export type QueryVariables = Record<string, any>;
  */
 export interface Operation<TData = any, TVars = any> {
   /** GraphQL query document */
-  query: DocumentNode | string;
+  query: CachePlan | DocumentNode | string;
   /** Query variables */
   variables?: TVars;
   /** Cache policy (default: cache-first) */
@@ -83,7 +85,7 @@ export interface OperationResult<TData = any> {
   /** Metadata about the operation result */
   meta?: {
     /** Source of the data: 'cache' for cached data, 'network' for fresh network data */
-    source?: 'cache' | 'network';
+    source?: "cache" | "network";
   };
 }
 
@@ -181,7 +183,7 @@ export interface OperationsDependencies {
 
 export const createOperations = (
   { transport, suspensionTimeout = 1000, onQueryError, onQueryData, cachePolicy: defaultCachePolicy }: OperationsOptions,
-  { planner, documents, ssr }: OperationsDependencies
+  { planner, documents, ssr }: OperationsDependencies,
 ) => {
   // Track query epochs to prevent stale responses from notifying watchers
   // Key: query signature, Value: current epoch number
@@ -289,14 +291,14 @@ export const createOperations = (
           // Validate that we can materialize the data we just wrote
           if (cachedAfterWrite.source === "none") {
             if (__DEV__ && cachedAfterWrite.ok.miss) {
-              console.error('[cachebay] Query materialization failed: missing required fields in response', cachedAfterWrite.ok.miss);
+              console.error("[cachebay] Query materialization failed: missing required fields in response", cachedAfterWrite.ok.miss);
             }
             return {
               data: null,
               error: new CombinedError({
                 networkError: new Error(
-                  'Failed to materialize query after write. ' +
-                  'The response may be missing required fields like __typename or id.'
+                  "Failed to materialize query after write. " +
+                  "The response may be missing required fields like __typename or id.",
                 ),
               }),
             };
@@ -307,7 +309,7 @@ export const createOperations = (
           const successResult = {
             data: cachedAfterWrite.data as TData,
             error: result.error || null,
-            meta: { source: 'network' as const },
+            meta: { source: "network" as const },
           };
           onSuccess?.(successResult.data);
           return successResult;
@@ -478,7 +480,7 @@ export const createOperations = (
   }: Operation<TData, TVars>): Promise<ObservableLike<OperationResult<TData>>> => {
     if (!transport.ws) {
       throw new Error(
-        "WebSocket transport is not configured. Please provide 'transport.ws' in createCachebay options to use subscriptions."
+        "WebSocket transport is not configured. Please provide 'transport.ws' in createCachebay options to use subscriptions.",
       );
     }
 

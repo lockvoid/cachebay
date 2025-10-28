@@ -1,12 +1,12 @@
+import { buildConnectionCanonicalKey } from "../compiler";
 import {
   ROOT_ID,
   TYPENAME_FIELD,
   ID_FIELD,
   CONNECTION_PAGE_INFO_FIELD,
   CONNECTION_TYPENAME,
-  CONNECTION_PAGE_INFO_TYPENAME
+  CONNECTION_PAGE_INFO_TYPENAME,
 } from "./constants";
-import { buildConnectionCanonicalKey } from "../compiler/utils";
 import type { GraphInstance } from "./graph";
 
 type OptimisticDependencies = { graph: GraphInstance };

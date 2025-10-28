@@ -1,8 +1,8 @@
 import { mount } from "@vue/test-utils";
 import { defineComponent, h, computed, watch, Suspense } from "vue";
-import { createTestClient, createConnectionComponent, getEdges, fixtures, operations, delay, tick } from "@/test/helpers";
-import { useQuery } from "@/src/adapters/vue/useQuery";
 import { useFragment } from "@/src/adapters/vue/useFragment";
+import { useQuery } from "@/src/adapters/vue/useQuery";
+import { createTestClient, createConnectionComponent, getEdges, fixtures, operations, delay, tick } from "@/test/helpers";
 
 describe("Edge cases", () => {
   it("reflects in-place entity updates across all edges (no union dedup)", async () => {
@@ -171,7 +171,7 @@ describe("Edge cases", () => {
         respond: () => {
           const connection = fixtures.posts.buildConnection([
             { id: "pa1", title: "A1", author: { id: "1", email: "u1@example.com", __typename: "User" } },
-            { id: "pa2", title: "A2", author: { id: "1", email: "u1@example.com", __typename: "User" } }
+            { id: "pa2", title: "A2", author: { id: "1", email: "u1@example.com", __typename: "User" } },
           ]);
 
           // Add missing score field to edges

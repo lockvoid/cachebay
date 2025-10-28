@@ -38,9 +38,9 @@ vi.mock("@/src/core/documents", async () => {
   };
 });
 
+import { gql } from "graphql-tag";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createCachebay } from "@/src/core/client";
-import { gql } from "graphql-tag";
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
@@ -339,7 +339,7 @@ describe("client API - Performance", () => {
       await client.executeQuery({
         query: QUERY,
         variables: { id: "1" },
-        cachePolicy: 'network-only',
+        cachePolicy: "network-only",
       });
 
       await tick();

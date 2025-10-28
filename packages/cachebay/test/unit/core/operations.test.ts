@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createOperations } from "../../../src/core/operations";
 import { CombinedError } from "../../../src/core/errors";
+import { createOperations } from "../../../src/core/operations";
 import type { Transport, OperationResult, ObservableLike } from "../../../src/core/operations";
 
 describe("operations", () => {
@@ -78,7 +78,7 @@ describe("operations", () => {
     // Create operations instance
     operations = createOperations(
       { transport: mockTransport, suspensionTimeout: 1000 },
-      { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr }
+      { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr },
     );
   });
 
@@ -136,7 +136,7 @@ describe("operations", () => {
 
       expect(result).toEqual({
         ...mockResult,
-        meta: { source: 'network' },
+        meta: { source: "network" },
       });
       expect(mockPlanner.getPlan).toHaveBeenCalledWith(query);
       expect(mockTransport.http).toHaveBeenCalledWith(
@@ -145,7 +145,7 @@ describe("operations", () => {
           variables,
           operationType: "query",
           compiledQuery: expect.objectContaining({ compiled: true }),
-        })
+        }),
       );
       expect(mockDocuments.normalize).toHaveBeenCalledWith({
         document: query,
@@ -195,7 +195,7 @@ describe("operations", () => {
       expect(mockTransport.http).toHaveBeenCalledWith(
         expect.objectContaining({
           variables: {},
-        })
+        }),
       );
     });
 
@@ -294,7 +294,7 @@ describe("operations", () => {
         expect(onError).toHaveBeenCalledWith(
           expect.objectContaining({
             networkError,
-          })
+          }),
         );
       });
     });
@@ -539,7 +539,7 @@ describe("operations", () => {
         expect(onError).toHaveBeenCalledWith(
           expect.objectContaining({
             networkError,
-          })
+          }),
         );
       });
 
@@ -709,7 +709,7 @@ describe("operations", () => {
           expect.objectContaining({
             name: "CombinedError",
             networkError,
-          })
+          }),
         );
       });
 
@@ -745,7 +745,7 @@ describe("operations", () => {
           operations.executeQuery({
             query,
             variables,
-          })
+          }),
         ).resolves.toBeDefined();
       });
     });
@@ -773,7 +773,7 @@ describe("operations", () => {
           variables,
           operationType: "mutation",
           compiledQuery: expect.objectContaining({ compiled: true }),
-        })
+        }),
       );
       expect(mockDocuments.normalize).toHaveBeenCalledWith({
         document: mutation,
@@ -818,11 +818,11 @@ describe("operations", () => {
     it("throws error when WebSocket transport is not configured", async () => {
       const opsWithoutWs = createOperations(
         { transport: { http: vi.fn() } },
-        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr }
+        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr },
       );
 
       await expect(
-        opsWithoutWs.executeSubscription({ query: subscription, variables })
+        opsWithoutWs.executeSubscription({ query: subscription, variables }),
       ).rejects.toThrow("WebSocket transport is not configured");
     });
 
@@ -842,7 +842,7 @@ describe("operations", () => {
           variables,
           operationType: "subscription",
           compiledQuery: expect.objectContaining({ compiled: true }),
-        })
+        }),
       );
       expect(observable).toBeDefined();
       expect(typeof observable.subscribe).toBe("function");
@@ -972,7 +972,7 @@ describe("operations", () => {
 
       const opsWithCallback = createOperations(
         { transport: mockTransport, onQueryError },
-        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr }
+        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr },
       );
 
       mockDocuments.materialize.mockReturnValue({
@@ -994,7 +994,7 @@ describe("operations", () => {
           networkError: expect.objectContaining({
             name: "CacheMissError",
           }),
-        })
+        }),
       );
     });
 
@@ -1006,7 +1006,7 @@ describe("operations", () => {
 
       const opsWithCallback = createOperations(
         { transport: mockTransport, onQueryError },
-        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr }
+        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr },
       );
 
       vi.mocked(mockTransport.http).mockRejectedValue(networkError);
@@ -1021,7 +1021,7 @@ describe("operations", () => {
         "query-sig-123",
         expect.objectContaining({
           networkError,
-        })
+        }),
       );
     });
   });
@@ -1059,7 +1059,7 @@ describe("operations", () => {
 
       // Promise resolves with network data
       expect(result.data).toEqual(networkData);
-      expect(result.meta?.source).toBe('network');
+      expect(result.meta?.source).toBe("network");
       expect(mockTransport.http).toHaveBeenCalled();
     });
 
@@ -1077,7 +1077,7 @@ describe("operations", () => {
       });
 
       expect(result.data).toEqual(networkData);
-      expect(result.meta?.source).toBe('network');
+      expect(result.meta?.source).toBe("network");
     });
 
     it("does not set meta.source for cache-first with cache hit", async () => {
@@ -1112,7 +1112,7 @@ describe("operations", () => {
     it("uses default cachePolicy from options when not provided in executeQuery", async () => {
       const opsWithDefaultPolicy = createOperations(
         { transport: mockTransport, cachePolicy: "cache-first" },
-        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr }
+        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr },
       );
 
       mockDocuments.materialize.mockReturnValue({
@@ -1138,7 +1138,7 @@ describe("operations", () => {
     it("executeQuery cachePolicy takes priority over options cachePolicy", async () => {
       const opsWithDefaultPolicy = createOperations(
         { transport: mockTransport, cachePolicy: "cache-first" },
-        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr }
+        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr },
       );
 
       const networkData = { user: { id: "1", name: "Network Alice" } };
@@ -1164,7 +1164,7 @@ describe("operations", () => {
     it("defaults to network-only when no cachePolicy provided in both places", async () => {
       const opsWithoutPolicy = createOperations(
         { transport: mockTransport },
-        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr }
+        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr },
       );
 
       const networkData = { user: { id: "1", name: "Network Alice" } };
@@ -1208,7 +1208,7 @@ describe("operations", () => {
 
       expect(onCachedData).toHaveBeenCalledWith(
         expect.objectContaining(cachedData),
-        { willFetchFromNetwork: false }
+        { willFetchFromNetwork: false },
       );
       expect(mockTransport.http).not.toHaveBeenCalled();
     });
@@ -1225,7 +1225,7 @@ describe("operations", () => {
         ok: {
           canonical: true,
           strict: true,
-          strictSignature: strictSignature
+          strictSignature: strictSignature,
         },
         dependencies: new Set(),
       });
@@ -1254,7 +1254,7 @@ describe("operations", () => {
 
       expect(onCachedData).toHaveBeenCalledWith(
         expect.objectContaining(cachedData),
-        { willFetchFromNetwork: false }
+        { willFetchFromNetwork: false },
       );
       // cache-first with cache hit doesn't fetch from network
       expect(mockTransport.http).not.toHaveBeenCalled();
@@ -1295,7 +1295,7 @@ describe("operations", () => {
 
       expect(onCachedData).toHaveBeenCalledWith(
         expect.objectContaining(cachedData),
-        { willFetchFromNetwork: true }
+        { willFetchFromNetwork: true },
       );
       expect(mockTransport.http).toHaveBeenCalled();
     });
@@ -1338,7 +1338,7 @@ describe("operations", () => {
 
       expect(onCachedData).toHaveBeenCalledWith(
         expect.objectContaining(cachedData),
-        { willFetchFromNetwork: false }
+        { willFetchFromNetwork: false },
       );
       expect(mockTransport.http).not.toHaveBeenCalled();
       expect(result.data).toEqual(cachedData);
@@ -1356,7 +1356,7 @@ describe("operations", () => {
         ok: {
           canonical: true,
           strict: true,
-          strictSignature: strictSignature
+          strictSignature: strictSignature,
         },
         dependencies: new Set(),
       });
@@ -1393,7 +1393,7 @@ describe("operations", () => {
 
       expect(onCachedData).toHaveBeenCalledWith(
         expect.objectContaining(cachedData),
-        { willFetchFromNetwork: false }
+        { willFetchFromNetwork: false },
       );
       expect(mockTransport.http).not.toHaveBeenCalled();
       expect(result.data).toEqual(cachedData);

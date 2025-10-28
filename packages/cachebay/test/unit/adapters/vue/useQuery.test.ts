@@ -1,9 +1,9 @@
 import { mount } from "@vue/test-utils";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { defineComponent, h, ref, nextTick, watch } from "vue";
+import { provideCachebay } from "@/src/adapters/vue/plugin";
 import { useQuery } from "@/src/adapters/vue/useQuery";
 import { createCachebay } from "@/src/core/client";
-import { provideCachebay } from "@/src/adapters/vue/plugin";
 import type { Transport, OperationResult } from "@/src/core/operations";
 import { USER_QUERY } from "@/test/helpers/operations";
 
@@ -20,7 +20,7 @@ describe("useQuery", () => {
     };
     cache = createCachebay({
       transport: mockTransport,
-      suspensionTimeout: 50  // Use 50ms for faster tests
+      suspensionTimeout: 50,  // Use 50ms for faster tests
     });
   });
 
@@ -667,7 +667,7 @@ describe("useQuery", () => {
       expect(mockTransport.http).toHaveBeenLastCalledWith(
         expect.objectContaining({
           variables: { id: "2" },
-        })
+        }),
       );
     });
 
@@ -719,7 +719,7 @@ describe("useQuery", () => {
       expect(mockTransport.http).toHaveBeenCalledWith(
         expect.objectContaining({
           variables: { search: "alice", limit: 10, offset: 0 },
-        })
+        }),
       );
     });
 
@@ -770,7 +770,7 @@ describe("useQuery", () => {
       expect(mockTransport.http).toHaveBeenCalledWith(
         expect.objectContaining({
           variables: { category: "tech", page: 2, perPage: 20 },
-        })
+        }),
       );
 
       mockTransport.http.mockClear();
@@ -783,7 +783,7 @@ describe("useQuery", () => {
       expect(mockTransport.http).toHaveBeenCalledWith(
         expect.objectContaining({
           variables: { category: "sports", page: 1, perPage: 20 },
-        })
+        }),
       );
     });
 
@@ -830,7 +830,7 @@ describe("useQuery", () => {
       expect(mockTransport.http).toHaveBeenCalledWith(
         expect.objectContaining({
           variables: { id: "1" },
-        })
+        }),
       );
     });
 
@@ -873,7 +873,7 @@ describe("useQuery", () => {
       expect(mockTransport.http).toHaveBeenCalledWith(
         expect.objectContaining({
           variables: { id: "2" },
-        })
+        }),
       );
     });
 
@@ -929,7 +929,7 @@ describe("useQuery", () => {
 
       // Should reflect the update
       expect(queryResult.data.value).toMatchObject({
-        user: { id: "2", email: "bob-updated@example.com" }
+        user: { id: "2", email: "bob-updated@example.com" },
       });
     });
 
@@ -1088,9 +1088,9 @@ describe("useQuery", () => {
                   data: { user: { __typename: "User", id: "1", email: "network@example.com" } },
                   error: null,
                 }),
-              100 // 100ms delay
-            )
-          )
+              100, // 100ms delay
+            ),
+          ),
       ),
     };
 
@@ -1196,7 +1196,7 @@ describe("useQuery", () => {
     it("serves cached response within suspension window to avoid duplicate network requests", async () => {
       const cache = createCachebay({
         transport: mockTransport,
-        suspensionTimeout: 1000 // 1 second window
+        suspensionTimeout: 1000, // 1 second window
       });
 
       // First query - hits network
@@ -1214,7 +1214,7 @@ describe("useQuery", () => {
           email: "alice@example.com",
           __typename: "User",
           __version: 5,
-        }
+        },
       });
 
       // Second query within suspension window - serves from cache without network
@@ -1231,7 +1231,7 @@ describe("useQuery", () => {
     it("hits network again after suspension window expires", async () => {
       const cache = createCachebay({
         transport: mockTransport,
-        suspensionTimeout: 50 // 50ms window
+        suspensionTimeout: 50, // 50ms window
       });
 
       // First query
@@ -1260,7 +1260,7 @@ describe("useQuery", () => {
     it("serves from strict cache during hydration", async () => {
       const cache = createCachebay({
         transport: mockTransport,
-        hydrationTimeout: 100
+        hydrationTimeout: 100,
       });
 
       // Mark as hydrating first
@@ -1286,15 +1286,15 @@ describe("useQuery", () => {
           __typename: "User",
           __version: 5,
           id: "1",
-          email: "ssr@example.com"
-        }
+          email: "ssr@example.com",
+        },
       });
     });
 
     it("does not hit network during hydration window", async () => {
       const cache = createCachebay({
         transport: mockTransport,
-        hydrationTimeout: 100 // 100ms window
+        hydrationTimeout: 100, // 100ms window
       });
 
       // Simulate SSR
@@ -1316,18 +1316,18 @@ describe("useQuery", () => {
       expect(result.data).toEqual({
         __version: 209096686,
         user: {
-          __typename: 'User',
+          __typename: "User",
           __version: 5,
           id: "1",
           email: "ssr@example.com",
-        }
+        },
       }); // Cached data
     });
 
     it("network-only still uses cache during hydration to avoid network", async () => {
       const cache = createCachebay({
         transport: mockTransport,
-        hydrationTimeout: 100
+        hydrationTimeout: 100,
       });
 
       (cache as any).__internals.ssr.hydrate({ records: [] });
@@ -1335,7 +1335,7 @@ describe("useQuery", () => {
       cache.writeQuery({
         query: USER_QUERY,
         variables: { id: "1" },
-        data: { user: { __typename: 'User', id: "1", email: "ssr@example.com" } },
+        data: { user: { __typename: "User", id: "1", email: "ssr@example.com" } },
       });
 
       // network-only during hydration should still use cache to avoid network
@@ -1350,11 +1350,11 @@ describe("useQuery", () => {
         __version: 209096686,
 
         user: {
-          __typename: 'User',
+          __typename: "User",
           __version: 5,
           id: "1",
           email: "ssr@example.com",
-        }
+        },
       });
     });
   });
@@ -1550,12 +1550,12 @@ describe("useQuery", () => {
         query: expect.any(String),
         variables: { id: "1" },
         operationType: "query",
-      })
+      }),
     );
   });
 
   it("add default cachePolicy when not provided", async () => {
-    const executeQuerySpy = vi.spyOn(cache, 'executeQuery');
+    const executeQuerySpy = vi.spyOn(cache, "executeQuery");
 
     const App = defineComponent({
       setup() {
@@ -1589,7 +1589,7 @@ describe("useQuery", () => {
         query: USER_QUERY,
         variables: { id: "1" },
         cachePolicy: undefined, // Should pass undefined to let core handle default
-      })
+      }),
     );
   });
 
@@ -1768,13 +1768,13 @@ describe("useQuery", () => {
                 error: null,
               });
             }, 50); // 50ms delay
-          })
+          }),
         ),
       };
 
       const delayedCache = createCachebay({
         transport: delayedTransport,
-        suspensionTimeout: 50
+        suspensionTimeout: 50,
       });
 
       // Pre-populate cache

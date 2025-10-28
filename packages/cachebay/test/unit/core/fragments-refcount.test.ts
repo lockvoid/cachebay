@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createGraph } from "@/src/core/graph";
-import { createPlanner } from "@/src/core/planner";
 import { createCanonical } from "@/src/core/canonical";
-import { createOptimistic } from "@/src/core/optimistic";
+import { ROOT_ID } from "@/src/core/constants";
 import { createDocuments } from "@/src/core/documents";
 import { createFragments } from "@/src/core/fragments";
-import { ROOT_ID } from "@/src/core/constants";
+import { createGraph } from "@/src/core/graph";
+import { createOptimistic } from "@/src/core/optimistic";
+import { createPlanner } from "@/src/core/planner";
 import { users } from "@/test/helpers/fixtures";
 import { USER_FRAGMENT } from "@/test/helpers/operations";
 

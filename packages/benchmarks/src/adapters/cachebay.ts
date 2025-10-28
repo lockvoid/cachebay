@@ -1,4 +1,4 @@
-import { createCachebay } from "../../../cachebay/src";
+import { createCachebay } from "../../../cachebay/src/core";
 import { createYogaFetcher } from '../utils/graphql';
 
 export type CachebayPluginConfig = {

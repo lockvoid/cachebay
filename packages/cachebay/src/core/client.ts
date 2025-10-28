@@ -1,13 +1,13 @@
-import { createInspect } from "./inspect";
-import { createSSR } from "./ssr";
 import { createCanonical } from "./canonical";
 import { createDocuments } from "./documents";
 import { createFragments } from "./fragments";
 import { createGraph } from "./graph";
+import { createInspect } from "./inspect";
+import { createOperations } from "./operations";
 import { createOptimistic } from "./optimistic";
 import { createPlanner } from "./planner";
 import { createQueries } from "./queries";
-import { createOperations } from "./operations";
+import { createSSR } from "./ssr";
 import type { CachebayOptions } from "./types";
 
 /**
@@ -222,7 +222,7 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
       },
       onQueryData: queries.handleQueryExecuted,
     },
-    { planner, documents, ssr }
+    { planner, documents, ssr },
   );
 
   const inspect = createInspect({ graph, optimistic });

@@ -338,7 +338,7 @@ describe("core/graph.ts", () => {
             active: true,
             email: null,
             arr: [1, 2],
-            obj: { key: "value" }
+            obj: { key: "value" },
           });
           expect(graph.getVersion("User:u1")).toBe(1);
 
@@ -348,7 +348,7 @@ describe("core/graph.ts", () => {
             active: true,
             email: null,
             arr: [1, 2],
-            obj: { key: "value" }
+            obj: { key: "value" },
           });
           expect(graph.getVersion("User:u1")).toBe(1);
         });
@@ -359,14 +359,14 @@ describe("core/graph.ts", () => {
             id: "u1",
             name: "John",
             age: 25,
-            active: true
+            active: true,
           });
           expect(graph.getVersion("User:u1")).toBe(1);
 
           graph.putRecord("User:u1", {
             name: "John",  // same
             age: 26,       // changed
-            active: true   // same
+            active: true,   // same
           });
           expect(graph.getVersion("User:u1")).toBe(2);
         });

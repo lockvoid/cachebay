@@ -1,10 +1,10 @@
-import { buildConnectionCanonicalKey } from "../compiler/utils";
+import { buildConnectionCanonicalKey } from "../compiler";
 import {
   TYPENAME_FIELD,
   CONNECTION_EDGES_FIELD,
   CONNECTION_PAGE_INFO_FIELD,
   CONNECTION_TYPENAME,
-  CONNECTION_PAGE_INFO_TYPENAME
+  CONNECTION_PAGE_INFO_TYPENAME,
 } from "./constants";
 import type { GraphInstance } from "./graph";
 import type { PlanField } from "../compiler";

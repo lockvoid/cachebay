@@ -8,9 +8,9 @@ import type { GraphQLError } from "graphql";
  * Error thrown when cache-only policy is used but no cached data exists
  */
 export class CacheMissError extends Error {
-  constructor(message = 'Cache miss: no data available for cache-only query') {
+  constructor(message = "Cache miss: no data available for cache-only query") {
     super(message);
-    this.name = 'CacheMissError';
+    this.name = "CacheMissError";
   }
 }
 
@@ -20,9 +20,9 @@ export class CacheMissError extends Error {
  * This is expected behavior and should be ignored by consumers.
  */
 export class StaleResponseError extends Error {
-  constructor(message = 'Response ignored: newer request in flight') {
+  constructor(message = "Response ignored: newer request in flight") {
     super(message);
-    this.name = 'StaleResponseError';
+    this.name = "StaleResponseError";
   }
 }
 

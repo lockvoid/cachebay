@@ -36,8 +36,8 @@ describe("documents.normalize", () => {
     documents = createDocuments({ graph, canonical, planner });
   });
 
-  describe('primitives', () => {
-    it('normalizes string', () => {
+  describe("primitives", () => {
+    it("normalizes string", () => {
       documents.normalize({
         document: `
           query {
@@ -53,7 +53,7 @@ describe("documents.normalize", () => {
             __typename: "Entity",
             id: "e1",
             data: "string",
-          }
+          },
         },
       });
 
@@ -64,7 +64,7 @@ describe("documents.normalize", () => {
       });
     });
 
-    it('normalizes number', () => {
+    it("normalizes number", () => {
       documents.normalize({
         document: `
           query {
@@ -80,7 +80,7 @@ describe("documents.normalize", () => {
             __typename: "Entity",
             id: "e1",
             data: 123,
-          }
+          },
         },
       });
 
@@ -91,7 +91,7 @@ describe("documents.normalize", () => {
       });
     });
 
-    it('normalizes boolean', () => {
+    it("normalizes boolean", () => {
       documents.normalize({
         document: `
           query {
@@ -107,7 +107,7 @@ describe("documents.normalize", () => {
             __typename: "Entity",
             id: "e1",
             data: true,
-          }
+          },
         },
       });
 
@@ -118,7 +118,7 @@ describe("documents.normalize", () => {
       });
     });
 
-    it('normalizes null', () => {
+    it("normalizes null", () => {
       documents.normalize({
         document: `
           query {
@@ -134,7 +134,7 @@ describe("documents.normalize", () => {
             __typename: "Entity",
             id: "e1",
             data: null,
-          }
+          },
         },
       });
 
@@ -145,7 +145,7 @@ describe("documents.normalize", () => {
       });
     });
 
-    it('normalizes json', () => {
+    it("normalizes json", () => {
       documents.normalize({
         document: `
           query {
@@ -161,7 +161,7 @@ describe("documents.normalize", () => {
             __typename: "Entity",
             id: "e1",
             data: { foo: { bar: "baz" } },
-          }
+          },
         },
       });
 
@@ -173,8 +173,8 @@ describe("documents.normalize", () => {
     });
   });
 
-  describe('aliases', () => {
-    it('normalizes without aliases', () => {
+  describe("aliases", () => {
+    it("normalizes without aliases", () => {
       documents.normalize({
         document: `
           query {
@@ -192,7 +192,7 @@ describe("documents.normalize", () => {
             id: "e1",
             dataUrl: "1",
             previewUrl: "2",
-          }
+          },
         },
       });
 
@@ -2261,7 +2261,7 @@ describe("documents.normalize", () => {
       data: data1,
     });
 
-    expect(graph.getRecord('Post:p1')).toEqual({
+    expect(graph.getRecord("Post:p1")).toEqual({
       __typename: "Post",
       id: "p1",
       title: "Post 1",
@@ -2270,13 +2270,13 @@ describe("documents.normalize", () => {
       },
     });
 
-    expect(graph.getRecord('Tag:t1')).toEqual({
+    expect(graph.getRecord("Tag:t1")).toEqual({
       __typename: "Tag",
       id: "t1",
       name: "Tag 1",
     });
 
-    expect(graph.getRecord('Tag:t2')).toEqual({
+    expect(graph.getRecord("Tag:t2")).toEqual({
       __typename: "Tag",
       id: "t2",
       name: "Tag 2",

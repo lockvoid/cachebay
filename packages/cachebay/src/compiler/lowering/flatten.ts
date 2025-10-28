@@ -7,18 +7,13 @@ import {
   type FragmentSpreadNode,
   type ValueNode,
 } from "graphql";
-import type { PlanField } from "../types";
+import {
+  CONNECTION_DIRECTIVE,
+  CONNECTION_PAGINATION_ARGS,
+} from "../constants";
 import { fingerprintField } from "../fingerprint";
 import { collectFieldVars } from "../variables";
-import {
-  CONNECTION_FIRST_FIELD,
-  CONNECTION_LAST_FIELD,
-  CONNECTION_AFTER_FIELD,
-  CONNECTION_BEFORE_FIELD,
-  CONNECTION_DIRECTIVE,
-  CONNECTION_MODE_INFINITE,
-  CONNECTION_MODE_PAGE
-} from "../../core/constants";
+import type { PlanField } from "../types";
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /* helpers                                                                   */
@@ -162,7 +157,7 @@ const parseConnectionDirective = (field: FieldNode): {
       }
     } else if (name === "mode") {
       const v = String(valueToJS(arg.value));
-      if (v === CONNECTION_MODE_INFINITE || v === CONNECTION_MODE_PAGE) mode = v;
+      mode = v;
     }
   }
 
@@ -170,8 +165,7 @@ const parseConnectionDirective = (field: FieldNode): {
     isConnection: true,
     key,
     filters,
-    // ✅ default to "infinite"
-    mode: mode ?? CONNECTION_MODE_INFINITE,
+    mode,
   };
 };
 
@@ -219,7 +213,7 @@ export const lowerSelectionSet = (
       let isConnection = false;
       let connectionKey: string | undefined;
       let connectionFilters: string[] | undefined;
-      let connectionMode: "infinite" | "page" | undefined;
+      let connectionMode;
       let pageArgs: string[] | undefined;
 
       if (fieldNode.directives?.some(d => d.name.value === CONNECTION_DIRECTIVE)) {
@@ -228,21 +222,20 @@ export const lowerSelectionSet = (
         connectionKey = meta.key || fieldName;
 
         // If filters not provided: infer from field args excluding pagination args.
-        const paginationArgs = new Set([CONNECTION_FIRST_FIELD, CONNECTION_LAST_FIELD, CONNECTION_AFTER_FIELD, CONNECTION_BEFORE_FIELD]);
         if (meta.filters && meta.filters.length > 0) {
           connectionFilters = meta.filters.slice();
         } else {
           connectionFilters = (fieldNode.arguments || [])
             .map(a => a.name.value)
-            .filter(n => !paginationArgs.has(n));
+            .filter(n => !CONNECTION_PAGINATION_ARGS.has(n));
         }
 
-        connectionMode = meta.mode || CONNECTION_MODE_INFINITE; // meta already defaults; keep for clarity
+        connectionMode = meta.mode;
 
         // Collect window/pagination args for this connection
         pageArgs = (fieldNode.arguments || [])
           .map(a => a.name.value)
-          .filter(n => paginationArgs.has(n));
+          .filter(n => CONNECTION_PAGINATION_ARGS.has(n));
       }
 
       // Collect arg names and vars for fingerprinting

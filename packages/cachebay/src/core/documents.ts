@@ -1,13 +1,13 @@
-import { fingerprintNodes } from "./utils";
-import { buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey } from "../compiler/utils";
+import { buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey } from "../compiler";
 import {
   ROOT_ID,
   TYPENAME_FIELD,
   CONNECTION_EDGES_FIELD,
   CONNECTION_PAGE_INFO_FIELD,
-  CONNECTION_NODE_FIELD
+  CONNECTION_NODE_FIELD,
 } from "./constants";
 import { __DEV__ } from "./instrumentation";
+import { fingerprintNodes } from "./utils";
 import type { CachePlan, PlanField } from "../compiler";
 import type { CanonicalInstance } from "./canonical";
 import type { GraphInstance } from "./graph";
@@ -521,7 +521,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const cacheKey = getMaterializeCacheKey({ signature: canonical ? canonicalSignature! : strictSignature, fingerprint, entityId });
 
     if (!force) {
-      let cached = materializeCache.get(cacheKey);
+      const cached = materializeCache.get(cacheKey);
 
       if (cached) {
         cached.hot = true;

@@ -1,6 +1,6 @@
 import { ref, type Ref } from "vue";
-import type { OperationResult } from "@/src/core/operations";
 import { useCachebay } from "./useCachebay";
+import type { OperationResult } from "../../core";
 import type { DocumentNode } from "graphql";
 
 /**
