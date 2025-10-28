@@ -223,7 +223,10 @@ export const createOperations = (
     // Validate and normalize cache policy
     const finalCachePolicy = validateCachePolicy(cachePolicy ?? defaultCachePolicy, NETWORK_ONLY);
     const plan = planner.getPlan(query);
-    const signature = plan.makeSignature(true, variables);  // Always canonical
+    
+    // Calculate both signatures upfront
+    const canonicalSignature = plan.makeSignature(true, variables);  // For watchers (excludes pagination)
+    const strictSignature = plan.makeSignature(false, variables);     // For suspension & epochs (includes pagination)
 
     // Read from cache using documents directly
     // Always read cache during SSR hydration, even for network-only
@@ -240,9 +243,9 @@ export const createOperations = (
 
     const performRequest = async () => {
       try {
-        const currentEpoch = (queryEpochs.get(signature) || 0) + 1;
+        const currentEpoch = (queryEpochs.get(canonicalSignature) || 0) + 1;
 
-        queryEpochs.set(signature, currentEpoch);
+        queryEpochs.set(canonicalSignature, currentEpoch);
 
         // Network fetch
         const context: HttpContext = {
@@ -254,7 +257,7 @@ export const createOperations = (
 
         const result = await transport.http(context);
 
-        const isStale = queryEpochs.get(signature) !== currentEpoch;
+        const isStale = queryEpochs.get(canonicalSignature) !== currentEpoch;
 
         // If stale, return null data with StaleResponseError wrapped in CombinedError
         if (isStale) {
@@ -282,7 +285,7 @@ export const createOperations = (
 
           // Notify watchers about query execution with data and dependencies
           onQueryData?.({
-            signature,
+            signature: canonicalSignature,
             data: cachedAfterWrite.data,
             dependencies: cachedAfterWrite.dependencies,
             cachePolicy: finalCachePolicy,
@@ -304,7 +307,7 @@ export const createOperations = (
             };
           }
 
-          markEmitted(signature);
+          markEmitted(strictSignature);
 
           const successResult = {
             data: cachedAfterWrite.data as TData,
@@ -316,7 +319,7 @@ export const createOperations = (
         }
 
         // Mark as emitted for suspension tracking
-        markEmitted(signature);
+        markEmitted(strictSignature);
 
         // If we have an error but no data, propagate the error
         if (result.error) {
@@ -325,7 +328,7 @@ export const createOperations = (
             : new CombinedError({ networkError: result.error as Error });
 
           onError?.(combinedError);
-          onQueryError?.(signature, combinedError);
+          onQueryError?.(canonicalSignature, combinedError);
         }
 
         return result as OperationResult<TData>;
@@ -336,7 +339,7 @@ export const createOperations = (
         // Stale errors should be silently dropped
         if (!(error instanceof StaleResponseError)) {
           onError?.(combinedError);
-          onQueryError?.(signature, combinedError);
+          onQueryError?.(canonicalSignature, combinedError);
         }
 
         return {
@@ -347,7 +350,7 @@ export const createOperations = (
     };
 
     // SSR hydration or suspension window: return cached data if available
-    if (ssr.isHydrating() || isWithinSuspension(signature)) {
+    if (ssr.isHydrating() || isWithinSuspension(strictSignature)) {
       if (cached && cached.source !== "none") {
         // Call onCachedData for SSR/suspension to set data synchronously
         // No network request will be made (early return)
@@ -365,14 +368,14 @@ export const createOperations = (
         onError?.(error);
 
         // Notify error callback
-        onQueryError?.(signature, error);
+        onQueryError?.(canonicalSignature, error);
 
         return { data: null, error };
       }
 
       // Notify watchers about cache-only hit with data and dependencies
       onQueryData?.({
-        signature,
+        signature: canonicalSignature,
         data: cached.data,
         dependencies: cached.dependencies,
         cachePolicy: finalCachePolicy,
@@ -389,13 +392,12 @@ export const createOperations = (
         // Check if strict signature matches (pagination args haven't changed)
         // If strictSignature is present and matches, return cached data
         // If strictSignature doesn't match, fetch from network (pagination changed)
-        const strictSignature = plan.makeSignature(false, variables);
         const strictMatches = cached.ok.strictSignature === strictSignature;
 
         if (strictMatches) {
           // Strict match: pagination args haven't changed, return cached data
           onQueryData?.({
-            signature,
+            signature: canonicalSignature,
             data: cached.data,
             dependencies: cached.dependencies,
             cachePolicy: finalCachePolicy,
@@ -414,7 +416,7 @@ export const createOperations = (
       if (cached && cached.ok.canonical) {
         // Notify watchers so lastData is set (prevents duplicate emission if network data is same)
         onQueryData?.({
-          signature,
+          signature: canonicalSignature,
           data: cached.data,
           dependencies: cached.dependencies,
           cachePolicy: finalCachePolicy,

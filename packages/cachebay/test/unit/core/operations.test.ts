@@ -1398,6 +1398,107 @@ describe("operations", () => {
       expect(mockTransport.http).not.toHaveBeenCalled();
       expect(result.data).toEqual(cachedData);
     });
+
+    it("suspension window: should NOT reuse suspended response when pagination params change", async () => {
+      // Pre-populate cache with first page
+      const firstPageData = { posts: [{ id: "1", title: "First" }] };
+      const secondPageData = { posts: [{ id: "2", title: "Second" }] };
+      
+      mockDocuments.normalize({ data: firstPageData });
+
+      // Mock materialize to return data with proper strict signature matching
+      vi.mocked(mockDocuments.materialize)
+        .mockReturnValueOnce({
+          // First query read
+          data: firstPageData,
+          source: "none",  // Cache miss, will fetch from network
+          ok: {
+            canonical: false,
+            strict: false,
+          },
+          dependencies: new Set(),
+        })
+        .mockReturnValueOnce({
+          // After first query write
+          data: firstPageData,
+          source: "canonical",
+          ok: {
+            canonical: true,
+            strict: true,
+            strictSignature: "strict-sig-first-10",
+          },
+          dependencies: new Set(),
+        })
+        .mockReturnValueOnce({
+          // Second query read - has cache but different strict signature
+          data: firstPageData,
+          source: "canonical",
+          ok: {
+            canonical: true,
+            strict: true,
+            strictSignature: "strict-sig-first-10",  // Old signature, won't match
+          },
+          dependencies: new Set(),
+        })
+        .mockReturnValueOnce({
+          // After second query write
+          data: secondPageData,
+          source: "canonical",
+          ok: {
+            canonical: true,
+            strict: true,
+            strictSignature: "strict-sig-first-20",
+          },
+          dependencies: new Set(),
+        });
+
+      // Mock plan to return DIFFERENT strict signatures for different pagination
+      const firstStrictSig = "strict-sig-first-10";
+      const secondStrictSig = "strict-sig-first-20";  // Different pagination
+      const canonicalSig = "canonical-sig-posts";  // Same canonical (filters only)
+      
+      vi.mocked(mockPlanner.getPlan).mockReturnValue({
+        compiled: true,
+        networkQuery: query,
+        makeSignature: vi.fn()
+          // First query (first: 10) - both signatures calculated upfront
+          .mockReturnValueOnce(canonicalSig)      // Canonical signature
+          .mockReturnValueOnce(firstStrictSig)    // Strict signature (for suspension)
+          .mockReturnValueOnce(firstStrictSig)    // Strict check in cache-first
+          // Second query (first: 20) - both signatures calculated upfront
+          .mockReturnValueOnce(canonicalSig)      // Canonical signature (same!)
+          .mockReturnValueOnce(secondStrictSig)   // Strict signature (different! - should bypass suspension)
+          .mockReturnValueOnce(secondStrictSig),  // Strict check in cache-first
+      });
+
+      const mockResult: OperationResult = {
+        data: secondPageData,
+        error: null,
+      };
+      vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+      // First query with first: 10
+      await operations.executeQuery({
+        query,
+        variables: { first: 10 },
+        cachePolicy: "cache-first",
+      });
+
+      vi.mocked(mockTransport.http).mockClear();
+
+      // Second query with first: 20 (different pagination) within suspension window
+      const result = await operations.executeQuery({
+        query,
+        variables: { first: 20 },  // DIFFERENT pagination param
+        cachePolicy: "cache-first",
+      });
+
+      // BUG: Current implementation uses canonical signature for suspension,
+      // so it will incorrectly return cached data without making network request
+      // EXPECTED: Should make network request because pagination changed
+      expect(mockTransport.http).toHaveBeenCalled();  // This will FAIL with current impl
+      expect(result.data).toEqual(secondPageData);
+    });
   });
 
   // Performance tests have been moved to operations-performance.test.ts
