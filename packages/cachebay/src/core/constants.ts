@@ -29,3 +29,9 @@ export const CONNECTION_LAST = "last" as const;
 export const CONNECTION_AFTER = "after" as const;
 
 export const CONNECTION_BEFORE = "before" as const;
+
+export const CONNECTION_DIRECTIVE = "connection";
+
+export const CONNECTION_MODE_INFINITE = "infinite";
+
+export const CONNECTION_MODE_PAGE = "page";
