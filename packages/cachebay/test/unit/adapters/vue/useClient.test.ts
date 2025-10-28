@@ -21,7 +21,7 @@ describe("useCachebay", () => {
     });
 
     expect(() => mount(App)).toThrowError(
-      "[cachebay] useCachebay() called before cache setup",
+      "[cachebay] useCachebay() called before setup. Call app.use(cachebayPlugin) first",
     );
   });
 

@@ -8,7 +8,7 @@ describe("createCachebay", () => {
   };
 
   it("throws error when transport is not provided", () => {
-    expect(() => createCachebay({} as any)).toThrow("transport' is required");
+    expect(() => createCachebay({} as any)).toThrow("Missing required 'transport' with 'http' function. Example: { transport: { http: async (ctx) => { ... } } }");
   });
 
   it("throws error when transport.http is not a function", () => {

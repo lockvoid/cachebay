@@ -1,10 +1,10 @@
 import { mount } from "@vue/test-utils";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { defineComponent, h, ref, nextTick } from "vue";
-import { useFragment } from "@/src/adapters/vue/useFragment";
-import { createCachebay } from "@/src/core/client";
 import { provideCachebay } from "@/src/adapters/vue/plugin";
+import { useFragment } from "@/src/adapters/vue/useFragment";
 import { compilePlan } from "@/src/compiler";
+import { createCachebay } from "@/src/core/client";
 import type { Transport } from "@/src/core/operations";
 
 // Create a simple fragment for testing
@@ -32,15 +32,15 @@ describe("useFragment", () => {
     const mockUpdate = vi.fn((opts: any) => {
       // Call onData with updated data when update is called
       if (opts.id) {
-        const userId = opts.id.split(':')[1];
+        const userId = opts.id.split(":")[1];
         opts.onData?.({ id: userId, email: `${userId}@example.com` });
       }
     });
     const watchFragmentSpy = vi.spyOn(cache as any, "watchFragment").mockImplementation((opts: any) => {
       opts.onData({ id: "u1", email: "test@example.com" });
-      return { 
+      return {
         unsubscribe: mockUnsubscribe,
-        update: mockUpdate
+        update: mockUpdate,
       };
     });
 
@@ -111,9 +111,9 @@ describe("useFragment", () => {
     const mockUpdate = vi.fn();
     const watchFragmentSpy = vi.spyOn(cache as any, "watchFragment").mockImplementation((opts: any) => {
       opts.onData({ id: opts.id.split(":")[1], email: "test@example.com" });
-      return { 
+      return {
         unsubscribe: mockUnsubscribe,
-        update: mockUpdate
+        update: mockUpdate,
       };
     });
 
@@ -165,9 +165,9 @@ describe("useFragment", () => {
     const mockUpdate = vi.fn();
     const watchFragmentSpy = vi.spyOn(testCache as any, "watchFragment").mockImplementation((opts: any) => {
       opts.onData({ id: "u1", email: "test@example.com" });
-      return { 
+      return {
         unsubscribe: mockUnsubscribe,
-        update: mockUpdate
+        update: mockUpdate,
       };
     });
 
@@ -250,7 +250,7 @@ describe("useFragment", () => {
         id: "User:u1",
         fragment: USER_FIELDS_FRAGMENT,
         variables: {},
-      })
+      }),
     );
   });
 
@@ -281,7 +281,7 @@ describe("useFragment", () => {
           plugins: [invalidCache],
         },
       }),
-    ).toThrowError("[useFragment] cache must expose watchFragment()");
+    ).toThrowError("[cachebay] useFragment: cache.watchFragment() is required");
   });
 
   it("recycles unchanged data (stable references)", async () => {
