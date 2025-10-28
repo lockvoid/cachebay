@@ -16,7 +16,7 @@ const createHttpTransport = (url: string) => {
         },
       });
 
-      return { data: result.data, error: result.errors };
+      return { data: result.data, error: result.errors?.[0] };
     } catch (error) {
       return { data: null, error };
     }
@@ -82,7 +82,7 @@ export default defineNuxtPlugin((nuxtApp) => {
     const state = useState("cachebay").value;
 
     if (state) {
-      cachebay.hydrate(state);
+      cachebay.hydrate(toRaw(state));
     }
   }
 

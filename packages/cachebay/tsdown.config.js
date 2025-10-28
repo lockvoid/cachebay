@@ -33,15 +33,13 @@ export default defineConfig({
 
   onSuccess: async () => {
     const rewriteImports = (filePath) => {
-      const sourcePath = join(process.cwd(), "dist");
+      const sourcePath = join(process.cwd(), "dist", filePath);
 
       const content = readFileSync(sourcePath, "utf-8").replace(/\/(core|compiler)"/g, '/$1/index.js"').replace(/\/(core|compiler)'/g, "/$1/index.js'");
 
       writeFileSync(sourcePath, content, "utf-8");
     };
 
-    ["adapters/vue/index.js", "core/index.js"].forEach((filePath) => {
-      rewriteImports(filePath);
-    });
+    ["adapters/vue/index.js", "core/index.js"].forEach(rewriteImports);
   },
 });
