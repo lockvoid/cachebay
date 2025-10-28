@@ -69,7 +69,10 @@ export type materializeOptions = {
   canonical?: boolean;
   entityId?: string;
   fingerprint?: boolean;
-  force?: boolean;
+  /** If true, try to read from cache first, fallback to full materialization. Default: false (always materialize) */
+  preferCache?: boolean;
+  /** If true, update the materialize cache with the result. Default: true */
+  updateCache?: boolean;
 };
 
 /**
@@ -508,10 +511,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
    * Materialize a document from cache
    * Reads normalized data and reconstructs the GraphQL response shape
    *
-   * @param options.force - If false (default), returns cached result if available. If true, always re-materializes.
+   * @param options.preferCache - If true, try to read from cache first, fallback to full materialization. Default: false
+   * @param options.updateCache - If true, update the materialize cache with the result. Default: true
    */
   const materialize = (options: materializeOptions): materializeResult => {
-    const { document, variables = {}, canonical = true, entityId, fingerprint = true, force = false } = options;
+    const { document, variables = {}, canonical = true, entityId, fingerprint = true, preferCache = false, updateCache = true } = options;
 
     // Get plan once at the start
     const plan = planner.getPlan(document);
@@ -520,7 +524,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const canonicalSignature = canonical ? plan.makeSignature(true, variables) : undefined;
     const cacheKey = getMaterializeCacheKey({ signature: canonical ? canonicalSignature! : strictSignature, fingerprint, entityId });
 
-    if (!force) {
+    // Try to read from cache if preferCache is true
+    if (preferCache) {
       const cached = materializeCache.get(cacheKey);
 
       if (cached) {
@@ -1039,7 +1044,10 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         hot: false,
       };
 
-    materializeCache.set(cacheKey, result);
+    // Only update cache if updateCache is true
+    if (updateCache) {
+      materializeCache.set(cacheKey, result);
+    }
 
     return result;
   };
