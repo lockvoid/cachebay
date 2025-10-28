@@ -4,9 +4,7 @@ export const isCachePlan = (v: any): v is CachePlan => {
   return v && typeof v === "object" && v.kind === "CachePlan";
 };
 
-// Connection pagination fields (Relay spec)
-const CONNECTION_FIELDS = new Set(["first", "last", "after", "before"]);
-const ROOT_ID = "@";
+import { ROOT_ID, CONNECTION_FIELDS } from "../core/constants";
 
 /**
  * Stable JSON stringify with sorted keys for consistent output.
@@ -60,7 +58,7 @@ export const buildConnectionKey = (
   parentId: string,
   variables: Record<string, any>,
 ): string => {
-  // parentId can be "@", "Type:id", "Type:id.container", or already absolute like "@.X.Y"
+  // parentId can be ROOT_ID, "Type:id", "Type:id.container", or already absolute like "@.X.Y"
   const base = parentId[0] === ROOT_ID ? parentId : `${ROOT_ID}.${parentId}`;
   return `${base}.${field.fieldName}(${field.stringifyArgs(variables)})`;
 };

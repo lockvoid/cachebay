@@ -1,4 +1,4 @@
-import { ID_FIELD, TYPENAME_FIELD, IDENTITY_FIELDS, ROOT_ID } from "./constants";
+import { ID_FIELD, TYPENAME_FIELD, ROOT_ID } from "./constants";
 import { isObject, isDataDeepEqual } from "./utils";
 
 const EMPTY_SET: ReadonlySet<string> = new Set();
@@ -56,8 +56,8 @@ const commitChanges = (currentSnapshot: Record<string, any>, partialSnapshot: Re
     }
 
     // Only use deep equality for objects/arrays to avoid false positives from JSON.parse
-    if (typeof incomingValue === 'object' && incomingValue !== null &&
-      typeof currentValue === 'object' && currentValue !== null) {
+    if (typeof incomingValue === "object" && incomingValue !== null &&
+      typeof currentValue === "object" && currentValue !== null) {
       if (isDataDeepEqual(currentValue, incomingValue)) {
         continue;
       }

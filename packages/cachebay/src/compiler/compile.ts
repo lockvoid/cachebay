@@ -4,11 +4,17 @@ import {
   print,
   visit,
   type DocumentNode,
-  type FragmentDefinitionNode,
   type OperationDefinitionNode,
+  type FragmentDefinitionNode,
   type SelectionSetNode,
   type FieldNode,
+  type InlineFragmentNode,
+  type FragmentSpreadNode,
+  type VariableDefinitionNode,
+  type ArgumentNode,
+  type ValueNode,
 } from "graphql";
+import { ROOT_ID, CONNECTION_FIELDS } from "../core/constants";
 import { lowerSelectionSet } from "./lowering/flatten";
 import { isCachePlan, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey } from "./utils";
 import type { CachePlan, PlanField } from "./types";
@@ -140,8 +146,8 @@ const computePlanMetadata = (
     for (let i = 0; i < depFields.length; i++) {
       const { field, isConnection, parentTypename } = depFields[i];
 
-      // Determine parentId: use "@" for root (Query/Mutation), otherwise use typename
-      const parentId = parentTypename === rootTypename ? "@" : parentTypename;
+      // Determine parentId: use ROOT_ID for root (Query/Mutation), otherwise use typename
+      const parentId = parentTypename === rootTypename ? ROOT_ID : parentTypename;
 
       if (isConnection) {
         // For connections: use canonical (filters only) or strict (with pagination) based on mode

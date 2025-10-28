@@ -1,4 +1,4 @@
-import { ROOT_ID } from "./constants";
+import { ROOT_ID, TYPENAME_FIELD, ID_FIELD } from "./constants";
 import { buildConnectionCanonicalKey } from "../compiler/utils";
 import type { GraphInstance } from "./graph";
 
@@ -697,7 +697,7 @@ export const createOptimistic = ({ graph }: OptimisticDependencies) => {
       // Avoid no-op writes (perf): if node only has __typename/id, skip the merge
       const patch: any = {};
       for (const key in node) {
-        if (key !== "__typename" && key !== "id") {
+        if (key !== TYPENAME_FIELD && key !== ID_FIELD) {
           patch[key] = node[key];
         }
       }

@@ -3,6 +3,7 @@ import type { PlannerInstance } from "./planner";
 import type { DocumentsInstance } from "./documents";
 import type { SSRInstance } from "./ssr";
 import { __DEV__ } from "./instrumentation";
+import { CACHE_AND_NETWORK, NETWORK_ONLY, CACHE_FIRST, CACHE_ONLY } from "./constants";
 import { validateCachePolicy } from "./utils";
 import { StaleResponseError, CombinedError, CacheMissError } from "./errors";
 
@@ -218,14 +219,14 @@ export const createOperations = (
     onCachedData,
   }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
     // Validate and normalize cache policy
-    const finalCachePolicy = validateCachePolicy(cachePolicy ?? defaultCachePolicy, 'network-only');
+    const finalCachePolicy = validateCachePolicy(cachePolicy ?? defaultCachePolicy, NETWORK_ONLY);
     const plan = planner.getPlan(query);
     const signature = plan.makeSignature(true, variables);  // Always canonical
 
     // Read from cache using documents directly
     // Always read cache during SSR hydration, even for network-only
     let cached;
-    if (finalCachePolicy !== 'network-only' || ssr.isHydrating()) {
+    if (finalCachePolicy !== NETWORK_ONLY || ssr.isHydrating()) {
       cached = documents.materialize({
         document: query,
         variables,
@@ -356,7 +357,7 @@ export const createOperations = (
       }
     }
 
-    if (finalCachePolicy === 'cache-only') {
+    if (finalCachePolicy === CACHE_ONLY) {
       if (!cached || cached.source === "none") {
         const error = new CombinedError({ networkError: new CacheMissError() });
         onError?.(error);
@@ -381,7 +382,7 @@ export const createOperations = (
       return result;
     }
 
-    if (finalCachePolicy === 'cache-first') {
+    if (finalCachePolicy === CACHE_FIRST) {
       if (cached && cached.ok.canonical && cached.ok.strict) {
         // Check if strict signature matches (pagination args haven't changed)
         // If strictSignature is present and matches, return cached data
@@ -407,7 +408,7 @@ export const createOperations = (
       }
     }
 
-    if (finalCachePolicy === 'cache-and-network') {
+    if (finalCachePolicy === CACHE_AND_NETWORK) {
       if (cached && cached.ok.canonical) {
         // Notify watchers so lastData is set (prevents duplicate emission if network data is same)
         onQueryData?.({
