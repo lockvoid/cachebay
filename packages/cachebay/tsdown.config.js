@@ -1,4 +1,6 @@
 import { defineConfig } from "tsdown";
+import { readFileSync, writeFileSync } from "fs";
+import { join } from "path";
 
 export default defineConfig({
   outDir: "dist",
@@ -11,9 +13,7 @@ export default defineConfig({
     "src/adapters/vue/index.ts",
   ],
 
-  format: [
-    "esm",
-  ],
+  format: ["esm"],
 
   external: (id, importer) => {
     if (importer?.includes("adapters/vue")) {
@@ -23,14 +23,25 @@ export default defineConfig({
     }
 
     if (importer?.includes("core")) {
-
       if (id.startsWith("../compiler")) {
-        console.log(id);
-
         return true;
       }
     }
 
     return ["vue", "graphql", "graphql-tag"].includes(id);
+  },
+
+  onSuccess: async () => {
+    const rewriteImports = (filePath) => {
+      const sourcePath = join(process.cwd(), "dist");
+
+      const content = readFileSync(sourcePath, "utf-8").replace(/\/(core|compiler)"/g, '/$1/index.js"').replace(/\/(core|compiler)'/g, "/$1/index.js'");
+
+      writeFileSync(sourcePath, content, "utf-8");
+    };
+
+    ["adapters/vue/index.js", "core/index.js"].forEach((filePath) => {
+      rewriteImports(filePath);
+    });
   },
 });
