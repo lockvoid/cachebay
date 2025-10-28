@@ -2,6 +2,7 @@
 let normalizeCount = 0;
 let materializeHotCount = 0;
 let materializeColdCount = 0;
+let invalidateSpy: any = null;
 
 // Mock documents to inject performance counters
 vi.mock("@/src/core/documents", async () => {
@@ -33,6 +34,13 @@ vi.mock("@/src/core/documents", async () => {
 
         return result;
       }) as any;
+
+      // Spy on invalidate
+      const origInvalidate = documents.invalidate;
+      invalidateSpy = vi.fn((options) => {
+        return origInvalidate.call(documents, options);
+      });
+      documents.invalidate = invalidateSpy;
 
       return documents;
     },
@@ -83,6 +91,11 @@ describe("operations API - Performance", () => {
         Post: (p: any) => p.id,
       },
     });
+
+    // Reset invalidate spy after client creation
+    if (invalidateSpy) {
+      invalidateSpy.mockClear();
+    }
   });
 
   describe("executeQuery - cache policies", () => {
@@ -375,6 +388,292 @@ describe("operations API - Performance", () => {
       expect(normalizeCount).toBe(1);
       expect(materializeColdCount).toBe(0);
       expect(materializeHotCount).toBe(0);
+    });
+  });
+
+  describe("Invalidation - watcher prevents, no watcher triggers", () => {
+    const QUERY = gql`
+      query GetUser($id: ID!) {
+        user(id: $id) {
+          id
+          name
+          __typename
+        }
+      }
+    `;
+
+    const userData = { user: { __typename: "User", id: "1", name: "Alice" } };
+
+    describe("network-only", () => {
+      it("WITH watcher: invalidate NOT called", async () => {
+        mockTransport.http = vi.fn().mockResolvedValue({ data: userData, error: null });
+
+        // 1. Create watcher
+        const handle = client.watchQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          immediate: false,
+          onData: vi.fn(),
+        });
+
+        // 2. Execute query - watcher catches result, no invalidation
+        await client.executeQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          cachePolicy: "network-only",
+        });
+
+        // 3. Verify invalidate was NOT called (watcher prevented it)
+        expect(invalidateSpy).not.toHaveBeenCalled();
+
+        handle.unsubscribe();
+      });
+
+      it("WITHOUT watcher: invalidate called", async () => {
+        mockTransport.http = vi.fn().mockResolvedValue({ data: userData, error: null });
+
+        // 1. Create watcher
+        const handle = client.watchQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          immediate: false,
+          onData: vi.fn(),
+        });
+
+        // 2. Execute query with watcher - should NOT invalidate
+        await client.executeQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          cachePolicy: "network-only",
+        });
+
+        // Verify no invalidation yet
+        expect(invalidateSpy).not.toHaveBeenCalled();
+
+        // 3. Unsubscribe watcher
+        handle.unsubscribe();
+
+        // 4. Execute query without watcher - should invalidate
+        mockTransport.http = vi.fn().mockResolvedValue({ data: userData, error: null });
+        await client.executeQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          cachePolicy: "network-only",
+        });
+
+        // 5. Verify invalidate WAS called (no watcher to prevent it)
+        expect(invalidateSpy).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe("cache-first", () => {
+      it("WITH watcher: invalidate NOT called", async () => {
+        mockTransport.http = vi.fn().mockResolvedValue({ data: userData, error: null });
+
+        // 1. Create watcher
+        const handle = client.watchQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          immediate: false,
+          onData: vi.fn(),
+        });
+
+        // Populate cache
+        await client.executeQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          cachePolicy: "network-only",
+        });
+
+        // Verify no invalidation yet
+        expect(invalidateSpy).not.toHaveBeenCalled();
+
+        // 2. Execute cache-first with watcher - no invalidation
+        await client.executeQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          cachePolicy: "cache-first",
+        });
+
+        // 3. Verify invalidate was NOT called
+        expect(invalidateSpy).not.toHaveBeenCalled();
+
+        handle.unsubscribe();
+      });
+
+      it("WITHOUT watcher: invalidate called", async () => {
+        mockTransport.http = vi.fn().mockResolvedValue({ data: userData, error: null });
+
+        // 1. Create watcher and populate cache
+        const handle = client.watchQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          immediate: false,
+          onData: vi.fn(),
+        });
+
+        await client.executeQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          cachePolicy: "network-only",
+        });
+
+        // Verify no invalidation yet
+        expect(invalidateSpy).not.toHaveBeenCalled();
+
+        // 2. Unsubscribe watcher
+        handle.unsubscribe();
+
+        // 3. Execute cache-first without watcher - should invalidate
+        await client.executeQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          cachePolicy: "cache-first",
+        });
+
+        // 4. Verify invalidate WAS called
+        expect(invalidateSpy).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe("cache-only", () => {
+      it("WITH watcher: invalidate NOT called", async () => {
+        mockTransport.http = vi.fn().mockResolvedValue({ data: userData, error: null });
+
+        // 1. Create watcher and populate cache
+        const handle = client.watchQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          immediate: false,
+          onData: vi.fn(),
+        });
+
+        await client.executeQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          cachePolicy: "network-only",
+        });
+
+        // Verify no invalidation yet
+        expect(invalidateSpy).not.toHaveBeenCalled();
+
+        // 2. Execute cache-only with watcher - no invalidation
+        await client.executeQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          cachePolicy: "cache-only",
+        });
+
+        // 3. Verify invalidate was NOT called
+        expect(invalidateSpy).not.toHaveBeenCalled();
+
+        handle.unsubscribe();
+      });
+
+      it("WITHOUT watcher: invalidate called", async () => {
+        mockTransport.http = vi.fn().mockResolvedValue({ data: userData, error: null });
+
+        // 1. Create watcher and populate cache
+        const handle = client.watchQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          immediate: false,
+          onData: vi.fn(),
+        });
+
+        await client.executeQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          cachePolicy: "network-only",
+        });
+
+        // Verify no invalidation yet
+        expect(invalidateSpy).not.toHaveBeenCalled();
+
+        // 2. Unsubscribe watcher
+        handle.unsubscribe();
+
+        // 3. Execute cache-only without watcher - should invalidate
+        await client.executeQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          cachePolicy: "cache-only",
+        });
+
+        // 4. Verify invalidate WAS called
+        expect(invalidateSpy).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe("cache-and-network", () => {
+      it("WITH watcher: invalidate NOT called", async () => {
+        mockTransport.http = vi.fn().mockResolvedValue({ data: userData, error: null });
+
+        // 1. Create watcher and populate cache
+        const handle = client.watchQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          immediate: false,
+          onData: vi.fn(),
+        });
+
+        await client.executeQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          cachePolicy: "network-only",
+        });
+
+        // Verify no invalidation yet
+        expect(invalidateSpy).not.toHaveBeenCalled();
+
+        // 2. Execute cache-and-network with watcher - no invalidation
+        mockTransport.http = vi.fn().mockResolvedValue({ data: userData, error: null });
+        await client.executeQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          cachePolicy: "cache-and-network",
+        });
+
+        // 3. Verify invalidate was NOT called
+        expect(invalidateSpy).not.toHaveBeenCalled();
+
+        handle.unsubscribe();
+      });
+
+      it("WITHOUT watcher: invalidate called", async () => {
+        mockTransport.http = vi.fn().mockResolvedValue({ data: userData, error: null });
+
+        // 1. Create watcher and populate cache
+        const handle = client.watchQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          immediate: false,
+          onData: vi.fn(),
+        });
+
+        await client.executeQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          cachePolicy: "network-only",
+        });
+
+        // Verify no invalidation yet
+        expect(invalidateSpy).not.toHaveBeenCalled();
+
+        // 2. Unsubscribe watcher
+        handle.unsubscribe();
+
+        // 3. Execute cache-and-network without watcher - should invalidate
+        mockTransport.http = vi.fn().mockResolvedValue({ data: userData, error: null });
+        await client.executeQuery({
+          query: QUERY,
+          variables: { id: "1" },
+          cachePolicy: "cache-and-network",
+        });
+
+        // 4. Verify invalidate WAS called (twice: cached data + network data)
+        expect(invalidateSpy).toHaveBeenCalled();
+      });
     });
   });
 });
