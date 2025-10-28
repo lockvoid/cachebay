@@ -194,7 +194,6 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
     },
   });
 
-  // Now create subsystems with graph
   const optimistic = createOptimistic({ graph });
   const ssr = createSSR({ hydrationTimeout: options.hydrationTimeout }, { graph });
   const canonical = createCanonical({ graph, optimistic });
@@ -210,12 +209,11 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
       suspensionTimeout: options.suspensionTimeout,
 
       onQueryNetworkData: (signature, data) => {
-        queries.notifyDataBySignature(signature, data);
+        return queries.notifyDataBySignature(signature, data);
       },
 
       onQueryNetworkError: (signature, error) => {
-        // Propagate errors to queries, which will notify watchers
-        queries.notifyErrorBySignature(signature, error);
+        return queries.notifyErrorBySignature(signature, error);
       },
     },
 

@@ -140,11 +140,12 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
   /**
    * Propagate error to all watchers with the given signature
+   * Returns true if watchers caught the error, false otherwise
    */
-  const notifyErrorBySignature = (signature: string, error: Error) => {
+  const notifyErrorBySignature = (signature: string, error: Error): boolean => {
     // Find all watchers with this signature
     const watcherSet = signatureToWatchers.get(signature);
-    if (!watcherSet) return;
+    if (!watcherSet || watcherSet.size === 0) return false;
 
     for (const watcherId of watcherSet) {
       const watcher = watchers.get(watcherId);
@@ -152,6 +153,8 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
         watcher.onError(error);
       }
     }
+
+    return true;  // Watchers caught the error
   };
 
   // --- Dep index maintenance ---
@@ -397,12 +400,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
    * Handles multiple watchers per signature
    * Returns true if watchers caught the data, false otherwise
    */
-  const notifyDataBySignature = ({ signature, data, dependencies }: {
-    signature: string;
-    data: any;
-    dependencies: Set<string>;
-    cachePolicy: string;
-  }): boolean => {
+  const notifyDataBySignature = (signature: string, data: any): boolean => {
     // Find all watchers with this signature
     const watcherSet = signatureToWatchers.get(signature);
     if (!watcherSet || watcherSet.size === 0) return false;
@@ -412,9 +410,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
       const w = watchers.get(watcherId);
       if (!w) continue;
 
-      // Update dependencies
-      updateWatcherDependencies(watcherId, dependencies);
-
+      // Dependencies are updated via notifyDataByDependencies (triggered by graph.onChange)
       // Directly emit data to watcher (avoid redundant materialize)
       // recycleSnapshots to preserve object identity
       const recycled = recycleSnapshots(w.lastData, data);

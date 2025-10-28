@@ -167,7 +167,7 @@ export interface OperationsOptions {
   cachePolicy?: CachePolicy;
   suspensionTimeout?: number;
   onQueryNetworkError?: (signature: string, error: CombinedError) => boolean; // Returns true if watchers caught the error, false otherwise
-  onQueryNetworkData?: (signature: string; data: any;) => boolean; // Returns true if watchers caught the data, false otherwise
+  onQueryNetworkData?: (signature: string, data: any) => boolean; // Returns true if watchers caught the data, false otherwise
 }
 
 export interface OperationsDependencies {
@@ -261,7 +261,7 @@ export const createOperations = (
           documents.normalize({
             document: query,
             variables,
-            data,
+            data: result.data,
           });
 
           // Materialize to update cache and get dependencies for watcher tracking
@@ -273,14 +273,6 @@ export const createOperations = (
             preferCache: false,
             updateCache: true,
           });
-
-          if (onQueryNetworkData) {
-            const wasCaught = onQueryNetworkData(canonicalSignature, freshMaterialization.data);
-
-            if (!wasCaught) {
-              documents.invalidate({ document: query, variables, canonical: true, fingerprint: true });
-            }
-          }
 
           if (freshMaterialization.source === "none") {
             const errorMessage = "[cachebay] Query materialization failed: missing required fields in response";
@@ -295,6 +287,14 @@ export const createOperations = (
           markEmitted(strictSignature);
 
           onNetworkData?.(freshMaterialization.data);
+
+          if (onQueryNetworkData) {
+            const wasCaught = onQueryNetworkData(canonicalSignature, freshMaterialization.data);
+
+            if (!wasCaught) {
+              documents.invalidate({ document: query, variables, canonical: true, fingerprint: true });
+            }
+          }
 
           return { data: freshMaterialization.data || null, error: result.error || null, meta: { source: "network" }, };
         }
@@ -329,7 +329,12 @@ export const createOperations = (
     if (ssr.isHydrating() || isWithinSuspension(strictSignature)) {
       if (cached && cached.source !== "none") {
         onCacheData?.(cached.data, { willFetchFromNetwork: false });
-        onNetworkData?.(cached.data);
+
+        const dataPropagated = onQueryNetworkData?.(canonicalSignature, cached.data) ?? false;
+
+        if (!dataPropagated) {
+          documents.invalidate({ document: query, variables, canonical: true, fingerprint: true });
+        }
 
         return { data: cached.data, error: null };
       }
@@ -346,8 +351,12 @@ export const createOperations = (
       }
 
       onCacheData?.(cached.data, { willFetchFromNetwork: false });
-      onNetworkData?.(cached.data);
-      onQueryNetworkData?.(canonicalSignature, cached.data);
+
+      const dataPropagated = onQueryNetworkData?.(canonicalSignature, cached.data) ?? false;
+
+      if (!dataPropagated) {
+        documents.invalidate({ document: query, variables, canonical: true, fingerprint: true });
+      }
 
       return { data: cached.data as TData, error: null };
     }
@@ -355,8 +364,12 @@ export const createOperations = (
     if (finalCachePolicy === CACHE_FIRST) {
       if (cached && cached.ok.canonical && cached.ok.strict && cached.ok.strictSignature === strictSignature) {
         onCacheData?.(cached.data, { willFetchFromNetwork: false });
-        onNetworkData?.(cached.data);
-        onQueryNetworkData?.(canonicalSignature, cached.data)
+
+        const dataPropagated = onQueryNetworkData?.(canonicalSignature, cached.data) ?? false;
+
+        if (!dataPropagated) {
+          documents.invalidate({ document: query, variables, canonical: true, fingerprint: true });
+        }
 
         return { data: cached.data as TData, error: null };
       }
@@ -365,7 +378,12 @@ export const createOperations = (
     if (finalCachePolicy === CACHE_AND_NETWORK) {
       if (cached && cached.ok.canonical) {
         onCacheData?.(cached.data as TData, { willFetchFromNetwork: true });
-        onQueryCacheData?.(canonicalSignature, cached.data);
+
+        const dataPropagated = onQueryNetworkData?.(canonicalSignature, cached.data) ?? false;
+
+        if (!dataPropagated) {
+          documents.invalidate({ document: query, variables, canonical: true, fingerprint: true });
+        }
 
         return performRequest();
       }
@@ -374,6 +392,9 @@ export const createOperations = (
     if (finalCachePolicy === NETWORK_ONLY) {
       return performRequest();
     }
+
+    // Fallback for any unhandled cache policy
+    return performRequest();
   };
 
   /**
