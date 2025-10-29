@@ -33,6 +33,7 @@ const createWsTransport = (url: string) => {
   return async (ctx: WsContext) => {
     return {
       subscribe: (observer: any) => {
+        console.log('SUPERsubscribe')
         const unsubscribe = sseClient.subscribe({ query: ctx.query, variables: ctx.variables }, {
           next: (value: any) => {
             observer.next?.({ data: value.data, error: value.errors?.[0] ? new Error(value.errors[0].message) : null });

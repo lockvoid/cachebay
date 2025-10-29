@@ -129,6 +129,34 @@ describe("operations", () => {
     const mutation = "mutation CreateUser($name: String!) { createUser(name: $name) { id name } }";
     const variables = { name: "Bob" };
 
+    it("sends networkQuery with __typename to transport, not original query", async () => {
+      const mockResult: OperationResult = {
+        data: { createUser: { id: "1", name: "Alice" } },
+        error: null,
+      };
+
+      const networkQueryWithTypename = "mutation CreateUser($name: String!) { createUser(name: $name) { id name __typename } }";
+      
+      mockPlanner.getPlan.mockReturnValue({
+        compiled: true,
+        networkQuery: networkQueryWithTypename,
+        makeSignature: vi.fn().mockReturnValue("mutation-sig-123"),
+      });
+
+      vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+      await operations.executeMutation({ query: mutation, variables });
+
+      // Should send networkQuery (with __typename), not original query
+      expect(mockTransport.http).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: networkQueryWithTypename, // NOT the original mutation
+          variables,
+          operationType: "mutation",
+        }),
+      );
+    });
+
     it("executes mutation and writes successful result to cache", async () => {
       const mockResult: OperationResult = {
         data: { createUser: { id: "2", name: "Bob" } },
@@ -143,7 +171,7 @@ describe("operations", () => {
       expect(mockPlanner.getPlan).toHaveBeenCalledWith(mutation);
       expect(mockTransport.http).toHaveBeenCalledWith(
         expect.objectContaining({
-          query: mutation,
+          query: expect.any(String), // networkQuery, not original
           variables,
           operationType: "mutation",
           compiledQuery: expect.objectContaining({ compiled: true }),
@@ -218,7 +246,7 @@ describe("operations", () => {
         canonical: true,
         fingerprint: true,
         preferCache: false,
-        updateCache: true,
+        updateCache: false,
         entityId: "@mutation.0",
       });
 

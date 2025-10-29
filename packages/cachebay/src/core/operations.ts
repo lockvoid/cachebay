@@ -415,7 +415,7 @@ export const createOperations = (
     const rootId = `@mutation.${mutationClock++}`;
 
     const context: HttpContext = {
-      query,
+      query: compiledQuery.networkQuery,
       variables,
       operationType: "mutation",
       compiledQuery,
@@ -440,7 +440,7 @@ export const createOperations = (
           canonical: true,
           fingerprint: true,
           preferCache: false,
-          updateCache: onQueryNetworkData ? true : false, // Only cache if watcher system exists
+          updateCache: false,
           entityId: rootId,
         });
 
@@ -523,7 +523,7 @@ export const createOperations = (
     const plan = planner.getPlan(query);
 
     const context: WsContext = {
-      query,
+      query: plan.networkQuery,
       variables,
       operationType: "subscription",
       compiledQuery: plan,
@@ -535,8 +535,10 @@ export const createOperations = (
       // Wrap observable to write incoming data to cache
       return {
         subscribe(observer: Partial<ObserverLike<OperationResult<TData>>>) {
+          console.log('subscribe')
           return observable.subscribe({
             next: (eventData: any) => {
+              console.log('sdsd', eventData)
               // Handle GraphQL errors in subscription events
               if (eventData.errors && !eventData.data) {
                 const error = new CombinedError({ graphqlErrors: eventData.errors });
@@ -602,6 +604,7 @@ export const createOperations = (
               }
             },
             error: (err: any) => {
+              console.log('error', err)
               // Forward error to observer and callback
               const error = new CombinedError({ networkError: err });
               if (onErrorCallback) onErrorCallback(error);
@@ -610,6 +613,7 @@ export const createOperations = (
               }
             },
             complete: () => {
+              console.log('complete')
               // Forward completion to observer and callback
               if (onCompleteCallback) onCompleteCallback();
               if (observer.complete) {

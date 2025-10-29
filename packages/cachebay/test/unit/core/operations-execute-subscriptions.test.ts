@@ -129,6 +129,34 @@ describe("operations", () => {
     const subscription = "subscription OnMessage { messageAdded { id text } }";
     const variables = { roomId: "1" };
 
+    it("sends networkQuery with __typename to transport, not original query", () => {
+      const mockObservable = {
+        subscribe: vi.fn(),
+        unsubscribe: vi.fn(),
+      };
+
+      const networkQueryWithTypename = "subscription OnMessage { messageAdded { id text __typename } }";
+      
+      mockPlanner.getPlan.mockReturnValue({
+        compiled: true,
+        networkQuery: networkQueryWithTypename,
+        makeSignature: vi.fn().mockReturnValue("subscription-sig-123"),
+      });
+
+      vi.mocked(mockTransport.ws).mockReturnValue(mockObservable as any);
+
+      operations.executeSubscription({ query: subscription, variables });
+
+      // Should send networkQuery (with __typename), not original query
+      expect(mockTransport.ws).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: networkQueryWithTypename, // NOT the original subscription
+          variables,
+          operationType: "subscription",
+        }),
+      );
+    });
+
     it("returns observable for subscription", () => {
       const mockObservable = {
         subscribe: vi.fn(),
@@ -143,7 +171,7 @@ describe("operations", () => {
       expect(mockPlanner.getPlan).toHaveBeenCalledWith(subscription);
       expect(mockTransport.ws).toHaveBeenCalledWith(
         expect.objectContaining({
-          query: subscription,
+          query: expect.any(String), // networkQuery, not original
           variables,
           operationType: "subscription",
           compiledQuery: expect.objectContaining({ compiled: true }),

@@ -23,7 +23,7 @@ export const useHogwartsTime = () => {
     }
 
     if (data) {
-      // console.log('Hogwarts time:', data.hogwartsTimeUpdated);
+      console.log('Hogwarts time:', data.hogwartsTimeUpdated);
     }
   });
 };
