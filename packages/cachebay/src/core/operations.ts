@@ -187,6 +187,10 @@ export const createOperations = (
   // Suspension tracking: last terminal emit time per query signature
   const lastEmitBySig = new Map<string, number>();
 
+  // Mutation and subscription clocks for unique rootIds
+  let mutationClock = 0;
+  let subscriptionClock = 0;
+
   // No need for error tracking maps - just call onQueryNetworkError callback
 
   /**
@@ -402,8 +406,13 @@ export const createOperations = (
   const executeMutation = async <TData = any, Tvariables = QueryVariables>({
     query,
     variables = {},
-  }: Operation<TData, Tvariables>): Promise<OperationResult<TData>> => {
+    onData,
+    onError,
+  }: Operation<TData, Tvariables> & {
+    onData?: (data: TData) => void;
+  }): Promise<OperationResult<TData>> => {
     const compiledQuery = planner.getPlan(query);
+    const rootId = `@mutation.${mutationClock++}`;
 
     const context: HttpContext = {
       query,
@@ -415,40 +424,96 @@ export const createOperations = (
     try {
       const result = await transport.http(context);
 
-      // Write successful mutation result to cache and notify watchers
-      if (result.data && !result.error) {
+      // Write mutation result to cache (including partial data)
+      if (result.data) {
         documents.normalize({
           document: query,
           variables,
           data: result.data,
+          rootId,
         });
 
-        // Materialize to update cache and get dependencies for watcher tracking
+        // Materialize from the mutation rootId to get the result
         const freshMaterialization = documents.materialize({
           document: query,
           variables,
           canonical: true,
-          fingerprint: false,
+          fingerprint: true,
           preferCache: false,
-          updateCache: false,
+          updateCache: onQueryNetworkData ? true : false, // Only cache if watcher system exists
+          entityId: rootId,
         });
 
-        return { data: freshMaterialization.data, error: result.error || null };
+        // Check if materialization succeeded
+        if (freshMaterialization.source === "none") {
+          const error = new CombinedError({
+            networkError: new Error("[cachebay] Mutation materialization failed after write - missing required fields"),
+          });
+          if (onError) onError(error);
+          return { data: null, error };
+        }
+
+        // Notify watchers if callback provided (only for successful mutations without errors)
+        if (onQueryNetworkData && freshMaterialization.data && !result.error) {
+          const plan = planner.getPlan(query);
+          const signature = plan.makeSignature("canonical", variables);
+          const caught = onQueryNetworkData({
+            signature,
+            data: freshMaterialization.data,
+            dependencies: freshMaterialization.dependencies || new Set(),
+            cachePolicy: "cache-first",
+          });
+
+          // If no watchers caught it, invalidate the cache
+          if (!caught) {
+            documents.invalidate({
+              document: query,
+              variables,
+              canonical: true,
+              fingerprint: true,
+            });
+          }
+        }
+
+        // Call onData callback (only for successful mutations)
+        if (onData && freshMaterialization.data && !result.error) {
+          onData(freshMaterialization.data as TData);
+        }
+
+        // Handle errors
+        if (result.error && onError) {
+          onError(result.error);
+        }
+
+        return { data: freshMaterialization.data as TData, error: result.error || null };
+      }
+
+      // No data at all - just error
+      if (result.error) {
+        if (onError) onError(result.error);
       }
 
       return result as OperationResult<TData>;
     } catch (error) {
-      return { data: null, error: new CombinedError({ networkError: error }) };
+      const combinedError = new CombinedError({ networkError: error });
+      if (onError) onError(combinedError);
+      return { data: null, error: combinedError };
     }
   };
 
   /**
    * Execute a GraphQL subscription - returns observable that writes data to cache
    */
-  const executeSubscription = async <TData = any, Tvariables = QueryVariables>({
+  const executeSubscription = <TData = any, Tvariables = QueryVariables>({
     query,
-    variables,
-  }: Operation<TData, Tvariables>): Promise<ObservableLike<OperationResult<TData>>> => {
+    variables = {},
+    onData,
+    onError: onErrorCallback,
+    onComplete: onCompleteCallback,
+  }: Operation<TData, Tvariables> & {
+    onData?: (data: TData) => void;
+    onComplete?: () => void;
+  }): ObservableLike<OperationResult<TData>> => {
     if (!transport.ws) {
       throw new Error(
         "WebSocket transport is not configured. Please provide 'transport.ws' in createCachebay options to use subscriptions.",
@@ -458,56 +523,95 @@ export const createOperations = (
     const plan = planner.getPlan(query);
 
     const context: WsContext = {
-      query: plan.networkQuery,
+      query,
       variables,
       operationType: "subscription",
       compiledQuery: plan,
     };
 
     try {
-      const observable = await transport.ws(context);
+      const observable = transport.ws(context);
 
       // Wrap observable to write incoming data to cache
       return {
         subscribe(observer: Partial<ObserverLike<OperationResult<TData>>>) {
           return observable.subscribe({
-            next: (result: OperationResult<TData>) => {
-              // Write successful subscription data to cache and notify watchers
+            next: (eventData: any) => {
+              // Handle GraphQL errors in subscription events
+              if (eventData.errors && !eventData.data) {
+                const error = new CombinedError({ graphqlErrors: eventData.errors });
+                if (onErrorCallback) onErrorCallback(error);
+                if (observer.next) {
+                  observer.next({ data: null, error });
+                }
+                return;
+              }
+
+              const result = eventData as OperationResult<TData>;
+
+              // Write successful subscription data to cache with unique rootId
               if (result.data && !result.error) {
+                const rootId = `@subscription.${subscriptionClock++}`;
+
                 documents.normalize({
                   document: query,
                   variables,
                   data: result.data,
+                  rootId,
                 });
 
-                // Materialize to update cache and get dependencies for watcher tracking
+                // Materialize from the subscription rootId to get the result
                 const freshMaterialization = documents.materialize({
                   document: query,
                   variables,
                   canonical: true,
-                  fingerprint: false,
+                  fingerprint: true,
                   preferCache: false,
                   updateCache: false,
+                  entityId: rootId,
                 });
 
+                // Check if materialization succeeded
+                if (freshMaterialization.source === "none") {
+                  const error = new CombinedError({
+                    networkError: new Error("[cachebay] Subscription materialization failed after write - missing required fields"),
+                  });
+                  if (onErrorCallback) onErrorCallback(error);
+                  if (observer.next) {
+                    observer.next({ data: null, error });
+                  }
+                  return;
+                }
+
+                // Call onData callback
+                if (onData && freshMaterialization.data) {
+                  onData(freshMaterialization.data as TData);
+                }
+
                 if (observer.next) {
-                  observer.next({ data: freshMaterialization.data, error: result.error || null });
+                  observer.next({ data: freshMaterialization.data as TData, error: result.error || null });
                 }
               } else {
                 // Forward errors as-is
+                if (result.error && onErrorCallback) {
+                  onErrorCallback(result.error);
+                }
                 if (observer.next) {
                   observer.next(result);
                 }
               }
             },
             error: (err: any) => {
-              // Forward error to observer
+              // Forward error to observer and callback
+              const error = new CombinedError({ networkError: err });
+              if (onErrorCallback) onErrorCallback(error);
               if (observer.error) {
-                observer.error(err);
+                observer.error(error);
               }
             },
             complete: () => {
-              // Forward completion to observer
+              // Forward completion to observer and callback
+              if (onCompleteCallback) onCompleteCallback();
               if (observer.complete) {
                 observer.complete();
               }
@@ -518,8 +622,10 @@ export const createOperations = (
     } catch (err) {
       return {
         subscribe(observer: Partial<ObserverLike<OperationResult<TData>>>) {
+          const error = new CombinedError({ networkError: err });
+          if (onErrorCallback) onErrorCallback(error);
           if (observer.error) {
-            observer.error(err);
+            observer.error(error);
           }
           return { unsubscribe: () => { } };
         },

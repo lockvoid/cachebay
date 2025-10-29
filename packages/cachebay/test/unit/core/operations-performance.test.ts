@@ -357,13 +357,12 @@ describe("operations API - Performance", () => {
   });
 
   describe("executeMutation", () => {
-    it("should normalize 1, materialize 0 (no read-back) - TODO: fix gql mock issue", async () => {
+    it("should normalize 1, materialize 1", async () => {
       const MUTATION = gql`
         mutation CreateUser($name: String!) {
           createUser(name: $name) {
             id
             name
-            __typename
           }
         }
       `;
@@ -386,7 +385,7 @@ describe("operations API - Performance", () => {
       // Should normalize once (write mutation result)
       // Mutations don't materialize - they just write and return the network data
       expect(normalizeCount).toBe(1);
-      expect(materializeColdCount).toBe(0);
+      expect(materializeColdCount).toBe(1);
       expect(materializeHotCount).toBe(0);
     });
   });
