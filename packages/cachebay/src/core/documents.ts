@@ -459,6 +459,14 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         return;
       }
 
+      // Handle null values for fields with selectionSet (e.g., errors: null)
+      if (value === null && field && field.selectionSet) {
+        // Store null as a link so materialization knows it's a valid null, not missing
+        const fieldKey = buildFieldKey(field, variables);
+        put(frame.parentId, { [fieldKey]: null });
+        return;
+      }
+
       if (value && typeof value === "object") {
         if (field && !field.selectionSet) {
           writeScalar(frame.parentId, field, value);
@@ -717,7 +725,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             }
 
             if (!link || !link.__ref) {
-              out[outKey] = link === null ? null : undefined;
+              // null is a valid value, not a cache miss
+              if (link === null) {
+                out[outKey] = null;
+                continue;
+              }
+              // undefined means the field is missing from cache
+              out[outKey] = undefined;
               strictOK = false;
               canonicalOK = false;
               miss({ kind: FIELD_LINK_MISSING, at: addPath(path, outKey), parentId: id, fieldKey: storeKey });
@@ -791,19 +805,26 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             const nlink = (record as any).node;
 
             if (!nlink || !nlink.__ref) {
-              outEdge.node = nlink === null ? null : undefined;
+              // null is a valid value, not a cache miss
+              if (nlink === null) {
+                outEdge.node = null;
+                continue;
+              }
+              // undefined means the field is missing from cache
+              outEdge.node = undefined;
               strictOK = false;
               canonicalOK = false;
               miss({ kind: EDGE_NODE_MISSING, at: addPath(path, CONNECTION_NODE_FIELD), edgeId });
-            } else {
-              const nodeId = nlink.__ref as string;
-              const nodeOut: any = {};
-              const nodeFp: any = {};
-              outEdge.node = nodeOut;
-              if (fingerprint) fpEdge.node = nodeFp;
-              readEntity(nodeId, nodePlan as PlanField, nodeOut, nodeFp, addPath(path, CONNECTION_NODE_FIELD));
-              nodeFingerprint = nodeFp[FINGERPRINT_KEY];
+              continue;
             }
+
+            const nodeId = nlink.__ref as string;
+            const nodeOut: any = {};
+            const nodeFp: any = {};
+            outEdge.node = nodeOut;
+            if (fingerprint) fpEdge.node = nodeFp;
+            readEntity(nodeId, nodePlan as PlanField, nodeOut, nodeFp, addPath(path, CONNECTION_NODE_FIELD));
+            nodeFingerprint = nodeFp[FINGERPRINT_KEY];
           } else if (!f.selectionSet) {
             readScalar(record, f, outEdge, outKey, edgeId, addPath(path, outKey));
           }
@@ -957,7 +978,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         }
 
         if (!link || !link.__ref) {
-          conn[childField.responseKey] = link === null ? null : undefined;
+          // null is a valid value, not a cache miss
+          if (link === null) {
+            conn[childField.responseKey] = null;
+            continue;
+          }
+          // undefined means the field is missing from cache
+          conn[childField.responseKey] = undefined;
           strictOK = false;
           canonicalOK = false;
           miss({
@@ -1027,7 +1054,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           const link = (rootRecord as any)[fieldKey];
 
           if (!link || !link.__ref) {
-            data[field.responseKey] = link === null ? null : undefined;
+            // null is a valid value, not a cache miss
+            if (link === null) {
+              data[field.responseKey] = null;
+              continue;
+            }
+            // undefined means the field is missing from cache
+            data[field.responseKey] = undefined;
             strictOK = false;
             canonicalOK = false;
             miss({ kind: ROOT_LINK_MISSING, at: path, fieldKey });

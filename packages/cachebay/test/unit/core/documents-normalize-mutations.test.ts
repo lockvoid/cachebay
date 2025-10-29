@@ -253,4 +253,59 @@ describe("documents.normalize - mutations with rootId", () => {
       __typename: "@",
     });
   });
+
+  it("normalizes and materializes mutation with null field", () => {
+    const mutation = `
+      mutation CreateDirectUpload($input: CreateDirectUploadInput!) {
+        createDirectUpload(input: $input) {
+          directUpload {
+            uploadUrl
+            __typename
+          }
+          errors {
+            message
+            __typename
+          }
+          __typename
+        }
+      }
+    `;
+
+    const mutationData = {
+      createDirectUpload: {
+        directUpload: {
+          uploadUrl: "https://example.com/upload",
+          __typename: "DirectUpload",
+        },
+        errors: null, // This is a valid null value
+        __typename: "CreateDirectUploadPayload",
+      },
+    };
+
+    const rootId = "@mutation.0";
+
+    // Normalize the mutation response
+    documents.normalize({
+      document: mutation,
+      variables: { input: { filename: "test.wav" } },
+      data: mutationData,
+      rootId,
+    });
+
+    // Materialize it back - should succeed with null field
+    const result = documents.materialize({
+      document: mutation,
+      variables: { input: { filename: "test.wav" } },
+      canonical: true,
+      fingerprint: false,
+      preferCache: false,
+      updateCache: false,
+      rootId,
+    });
+
+    // Should succeed - null is a valid value, not a cache miss
+    expect(result.source).not.toBe("none");
+    expect(result.data).toEqual(mutationData);
+    expect(result.data.createDirectUpload.errors).toBeNull();
+  });
 });

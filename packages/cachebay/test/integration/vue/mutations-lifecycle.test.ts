@@ -100,4 +100,86 @@ describe("Mutations", () => {
 
     await fx.restore();
   });
+
+  it("handles mutation response with null fields correctly", async () => {
+    const CREATE_UPLOAD_MUTATION = `
+      mutation CreateDirectUpload($input: CreateDirectUploadInput!) {
+        createDirectUpload(input: $input) {
+          directUpload {
+            uploadUrl
+            __typename
+          }
+          errors {
+            message
+            __typename
+          }
+          __typename
+        }
+      }
+    `;
+
+    const { cache, client, fx } = createTestClient({
+      routes: [
+        {
+          when: ({ body }) => {
+            return body?.includes?.("mutation CreateDirectUpload");
+          },
+
+          respond: () => {
+            return {
+              data: {
+                createDirectUpload: {
+                  directUpload: {
+                    uploadUrl: "https://example.com/upload",
+                    __typename: "DirectUpload",
+                  },
+                  errors: null, // This is a valid null value, not a missing field
+                  __typename: "CreateDirectUploadPayload",
+                },
+              },
+            };
+          },
+
+          delay: 10,
+        },
+      ],
+    });
+
+    const Cmp = defineComponent({
+      setup() {
+        const { execute } = useMutation(CREATE_UPLOAD_MUTATION);
+
+        const run = async () => {
+          return execute({
+            input: {
+              filename: "test.wav",
+              contentType: "audio/wav",
+              byteSize: 1024,
+            },
+          });
+        };
+
+        return { run };
+      },
+
+      render() {
+        return h("div", {}, "Upload Component");
+      },
+    });
+
+    const wrapper = mount(Cmp, { global: { plugins: [client] } });
+
+    await delay(5);
+
+    const response = await wrapper.vm.run();
+
+    await delay(15);
+
+    // Should succeed - null is a valid value
+    expect(response.error).toBeFalsy();
+    expect(response.data.createDirectUpload.directUpload.uploadUrl).toBe("https://example.com/upload");
+    expect(response.data.createDirectUpload.errors).toBeNull();
+
+    await fx.restore();
+  });
 });

@@ -452,11 +452,15 @@ export const createOperations = (
           if (__DEV__ && freshMaterialization.ok.miss && freshMaterialization.ok.miss.length > 0) {
             const misses = freshMaterialization.ok.miss.map((m: any) => {
               if (m.kind === "entity-missing") {
-                return `  - Entity missing: ${m.id} at ${m.at}`;
+                return `  - Entity "${m.id}" not found in cache (at path: ${m.at})`;
               } else if (m.kind === "root-link-missing") {
-                return `  - Root field missing: ${m.fieldKey} at ${m.at}`;
+                // Extract field name from fieldKey (remove arguments)
+                const fieldName = m.fieldKey.split('(')[0];
+                return `  - Root field "${fieldName}" not found (at path: ${m.at})`;
               } else if (m.kind === "field-link-missing") {
-                return `  - Field missing: ${m.fieldKey} on ${m.parentId} at ${m.at}`;
+                // Extract field name from fieldKey (remove arguments)
+                const fieldName = m.fieldKey.split('(')[0];
+                return `  - Field "${fieldName}" not found on entity "${m.parentId}" (at path: ${m.at})`;
               }
               return `  - ${JSON.stringify(m)}`;
             }).join("\n");

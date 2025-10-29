@@ -867,7 +867,7 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       });
     });
 
-    it("returns MISSING (source === 'none') when field is explicitly null", () => {
+    it("returns data when field is explicitly null (null is a valid value)", () => {
       const QUERY = `
         query Query($id: ID!) {
           post(id: $id) {
@@ -893,7 +893,9 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       });
 
       const c = documents.materialize({ document: QUERY, variables: { id: "p1" } }) as any;
-      expect(c.source).toBe("none");
+      // null is a valid GraphQL value, not a cache miss
+      expect(c.source).not.toBe("none");
+      expect(c.data.post.author).toBeNull();
     });
 
     it("hydrates in place when record appears after initial null", async () => {
@@ -909,7 +911,7 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
         }
       `;
 
-      // First normalize with missing author
+      // First normalize with null author (valid value)
       documents.normalize({
         document: QUERY,
         variables: { id: "p1" },
@@ -923,7 +925,9 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       });
 
       const c1 = documents.materialize({ document: QUERY, variables: { id: "p1" } }) as any;
-      expect(c1.source).toBe("none");
+      // null is valid, not a miss
+      expect(c1.source).not.toBe("none");
+      expect(c1.data.post.author).toBeNull();
 
       // Now normalize with author present
       documents.normalize({

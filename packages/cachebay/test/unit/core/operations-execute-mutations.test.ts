@@ -616,11 +616,77 @@ describe("operations", () => {
       expect(result.error).toBeInstanceOf(CombinedError);
       expect(result.error?.message).toContain("Mutation materialization failed");
       expect(result.error?.message).toContain("Missing fields:");
-      expect(result.error?.message).toContain("Field missing: email on User:9 at createUser");
-      expect(result.error?.message).toContain("Entity missing: Profile:1 at createUser.profile");
+      expect(result.error?.message).toContain('Field "email" not found on entity "User:9"');
+      expect(result.error?.message).toContain('Entity "Profile:1" not found in cache');
       expect(mockDocuments.normalize).toHaveBeenCalled();
 
       vi.restoreAllMocks();
+    });
+
+    it("handles null fields in mutation response", async () => {
+      const mutationWithNullableField = `
+        mutation CreateDirectUpload($input: CreateDirectUploadInput!) {
+          createDirectUpload(input: $input) {
+            directUpload {
+              uploadUrl
+              __typename
+            }
+            errors {
+              message
+              __typename
+            }
+            __typename
+          }
+        }
+      `;
+
+      const responseData = {
+        createDirectUpload: {
+          directUpload: {
+            uploadUrl: "https://example.com/upload",
+            __typename: "DirectUpload",
+          },
+          errors: null, // This is a valid null value, not a missing field
+          __typename: "CreateDirectUploadPayload",
+        },
+      };
+
+      const mockResult: OperationResult = {
+        data: responseData,
+        error: null,
+      };
+
+      vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+      // Mock normalize to store the data
+      mockDocuments.normalize.mockImplementation(() => {});
+
+      // Mock materialize to return the data with null field
+      mockDocuments.materialize.mockReturnValue({
+        data: responseData,
+        source: "canonical",
+        fingerprints: {},
+        dependencies: new Set(),
+        ok: {
+          strict: true,
+          canonical: true,
+        },
+      });
+
+      const result = await operations.executeMutation({
+        query: mutationWithNullableField,
+        variables: { input: { filename: "test.wav" } },
+      });
+
+      // Should succeed - null is a valid value
+      expect(result.data).toEqual(responseData);
+      expect(result.error).toBeNull();
+      expect(mockDocuments.normalize).toHaveBeenCalledWith({
+        document: mutationWithNullableField,
+        variables: { input: { filename: "test.wav" } },
+        data: responseData,
+        rootId: "@mutation.0",
+      });
     });
 
     it("handles partial data with GraphQL errors", async () => {
