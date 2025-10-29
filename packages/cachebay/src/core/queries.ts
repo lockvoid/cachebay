@@ -65,23 +65,31 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     if (flushScheduled) {
       return;
     }
+
     flushScheduled = true;
 
+    console.log('scheduleFlush', pendingTouched.size);
     queueMicrotask(() => {
       flushScheduled = false;
+
       if (pendingTouched.size === 0) {
         return;
       }
 
       const touched = Array.from(pendingTouched);
+
       pendingTouched.clear();
 
       const affected = new Set<number>();
 
       for (const id of touched) {
         const ws = depIndex.get(id);
+        console.log('ws', depIndex);
+
         if (ws) {
-          for (const k of ws) affected.add(k);
+          for (const k of ws) {
+            affected.add(k);
+          }
         }
       }
 
@@ -115,8 +123,10 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
         }
 
         const recycled = recycleSnapshots(w.lastData, result.data);
+
         if (recycled !== w.lastData) {
           w.lastData = recycled;
+
           try {
             w.onData(recycled);
           } catch (e) {
@@ -159,6 +169,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
   // --- Dep index maintenance ---
   const updateWatcherDependencies = (watcherId: number, nextDeps: Set<string>) => {
+    console.log('nextDeps', nextDeps);
     const watcher = watchers.get(watcherId);
     if (!watcher) return;
 
@@ -168,17 +179,29 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     // fast path
     if (old.size === next.size) {
       let same = true;
-      for (const d of old) if (!next.has(d)) { same = false; break; }
-      if (same) return;
+      for (const d of old) {
+        if (!next.has(d)) {
+          same = false;
+          break;
+        }
+      }
+
+      if (same) {
+        return;
+      }
     }
 
     // remove old
     for (const d of old) {
       if (!next.has(d)) {
         const set = depIndex.get(d);
+
         if (set) {
           set.delete(watcherId);
-          if (set.size === 0) depIndex.delete(d);
+
+          if (set.size === 0) {
+            depIndex.delete(d);
+          }
         }
       }
     }
@@ -273,6 +296,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
       if (initial.source !== "none") {
         watcher.lastData = initial.data;
+
         try {
           onData(initial.data);
         } catch (e) {
@@ -285,20 +309,28 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
       // This ensures the watcher is notified when entities are added to the cache
       // Use canonical mode to match the signature mode (watchers use canonical signatures)
       const basicDeps = plan.getDependencies(true, variables);
+
       updateWatcherDependencies(watcherId, basicDeps);
     }
 
     return {
       unsubscribe: () => {
         const w = watchers.get(watcherId);
-        if (!w) return;
+
+        if (!w) {
+          return;
+        }
 
         // Remove from dep index
         for (const d of w.deps) {
           const set = depIndex.get(d);
+
           if (set) {
             set.delete(watcherId);
-            if (set.size === 0) depIndex.delete(d);
+
+            if (set.size === 0) {
+              depIndex.delete(d);
+            }
           }
         }
 
@@ -310,6 +342,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
           if (watcherSet.size === 0) {
             // Last watcher for this signature - invalidate cache
             signatureToWatchers.delete(w.signature);
+
             documents.invalidate({
               document: w.query,
               variables: w.variables,
@@ -363,6 +396,8 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
           newSet.add(watcherId);
         }
 
+        console.log("newSignature:", newSignature);
+
         // If immediate, materialize and emit synchronously
         if (immediate) {
           const res = documents.materialize({
@@ -403,12 +438,23 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
   const notifyDataBySignature = (signature: string, data: any): boolean => {
     // Find all watchers with this signature
     const watcherSet = signatureToWatchers.get(signature);
-    if (!watcherSet || watcherSet.size === 0) return false;
+
+    if (!watcherSet || watcherSet.size === 0) {
+      return false;
+    }
+
+    console.log(`notifyDataBySignature watcherSet`, watcherSet);
 
     // Emit to all watchers with this signature
     for (const watcherId of watcherSet) {
       const w = watchers.get(watcherId);
-      if (!w) continue;
+      console.log(`notifyDataBySignature w1`, w);
+
+      if (!w) {
+        continue;
+      }
+
+      console.log(`notifyDataBySignature w2`, w);
 
       // Dependencies are updated via notifyDataByDependencies (triggered by graph.onChange)
       // Directly emit data to watcher (avoid redundant materialize)
@@ -445,6 +491,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
   const inspect = () => {
     return {
       watchersCount: watchers.size,
+
       getQueryWatchers: (query: DocumentNode | string, variables: Record<string, any> = {}): number => {
         const plan = planner.getPlan(query);
         const signature = plan.makeSignature(true, variables);

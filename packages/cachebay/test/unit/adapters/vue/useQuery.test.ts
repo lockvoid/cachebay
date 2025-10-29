@@ -877,7 +877,7 @@ describe("useQuery", () => {
       );
     });
 
-    it("updates watcher with new variables", async () => {
+    it.only("updates watcher with new variables", async () => {
       let queryResult: any;
 
       const App = defineComponent({
@@ -902,8 +902,11 @@ describe("useQuery", () => {
         },
       });
 
-      await nextTick();
       await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(queryResult.data.value).toMatchObject({
+        user: { id: "1", email: "alice@example.com" },
+      });
 
       // Mock response for user:2
       mockTransport.http = vi.fn().mockResolvedValue({
@@ -913,18 +916,19 @@ describe("useQuery", () => {
 
       // Refetch with new variables
       await queryResult.refetch({ variables: { id: "2" } });
-      await nextTick();
-      await new Promise((resolve) => setTimeout(resolve, 50));
 
-      // Watcher should now be watching user:2
-      // Update user:2 in cache
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect(queryResult.data.value).toMatchObject({
+        user: { id: "2", email: "bob@example.com" },
+      });
+
       cache.writeQuery({
         query: USER_QUERY,
         variables: { id: "2" },
         data: { user: { __typename: "User", id: "2", email: "bob-updated@example.com" } },
       });
 
-      await nextTick();
       await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Should reflect the update
@@ -1270,7 +1274,7 @@ describe("useQuery", () => {
       cache.writeQuery({
         query: USER_QUERY,
         variables: { id: "1" },
-        data: { user: {  __typename: "User",  id: "1", email: "ssr@example.com" } },
+        data: { user: { __typename: "User", id: "1", email: "ssr@example.com" } },
       });
 
       // Query during hydration - should serve from strict cache
@@ -1881,7 +1885,7 @@ describe("useQuery", () => {
 
       // Should have made network request (network-only policy from client)
       expect(customTransport.http).toHaveBeenCalled();
-      
+
       // Should have network data, not cached data
       expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "network@example.com" } });
     });
@@ -1937,7 +1941,7 @@ describe("useQuery", () => {
 
       // Should NOT have made network request (cache-only overrides network-only)
       expect(customTransport.http).not.toHaveBeenCalled();
-      
+
       // Should have cached data
       expect(queryResult.data.value).toMatchObject({ user: { id: "1", email: "cached@example.com" } });
     });

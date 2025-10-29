@@ -291,6 +291,7 @@ export const createOperations = (
           if (onQueryNetworkData) {
             const wasCaught = onQueryNetworkData(canonicalSignature, freshMaterialization.data);
 
+            console.log('onQueryNetworkData:', canonicalSignature, wasCaught, freshMaterialization);
             if (!wasCaught) {
               documents.invalidate({ document: query, variables, canonical: true, fingerprint: true });
             }

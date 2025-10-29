@@ -105,7 +105,6 @@ export function useQuery<TData = any, TVars = any>(
     isFetching.value = true;
 
     try {
-      console.log('Performing request2');
       const result = await client.executeQuery<TData, TVars>({
         query: options.query,
         variables: vars,
@@ -130,7 +129,6 @@ export function useQuery<TData = any, TVars = any>(
           isFetching.value = false; // Set synchronously to prevent loading flash
         },
       });
-      console.log(result);
 
       // Promise resolves with fresh data, set isFetching to false
       isFetching.value = false;
@@ -148,17 +146,20 @@ export function useQuery<TData = any, TVars = any>(
   const refetch = async (refetchOptions?: RefetchOptions<TVars>) => {
     // Don't execute if disabled or no watcher
     const isEnabled = toValue(options.enabled) ?? true;
-    if (!isEnabled || !watchHandle) return;
+
+    if (!isEnabled || !watchHandle) {
+      return;
+    }
 
     const currentVars = toValue(options.variables) || ({} as TVars);
 
     // Merge variables (Apollo behavior: omitted variables use original values)
-    const vars = refetchOptions?.variables
-      ? { ...currentVars, ...refetchOptions.variables } as TVars
-      : currentVars;
+    const vars = refetchOptions?.variables ? { ...currentVars, ...refetchOptions.variables } as TVars : currentVars;
 
     // Default to network-only if no cache policy specified (Apollo behavior)
     const refetchPolicy = refetchOptions?.cachePolicy || "network-only";
+
+    console.log('refetching', vars, refetchPolicy)
 
     // Update watcher with new variables if provided
     if (refetchOptions?.variables) {
@@ -167,6 +168,8 @@ export function useQuery<TData = any, TVars = any>(
 
     // Execute query with refetch policy using performQuery
     const result = await performQuery(vars, refetchPolicy);
+
+    console.log('refetched', result)
 
     // Resolve suspension promise for lazy mode refetch
     suspensionPromise.resolve(result);
@@ -193,7 +196,6 @@ export function useQuery<TData = any, TVars = any>(
           setupWatcher(vars);
           // Execute query unless lazy mode
           if (!options.lazy) {
-            console.log('PERFORM')
             const promise = performQuery(vars, policy);
 
             promise.then(result => {
@@ -241,7 +243,6 @@ export function useQuery<TData = any, TVars = any>(
 
   // Cleanup on unmount
   onBeforeUnmount(() => {
-    console.log("Unmounting useQuery");
     if (watchHandle) {
       watchHandle.unsubscribe();
       watchHandle = null;

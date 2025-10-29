@@ -189,6 +189,7 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
     interfaces: options.interfaces || {},
 
     onChange: (touchedIds) => {
+      console.log("Graph changed:", touchedIds);
       queries.notifyDataByDependencies(touchedIds);
       fragments.notifyDataByDependencies(touchedIds);
     },
