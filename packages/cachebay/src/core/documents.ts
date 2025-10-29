@@ -156,8 +156,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const startId = rootId ?? ROOT_ID;
     const shouldLink = (startId !== ROOT_ID) || (plan.operation === "query");
 
-    if (startId === ROOT_ID) {
-      put(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
+    // Create root record metadata only for root IDs (@ or @mutation.X or @subscription.X)
+    // Don't create for entity IDs (User:123) used in fragment normalization
+    const isRootId = startId === ROOT_ID || startId.startsWith('@mutation.') || startId.startsWith('@subscription.');
+    if (isRootId) {
+      put(startId, { id: startId, __typename: startId });
     }
 
     type Frame = {
@@ -955,25 +958,31 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     const data = {};
 
-    if (entityId) {
+    // Determine if entityId is actually a root ID (@ or @mutation.X or @subscription.X)
+    const isRootId = entityId && (entityId === ROOT_ID || entityId.startsWith('@mutation.') || entityId.startsWith('@subscription.'));
+    
+    if (entityId && !isRootId) {
+      // Fragment materialization - read from entity
       const synthetic = { selectionSet: plan.root, selectionMap: plan.rootSelectionMap } as unknown as PlanField;
       readEntity(entityId, synthetic, data, entityId);
     } else {
-      const rootRecord = graph.getRecord(ROOT_ID) || {};
+      // Query/Mutation/Subscription - read from root record
+      const actualRootId = entityId || ROOT_ID;
+      const rootRecord = graph.getRecord(actualRootId) || {};
       const rootSelection = plan.root;
 
       for (let i = 0; i < rootSelection.length; i++) {
         const field = rootSelection[i];
-        const path = addPath(ROOT_ID, field.responseKey);
+        const path = addPath(actualRootId, field.responseKey);
 
         if ((field as any).isConnection) {
-          readConnection(ROOT_ID, field, data, field.responseKey, path);
+          readConnection(actualRootId, field, data, field.responseKey, path);
           continue;
         }
 
         if (field.selectionSet && field.selectionSet.length) {
           const fieldKey = buildFieldKey(field, variables);
-          touch(ROOT_ID + "." + fieldKey);
+          touch(actualRootId + "." + fieldKey);
 
           const link = (rootRecord as any)[fieldKey];
 
@@ -989,17 +998,19 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             readEntity(childId, field, childOut, addPath(path, childId));
           }
         } else {
-          readScalar(rootRecord, field, data, field.responseKey, ROOT_ID, path);
+          readScalar(rootRecord, field, data, field.responseKey, actualRootId, path);
         }
       }
     }
 
     const requestedOK = canonical ? canonicalOK : strictOK;
     const rootFingerprints = [];
-    if (entityId) {
+    if (entityId && !isRootId) {
+      // Fragment - single entity fingerprint
       const fp = getFingerprint(data);
       if (fp !== undefined) rootFingerprints.push(fp);
     } else {
+      // Query/Mutation/Subscription - collect fingerprints from root fields
       for (let i = 0; i < plan.root.length; i++) {
         const field = plan.root[i];
         const value = data[field.responseKey];
