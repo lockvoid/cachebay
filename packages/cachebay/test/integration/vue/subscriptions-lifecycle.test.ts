@@ -160,7 +160,7 @@ describe("Subscriptions", () => {
     await delay(20);
 
     expect(errors.length).toBe(1);
-    expect(errors[0].message).toBe("Subscription failed");
+    expect(errors[0].message).toBe("[Network] Subscription failed");
   });
 
   it("allows unsubscribing from active subscription", async () => {
@@ -208,11 +208,11 @@ describe("Subscriptions", () => {
       },
     });
 
-    await expect(
+    expect(() =>
       cache.executeSubscription({
         query: operations.USER_UPDATED_SUBSCRIPTION,
         variables: { id: "u1" },
       }),
-    ).rejects.toThrow("WebSocket transport is not configured");
+    ).toThrow("WebSocket transport is not configured");
   });
 });

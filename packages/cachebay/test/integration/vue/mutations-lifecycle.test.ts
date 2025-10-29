@@ -21,7 +21,20 @@ describe("Mutations", () => {
                 updateUser: {
                   __typename: "UpdateUserPayload",
 
-                  user: fixtures.users.buildNode({ id: "u1", email: "u1+updated@example.com" }),
+                  user: {
+                    ...fixtures.users.buildNode({ id: "u1", email: "u1+updated@example.com" }),
+                    posts: {
+                      __typename: "PostConnection",
+                      pageInfo: {
+                        __typename: "PageInfo",
+                        startCursor: null,
+                        endCursor: null,
+                        hasNextPage: false,
+                        hasPreviousPage: false,
+                      },
+                      edges: [],
+                    },
+                  },
                 },
               },
             };
@@ -45,6 +58,10 @@ describe("Mutations", () => {
             input: {
               email: "u1+updated@example.com",
             },
+
+            postCategory: "tech",
+            postFirst: 10,
+            postAfter: null,
           });
         };
 

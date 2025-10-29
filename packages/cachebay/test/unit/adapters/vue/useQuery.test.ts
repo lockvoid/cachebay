@@ -1212,12 +1212,10 @@ describe("useQuery", () => {
 
       expect(mockTransport.http).toHaveBeenCalledTimes(1);
       expect(result1.data).toEqual({
-        __version: 209096686,
         user: {
           id: "1",
           email: "alice@example.com",
           __typename: "User",
-          __version: 5,
         },
       });
 
@@ -1285,10 +1283,8 @@ describe("useQuery", () => {
 
       expect(mockTransport.http).not.toHaveBeenCalled();
       expect(result.data).toEqual({
-        __version: 209096686,
         user: {
           __typename: "User",
-          __version: 5,
           id: "1",
           email: "ssr@example.com",
         },
@@ -1318,10 +1314,8 @@ describe("useQuery", () => {
 
       expect(mockTransport.http).not.toHaveBeenCalled();
       expect(result.data).toEqual({
-        __version: 209096686,
         user: {
           __typename: "User",
-          __version: 5,
           id: "1",
           email: "ssr@example.com",
         },
@@ -1351,11 +1345,8 @@ describe("useQuery", () => {
 
       expect(mockTransport.http).not.toHaveBeenCalled();
       expect(result.data).toEqual({
-        __version: 209096686,
-
         user: {
           __typename: "User",
-          __version: 5,
           id: "1",
           email: "ssr@example.com",
         },
