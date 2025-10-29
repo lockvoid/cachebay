@@ -204,18 +204,12 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     ]));
 
     // Fingerprinting: connection should have fingerprint
-    expect(res.fingerprints).toEqual({
-      __version: expect.any(Number),
-      users: {
-        __version: expect.any(Number),
-        edges: expect.arrayContaining([
-          { __version: expect.any(Number), node: { __version: expect.any(Number) } },
-          { __version: expect.any(Number), node: { __version: expect.any(Number) } },
-        ]),
-        pageInfo: { __version: expect.any(Number) },
-      },
-    });
+    expect(res.fingerprints.__version).toBeGreaterThan(0);
+    expect(res.fingerprints.users.__version).toBeGreaterThan(0);
     expect(res.fingerprints.users.edges.__version).toBeGreaterThan(0);
+    expect(res.fingerprints.users.edges[0].__version).toBeGreaterThan(0);
+    expect(res.fingerprints.users.edges[0].node.__version).toBeGreaterThan(0);
+    expect(res.fingerprints.users.pageInfo.__version).toBeGreaterThan(0);
     const fp1 = res.fingerprints.__version;
 
     // Update a user node
@@ -274,20 +268,13 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     ]));
 
     // Fingerprinting: nested connection fingerprints
-    expect(res.fingerprints).toEqual({
-      __version: expect.any(Number),
-      user: {
-        __version: expect.any(Number),
-        posts: {
-          __version: expect.any(Number),
-          edges: expect.arrayContaining([
-            { __version: expect.any(Number), node: { __version: expect.any(Number) } },
-          ]),
-          pageInfo: { __version: expect.any(Number) },
-        },
-      },
-    });
+    expect(res.fingerprints.__version).toBeGreaterThan(0);
+    expect(res.fingerprints.user.__version).toBeGreaterThan(0);
+    expect(res.fingerprints.user.posts.__version).toBeGreaterThan(0);
     expect(res.fingerprints.user.posts.edges.__version).toBeGreaterThan(0);
+    expect(res.fingerprints.user.posts.edges[0].__version).toBeGreaterThan(0);
+    expect(res.fingerprints.user.posts.edges[0].node.__version).toBeGreaterThan(0);
+    expect(res.fingerprints.user.posts.pageInfo.__version).toBeGreaterThan(0);
     const userFp1 = res.fingerprints.user.__version;
     const postsFp1 = res.fingerprints.user.posts.__version;
 
@@ -1000,23 +987,27 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
         endCursor: "p1",
         hasNextPage: false,
         hasPreviousPage: false,
-        __version: expect.any(Number),
       });
 
       expect(d.data.posts.edges).toEqual([
         {
           __typename: "PostEdge",
-          __version: expect.any(Number),
           cursor: "p1",
           node: {
             __typename: "Post",
             id: "p1",
             title: "Post 1",
             flags: [],
-            __version: expect.any(Number),
           },
         },
       ]);
+
+      // Check fingerprints
+      expect(d.fingerprints.posts.__version).toBeGreaterThan(0);
+      expect(d.fingerprints.posts.pageInfo.__version).toBeGreaterThan(0);
+      expect(d.fingerprints.posts.edges.__version).toBeGreaterThan(0);
+      expect(d.fingerprints.posts.edges[0].__version).toBeGreaterThan(0);
+      expect(d.fingerprints.posts.edges[0].node.__version).toBeGreaterThan(0);
     });
   });
 
@@ -1087,7 +1078,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       __typename: "User",
       id: "u1",
       email: "u1@example.com",
-      __version: expect.any(Number),
     });
     expect(d.data.user.posts.pageInfo).toEqual({
       __typename: "PageInfo",
@@ -1095,7 +1085,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       endCursor: "p2",
       hasNextPage: false,
       hasPreviousPage: false,
-      __version: expect.any(Number),
     });
     expect(d.data.user.posts.edges).toHaveLength(2);
 
@@ -1104,7 +1093,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       __typename: "Post",
       id: "p1",
       title: "Post 1",
-      __version: expect.any(Number),
     });
     expect(d.data.user.posts.edges[0].node.comments.pageInfo).toEqual({
       __typename: "PageInfo",
@@ -1112,37 +1100,30 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       endCursor: "c2",
       hasNextPage: true,
       hasPreviousPage: false,
-      __version: expect.any(Number),
     });
     expect(d.data.user.posts.edges[0].node.comments.edges).toEqual([
       {
         __typename: "CommentEdge",
-        __version: expect.any(Number),
         cursor: "c1",
         node: {
           __typename: "Comment",
-          __version: expect.any(Number),
           uuid: "c1",
           text: "Comment 1",
           author: {
             __typename: "User",
-            __version: expect.any(Number),
             id: "u2",
           },
         },
       },
       {
         __typename: "CommentEdge",
-        __version: expect.any(Number),
         cursor: "c2",
         node: {
           __typename: "Comment",
-          __version: expect.any(Number),
           uuid: "c2",
           text: "Comment 2",
           author: {
             __typename: "User",
-            __version: expect.any(Number),
             id: "u3",
           },
         },
@@ -1154,7 +1135,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       __typename: "Post",
       id: "p2",
       title: "Post 2",
-      __version: expect.any(Number),
     });
     expect(d.data.user.posts.edges[1].node.comments.pageInfo).toEqual({
       __typename: "PageInfo",
@@ -1162,21 +1142,17 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       endCursor: "c3",
       hasNextPage: false,
       hasPreviousPage: false,
-      __version: expect.any(Number),
     });
     expect(d.data.user.posts.edges[1].node.comments.edges).toEqual([
       {
         __typename: "CommentEdge",
-        __version: expect.any(Number),
         cursor: "c3",
         node: {
           __typename: "Comment",
-          __version: expect.any(Number),
           uuid: "c3",
           text: "Comment 3",
           author: {
             __typename: "User",
-            __version: expect.any(Number),
             id: "u2",
           },
         },
@@ -1283,7 +1259,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       endCursor: "u2",
       hasNextPage: false,
       hasPreviousPage: false,
-      __version: expect.any(Number),
     });
     expect(d.data.users.edges).toHaveLength(2);
 
@@ -1292,7 +1267,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       __typename: "User",
       id: "u1",
       email: "u1@example.com",
-      __version: expect.any(Number),
     });
     expect(d.data.users.edges[0].node.posts.pageInfo).toEqual({
       __typename: "PageInfo",
@@ -1300,7 +1274,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       endCursor: "p2",
       hasNextPage: true,
       hasPreviousPage: false,
-      __version: expect.any(Number),
     });
     expect(d.data.users.edges[0].node.posts.edges).toHaveLength(2);
 
@@ -1309,7 +1282,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       __typename: "Post",
       id: "p1",
       title: "Post 1",
-      __version: expect.any(Number),
     });
     expect(d.data.users.edges[0].node.posts.edges[0].node.comments.pageInfo).toEqual({
       __typename: "PageInfo",
@@ -1317,27 +1289,22 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       endCursor: "c2",
       hasNextPage: true,
       hasPreviousPage: false,
-      __version: expect.any(Number),
     });
     expect(d.data.users.edges[0].node.posts.edges[0].node.comments.edges).toEqual([
       {
         __typename: "CommentEdge",
-        __version: expect.any(Number),
         cursor: "c1",
         node: {
           __typename: "Comment",
-          __version: expect.any(Number),
           uuid: "c1",
           text: "Comment 1",
         },
       },
       {
         __typename: "CommentEdge",
-        __version: expect.any(Number),
         cursor: "c2",
         node: {
           __typename: "Comment",
-          __version: expect.any(Number),
           uuid: "c2",
           text: "Comment 2",
         },
@@ -1349,7 +1316,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       __typename: "Post",
       id: "p2",
       title: "Post 2",
-      __version: expect.any(Number),
     });
     expect(d.data.users.edges[0].node.posts.edges[1].node.comments.pageInfo).toEqual({
       __typename: "PageInfo",
@@ -1357,16 +1323,13 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       endCursor: "c3",
       hasNextPage: false,
       hasPreviousPage: false,
-      __version: expect.any(Number),
     });
     expect(d.data.users.edges[0].node.posts.edges[1].node.comments.edges).toEqual([
       {
         __typename: "CommentEdge",
-        __version: expect.any(Number),
         cursor: "c3",
         node: {
           __typename: "Comment",
-          __version: expect.any(Number),
           uuid: "c3",
           text: "Comment 3",
         },
@@ -1378,7 +1341,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       __typename: "User",
       id: "u2",
       email: "u2@example.com",
-      __version: expect.any(Number),
     });
     expect(d.data.users.edges[1].node.posts.pageInfo).toEqual({
       __typename: "PageInfo",
@@ -1386,7 +1348,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       endCursor: "p3",
       hasNextPage: false,
       hasPreviousPage: false,
-      __version: expect.any(Number),
     });
     expect(d.data.users.edges[1].node.posts.edges).toHaveLength(1);
 
@@ -1395,7 +1356,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       __typename: "Post",
       id: "p3",
       title: "Post 3",
-      __version: expect.any(Number),
     });
     expect(d.data.users.edges[1].node.posts.edges[0].node.comments.pageInfo).toEqual({
       __typename: "PageInfo",
@@ -1403,16 +1363,13 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       endCursor: "c4",
       hasNextPage: false,
       hasPreviousPage: false,
-      __version: expect.any(Number),
     });
     expect(d.data.users.edges[1].node.posts.edges[0].node.comments.edges).toEqual([
       {
         __typename: "CommentEdge",
-        __version: expect.any(Number),
         cursor: "c4",
         node: {
           __typename: "Comment",
-          __version: expect.any(Number),
           uuid: "c4",
           text: "Comment 4",
         },
@@ -1470,7 +1427,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       __typename: "User",
       id: "u1",
       email: "u1@example.com",
-      __version: expect.any(Number),
     });
 
     // Users connection query
@@ -1480,7 +1436,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       endCursor: "u4",
       hasNextPage: true,
       hasPreviousPage: false,
-      __version: expect.any(Number),
     });
     expect(d.data.users.edges).toHaveLength(3);
 
@@ -1488,21 +1443,18 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       __typename: "User",
       id: "u2",
       email: "u2@example.com",
-      __version: expect.any(Number),
     });
 
     expect(d.data.users.edges[1].node).toEqual({
       __typename: "User",
       id: "u3",
       email: "u3@example.com",
-      __version: expect.any(Number),
     });
 
     expect(d.data.users.edges[2].node).toEqual({
       __typename: "User",
       id: "u4",
       email: "u4@example.com",
-      __version: expect.any(Number),
     });
   });
 
@@ -1611,7 +1563,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       endCursor: "p2",
       hasNextPage: false,
       hasPreviousPage: false,
-      __version: expect.any(Number),
     });
     expect(d.data.posts.edges).toHaveLength(2);
 
@@ -1624,7 +1575,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     });
     expect(d.data.posts.edges[0].node.video).toEqual({
       __typename: "Media",
-      __version: expect.any(Number),
       key: "video1",
       mediaUrl: "https://example.com/video1.mp4",
     });
@@ -1635,7 +1585,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
 
     expect(d.data.posts.edges[0].node.aggregations.moderationTags.pageInfo).toEqual({
       __typename: "PageInfo",
-      __version: expect.any(Number),
       startCursor: "mt1",
       endCursor: "mt2",
       hasPreviousPage: false,
@@ -1644,10 +1593,8 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     expect(d.data.posts.edges[0].node.aggregations.moderationTags.edges).toEqual([
       {
         __typename: "TagEdge",
-        __version: expect.any(Number),
         node: {
           __typename: "Tag",
-          __version: expect.any(Number),
           id: "mt1",
           name: "NSFW",
         },
