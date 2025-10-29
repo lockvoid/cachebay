@@ -457,6 +457,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
       // Directly emit data to watcher (avoid redundant materialize)
       // recycleSnapshots to preserve object identity
       const recycled = recycleSnapshots(w.lastData, data, w.lastFingerprints, fingerprints);
+
       if (recycled !== w.lastData) {
         w.lastData = recycled;
         w.lastFingerprints = fingerprints;

@@ -880,6 +880,7 @@ describe("Cache Policies Behavior", () => {
       });
 
       await delay(10);
+
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(0);
       expect(Cmp.dataUpdates.length).toBe(1);

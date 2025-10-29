@@ -356,7 +356,7 @@ export const createOperations = (
 
       onCacheData?.(cached.data, { willFetchFromNetwork: false });
 
-      const dataPropagated = onQueryNetworkData?.(canonicalSignature, cached.data, cached.dependencies) ?? false;
+      const dataPropagated = onQueryNetworkData?.(canonicalSignature, cached.data, cached.fingerprints, cached.dependencies) ?? false;
 
       if (!dataPropagated) {
         documents.invalidate({ document: query, variables, canonical: true, fingerprint: true });
@@ -531,14 +531,13 @@ export const createOperations = (
 
     try {
       const observableOrPromise = transport.ws(context);
-      
+
       // Check if transport returns a Promise (async) or Observable (sync)
       const isPromise = observableOrPromise && typeof (observableOrPromise as any).then === 'function';
 
       // Common handlers for both sync and async paths
       const createHandlers = (observer: Partial<ObserverLike<OperationResult<TData>>>) => ({
         next: (eventData: any) => {
-          console.log('sdsd', eventData)
           // Handle GraphQL errors in subscription events
           if (eventData.errors && !eventData.data) {
             const error = new CombinedError({ graphqlErrors: eventData.errors });
@@ -600,7 +599,6 @@ export const createOperations = (
           }
         },
         error: (err: any) => {
-          console.log('error', err)
           // Forward error to observer and callback
           const error = new CombinedError({ networkError: err });
           if (onErrorCallback) onErrorCallback(error);
@@ -609,7 +607,6 @@ export const createOperations = (
           }
         },
         complete: () => {
-          console.log('complete')
           // Forward completion to observer and callback
           if (onCompleteCallback) onCompleteCallback();
           if (observer.complete) {
@@ -621,12 +618,10 @@ export const createOperations = (
       // Wrap observable to write incoming data to cache
       return {
         subscribe(observer: Partial<ObserverLike<OperationResult<TData>>>) {
-          console.log('subscribe')
-          
           if (isPromise) {
             // Async transport - wait for promise then subscribe
             let subscription: any = null;
-            
+
             (observableOrPromise as Promise<ObservableLike<OperationResult<TData>>>)
               .then(observable => {
                 subscription = observable.subscribe(createHandlers(observer));
@@ -636,14 +631,14 @@ export const createOperations = (
                 if (onErrorCallback) onErrorCallback(error);
                 if (observer.error) observer.error(error);
               });
-            
+
             return {
               unsubscribe: () => {
                 if (subscription) subscription.unsubscribe();
               },
             };
           }
-          
+
           // Sync transport - subscribe immediately
           const observable = observableOrPromise as ObservableLike<OperationResult<TData>>;
           return observable.subscribe(createHandlers(observer));
