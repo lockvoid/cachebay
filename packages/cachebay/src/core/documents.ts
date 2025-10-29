@@ -610,17 +610,19 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       touch(pageInfoId);
 
       const record = graph.getRecord(pageInfoId) || {};
-      const selection = field.selectionSet || [];
+      const selection = field.selectionSet;
       const outPageInfo: any = {};
 
-      for (let i = 0; i < selection.length; i++) {
-        const f = selection[i];
+      if (selection) {
+        for (let i = 0; i < selection.length; i++) {
+          const f = selection[i];
 
-        if (f.selectionSet) {
-          continue;
+          if (f.selectionSet) {
+            continue;
+          }
+
+          readScalar(record, f, outPageInfo, f.responseKey, pageInfoId, addPath(path, f.responseKey));
         }
-
-        readScalar(record, f, outPageInfo, f.responseKey, pageInfoId, addPath(path, f.responseKey));
       }
 
       outConn.pageInfo = outPageInfo;
@@ -649,86 +651,96 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
 
       const runtimeType = (snapshot as any).__typename as string | undefined;
-      const selection = field.selectionSet || [];
+      const selection = field.selectionSet;
       const childFingerprints = [];
 
-      for (let i = 0; i < selection.length; i++) {
-        const childField = selection[i];
-        const outKey = childField.responseKey;
+      if (selection) {
+        for (let i = 0; i < selection.length; i++) {
+          const childField = selection[i];
+          const outKey = childField.responseKey;
 
-        if (!selectionAppliesToRuntime(childField, runtimeType)) {
-          continue;
-        }
-
-        if ((childField as any).isConnection) {
-          const childFp = {};
-          if (fingerprint) fpOut[outKey] = childFp;
-          readConnection(id, childField, out, outKey, childFp, addPath(path, outKey));
-          if (childFp[FINGERPRINT_KEY] !== undefined) {
-            childFingerprints.push(childFp[FINGERPRINT_KEY]);
+          if (!selectionAppliesToRuntime(childField, runtimeType)) {
+            continue;
           }
-          continue;
-        }
 
-        if (childField.selectionSet && childField.selectionSet.length) {
-          const storeKey = buildFieldKey(childField, variables);
-          const link = (snapshot as any)[storeKey];
+          if ((childField as any).isConnection) {
+            const childFp = {};
+            if (fingerprint) fpOut[outKey] = childFp;
+            readConnection(id, childField, out, outKey, childFp, addPath(path, outKey));
+            if (childFp[FINGERPRINT_KEY] !== undefined) {
+              childFingerprints.push(childFp[FINGERPRINT_KEY]);
+            }
+            continue;
+          }
 
-          if (link != null && Array.isArray(link.__refs)) {
-            const refs = link.__refs;
-            const outArray = new Array(refs.length);
+          if (childField.selectionSet?.length) {
+            const storeKey = buildFieldKey(childField, variables);
+            const link = (snapshot as any)[storeKey];
 
-            out[outKey] = outArray;
+            if (link != null && Array.isArray(link.__refs)) {
+              const refs = link.__refs;
+              const outArray = new Array(refs.length);
 
-            const arrayFingerprints = [];
-            const fpArray: any[] = [];
-            if (fingerprint) fpOut[outKey] = fpArray;
+              out[outKey] = outArray;
 
-            for (let j = 0; j < refs.length; j++) {
-              const childOut: any = {};
-              const childFp: any = {};
-              outArray[j] = childOut;
-              if (fingerprint) fpArray[j] = childFp;
-              readEntity(refs[j], childField, childOut, childFp, addPath(path, outKey + "[" + j + "]"));
+              if (fingerprint) {
+                const arrayFingerprints = [];
+                const fpArray: any[] = [];
+                fpOut[outKey] = fpArray;
 
-              if (childFp[FINGERPRINT_KEY] !== undefined) {
-                arrayFingerprints.push(childFp[FINGERPRINT_KEY]);
+                for (let j = 0; j < refs.length; j++) {
+                  const childOut: any = {};
+                  const childFp: any = {};
+                  outArray[j] = childOut;
+                  fpArray[j] = childFp;
+                  readEntity(refs[j], childField, childOut, childFp, addPath(path, outKey + "[" + j + "]"));
+
+                  if (childFp[FINGERPRINT_KEY] !== undefined) {
+                    arrayFingerprints.push(childFp[FINGERPRINT_KEY]);
+                  }
+                }
+
+                if (arrayFingerprints.length > 0) {
+                  const arrayFp = fingerprintNodes(0, arrayFingerprints);
+                  setFingerprint(fpArray, arrayFp);
+                  childFingerprints.push(arrayFp);
+                }
+              } else {
+                for (let j = 0; j < refs.length; j++) {
+                  const childOut: any = {};
+                  outArray[j] = childOut;
+                  readEntity(refs[j], childField, childOut, {}, addPath(path, outKey + "[" + j + "]"));
+                }
               }
+
+              continue;
             }
 
-            if (arrayFingerprints.length > 0) {
-              const arrayFp = fingerprintNodes(0, arrayFingerprints);
-              setFingerprint(fpArray, arrayFp);
-              childFingerprints.push(arrayFp);
+            if (!link || !link.__ref) {
+              out[outKey] = link === null ? null : undefined;
+              strictOK = false;
+              canonicalOK = false;
+              miss({ kind: FIELD_LINK_MISSING, at: addPath(path, outKey), parentId: id, fieldKey: storeKey });
+              continue;
             }
 
+            const childId = link.__ref as string;
+            const childOut: any = {};
+            const childFp: any = {};
+            out[outKey] = childOut;
+            if (fingerprint) fpOut[outKey] = childFp;
+            readEntity(childId, childField, childOut, childFp, addPath(path, outKey));
+            if (childFp[FINGERPRINT_KEY] !== undefined) {
+              childFingerprints.push(childFp[FINGERPRINT_KEY]);
+            }
             continue;
           }
 
-          if (!link || !link.__ref) {
-            out[outKey] = link === null ? null : undefined;
-            strictOK = false;
-            canonicalOK = false;
-            miss({ kind: FIELD_LINK_MISSING, at: addPath(path, outKey), parentId: id, fieldKey: storeKey });
-            continue;
-          }
-
-          const childId = link.__ref as string;
-          const childOut: any = {};
-          const childFp: any = {};
-          out[outKey] = childOut;
-          if (fingerprint) fpOut[outKey] = childFp;
-          readEntity(childId, childField, childOut, childFp, addPath(path, outKey));
-          if (childFp[FINGERPRINT_KEY] !== undefined) {
-            childFingerprints.push(childFp[FINGERPRINT_KEY]);
-          }
-          continue;
+          readScalar(snapshot, childField, out, outKey, id, addPath(path, outKey));
         }
-
-        readScalar(snapshot, childField, out, outKey, id, addPath(path, outKey));
       }
 
-      if (Array.isArray(field.selectionSet) && field.selectionSet.length) {
+      if (field.selectionSet?.length) {
         for (let i = 0; i < field.selectionSet.length; i++) {
           const pf = field.selectionSet[i];
 
@@ -765,34 +777,36 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         outEdge.__typename = (record as any).__typename;
       }
 
-      const selection = field.selectionSet || [];
+      const selection = field.selectionSet;
       const nodePlan = (field as any).selectionMap ? (field as any).selectionMap.get(CONNECTION_NODE_FIELD) : undefined;
 
       let nodeFingerprint;
 
-      for (let i = 0; i < selection.length; i++) {
-        const f = selection[i];
-        const outKey = f.responseKey;
+      if (selection) {
+        for (let i = 0; i < selection.length; i++) {
+          const f = selection[i];
+          const outKey = f.responseKey;
 
-        if (outKey === CONNECTION_NODE_FIELD) {
-          const nlink = (record as any).node;
+          if (outKey === CONNECTION_NODE_FIELD) {
+            const nlink = (record as any).node;
 
-          if (!nlink || !nlink.__ref) {
-            outEdge.node = nlink === null ? null : undefined;
-            strictOK = false;
-            canonicalOK = false;
-            miss({ kind: EDGE_NODE_MISSING, at: addPath(path, CONNECTION_NODE_FIELD), edgeId });
-          } else {
-            const nodeId = nlink.__ref as string;
-            const nodeOut: any = {};
-            const nodeFp: any = {};
-            outEdge.node = nodeOut;
-            if (fingerprint) fpEdge.node = nodeFp;
-            readEntity(nodeId, nodePlan as PlanField, nodeOut, nodeFp, addPath(path, CONNECTION_NODE_FIELD));
-            nodeFingerprint = nodeFp[FINGERPRINT_KEY];
+            if (!nlink || !nlink.__ref) {
+              outEdge.node = nlink === null ? null : undefined;
+              strictOK = false;
+              canonicalOK = false;
+              miss({ kind: EDGE_NODE_MISSING, at: addPath(path, CONNECTION_NODE_FIELD), edgeId });
+            } else {
+              const nodeId = nlink.__ref as string;
+              const nodeOut: any = {};
+              const nodeFp: any = {};
+              outEdge.node = nodeOut;
+              if (fingerprint) fpEdge.node = nodeFp;
+              readEntity(nodeId, nodePlan as PlanField, nodeOut, nodeFp, addPath(path, CONNECTION_NODE_FIELD));
+              nodeFingerprint = nodeFp[FINGERPRINT_KEY];
+            }
+          } else if (!f.selectionSet) {
+            readScalar(record, f, outEdge, outKey, edgeId, addPath(path, outKey));
           }
-        } else if (!f.selectionSet) {
-          readScalar(record, f, outEdge, outKey, edgeId, addPath(path, outKey));
         }
       }
 
@@ -804,27 +818,41 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     };
 
     const readConnection = (parentId: string, field: PlanField, out: any, outKey: string, fpOut: any, path: string) => {
-      const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
-      const strictKey = buildConnectionKey(field, parentId, variables);
+      // Optimization: only build and fetch the key we need
+      const baseIsCanonical = canonical === true;
+      const baseKey = baseIsCanonical 
+        ? buildConnectionCanonicalKey(field, parentId, variables)
+        : buildConnectionKey(field, parentId, variables);
 
-      if (canonical) {
-        touch(canonicalKey);
+      touch(baseKey);
+
+      const page = graph.getRecord(baseKey);
+
+      // Update OK flags - we need to check both for correctness
+      if (baseIsCanonical) {
+        canonicalOK &&= !!page;
+        // Also check if strict exists for the OK tracking
+        const strictKey = buildConnectionKey(field, parentId, variables);
+        const pageStrict = graph.getRecord(strictKey);
+        strictOK &&= !!pageStrict;
       } else {
-        touch(strictKey);
+        strictOK &&= !!page;
+        // Also check if canonical exists for the OK tracking
+        const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
+        const pageCanonical = graph.getRecord(canonicalKey);
+        canonicalOK &&= !!pageCanonical;
       }
-
-      const pageCanonical = graph.getRecord(canonicalKey);
-      const pageStrict = graph.getRecord(strictKey);
-
-      canonicalOK &&= !!pageCanonical;
-      strictOK &&= !!pageStrict;
-
-      const requestedOK = canonical ? !!pageCanonical : !!pageStrict;
 
       const conn: any = { edges: [], pageInfo: {} };
       out[outKey] = conn;
 
-      if (!requestedOK) {
+      if (!page) {
+        // For miss reporting, we need both keys
+        const canonicalKey = baseIsCanonical ? baseKey : buildConnectionCanonicalKey(field, parentId, variables);
+        const strictKey = baseIsCanonical ? buildConnectionKey(field, parentId, variables) : baseKey;
+        const pageCanonical = baseIsCanonical ? page : graph.getRecord(canonicalKey);
+        const pageStrict = baseIsCanonical ? graph.getRecord(strictKey) : page;
+        
         miss({
           kind: CONNECTION_MISSING,
           at: path,
@@ -837,10 +865,6 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         });
         return;
       }
-
-      const baseIsCanonical = canonical === true;
-      const page = (baseIsCanonical ? pageCanonical : pageStrict) as any;
-      const baseKey = baseIsCanonical ? canonicalKey : strictKey;
 
       const selMap = (field as any).selectionMap;
 
@@ -908,16 +932,25 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         if (link != null && Array.isArray(link.__refs)) {
           const refs = link.__refs;
           const outArray = new Array(refs.length);
-          const fpArray: any[] = [];
           conn[childField.responseKey] = outArray;
-          if (fingerprint) fpOut[childField.responseKey] = fpArray;
 
-          for (let j = 0; j < refs.length; j++) {
-            const childOut: any = {};
-            const childFp: any = {};
-            outArray[j] = childOut;
-            if (fingerprint) fpArray[j] = childFp;
-            readEntity(refs[j], childField, childOut, childFp, addPath(path, childField.responseKey + "[" + j + "]"));
+          if (fingerprint) {
+            const fpArray: any[] = [];
+            fpOut[childField.responseKey] = fpArray;
+
+            for (let j = 0; j < refs.length; j++) {
+              const childOut: any = {};
+              const childFp: any = {};
+              outArray[j] = childOut;
+              fpArray[j] = childFp;
+              readEntity(refs[j], childField, childOut, childFp, addPath(path, childField.responseKey + "[" + j + "]"));
+            }
+          } else {
+            for (let j = 0; j < refs.length; j++) {
+              const childOut: any = {};
+              outArray[j] = childOut;
+              readEntity(refs[j], childField, childOut, {}, addPath(path, childField.responseKey + "[" + j + "]"));
+            }
           }
 
           continue;
@@ -987,7 +1020,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           continue;
         }
 
-        if (field.selectionSet && field.selectionSet.length) {
+        if (field.selectionSet?.length) {
           const fieldKey = buildFieldKey(field, variables);
           touch(actualRootId + "." + fieldKey);
 
