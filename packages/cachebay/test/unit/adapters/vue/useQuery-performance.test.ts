@@ -261,7 +261,7 @@ describe("useQuery Performance", () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    it("cache miss: always COLD (1 materialization each time)", async () => {
+    it("cache miss: COLD first time, then HOT (cache miss results are cached)", async () => {
       // PHASE 1: First cache miss
       await runInVueContext(() => {
         useQuery({
@@ -286,7 +286,7 @@ describe("useQuery Performance", () => {
       materializeHotCount = 0;
       materializeColdCount = 0;
 
-      // PHASE 2: Second cache miss with same variables - still COLD (cache misses aren't cached)
+      // PHASE 2: Second query with same variables - now HOT (cache miss result was cached)
       await runInVueContext(() => {
         useQuery({
           query: operations.USER_QUERY,
@@ -297,10 +297,10 @@ describe("useQuery Performance", () => {
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      // Still COLD (cache miss results are cached but still return source: "none")
+      // HOT because cache miss results ARE cached (source: "none" is cached)
       expect(normalizeCount).toBe(0);
-      expect(materializeColdCount).toBe(1);
-      expect(materializeHotCount).toBe(0); // HOT because cache miss result is cached
+      expect(materializeColdCount).toBe(0); // Not COLD because result is cached
+      expect(materializeHotCount).toBe(1); // HOT because cache miss result is cached
       expect(watchQueryCallCount).toBe(2); // Second useQuery creates new watcher
       expect(mockFetch).not.toHaveBeenCalled();
     });
