@@ -1164,6 +1164,37 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
         },
       },
     ]);
+
+    // Comprehensive fingerprint checks
+    expect(d.fingerprints).toBeDefined();
+    expect(d.fingerprints.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.pageInfo.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges.__version).toBeGreaterThan(0);
+    
+    // First post fingerprints
+    expect(d.fingerprints.user.posts.edges[0].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges[0].node.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges[0].node.comments.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges[0].node.comments.pageInfo.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges[0].node.comments.edges.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges[0].node.comments.edges[0].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges[0].node.comments.edges[0].node.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges[0].node.comments.edges[0].node.author.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges[0].node.comments.edges[1].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges[0].node.comments.edges[1].node.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges[0].node.comments.edges[1].node.author.__version).toBeGreaterThan(0);
+    
+    // Second post fingerprints
+    expect(d.fingerprints.user.posts.edges[1].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges[1].node.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges[1].node.comments.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges[1].node.comments.pageInfo.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges[1].node.comments.edges.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges[1].node.comments.edges[0].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges[1].node.comments.edges[0].node.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.user.posts.edges[1].node.comments.edges[0].node.author.__version).toBeGreaterThan(0);
   });
 
   it("materializes USERS_POSTS_COMMENTS_QUERY connection", () => {
@@ -1524,6 +1555,24 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       id: "u4",
       email: "u4@example.com",
     });
+
+    // Comprehensive fingerprint checks
+    expect(d.fingerprints).toBeDefined();
+    expect(d.fingerprints.__version).toBeGreaterThan(0);
+    
+    // Single user fingerprints
+    expect(d.fingerprints.user.__version).toBeGreaterThan(0);
+    
+    // Users connection fingerprints
+    expect(d.fingerprints.users.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.pageInfo.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[0].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[0].node.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[1].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[1].node.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[2].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[2].node.__version).toBeGreaterThan(0);
   });
 
   it("materializes POSTS_WITH_AGGREGATIONS_QUERY with nested aggregations", () => {

@@ -59,7 +59,6 @@ describe('materialize (single page)', () => {
       variables: { first: 10, after: null },
       canonical: true,
       fingerprint: false,
-      force: false
     });
   }, {
     iterations: ITERATIONS,
@@ -90,7 +89,6 @@ describe('materialize (single page)', () => {
       variables: { first: 10, after: null },
       canonical: true,
       fingerprint: true,
-      force: false
     });
   }, {
     iterations: ITERATIONS,
@@ -154,7 +152,6 @@ describe('materialize (all pages)', () => {
         variables: page.variables,
         canonical: true,
         fingerprint: false,
-        force: true
       });
     }
   }, {
@@ -193,7 +190,6 @@ describe('materialize (all pages)', () => {
         variables: page.variables,
         canonical: true,
         fingerprint: true,
-        force: true
       });
     }
   }, {
