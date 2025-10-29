@@ -161,9 +161,9 @@ export function useQuery<TData = any, TVars = any>(
 
     console.log('refetching', vars, refetchPolicy)
 
-    // Update watcher with new variables if provided
+    // Update watcher with new variables if provided (before performQuery)
     if (refetchOptions?.variables) {
-      watchHandle.update({ variables: vars, immediate: false }); // Don't materialize - performQuery will handle it
+      watchHandle.update({ variables: vars, immediate: false }); // Don't materialize - notifyDataBySignature will update dependencies
     }
 
     // Execute query with refetch policy using performQuery

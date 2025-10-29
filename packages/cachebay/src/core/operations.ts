@@ -167,7 +167,7 @@ export interface OperationsOptions {
   cachePolicy?: CachePolicy;
   suspensionTimeout?: number;
   onQueryNetworkError?: (signature: string, error: CombinedError) => boolean; // Returns true if watchers caught the error, false otherwise
-  onQueryNetworkData?: (signature: string, data: any) => boolean; // Returns true if watchers caught the data, false otherwise
+  onQueryNetworkData?: (signature: string, data: any, dependencies: Set<string>) => boolean; // Returns true if watchers caught the data, false otherwise
 }
 
 export interface OperationsDependencies {
@@ -289,7 +289,7 @@ export const createOperations = (
           onNetworkData?.(freshMaterialization.data);
 
           if (onQueryNetworkData) {
-            const wasCaught = onQueryNetworkData(canonicalSignature, freshMaterialization.data);
+            const wasCaught = onQueryNetworkData(canonicalSignature, freshMaterialization.data, freshMaterialization.dependencies);
 
             console.log('onQueryNetworkData:', canonicalSignature, wasCaught, freshMaterialization);
             if (!wasCaught) {
@@ -331,7 +331,7 @@ export const createOperations = (
       if (cached && cached.source !== "none") {
         onCacheData?.(cached.data, { willFetchFromNetwork: false });
 
-        const dataPropagated = onQueryNetworkData?.(canonicalSignature, cached.data) ?? false;
+        const dataPropagated = onQueryNetworkData?.(canonicalSignature, cached.data, cached.dependencies) ?? false;
 
         if (!dataPropagated) {
           documents.invalidate({ document: query, variables, canonical: true, fingerprint: true });
@@ -353,7 +353,7 @@ export const createOperations = (
 
       onCacheData?.(cached.data, { willFetchFromNetwork: false });
 
-      const dataPropagated = onQueryNetworkData?.(canonicalSignature, cached.data) ?? false;
+      const dataPropagated = onQueryNetworkData?.(canonicalSignature, cached.data, cached.dependencies) ?? false;
 
       if (!dataPropagated) {
         documents.invalidate({ document: query, variables, canonical: true, fingerprint: true });
@@ -366,7 +366,7 @@ export const createOperations = (
       if (cached && cached.ok.canonical && cached.ok.strict && cached.ok.strictSignature === strictSignature) {
         onCacheData?.(cached.data, { willFetchFromNetwork: false });
 
-        const dataPropagated = onQueryNetworkData?.(canonicalSignature, cached.data) ?? false;
+        const dataPropagated = onQueryNetworkData?.(canonicalSignature, cached.data, cached.dependencies) ?? false;
 
         if (!dataPropagated) {
           documents.invalidate({ document: query, variables, canonical: true, fingerprint: true });
@@ -380,7 +380,7 @@ export const createOperations = (
       if (cached && cached.ok.canonical) {
         onCacheData?.(cached.data as TData, { willFetchFromNetwork: true });
 
-        const dataPropagated = onQueryNetworkData?.(canonicalSignature, cached.data) ?? false;
+        const dataPropagated = onQueryNetworkData?.(canonicalSignature, cached.data, cached.dependencies) ?? false;
 
         if (!dataPropagated) {
           documents.invalidate({ document: query, variables, canonical: true, fingerprint: true });

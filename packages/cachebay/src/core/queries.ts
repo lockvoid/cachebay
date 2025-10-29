@@ -431,11 +431,11 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
   };
 
   /**
-   * Callback handler from operations - updates watcher dependencies and directly emits data
+   * Notify watchers by signature (called by operations after network response)
    * Handles multiple watchers per signature
    * Returns true if watchers caught the data, false otherwise
    */
-  const notifyDataBySignature = (signature: string, data: any): boolean => {
+  const notifyDataBySignature = (signature: string, data: any, dependencies: Set<string>): boolean => {
     // Find all watchers with this signature
     const watcherSet = signatureToWatchers.get(signature);
 
@@ -456,7 +456,9 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
       console.log(`notifyDataBySignature w2`, w);
 
-      // Dependencies are updated via notifyDataByDependencies (triggered by graph.onChange)
+      // Update watcher dependencies (since we have them from materialization)
+      updateWatcherDependencies(watcherId, dependencies);
+
       // Directly emit data to watcher (avoid redundant materialize)
       // recycleSnapshots to preserve object identity
       const recycled = recycleSnapshots(w.lastData, data);

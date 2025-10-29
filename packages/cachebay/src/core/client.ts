@@ -209,8 +209,8 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
       transport: options.transport,
       suspensionTimeout: options.suspensionTimeout,
 
-      onQueryNetworkData: (signature, data) => {
-        return queries.notifyDataBySignature(signature, data);
+      onQueryNetworkData: (signature, data, dependencies) => {
+        return queries.notifyDataBySignature(signature, data, dependencies);
       },
 
       onQueryNetworkError: (signature, error) => {
