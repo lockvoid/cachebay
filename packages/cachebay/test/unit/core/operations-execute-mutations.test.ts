@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { CombinedError } from "../../../src/core/errors";
 import { createOperations } from "../../../src/core/operations";
 import type { Transport, OperationResult, ObservableLike } from "../../../src/core/operations";
+import * as instrumentation from "../../../src/core/instrumentation";
 
 describe("operations", () => {
   let mockTransport: Transport;
@@ -543,7 +544,10 @@ describe("operations", () => {
   describe("executeMutation - error handling", () => {
     const mutation = "mutation CreateUser($name: String!) { createUser(name: $name) { id name } }";
 
-    it("returns error when materialization fails after write", async () => {
+    it("returns error when materialization fails after write (production mode)", async () => {
+      // Mock __DEV__ = false (production)
+      vi.spyOn(instrumentation, "__DEV__", "get").mockReturnValue(false);
+
       const mockResult: OperationResult = {
         data: { createUser: { id: "9", name: "Ivy" } },
         error: null,
@@ -558,6 +562,9 @@ describe("operations", () => {
         ok: {
           strict: false,
           canonical: false,
+          miss: [
+            { kind: "field-link-missing", at: "createUser", parentId: "User:9", fieldKey: "email" },
+          ],
         },
       });
 
@@ -569,7 +576,51 @@ describe("operations", () => {
       expect(result.data).toBeNull();
       expect(result.error).toBeInstanceOf(CombinedError);
       expect(result.error?.message).toContain("Mutation materialization failed");
+      expect(result.error?.message).not.toContain("Missing fields:");
       expect(mockDocuments.normalize).toHaveBeenCalled();
+
+      vi.restoreAllMocks();
+    });
+
+    it("returns detailed error with miss information (dev mode)", async () => {
+      // Mock __DEV__ = true (development)
+      vi.spyOn(instrumentation, "__DEV__", "get").mockReturnValue(true);
+
+      const mockResult: OperationResult = {
+        data: { createUser: { id: "9", name: "Ivy" } },
+        error: null,
+      };
+
+      vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
+
+      // Mock materialize to return source: "none" with miss information
+      mockDocuments.materialize.mockReturnValue({
+        data: undefined,
+        source: "none",
+        ok: {
+          strict: false,
+          canonical: false,
+          miss: [
+            { kind: "field-link-missing", at: "createUser", parentId: "User:9", fieldKey: "email" },
+            { kind: "entity-missing", at: "createUser.profile", id: "Profile:1" },
+          ],
+        },
+      });
+
+      const result = await operations.executeMutation({ 
+        query: mutation, 
+        variables: { name: "Ivy" },
+      });
+
+      expect(result.data).toBeNull();
+      expect(result.error).toBeInstanceOf(CombinedError);
+      expect(result.error?.message).toContain("Mutation materialization failed");
+      expect(result.error?.message).toContain("Missing fields:");
+      expect(result.error?.message).toContain("Field missing: email on User:9 at createUser");
+      expect(result.error?.message).toContain("Entity missing: Profile:1 at createUser.profile");
+      expect(mockDocuments.normalize).toHaveBeenCalled();
+
+      vi.restoreAllMocks();
     });
 
     it("handles partial data with GraphQL errors", async () => {

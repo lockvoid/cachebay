@@ -446,8 +446,25 @@ export const createOperations = (
 
         // Check if materialization succeeded
         if (freshMaterialization.source === "none") {
+          let errorMessage = "[cachebay] Mutation materialization failed after write - missing required fields";
+          
+          // Add detailed miss information in development mode
+          if (__DEV__ && freshMaterialization.ok.miss && freshMaterialization.ok.miss.length > 0) {
+            const misses = freshMaterialization.ok.miss.map((m: any) => {
+              if (m.kind === "entity-missing") {
+                return `  - Entity missing: ${m.id} at ${m.at}`;
+              } else if (m.kind === "root-link-missing") {
+                return `  - Root field missing: ${m.fieldKey} at ${m.at}`;
+              } else if (m.kind === "field-link-missing") {
+                return `  - Field missing: ${m.fieldKey} on ${m.parentId} at ${m.at}`;
+              }
+              return `  - ${JSON.stringify(m)}`;
+            }).join("\n");
+            errorMessage += "\n\nMissing fields:\n" + misses;
+          }
+          
           const error = new CombinedError({
-            networkError: new Error("[cachebay] Mutation materialization failed after write - missing required fields"),
+            networkError: new Error(errorMessage),
           });
           if (onError) onError(error);
           return { data: null, error };
