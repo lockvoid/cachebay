@@ -581,21 +581,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       return true;
     };
 
-    // Map to store fingerprints for each data object/array
-    const fingerprintMap = new WeakMap<object, number>();
-
-    const setFingerprint = (obj: any, fp: number) => {
-      if (!fingerprint || !obj || typeof obj !== 'object') {
+    // Helper to set fingerprint on the fingerprint object
+    const setFingerprint = (fpOut: any, fp: number) => {
+      if (!fingerprint || !fpOut) {
         return;
       }
-      fingerprintMap.set(obj, fp);
-    };
-
-    const getFingerprint = (obj: any) => {
-      if (!fingerprint || !obj || typeof obj !== 'object') {
-        return undefined;
-      }
-      return fingerprintMap.get(obj);
+      fpOut[FINGERPRINT_KEY] = fp;
     };
 
     const readScalar = (record: any, field: PlanField, out: any, outKey: string, parentId: string, path: string) => {
@@ -615,7 +606,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       out[outKey] = value;
     };
 
-    const readPageInfo = (pageInfoId: string, field: PlanField, outConn: any, path: string) => {
+    const readPageInfo = (pageInfoId: string, field: PlanField, outConn: any, fpPageInfo: any, path: string) => {
       touch(pageInfoId);
 
       const record = graph.getRecord(pageInfoId) || {};
@@ -636,12 +627,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
       const pageInfoVersion = graph.getVersion(pageInfoId);
 
-      setFingerprint(outPageInfo, pageInfoVersion);
+      setFingerprint(fpPageInfo, pageInfoVersion);
 
       return pageInfoVersion;
     };
 
-    const readEntity = (id: string, field: PlanField, out: any, path: string) => {
+    const readEntity = (id: string, field: PlanField, out: any, fpOut: any, path: string) => {
       touch(id);
 
       const record = graph.getRecord(id);
@@ -670,11 +661,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         }
 
         if ((childField as any).isConnection) {
-          readConnection(id, childField, out, outKey, addPath(path, outKey));
-          const connObj = out[outKey];
-          if (connObj && typeof connObj === "object") {
-            const fp = getFingerprint(connObj);
-            if (fp !== undefined) childFingerprints.push(fp);
+          const childFp = {};
+          if (fingerprint) fpOut[outKey] = childFp;
+          readConnection(id, childField, out, outKey, childFp, addPath(path, outKey));
+          if (childFp[FINGERPRINT_KEY] !== undefined) {
+            childFingerprints.push(childFp[FINGERPRINT_KEY]);
           }
           continue;
         }
@@ -690,21 +681,24 @@ export const createDocuments = (deps: DocumentsDependencies) => {
             out[outKey] = outArray;
 
             const arrayFingerprints = [];
+            const fpArray: any[] = [];
+            if (fingerprint) fpOut[outKey] = fpArray;
 
             for (let j = 0; j < refs.length; j++) {
               const childOut: any = {};
+              const childFp: any = {};
               outArray[j] = childOut;
-              readEntity(refs[j], childField, childOut, addPath(path, outKey + "[" + j + "]"));
-              const fp = getFingerprint(childOut);
+              if (fingerprint) fpArray[j] = childFp;
+              readEntity(refs[j], childField, childOut, childFp, addPath(path, outKey + "[" + j + "]"));
 
-              if (fp !== undefined) {
-                arrayFingerprints.push(fp);
+              if (childFp[FINGERPRINT_KEY] !== undefined) {
+                arrayFingerprints.push(childFp[FINGERPRINT_KEY]);
               }
             }
 
             if (arrayFingerprints.length > 0) {
               const arrayFp = fingerprintNodes(0, arrayFingerprints);
-              setFingerprint(outArray, arrayFp);
+              setFingerprint(fpArray, arrayFp);
               childFingerprints.push(arrayFp);
             }
 
@@ -721,10 +715,13 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
           const childId = link.__ref as string;
           const childOut: any = {};
+          const childFp: any = {};
           out[outKey] = childOut;
-          readEntity(childId, childField, childOut, addPath(path, outKey));
-          const fp = getFingerprint(childOut);
-          if (fp !== undefined) childFingerprints.push(fp);
+          if (fingerprint) fpOut[outKey] = childFp;
+          readEntity(childId, childField, childOut, childFp, addPath(path, outKey));
+          if (childFp[FINGERPRINT_KEY] !== undefined) {
+            childFingerprints.push(childFp[FINGERPRINT_KEY]);
+          }
           continue;
         }
 
@@ -754,13 +751,15 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
       const finalFingerprint = childFingerprints.length > 0 ? fingerprintNodes(entityVersion, childFingerprints) : entityVersion;
 
-      setFingerprint(out, finalFingerprint);
+      setFingerprint(fpOut, finalFingerprint);
     };
 
-    const readEdge = (edgeId: string, field: PlanField, outArray: any[], index: number, path: string) => {
+    const readEdge = (edgeId: string, field: PlanField, outArray: any[], fpArray: any[], index: number, path: string) => {
       const record = graph.getRecord(edgeId) || {};
       const outEdge: any = {};
+      const fpEdge: any = {};
       outArray[index] = outEdge;
+      if (fingerprint) fpArray[index] = fpEdge;
 
       if ((record as any).__typename !== undefined) {
         outEdge.__typename = (record as any).__typename;
@@ -786,9 +785,11 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           } else {
             const nodeId = nlink.__ref as string;
             const nodeOut: any = {};
+            const nodeFp: any = {};
             outEdge.node = nodeOut;
-            readEntity(nodeId, nodePlan as PlanField, nodeOut, addPath(path, CONNECTION_NODE_FIELD));
-            nodeFingerprint = getFingerprint(nodeOut);
+            if (fingerprint) fpEdge.node = nodeFp;
+            readEntity(nodeId, nodePlan as PlanField, nodeOut, nodeFp, addPath(path, CONNECTION_NODE_FIELD));
+            nodeFingerprint = nodeFp[FINGERPRINT_KEY];
           }
         } else if (!f.selectionSet) {
           readScalar(record, f, outEdge, outKey, edgeId, addPath(path, outKey));
@@ -799,10 +800,10 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
       const finalFingerprint = nodeFingerprint !== undefined ? fingerprintNodes(edgeVersion, [nodeFingerprint]) : edgeVersion;
 
-      setFingerprint(outEdge, finalFingerprint);
+      setFingerprint(fpEdge, finalFingerprint);
     };
 
-    const readConnection = (parentId: string, field: PlanField, out: any, outKey: string, path: string) => {
+    const readConnection = (parentId: string, field: PlanField, out: any, outKey: string, fpOut: any, path: string) => {
       const canonicalKey = buildConnectionCanonicalKey(field, parentId, variables);
       const strictKey = buildConnectionKey(field, parentId, variables);
 
@@ -855,7 +856,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           const pageInfoLink = page.pageInfo;
 
           if (pageInfoLink && pageInfoLink.__ref) {
-            pageInfoFingerprint = readPageInfo(pageInfoLink.__ref as string, childField, conn, addPath(path, CONNECTION_PAGE_INFO_FIELD));
+            const fpPageInfo: any = {};
+            if (fingerprint) fpOut.pageInfo = fpPageInfo;
+            pageInfoFingerprint = readPageInfo(pageInfoLink.__ref as string, childField, conn, fpPageInfo, addPath(path, CONNECTION_PAGE_INFO_FIELD));
           } else {
             conn.pageInfo = {};
             strictOK = false;
@@ -868,22 +871,21 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         if (responseKey === CONNECTION_EDGES_FIELD) {
           const refs = page.edges.__refs;
           const outArr = new Array(refs.length);
+          const fpArr: any[] = [];
           conn.edges = outArr;
+          if (fingerprint) fpOut.edges = fpArr;
 
           for (let i = 0; i < refs.length; i++) {
-            readEdge(refs[i], childField, outArr, i, addPath(path, "edges[" + i + "]"));
+            readEdge(refs[i], childField, outArr, fpArr, i, addPath(path, "edges[" + i + "]"));
 
-            const edge = outArr[i];
-
-            if (edge) {
-              const fp = getFingerprint(edge);
-              if (fp !== undefined) edgeFingerprints.push(fp);
+            if (fpArr[i] && fpArr[i][FINGERPRINT_KEY] !== undefined) {
+              edgeFingerprints.push(fpArr[i][FINGERPRINT_KEY]);
             }
           }
 
           if (edgeFingerprints.length > 0) {
             const edgesArrayFp = fingerprintNodes(0, edgeFingerprints);
-            setFingerprint(outArr, edgesArrayFp);
+            setFingerprint(fpArr, edgesArrayFp);
           }
 
           continue;
@@ -895,7 +897,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         }
 
         if ((childField as any).isConnection) {
-          readConnection(baseKey, childField, conn, childField.responseKey, addPath(path, childField.responseKey));
+          const childFp = {};
+          if (fingerprint) fpOut[childField.responseKey] = childFp;
+          readConnection(baseKey, childField, conn, childField.responseKey, childFp, addPath(path, childField.responseKey));
           continue;
         }
 
@@ -904,12 +908,16 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         if (link != null && Array.isArray(link.__refs)) {
           const refs = link.__refs;
           const outArray = new Array(refs.length);
+          const fpArray: any[] = [];
           conn[childField.responseKey] = outArray;
+          if (fingerprint) fpOut[childField.responseKey] = fpArray;
 
           for (let j = 0; j < refs.length; j++) {
             const childOut: any = {};
+            const childFp: any = {};
             outArray[j] = childOut;
-            readEntity(refs[j], childField, childOut, addPath(path, childField.responseKey + "[" + j + "]"));
+            if (fingerprint) fpArray[j] = childFp;
+            readEntity(refs[j], childField, childOut, childFp, addPath(path, childField.responseKey + "[" + j + "]"));
           }
 
           continue;
@@ -930,8 +938,10 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
         const childId = link.__ref as string;
         const childOut: any = {};
+        const childFp: any = {};
         conn[childField.responseKey] = childOut;
-        readEntity(childId, childField, childOut, addPath(path, childField.responseKey));
+        if (fingerprint) fpOut[childField.responseKey] = childFp;
+        readEntity(childId, childField, childOut, childFp, addPath(path, childField.responseKey));
       }
 
       const pageVersion = graph.getVersion(baseKey);
@@ -947,7 +957,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       const connFingerprint = connChildren.length > 0
         ? fingerprintNodes(pageVersion, connChildren)
         : pageVersion;
-      setFingerprint(conn, connFingerprint);
+      setFingerprint(fpOut, connFingerprint);
     };
 
     const data = {};
@@ -959,7 +969,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     if (rootId && !isRootId) {
       // Fragment materialization - read from entity
       const synthetic = { selectionSet: plan.root, selectionMap: plan.rootSelectionMap } as unknown as PlanField;
-      readEntity(rootId, synthetic, data, rootId);
+      readEntity(rootId, synthetic, data, fingerprints, rootId);
     } else {
       // Query/Mutation/Subscription - read from root record
       const actualRootId = rootId || ROOT_ID;
@@ -971,7 +981,9 @@ export const createDocuments = (deps: DocumentsDependencies) => {
         const path = addPath(actualRootId, field.responseKey);
 
         if ((field as any).isConnection) {
-          readConnection(actualRootId, field, data, field.responseKey, path);
+          const fieldFp = {};
+          if (fingerprint) fingerprints[field.responseKey] = fieldFp;
+          readConnection(actualRootId, field, data, field.responseKey, fieldFp, path);
           continue;
         }
 
@@ -989,8 +1001,10 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           } else {
             const childId = link.__ref as string;
             const childOut: any = {};
+            const childFp: any = {};
             data[field.responseKey] = childOut;
-            readEntity(childId, field, childOut, addPath(path, childId));
+            if (fingerprint) fingerprints[field.responseKey] = childFp;
+            readEntity(childId, field, childOut, childFp, addPath(path, childId));
           }
         } else {
           readScalar(rootRecord, field, data, field.responseKey, actualRootId, path);
@@ -1001,75 +1015,27 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const requestedOK = canonical ? canonicalOK : strictOK;
     
     // Compute and set root fingerprint
-    const rootFingerprints = [];
-    if (rootId && !isRootId) {
-      // Fragment - single entity fingerprint
-      const fp = getFingerprint(data);
-      if (fp !== undefined) rootFingerprints.push(fp);
-    } else {
-      // Query/Mutation/Subscription - collect fingerprints from root fields
-      for (let i = 0; i < plan.root.length; i++) {
-        const field = plan.root[i];
-        const value = data[field.responseKey];
-        if (value && typeof value === "object") {
-          const fp = getFingerprint(value);
-          if (fp !== undefined) rootFingerprints.push(fp);
-        }
-      }
-    }
-
-    if (requestedOK && rootFingerprints.length > 0) {
-      const rootFingerprint = fingerprintNodes(0, rootFingerprints);
-      setFingerprint(data, rootFingerprint);
-    }
-    
-    // Build fingerprints tree that mirrors data structure
-    const buildFingerprintsTree = (obj: any, fpObj: any) => {
-      if (!obj || typeof obj !== 'object') {
-        return;
-      }
-
-      const fp = getFingerprint(obj);
-      if (fp !== undefined) {
-        fpObj[FINGERPRINT_KEY] = fp;
-      }
-
-      if (Array.isArray(obj)) {
-        for (let i = 0; i < obj.length; i++) {
-          const item = obj[i];
-          if (item && typeof item === 'object') {
-            const itemFp = {};
-            buildFingerprintsTree(item, itemFp);
-            if (Object.keys(itemFp).length > 0) {
-              if (!Array.isArray(fpObj)) {
-                // Convert to array if needed
-                const keys = Object.keys(fpObj);
-                if (keys.length === 0 || keys.every(k => k === FINGERPRINT_KEY)) {
-                  Object.setPrototypeOf(fpObj, Array.prototype);
-                  fpObj.length = 0;
-                }
-              }
-              fpObj[i] = itemFp;
-            }
-          }
-        }
-      } else {
-        for (const key in obj) {
-          if (key === FINGERPRINT_KEY) continue;
-          const value = obj[key];
-          if (value && typeof value === 'object') {
-            const childFp = {};
-            buildFingerprintsTree(value, childFp);
-            if (Object.keys(childFp).length > 0) {
-              fpObj[key] = childFp;
-            }
-          }
-        }
-      }
-    };
-
     if (requestedOK && fingerprint) {
-      buildFingerprintsTree(data, fingerprints);
+      const rootFingerprints = [];
+      if (rootId && !isRootId) {
+        // Fragment - single entity fingerprint
+        const fp = fingerprints[FINGERPRINT_KEY];
+        if (fp !== undefined) rootFingerprints.push(fp);
+      } else {
+        // Query/Mutation/Subscription - collect fingerprints from root fields
+        for (let i = 0; i < plan.root.length; i++) {
+          const field = plan.root[i];
+          const fieldFp = fingerprints[field.responseKey];
+          if (fieldFp && fieldFp[FINGERPRINT_KEY] !== undefined) {
+            rootFingerprints.push(fieldFp[FINGERPRINT_KEY]);
+          }
+        }
+      }
+
+      if (rootFingerprints.length > 0) {
+        const rootFingerprint = fingerprintNodes(0, rootFingerprints);
+        fingerprints[FINGERPRINT_KEY] = rootFingerprint;
+      }
     }
 
     // Create result object (either "none" or with data)
