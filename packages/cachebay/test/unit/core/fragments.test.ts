@@ -45,7 +45,7 @@ describe("Fragments (documents-powered)", () => {
         id: "u1",
         email: "u1@example.com",
       });
-      expect(snap1.__version).toBeDefined();
+      // __version is now in separate fingerprints tree, not on data
 
       graph.putRecord("User:u1", { email: "u1+updated@example.com" });
 
@@ -60,7 +60,7 @@ describe("Fragments (documents-powered)", () => {
         id: "u1",
         email: "u1+updated@example.com",
       });
-      expect(snap2.__version).toBeDefined();
+      // __version is now in separate fingerprints tree, not on data
     });
 
     it("returns null when entity is missing", () => {
@@ -303,7 +303,7 @@ describe("Fragments (documents-powered)", () => {
       })!;
       expect(graph.getRecord("User:u1")).toEqual({ __typename: "User", id: "u1", email: "seed@example.com" });
       expect(snap1).toMatchObject({ __typename: "User", id: "u1", email: "seed@example.com" });
-      expect(snap1.__version).toBeDefined();
+      // __version is now in separate fingerprints tree, not on data
 
       fragments.writeFragment({
         id: "User:u1",
@@ -317,7 +317,7 @@ describe("Fragments (documents-powered)", () => {
       })!;
       expect(graph.getRecord("User:u1")).toEqual({ __typename: "User", id: "u1", email: "seed2@example.com" });
       expect(snap2).toMatchObject({ __typename: "User", id: "u1", email: "seed2@example.com" });
-      expect(snap2.__version).toBeDefined();
+      // __version is now in separate fingerprints tree, not on data
     });
 
     it("writes a connection page; watcher sees edges/pageInfo/totalCount changes", async () => {

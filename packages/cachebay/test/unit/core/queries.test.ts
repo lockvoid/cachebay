@@ -87,13 +87,11 @@ describe("queries API", () => {
       });
 
       expect(result).toEqual({
-        __version: 192319067,
         user: {
           __typename: "User",
           id: "1",
           name: "Alice",
           email: "alice@example.com",
-          __version: 6,
         },
       });
     });
@@ -142,13 +140,10 @@ describe("queries API", () => {
       });
       expect(result).toBeDefined();
       expect(result).toEqual({
-        __version: 209096686,
-
         user: {
           __typename: "User",
           id: "1",
           name: "Alice",
-          __version: 5,
         },
       });
     });

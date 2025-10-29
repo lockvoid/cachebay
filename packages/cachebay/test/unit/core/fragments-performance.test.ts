@@ -94,7 +94,7 @@ describe("Fragments Performance", () => {
         id: "u1",
         email: "initial@example.com",
       });
-      expect(read1.__version).toBeDefined();
+      // __version is now in separate fingerprints tree, not on data
 
       // readFragment only materializes, doesn't normalize
       expect(normalizeCount).toBe(0);
@@ -121,8 +121,7 @@ describe("Fragments Performance", () => {
         id: "u1",
         email: "updated@example.com",
       });
-      expect(read2.__version).toBeDefined();
-      expect(read2.__version).not.toBe(read1.__version);
+      // __version is now in separate fingerprints tree, not on data
 
       // Still COLD - force: true always bypasses cache
       expect(normalizeCount).toBe(0);
@@ -140,8 +139,8 @@ describe("Fragments Performance", () => {
       });
 
       expect(result).toBeDefined();
-      expect(result.__version).toBeDefined();
-      expect(typeof result.__version).toBe("number");
+      // __version is now in separate fingerprints tree, not on data
+      expect(result.__typename).toBe("User");
     });
   });
 

@@ -8,7 +8,7 @@ import type { Transport } from "@/src/core/operations";
 
 const MUTATION = "mutation CreateUser($name: String!) { createUser(name: $name) { id name } }";
 
-describe.skip("useMutation", () => {
+describe("useMutation", () => {
   let mockTransport: Transport;
   let cache: ReturnType<typeof createCachebay>;
 

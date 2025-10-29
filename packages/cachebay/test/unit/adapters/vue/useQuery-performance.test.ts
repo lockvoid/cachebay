@@ -728,7 +728,7 @@ describe("useQuery Performance", () => {
   });
 
   describe("immediate option", () => {
-    it.only("default (not lazy) materializes on cache hit", async () => {
+    it("default (not lazy) materializes on cache hit", async () => {
       // Pre-populate cache AND materialize it once to populate materializeCache
       client.writeQuery({
         query: operations.USER_QUERY,

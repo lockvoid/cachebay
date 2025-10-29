@@ -222,7 +222,8 @@ describe("operations", () => {
       vi.mocked(mockTransport.http).mockResolvedValue(mockResult);
       vi.mocked(mockDocuments.materialize).mockReturnValue({
         data: mockResult.data,
-        dependencies: ["User:2"],
+        fingerprints: { __version: 123, createUser: { __version: 456 } },
+        dependencies: new Set(["User:2"]),
         source: "canonical",
         hot: false,
         ok: { miss: null },
@@ -251,12 +252,12 @@ describe("operations", () => {
       });
 
       // Should notify watchers
-      expect(onQueryNetworkData).toHaveBeenCalledWith({
-        signature: expect.any(String),
-        data: mockResult.data,
-        dependencies: ["User:2"],
-        cachePolicy: "cache-first",
-      });
+      expect(onQueryNetworkData).toHaveBeenCalledWith(
+        expect.any(String), // signature
+        mockResult.data, // data
+        expect.any(Object), // fingerprints
+        expect.any(Set), // dependencies
+      );
 
       // Should NOT invalidate (watchers caught it)
       expect(mockDocuments.invalidate).not.toHaveBeenCalled();

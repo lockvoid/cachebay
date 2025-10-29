@@ -8,7 +8,7 @@ import type { Transport, ObservableLike, OperationResult } from "@/src/core/oper
 
 const SUBSCRIPTION = "subscription OnMessage { messageAdded { id text } }";
 
-describe.skip("useSubscription", () => {
+describe("useSubscription", () => {
   let mockTransport: Transport;
   let cache: ReturnType<typeof createCachebay>;
   let mockObservable: ObservableLike<OperationResult>;

@@ -1,7 +1,7 @@
 import { createCachebay } from "@/src/core/client";
 import { fixtures, operations, tick, delay } from "@/test/helpers";
 
-describe.skip("Subscriptions", () => {
+describe("Subscriptions", () => {
   it("receives subscription updates and writes them to cache", async () => {
     let emitUpdate: ((data: any) => void) | null = null;
     let completeSubscription: (() => void) | null = null;

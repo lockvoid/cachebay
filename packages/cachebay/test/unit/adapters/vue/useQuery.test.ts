@@ -877,7 +877,7 @@ describe("useQuery", () => {
       );
     });
 
-    it.only("updates watcher with new variables", async () => {
+    it("updates watcher with new variables", async () => {
       let queryResult: any;
 
       const App = defineComponent({

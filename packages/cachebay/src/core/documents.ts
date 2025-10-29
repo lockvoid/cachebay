@@ -994,7 +994,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     };
 
     const data = {};
-    const fingerprints = {};
+    const fingerprints = fingerprint ? {} : undefined;
 
     // Determine if rootId is actually a root ID (@ or @mutation.X or @subscription.X)
     const isRootId = rootId && (rootId === ROOT_ID || rootId.startsWith('@mutation.') || rootId.startsWith('@subscription.'));

@@ -27,7 +27,7 @@ describe("Fragments lifecycle", () => {
         fragment: operations.USER_FRAGMENT,
       });
 
-      expect(view).toEqual({__version: 242651924, __typename: "User", id: "1", email: "ann@example.com" });
+      expect(view).toEqual({__typename: "User", id: "1", email: "ann@example.com" });
     });
 
     it("updates existing fragments with partial data", async () => {
@@ -44,7 +44,7 @@ describe("Fragments lifecycle", () => {
         fragment: operations.USER_FRAGMENT,
       });
 
-      expect(view).toEqual({ __version: 242651924, __typename: "User", id: "2", email: "u1@example.com" });
+      expect(view).toEqual({ __typename: "User", id: "2", email: "u1@example.com" });
 
       cache.writeFragment({
         id: "User:2",
@@ -57,7 +57,7 @@ describe("Fragments lifecycle", () => {
         fragment: operations.USER_FRAGMENT,
       });
 
-      expect(updatedView).toEqual({__version: 225874305, __typename: "User", id: "2", email: "u1+updated@example.com" });
+      expect(updatedView).toEqual({__typename: "User", id: "2", email: "u1+updated@example.com" });
     });
 
     it("applies multiple writes correctly with latest data winning", async () => {
@@ -120,7 +120,6 @@ describe("Fragments lifecycle", () => {
         titles: ["Hello", "World"],
         pageInfo: {
           __typename: "PageInfo",
-          __version: 23,
           hasNextPage: true,
           hasPreviousPage: false,
           endCursor: "c2",
@@ -147,7 +146,7 @@ describe("Fragments lifecycle", () => {
         fragment: operations.COMMENT_FRAGMENT,
       });
 
-      expect(v1).toEqual({ __version: 242651924, __typename: "Comment", uuid: "abc-123", text: "First!" });
+      expect(v1).toEqual({ __typename: "Comment", uuid: "abc-123", text: "First!" });
 
       cache.writeFragment({
         id: "Comment:abc-123",

@@ -658,13 +658,13 @@ describe("documents - materialize cache", () => {
       // Different fingerprint option should return different references
       expect(result1).not.toBe(result2);
 
-      // fingerprint: true adds __version fields
-      expect(result1.data.__version).toBeDefined();
-      expect(result1.data.user.__version).toBeDefined();
+      // fingerprint: true creates separate fingerprints tree
+      expect(result1.fingerprints).toBeDefined();
+      expect(result1.fingerprints.__version).toBeDefined();
+      expect(result1.fingerprints.user.__version).toBeDefined();
 
-      // fingerprint: false does not add __version fields
-      expect(result2.data.__version).toBeUndefined();
-      expect(result2.data.user.__version).toBeUndefined();
+      // fingerprint: false does not create fingerprints
+      expect(result2.fingerprints).toBeUndefined();
 
       // Core data should be the same
       expect(result1.data.user.id).toBe(result2.data.user.id);
