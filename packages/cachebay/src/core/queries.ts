@@ -49,6 +49,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     onError?: (error: Error) => void;
     deps: Set<string>;
     lastData: any | undefined;
+    lastFingerprints: any | undefined;
     skipNextPropagate?: boolean; // Flag to skip next notifyDataByDependencies emission (coalescing)
   };
 
@@ -120,10 +121,11 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
           continue;
         }
 
-        const recycled = recycleSnapshots(w.lastData, result.data);
+        const recycled = recycleSnapshots(w.lastData, result.data, w.lastFingerprints, result.fingerprints);
 
         if (recycled !== w.lastData) {
           w.lastData = recycled;
+          w.lastFingerprints = result.fingerprints;
 
           try {
             w.onData(recycled);
@@ -267,6 +269,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
       onError,
       deps: new Set(),
       lastData: undefined,
+      lastFingerprints: undefined,
     };
     watchers.set(watcherId, watcher);
 
@@ -293,6 +296,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
       if (initial.source !== "none") {
         watcher.lastData = initial.data;
+        watcher.lastFingerprints = initial.fingerprints;
 
         try {
           onData(initial.data);
@@ -408,10 +412,11 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
           if (res.source !== "none") {
             // recycleSnapshots automatically preserves object identity for unchanged parts
-            const recycled = recycleSnapshots(w.lastData, res.data);
+            const recycled = recycleSnapshots(w.lastData, res.data, w.lastFingerprints, res.fingerprints);
             // Only emit if data actually changed
             if (recycled !== w.lastData) {
               w.lastData = recycled;
+              w.lastFingerprints = res.fingerprints;
               try {
                 w.onData(recycled);
               } catch (e) {
@@ -430,7 +435,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
    * Handles multiple watchers per signature
    * Returns true if watchers caught the data, false otherwise
    */
-  const notifyDataBySignature = (signature: string, data: any, dependencies: Set<string>): boolean => {
+  const notifyDataBySignature = (signature: string, data: any, fingerprints: any, dependencies: Set<string>): boolean => {
     // Find all watchers with this signature
     const watcherSet = signatureToWatchers.get(signature);
 
@@ -451,9 +456,10 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
       // Directly emit data to watcher (avoid redundant materialize)
       // recycleSnapshots to preserve object identity
-      const recycled = recycleSnapshots(w.lastData, data);
+      const recycled = recycleSnapshots(w.lastData, data, w.lastFingerprints, fingerprints);
       if (recycled !== w.lastData) {
         w.lastData = recycled;
+        w.lastFingerprints = fingerprints;
 
         // Set flag to skip next notifyDataByDependencies emission (coalescing)
         // This prevents double emission when normalize triggers graph.onChange

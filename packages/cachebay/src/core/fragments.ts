@@ -54,6 +54,7 @@ export const createFragments = ({ planner, documents }: FragmentsDependencies) =
     onError?: (error: Error) => void;
     deps: Set<string>;
     lastData: any | undefined;
+    lastFingerprints: any | undefined;
   };
 
   const watchers = new Map<number, WatcherState>();
@@ -98,9 +99,10 @@ export const createFragments = ({ planner, documents }: FragmentsDependencies) =
         updateWatcherDeps(k, result.dependencies);
 
         if (result.source !== "none") {
-          const recycled = recycleSnapshots(w.lastData, result.data);
+          const recycled = recycleSnapshots(w.lastData, result.data, w.lastFingerprints, result.fingerprints);
           if (recycled !== w.lastData) {
             w.lastData = recycled;
+            w.lastFingerprints = result.fingerprints;
             try {
               w.onData(recycled);
             } catch (e) {
@@ -225,6 +227,7 @@ export const createFragments = ({ planner, documents }: FragmentsDependencies) =
       onError,
       deps: new Set(),
       lastData: undefined,
+      lastFingerprints: undefined,
     };
     watchers.set(watcherId, watcher);
 
@@ -249,7 +252,8 @@ export const createFragments = ({ planner, documents }: FragmentsDependencies) =
     updateWatcherDeps(watcherId, initial.dependencies);
 
     if (initial.source !== "none") {
-      watcher.lastData = recycleSnapshots(undefined, initial.data);
+      watcher.lastData = initial.data;
+      watcher.lastFingerprints = initial.fingerprints;
       if (immediate) {
         try {
           onData(initial.data);
@@ -353,10 +357,11 @@ export const createFragments = ({ planner, documents }: FragmentsDependencies) =
 
           if (res.source !== "none") {
             // recycleSnapshots automatically preserves object identity for unchanged parts
-            const recycled = recycleSnapshots(w.lastData, res.data);
+            const recycled = recycleSnapshots(w.lastData, res.data, w.lastFingerprints, res.fingerprints);
             // Only emit if data actually changed
             if (recycled !== w.lastData) {
               w.lastData = recycled;
+              w.lastFingerprints = res.fingerprints;
               try {
                 w.onData(recycled);
               } catch (e) {

@@ -264,39 +264,44 @@ describe("Utils", () => {
 
   describe("basic behavior", () => {
     it("reuses prevData when fingerprints match", () => {
-      const prevData = { __typename: "User", __version: 123, id: "u1", name: "Alice" };
-      const nextData = { __typename: "User", __version: 123, id: "u1", name: "Alice" };
+      const prevData = { __typename: "User", id: "u1", name: "Alice" };
+      const nextData = { __typename: "User", id: "u1", name: "Alice" };
+      const prevFp = { __version: 123 };
+      const nextFp = { __version: 123 };
 
-      const result = recycleSnapshots(prevData, nextData);
+      const result = recycleSnapshots(prevData, nextData, prevFp, nextFp);
 
       expect(result).toBe(prevData);
       expect(result).not.toBe(nextData);
     });
 
     it("returns nextData when fingerprints differ", () => {
-      const prevData = { __typename: "User", __version: 123, id: "u1", name: "Alice" };
-      const nextData = { __typename: "User", __version: 124, id: "u1", name: "Bob" };
+      const prevData = { __typename: "User", id: "u1", name: "Alice" };
+      const nextData = { __typename: "User", id: "u1", name: "Bob" };
+      const prevFp = { __version: 123 };
+      const nextFp = { __version: 124 };
 
-      const result = recycleSnapshots(prevData, nextData);
+      const result = recycleSnapshots(prevData, nextData, prevFp, nextFp);
 
       expect(result).toBe(nextData);
       expect(result).not.toBe(prevData);
     });
 
     it("returns same reference when prevData === nextData", () => {
-      const data = { __version: 123, id: "u1", name: "Alice" };
+      const data = { id: "u1", name: "Alice" };
+      const fp = { __version: 123 };
 
-      const result = recycleSnapshots(data, data);
+      const result = recycleSnapshots(data, data, fp, fp);
 
       expect(result).toBe(data);
     });
 
     it("handles primitives and non-objects", () => {
-      expect(recycleSnapshots(42, 42)).toBe(42);
-      expect(recycleSnapshots("hello", "hello")).toBe("hello");
-      expect(recycleSnapshots(true, false)).toBe(false);
-      expect(recycleSnapshots(null, null)).toBe(null);
-      expect(recycleSnapshots(undefined, undefined)).toBe(undefined);
+      expect(recycleSnapshots(42, 42, undefined, undefined)).toBe(42);
+      expect(recycleSnapshots("hello", "hello", undefined, undefined)).toBe("hello");
+      expect(recycleSnapshots(true, false, undefined, undefined)).toBe(false);
+      expect(recycleSnapshots(null, null, undefined, undefined)).toBe(null);
+      expect(recycleSnapshots(undefined, undefined, undefined, undefined)).toBe(undefined);
     });
 
     it("does not recycle non-plain objects", () => {
@@ -306,8 +311,10 @@ describe("Utils", () => {
 
       const prevData = new CustomClass();
       const nextData = new CustomClass();
+      const prevFp = { __version: 100 };
+      const nextFp = { __version: 100 };
 
-      const result = recycleSnapshots(prevData, nextData);
+      const result = recycleSnapshots(prevData, nextData, prevFp, nextFp);
 
       expect(result).toBe(nextData);
       expect(result).not.toBe(prevData);
@@ -316,40 +323,54 @@ describe("Utils", () => {
 
   describe("partial recycling", () => {
     it("recycles unchanged subtrees in objects", () => {
-      const prevUser = { __typename: "User", __version: 200, id: "u1", name: "Alice" };
+      const prevUser = { __typename: "User", id: "u1", name: "Alice" };
       const prevData = {
         __typename: "Query",
-        __version: 100,
         user: prevUser,
         count: 10,
       };
+      const prevFp = {
+        __version: 100,
+        user: { __version: 200 },
+      };
 
-      const nextUser = { __typename: "User", __version: 200, id: "u1", name: "Alice" };
+      const nextUser = { __typename: "User", id: "u1", name: "Alice" };
       const nextData = {
         __typename: "Query",
-        __version: 101,
         user: nextUser,
         count: 11,
       };
+      const nextFp = {
+        __version: 101,
+        user: { __version: 200 }, // Same fingerprint!
+      };
 
-      const result = recycleSnapshots(prevData, nextData);
+      const result = recycleSnapshots(prevData, nextData, prevFp, nextFp);
 
       expect(result).toBe(nextData);
       expect(result.user).toBe(prevUser); // Recycled!
     });
 
     it("recycles unchanged elements in arrays", () => {
-      const prevItem1 = { __typename: "Post", __version: 100, id: "p1", title: "Post 1" };
-      const prevItem2 = { __typename: "Post", __version: 200, id: "p2", title: "Post 2" };
+      const prevItem1 = { __typename: "Post", id: "p1", title: "Post 1" };
+      const prevItem2 = { __typename: "Post", id: "p2", title: "Post 2" };
       const prevData = [prevItem1, prevItem2];
-      (prevData as any).__version = 500;
+      const prevFp = {
+        __version: 500,
+        0: { __version: 100 },
+        1: { __version: 200 },
+      };
 
-      const nextItem1 = { __typename: "Post", __version: 100, id: "p1", title: "Post 1" };
-      const nextItem2 = { __typename: "Post", __version: 201, id: "p2", title: "Post 2 Updated" };
+      const nextItem1 = { __typename: "Post", id: "p1", title: "Post 1" };
+      const nextItem2 = { __typename: "Post", id: "p2", title: "Post 2 Updated" };
       const nextData = [nextItem1, nextItem2];
-      (nextData as any).__version = 501;
+      const nextFp = {
+        __version: 501,
+        0: { __version: 100 }, // Same!
+        1: { __version: 201 }, // Changed!
+      };
 
-      const result = recycleSnapshots(prevData, nextData);
+      const result = recycleSnapshots(prevData, nextData, prevFp, nextFp);
 
       expect(result).toBe(nextData);
       expect(result[0]).toBe(prevItem1); // Recycled!
@@ -357,31 +378,45 @@ describe("Utils", () => {
     });
 
     it("handles mixed arrays and objects with partial changes", () => {
-      const prevUser1 = { __typename: "User", __version: 100, id: "u1", name: "Alice" };
-      const prevUser2 = { __typename: "User", __version: 101, id: "u2", name: "Bob" };
+      const prevUser1 = { __typename: "User", id: "u1", name: "Alice" };
+      const prevUser2 = { __typename: "User", id: "u2", name: "Bob" };
       const prevUsers = [prevUser1, prevUser2];
-      (prevUsers as any).__version = 200;
 
       const prevData = {
         __typename: "Query",
-        __version: 300,
         users: prevUsers,
-        metadata: { __typename: "Metadata", __version: 400, count: 2 },
+        metadata: { __typename: "Metadata", count: 2 },
+      };
+      const prevFp = {
+        __version: 300,
+        users: {
+          __version: 200,
+          0: { __version: 100 },
+          1: { __version: 101 },
+        },
+        metadata: { __version: 400 },
       };
 
-      const nextUser1 = { __typename: "User", __version: 100, id: "u1", name: "Alice" };
-      const nextUser2 = { __typename: "User", __version: 102, id: "u2", name: "Bob Updated" };
+      const nextUser1 = { __typename: "User", id: "u1", name: "Alice" };
+      const nextUser2 = { __typename: "User", id: "u2", name: "Bob Updated" };
       const nextUsers = [nextUser1, nextUser2];
-      (nextUsers as any).__version = 201;
 
       const nextData = {
         __typename: "Query",
-        __version: 301,
         users: nextUsers,
-        metadata: { __typename: "Metadata", __version: 400, count: 2 },
+        metadata: { __typename: "Metadata", count: 2 },
+      };
+      const nextFp = {
+        __version: 301,
+        users: {
+          __version: 201,
+          0: { __version: 100 }, // Same!
+          1: { __version: 102 }, // Changed!
+        },
+        metadata: { __version: 400 }, // Same!
       };
 
-      const result = recycleSnapshots(prevData, nextData);
+      const result = recycleSnapshots(prevData, nextData, prevFp, nextFp);
 
       expect(result).toBe(nextData);
       expect(result.users[0]).toBe(prevUser1); // Recycled!
@@ -390,23 +425,47 @@ describe("Utils", () => {
     });
 
     it("recycles deep unchanged subtrees when middle level changes", () => {
-      const prevLevel4 = { __version: 500, value: "deep" };
-      const prevLevel3 = { __version: 400, level4: prevLevel4 };
-      const prevLevel2 = { __version: 300, level3: prevLevel3 };
+      const prevLevel4 = { value: "deep" };
+      const prevLevel3 = { level4: prevLevel4 };
+      const prevLevel2 = { level3: prevLevel3 };
       const prevData = {
+        level1: { level2: prevLevel2 },
+      };
+      const prevFp = {
         __version: 100,
-        level1: { __version: 200, level2: prevLevel2 },
+        level1: {
+          __version: 200,
+          level2: {
+            __version: 300,
+            level3: {
+              __version: 400,
+              level4: { __version: 500 },
+            },
+          },
+        },
       };
 
-      const nextLevel4 = { __version: 500, value: "deep" };
-      const nextLevel3 = { __version: 400, level4: nextLevel4 };
-      const nextLevel2 = { __version: 301, level3: nextLevel3 }; // L2 changed!
+      const nextLevel4 = { value: "deep" };
+      const nextLevel3 = { level4: nextLevel4 };
+      const nextLevel2 = { level3: nextLevel3 }; // L2 changed!
       const nextData = {
+        level1: { level2: nextLevel2 },
+      };
+      const nextFp = {
         __version: 101,
-        level1: { __version: 201, level2: nextLevel2 },
+        level1: {
+          __version: 201,
+          level2: {
+            __version: 301, // Changed!
+            level3: {
+              __version: 400, // Same!
+              level4: { __version: 500 },
+            },
+          },
+        },
       };
 
-      const result = recycleSnapshots(prevData, nextData);
+      const result = recycleSnapshots(prevData, nextData, prevFp, nextFp);
 
       expect(result).toBe(nextData);
       expect(result.level1.level2.level3).toBe(prevLevel3); // L3 recycled!
@@ -416,64 +475,72 @@ describe("Utils", () => {
     it("recycles unchanged edges and pageInfo in connections", () => {
       const prevEdge1 = {
         __typename: "PostEdge",
-        __version: 100,
         cursor: "c1",
-        node: { __typename: "Post", __version: 200, id: "p1", title: "Post 1" },
+        node: { __typename: "Post", id: "p1", title: "Post 1" },
       };
       const prevEdge2 = {
         __typename: "PostEdge",
-        __version: 101,
         cursor: "c2",
-        node: { __typename: "Post", __version: 201, id: "p2", title: "Post 2" },
+        node: { __typename: "Post", id: "p2", title: "Post 2" },
       };
       const prevEdges = [prevEdge1, prevEdge2];
-      (prevEdges as any).__version = 300;
 
       const prevPageInfo = {
         __typename: "PageInfo",
-        __version: 400,
         hasNextPage: true,
         endCursor: "c2",
       };
 
       const prevData = {
         __typename: "PostConnection",
-        __version: 500,
         edges: prevEdges,
         pageInfo: prevPageInfo,
+      };
+      const prevFp = {
+        __version: 500,
+        edges: {
+          __version: 300,
+          0: { __version: 100, node: { __version: 200 } },
+          1: { __version: 101, node: { __version: 201 } },
+        },
+        pageInfo: { __version: 400 },
       };
 
       // Next data: edge2 changed
       const nextEdge1 = {
         __typename: "PostEdge",
-        __version: 100,
         cursor: "c1",
-        node: { __typename: "Post", __version: 200, id: "p1", title: "Post 1" },
+        node: { __typename: "Post", id: "p1", title: "Post 1" },
       };
       const nextEdge2 = {
         __typename: "PostEdge",
-        __version: 102, // Changed!
         cursor: "c2",
-        node: { __typename: "Post", __version: 202, id: "p2", title: "Post 2 Updated" },
+        node: { __typename: "Post", id: "p2", title: "Post 2 Updated" },
       };
       const nextEdges = [nextEdge1, nextEdge2];
-      (nextEdges as any).__version = 301; // Changed!
 
       const nextPageInfo = {
         __typename: "PageInfo",
-        __version: 400, // Same
         hasNextPage: true,
         endCursor: "c2",
       };
 
       const nextData = {
         __typename: "PostConnection",
-        __version: 501, // Changed!
         edges: nextEdges,
         pageInfo: nextPageInfo,
       };
+      const nextFp = {
+        __version: 501, // Changed!
+        edges: {
+          __version: 301, // Changed!
+          0: { __version: 100, node: { __version: 200 } }, // Same!
+          1: { __version: 102, node: { __version: 202 } }, // Changed!
+        },
+        pageInfo: { __version: 400 }, // Same!
+      };
 
-      const result = recycleSnapshots(prevData, nextData);
+      const result = recycleSnapshots(prevData, nextData, prevFp, nextFp);
 
       expect(result).toBe(nextData);
       expect(result.edges[0]).toBe(prevEdge1); // Recycled!
@@ -484,48 +551,52 @@ describe("Utils", () => {
     it("recycles common prefix when array grows (pagination append)", () => {
       const prevEdge1 = {
         __typename: "PostEdge",
-        __version: 100,
         cursor: "p1",
-        node: { __typename: "Post", __version: 200, id: "p1", title: "Post 1" },
+        node: { __typename: "Post", id: "p1", title: "Post 1" },
       };
       const prevEdge2 = {
         __typename: "PostEdge",
-        __version: 101,
         cursor: "p2",
-        node: { __typename: "Post", __version: 201, id: "p2", title: "Post 2" },
+        node: { __typename: "Post", id: "p2", title: "Post 2" },
       };
       const prevEdges = [prevEdge1, prevEdge2];
-      (prevEdges as any).__version = 300;
+      const prevFp = {
+        __version: 300,
+        0: { __version: 100, node: { __version: 200 } },
+        1: { __version: 101, node: { __version: 201 } },
+      };
 
       // Next data: array grew from 2 to 4 edges (appended new page)
       const nextEdge1 = {
         __typename: "PostEdge",
-        __version: 100, // Same!
         cursor: "p1",
-        node: { __typename: "Post", __version: 200, id: "p1", title: "Post 1" },
+        node: { __typename: "Post", id: "p1", title: "Post 1" },
       };
       const nextEdge2 = {
         __typename: "PostEdge",
-        __version: 101, // Same!
         cursor: "p2",
-        node: { __typename: "Post", __version: 201, id: "p2", title: "Post 2" },
+        node: { __typename: "Post", id: "p2", title: "Post 2" },
       };
       const nextEdge3 = {
         __typename: "PostEdge",
-        __version: 102,
         cursor: "p3",
-        node: { __typename: "Post", __version: 202, id: "p3", title: "Post 3" },
+        node: { __typename: "Post", id: "p3", title: "Post 3" },
       };
       const nextEdge4 = {
         __typename: "PostEdge",
-        __version: 103,
         cursor: "p4",
-        node: { __typename: "Post", __version: 203, id: "p4", title: "Post 4" },
+        node: { __typename: "Post", id: "p4", title: "Post 4" },
       };
       const nextEdges = [nextEdge1, nextEdge2, nextEdge3, nextEdge4];
-      (nextEdges as any).__version = 301;
+      const nextFp = {
+        __version: 301,
+        0: { __version: 100, node: { __version: 200 } }, // Same!
+        1: { __version: 101, node: { __version: 201 } }, // Same!
+        2: { __version: 102, node: { __version: 202 } },
+        3: { __version: 103, node: { __version: 203 } },
+      };
 
-      const result = recycleSnapshots(prevEdges, nextEdges);
+      const result = recycleSnapshots(prevEdges, nextEdges, prevFp, nextFp);
 
       // Array reference should be nextEdges (different length)
       expect(result).toBe(nextEdges);
@@ -540,48 +611,52 @@ describe("Utils", () => {
     it("recycles elements when array is prepended", () => {
       const prevEdge1 = {
         __typename: "PostEdge",
-        __version: 100,
         cursor: "p3",
-        node: { __typename: "Post", __version: 200, id: "p3", title: "Post 3" },
+        node: { __typename: "Post", id: "p3", title: "Post 3" },
       };
       const prevEdge2 = {
         __typename: "PostEdge",
-        __version: 101,
         cursor: "p4",
-        node: { __typename: "Post", __version: 201, id: "p4", title: "Post 4" },
+        node: { __typename: "Post", id: "p4", title: "Post 4" },
       };
       const prevEdges = [prevEdge1, prevEdge2];
-      (prevEdges as any).__version = 300;
+      const prevFp = {
+        __version: 300,
+        0: { __version: 100, node: { __version: 200 } },
+        1: { __version: 101, node: { __version: 201 } },
+      };
 
       // Next data: prepended 2 new edges at the start
       const nextEdge1 = {
         __typename: "PostEdge",
-        __version: 102,
         cursor: "p1",
-        node: { __typename: "Post", __version: 202, id: "p1", title: "Post 1" },
+        node: { __typename: "Post", id: "p1", title: "Post 1" },
       };
       const nextEdge2 = {
         __typename: "PostEdge",
-        __version: 103,
         cursor: "p2",
-        node: { __typename: "Post", __version: 203, id: "p2", title: "Post 2" },
+        node: { __typename: "Post", id: "p2", title: "Post 2" },
       };
       const nextEdge3 = {
         __typename: "PostEdge",
-        __version: 100, // Same as prevEdge1!
         cursor: "p3",
-        node: { __typename: "Post", __version: 200, id: "p3", title: "Post 3" },
+        node: { __typename: "Post", id: "p3", title: "Post 3" },
       };
       const nextEdge4 = {
         __typename: "PostEdge",
-        __version: 101, // Same as prevEdge2!
         cursor: "p4",
-        node: { __typename: "Post", __version: 201, id: "p4", title: "Post 4" },
+        node: { __typename: "Post", id: "p4", title: "Post 4" },
       };
       const nextEdges = [nextEdge1, nextEdge2, nextEdge3, nextEdge4];
-      (nextEdges as any).__version = 301;
+      const nextFp = {
+        __version: 301,
+        0: { __version: 102, node: { __version: 202 } },
+        1: { __version: 103, node: { __version: 203 } },
+        2: { __version: 100, node: { __version: 200 } }, // Same as prevEdge1!
+        3: { __version: 101, node: { __version: 201 } }, // Same as prevEdge2!
+      };
 
-      const result = recycleSnapshots(prevEdges, nextEdges);
+      const result = recycleSnapshots(prevEdges, nextEdges, prevFp, nextFp);
 
       // Array reference should be nextEdges (different length)
       expect(result).toBe(nextEdges);
@@ -596,42 +671,46 @@ describe("Utils", () => {
     it("recycles common prefix when array shrinks", () => {
       const prevEdge1 = {
         __typename: "PostEdge",
-        __version: 100,
         cursor: "p1",
-        node: { __typename: "Post", __version: 200, id: "p1", title: "Post 1" },
+        node: { __typename: "Post", id: "p1", title: "Post 1" },
       };
       const prevEdge2 = {
         __typename: "PostEdge",
-        __version: 101,
         cursor: "p2",
-        node: { __typename: "Post", __version: 201, id: "p2", title: "Post 2" },
+        node: { __typename: "Post", id: "p2", title: "Post 2" },
       };
       const prevEdge3 = {
         __typename: "PostEdge",
-        __version: 102,
         cursor: "p3",
-        node: { __typename: "Post", __version: 202, id: "p3", title: "Post 3" },
+        node: { __typename: "Post", id: "p3", title: "Post 3" },
       };
       const prevEdges = [prevEdge1, prevEdge2, prevEdge3];
-      (prevEdges as any).__version = 300;
+      const prevFp = {
+        __version: 300,
+        0: { __version: 100, node: { __version: 200 } },
+        1: { __version: 101, node: { __version: 201 } },
+        2: { __version: 102, node: { __version: 202 } },
+      };
 
       // Next data: array shrunk from 3 to 2 edges
       const nextEdge1 = {
         __typename: "PostEdge",
-        __version: 100, // Same!
         cursor: "p1",
-        node: { __typename: "Post", __version: 200, id: "p1", title: "Post 1" },
+        node: { __typename: "Post", id: "p1", title: "Post 1" },
       };
       const nextEdge2 = {
         __typename: "PostEdge",
-        __version: 101, // Same!
         cursor: "p2",
-        node: { __typename: "Post", __version: 201, id: "p2", title: "Post 2" },
+        node: { __typename: "Post", id: "p2", title: "Post 2" },
       };
       const nextEdges = [nextEdge1, nextEdge2];
-      (nextEdges as any).__version = 301;
+      const nextFp = {
+        __version: 301,
+        0: { __version: 100, node: { __version: 200 } }, // Same!
+        1: { __version: 101, node: { __version: 201 } }, // Same!
+      };
 
-      const result = recycleSnapshots(prevEdges, nextEdges);
+      const result = recycleSnapshots(prevEdges, nextEdges, prevFp, nextFp);
 
       // Array reference should be nextEdges (different length)
       expect(result).toBe(nextEdges);
@@ -643,51 +722,70 @@ describe("Utils", () => {
     it("recycles unchanged posts in nested connections", () => {
       const prevComment1 = {
         __typename: "Comment",
-        __version: 100,
         id: "c1",
         text: "Comment 1",
       };
       const prevCommentEdges = [prevComment1];
-      (prevCommentEdges as any).__version = 200;
 
       const prevPost1 = {
         __typename: "Post",
-        __version: 300,
         id: "p1",
         title: "Post 1",
         comments: {
           __typename: "CommentConnection",
-          __version: 400,
           edges: prevCommentEdges,
         },
       };
 
       const prevPost2 = {
         __typename: "Post",
-        __version: 350,
         id: "p2",
         title: "Post 2",
         comments: {
           __typename: "CommentConnection",
-          __version: 450,
           edges: [],
         },
       };
 
       const prevPostEdges = [prevPost1, prevPost2];
-      (prevPostEdges as any).__version = 500;
 
       const prevData = {
         __typename: "Query",
-        __version: 600,
         user: {
           __typename: "User",
-          __version: 700,
           id: "u1",
           posts: {
             __typename: "PostConnection",
-            __version: 800,
             edges: prevPostEdges,
+          },
+        },
+      };
+      const prevFp = {
+        __version: 600,
+        user: {
+          __version: 700,
+          posts: {
+            __version: 800,
+            edges: {
+              __version: 500,
+              0: {
+                __version: 300,
+                comments: {
+                  __version: 400,
+                  edges: {
+                    __version: 200,
+                    0: { __version: 100 },
+                  },
+                },
+              },
+              1: {
+                __version: 350,
+                comments: {
+                  __version: 450,
+                  edges: { __version: 0 },
+                },
+              },
+            },
           },
         },
       };
@@ -695,56 +793,75 @@ describe("Utils", () => {
       // Next data: comment in post1 changed
       const nextComment1 = {
         __typename: "Comment",
-        __version: 101, // Changed!
         id: "c1",
         text: "Comment 1 Updated",
       };
       const nextCommentEdges = [nextComment1];
-      (nextCommentEdges as any).__version = 201; // Changed!
 
       const nextPost1 = {
         __typename: "Post",
-        __version: 301, // Changed!
         id: "p1",
         title: "Post 1",
         comments: {
           __typename: "CommentConnection",
-          __version: 401, // Changed!
           edges: nextCommentEdges,
         },
       };
 
       const nextPost2 = {
         __typename: "Post",
-        __version: 350, // Same!
         id: "p2",
         title: "Post 2",
         comments: {
           __typename: "CommentConnection",
-          __version: 450,
           edges: [],
         },
       };
 
       const nextPostEdges = [nextPost1, nextPost2];
-      (nextPostEdges as any).__version = 501; // Changed!
 
       const nextData = {
         __typename: "Query",
-        __version: 601, // Changed!
         user: {
           __typename: "User",
-          __version: 701, // Changed!
           id: "u1",
           posts: {
             __typename: "PostConnection",
-            __version: 801, // Changed!
             edges: nextPostEdges,
           },
         },
       };
+      const nextFp = {
+        __version: 601, // Changed!
+        user: {
+          __version: 701, // Changed!
+          posts: {
+            __version: 801, // Changed!
+            edges: {
+              __version: 501, // Changed!
+              0: {
+                __version: 301, // Changed!
+                comments: {
+                  __version: 401, // Changed!
+                  edges: {
+                    __version: 201, // Changed!
+                    0: { __version: 101 }, // Changed!
+                  },
+                },
+              },
+              1: {
+                __version: 350, // Same!
+                comments: {
+                  __version: 450,
+                  edges: { __version: 0 },
+                },
+              },
+            },
+          },
+        },
+      };
 
-      const result = recycleSnapshots(prevData, nextData);
+      const result = recycleSnapshots(prevData, nextData, prevFp, nextFp);
 
       expect(result).toBe(nextData);
       expect(result.user.posts.edges[1]).toBe(prevPost2); // Post2 recycled!

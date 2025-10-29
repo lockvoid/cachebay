@@ -97,15 +97,20 @@ const FINGERPRINT_KEY = "__version";
 
 /**
  * Recycles subtrees from prevData by replacing equal subtrees in nextData.
- * Uses __version fingerprints for O(1) equality checks.
- *
- * IMPORTANT: Only works with materialized results that have __version fingerprints.
+ * Uses fingerprints for O(1) equality checks.
  *
  * @param prevData - Previous materialized snapshot
  * @param nextData - New materialized snapshot to recycle into
+ * @param prevFingerprints - Fingerprints tree for prevData
+ * @param nextFingerprints - Fingerprints tree for nextData
  * @returns Recycled snapshot (reuses prevData subtrees where possible)
  */
-export function recycleSnapshots<T>(prevData: T, nextData: T): T {
+export function recycleSnapshots<T>(
+  prevData: T,
+  nextData: T,
+  prevFingerprints: any,
+  nextFingerprints: any
+): T {
   // Fast path: reference equality
   if (prevData === nextData) {
     return nextData;
@@ -137,16 +142,19 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
     return nextData;
   }
 
-  // Compare fingerprints - materialized results always have __version
-  const prevVersion = (prevData as any)[FINGERPRINT_KEY];
-  const nextVersion = (nextData as any)[FINGERPRINT_KEY];
+  // Compare fingerprints from separate fingerprint trees
+  const prevVersion = prevFingerprints?.[FINGERPRINT_KEY];
+  const nextVersion = nextFingerprints?.[FINGERPRINT_KEY];
 
-  if (prevVersion === nextVersion) {
+  if (prevVersion !== undefined && nextVersion !== undefined && prevVersion === nextVersion) {
     // Fingerprints match - data is identical, reuse prevData
     return prevData;
   }
 
-  // Fingerprints differ - recycle children
+  // Fingerprints differ or are missing - recycle children but return nextData
+  // (unless all children are identical AND fingerprints are both undefined)
+  const fingerprintsDiffer = prevVersion !== undefined && nextVersion !== undefined && prevVersion !== nextVersion;
+  
   if (prevIsArray && nextIsArray) {
     const prevArray = prevData as any[];
     const nextArray = nextData as any[];
@@ -157,14 +165,16 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
 
     for (let i = 0; i < nextArray.length; i++) {
       const nextItem = nextArray[i];
-      const nextFp = (nextItem as any)?.[FINGERPRINT_KEY];
+      const nextItemFp = nextFingerprints?.[i];
+      const nextFp = nextItemFp?.[FINGERPRINT_KEY];
 
       // Try to find matching item in prevArray by fingerprint
       let recycled = nextItem;
       if (nextFp !== undefined) {
         for (let j = 0; j < prevArray.length; j++) {
           const prevItem = prevArray[j];
-          const prevFp = (prevItem as any)?.[FINGERPRINT_KEY];
+          const prevItemFp = prevFingerprints?.[j];
+          const prevFp = prevItemFp?.[FINGERPRINT_KEY];
           if (prevFp === nextFp) {
             recycled = prevItem;
             break;
@@ -180,7 +190,8 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
       }
     }
 
-    return allEqual ? prevData : nextData;
+    // If fingerprints differ, always return nextData even if children are equal
+    return (fingerprintsDiffer || !allEqual) ? nextData : prevData;
   } else {
     // Both are plain objects
     const prevObject = prevData as Record<string, any>;
@@ -194,7 +205,14 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
 
     let allEqual = true;
     for (const key of nextKeys) {
-      const recycled = recycleSnapshots(prevObject[key], nextObject[key]);
+      if (key === FINGERPRINT_KEY) continue; // Skip __version key
+      
+      const recycled = recycleSnapshots(
+        prevObject[key],
+        nextObject[key],
+        prevFingerprints?.[key],
+        nextFingerprints?.[key]
+      );
       if (recycled !== nextObject[key]) {
         nextObject[key] = recycled;
       }
@@ -203,7 +221,8 @@ export function recycleSnapshots<T>(prevData: T, nextData: T): T {
       }
     }
 
-    return allEqual ? prevData : nextData;
+    // If fingerprints differ, always return nextData even if children are equal
+    return (fingerprintsDiffer || !allEqual) ? nextData : prevData;
   }
 }
 
