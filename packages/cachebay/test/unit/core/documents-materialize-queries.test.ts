@@ -2348,7 +2348,7 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       expect(documents.materialize({ document: QUERY, variables: { id: "u1" }, fingerprint: false, preferCache: true })).toBe(without_fp);
     });
 
-    it("respects entityId option when invalidating", () => {
+    it("respects rootId option when invalidating", () => {
       const QUERY = planner.getPlan(USER_QUERY);
 
       documents.normalize({
@@ -2361,11 +2361,11 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
 
       graph.flush();
 
-      // Cache both with and without entityId
+      // Cache both with and without rootId
       const with_entity = documents.materialize({
         document: QUERY,
         variables: { id: "u1" },
-        entityId: "User:u1",
+        rootId: "User:u1",
         updateCache: true,
       });
 
@@ -2376,20 +2376,20 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       });
 
       // Verify both are cached
-      expect(documents.materialize({ document: QUERY, variables: { id: "u1" }, entityId: "User:u1", preferCache: true })).toBe(with_entity);
+      expect(documents.materialize({ document: QUERY, variables: { id: "u1" }, rootId: "User:u1", preferCache: true })).toBe(with_entity);
       expect(documents.materialize({ document: QUERY, variables: { id: "u1" }, preferCache: true })).toBe(without_entity);
 
-      // Invalidate only entityId cache
+      // Invalidate only rootId cache
       documents.invalidate({
         document: QUERY,
         variables: { id: "u1" },
-        entityId: "User:u1",
+        rootId: "User:u1",
       });
 
-      // With entityId returns new reference
-      expect(documents.materialize({ document: QUERY, variables: { id: "u1" }, entityId: "User:u1", preferCache: true })).not.toBe(with_entity);
+      // With rootId returns new reference
+      expect(documents.materialize({ document: QUERY, variables: { id: "u1" }, rootId: "User:u1", preferCache: true })).not.toBe(with_entity);
 
-      // Without entityId returns same reference
+      // Without rootId returns same reference
       expect(documents.materialize({ document: QUERY, variables: { id: "u1" }, preferCache: true })).toBe(without_entity);
     });
   });

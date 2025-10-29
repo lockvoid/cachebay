@@ -1,4 +1,4 @@
-// Test materialize for fragments with entityId
+// Test materialize for fragments with rootId
 import { describe, it, expect, beforeEach } from "vitest";
 import { compilePlan } from "@/src/compiler";
 import { createCanonical } from "@/src/core/canonical";
@@ -9,7 +9,7 @@ import { createPlanner } from "@/src/core/planner";
 import { users } from "@/test/helpers/fixtures";
 import { USER_QUERY } from "@/test/helpers/operations";
 
-describe("documents.materialize - fragments with entityId", () => {
+describe("documents.materialize - fragments with rootId", () => {
   let graph: ReturnType<typeof createGraph>;
   let optimistic: ReturnType<typeof createOptimistic>;
   let planner: ReturnType<typeof createPlanner>;
@@ -51,12 +51,12 @@ describe("documents.materialize - fragments with entityId", () => {
       },
     });
 
-    // Read fragment using standard entityId format: TypeName:id
+    // Read fragment using standard rootId format: TypeName:id
     const result = documents.materialize({
       document: USER_FRAGMENT,
       variables: {},
       canonical: true,
-      entityId: "User:u1",
+      rootId: "User:u1",
       fingerprint: true,
     });
 
@@ -125,7 +125,7 @@ describe("documents.materialize - fragments with entityId", () => {
       document: COMMENT_FRAGMENT,
       variables: {},
       canonical: true,
-      entityId: `Comment:${commentUuid}`,
+      rootId: `Comment:${commentUuid}`,
       fingerprint: true,
     });
 
@@ -157,7 +157,7 @@ describe("documents.materialize - fragments with entityId", () => {
       document: USER_FRAGMENT,
       variables: {},
       canonical: true,
-      entityId: "User:nonexistent",
+      rootId: "User:nonexistent",
       fingerprint: true,
     });
 
@@ -186,7 +186,7 @@ describe("documents.materialize - fragments with entityId", () => {
     const result1 = documents.materialize({
       document: USER_FRAGMENT,
       variables: {},
-      entityId: "User:u1",
+      rootId: "User:u1",
       updateCache: true,
     });
 
@@ -194,7 +194,7 @@ describe("documents.materialize - fragments with entityId", () => {
     const cached = documents.materialize({
       document: USER_FRAGMENT,
       variables: {},
-      entityId: "User:u1",
+      rootId: "User:u1",
       preferCache: true,
     });
     expect(cached).toBe(result1);
@@ -203,14 +203,14 @@ describe("documents.materialize - fragments with entityId", () => {
     documents.invalidate({
       document: USER_FRAGMENT,
       variables: {},
-      entityId: "User:u1",
+      rootId: "User:u1",
     });
 
     // Should return new reference
     const result2 = documents.materialize({
       document: USER_FRAGMENT,
       variables: {},
-      entityId: "User:u1",
+      rootId: "User:u1",
       preferCache: true,
     });
     expect(result2).not.toBe(result1);
@@ -262,7 +262,7 @@ describe("documents.materialize - fragments with entityId", () => {
     const result = documents.materialize({
       document: USER_WITH_POSTS_FRAGMENT,
       variables: {},
-      entityId: "User:u1",
+      rootId: "User:u1",
       canonical: true,
       fingerprint: true,
     });

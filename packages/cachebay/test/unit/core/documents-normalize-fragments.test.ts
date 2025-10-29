@@ -47,7 +47,7 @@ describe("documents.normalize - fragments with rootId", () => {
       name: "Alice",
     };
 
-    // Normalize fragment with entityId
+    // Normalize fragment with rootId
     documents.normalize({
       document: USER_FRAGMENT,
       variables: {},

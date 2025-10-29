@@ -67,7 +67,7 @@ export type materializeOptions = {
   document: DocumentNode | CachePlan;
   variables?: Record<string, any>;
   canonical?: boolean;
-  entityId?: string;
+  rootId?: string;
   fingerprint?: boolean;
   /** If true, try to read from cache first, fallback to full materialization. Default: true (prefer cache) */
   preferCache?: boolean;
@@ -80,6 +80,7 @@ export type materializeOptions = {
  */
 export type materializeResult = {
   data: any;
+  fingerprints: any; // Mirrors data structure, contains only __version values
   dependencies: Set<string>;
   source: "canonical" | "strict" | "none";
   ok: {
@@ -99,7 +100,7 @@ export type invalidateOptions = {
   document: DocumentNode | CachePlan;
   variables?: Record<string, any>;
   canonical?: boolean;
-  entityId?: string;
+  rootId?: string;
   fingerprint?: boolean;
 };
 
@@ -126,18 +127,18 @@ export const createDocuments = (deps: DocumentsDependencies) => {
   /**
    * Helper to build materialize cache key
    * For regular queries: use precomputed signature + fingerprint flag
-   * For entityId queries: prefix with entityId to ensure separate cache entries
+   * For rootId queries: prefix with rootId to ensure separate cache entries
    */
   const getMaterializeCacheKey = (options: {
     signature: string;
     fingerprint: boolean;
-    entityId?: string;
+    rootId?: string;
   }): string => {
-    const { signature, fingerprint, entityId } = options;
+    const { signature, fingerprint, rootId } = options;
     const fpFlag = fingerprint ? "f" : "n";
 
-    return entityId
-      ? `entity:${entityId}|${fpFlag}|${signature}`
+    return rootId
+      ? `entity:${rootId}|${fpFlag}|${signature}`
       : `${fpFlag}|${signature}`;
   };
 
@@ -327,8 +328,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
       for (let i = 0; i < arr.length; i++) {
         const item = arr[i];
-        const entityId = (item && typeof item === "object") ? graph.identify(item) : null;
-        const itemKey = entityId ?? `${baseKey}.${i}`;
+        const rootId = (item && typeof item === "object") ? graph.identify(item) : null;
+        const itemKey = rootId ?? `${baseKey}.${i}`;
 
         if (item && typeof item === "object") {
           if (item.__typename) {
@@ -354,8 +355,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
           continue;
         }
 
-        const entityId = graph.identify(val);
-        const itemKey = entityId ?? `${baseKey}.${i}`;
+        const rootId = graph.identify(val);
+        const itemKey = rootId ?? `${baseKey}.${i}`;
 
         const itemFrame = {
           parentId: itemKey,
@@ -422,25 +423,25 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     };
 
     const normalizeEntityObject = (obj: any, field: PlanField | undefined, frame: Frame) => {
-      const entityId = graph.identify(obj);
+      const rootId = graph.identify(obj);
 
-      if (!entityId) {
+      if (!rootId) {
         return false;
       }
 
       if (obj.__typename) {
-        put(entityId, { __typename: obj.__typename });
+        put(rootId, { __typename: obj.__typename });
       } else {
-        put(entityId, {});
+        put(rootId, {});
       }
 
       if (field && !(frame.insideConnection && field.responseKey === CONNECTION_NODE_FIELD)) {
-        linkTo(frame.parentId, field, entityId);
+        linkTo(frame.parentId, field, rootId);
       }
 
       const fromNode = !!field && field.responseKey === CONNECTION_NODE_FIELD;
       const nextFrame = {
-        parentId: entityId,
+        parentId: rootId,
         fields: field?.selectionSet,
         fieldsMap: field?.selectionMap,
         insideConnection: fromNode ? false : frame.insideConnection,
@@ -518,14 +519,14 @@ export const createDocuments = (deps: DocumentsDependencies) => {
    * @param options.updateCache - If true, update the materialize cache with the result. Default: false
    */
   const materialize = (options: materializeOptions): materializeResult => {
-    const { document, variables = {}, canonical = true, entityId, fingerprint = true, preferCache = true, updateCache = false } = options;
+    const { document, variables = {}, canonical = true, rootId, fingerprint = true, preferCache = true, updateCache = false } = options;
 
     // Get plan once at the start
     const plan = planner.getPlan(document);
 
     const strictSignature = plan.makeSignature(false, variables);
     const canonicalSignature = canonical ? plan.makeSignature(true, variables) : undefined;
-    const cacheKey = getMaterializeCacheKey({ signature: canonical ? canonicalSignature! : strictSignature, fingerprint, entityId });
+    const cacheKey = getMaterializeCacheKey({ signature: canonical ? canonicalSignature! : strictSignature, fingerprint, rootId });
 
     // Try to read from cache if preferCache is true
     if (preferCache) {
@@ -958,16 +959,16 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     const data = {};
 
-    // Determine if entityId is actually a root ID (@ or @mutation.X or @subscription.X)
-    const isRootId = entityId && (entityId === ROOT_ID || entityId.startsWith('@mutation.') || entityId.startsWith('@subscription.'));
+    // Determine if rootId is actually a root ID (@ or @mutation.X or @subscription.X)
+    const isRootId = rootId && (rootId === ROOT_ID || rootId.startsWith('@mutation.') || rootId.startsWith('@subscription.'));
     
-    if (entityId && !isRootId) {
+    if (rootId && !isRootId) {
       // Fragment materialization - read from entity
       const synthetic = { selectionSet: plan.root, selectionMap: plan.rootSelectionMap } as unknown as PlanField;
-      readEntity(entityId, synthetic, data, entityId);
+      readEntity(rootId, synthetic, data, rootId);
     } else {
       // Query/Mutation/Subscription - read from root record
-      const actualRootId = entityId || ROOT_ID;
+      const actualRootId = rootId || ROOT_ID;
       const rootRecord = graph.getRecord(actualRootId) || {};
       const rootSelection = plan.root;
 
@@ -1005,7 +1006,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     const requestedOK = canonical ? canonicalOK : strictOK;
     const rootFingerprints = [];
-    if (entityId && !isRootId) {
+    if (rootId && !isRootId) {
       // Fragment - single entity fingerprint
       const fp = getFingerprint(data);
       if (fp !== undefined) rootFingerprints.push(fp);
@@ -1070,12 +1071,12 @@ export const createDocuments = (deps: DocumentsDependencies) => {
    * @param options - Options matching the materialization parameters
    */
   const invalidate = (options: invalidateOptions): void => {
-    const { document, variables = {}, canonical = true, entityId, fingerprint = true } = options;
+    const { document, variables = {}, canonical = true, rootId, fingerprint = true } = options;
 
     // Get plan and build cache key the same way as materialize
     const plan = planner.getPlan(document);
     const signature = canonical ? plan.makeSignature(true, variables) : plan.makeSignature(false, variables);
-    const cacheKey = getMaterializeCacheKey({ signature, fingerprint, entityId });
+    const cacheKey = getMaterializeCacheKey({ signature, fingerprint, rootId });
 
     materializeCache.delete(cacheKey);
   };

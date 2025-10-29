@@ -49,7 +49,7 @@ export const createFragments = ({ planner, documents }: FragmentsDependencies) =
     fragment: DocumentNode | CachePlan;
     fragmentName?: string;
     variables: Record<string, unknown>;
-    signature: string;  // Fragment signature (entityId|fragmentSignature)
+    signature: string;  // Fragment signature (rootId|fragmentSignature)
     onData: (data: any) => void;
     onError?: (error: Error) => void;
     deps: Set<string>;
@@ -58,7 +58,7 @@ export const createFragments = ({ planner, documents }: FragmentsDependencies) =
 
   const watchers = new Map<number, WatcherState>();
   const depIndex = new Map<string, Set<number>>();
-  const signatureToWatchers = new Map<string, Set<number>>(); // Multiple watchers per signature (entityId|signature)
+  const signatureToWatchers = new Map<string, Set<number>>(); // Multiple watchers per signature (rootId|signature)
   let watcherSeq = 1;
 
   const pendingTouched = new Set<string>();
@@ -89,7 +89,7 @@ export const createFragments = ({ planner, documents }: FragmentsDependencies) =
           document: planner.getPlan(w.fragment, { fragmentName: w.fragmentName }),
           variables: w.variables as Record<string, any>,
           canonical: true,  // Always use canonical mode
-          entityId: w.id,
+          rootId: w.id,
           fingerprint: true,
           preferCache: false,  // Data just changed - need fresh materialization
           updateCache: true,   // Update cache with fresh data
@@ -158,7 +158,7 @@ export const createFragments = ({ planner, documents }: FragmentsDependencies) =
   const buildSignature = (id: string, fragment: DocumentNode | CachePlan, fragmentName: string | undefined, variables: Record<string, unknown>): string => {
     const plan = planner.getPlan(fragment, { fragmentName });
     const sig = plan.makeSignature(true, variables as Record<string, any>);
-    // Format: entityId|signature
+    // Format: rootId|signature
     return `${id}|${sig}`;
   };
 
@@ -169,7 +169,7 @@ export const createFragments = ({ planner, documents }: FragmentsDependencies) =
     variables = {},
   }: ReadFragmentArgs): T | null => {
     const result = documents.materialize({
-      entityId: id,
+      rootId: id,
       document: planner.getPlan(fragment, { fragmentName }),
       variables: variables as Record<string, any>,
       canonical: true,
@@ -240,7 +240,7 @@ export const createFragments = ({ planner, documents }: FragmentsDependencies) =
       document: planner.getPlan(fragment, { fragmentName }),
       variables: variables as Record<string, any>,
       canonical: true,  // Always use canonical mode
-      entityId: id,
+      rootId: id,
       fingerprint: true,
       preferCache: true,   // Try cache first
       updateCache: true,   // Watchers cache their results
@@ -276,7 +276,7 @@ export const createFragments = ({ planner, documents }: FragmentsDependencies) =
               document: planner.getPlan(w.fragment, { fragmentName: w.fragmentName }),
               variables: w.variables as Record<string, any>,
               canonical: true,
-              entityId: w.id,
+              rootId: w.id,
               fingerprint: true,
             });
           }
@@ -321,7 +321,7 @@ export const createFragments = ({ planner, documents }: FragmentsDependencies) =
                 document: planner.getPlan(w.fragment, { fragmentName: w.fragmentName }),
                 variables: oldVariables as Record<string, any>,
                 canonical: true,
-                entityId: oldId,
+                rootId: oldId,
                 fingerprint: true,
               });
             }
@@ -343,7 +343,7 @@ export const createFragments = ({ planner, documents }: FragmentsDependencies) =
             document: planner.getPlan(w.fragment, { fragmentName: w.fragmentName }),
             variables: w.variables as Record<string, any>,
             canonical: true,
-            entityId: w.id,
+            rootId: w.id,
             fingerprint: true,
             preferCache: true,   // Try cache first
             updateCache: true,   // Watchers cache their results

@@ -52,7 +52,7 @@ describe("documents.materialize - subscriptions with rootId", () => {
       rootId,
     });
 
-    // Then materialize from same rootId (using entityId parameter)
+    // Then materialize from same rootId (using rootId parameter)
     const result = documents.materialize({
       document: USER_UPDATED_SUBSCRIPTION,
       variables,
@@ -60,7 +60,7 @@ describe("documents.materialize - subscriptions with rootId", () => {
       fingerprint: false,
       preferCache: false,
       updateCache: false,
-      entityId: rootId,
+      rootId: rootId,
     });
 
     // Should successfully materialize the subscription result
@@ -119,7 +119,7 @@ describe("documents.materialize - subscriptions with rootId", () => {
     const result1 = documents.materialize({
       document: USER_UPDATED_SUBSCRIPTION,
       variables,
-      entityId: "@subscription.0",
+      rootId: "@subscription.0",
       canonical: true,
       fingerprint: false,
     });
@@ -127,7 +127,7 @@ describe("documents.materialize - subscriptions with rootId", () => {
     const result2 = documents.materialize({
       document: USER_UPDATED_SUBSCRIPTION,
       variables,
-      entityId: "@subscription.1",
+      rootId: "@subscription.1",
       canonical: true,
       fingerprint: false,
     });
@@ -148,7 +148,7 @@ describe("documents.materialize - subscriptions with rootId", () => {
     const result = documents.materialize({
       document: USER_UPDATED_SUBSCRIPTION,
       variables,
-      entityId: "@subscription.999", // Non-existent root
+      rootId: "@subscription.999", // Non-existent root
       canonical: true,
       fingerprint: false,
     });
@@ -186,7 +186,7 @@ describe("documents.materialize - subscriptions with rootId", () => {
     const result = documents.materialize({
       document: USER_UPDATED_SUBSCRIPTION,
       variables,
-      entityId: rootId,
+      rootId: rootId,
       canonical: true,
       fingerprint: false,
     });
@@ -221,7 +221,7 @@ describe("documents.materialize - subscriptions with rootId", () => {
     const result = documents.materialize({
       document: USER_UPDATED_SUBSCRIPTION,
       variables: wrongVariables,
-      entityId: "@subscription.0",
+      rootId: "@subscription.0",
       canonical: true,
       fingerprint: false,
     });
@@ -258,7 +258,7 @@ describe("documents.materialize - subscriptions with rootId", () => {
       const result = documents.materialize({
         document: USER_UPDATED_SUBSCRIPTION,
         variables,
-        entityId: `@subscription.${i}`,
+        rootId: `@subscription.${i}`,
         canonical: true,
         fingerprint: false,
       });

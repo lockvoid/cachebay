@@ -60,7 +60,7 @@ describe("documents.materialize - mutations with rootId", () => {
       rootId,
     });
 
-    // Then materialize from same rootId (using entityId parameter)
+    // Then materialize from same rootId (using rootId parameter)
     const result = documents.materialize({
       document: UPDATE_USER_MUTATION,
       variables,
@@ -68,7 +68,7 @@ describe("documents.materialize - mutations with rootId", () => {
       fingerprint: false,
       preferCache: false,
       updateCache: false,
-      entityId: rootId,
+      rootId: rootId,
     });
 
     // Should successfully materialize the mutation result
@@ -142,7 +142,7 @@ describe("documents.materialize - mutations with rootId", () => {
     const result1 = documents.materialize({
       document: UPDATE_USER_MUTATION,
       variables: variables1,
-      entityId: "@mutation.0",
+      rootId: "@mutation.0",
       canonical: true,
       fingerprint: false,
     });
@@ -150,7 +150,7 @@ describe("documents.materialize - mutations with rootId", () => {
     const result2 = documents.materialize({
       document: UPDATE_USER_MUTATION,
       variables: variables2,
-      entityId: "@mutation.1",
+      rootId: "@mutation.1",
       canonical: true,
       fingerprint: false,
     });
@@ -171,7 +171,7 @@ describe("documents.materialize - mutations with rootId", () => {
     const result = documents.materialize({
       document: UPDATE_USER_MUTATION,
       variables,
-      entityId: "@mutation.999", // Non-existent root
+      rootId: "@mutation.999", // Non-existent root
       canonical: true,
       fingerprint: false,
     });
@@ -216,7 +216,7 @@ describe("documents.materialize - mutations with rootId", () => {
     const result = documents.materialize({
       document: UPDATE_USER_MUTATION,
       variables,
-      entityId: rootId,
+      rootId: rootId,
       canonical: true,
       fingerprint: false,
     });
@@ -261,7 +261,7 @@ describe("documents.materialize - mutations with rootId", () => {
     const result = documents.materialize({
       document: UPDATE_USER_MUTATION,
       variables: wrongVariables,
-      entityId: "@mutation.0",
+      rootId: "@mutation.0",
       canonical: true,
       fingerprint: false,
     });

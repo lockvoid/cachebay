@@ -441,7 +441,7 @@ export const createOperations = (
           fingerprint: true,
           preferCache: false,
           updateCache: false,
-          entityId: rootId,
+          rootId: rootId,
         });
 
         // Check if materialization succeeded
@@ -568,7 +568,7 @@ export const createOperations = (
               fingerprint: true,
               preferCache: false,
               updateCache: false,
-              entityId: rootId,
+              rootId: rootId,
             });
 
             // Check if materialization succeeded

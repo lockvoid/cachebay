@@ -131,7 +131,7 @@ describe("operations", () => {
 
     it("supports async ws transport that returns Promise<Observable>", () => {
       const event = { data: { messageAdded: { id: "1", text: "Async" } } };
-      
+
       let onNext: ((data: any) => void) | undefined;
 
       const mockObservable = {
@@ -181,7 +181,7 @@ describe("operations", () => {
       };
 
       const networkQueryWithTypename = "subscription OnMessage { messageAdded { id text __typename } }";
-      
+
       mockPlanner.getPlan.mockReturnValue({
         compiled: true,
         networkQuery: networkQueryWithTypename,
@@ -281,7 +281,7 @@ describe("operations", () => {
 
       onNext?.(event);
 
-      // Should materialize with entityId set to subscription rootId
+      // Should materialize with rootId set to subscription rootId
       expect(mockDocuments.materialize).toHaveBeenCalledWith({
         document: subscription,
         variables,
@@ -289,7 +289,7 @@ describe("operations", () => {
         fingerprint: true,
         preferCache: false,
         updateCache: false,
-        entityId: "@subscription.0",
+        rootId: "@subscription.0",
       });
     });
 

@@ -15,7 +15,7 @@ import { createPlanner } from "@/src/core/planner";
  *    - variables
  *    - canonical mode (canonical vs strict)
  *    - fingerprint option (true vs false)
- *    - entityId (for fragments)
+ *    - rootId (for fragments)
  * 4. Cache invalidation works correctly with preferCache: false
  */
 describe("documents - materialize cache", () => {
@@ -268,7 +268,7 @@ describe("documents - materialize cache", () => {
       expect(canonicalResult1).not.toBe(strictResult1);
     });
 
-    it("should create separate cache entries for different entityId", () => {
+    it("should create separate cache entries for different rootId", () => {
       const FRAGMENT = gql`
         fragment UserFields on User {
           id
@@ -288,7 +288,7 @@ describe("documents - materialize cache", () => {
         document: FRAGMENT,
         variables: {},
         canonical: true,
-        entityId: "User:1",
+        rootId: "User:1",
         preferCache: false,
         updateCache: true,
       });
@@ -298,7 +298,7 @@ describe("documents - materialize cache", () => {
         document: FRAGMENT,
         variables: {},
         canonical: true,
-        entityId: "User:2",
+        rootId: "User:2",
         preferCache: false,
         updateCache: true,
       });
@@ -308,15 +308,15 @@ describe("documents - materialize cache", () => {
         document: FRAGMENT,
         variables: {},
         canonical: true,
-        entityId: "User:1",
+        rootId: "User:1",
         preferCache: true,
         updateCache: true,
       });
 
-      // Same entityId should return same reference
+      // Same rootId should return same reference
       expect(result1a).toBe(result1b);
 
-      // Different entityId should return different references
+      // Different rootId should return different references
       expect(result1a).not.toBe(result2a);
       expect(result1a.data.name).toBe("Alice");
       expect(result2a.data.name).toBe("Bob");

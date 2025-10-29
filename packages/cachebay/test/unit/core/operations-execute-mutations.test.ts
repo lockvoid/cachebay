@@ -247,7 +247,7 @@ describe("operations", () => {
         fingerprint: true,
         preferCache: false,
         updateCache: false,
-        entityId: "@mutation.0",
+        rootId: "@mutation.0",
       });
 
       // Should notify watchers
@@ -318,7 +318,7 @@ describe("operations", () => {
         fingerprint: true,
         preferCache: false,
         updateCache: false,  // No watcher system
-        entityId: "@mutation.0",
+        rootId: "@mutation.0",
       });
     });
 
@@ -401,7 +401,7 @@ describe("operations", () => {
 
       await operations.executeMutation({ query: mutation, variables });
 
-      // Should materialize with entityId set to mutation rootId
+      // Should materialize with rootId set to mutation rootId
       expect(mockDocuments.materialize).toHaveBeenCalledWith({
         document: mutation,
         variables,
@@ -409,7 +409,7 @@ describe("operations", () => {
         fingerprint: true,
         preferCache: false,
         updateCache: false,
-        entityId: "@mutation.0",
+        rootId: "@mutation.0",
       });
     });
 
