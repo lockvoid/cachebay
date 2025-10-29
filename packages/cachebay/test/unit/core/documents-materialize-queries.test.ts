@@ -1381,6 +1381,68 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
         },
       },
     ]);
+
+    // Comprehensive fingerprint checks
+    expect(d.fingerprints).toBeDefined();
+    expect(d.fingerprints.__version).toBeGreaterThan(0);
+    
+    // Root users connection fingerprints
+    expect(d.fingerprints.users.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.pageInfo.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges.__version).toBeGreaterThan(0);
+    
+    // First user fingerprints
+    expect(d.fingerprints.users.edges[0].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[0].node.__version).toBeGreaterThan(0);
+    
+    // First user posts connection fingerprints
+    expect(d.fingerprints.users.edges[0].node.posts.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[0].node.posts.pageInfo.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[0].node.posts.edges.__version).toBeGreaterThan(0);
+    
+    // First user, first post fingerprints
+    expect(d.fingerprints.users.edges[0].node.posts.edges[0].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[0].node.posts.edges[0].node.__version).toBeGreaterThan(0);
+    
+    // First user, first post comments connection fingerprints
+    expect(d.fingerprints.users.edges[0].node.posts.edges[0].node.comments.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[0].node.posts.edges[0].node.comments.pageInfo.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[0].node.posts.edges[0].node.comments.edges.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[0].node.posts.edges[0].node.comments.edges[0].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[0].node.posts.edges[0].node.comments.edges[0].node.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[0].node.posts.edges[0].node.comments.edges[1].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[0].node.posts.edges[0].node.comments.edges[1].node.__version).toBeGreaterThan(0);
+    
+    // First user, second post fingerprints
+    expect(d.fingerprints.users.edges[0].node.posts.edges[1].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[0].node.posts.edges[1].node.__version).toBeGreaterThan(0);
+    
+    // First user, second post comments connection fingerprints
+    expect(d.fingerprints.users.edges[0].node.posts.edges[1].node.comments.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[0].node.posts.edges[1].node.comments.pageInfo.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[0].node.posts.edges[1].node.comments.edges.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[0].node.posts.edges[1].node.comments.edges[0].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[0].node.posts.edges[1].node.comments.edges[0].node.__version).toBeGreaterThan(0);
+    
+    // Second user fingerprints
+    expect(d.fingerprints.users.edges[1].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[1].node.__version).toBeGreaterThan(0);
+    
+    // Second user posts connection fingerprints
+    expect(d.fingerprints.users.edges[1].node.posts.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[1].node.posts.pageInfo.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[1].node.posts.edges.__version).toBeGreaterThan(0);
+    
+    // Second user, first post fingerprints
+    expect(d.fingerprints.users.edges[1].node.posts.edges[0].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[1].node.posts.edges[0].node.__version).toBeGreaterThan(0);
+    
+    // Second user, first post comments connection fingerprints
+    expect(d.fingerprints.users.edges[1].node.posts.edges[0].node.comments.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[1].node.posts.edges[0].node.comments.pageInfo.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[1].node.posts.edges[0].node.comments.edges.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[1].node.posts.edges[0].node.comments.edges[0].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.users.edges[1].node.posts.edges[0].node.comments.edges[0].node.__version).toBeGreaterThan(0);
   });
 
   it("materializes MULTIPLE_USERS_QUERY with both single user and users connection", () => {
@@ -1755,6 +1817,79 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
         },
       },
     ]);
+
+    // Comprehensive fingerprint checks
+    expect(d.fingerprints).toBeDefined();
+    expect(d.fingerprints.__version).toBeGreaterThan(0);
+    
+    // Root posts connection fingerprints
+    expect(d.fingerprints.posts.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.pageInfo.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges.__version).toBeGreaterThan(0);
+    
+    // First post (VideoPost) fingerprints
+    expect(d.fingerprints.posts.edges[0].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[0].node.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[0].node.video.__version).toBeGreaterThan(0);
+    
+    // First post aggregations fingerprints
+    expect(d.fingerprints.posts.edges[0].node.aggregations.__version).toBeGreaterThan(0);
+    
+    // First post moderationTags connection fingerprints
+    expect(d.fingerprints.posts.edges[0].node.aggregations.moderationTags.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[0].node.aggregations.moderationTags.pageInfo.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[0].node.aggregations.moderationTags.edges.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[0].node.aggregations.moderationTags.edges[0].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[0].node.aggregations.moderationTags.edges[0].node.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[0].node.aggregations.moderationTags.edges[1].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[0].node.aggregations.moderationTags.edges[1].node.__version).toBeGreaterThan(0);
+    
+    // First post userTags connection fingerprints
+    expect(d.fingerprints.posts.edges[0].node.aggregations.userTags.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[0].node.aggregations.userTags.pageInfo.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[0].node.aggregations.userTags.edges.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[0].node.aggregations.userTags.edges[0].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[0].node.aggregations.userTags.edges[0].node.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[0].node.aggregations.userTags.edges[1].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[0].node.aggregations.userTags.edges[1].node.__version).toBeGreaterThan(0);
+    
+    // Second post (AudioPost) fingerprints
+    expect(d.fingerprints.posts.edges[1].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[1].node.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[1].node.audio.__version).toBeGreaterThan(0);
+    
+    // Second post aggregations fingerprints
+    expect(d.fingerprints.posts.edges[1].node.aggregations.__version).toBeGreaterThan(0);
+    
+    // Second post moderationTags connection fingerprints
+    expect(d.fingerprints.posts.edges[1].node.aggregations.moderationTags.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[1].node.aggregations.moderationTags.pageInfo.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[1].node.aggregations.moderationTags.edges.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[1].node.aggregations.moderationTags.edges[0].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[1].node.aggregations.moderationTags.edges[0].node.__version).toBeGreaterThan(0);
+    
+    // Second post userTags connection fingerprints
+    expect(d.fingerprints.posts.edges[1].node.aggregations.userTags.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[1].node.aggregations.userTags.pageInfo.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[1].node.aggregations.userTags.edges.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[1].node.aggregations.userTags.edges[0].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.edges[1].node.aggregations.userTags.edges[0].node.__version).toBeGreaterThan(0);
+    
+    // Connection-level aggregations fingerprints
+    expect(d.fingerprints.posts.aggregations.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.aggregations.todayStat.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.aggregations.yesterdayStat.__version).toBeGreaterThan(0);
+    
+    // Connection-level tags connection fingerprints
+    expect(d.fingerprints.posts.aggregations.tags.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.aggregations.tags.pageInfo.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.aggregations.tags.edges.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.aggregations.tags.edges[0].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.aggregations.tags.edges[0].node.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.aggregations.tags.edges[1].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.aggregations.tags.edges[1].node.__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.aggregations.tags.edges[2].__version).toBeGreaterThan(0);
+    expect(d.fingerprints.posts.aggregations.tags.edges[2].node.__version).toBeGreaterThan(0);
   });
 
   describe("canonical flag & ok/source behavior", () => {
@@ -2250,6 +2385,14 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       expect(result.hot).toBe(false); // Not from cache since we invalidated before materializing
       expect(result.source).not.toBe("none"); // Should have data
       expect(result.data).toBeDefined();
+      
+      // Verify fingerprints are present
+      expect(result.fingerprints).toEqual({
+        __version: expect.any(Number),
+        user: { __version: expect.any(Number) },
+      });
+      expect(result.fingerprints.__version).toBeGreaterThan(0);
+      expect(result.fingerprints.user.__version).toBeGreaterThan(0);
     });
 
     it("respects canonical option when invalidating", () => {
@@ -2419,6 +2562,16 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
 
       expect(result2.hot).toBe(false); // Still cache miss (first call didn't cache)
       expect(result2).not.toBe(result1); // Different references (not cached)
+      
+      // Verify fingerprints are present in both
+      expect(result1.fingerprints).toEqual({
+        __version: expect.any(Number),
+        user: { __version: expect.any(Number) },
+      });
+      expect(result2.fingerprints).toEqual({
+        __version: expect.any(Number),
+        user: { __version: expect.any(Number) },
+      });
     });
 
     it("preferCache: true returns cached result if available", () => {
@@ -2450,6 +2603,14 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
 
       expect(result2.hot).toBe(true);  // From cache
       expect(result2).toBe(result1);   // Same reference
+      
+      // Verify fingerprints are present
+      expect(result1.fingerprints).toEqual({
+        __version: expect.any(Number),
+        user: { __version: expect.any(Number) },
+      });
+      expect(result1.fingerprints.__version).toBeGreaterThan(0);
+      expect(result1.fingerprints.user.__version).toBeGreaterThan(0);
     });
 
     it("preferCache: true falls back to materialization if cache miss", () => {
@@ -2474,6 +2635,14 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       expect(result.hot).toBe(false); // Cache miss, materialized fresh
       expect(result.source).not.toBe("none");
       expect(result.data).toBeDefined();
+      
+      // Verify fingerprints are present
+      expect(result.fingerprints).toEqual({
+        __version: expect.any(Number),
+        user: { __version: expect.any(Number) },
+      });
+      expect(result.fingerprints.__version).toBeGreaterThan(0);
+      expect(result.fingerprints.user.__version).toBeGreaterThan(0);
     });
 
     it("updateCache: false does not cache the result", () => {
@@ -2504,6 +2673,16 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       expect(result1.hot).toBe(false);
       expect(result2.hot).toBe(false); // Cache miss because result1 wasn't cached
       expect(result2).not.toBe(result1); // Different references
+      
+      // Verify fingerprints are present in both
+      expect(result1.fingerprints).toEqual({
+        __version: expect.any(Number),
+        user: { __version: expect.any(Number) },
+      });
+      expect(result2.fingerprints).toEqual({
+        __version: expect.any(Number),
+        user: { __version: expect.any(Number) },
+      });
     });
 
     it("updateCache: true (explicit) caches the result", () => {
@@ -2534,6 +2713,14 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
 
       expect(result2.hot).toBe(true); // Cache hit
       expect(result2).toBe(result1);  // Same reference
+      
+      // Verify fingerprints are present
+      expect(result1.fingerprints).toEqual({
+        __version: expect.any(Number),
+        user: { __version: expect.any(Number) },
+      });
+      expect(result1.fingerprints.__version).toBeGreaterThan(0);
+      expect(result1.fingerprints.user.__version).toBeGreaterThan(0);
     });
 
     it("preferCache and updateCache work together correctly", () => {
@@ -2585,6 +2772,14 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
 
       expect(read3.hot).toBe(true); // Cache hit!
       expect(read3).toBe(cached);   // Same reference
+      
+      // Verify fingerprints are present
+      expect(read1.fingerprints).toEqual({
+        __version: expect.any(Number),
+        user: { __version: expect.any(Number) },
+      });
+      expect(read1.fingerprints.__version).toBeGreaterThan(0);
+      expect(read1.fingerprints.user.__version).toBeGreaterThan(0);
     });
   });
 });
