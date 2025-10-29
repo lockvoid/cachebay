@@ -159,8 +159,6 @@ export function useQuery<TData = any, TVars = any>(
     // Default to network-only if no cache policy specified (Apollo behavior)
     const refetchPolicy = refetchOptions?.cachePolicy || "network-only";
 
-    console.log('refetching', vars, refetchPolicy)
-
     // Update watcher with new variables if provided (before performQuery)
     if (refetchOptions?.variables) {
       watchHandle.update({ variables: vars, immediate: false }); // Don't materialize - notifyDataBySignature will update dependencies
@@ -168,8 +166,6 @@ export function useQuery<TData = any, TVars = any>(
 
     // Execute query with refetch policy using performQuery
     const result = await performQuery(vars, refetchPolicy);
-
-    console.log('refetched', result)
 
     // Resolve suspension promise for lazy mode refetch
     suspensionPromise.resolve(result);

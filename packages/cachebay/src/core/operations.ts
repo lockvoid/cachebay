@@ -34,7 +34,7 @@ export type QueryVariables = Record<string, any>;
  *
  * @public
  * @template TData - Expected data type returned from the operation
- * @template TVars - Variables type for the operation
+ * @template Tvariables - Variables type for the operation
  * @example
  * ```typescript
  * const operation: Operation<{ user: User }, { id: string }> = {
@@ -44,11 +44,11 @@ export type QueryVariables = Record<string, any>;
  * };
  * ```
  */
-export interface Operation<TData = any, TVars = any> {
+export interface Operation<TData = any, Tvariables = any> {
   /** GraphQL query document */
   query: CachePlan | DocumentNode | string;
   /** Query variables */
-  variables?: TVars;
+  variables?: Tvariables;
   /** Cache policy (default: cache-first) */
   cachePolicy?: CachePolicy;
   /** Canonical mode - read from canonical containers (default: true) */
@@ -208,14 +208,14 @@ export const createOperations = (
   /**
    * Execute a GraphQL query with suspension and hydration support
    */
-  const executeQuery = async <TData = any, TVars = QueryVariables>({
+  const executeQuery = async <TData = any, Tvariables = QueryVariables>({
     query,
     variables = {},
     cachePolicy,
     onNetworkData,
     onCacheData,
     onError,
-  }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
+  }: Operation<TData, Tvariables>): Promise<OperationResult<TData>> => {
     const finalCachePolicy = validateCachePolicy(cachePolicy ?? defaultCachePolicy, NETWORK_ONLY);
     const plan = planner.getPlan(query);
     const canonicalSignature = plan.makeSignature(true, variables);
@@ -291,7 +291,6 @@ export const createOperations = (
           if (onQueryNetworkData) {
             const wasCaught = onQueryNetworkData(canonicalSignature, freshMaterialization.data, freshMaterialization.dependencies);
 
-            console.log('onQueryNetworkData:', canonicalSignature, wasCaught, freshMaterialization);
             if (!wasCaught) {
               documents.invalidate({ document: query, variables, canonical: true, fingerprint: true });
             }
@@ -394,23 +393,21 @@ export const createOperations = (
       return performRequest();
     }
 
-    // Fallback for any unhandled cache policy
     return performRequest();
   };
 
   /**
    * Execute a GraphQL mutation
    */
-  const executeMutation = async <TData = any, TVars = QueryVariables>({
+  const executeMutation = async <TData = any, Tvariables = QueryVariables>({
     query,
-    variables,
-  }: Operation<TData, TVars>): Promise<OperationResult<TData>> => {
-    const vars = variables || ({} as TVars);
+    variables = {},
+  }: Operation<TData, Tvariables>): Promise<OperationResult<TData>> => {
     const compiledQuery = planner.getPlan(query);
 
     const context: HttpContext = {
       query,
-      variables: vars,
+      variables,
       operationType: "mutation",
       compiledQuery,
     };
@@ -420,45 +417,49 @@ export const createOperations = (
 
       // Write successful mutation result to cache and notify watchers
       if (result.data && !result.error) {
-        const freshMaterialization = normalizeAndNotify(query, vars, result.data, "cache-first");
+        documents.normalize({
+          document: query,
+          variables,
+          data: result.data,
+        });
 
-        // Return materialized data - mutations can contain connections and complex structures
-        return {
-          data: freshMaterialization.data as TData,
-          error: result.error,
-        };
+        // Materialize to update cache and get dependencies for watcher tracking
+        const freshMaterialization = documents.materialize({
+          document: query,
+          variables,
+          canonical: true,
+          fingerprint: false,
+          preferCache: false,
+          updateCache: false,
+        });
+
+        return { data: freshMaterialization.data, error: result.error || null };
       }
 
       return result as OperationResult<TData>;
-    } catch (err) {
-      return {
-        data: null,
-        error: new CombinedError({
-          networkError: err as Error,
-        }),
-      };
+    } catch (error) {
+      return { data: null, error: new CombinedError({ networkError: error }) };
     }
   };
 
   /**
    * Execute a GraphQL subscription - returns observable that writes data to cache
    */
-  const executeSubscription = async <TData = any, TVars = QueryVariables>({
+  const executeSubscription = async <TData = any, Tvariables = QueryVariables>({
     query,
     variables,
-  }: Operation<TData, TVars>): Promise<ObservableLike<OperationResult<TData>>> => {
+  }: Operation<TData, Tvariables>): Promise<ObservableLike<OperationResult<TData>>> => {
     if (!transport.ws) {
       throw new Error(
         "WebSocket transport is not configured. Please provide 'transport.ws' in createCachebay options to use subscriptions.",
       );
     }
 
-    const vars = variables || ({} as TVars);
     const plan = planner.getPlan(query);
 
     const context: WsContext = {
       query: plan.networkQuery,
-      variables: vars,
+      variables,
       operationType: "subscription",
       compiledQuery: plan,
     };
@@ -473,14 +474,24 @@ export const createOperations = (
             next: (result: OperationResult<TData>) => {
               // Write successful subscription data to cache and notify watchers
               if (result.data && !result.error) {
-                const freshMaterialization = normalizeAndNotify(query, vars, result.data, "cache-first");
+                documents.normalize({
+                  document: query,
+                  variables,
+                  data: result.data,
+                });
 
-                // Forward materialized data (normalized), not raw network response
+                // Materialize to update cache and get dependencies for watcher tracking
+                const freshMaterialization = documents.materialize({
+                  document: query,
+                  variables,
+                  canonical: true,
+                  fingerprint: false,
+                  preferCache: false,
+                  updateCache: false,
+                });
+
                 if (observer.next) {
-                  observer.next({
-                    data: freshMaterialization.data as TData,
-                    error: result.error,
-                  });
+                  observer.next({ data: freshMaterialization.data, error: result.error || null });
                 }
               } else {
                 // Forward errors as-is

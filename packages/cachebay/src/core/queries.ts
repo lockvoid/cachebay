@@ -68,7 +68,6 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
     flushScheduled = true;
 
-    console.log('scheduleFlush', pendingTouched.size);
     queueMicrotask(() => {
       flushScheduled = false;
 
@@ -84,7 +83,6 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
       for (const id of touched) {
         const ws = depIndex.get(id);
-        console.log('ws', depIndex);
 
         if (ws) {
           for (const k of ws) {
@@ -169,7 +167,6 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
 
   // --- Dep index maintenance ---
   const updateWatcherDependencies = (watcherId: number, nextDeps: Set<string>) => {
-    console.log('nextDeps', nextDeps);
     const watcher = watchers.get(watcherId);
     if (!watcher) return;
 
@@ -396,8 +393,6 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
           newSet.add(watcherId);
         }
 
-        console.log("newSignature:", newSignature);
-
         // If immediate, materialize and emit synchronously
         if (immediate) {
           const res = documents.materialize({
@@ -443,18 +438,13 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
       return false;
     }
 
-    console.log(`notifyDataBySignature watcherSet`, watcherSet);
-
     // Emit to all watchers with this signature
     for (const watcherId of watcherSet) {
       const w = watchers.get(watcherId);
-      console.log(`notifyDataBySignature w1`, w);
 
       if (!w) {
         continue;
       }
-
-      console.log(`notifyDataBySignature w2`, w);
 
       // Update watcher dependencies (since we have them from materialization)
       updateWatcherDependencies(watcherId, dependencies);
