@@ -581,28 +581,21 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       return true;
     };
 
+    // Map to store fingerprints for each data object/array
+    const fingerprintMap = new WeakMap<object, number>();
+
     const setFingerprint = (obj: any, fp: number) => {
-      if (!fingerprint) {
+      if (!fingerprint || !obj || typeof obj !== 'object') {
         return;
       }
-
-      if (Array.isArray(obj)) {
-        Object.defineProperty(obj, FINGERPRINT_KEY, {
-          value: fp,
-          writable: true,
-          enumerable: false,
-          configurable: true,
-        });
-      } else {
-        obj[FINGERPRINT_KEY] = fp;
-      }
+      fingerprintMap.set(obj, fp);
     };
 
     const getFingerprint = (obj: any) => {
-      if (!fingerprint) {
+      if (!fingerprint || !obj || typeof obj !== 'object') {
         return undefined;
       }
-      return obj[FINGERPRINT_KEY];
+      return fingerprintMap.get(obj);
     };
 
     const readScalar = (record: any, field: PlanField, out: any, outKey: string, parentId: string, path: string) => {
@@ -958,6 +951,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     };
 
     const data = {};
+    const fingerprints = {};
 
     // Determine if rootId is actually a root ID (@ or @mutation.X or @subscription.X)
     const isRootId = rootId && (rootId === ROOT_ID || rootId.startsWith('@mutation.') || rootId.startsWith('@subscription.'));
@@ -1005,6 +999,8 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     }
 
     const requestedOK = canonical ? canonicalOK : strictOK;
+    
+    // Compute and set root fingerprint
     const rootFingerprints = [];
     if (rootId && !isRootId) {
       // Fragment - single entity fingerprint
@@ -1026,11 +1022,61 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       const rootFingerprint = fingerprintNodes(0, rootFingerprints);
       setFingerprint(data, rootFingerprint);
     }
+    
+    // Build fingerprints tree that mirrors data structure
+    const buildFingerprintsTree = (obj: any, fpObj: any) => {
+      if (!obj || typeof obj !== 'object') {
+        return;
+      }
+
+      const fp = getFingerprint(obj);
+      if (fp !== undefined) {
+        fpObj[FINGERPRINT_KEY] = fp;
+      }
+
+      if (Array.isArray(obj)) {
+        for (let i = 0; i < obj.length; i++) {
+          const item = obj[i];
+          if (item && typeof item === 'object') {
+            const itemFp = {};
+            buildFingerprintsTree(item, itemFp);
+            if (Object.keys(itemFp).length > 0) {
+              if (!Array.isArray(fpObj)) {
+                // Convert to array if needed
+                const keys = Object.keys(fpObj);
+                if (keys.length === 0 || keys.every(k => k === FINGERPRINT_KEY)) {
+                  Object.setPrototypeOf(fpObj, Array.prototype);
+                  fpObj.length = 0;
+                }
+              }
+              fpObj[i] = itemFp;
+            }
+          }
+        }
+      } else {
+        for (const key in obj) {
+          if (key === FINGERPRINT_KEY) continue;
+          const value = obj[key];
+          if (value && typeof value === 'object') {
+            const childFp = {};
+            buildFingerprintsTree(value, childFp);
+            if (Object.keys(childFp).length > 0) {
+              fpObj[key] = childFp;
+            }
+          }
+        }
+      }
+    };
+
+    if (requestedOK && fingerprint) {
+      buildFingerprintsTree(data, fingerprints);
+    }
 
     // Create result object (either "none" or with data)
     const result: materializeResult = !requestedOK
       ? {
         data: undefined,
+        fingerprints: undefined,
         dependencies,
         source: "none",
         ok: {
@@ -1044,6 +1090,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
       : {
         data,
+        fingerprints,
         dependencies,
         source: canonical ? "canonical" : "strict",
         ok: {

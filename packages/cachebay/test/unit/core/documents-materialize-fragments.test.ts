@@ -65,6 +65,8 @@ describe("documents.materialize - fragments with rootId", () => {
       __typename: "User",
       id: "u1",
       email: "user1@test.com",
+    });
+    expect(result.fingerprints).toEqual({
       __version: expect.any(Number),
     });
   });
@@ -138,9 +140,13 @@ describe("documents.materialize - fragments with rootId", () => {
         __typename: "User",
         id: "u1",
         name: "Alice",
+      },
+    });
+    expect(result.fingerprints).toEqual({
+      __version: expect.any(Number),
+      author: {
         __version: expect.any(Number),
       },
-      __version: expect.any(Number),
     });
   });
 

@@ -79,8 +79,11 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     const res = documents.materialize({ document: QUERY, variables: { id: "u1" } }) as any;
     expect(res.source).not.toBe("none");
     expect(res.data).toEqual({
+      user: { __typename: "User", id: "u1", email: "u1@example.com" },
+    });
+    expect(res.fingerprints).toEqual({
       __version: expect.any(Number),
-      user: { __typename: "User", id: "u1", email: "u1@example.com", __version: expect.any(Number) },
+      user: { __version: expect.any(Number) },
     });
 
     // dependencies should include root field key and entity id
@@ -143,14 +146,16 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     const res = documents.materialize({ document: QUERY, variables: {} }) as any;
     expect(res.source).not.toBe("none");
     expect(res.data).toEqual({
-      __version: expect.any(Number),
       media: {
         __typename: "Media",
         key: "m1",
         dataUrl: "raw-1",
         previewUrl: "raw-2",
-        __version: expect.any(Number),
       },
+    });
+    expect(res.fingerprints).toEqual({
+      __version: expect.any(Number),
+      media: { __version: expect.any(Number) },
     });
 
     expect(res.dependencies).toEqual(new Set([
@@ -199,11 +204,19 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     ]));
 
     // Fingerprinting: connection should have fingerprint
-    const fp1 = (res.data as any).__version;
-    expect(fp1).toBeGreaterThan(0);
-    // expect((res.data.users as any).__version).toBeGreaterThan(0);
-    // expect((res.data.users.edges as any).__version).toBeGreaterThan(0);
-    // expect((res.data.users.pageInfo as any).__version).toBeGreaterThan(0);
+    expect(res.fingerprints).toEqual({
+      __version: expect.any(Number),
+      users: {
+        __version: expect.any(Number),
+        edges: expect.arrayContaining([
+          { __version: expect.any(Number), node: { __version: expect.any(Number) } },
+          { __version: expect.any(Number), node: { __version: expect.any(Number) } },
+        ]),
+        pageInfo: { __version: expect.any(Number) },
+      },
+    });
+    expect(res.fingerprints.users.edges.__version).toBeGreaterThan(0);
+    const fp1 = res.fingerprints.__version;
 
     // Update a user node
     graph.putRecord("User:u1", { email: "u1+updated@example.com" });
@@ -215,8 +228,8 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     }) as any;
 
     // Fingerprint should change because node changed
-    expect((res2.data as any).__version).not.toBe(fp1);
-    // expect((res2.data.users as any).__version).not.toBe((res.data.users as any).__version);
+    expect(res2.fingerprints.__version).not.toBe(fp1);
+    expect(res2.fingerprints.users.__version).not.toBe(res.fingerprints.users.__version);
   });
 
   it("materializes a nested connection via canonical key (user.posts)", () => {
@@ -249,7 +262,7 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     }) as any;
 
     expect(res.source).toBe("canonical");
-    expect(res.data.user.posts.edges[0].node).toEqual({ __typename: "Post", id: "p1", title: "Post 1", flags: [], __version: expect.any(Number) });
+    expect(res.data.user.posts.edges[0].node).toEqual({ __typename: "Post", id: "p1", title: "Post 1", flags: [] });
 
     // dependencies include user record + nested connection keys
     expect(res.dependencies).toEqual(new Set([
@@ -261,15 +274,22 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     ]));
 
     // Fingerprinting: nested connection fingerprints
-    // const userFp1 = (res.data.user as any).__version;
-    // const postsFp1 = (res.data.user.posts as any).__version;
-    // const edgeFp1 = (res.data.user.posts.edges[0] as any).__version;
-    // const nodeFp1 = (res.data.user.posts.edges[0].node as any).__version;
-
-    // expect(userFp1).toBeGreaterThan(0);
-    // expect(postsFp1).toBeGreaterThan(0);
-    // expect(edgeFp1).toBeGreaterThan(0);
-    // expect(nodeFp1).toBeGreaterThan(0);
+    expect(res.fingerprints).toEqual({
+      __version: expect.any(Number),
+      user: {
+        __version: expect.any(Number),
+        posts: {
+          __version: expect.any(Number),
+          edges: expect.arrayContaining([
+            { __version: expect.any(Number), node: { __version: expect.any(Number) } },
+          ]),
+          pageInfo: { __version: expect.any(Number) },
+        },
+      },
+    });
+    expect(res.fingerprints.user.posts.edges.__version).toBeGreaterThan(0);
+    const userFp1 = res.fingerprints.user.__version;
+    const postsFp1 = res.fingerprints.user.posts.__version;
 
     // Update the post node
     graph.putRecord("Post:p1", { title: "Post 1 Updated" });
@@ -281,11 +301,9 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     }) as any;
 
     // All fingerprints in the chain should change
-    // expect((res2.data.user.posts.edges[0].node as any).__version).not.toBe(nodeFp1);
-    // expect((res2.data.user.posts.edges[0] as any).__version).not.toBe(edgeFp1);
-    // expect((res2.data.user.posts as any).__version).not.toBe(postsFp1);
-    // expect((res2.data.user as any).__version).not.toBe(userFp1);
-    expect((res2.data as any).__version).not.toBe((res.data as any).__version);
+    expect(res2.fingerprints.__version).not.toBe(res.fingerprints.__version);
+    expect(res2.fingerprints.user.__version).not.toBe(userFp1);
+    expect(res2.fingerprints.user.posts.__version).not.toBe(postsFp1);
   });
 
   describe("dependencies tracking", () => {
@@ -388,7 +406,8 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       });
       const c = documents.materialize({ document: QUERY, variables: { id: "e1" } }) as any;
       expect(c.source).not.toBe("none");
-      expect(c.data).toEqual({ __version: expect.any(Number), entity: { __typename: "Entity", id: "e1", data: "string", __version: expect.any(Number) } });
+      expect(c.data).toEqual({ entity: { __typename: "Entity", id: "e1", data: "string" } });
+      expect(c.fingerprints).toEqual({ __version: expect.any(Number), entity: { __version: expect.any(Number) } });
 
       expect(c.dependencies).toEqual(new Set([
         `${ROOT_ID}.entity({"id":"e1"})`,
@@ -412,7 +431,8 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       });
       const c = documents.materialize({ document: QUERY, variables: { id: "e1" } }) as any;
       expect(c.source).not.toBe("none");
-      expect(c.data).toEqual({ __version: expect.any(Number), entity: { __typename: "Entity", id: "e1", data: 123, __version: expect.any(Number) } });
+      expect(c.data).toEqual({ entity: { __typename: "Entity", id: "e1", data: 123 } });
+      expect(c.fingerprints).toEqual({ __version: expect.any(Number), entity: { __version: expect.any(Number) } });
 
       expect(c.dependencies).toEqual(new Set([
         `${ROOT_ID}.entity({"id":"e1"})`,
@@ -436,7 +456,8 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       });
       const c = documents.materialize({ document: QUERY, variables: { id: "e1" } }) as any;
       expect(c.source).not.toBe("none");
-      expect(c.data).toEqual({ __version: expect.any(Number), entity: { __typename: "Entity", id: "e1", data: true, __version: expect.any(Number) } });
+      expect(c.data).toEqual({ entity: { __typename: "Entity", id: "e1", data: true } });
+      expect(c.fingerprints).toEqual({ __version: expect.any(Number), entity: { __version: expect.any(Number) } });
 
       expect(c.dependencies).toEqual(new Set([
         `${ROOT_ID}.entity({"id":"e1"})`,
@@ -460,7 +481,8 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       });
       const c = documents.materialize({ document: QUERY, variables: { id: "e1" } }) as any;
       expect(c.source).not.toBe("none");
-      expect(c.data).toEqual({ __version: expect.any(Number), entity: { __typename: "Entity", id: "e1", data: null, __version: expect.any(Number) } });
+      expect(c.data).toEqual({ entity: { __typename: "Entity", id: "e1", data: null } });
+      expect(c.fingerprints).toEqual({ __version: expect.any(Number), entity: { __version: expect.any(Number) } });
 
       expect(c.dependencies).toEqual(new Set([
         `${ROOT_ID}.entity({"id":"e1"})`,
@@ -484,7 +506,8 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       });
       const c = documents.materialize({ document: QUERY, variables: { id: "e1" } }) as any;
       expect(c.source).not.toBe("none");
-      expect(c.data).toEqual({ __version: expect.any(Number), entity: { __typename: "Entity", id: "e1", data: { foo: { bar: "baz" } }, __version: expect.any(Number) } });
+      expect(c.data).toEqual({ entity: { __typename: "Entity", id: "e1", data: { foo: { bar: "baz" } } } });
+      expect(c.fingerprints).toEqual({ __version: expect.any(Number), entity: { __version: expect.any(Number) } });
 
       expect(c.dependencies).toEqual(new Set([
         `${ROOT_ID}.entity({"id":"e1"})`,
@@ -519,14 +542,16 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       const c = documents.materialize({ document: QUERY, variables: { id: "e1" } }) as any;
       expect(c.source).not.toBe("none");
       expect(c.data).toEqual({
-        __version: expect.any(Number),
         entity: {
           __typename: "Entity",
           id: "e1",
           dataUrl: "1",
           previewUrl: "2",
-          __version: expect.any(Number),
         },
+      });
+      expect(c.fingerprints).toEqual({
+        __version: expect.any(Number),
+        entity: { __version: expect.any(Number) },
       });
 
       expect(c.dependencies).toEqual(new Set([
@@ -565,8 +590,8 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
         __typename: "User",
         id: "u1",
         email: "u1@example.com",
-        __version: expect.any(Number),
       });
+      expect(c1.fingerprints.user).toEqual({ __version: expect.any(Number) });
 
       // Update the user
       documents.normalize({
@@ -587,8 +612,8 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
         __typename: "User",
         id: "u1",
         email: "u1+updated@example.com",
-        __version: expect.any(Number),
       });
+      expect(c2.fingerprints.user).toEqual({ __version: expect.any(Number) });
 
       expect(c1.dependencies).toEqual(new Set([
         `${ROOT_ID}.user({"id":"u1"})`,
@@ -642,9 +667,11 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
           __typename: "User",
           id: "u1",
           email: "u1@example.com",
-          __version: expect.any(Number),
         },
+      });
+      expect(c1.fingerprints.user.posts.edges[0].node).toEqual({
         __version: expect.any(Number),
+        author: { __version: expect.any(Number) },
       });
 
       expect(c1.data.user.posts.edges[1].node).toEqual({
@@ -656,9 +683,11 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
           __typename: "User",
           id: "u1",
           email: "u1@example.com",
-          __version: expect.any(Number),
         },
+      });
+      expect(c1.fingerprints.user.posts.edges[1].node).toEqual({
         __version: expect.any(Number),
+        author: { __version: expect.any(Number) },
       });
 
       // Update the user
@@ -690,9 +719,11 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
           __typename: "User",
           id: "u1",
           email: "u1+updated@example.com",
-          __version: expect.any(Number),
         },
+      });
+      expect(c2.fingerprints.user.posts.edges[0].node).toEqual({
         __version: expect.any(Number),
+        author: { __version: expect.any(Number) },
       });
       expect(c2.data.user.posts.edges[1].node).toEqual({
         __typename: "Post",
@@ -703,9 +734,11 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
           __typename: "User",
           id: "u1",
           email: "u1+updated@example.com",
-          __version: expect.any(Number),
         },
+      });
+      expect(c2.fingerprints.user.posts.edges[1].node).toEqual({
         __version: expect.any(Number),
+        author: { __version: expect.any(Number) },
       });
     });
 
@@ -758,6 +791,8 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
         __typename: "User",
         id: "u1",
         email: "u1@example.com",
+      });
+      expect(c1.fingerprints.post.nested1.nested2.nested3.author).toEqual({
         __version: expect.any(Number),
       });
 
@@ -780,6 +815,8 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
         __typename: "User",
         id: "u1",
         email: "u1+updated@example.com",
+      });
+      expect(c2.fingerprints.post.nested1.nested2.nested3.author).toEqual({
         __version: expect.any(Number),
       });
     });
