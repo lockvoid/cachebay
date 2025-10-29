@@ -129,6 +129,51 @@ describe("operations", () => {
     const subscription = "subscription OnMessage { messageAdded { id text } }";
     const variables = { roomId: "1" };
 
+    it("supports async ws transport that returns Promise<Observable>", () => {
+      const event = { data: { messageAdded: { id: "1", text: "Async" } } };
+      
+      let onNext: ((data: any) => void) | undefined;
+
+      const mockObservable = {
+        subscribe: vi.fn((observer: any) => {
+          onNext = observer.next;
+          return { unsubscribe: vi.fn() };
+        }),
+      };
+
+      // Mock async transport that returns a Promise
+      const asyncTransport = {
+        http: vi.fn(),
+        ws: vi.fn().mockResolvedValue(mockObservable), // Returns Promise!
+      };
+
+      const asyncOperations = createOperations(
+        { transport: asyncTransport },
+        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr },
+      );
+
+      const observable = asyncOperations.executeSubscription({ query: subscription, variables });
+      observable.subscribe({});
+
+      // Wait for promise to resolve
+      return new Promise(resolve => {
+        setTimeout(() => {
+          // Now trigger the event
+          onNext?.(event);
+
+          // Should have normalized the data
+          expect(mockDocuments.normalize).toHaveBeenCalledWith({
+            document: subscription,
+            variables,
+            data: event.data,
+            rootId: "@subscription.0",
+          });
+
+          resolve(undefined);
+        }, 10);
+      });
+    });
+
     it("sends networkQuery with __typename to transport, not original query", () => {
       const mockObservable = {
         subscribe: vi.fn(),
