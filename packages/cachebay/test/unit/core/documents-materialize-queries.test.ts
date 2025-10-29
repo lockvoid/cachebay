@@ -578,7 +578,13 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
         id: "u1",
         email: "u1@example.com",
       });
-      expect(c1.fingerprints.user).toEqual({ __version: expect.any(Number) });
+      // Check fingerprints structure
+      expect(c1.fingerprints).toEqual({
+        __version: expect.any(Number),
+        user: { __version: expect.any(Number) },
+      });
+      const rootFp1 = c1.fingerprints.__version;
+      const userFp1 = c1.fingerprints.user.__version;
 
       // Update the user
       documents.normalize({
@@ -1601,10 +1607,10 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       },
       {
         __typename: "TagEdge",
-        __version: expect.any(Number),
+
         node: {
           __typename: "Tag",
-          __version: expect.any(Number),
+
           id: "mt2",
           name: "Spam",
         },
@@ -1612,7 +1618,7 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     ]);
     expect(d.data.posts.edges[0].node.aggregations.userTags.pageInfo).toEqual({
       __typename: "PageInfo",
-      __version: expect.any(Number),
+
       startCursor: "ut1",
       endCursor: "ut2",
       hasPreviousPage: false,
@@ -1621,20 +1627,20 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     expect(d.data.posts.edges[0].node.aggregations.userTags.edges).toEqual([
       {
         __typename: "TagEdge",
-        __version: expect.any(Number),
+
         node: {
           __typename: "Tag",
-          __version: expect.any(Number),
+
           id: "ut1",
           name: "Tech",
         },
       },
       {
         __typename: "TagEdge",
-        __version: expect.any(Number),
+
         node: {
           __typename: "Tag",
-          __version: expect.any(Number),
+
           id: "ut2",
           name: "AI",
         },
@@ -1650,13 +1656,13 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     });
     expect(d.data.posts.edges[1].node.audio).toEqual({
       __typename: "Media",
-      __version: expect.any(Number),
+
       key: "audio1",
       mediaUrl: "https://example.com/audio1.mp3",
     });
     expect(d.data.posts.edges[1].node.aggregations.moderationTags.pageInfo).toEqual({
       __typename: "PageInfo",
-      __version: expect.any(Number),
+
       startCursor: "mt3",
       endCursor: "mt3",
       hasPreviousPage: false,
@@ -1665,10 +1671,10 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     expect(d.data.posts.edges[1].node.aggregations.moderationTags.edges).toEqual([
       {
         __typename: "TagEdge",
-        __version: expect.any(Number),
+
         node: {
           __typename: "Tag",
-          __version: expect.any(Number),
+
           id: "mt3",
           name: "Flagged",
         },
@@ -1676,7 +1682,7 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     ]);
     expect(d.data.posts.edges[1].node.aggregations.userTags.pageInfo).toEqual({
       __typename: "PageInfo",
-      __version: expect.any(Number),
+
       startCursor: "ut3",
       endCursor: "ut3",
       hasPreviousPage: false,
@@ -1685,10 +1691,10 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     expect(d.data.posts.edges[1].node.aggregations.userTags.edges).toEqual([
       {
         __typename: "TagEdge",
-        __version: expect.any(Number),
+
         node: {
           __typename: "Tag",
-          __version: expect.any(Number),
+
           id: "ut3",
           name: "News",
         },
@@ -1699,19 +1705,19 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     expect(d.data.posts.aggregations.scoring).toBe(95);
     expect(d.data.posts.aggregations.todayStat).toEqual({
       __typename: "Stat",
-      __version: expect.any(Number),
+
       key: "today",
       views: 1500,
     });
     expect(d.data.posts.aggregations.yesterdayStat).toEqual({
       __typename: "Stat",
-      __version: expect.any(Number),
+
       key: "yesterday",
       views: 1200,
     });
     expect(d.data.posts.aggregations.tags.pageInfo).toEqual({
       __typename: "PageInfo",
-      __version: expect.any(Number),
+
       startCursor: "bt1",
       endCursor: "bt3",
       hasNextPage: true,
@@ -1720,30 +1726,30 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     expect(d.data.posts.aggregations.tags.edges).toEqual([
       {
         __typename: "TagEdge",
-        __version: expect.any(Number),
+
         node: {
           __typename: "Tag",
-          __version: expect.any(Number),
+
           id: "bt1",
           name: "Popular",
         },
       },
       {
         __typename: "TagEdge",
-        __version: expect.any(Number),
+
         node: {
           __typename: "Tag",
-          __version: expect.any(Number),
+
           id: "bt2",
           name: "Trending",
         },
       },
       {
         __typename: "TagEdge",
-        __version: expect.any(Number),
+
         node: {
           __typename: "Tag",
-          __version: expect.any(Number),
+
           id: "bt3",
           name: "Featured",
         },
