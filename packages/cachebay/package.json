@@ -4,8 +4,8 @@
   "license": "MIT",
   "author": "LockVoid",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/core/index.js",
+  "types": "./dist/core/index.d.ts",
   "scripts": {
     "build": "tsdown",
     "coverage": "vitest --run --coverage",
