@@ -1,10 +1,9 @@
+
 # Optimistic updates
 
 Cachebay’s optimistic engine is **layered**. Each `modifyOptimistic(...)` call creates a layer that applies immediately. You can **commit** the layer (keep it) or **revert** only that layer later; Cachebay restores the base and **replays** remaining layers so state stays correct and deterministic.
 
 Works for **entities** and **Relay connections** — no array churn; updates are microtask-batched.
-
----
 
 ## TL;DR
 
@@ -18,7 +17,7 @@ const tx = cachebay.modifyOptimistic((o, { data }) => {
   const c = o.connection({ parent: 'Query', key: 'posts' })
 
   // 3) Prepend an optimistic node
-  c.addNode({ __typename: 'Post', id: data.id ? data.id : 'temp:123456', title: 'Draft' }, { position: 'start' })
+  c.addNode({ __typename: 'Post', id: data?.id ?? 'temp:123456', title: 'Draft' }, { position: 'start' })
 
   // 4) Patch connection pageInfo/extras (shallow-merge)
   c.patch((prev) => ({ pageInfo: { ...prev.pageInfo, hasNextPage: false } }))
@@ -30,8 +29,6 @@ tx.commit({ id: '123' }) // layer applied with server data & remembered
 // Error:
 tx.revert?.() // remove only this layer; remaining layers are replayed
 ```
-
----
 
 ## API surface
 
@@ -75,7 +72,6 @@ tx.revert()
 
 >**Note:** `commit(data?)` **always** drops the layer. If you need the overlay to remain, don’t call `commit()`.
 
----
 
 ## Entities
 
@@ -108,7 +104,6 @@ cachebay.modifyOptimistic((o) => {
 }).commit?.()
 ```
 
----
 
 ## Connections
 
@@ -158,36 +153,117 @@ c.patch({ pageInfo: { hasNextPage: false }, totalCount: 10 })
 - Shallow-merged into the connection object.
 - If you include `pageInfo`, it’s merged **field-by-field** (existing fields preserved unless overridden).
 
-**Examples**
+## Helpers
 
-**Temp → server ID (connection)**
-
-```ts
-const tx = cachebay.modifyOptimistic((o, ctx) => {
-  const c = o.connection({ parent: 'Query', key: 'posts' })
-  const id = ctx.data?.id ?? 'tmp:1'
-  const title = ctx.data?.title ?? 'Creating…'
-
-  c.addNode({ __typename: 'Post', id, title }, { position: 'start' })
-})
-
-// later, when the server returns the real id:
-tx.commit({ id: '123', title: 'Created' })
-```
-
-**Finalize an entity snapshot**
+Find canonical @connection keys for pages that match the filter. Pagination args are ignored; remaining args become connection. This lets you fan-out an optimistic add/remove across every matching connection without guessing filter shapes.
 
 ```ts
-const tx = cachebay.modifyOptimistic((o, ctx) => {
-  const id = ctx.data?.id ?? 'draft:42'
-
-  o.patch({ __typename: 'Post', id }, { title: ctx.data?.title ?? 'Draft' })
+const keys = cachebay.inspect.getConnectionKeys({
+  parent: 'Query', // optional
+  key: 'posts', // optional (field name)
+  // argsFn?: (rawArgs) => boolean // optional predicate on raw args
 })
-
-tx.commit({ id: '42', title: 'Ready' })
 ```
 
----
+## Recipes
+
+**Add Post (prepend into all Query.posts)**
+
+```ts
+const CREATE_POST =
+
+async function createPost(cache, client, input) {
+  // Build optimistic layer
+  const tx = cachebay.modifyOptimistic((o, { data }) => {
+    const keys = cachebay.inspect.getConnectionKeys({ parent: 'Query', key: 'posts' })
+
+    for (const key of keys) {
+      const c = o.connection(key)
+
+      // Use server-passed data in commit() if available later, or a temp node now
+      const node = data ?? { __typename: 'Post', id: `tmp:${Math.random()}`, title: input.title }
+
+      c.addNode(node, { position: 'start' })
+    }
+  })
+
+  try {
+    const result = await client.executeMutation({
+      query: `
+        mutation CreatePost($input: CreatePostInput!) {
+          createPost(input: $input) {
+            post {
+              id
+              title
+            }
+          }
+        }
+      `,
+
+      variables: {
+        input,
+      },
+    })
+
+    // Promote layer using server payload
+    tx.commit(result.data?.createPost?.post)
+
+    return result
+  } catch (e) {
+    tx.revert();
+
+    throw e;
+  }
+}
+```
+
+**Delete Post (remove from all Query.posts)**
+
+```ts
+const DELETE_POST =
+
+async function deletePost(cache, client, id) {
+  const tx = cachebay.modifyOptimistic((o) => {
+    const keys = cachebay.inspect.getConnectionKeys({ parent: 'Query', key: 'posts' })
+
+    for (const key of keys) {
+      o.connection(key).removeNode(`Post:${id}`) // or: o.connection(key).removeNode({ __typename: 'Post', id })
+    }
+  })
+
+  try {
+    const result = await client.executeMutation({
+      query: `
+        mutation DeletePost($id: ID!) {
+          deletePost(id: $id)
+        }
+      `,
+
+      variables: {
+        id,
+      },
+    })
+
+    if (result.error) {
+      throw result.error;
+    }
+
+    tx.commit()
+
+    return result
+  } catch (e) {
+    tx.revert()
+    throw e
+  }
+}
+```
+
+> Notes
+>
+> * Re-adding an existing node updates edge meta **in place** (no reordering).
+> * `pageInfo` updates are merged **field-by-field**.
+> * Edge creation is **O(1)** by using a monotonic edge index (no scans over `edges`).
+> * `cursor` (if provided on `edge`) is treated as meta; Cachebay maintains a cursor→position index for stable inserts/removals.
 
 ## Layering semantics
 
@@ -211,10 +287,8 @@ revert(L2)            → [A]
 
 `*` = optimistic.
 
----
 
 ## See also
 
 - **Relay connections** — modes, de-dup, policy matrix: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)
-- **Fragments** — `identify` / `readFragment` / `writeFragment`: [FRAGMENTS.md](./FRAGMENTS.md)
 - **SSR** — hydrate/dehydrate, first-mount CN behavior: [SSR.md](./SSR.md)
