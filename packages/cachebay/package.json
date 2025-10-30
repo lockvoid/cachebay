@@ -1,5 +1,5 @@
 {
-  "name": "villus-cachebay",
+  "name": "cachebay",
   "version": "0.8.0",
   "license": "MIT",
   "author": "LockVoid",
@@ -17,9 +17,11 @@
     "test:perf": "vitest bench --run"
   },
   "devDependencies": {
+    "@codspeed/vitest-plugin": "^5.0.1",
     "@lockvoid/eslint-config": "^0.7.0",
     "@nuxt/test-utils": "^3.19.2",
     "@playwright/test": "^1.55.0",
+    "@vitejs/plugin-vue": "^6.0.1",
     "@vitest/coverage-v8": "3.2.4",
     "@vue/test-utils": "^2.4.6",
     "eslint": "^9.31.0",
@@ -33,14 +35,12 @@
     "tsdown": "^0.15.6",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.41.0",
-    "villus": "^3.5.2",
     "vitest": "^3.2.4",
     "vue": "^3.5.18",
     "vue-router": "^4.5.1"
   },
   "peerDependencies": {
     "graphql": "^16.11.0",
-    "villus": "^3.5.2",
     "vue": "^3.5.18"
   },
   "exports": {
