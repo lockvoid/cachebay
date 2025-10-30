@@ -1,4 +1,3 @@
-
 # Optimistic updates
 
 Cachebay’s optimistic engine is **layered**. Each `modifyOptimistic(...)` call creates a layer that applies immediately. You can **commit** the layer (keep it) or **revert** only that layer later; Cachebay restores the base and **replays** remaining layers so state stays correct and deterministic.
@@ -11,7 +10,7 @@ Works for **entities** and **Relay connections** — no array churn; updates are
 
 ```ts
 // Start a layer
-const tx = cache.modifyOptimistic((o, { data }) => {
+const tx = cachebay.modifyOptimistic((o, { data }) => {
   // 1) Entity: patch fields (normalized by __typename:id)
   o.patch('Post:1', { title: 'Draft' }, { mode: 'merge' })
 
@@ -37,7 +36,7 @@ tx.revert?.() // remove only this layer; remaining layers are replayed
 ## API surface
 
 ```ts
-const tx = cache.modifyOptimistic(
+const tx = cachebay.modifyOptimistic(
   (o, ctx: { phase: 'optimistic' | 'commit'; data?: any }) => {
     // Entities
     o.patch(target, partialOrUpdater, { mode?: 'merge' | 'replace' })
@@ -94,17 +93,17 @@ tx.revert()
 
 ```ts
 // Merge/rename
-cache.modifyOptimistic((o) => {
+cachebay.modifyOptimistic((o) => {
   o.patch('Post:42', { title: 'Renaming…' }, { mode: 'merge' })
 }).commit?.()
 
 // Replace entirely
-cache.modifyOptimistic((o) => {
+cachebay.modifyOptimistic((o) => {
   o.patch('Post:42', { title: 'Fresh', tags: [] }, { mode: 'replace' })
 }).commit?.()
 
 // Delete
-cache.modifyOptimistic((o) => {
+cachebay.modifyOptimistic((o) => {
   o.delete('Post:42')
 }).commit?.()
 ```
@@ -164,7 +163,7 @@ c.patch({ pageInfo: { hasNextPage: false }, totalCount: 10 })
 **Temp → server ID (connection)**
 
 ```ts
-const tx = cache.modifyOptimistic((o, ctx) => {
+const tx = cachebay.modifyOptimistic((o, ctx) => {
   const c = o.connection({ parent: 'Query', key: 'posts' })
   const id = ctx.data?.id ?? 'tmp:1'
   const title = ctx.data?.title ?? 'Creating…'
@@ -179,7 +178,7 @@ tx.commit({ id: '123', title: 'Created' })
 **Finalize an entity snapshot**
 
 ```ts
-const tx = cache.modifyOptimistic((o, ctx) => {
+const tx = cachebay.modifyOptimistic((o, ctx) => {
   const id = ctx.data?.id ?? 'draft:42'
 
   o.patch({ __typename: 'Post', id }, { title: ctx.data?.title ?? 'Draft' })

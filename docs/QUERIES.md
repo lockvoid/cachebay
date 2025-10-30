@@ -20,7 +20,7 @@ Reads a query result from the cache synchronously. Returns the cached data if av
 
 **Imperative**
 ```ts
-const data = cache.readQuery({
+const data = cachebay.readQuery({
   query: POSTS_QUERY,
   variables: { first: 10, after: null }
 })
@@ -68,7 +68,7 @@ Writes a query result into the cache immediately. Normalizes the data, updates e
 
 **Imperative**
 ```ts
-cache.writeQuery({
+cachebay.writeQuery({
   query: POSTS_QUERY,
   variables: { first: 10 },
   data: {
@@ -128,7 +128,7 @@ const handleCreatePost = async (newPost) => {
 
 ## Watch Query
 
-Subscribes to changes for a specific query in the cache. Returns an unsubscribe function. The callback is invoked whenever the query result changes through network responses, mutations, optimistic updates, or manual cache writes.
+Subscribes to changes for a specific query in the cachebay. Returns an unsubscribe function. The callback is invoked whenever the query result changes through network responses, mutations, optimistic updates, or manual cache writes.
 
 **Options:**
 - `query` - GraphQL query string or DocumentNode
@@ -140,7 +140,7 @@ Subscribes to changes for a specific query in the cache. Returns an unsubscribe 
 
 **Imperative**
 ```ts
-const { unsubscribe } = cache.watchQuery({
+const { unsubscribe } = cachebay.watchQuery({
   query: POSTS_QUERY,
   variables: { first: 10 },
   onData: (data) => {

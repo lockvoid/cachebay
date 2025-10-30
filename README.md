@@ -151,10 +151,10 @@ Server-side rendering support through cache snapshots that enable seamless hydra
 
 ```ts
 // Server:
-const snapshot = cache.dehydrate()
+const snapshot = cachebay.dehydrate()
 
 // Client:
-cache.hydrate(snapshot)
+cachebay.hydrate(snapshot)
 ```
 
 > On first client mount after `hydrate`, **cache-and-network** renders from cache **without a duplicate request**. After that, it behaves normally (cached + revalidate).
@@ -335,7 +335,7 @@ See **[Fragments](./docs/FRAGMENTS.md)** for the complete API (`identify`, `read
 Layered optimistic updates let you stage cache changes immediately while a request is in flight. You can patch/delete **entities** and edit **connections** (add/remove/patch) with zero array churn—then **finalize** with `commit(data?)` or **undo** with `revert()`.
 
 ```ts
-const tx = cache.modifyOptimistic((o, ctx) => {
+const tx = cachebay.modifyOptimistic((o, ctx) => {
   // Entities
   o.patch('Post:999', { title: 'New (optimistic)' })
   o.delete('Post:999')

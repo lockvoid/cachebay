@@ -1,10 +1,8 @@
-# INSTALLATION
+# Installation
 
-Install Cachebay by running:
+Install Cachebay and its peer dependency with your package manager:
 
-Install:
-
-```/dev/null/install.md#L1-6
+```bash
 # pnpm
 pnpm add cachebay graphql
 
@@ -15,8 +13,9 @@ yarn add cachebay graphql
 npm install --save cachebay graphql
 ```
 
-Notes
-- Cachebay is ESM-friendly and tree-shakable.
-- Cachebay is compatible with Vue, Svelte. Agnostic exports lives under 'cachebay', and Vue and Svelte exports lives under 'cachebay/vue' and 'cachebay/svelte' respectively.
+- Vue, Svelte adapters built-in
+- Framework-agnostic core
+- ESM-friendly & tree-shakable (≈16 kB gzipped)
+- TypeScript-ready
 
-Next, continue to `SETUP.md` to learn how to create and configure a Cachebay.
+Next, continue to `SETUP.md` for Cachebay configuration.

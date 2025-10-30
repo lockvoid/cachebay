@@ -15,10 +15,10 @@ Cachebay is **request-scoped** on the server and **instance-scoped** on the clie
 
 ```ts
 // Server-side
-const snapshot = cache.dehydrate()
+const snapshot = cachebay.dehydrate()
 
 // Client-side
-cache.hydrate(snapshot)
+cachebay.hydrate(snapshot)
 ```
 
 ---
@@ -63,7 +63,7 @@ const cache = createCachebay()
 // Render Your App With This Cache Installed (details depend on your SSR stack)
 
 // Serialize Snapshot
-const snapshot = cache.dehydrate()
+const snapshot = cachebay.dehydrate()
 
 // Embed `snapshot` Into HTML Payload (e.g. window.__CACHEBAY__ = {...})
 ```
@@ -84,7 +84,7 @@ const cache = createCachebay({
 
 // Hydrate Once If Provided
 if ((window as any).__CACHEBAY__) {
-  cache.hydrate((window as any).__CACHEBAY__)
+  cachebay.hydrate((window as any).__CACHEBAY__)
 }
 
 // Villus Client
@@ -120,7 +120,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   // Persist Per-Request Snapshot On The Server
   if (import.meta.server) {
     nuxtApp.hook('app:rendered', () => {
-      useState('cachebay').value = cache.dehydrate()
+      useState('cachebay').value = cachebay.dehydrate()
     })
   }
 
@@ -129,7 +129,7 @@ export default defineNuxtPlugin((nuxtApp) => {
     const state = useState('cachebay').value
 
     if (state) {
-      cache.hydrate(state);
+      cachebay.hydrate(state);
     }
   }
 

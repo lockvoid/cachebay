@@ -1,12 +1,5 @@
-cachebay/docs/SETUP.md#L1-220
-# Setup — createCachebay (agnostic core)
+# Setup
 
-This page explains how to create and configure the Cachebay cache (the agnostic core). Keep this page as the authoritative setup reference: how to call `createCachebay`, what the important options mean, how Cachebay instances are scoped (server vs client), and short framework examples for Vue and Nuxt.
-
-See also:
-- `INSTALLATION.md` — install instructions
-- `QUICK_START.md` — one-shot runnable example
-- `FRAGMENTS.md`, `QUERIES.md`, `OPTIMISTIC_UPDATES.md`, `RELAY_CONNECTIONS.md`, `SSR.md` — deeper topics
 
 ---
 
@@ -81,48 +74,49 @@ Short server/client flow:
 // Server (per request)
 const cache = createCachebay({ transport: { http } })
 // render app -> queries run against cache
-const snapshot = cache.dehydrate() // serialize and embed
+const snapshot = cachebay.dehydrate() // serialize and embed
 
 // Client
 const cache = createCachebay({ transport: { http } })
-cache.hydrate(window.__CACHEBAY__) // if present, before mount
+cachebay.hydrate(window.__CACHEBAY__) // if present, before mount
 ```
 
 ---
 
-## Vue adapter (short)
+## Vue
 
 The Vue adapter is available at the `cachebay/vue` entrypoint. It wraps the agnostic instance in a tiny plugin that `provide`s the cache to your app, and ships composables (`useQuery`, `useMutation`, `useFragment`, `useSubscription`) that use the cache under the hood.
 
 Install & provide the plugin:
 
-```/dev/null/vue-main.ts#L1-24
+```
 import { createApp } from 'vue'
 import { createCachebay } from 'cachebay/vue'
 import App from './App.vue'
 
-const cache = createCachebay({ transport: { http: async ({ query, variables }) => fetch('/graphql', { method:'POST', body:JSON.stringify({query,variables}) }).then(r=>r.json()) } })
-createApp(App).use(cache).mount('#app')
+const cachebay = createCachebay({
+  transport: { http:
+    async ({ query, variables }) => {
+      return fetch('/graphql', { method:'POST', body:JSON.stringify({query,variables}) }).then(response => response.json()) } });
+    }
+});
+
+createApp(App).use(cachebay).mount('#app')
 ```
 
 In components use:
 
-```/dev/null/vue-component.md#L1-20
+```
 import { useQuery } from 'cachebay/vue'
 
 const { data, error, isFetching, refetch } = useQuery({
   query: `query Posts { posts { __typename id title } }`,
-  cachePolicy: 'cache-and-network'
 })
 ```
 
-Notes:
-- The Vue plugin does not change cache semantics — it only provides integration (DI + composables).
-- `useQuery` composable wraps `watchQuery` + `executeQuery` and supports Suspense, lazy mode, reactive variables, and refetch.
-
 ---
 
-## Nuxt example (short)
+### Nuxt example
 
 For Nuxt (server + client hydration), create the cache per server request and persist the snapshot to Nuxt state; hydrate on the client:
 
@@ -133,14 +127,14 @@ export default defineNuxtPlugin((nuxtApp) => {
   // Server: store snapshot after render
   if (process.server) {
     nuxtApp.hook('app:rendered', () => {
-      useState('cachebay').value = cache.dehydrate()
+      useState('cachebay').value = cachebay.dehydrate()
     })
   }
 
   // Client: hydrate once
   if (process.client) {
     const state = useState('cachebay').value
-    if (state) cache.hydrate(state)
+    if (state) cachebay.hydrate(state)
   }
 
   nuxtApp.vueApp.use(cache)
@@ -148,16 +142,3 @@ export default defineNuxtPlugin((nuxtApp) => {
 ```
 
 ---
-
-## Where to go next
-
-- `QUICK_START.md` — copy-paste runnable example
-- Adapter docs:
-  - `docs/adapters/VUE.md` — full Vue API & composable reference
-- Deep topics:
-  - `FRAGMENTS.md`, `QUERIES.md`, `OPTIMISTIC_UPDATES.md`, `RELAY_CONNECTIONS.md`, `SSR.md`
-
-If you want, I can now:
-- Create `QUICK_START.md` (single-file example).
-- Expand `SETUP.md` into a full `CREATE_CACHEBAY.md` with typed option shapes and expanded examples.
-Which would you prefer?

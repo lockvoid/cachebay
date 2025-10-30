@@ -19,7 +19,7 @@ Computes a unique entity key for a given object based on its `__typename` and id
 
 **Imperative**
 ```ts
-const key = cache.identify({ __typename: 'Post', id: '42' }) // → "Post:42" | null
+const key = cachebay.identify({ __typename: 'Post', id: '42' }) // → "Post:42" | null
 ```
 
 **Composable**
@@ -45,7 +45,7 @@ Retrieves a normalized entity from the cache as a reactive Vue proxy. The return
 
 **Imperative**
 ```ts
-const post = cache.readFragment('Post:42', PostFragment, 'PostDetails', { locale: 'en' })
+const post = cachebay.readFragment('Post:42', PostFragment, 'PostDetails', { locale: 'en' })
 ```
 
 **Composable**
@@ -98,7 +98,7 @@ Updates a single normalized entity in the cache immediately. Accepts an entity k
 
 **Imperative**
 ```ts
-cache.writeFragment({
+cachebay.writeFragment({
   id: 'Post:42',
   fragment: PostFragment,
   fragmentName: 'PostUpdate',
@@ -164,7 +164,7 @@ writeFragment({
 
 ## Watch Fragment
 
-Subscribes to changes for a specific entity in the cache. Returns an unsubscribe function. The callback is invoked whenever the entity or its dependencies change through queries, mutations, optimistic updates, or fragment writes.
+Subscribes to changes for a specific entity in the cachebay. Returns an unsubscribe function. The callback is invoked whenever the entity or its dependencies change through queries, mutations, optimistic updates, or fragment writes.
 
 **Options:**
 - `id` - Entity key in format `"Type:id"`
@@ -176,7 +176,7 @@ Subscribes to changes for a specific entity in the cache. Returns an unsubscribe
 
 **Imperative**
 ```ts
-const { unsubscribe } = cache.watchFragment({
+const { unsubscribe } = cachebay.watchFragment({
   id: 'Post:42',
   fragment: PostFragment,
   fragmentName: 'PostDetails',

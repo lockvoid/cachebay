@@ -1,6 +1,6 @@
 # Composables
 
-Cachebay ships a small set of Vue composables that sit on top of the normalized cache. They are available **after** you install Cachebay as a Vue plugin:
+Cachebay ships a small set of Vue composables that sit on top of the normalized cachebay. They are available **after** you install Cachebay as a Vue plugin:
 
 ```ts
 import { createApp } from 'vue'

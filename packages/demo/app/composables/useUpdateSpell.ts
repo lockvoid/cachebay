@@ -23,7 +23,7 @@ export const useUpdateSpell = () => {
 
   const execute = async (variables) => {
     if (settings.optimistic) {
-      const tx = cache.modifyOptimistic((state) => {
+      const tx = cachebay.modifyOptimistic((state) => {
         state.patch(`Spell:${variables.input.id}`, variables.input); // ...or state.patch({ __typename: "Spell", id: variables.input.id }, variables.input);
       });
 
