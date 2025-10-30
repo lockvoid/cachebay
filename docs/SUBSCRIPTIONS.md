@@ -1,3 +1,4 @@
+
 # Subscriptions
 
 **Streaming updates** with Cachebay — agnostic API and Vue bindings.
@@ -26,9 +27,9 @@ const observable = cachebay.executeSubscription({
 **Example**
 
 ```ts
-const sub = cachebay.executeSubscription({
+const subscription = cachebay.executeSubscription({
   query: `
-    subscription OnPostUpdated($id: ID!) {
+    subscription PostUpdated($id: ID!) {
       postUpdated(id: $id) {
         post { id title }
       }
@@ -44,7 +45,7 @@ const sub = cachebay.executeSubscription({
   },
 });
 
-const subscription = sub.subscribe({
+const { unsubscribe } = subscription.subscribe({
   next: (result) => {
     if (result.error) {
       console.error(result.error);
@@ -62,14 +63,14 @@ const subscription = sub.subscribe({
   },
 });
 
-subscription.unsubscribe();
+unsubscribe();
 ```
 
 ---
 
-## Transport setup (you provide these)
+## Transport setup
 
-You provide transports: `transport.http` for queries/mutations, and `transport.ws` for subscriptions (can be backed by WebSocket **or** SSE).
+Cachebay should be provided with transports: `transport.http` for queries/mutations, and `transport.ws` for subscriptions (can be backed by WebSocket **or** SSE).
 
 Pass it when creating Cachebay:
 
@@ -152,12 +153,6 @@ export const createGraphqlSseTransport = (url) => {
   };
 };
 ```
-
-> Transport expectations (lightweight):
-> - `http({ query, variables })` → returns `{ data?, errors? }`.
-> - `ws({ query, variables })` → returns an **observable-like** with `subscribe({ next, error, complete })` and `unsubscribe()`.
-
----
 
 ## Vue
 

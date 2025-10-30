@@ -175,14 +175,14 @@ describe("useSubscription", () => {
     expect(subscriptionResult.isFetching.value).toBe(false);
   });
 
-  it("pauses subscription when pause is true", async () => {
+  it("does not start subscription when enabled is false", async () => {
     let subscriptionResult: any;
 
     const App = defineComponent({
       setup() {
         subscriptionResult = useSubscription({
           query: SUBSCRIPTION,
-          pause: true,
+          enabled: false,
         });
         return () => h("div");
       },
@@ -207,15 +207,15 @@ describe("useSubscription", () => {
     expect(subscriptionResult.isFetching.value).toBe(false);
   });
 
-  it("reacts to reactive pause changes", async () => {
-    const isPaused = ref(true);
+  it("reacts to reactive enabled changes", async () => {
+    const isEnabled = ref(false);
     let subscriptionResult: any;
 
     const App = defineComponent({
       setup() {
         subscriptionResult = useSubscription({
           query: SUBSCRIPTION,
-          pause: isPaused,
+          enabled: isEnabled,
         });
         return () => h("div");
       },
@@ -236,8 +236,8 @@ describe("useSubscription", () => {
     await nextTick();
     expect(mockTransport.ws).not.toHaveBeenCalled();
 
-    // Unpause
-    isPaused.value = false;
+    // Enable
+    isEnabled.value = true;
     await nextTick();
     await new Promise((resolve) => setTimeout(resolve, 10));
 

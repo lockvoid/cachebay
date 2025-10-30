@@ -10,8 +10,8 @@ export interface UseSubscriptionOptions<TData = any, TVars = any> {
   query: DocumentNode | string;
   /** Subscription variables (can be reactive) */
   variables?: MaybeRefOrGetter<TVars>;
-  /** Pause subscription if true (can be reactive) */
-  pause?: MaybeRefOrGetter<boolean>;
+  /** Enable subscription execution (default: true, can be reactive) */
+  enabled?: MaybeRefOrGetter<boolean>;
 }
 
 /**
@@ -47,7 +47,7 @@ export function useSubscription<TData = any, TVars = any>(
    */
   const setupSubscription = async () => {
     const vars = toValue(options.variables) || ({} as TVars);
-    const isPaused = toValue(options.pause);
+    const isEnabled = toValue(options.enabled) ?? true;
 
     // Cleanup previous subscription
     if (unsubscribe) {
@@ -55,7 +55,7 @@ export function useSubscription<TData = any, TVars = any>(
       unsubscribe = null;
     }
 
-    if (isPaused) {
+    if (!isEnabled) {
       isFetching.value = false;
       return;
     }
@@ -95,9 +95,9 @@ export function useSubscription<TData = any, TVars = any>(
     }
   };
 
-  // Watch for variable and pause changes
+  // Watch for variable and enabled changes
   watch(
-    () => [toValue(options.variables), toValue(options.pause)],
+    () => [toValue(options.variables), toValue(options.enabled) ?? true],
     () => {
       setupSubscription();
     },
