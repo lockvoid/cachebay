@@ -9,7 +9,7 @@
 
 ## `executeMutation` (agnostic)
 
-Sends a write to the server and merges the result into the normalized cache.
+Sends a write to the server and merges the result into the normalized cachebay.
 
 **Options**
 
@@ -32,15 +32,15 @@ interface OperationResult<TData = any> {
 **Example**
 
 ```ts
-const { data, error } = await cache.executeMutation({
+const { data, error } = await cachebay.executeMutation({
   query: `
     mutation CreatePost($input: CreatePostInput!) {
       createPost(input: $input) {
-      post {
-        id
-        title
+        post {
+          id
+          title
+        }
       }
-    }
     }
   `,
 
@@ -66,20 +66,18 @@ Use `modifyOptimistic` — it understands entities and Relay connections and avo
 **Minimal example (entity patch)**
 
 ```ts
-import { useMutation, useCachebay } from 'cachebay/vue'
-
-const cachebay = useCachebay()
-
-const { execute } = useMutation(`
-  mutation UpdatePost($input: UpdatePostInput!) {
-    updatePost(input: $input) {
-      post {
-        id
-        title
+const { execute } = useMutation(
+  query: `
+    mutation UpdatePost($input: UpdatePostInput!) {
+      updatePost(input: $input) {
+        post {
+          id
+          title
+        }
       }
     }
-  }
-`)
+  `,
+)
 
 // 1) Start optimistic layer
 const tx = cachebay.modifyOptimistic((o) => {
@@ -88,10 +86,27 @@ const tx = cachebay.modifyOptimistic((o) => {
 
 // 2) Send network write and finalize
 try {
-  const result = await execute({ input: { id: 'p1', title: 'Real Title' } })
+  const result = await cachebay.executeMutation({
+    query: `
+      mutation UpdatePost($input: UpdatePostInput!) {
+        updatePost(input: $input) {
+          post {
+            id
+            title
+          }
+        }
+      }
+    `,
+
+    variables: {
+      input: { id: 'p1', title: 'Real Title' },
+    }
+  })
+
   tx.commit(result.data?.updatePost?.post)
 } catch (e) {
-  tx.revert()
+  tx.revert();
+
   throw e
 }
 ```
@@ -119,16 +134,18 @@ A lightweight wrapper that exposes reactive state and an `execute` function.
 <script setup lang="ts">
 import { useMutation } from 'cachebay/vue'
 
-const { data, error, isFetching, execute } = useMutation(`
-  mutation CreatePost($input: CreatePostInput!) {
-    createPost(input: $input) {
-      post {
-        id
-        title
+const { data, error, isFetching, execute } = useMutation(
+  query: `
+    mutation CreatePost($input: CreatePostInput!) {
+      createPost(input: $input) {
+        post {
+          id
+          title
+        }
       }
     }
-  }
-`)
+  `,
+)
 
 await execute({
   input: { id: 'p1', title: 'New post' },
@@ -169,17 +186,16 @@ export const useCreatePost = () => {
         if (data?.post) {
           c.addNode(data.post, { position: 'start' })
         } else {
-          c.addNode(
-            { __typename: 'Post', id: variables.input.id ?? `tmp:${Date.now()}`, title: variables.input.title },
-            { position: 'start' }
-          )
+          c.addNode({ __typename: 'Post', id: variables.input.id ?? `tmp:${Date.now()}`, title: variables.input.title })
         }
       }
     })
 
     try {
       const result = await createPost.execute({ input: variables.input })
+
       tx?.commit(result.data?.createPost?.post)
+
       return result
     } catch (error) {
       tx?.revert()
@@ -197,11 +213,13 @@ export const useCreatePost = () => {
 export const useDeletePost = () => {
   const cachebay = useCachebay()
 
-  const deletePost = useMutation(`
-    mutation DeletePost($input: DeletePostInput!) {
-      deletePost(input: $input)
-    }
-  `)
+  const deletePost = useMutation({
+    query:`
+      mutation DeletePost($input: DeletePostInput!) {
+        deletePost(input: $input)
+      }
+    `,
+  })
 
   const execute = async (variables: { input: { id: string } }) => {
     const tx = cachebay.modifyOptimistic((o) => {
@@ -215,11 +233,14 @@ export const useDeletePost = () => {
 
     try {
       const result = await deletePost.execute({ input: variables.input })
+
       tx?.commit()
-      return result
+
+      return result;
     } catch (error) {
       tx?.revert()
-      throw error
+
+      throw error;
     }
   }
 
@@ -250,10 +271,10 @@ export const useUpdatePost = () => {
 
       if (data?.post) {
         // Commit phase: merge server payload
-        o.patch(id, data.post, { mode: 'merge' })
+        o.patch(id, data.post);
       } else {
         // Optimistic phase: merge what we know from variables
-        o.patch( id, variables.input),
+        o.patch(id, variables.input),
         )
       }
     })

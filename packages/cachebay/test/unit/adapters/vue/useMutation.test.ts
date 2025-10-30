@@ -27,7 +27,7 @@ describe("useMutation", () => {
 
     const App = defineComponent({
       setup() {
-        mutationResult = useMutation(MUTATION);
+        mutationResult = useMutation({ query: MUTATION });
         return () => h("div");
       },
     });
@@ -55,7 +55,7 @@ describe("useMutation", () => {
 
     const App = defineComponent({
       setup() {
-        mutationResult = useMutation(MUTATION);
+        mutationResult = useMutation({ query: MUTATION });
         return () => h("div");
       },
     });
@@ -100,7 +100,7 @@ describe("useMutation", () => {
 
     const App = defineComponent({
       setup() {
-        mutationResult = useMutation(MUTATION);
+        mutationResult = useMutation({ query: MUTATION });
         return () => h("div");
       },
     });
@@ -143,7 +143,7 @@ describe("useMutation", () => {
 
     const App = defineComponent({
       setup() {
-        mutationResult = useMutation(MUTATION);
+        mutationResult = useMutation({ query: MUTATION });
         return () => h("div");
       },
     });
@@ -175,7 +175,7 @@ describe("useMutation", () => {
 
     const App = defineComponent({
       setup() {
-        mutationResult = useMutation(MUTATION);
+        mutationResult = useMutation({ query: MUTATION });
         return () => h("div");
       },
     });
@@ -204,7 +204,7 @@ describe("useMutation", () => {
 
     const App = defineComponent({
       setup() {
-        mutationResult = useMutation(MUTATION);
+        mutationResult = useMutation({ query: MUTATION });
         return () => h("div");
       },
     });
@@ -251,7 +251,7 @@ describe("useMutation", () => {
 
     const App = defineComponent({
       setup() {
-        mutationResult = useMutation(MUTATION);
+        mutationResult = useMutation({ query: MUTATION });
         return () => h("div");
       },
     });

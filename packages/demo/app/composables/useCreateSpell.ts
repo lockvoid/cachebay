@@ -16,9 +16,9 @@ export const CREATE_SPELL_MUTATION = `
 export const useCreateSpell = () => {
   const settings = useSettings();
 
-  const cache = useCachebay();
+  const cachebay = useCachebay();
 
-  const createSpell = useMutation(CREATE_SPELL_MUTATION);
+  const createSpell = useMutation({ query: CREATE_SPELL_MUTATION });
 
   const execute = async (variables) => {
     if (settings.optimistic) {
@@ -36,22 +36,17 @@ export const useCreateSpell = () => {
         });
       });
 
-      try {
-        const result = await createSpell.execute({ input: variables.input })
-
-        tx?.commit(result.data.createSpell.spell);
-
-        return result;
-      } catch (error) {
-        tx?.revert();
-
-        throw error;
-      }
+      const result = await createSpell.execute({ input: variables.input }).then((result, error) => {
+        if (result.error || error) {
+          tx?.revert();
+        } else {
+          tx?.commit();
+        }
+      });
     } else {
       return createSpell.execute({ input: variables.input });
     }
   };
 
   return { ...createSpell, execute };
-
 };

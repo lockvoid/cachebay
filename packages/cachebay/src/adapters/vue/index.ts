@@ -7,7 +7,7 @@ export { useQuery } from "./useQuery";
 export type { UseQueryOptions, UseQueryReturn, BaseUseQueryReturn } from "./useQuery";
 
 export { useMutation } from "./useMutation";
-export type { UseMutationReturn } from "./useMutation";
+export type { UseMutationOptions, UseMutationReturn } from "./useMutation";
 
 export { useSubscription } from "./useSubscription";
 export type { UseSubscriptionOptions, UseSubscriptionReturn } from "./useSubscription";

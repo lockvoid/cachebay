@@ -49,7 +49,7 @@ describe("Mutations", () => {
       setup() {
         const { data } = useQuery({ query: operations.USER_QUERY, variables: { id: "u1" }, cachePolicy: "cache-first" });
 
-        const { execute } = useMutation(operations.UPDATE_USER_MUTATION);
+        const { execute } = useMutation({ query: operations.UPDATE_USER_MUTATION });
 
         const run = async () => {
           return execute({
@@ -147,7 +147,7 @@ describe("Mutations", () => {
 
     const Cmp = defineComponent({
       setup() {
-        const { execute } = useMutation(CREATE_UPLOAD_MUTATION);
+        const { execute } = useMutation({ query: CREATE_UPLOAD_MUTATION });
 
         const run = async () => {
           return execute({

@@ -10,9 +10,9 @@ export const DELETE_SPELL = `
 export const useDeleteSpell = () => {
   const settings = useSettings();
 
-  const deleteSpell = useMutation(DELETE_SPELL);
+  const deleteSpell = useMutation({ query: DELETE_SPELL });
 
-  const cache = useCachebay();
+  const cachebay = useCachebay();
 
   const execute = async (variables) => {
     if (settings.optimistic) {
@@ -26,14 +26,13 @@ export const useDeleteSpell = () => {
         });
       });
 
-      return deleteSpell.execute({ input: variables.input })
-        .then((result, error) => {
-          if (result.error || error) {
-            tx?.revert();
-          } else {
-            tx?.commit();
-          }
-        });
+      return deleteSpell.execute({ input: variables.input }).then((result, error) => {
+        if (result.error || error) {
+          tx?.revert();
+        } else {
+          tx?.commit();
+        }
+      });
     } else {
       return deleteSpell.execute({ id: variables.id });
     }

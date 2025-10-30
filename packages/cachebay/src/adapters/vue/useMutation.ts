@@ -4,6 +4,14 @@ import type { OperationResult } from "../../core";
 import type { DocumentNode } from "graphql";
 
 /**
+ * useMutation options
+ */
+export interface UseMutationOptions<TData = any, TVars = any> {
+  /** GraphQL mutation document */
+  query: DocumentNode | string;
+}
+
+/**
  * useMutation return value
  */
 export interface UseMutationReturn<TData = any, TVars = any> {
@@ -19,11 +27,11 @@ export interface UseMutationReturn<TData = any, TVars = any> {
 
 /**
  * Reactive GraphQL mutation hook
- * @param mutation - GraphQL mutation document
+ * @param options - Mutation options with query
  * @returns Mutation state and execute function
  */
 export function useMutation<TData = any, TVars = any>(
-  mutation: DocumentNode | string,
+  options: UseMutationOptions<TData, TVars>,
 ): UseMutationReturn<TData, TVars> {
   const client = useCachebay();
 
@@ -40,7 +48,7 @@ export function useMutation<TData = any, TVars = any>(
 
     try {
       const result = await client.executeMutation<TData, TVars>({
-        query: mutation,
+        query: options.query,
         variables: variables || ({} as TVars),
       });
 

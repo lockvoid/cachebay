@@ -17,9 +17,9 @@ export const UPDATE_SPELL_MUTATION = `
 export const useUpdateSpell = () => {
   const settings = useSettings();
 
-  const cache = useCachebay();
+  const cachebay = useCachebay();
 
-  const updateSpell = useMutation(UPDATE_SPELL_MUTATION);
+  const updateSpell = useMutation({ query: UPDATE_SPELL_MUTATION });
 
   const execute = async (variables) => {
     if (settings.optimistic) {
@@ -27,14 +27,13 @@ export const useUpdateSpell = () => {
         state.patch(`Spell:${variables.input.id}`, variables.input); // ...or state.patch({ __typename: "Spell", id: variables.input.id }, variables.input);
       });
 
-      updateSpell.execute({ input: variables.input })
-        .then((result, error) => {
-          if (result.error || error) {
-            tx?.revert();
-          } else {
-            tx?.commit();
-          }
-        });
+      updateSpell.execute({ input: variables.input }).then((result, error) => {
+        if (result.error || error) {
+          tx?.revert();
+        } else {
+          tx?.commit(result.data.updateSpell.spell);
+        }
+      });
     } else {
       return updateSpell.execute({ input: variables.input });
     }
