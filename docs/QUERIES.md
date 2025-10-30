@@ -318,7 +318,7 @@ Deep dive: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)
 
 ## Next steps
 
-Continue to `MUTATIONS.md` to learn about write network data and optimistic updates.
+Continue to `FRAGMENTS.md` to learn about partial data reads and writes.
 
 ## See also
 
