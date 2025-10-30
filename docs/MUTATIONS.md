@@ -1,13 +1,13 @@
 # Mutations
 
-**Writing data** with Cachebay. Includes the agnostic API and Vue bindings.
+**Writing data** with Cachebay.
 
-* Agnostic API: `executeMutation`
+* Core API: `executeMutation`
 * Vue: `useMutation` (from `cachebay/vue`)
 
 ---
 
-## `executeMutation` (agnostic)
+## `executeMutation`
 
 Sends a write to the server and merges the result into the normalized cachebay.
 

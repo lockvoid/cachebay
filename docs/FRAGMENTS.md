@@ -1,15 +1,15 @@
 # Fragments
 
-**Reading & tracking partial entity data** with Cachebay, agnostic and Vue bindings.
+**Reading & tracking partial entity data** with Cachebay.
 
-* Agnostic API: `readFragment`, `writeFragment`, `watchFragment`
+* Core API: `readFragment`, `writeFragment`, `watchFragment`
 * Vue: `useFragment` (from `cachebay/vue`)
 
 > IDs are canonical: `"Typename:value"` (e.g., `"Post:p1"`). With interfaces enabled, interface IDs (e.g., `"Post:123"`) resolve to concrete types once known.
 
 ---
 
-## `readFragment` (agnostic)
+## `readFragment`
 
 Materializes a fragment for a **single entity** from cache only.
 
@@ -43,7 +43,7 @@ const post = cache.readFragment<{ id: string; title: string }>({
 
 ---
 
-## `writeFragment` (agnostic)
+## `writeFragment`
 
 Writes raw data for a **single entity** under its record id.
 
@@ -82,7 +82,7 @@ cache.writeFragment({
 
 ---
 
-## `watchFragment` (agnostic)
+## `watchFragment`
 
 Watches a fragment and **pushes updates** when dependent fields of that entity change. Effectively recycles views for rendering performance.
 

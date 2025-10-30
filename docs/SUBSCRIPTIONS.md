@@ -1,12 +1,12 @@
 
 # Subscriptions
 
-**Streaming updates** with Cachebay — agnostic API and Vue bindings.
+**Streaming updates** with Cachebay.
 
-* Agnostic API: `executeSubscription`
+* Core API: `executeSubscription`
 * Vue: `useSubscription` (from `cachebay/vue`)
 
-## `executeSubscription` (agnostic)
+## `executeSubscription`
 
 Starts a subscription and returns an observable you can subscribe to.
 

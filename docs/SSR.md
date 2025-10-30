@@ -63,7 +63,7 @@ Some Suspense setups can re-run the same query immediately after a result. Cache
 - A repeat execution of the same **op key** within that window is served **from cache** and **does not refetch**.
 - Applies to **cache-and-network** and **network-only** (when cached data exists).
 
-## Agnostic wiring
+## Basic wiring
 
 ```ts
 import { createCachebay } from 'cachebay'

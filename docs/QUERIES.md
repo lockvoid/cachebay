@@ -1,13 +1,13 @@
 # Queries
 
-**Querying data** with Cachebay, both agnostic APIs and Vue bindings.
+**Querying data** with Cachebay.
 
-* Agnostic API: `executeQuery`, plus low‑level `readQuery` / `writeQuery` / `watchQuery`
+* Core API: `executeQuery`, plus low‑level `readQuery` / `writeQuery` / `watchQuery`
 * Vue: `useQuery` (from `cachebay/vue`)
 
 ---
 
-## `executeQuery` (agnostic)
+## `executeQuery`
 
 High‑level query that respects cache policies and normalizes results.
 
@@ -56,7 +56,7 @@ const { data, error, meta } = await cache.executeQuery({
 
 ---
 
-## Low‑level helpers (agnostic)
+## Low‑level helpers
 
 Use these when you need **manual control** over cache reads/writes and real‑time updates.
 

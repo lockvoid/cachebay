@@ -1,7 +1,7 @@
 
 # Setup
 
-Create a Cachebay instance, wire a network transport, and (optionally) use a framework adapter. The core is framework‑agnostic; adapters add ergonomic APIs.
+Create a Cachebay instance, wire a network transport, and (optionally) use a framework adapter.
 
 ## Create Instance
 
@@ -172,7 +172,7 @@ export default defineNuxtPlugin((nuxtApp) => {
 
 ## Next steps
 
-Continue to `OPERATIONS.md` for executing queries, mutations, and subscriptions.
+Continue to [OPERATIONS.md](./OPERATIONS.md) for executing queries, mutations, and subscriptions.
 
 ## See also
 

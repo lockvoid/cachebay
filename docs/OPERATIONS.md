@@ -1,6 +1,6 @@
 # Operations
 
-Cachebay’s **agnostic** client exposes three network operations:
+Cachebay exposes three network operations:
 
 * `executeQuery` — fetch data with cache policies
 * `executeMutation` — perform network writes
