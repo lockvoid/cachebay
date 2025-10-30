@@ -88,9 +88,8 @@ if ((window as any).__CACHEBAY__) {
 ```ts
 // plugins/cachebay.ts
 import { defineNuxtPlugin } from '#app'
-import { createCachebay, createHttpTransport, createWsTransport } from 'cachebay'
+import { createCachebay } from 'cachebay'
 import { toRaw } from 'vue'
-import { useSettings } from '~/stores/settings'
 
 export default defineNuxtPlugin((nuxtApp) => {
   const url = '/graphql';
