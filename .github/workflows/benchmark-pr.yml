@@ -1,4 +1,4 @@
-name: PR Benchmarks
+name: Bench PR
 
 on:
   push:
