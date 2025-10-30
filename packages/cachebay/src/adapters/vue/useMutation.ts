@@ -6,7 +6,7 @@ import type { DocumentNode } from "graphql";
 /**
  * useMutation options
  */
-export interface UseMutationOptions<TData = any, TVars = any> {
+export interface UseMutationOptions {
   /** GraphQL mutation document */
   query: DocumentNode | string;
 }

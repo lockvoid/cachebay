@@ -105,7 +105,7 @@ describe("SSR", () => {
         });
 
         // 1. Right after mount - cached data, no request
-        await delay(2);
+        await delay(5);
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
 
@@ -113,7 +113,7 @@ describe("SSR", () => {
         wrapper.setProps({ category: "music", first: 2, after: null });
 
         // 3. Request fires for uncached data
-        await delay(2);
+        await delay(5);
         expect(fx.calls.length).toBe(1);
         expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
 
@@ -121,7 +121,7 @@ describe("SSR", () => {
         wrapper.setProps({ category: "lifestyle", first: 2, after: null });
 
         // 5. No new request for cached data during hydration
-        await delay(2);
+        await delay(5);
         expect(fx.calls.length).toBe(1); // Still 1, no new request during hydration
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
 

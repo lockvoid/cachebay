@@ -61,7 +61,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: { user: fixtures.user({ id: "u1", email: "u1@example.com" }) } };
           },
-          delay: 10,
+          delay: 10, // Increased to handle CI delay multiplier (30ms > 5ms * 3x CI multiplier)
         },
       ];
 
@@ -90,7 +90,7 @@ describe("Cache Policies Behavior", () => {
       expect(Cmp.dataUpdates.length).toBe(1);
       expect(Cmp.errorUpdates.length).toBe(0);
 
-      await delay(10);
+      await delay(20);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(2);

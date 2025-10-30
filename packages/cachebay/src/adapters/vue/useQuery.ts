@@ -7,7 +7,7 @@ import type { DocumentNode } from "graphql";
 /**
  * useQuery options
  */
-export interface UseQueryOptions<TData = any, TVars = any> {
+export interface UseQueryOptions<TVars = any> {
   /** GraphQL query document */
   query: DocumentNode | string;
   /** Query variables (can be reactive) */
@@ -78,8 +78,6 @@ export function useQuery<TData = any, TVars = any>(
    * Setup watcher (first time only)
    */
   const setupWatcher = (vars: TVars) => {
-    const policy = toValue(options.cachePolicy);
-
     watchHandle = client.watchQuery({
       query: options.query,
       variables: vars,
@@ -133,7 +131,7 @@ export function useQuery<TData = any, TVars = any>(
       // Promise resolves with fresh data, set isFetching to false
       isFetching.value = false;
       return result;
-    } catch (err) {
+    } catch {
       isFetching.value = false;
       return undefined;
     }

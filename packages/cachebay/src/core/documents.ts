@@ -159,7 +159,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
     // Create root record metadata only for root IDs (@ or @mutation.X or @subscription.X)
     // Don't create for entity IDs (User:123) used in fragment normalization
-    const isRootId = startId === ROOT_ID || startId.startsWith('@mutation.') || startId.startsWith('@subscription.');
+    const isRootId = startId === ROOT_ID || startId.startsWith("@mutation.") || startId.startsWith("@subscription.");
     if (isRootId) {
       put(startId, { id: startId, __typename: startId });
     }
@@ -207,7 +207,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
       }
     };
 
-    const normalizeEdgesArray = (pageKey: string, edges: any[], edgesField: PlanField | undefined, parentFrame: Frame) => {
+    const normalizeEdgesArray = (pageKey: string, edges: any[], edgesField: PlanField | undefined) => {
       const refs = new Array(edges.length);
 
       for (let i = 0; i < edges.length; i++) {

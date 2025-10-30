@@ -5,7 +5,7 @@ import type { DocumentNode } from "graphql";
 /**
  * useSubscription options
  */
-export interface UseSubscriptionOptions<TData = any, TVars = any> {
+export interface UseSubscriptionOptions<TVars = any> {
   /** GraphQL subscription document */
   query: DocumentNode | string;
   /** Subscription variables (can be reactive) */

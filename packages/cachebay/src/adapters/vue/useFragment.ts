@@ -6,7 +6,7 @@ import type { CachePolicy } from "../../core";
  * Options for useFragment composable
  * @template TData - Expected fragment data type
  */
-export type UseFragmentOptions<TData = unknown> = {
+export type UseFragmentOptions = {
   /** Entity ID (typename:id) or reactive ref to ID */
   id: string | Ref<string>;
   /** GraphQL fragment document or compiled plan */
