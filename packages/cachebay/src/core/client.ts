@@ -151,12 +151,13 @@ export type CachebayInstance = {
    * @internal
    */
   __internals: {
-    graph: ReturnType<typeof createGraph>;
     planner: ReturnType<typeof createPlanner>;
+    graph: ReturnType<typeof createGraph>;
+    optimistic: ReturnType<typeof createOptimistic>;
     canonical: ReturnType<typeof createCanonical>;
     documents: ReturnType<typeof createDocuments>;
-    fragments: ReturnType<typeof createFragments>;
     queries: ReturnType<typeof createQueries>;
+    fragments: ReturnType<typeof createFragments>;
     operations: ReturnType<typeof createOperations>;
     ssr: ReturnType<typeof createSSR>;
     inspect: ReturnType<typeof createInspect>;
