@@ -54,12 +54,12 @@ jobs:
       - name: Install Playwright
         run: pnpm --filter benchmarks exec playwright install chromium
 
-      - name: Run API benchmarks
-        uses: CodSpeedHQ/action@v4
-        with:
-          mode: instrumentation
-          run: pnpm --filter benchmarks bench:api
-          token: ${{ secrets.CODSPEED_TOKEN }}
+      # - name: Run API benchmarks
+      #   uses: CodSpeedHQ/action@v4
+      #   with:
+      #     mode: instrumentation
+      #     run: pnpm --filter benchmarks bench:api
+      #     token: ${{ secrets.CODSPEED_TOKEN }}
 
       - name: Run DOM benchmarks
         uses: CodSpeedHQ/action@v4
