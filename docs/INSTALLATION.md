@@ -18,4 +18,6 @@ npm install --save cachebay graphql
 - ESM-friendly & tree-shakable (≈16 kB gzipped)
 - TypeScript-ready
 
-Next, continue to `SETUP.md` for Cachebay configuration.
+## Next steps
+
+Continue to [SETUP.md](./SETUP.md) to configure your Cachebay instance with transports, policies, and entity identity.

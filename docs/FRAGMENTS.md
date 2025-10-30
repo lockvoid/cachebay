@@ -205,7 +205,7 @@ variables.value = { locale: 'de' }
 
 ## Next steps
 
-Continue to `MUTATIONS.md` to learn about network writes and optimistic updates.
+Continue to [MUTATIONS.md](./MUTATIONS.md) to learn about executing mutations, write merging, and optimistic update patterns.
 
 ## See also
 
@@ -214,3 +214,4 @@ Continue to `MUTATIONS.md` to learn about network writes and optimistic updates.
 * **Mutations** — write merging & optimistic: [MUTATIONS.md](./MUTATIONS.md)
 * **Optimistic updates** — entity helpers: [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)
 * **Relay connections** — pagination: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)
+* **SSR** — hydrate/dehydrate entities: [SSR.md](./SSR.md)

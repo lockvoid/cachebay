@@ -318,10 +318,11 @@ Deep dive: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)
 
 ## Next steps
 
-Continue to `FRAGMENTS.md` to learn about partial data reads and writes.
+Continue to [FRAGMENTS.md](./FRAGMENTS.md) to learn about reading and watching partial entity data without full queries.
 
 ## See also
 
+* **Fragments** — partial entity reads/writes: [FRAGMENTS.md](./FRAGMENTS.md)
 * **Mutations** — write merging: [MUTATIONS.md](./MUTATIONS.md)
 * **Subscriptions** — streaming & transport: [SUBSCRIPTIONS.md](./SUBSCRIPTIONS.md)
 * **Relay connections** — pagination & merge modes: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)

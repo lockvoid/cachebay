@@ -125,8 +125,14 @@ export default defineNuxtPlugin((nuxtApp) => {
 })
 ```
 
+## Next steps
+
+Review [KEYNOTES.md](./KEYNOTES.md) for architectural insights, or explore the [demo app](../packages/demo) to see everything in action.
+
 ## See also
 
+- **Setup** — cache configuration & policies: [SETUP.md](./SETUP.md)
+- **Queries** — cache policies & execution: [QUERIES.md](./QUERIES.md)
 - **Relay connections** — directive, merge modes, policy matrix: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)
 - **Optimistic updates** — layering, entity ops, `addNode` / `removeNode` / `patch`: [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)
 - **Fragments** — identify / read / write: [FRAGMENTS.md](./FRAGMENTS.md)

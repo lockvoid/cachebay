@@ -223,9 +223,14 @@ enabled.value = false; // stop
 
 ---
 
+## Next steps
+
+Continue to [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md) to learn about cursor-based pagination with infinite scroll and page-based navigation.
+
 ## See also
 
 * **Queries** — read/write/watch + policies: [QUERIES.md](./QUERIES.md)
 * **Mutations** — write merging: [MUTATIONS.md](./MUTATIONS.md)
+* **Relay connections** — pagination updates: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)
 * **Optimistic updates** — layering & helpers: [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)
 * **SSR** — hydrate/dehydrate: [SSR.md](./SSR.md)

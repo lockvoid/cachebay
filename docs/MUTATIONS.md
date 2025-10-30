@@ -298,7 +298,7 @@ export const useUpdatePost = () => {
 
 ## Next steps
 
-Continue to `SUBSCRIPTIONS.md` to stream network updates and keep the cache live.
+Continue to [SUBSCRIPTIONS.md](./SUBSCRIPTIONS.md) to learn about streaming real-time updates via WebSocket or SSE transports.
 
 ## See also
 

@@ -287,8 +287,13 @@ revert(L2)            → [A]
 
 `*` = optimistic.
 
+## Next steps
+
+Continue to [SSR.md](./SSR.md) to learn about server-side rendering with dehydrate/hydrate and Suspense integration.
 
 ## See also
 
+- **Queries** — read/write/watch + policies: [QUERIES.md](./QUERIES.md)
+- **Mutations** — write merging & optimistic patterns: [MUTATIONS.md](./MUTATIONS.md)
 - **Relay connections** — modes, de-dup, policy matrix: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)
 - **SSR** — hydrate/dehydrate, first-mount CN behavior: [SSR.md](./SSR.md)

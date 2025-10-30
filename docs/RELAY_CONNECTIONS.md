@@ -253,8 +253,13 @@ const { data } = useQuery({
 
 ```
 
+## Next steps
+
+Continue to [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md) to learn about layered optimistic updates for instant UI feedback with clean rollback.
+
 ## See also
 
--   **Optimistic updates**  — layering,  `patch`  /  `delete`, connection helpers:  [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)
 -   **Queries**  — pagination & variable changes:  [QUERIES.md](./QUERIES.md)
+-   **Mutations**  — write merging & connection updates:  [MUTATIONS.md](./MUTATIONS.md)
+-   **Optimistic updates**  — layering,  `patch`  /  `delete`, connection helpers:  [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)
 -   **SSR**  — hydrate/dehydrate, first-mount requests behavior:  [SSR.md](./SSR.md)

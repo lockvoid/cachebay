@@ -161,7 +161,7 @@ Deep dive: [SUBSCRIPTIONS.md](./SUBSCRIPTIONS.md)
 
 ## Next steps
 
-Continue to `QUERIES.md`, `MUTATIONS.md`, and `SUBSCRIPTIONS.md` for detailed guides and adapter examples.
+Continue to [QUERIES.md](./QUERIES.md) for detailed query patterns, cache policies, and framework adapters. Then explore mutations and subscriptions.
 
 ## See also
 
