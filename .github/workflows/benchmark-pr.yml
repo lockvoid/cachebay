@@ -1,9 +1,8 @@
-name: CodSpeed Benchmarks
+name: PR Benchmarks
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -25,7 +24,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: "pnpm"
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -34,19 +33,10 @@ jobs:
         working-directory: packages/cachebay
         run: pnpm build
 
-      - name: Install Playwright
-        run: pnpm --filter benchmarks exec playwright install chromium
-
-      # - name: Run API benchmarks
-      #   uses: CodSpeedHQ/action@v4
-      #   with:
-      #     mode: instrumentation
-      #     run: pnpm --filter benchmarks bench:api
-      #     token: ${{ secrets.CODSPEED_TOKEN }}
+      - name: Setup Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
 
       - name: Run DOM benchmarks
-        uses: CodSpeedHQ/action@v4
-        with:
-          mode: instrumentation
-          run: pnpm --filter benchmarks bench:chromium
-          token: ${{ secrets.CODSPEED_TOKEN }}
+        run: pnpm --filter benchmarks bench:dom

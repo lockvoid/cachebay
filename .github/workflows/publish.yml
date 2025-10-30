@@ -51,33 +51,19 @@ jobs:
         working-directory: packages/cachebay
         run: pnpm test
 
-      - name: Install Playwright
-        run: pnpm --filter benchmarks exec playwright install chromium
-
-      # - name: Run API benchmarks
-      #   uses: CodSpeedHQ/action@v4
-      #   with:
-      #     mode: instrumentation
-      #     run: pnpm --filter benchmarks bench:api
-      #     token: ${{ secrets.CODSPEED_TOKEN }}
-
       - name: Run DOM benchmarks
-        uses: CodSpeedHQ/action@v4
-        with:
-          mode: instrumentation
-          run: pnpm --filter benchmarks bench:chromium
-          token: ${{ secrets.CODSPEED_TOKEN }}
+        run: pnpm --filter benchmarks bench:dom
 
       - name: Bump version
         run: pnpm bump ${{ github.event.inputs.version_type }}
 
-      - name: Copy docs
+      - name: Copy documentation
         run: |
           cp -r ./docs ./packages/cachebay/docs
           cp ./LICENSE.md ./packages/cachebay/LICENSE.md
           cp ./README.md ./packages/cachebay/README.md
 
-      - name: Commit all bump changes
+      - name: Commit bump changes
         run: |
           VERSION=$(node -p "require('./packages/cachebay/package.json').version")
           git config user.name "LockVoid /dev/null"

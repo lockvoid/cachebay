@@ -6,6 +6,8 @@
 [![Bundlephobia](https://img.shields.io/bundlephobia/minzip/cachebay)](https://bundlephobia.com/package/cachebay)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+<img width="100" height="100" alt="Cachebay" src="https://pub-464e6b9480014239a02034726cf0073c.r2.dev/cachebay.png">
+
 **Framework-agnostic GraphQL data layer: normalized caching, Relay-style connections, layered optimistic updates, and SSR that just works.**
 
 - **Adapters:** first-party for **Vue** and **Svelte**; writing your own adapter is straightforward.

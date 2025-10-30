@@ -5,8 +5,6 @@ import relay from 'vite-plugin-relay';
 export default defineConfig(({ mode }) => ({
   mode: mode || 'production',
 
-  globals: true,
-
   plugins: [
     react(),
     relay,
@@ -38,8 +36,8 @@ export default defineConfig(({ mode }) => ({
   test: {
     browser: {
       enabled: true,
-      name: 'chromium',
-      provider: 'playwright',
+      name: 'chrome',
+      provider: 'webdriverio',
       headless: true,
     },
 
@@ -49,7 +47,7 @@ export default defineConfig(({ mode }) => ({
 
     benchmark: {
       warmupTime: 150,
-      concurrent: false
+      concurrent: false,
     },
 
     reporters: process.env.DEBUG === 'true' ? ['verbose'] : ['default'],
