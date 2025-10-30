@@ -5,7 +5,7 @@ Create a Cachebay instance, wire a network transport, and (optionally) use a fra
 
 ## Create Instance
 
-Cachebay is framework‑agnostic: create a cache with `createCachebay(options)` and reuse it across your app. On the server, create one cache **per request**; in the browser, typically a **single app‑wide** instance.
+Create a cache instance with `createCachebay(options)` and reuse it across your app. On the server, create one cache **per request**; in the browser, typically a **single app‑wide** instance.
 
 **Options**
 
@@ -179,5 +179,4 @@ Continue to `OPERATIONS.md` for executing queries, mutations, and subscriptions.
 * **Queries** — [QUERIES.md#queries](./OPERATIONS.md#queries)
 * **Mutations** — [MUTATIONS.md#mutations](./OPERATIONS.md#mutations)
 * **Subscriptions** — [SUBSCRIPTIONS.md#subscriptions](./OPERATIONS.md#subscriptions)
-* **Hydration & SSR** — [SSR.md](./SSR.md)
-* **Vue** — [VUE.md](./VUE.md)
+* **SSR** — [SSR.md](./SSR.md)
