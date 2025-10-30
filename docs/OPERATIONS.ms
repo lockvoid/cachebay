@@ -1,5 +1,3 @@
-
-
 # Operations
 
 Cachebay’s **agnostic** client exposes three network operations:
@@ -44,7 +42,7 @@ interface OperationResult<TData = any> {
 ```ts
 const { data, error, meta } = await cache.executeQuery({
   query: `
-    query ($id: ID!) {
+    query Post($id: ID!) {
       post(id:$id) {
         id
         title
@@ -91,13 +89,13 @@ const { data, error } = await cache.executeMutation({
 	    createPost(input: $input) {
 	      post {
 	        id
-	        name
+	        title
 	      }
 	    }
 	  }
   `
   variables: {
-    input: { id: 'p1', name: 'New post' }
+    input: { id: 'p1', name: 'New post' },
   },
 });
 ```
@@ -125,9 +123,10 @@ Deep dive: [MUTATIONS.md](./MUTATIONS.md)
 ```ts
 const subscription = cache.executeSubscription({
   query: `
-    subscription ($id: ID!) {
+    subscription PostUpdated($id: ID!) {
       postUpdated(id:$id) {
-        id title
+        id
+        title
       }
     }
   `,

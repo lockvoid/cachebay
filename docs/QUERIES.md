@@ -1,311 +1,328 @@
 # Queries
 
-Imperative cache API for reading, writing, and watching query results without network requests. These APIs provide direct access to the normalized cache, enabling manual cache updates, optimistic UI patterns, and reactive subscriptions.
+**Querying data** with Cachebay, both agnostic APIs and Vue bindings.
 
-- Read query results with **`readQuery`** (synchronous cache read)
-- Write query results with **`writeQuery`** (triggers reactive updates)
-- Watch for changes with **`watchQuery`** (reactive subscriptions)
-- Pairs cleanly with **Relay connections** and **optimistic updates**
+* Agnostic API: `executeQuery`, plus low‑level `readQuery` / `writeQuery` / `watchQuery`
+* Vue: `useQuery` (from `cachebay/vue`)
 
 ---
 
-## Read Query
+## `executeQuery` (agnostic)
 
-Reads a query result from the cache synchronously. Returns the cached data if available, or `undefined` if not found or incomplete. Does not trigger network requests.
+High‑level query that respects cache policies and normalizes results.
 
-**Options:**
-- `query` - GraphQL query string or DocumentNode
-- `variables` - Query variables (optional)
-- `decisionMode` - `'canonical'` (default) or `'strict'` for connection handling
+**Options**
 
-**Imperative**
+* `query: string | DocumentNode | CachePlan`
+* `variables?: Record<string, any>`
+* `cachePolicy?: 'cache-first' | 'network-only' | 'cache-only' | 'cache-and-network'`
+* `onCacheData?: (data, meta: { willFetchFromNetwork: boolean }) => void`
+* `onNetworkData?: (data) => void`
+* `onError?: (error: CombinedError) => void`
+
+**Returns**
+
+`Promise<OperationResult<TData>>`
+
 ```ts
-const data = cachebay.readQuery({
-  query: POSTS_QUERY,
-  variables: { first: 10, after: null }
-})
-
-if (data) {
-  console.log('Posts from cache:', data.posts.edges)
+interface OperationResult<TData = any> {
+  data: TData | null;
+  error: CombinedError | null;
+  meta?: { source?: 'cache' | 'network' };
 }
 ```
 
-**Composable**
-```ts
-import { useCache } from 'cachebay'
-const { readQuery } = useCache()
+**Example** (revalidate)
 
-const data = readQuery({
+```ts
+const { data, error, meta } = await cache.executeQuery({
   query: `
-    query Posts($first: Int!) {
-      posts(first: $first) @connection {
-        edges {
-          node { id title }
-        }
-        pageInfo {
-          endCursor
-          hasNextPage
-        }
-      }
-    }
-  `,
-  variables: { first: 20 }
-})
-```
-
-**Returns:** Query data object or `undefined` if not in cache
-
----
-
-## Write Query
-
-Writes a query result into the cache immediately. Normalizes the data, updates entities, and triggers reactivity for any components reading this query or related entities. Commonly used for optimistic updates and manual cache management.
-
-**Options:**
-- `query` - GraphQL query string or DocumentNode
-- `variables` - Query variables (optional)
-- `data` - The data object to write to the cache
-
-**Imperative**
-```ts
-cachebay.writeQuery({
-  query: POSTS_QUERY,
-  variables: { first: 10 },
-  data: {
-    posts: {
-      __typename: 'PostConnection',
-      edges: [
-        {
-          __typename: 'PostEdge',
-          cursor: 'cursor1',
-          node: {
-            __typename: 'Post',
-            id: '1',
-            title: 'New Post'
-          }
-        }
-      ],
-      pageInfo: {
-        __typename: 'PageInfo',
-        endCursor: 'cursor1',
-        hasNextPage: false
-      }
-    }
-  }
-})
-```
-
-**Composable**
-```ts
-import { useCache } from 'cachebay'
-const { writeQuery } = useCache()
-
-// After a mutation, update the cache manually
-const handleCreatePost = async (newPost) => {
-  // Optimistically update cache
-  writeQuery({
-    query: POSTS_QUERY,
-    variables: { first: 10 },
-    data: {
-      posts: {
-        edges: [
-          { node: newPost, cursor: newPost.id },
-          ...existingEdges
-        ],
-        pageInfo: existingPageInfo
-      }
-    }
-  })
-
-  // Then make the actual mutation
-  await createPost(newPost)
-}
-```
-
-**Note:** `writeQuery` normalizes the data and updates all related entities. Any components reading these entities will automatically re-render.
-
----
-
-## Watch Query
-
-Subscribes to changes for a specific query in the cachebay. Returns an unsubscribe function. The callback is invoked whenever the query result changes through network responses, mutations, optimistic updates, or manual cache writes.
-
-**Options:**
-- `query` - GraphQL query string or DocumentNode
-- `variables` - Query variables (optional)
-- `decisionMode` - `'canonical'` (default) or `'strict'` for connection handling
-- `onData` - Callback invoked with updated query data
-- `onError` - Callback invoked on errors (optional)
-- `skipInitialEmit` - Skip calling `onData` immediately (default: false)
-
-**Imperative**
-```ts
-const { unsubscribe } = cachebay.watchQuery({
-  query: POSTS_QUERY,
-  variables: { first: 10 },
-  onData: (data) => {
-    console.log('Posts updated:', data.posts.edges.length)
-  },
-  onError: (error) => {
-    console.error('Query error:', error)
-  }
-})
-
-// Later: stop watching
-unsubscribe()
-```
-
-**Composable**
-```ts
-import { useCache } from 'cachebay'
-import { onUnmounted } from 'vue'
-
-const { watchQuery } = useCache()
-
-const { unsubscribe } = watchQuery({
-  query: `
-    query UserProfile($id: ID!) {
-      user(id: $id) {
+    query ($id: ID!) {
+      post(id:$id) {
         id
-        name
-        email
-        posts @connection {
-          edges {
-            node { id title }
-          }
-        }
+        title
       }
     }
   `,
-  variables: { id: 'user123' },
-  onData: (data) => {
-    console.log('User profile updated:', data.user.name)
-  }
-})
 
-// Clean up when component unmounts
-onUnmounted(() => unsubscribe())
-```
+  variables: {
+    id: 'p1',
+  },
 
-**Use Cases:**
-- React to cache changes from other parts of the app
-- Sync UI with optimistic updates
-- Build custom reactive patterns
-- Debug cache behavior
-
----
-
-## Decision Modes
-
-Both `readQuery` and `watchQuery` support two decision modes for handling Relay connections:
-
-### Canonical Mode (default)
-
-Returns the **merged view** of all pages loaded so far for a connection. Best for infinite scroll and pagination UIs.
-
-```ts
-const data = readQuery({
-  query: POSTS_QUERY,
-  variables: { first: 10, after: 'cursor10' },
-  decisionMode: 'canonical' // default
-})
-
-// Returns ALL edges loaded so far (page 1 + page 2 + ...)
-```
-
-### Strict Mode
-
-Returns **only the specific page** requested by the variables. Best for testing or when you need exact page boundaries.
-
-```ts
-const data = readQuery({
-  query: POSTS_QUERY,
-  variables: { first: 10, after: 'cursor10' },
-  decisionMode: 'strict'
-})
-
-// Returns ONLY the edges for this specific page
+  cachePolicy: 'cache-and-network',
+});
+// meta?.source: 'cache' | 'network'
 ```
 
 ---
 
-## Patterns
+## Low‑level helpers (agnostic)
 
-### Optimistic UI with writeQuery
+Use these when you need **manual control** over cache reads/writes and real‑time updates.
+
+### `readQuery`
+
+Materializes from cache only.
+
+**Options**
+
+* `query: string | DocumentNode | CachePlan`
+* `variables?: Record<string, any>`
+
+**Returns**
+
+`T | null`
+
+**Example**
 
 ```ts
-import { useCache } from 'cachebay'
-import { useMutation } from 'villus'
-
-const { writeQuery, readQuery } = useCache()
-const { execute: createPost } = useMutation(CREATE_POST_MUTATION)
-
-const handleCreate = async (title: string) => {
-  const tempId = `temp:${Date.now()}`
-
-  // 1. Optimistically update cache
-  const existing = readQuery({ query: POSTS_QUERY, variables: { first: 10 } })
-  writeQuery({
-    query: POSTS_QUERY,
-    variables: { first: 10 },
-    data: {
-      posts: {
-        edges: [
-          { node: { __typename: 'Post', id: tempId, title }, cursor: tempId },
-          ...existing.posts.edges
-        ],
-        pageInfo: existing.posts.pageInfo
+const post = cache.readQuery<{ post: { id: string; title: string } }>({
+  query: `
+    query ($id: ID!) {
+      post(id:$id) {
+        id
+        title
       }
     }
-  })
+  `,
 
-  // 2. Make the actual mutation
-  const { data } = await createPost({ title })
-
-  // 3. Update with real ID (optional - network response will update cache)
-  if (data) {
-    writeQuery({
-      query: POSTS_QUERY,
-      variables: { first: 10 },
-      data: {
-        posts: {
-          edges: [
-            { node: data.createPost, cursor: data.createPost.id },
-            ...existing.posts.edges.slice(1) // Remove temp
-          ],
-          pageInfo: existing.posts.pageInfo
-        }
-      }
-    })
-  }
-}
+  variables: {
+    id: 'p1',
+  },
+});
 ```
 
-### Cache Synchronization with watchQuery
+### `writeQuery`
+
+Writes raw data into the cache using a query shape.
+
+**Options**
+
+* `query: string | DocumentNode | CachePlan`
+* `variables?: Record<string, any>`
+* `data: any`
+
+**Returns**
+
+`void`
+
+**Example**
 
 ```ts
-import { useCache } from 'cachebay'
-import { ref, onUnmounted } from 'vue'
+cache.writeQuery({
+  query: `
+    query ($id: ID!) {
+      post(id:$id) {
+        id
+        title
+      }
+    }
+  `,
 
-const { watchQuery } = useCache()
-const postCount = ref(0)
+  variables: {
+    id: 'p1',
+  },
 
-const { unsubscribe } = watchQuery({
-  query: POSTS_QUERY,
-  variables: { first: 100 },
+  data: {
+    post: { __typename: 'Post', id: 'p1', title: 'Hello' },
+  },
+});
+```
+
+### `watchQuery`
+
+Watches a query and pushes updates when dependent records change. Effectively recycles views for rendering performance.
+
+**Options**
+
+* `query: string | DocumentNode | CachePlan`
+* `variables?: Record<string, any>`
+* `onData: (data: any) => void`
+* `onError?: (error: Error) => void`
+* `immediate?: boolean` (default: `true`)
+
+**Returns**
+
+`{ unsubscribe(): void; update({ variables?, immediate? }): void }`
+
+**Example**
+
+```ts
+const watcher = cache.watchQuery({
+  query: `
+    query ($id: ID!) {
+      post(id:$id) {
+        id
+        title
+      }
+    }
+  `,
+
+  variables: {
+    id: 'p1',
+  },
+
   onData: (data) => {
-    postCount.value = data.posts.edges.length
-  }
-})
+    console.log(data);
+  },
 
-onUnmounted(() => unsubscribe())
+  onError: (error) => {
+    console.error(error);
+  },
+});
+
+// Later: change variables (emits according to cache state)
+watcher.update({ variables: { id: 'p2' }, immediate: true });
+
+// Cleanup
+watcher.unsubscribe();
 ```
 
 ---
+
+## Vue
+
+`useQuery` comes from **`cachebay/vue`**. It integrates cache policies, watchers, and Suspense.
+
+**Basic usage**
+
+```vue
+<script setup lang="ts">
+import { useQuery } from 'cachebay/vue'
+
+const { data, error, isFetching, refetch } = useQuery({
+  query: `
+    query ($id: ID!) {
+      post(id:$id) {
+        id
+        title
+      }
+    }
+  `,
+
+  variables: {
+    id: 'p1',
+  },
+
+  cachePolicy: 'cache-first', // reactive allowed
+})
+</script>
+```
+
+**With Suspense**
+
+```vue
+<script setup lang="ts">
+import { useQuery } from 'cachebay/vue'
+
+const { data, error, isFetching, refetch } = await useQuery({
+  query: `
+    query ($id: ID!) {
+      post(id:$id) {
+        id
+        title
+      }
+    }
+  `,
+
+  variables: {
+    id: 'p1',
+  },
+})
+</script>
+```
+
+**Refetch** (defaults to `network-only`)
+
+```ts
+await refetch({ variables: { id: 'p2' } })
+// or override
+await refetch({ cachePolicy: 'cache-and-network' })
+```
+
+**Enabled**
+
+```ts
+import { ref } from 'vue'
+import { useQuery } from 'cachebay/vue'
+
+const enabled = ref(false)
+
+const query = useQuery({
+  query: `
+    query ($id: ID!) {
+      post(id:$id) {
+        id
+        title
+      }
+    }
+  `,
+
+  variables: {
+    id: 'p1',
+  },
+
+  enabled,
+})
+
+// Later: start the query (creates watcher and runs it unless `lazy: true`)
+enabled.value = true
+```
+
+**Lazy**
+
+```ts
+import { useQuery } from 'cachebay/vue'
+
+const query = useQuery({
+  query: `
+    query ($id: ID!) {
+      post(id:$id) {
+        id
+        title
+      }
+    }
+  `,
+
+  variables: {
+    id: 'p1',
+  },
+
+  lazy: true,
+})
+
+// Later: fetch on demand
+await query.refetch()
+```
+
+> Notes:
+>
+> * When `enabled: false`, `refetch()` is a **no‑op**. Toggle `enabled` to `true` first.
+> * `refetch()` merges provided variables into the last set (Apollo‑style).
+> * Policy/watchers interplay is handled internally via `watchQuery` and `executeQuery`.
+> * `lazy: true` is **incompatible** with Suspense (throws by design).
+
+---
+
+## Pagination & variable changes
+
+For cursor pagination and merge rules, see **Relay connections**. Changing variables re‑materializes watchers and (depending on policy) fetches fresh pages.
+
+* Use `cache.executeQuery({ cachePolicy: 'cache-and-network', variables: { after } })` to revalidate while showing current items.
+* The watcher’s `update({ variables })` coalesces emissions and updates dependency tracking.
+
+Deep dive: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)
+
+---
+
+
+## Next steps
+
+Continue to `MUTATIONS.md` to learn about write network data and optimistic updates.
 
 ## See also
 
-- **Fragments** — entity-level cache operations: [FRAGMENTS.md](./FRAGMENTS.md)
-- **Composables** — `useCache()`, `useFragment()`: [COMPOSABLES.md](./COMPOSABLES.md)
-- **Relay connections** — directive, merge modes, policy matrix: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)
-- **Optimistic updates** — layering, entity ops, `addNode` / `removeNode` / `patch`: [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)
+* **Mutations** — write merging: [MUTATIONS.md](./MUTATIONS.md)
+* **Subscriptions** — streaming & transport: [SUBSCRIPTIONS.md](./SUBSCRIPTIONS.md)
+* **Relay connections** — pagination & merge modes: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)
+* **Optimistic updates** — layering & helpers: [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)
