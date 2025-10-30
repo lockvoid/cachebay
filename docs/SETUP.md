@@ -176,7 +176,7 @@ Continue to `OPERATIONS.md` for executing queries, mutations, and subscriptions.
 
 ## See also
 
-* **Queries** — [QUERIES.md#queries](./OPERATIONS.md#queries)
-* **Mutations** — [MUTATIONS.md#mutations](./OPERATIONS.md#mutations)
-* **Subscriptions** — [SUBSCRIPTIONS.md#subscriptions](./OPERATIONS.md#subscriptions)
+* **Queries** — [QUERIES.md](./QUERIES.md)
+* **Mutations** — [MUTATIONS.md](./MUTATIONS.md)
+* **Subscriptions** — [SUBSCRIPTIONS.md](./SUBSCRIPTIONS.md)
 * **SSR** — [SSR.md](./SSR.md)

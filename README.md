@@ -20,7 +20,7 @@
 
 A quick architectural overview of how Cachebay works — see **[Keynotes](./docs/KEYNOTES.md)**.
 
-For benchmarking — see **[Benchmarks](./docs/BENCHMARKS.md)**.
+For benchmarking — see **[Benchmarks](./packages/benchmarks/README.md)**.
 
 ## Documentation
 
