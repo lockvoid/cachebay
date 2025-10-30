@@ -1,144 +1,183 @@
+
 # Setup
 
+Create a Cachebay instance, wire a network transport, and (optionally) use a framework adapter. The core is framework‑agnostic; adapters add ergonomic APIs.
 
----
+## Create Instance
 
-## Core idea
+Cachebay is framework‑agnostic: create a cache with `createCachebay(options)` and reuse it across your app. On the server, create one cache **per request**; in the browser, typically a **single app‑wide** instance.
 
-- Cachebay is framework-agnostic. You create a cache instance with `createCachebay(options)`.
-- The instance is the cache: it holds normalized data, optimistic layers, and SSR snapshots.
-- On the server you should create one cache instance per request. On the client you typically create a single app-wide instance.
+**Options**
 
----
+* `transport.http` *(required)*: function that performs queries/mutations.
+* `transport.ws` *(optional)*: function that returns an **observable‑like** with `subscribe({ next, error, complete })` for subscriptions.
+* `cachePolicy?` *(default: "cache-first")*: default policy for queries; override per operation as needed.
+* `keys?`: only if you need custom identity; by default Cachebay uses the object's `id` field.
+* `interfaces?`: interface → implementing types map (resolves interface fragments).
+* `hydrationTimeout?` *(ms, default 100)*: Hydration timeout window.
+* `suspensionTimeout?` *(ms, default 1000)*: Suspension window to stabilize repeated calls.
 
-## createCachebay — minimal example
+### Example
 
-A minimal `fetch`-based transport:
+```ts
+// cachebay.ts
+import { createCachebay } from 'cachebay';
 
-```/dev/null/create-cachebay-example.ts#L1-40
+const http = async ({ query, variables })) => {
+  try {
+    const res = await fetch('/graphql', {
+      method: 'POST',
+
+      headers: {
+        'content-type': 'application/json',
+      },
+
+      body: JSON.stringify({ query, variables }),
+    });
+
+    const json = await res.json();
+
+    return { data: json?.data ?? null, error: result.errors?.[0] ?? null };
+  } catch (error) {
+    return { data: null, error };
+  }
+};
+
+export const cache = createCachebay({
+  transport: { http },
+});
+```
+
+## Cache policies & suspension
+
+Cachebay supports four cache policies (default: `"cache-first"`).
+
+| Policy                | Cache behavior                                                                | Network behavior                                                                          |
+| --------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| **cache-and-network** | If cached, emit immediately.                                                  | Always fetch; when the response arrives, normalize and re‑emit updated data (revalidate). |
+| **cache-first**       | If cached, use it.                                                            | If not cached, fetch once; otherwise no network.                                          |
+| **network-only**      | (During Hydration timeout, a cached value may be used once to avoid flicker.) | Always fetch and return the network result; cache is not used to satisfy the request.     |
+| **cache-only**        | Read from cache only.                                                         | Never fetch; if missing, throws `CacheMissError`.                                         |
+
+**Suspension timeout** (`suspensionTimeout`, default **1000 ms**): caches recent/in‑flight results for the same query signature to stabilize Suspense and dedupe repeated calls.
+
+**Hydration timeout** (`hydrationTimeout`, default **100 ms**): shortly after load, the client may prefer cached data to prevent flashes (then proceeds with the selected policy). See **[SSR.md](./SSR.md)** for details.
+
+## Entity identity
+
+Customize identity and enable interface‑style addressing at **cache creation**.
+
+```ts
 import { createCachebay } from 'cachebay'
 
 const cache = createCachebay({
-  transport: {
-    http: async ({ query, variables }) => {
-      const res = await fetch('/graphql', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, variables }),
-      })
-      return await res.json() // { data?: any, errors?: any[] }
+  keys: {
+    User: (user) => {
+      return user.id;
     }
-  }
+
+    Post: (post) => {
+      return post.uuid;
+    }
+  },
+
+  interfaces: {
+    Post: ['AudioPost', 'VideoPost'],
+  },
 })
 ```
 
----
+**How keys work**
 
-## Important options
+* A key function receives the raw object and must return a **unique value**  across entity type.
+* If no key rule matches a type, Cachebay falls back to the object's `id` field.
 
-This is a compact reference for the most used `createCachebay` options.
+**How interfaces work**
 
-- `transport` (required)
-  - `http: async (ctx) => Promise<OperationResult>` — required for queries & mutations. Receives `{ query, variables, operationName, ... }`.
-  - `ws?: async (ctx) => Promise<ObservableLike<OperationResult>>` — optional, for subscriptions (returns an observable/stream).
-- `cachePolicy?: 'cache-first' | 'cache-and-network' | 'network-only' | 'cache-only'`
-  - Default behavior for operations; can be overridden per-call.
-- `keys?: Record<string, (obj: any) => string | null>`
-  - Per-type id functions used to compute `Type:id`.
-- `interfaces?: Record<string, string[]>`
-  - Map of interface/abstract type to concrete implementors (helps `readFragment` address abstract types).
-- `hydrationTimeout?: number` (ms)
-  - Short window after `hydrate()` to suppress initial `cache-and-network` revalidate (SSR UX guard).
-- `suspensionTimeout?: number` (ms)
-  - Short window after a result to avoid duplicate Suspense re-executions.
-- `other` — additional internal tuning rarely needed for typical use.
+* Declaring `interfaces.Post = ['AudioPost','VideoPost']` lets you **address by parent type**:
 
-Instance methods you will use often:
-- `executeQuery`, `executeMutation`, `executeSubscription`
-- `readQuery`, `writeQuery`, `watchQuery`
-- `readFragment`, `writeFragment`, `watchFragment`
-- `modifyOptimistic` (optimistic layers)
-- `dehydrate()` / `hydrate(snapshot)` / `isHydrating()`
-- `identify(obj)` — compute `Type:id` or `null`
+  * `readFragment('Post:123')` resolves to the concrete record once known (e.g., `"AudioPost:123"`).
+* Writes still occur on **concrete** records (e.g., `{ __typename: 'AudioPost', uuid: '123' }`).
 
----
 
-## Instance scoping (server vs client)
+## Vue / Nuxt
 
-- Server: create a fresh cache per incoming request. Run your render flow (queries write into the cache), then call `dehydrate()` to produce a snapshot to embed in HTML.
-- Client: create one cache instance at app boot. Call `hydrate(snapshot)` before mounting if you embedded a server snapshot. Cachebay provides a short hydration window to avoid duplicate revalidation for `cache-and-network`.
+Cachebay ships a Vue adapter with composables (`useQuery`, `useFragment`, `useMutation`, `useSubscription`). Import **only** from `cachebay/vue`.
 
-Short server/client flow:
+### Vue
 
-```/dev/null/ssr-flow.md#L1-20
-// Server (per request)
-const cache = createCachebay({ transport: { http } })
-// render app -> queries run against cache
-const snapshot = cachebay.dehydrate() // serialize and embed
+Install the adapter as a Vue plugin via `app.use(cachebay)`:
 
-// Client
-const cache = createCachebay({ transport: { http } })
-cachebay.hydrate(window.__CACHEBAY__) // if present, before mount
-```
-
----
-
-## Vue
-
-The Vue adapter is available at the `cachebay/vue` entrypoint. It wraps the agnostic instance in a tiny plugin that `provide`s the cache to your app, and ships composables (`useQuery`, `useMutation`, `useFragment`, `useSubscription`) that use the cache under the hood.
-
-Install & provide the plugin:
-
-```
-import { createApp } from 'vue'
-import { createCachebay } from 'cachebay/vue'
-import App from './App.vue'
+```ts
+// app.ts
+import { createApp } from 'vue';
+import { createCachebay } from 'cachebay/vue';
+import App from './App.vue';
 
 const cachebay = createCachebay({
-  transport: { http:
-    async ({ query, variables }) => {
-      return fetch('/graphql', { method:'POST', body:JSON.stringify({query,variables}) }).then(response => response.json()) } });
-    }
+  transport: {
+    http: async ({ query, variables }) => {
+      try {
+        const res = await fetch('/graphql', {
+          method: 'POST',
+
+          headers: {
+            'content-type': 'application/json',
+          },
+
+          body: JSON.stringify({ query, variables }),
+        });
+
+        const json = await res.json();
+
+        return { data: json?.data ?? null, error: result.errors?.[0] ?? null };
+      } catch (error) {
+        return { data: null, error };
+      }
+    },
+  },
 });
 
-createApp(App).use(cachebay).mount('#app')
+createApp(App).use(cachebay).mount('#app');
 ```
 
-In components use:
+### Nuxt
 
-```
-import { useQuery } from 'cachebay/vue'
+Create and install the plugin inside a client plugin file.
 
-const { data, error, isFetching, refetch } = useQuery({
-  query: `query Posts { posts { __typename id title } }`,
-})
-```
+```ts
+// plugins/cachebay.client.ts
+import { createCachebay } from "cachebay/vue";
 
----
-
-### Nuxt example
-
-For Nuxt (server + client hydration), create the cache per server request and persist the snapshot to Nuxt state; hydrate on the client:
-
-```/dev/null/nuxt-plugin.ts#L1-60
 export default defineNuxtPlugin((nuxtApp) => {
-  const cache = createCachebay({ transport: { http: async ({ query, variables }) => fetch('/graphql', { method: 'POST', body: JSON.stringify({ query, variables }) }).then(r => r.json()) } })
+  const cachebay = createCachebay({
+    transport: async ({ query, variables }, ctx) => {
+      try {
+        const result = await $fetch('/graphql', {
+          method: "POST",
 
-  // Server: store snapshot after render
-  if (process.server) {
-    nuxtApp.hook('app:rendered', () => {
-      useState('cachebay').value = cachebay.dehydrate()
-    })
-  }
+          body: { query, variables },
+        });
 
-  // Client: hydrate once
-  if (process.client) {
-    const state = useState('cachebay').value
-    if (state) cachebay.hydrate(state)
-  }
+        return { data: result.data, error: result.errors?.[0] };
+      } catch (error) {
+        return { data: null, error };
+      }
+    },
+  });
 
-  nuxtApp.vueApp.use(cache)
-})
+  nuxtApp.vueApp.use(cachebay);
+});
 ```
 
----
+## Next steps
+
+Continue to `OPERATIONS.md` for executing queries, mutations, and subscriptions.
+
+## See also
+
+* **Queries** — [QUERIES.md#queries](./OPERATIONS.md#queries)
+* **Mutations** — [MUTATIONS.md#mutations](./OPERATIONS.md#mutations)
+* **Subscriptions** — [SUBSCRIPTIONS.md#subscriptions](./OPERATIONS.md#subscriptions)
+* **Hydration & SSR** — [SSR.md](./SSR.md)
+* **Vue** — [VUE.md](./VUE.md)

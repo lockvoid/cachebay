@@ -1,14 +1,14 @@
 import { createCachebay } from "cachebay/vue";
+import * as sse from "graphql-sse";
 import type { HttpContext, WsContext, OperationResult } from "cachebay";
-import * as sse from 'graphql-sse';
 
 const createHttpTransport = (url: string) => {
   return async (ctx: HttpContext): Promise<OperationResult> => {
     try {
       const result = await $fetch(url, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: {
           query: ctx.query,
@@ -30,11 +30,10 @@ const createWsTransport = (url: string) => {
 
   const sseClient = sse.createClient({ url });
 
-  return async (ctx: WsContext) => {
+  return ({ query, variables }) => {
     return {
       subscribe: (observer: any) => {
-        console.log('SUPERsubscribe')
-        const unsubscribe = sseClient.subscribe({ query: ctx.query, variables: ctx.variables }, {
+        const unsubscribe = sseClient.subscribe({ query, variables }, {
           next: (value: any) => {
             observer.next?.({ data: value.data, error: value.errors?.[0] ? new Error(value.errors[0].message) : null });
           },
