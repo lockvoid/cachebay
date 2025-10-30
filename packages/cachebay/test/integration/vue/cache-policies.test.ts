@@ -12,7 +12,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: { users: fixtures.users.buildConnection([{ email: "u1@example.com" }]) } };
           },
-          delay: 10,
+          delay: 20,
         },
       ];
 
@@ -37,14 +37,15 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await delay(5);
+      await delay(10);
       expect(getEdges(wrapper, "email").length).toBe(0);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(1);
       expect(Cmp.errorUpdates.length).toBe(0);
 
-      await delay(15);
+      await delay(30);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
+      expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(2);
       expect(Cmp.errorUpdates.length).toBe(0);
       expect(Cmp.renders.count).toBe(2);
@@ -61,7 +62,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: { user: fixtures.user({ id: "u1", email: "u1@example.com" }) } };
           },
-          delay: 10, // Increased to handle CI delay multiplier (30ms > 5ms * 3x CI multiplier)
+          delay: 20,
         },
       ];
 
@@ -84,13 +85,13 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await delay(5);
+      await delay(10);
       expect(getEdges(wrapper, "email")).toEqual([]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(1);
       expect(Cmp.errorUpdates.length).toBe(0);
 
-      await delay(20);
+      await delay(30);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(2);
@@ -148,7 +149,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: data1 };
           },
-          delay: 10,
+          delay: 20,
         },
       ];
 
@@ -177,13 +178,13 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await delay(5);
+      await delay(10);
       expect(getEdges(wrapper, "text")).toEqual([]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(1);
       expect(Cmp.errorUpdates.length).toBe(0);
 
-      await delay(15);
+      await delay(30);
       expect(getEdges(wrapper, "text")).toEqual(["Comment 3", "Comment 4"]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(2);
@@ -204,7 +205,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: { users: fixtures.users.buildConnection([{ email: "tech.user@example.com" }]) } };
           },
-          delay: 10,
+          delay: 20,
         },
       ];
 
@@ -230,13 +231,13 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await delay(5);
+      await delay(10);
       expect(getEdges(wrapper, "email").length).toBe(0);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(1);
       expect(Cmp.errorUpdates.length).toBe(0);
 
-      await delay(15);
+      await delay(30);
       expect(getEdges(wrapper, "email")).toEqual(["tech.user@example.com"]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(2);
@@ -283,7 +284,7 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await delay(5);
+      await delay(10);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(0);
       expect(Cmp.dataUpdates.length).toBe(1);
@@ -306,7 +307,7 @@ describe("Cache Policies Behavior", () => {
               },
             };
           },
-          delay: 15,
+          delay: 20,
         },
       ];
 
@@ -329,13 +330,13 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await tick();
+      await delay(10);
       expect(getEdges(wrapper, "email").join("")).toBe("");
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(1);
       expect(Cmp.errorUpdates.length).toBe(0);
 
-      await delay(20);
+      await delay(30);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(2);
@@ -415,7 +416,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: { users: fixtures.users.buildConnection([{ id: "u1", email: "u1+updated@example.com" }]) } };
           },
-          delay: 15,
+          delay: 20,
         },
       ];
 
@@ -447,7 +448,7 @@ describe("Cache Policies Behavior", () => {
       expect(Cmp.dataUpdates.length).toBe(1);
       expect(Cmp.errorUpdates.length).toBe(0);
 
-      await delay(20);
+      await delay(30);
       expect(getEdges(wrapper, "email")).toEqual(["u1+updated@example.com"]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(2);
@@ -482,7 +483,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: { users: fixtures.users.buildConnection([{ id: "u1", email: "u1@example.com" }]) } };
           },
-          delay: 10,
+          delay: 20,
         },
       ];
 
@@ -507,13 +508,13 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await delay(5);
+      await delay(10);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(1);
       expect(Cmp.errorUpdates.length).toBe(0);
 
-      await delay(15);
+      await delay(30);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(1);
@@ -548,7 +549,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: { users: fixtures.users.buildConnection([{ id: "u1", email: "u1+updated@example.com" }]) } };
           },
-          delay: 10,
+          delay: 20,
         },
       ];
 
@@ -573,13 +574,13 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await delay(5);
+      await delay(10);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(1);
       expect(Cmp.errorUpdates.length).toBe(0);
 
-      await delay(15);
+      await delay(30);
       expect(getEdges(wrapper, "email")).toEqual(["u1+updated@example.com"]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(2);
@@ -598,7 +599,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: { users: fixtures.users.buildConnection([{ email: "u1@example.com" }]) } };
           },
-          delay: 10,
+          delay: 20,
         },
       ];
 
@@ -623,13 +624,13 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await delay(5);
+      await delay(10);
       expect(getEdges(wrapper, "email")).toEqual([]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(1);
       expect(Cmp.errorUpdates.length).toBe(0);
 
-      await delay(15);
+      await delay(30);
       expect(getEdges(wrapper, "email")).toEqual(["u1@example.com"]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(2);
@@ -726,7 +727,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: data2 };
           },
-          delay: 10,
+          delay: 20,
         },
       ];
 
@@ -755,13 +756,13 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await tick();
+      await delay(10);
       expect(getEdges(wrapper, "text")).toEqual(["Comment 1", "Comment 2"]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(1);
       expect(Cmp.errorUpdates.length).toBe(0);
 
-      await delay(15);
+      await delay(30);
       expect(getEdges(wrapper, "text")).toEqual(["Comment 1", "Comment 2", "Comment 3"]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(2);
@@ -796,7 +797,7 @@ describe("Cache Policies Behavior", () => {
           respond: () => {
             return { data: { users: fixtures.users.buildConnection([{ id: "u1", email: "fresh-u1@example.com" }, { id: "u2", email: "fresh-u2@example.com" }]) } };
           },
-          delay: 15,
+          delay: 20,
         },
       ];
 
@@ -822,13 +823,13 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await delay(5);
+      await delay(10);
       expect(getEdges(wrapper, "email")).toEqual(["cached-u1@example.com"]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(1);
       expect(Cmp.errorUpdates.length).toBe(0);
 
-      await delay(15);
+      await delay(30);
       expect(getEdges(wrapper, "email")).toEqual(["fresh-u1@example.com", "fresh-u2@example.com"]);
       expect(fx.calls.length).toBe(1);
       expect(Cmp.dataUpdates.length).toBe(2);
@@ -913,7 +914,7 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await tick();
+      await delay(10);
       expect(getEdges(wrapper, "email").length).toBe(0);
       expect(fx.calls.length).toBe(0);
       expect(Cmp.dataUpdates.length).toBe(1);
@@ -946,7 +947,7 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      await tick();
+      await delay(10);
       expect(wrapper.text()).toContain("Cache miss");
       expect(fx.calls.length).toBe(0);
       expect(Cmp.dataUpdates.length).toBe(1);

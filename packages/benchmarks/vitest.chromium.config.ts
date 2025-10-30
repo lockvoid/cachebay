@@ -44,7 +44,7 @@ export default defineConfig(({ mode }) => ({
     },
 
     include: [
-      'suites/**/*.dom.bench.ts',
+      'bench/dom/**/*.bench.ts',
     ],
 
     benchmark: {
