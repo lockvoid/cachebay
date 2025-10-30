@@ -167,7 +167,7 @@ export type CachebayInstance = {
 /**
  * Create a new Cachebay cache instance
  * @param options - Configuration options for the cache
- * @returns Configured cache instance with Villus plugin interface
+ * @returns Configured cache instance
  */
 export function createCachebay(options: CachebayOptions): CachebayInstance {
   // Validate transport configuration

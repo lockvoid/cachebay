@@ -6,7 +6,27 @@ Cachebay is **request-scoped** on the server and **instance-scoped** on the clie
 - **Client:** call `hydrate(snapshot)` once at boot.
 - On the **first client mount**, **cache-and-network** renders from the **hydrated cache** **without** a duplicate request; after that, CN behaves normally (cached + revalidate).
 
----
+## Options
+
+You can tune SSR/Suspense behavior when creating the cache:
+
+```ts
+import { createCachebay } from 'cachebay'
+
+const cachebay = createCachebay({
+  /** Suppress the first CN revalidate right after hydrate (ms) */
+  hydrationTimeout: 120,
+
+  /** After a result, serve repeat Suspense re-execs of the same op key from cache (ms) */
+  suspensionTimeout: 800,
+
+  /** (Optional) Default cache policy for executeQuery/executeMutation */
+  // cachePolicy: 'cache-and-network',
+})
+```
+
+- **`hydrationTimeout`** — grace period after `hydrate()` where the first **cache-and-network** render publishes **cached terminally** (no revalidate).
+- **`suspensionTimeout`** — short window **after a result** during which a repeat execution of the **same op key** returns cached and skips a new fetch.
 
 ## What `hydrate()` restores
 
@@ -21,160 +41,93 @@ const snapshot = cachebay.dehydrate()
 cachebay.hydrate(snapshot)
 ```
 
----
-
 ## First-mount behavior (policy matrix)
 
 When a component renders **right after** `hydrate()`:
 
-| Policy              | During hydration window                     | After window (normal)                      |
-|---------------------|---------------------------------------------|--------------------------------------------|
+| Policy                | During hydration window                     | After window (normal)                      |
+|-----------------------|---------------------------------------------|--------------------------------------------|
 | **cache-and-network** | 0 requests (render cached, terminal)         | cached (non-terminal) + network revalidate |
 | **cache-first**       | 0 requests (render cached, terminal)         | if not cached → 1 request                   |
 | **network-only**      | 1 request                                     | 1 request                                   |
-| **cache-only**        | 0 requests (cached or `CacheMiss`)        | 0 requests                                  |
+| **cache-only**        | 0 requests (cached or `CacheMiss`)           | 0 requests                                  |
 
-The **hydration window** is short and internal; it suppresses CN’s initial revalidate so the UI shows hydrated data without a “double fetch”.
+The **hydration window** suppresses CN’s initial revalidate so the UI shows hydrated data without a “double fetch”.
 
 ---
 
 ## Suspense & duplicate re-exec protection
 
-Some Suspense setups re-run the same query immediately after a result lands. Cachebay smooths this with a **short after-result window**:
+Some Suspense setups can re-run the same query immediately after a result. Cachebay smooths this with a **short after-result window**:
 
 - A repeat execution of the same **op key** within that window is served **from cache** and **does not refetch**.
 - Applies to **cache-and-network** and **network-only** (when cached data exists).
 
----
-
-## Wiring examples
-
-### Vue (framework-agnostic)
-
-**Server-side**
+## Agnostic wiring
 
 ```ts
-// server.ts
 import { createCachebay } from 'cachebay'
 
-// New Cache Per SSR Request
-const cache = createCachebay()
-
-// Render Your App With This Cache Installed (details depend on your SSR stack)
-
-// Serialize Snapshot
+// Server
+const cachebay = createCachebay()
+// ...render your app...
 const snapshot = cachebay.dehydrate()
+// ...embed snapshot in HTML (e.g., window.__CACHEBAY__ = {...})
 
-// Embed `snapshot` Into HTML Payload (e.g. window.__CACHEBAY__ = {...})
-```
+// Client
+const cachebay = createCachebay();
 
-**Client-side**
-
-```ts
-// client.ts
-import { createClient } from 'villus'
-import { fetch as fetchPlugin } from 'villus'
-import { createCachebay } from 'cachebay'
-
-// Optional Runtime Tuning
-const cache = createCachebay({
-  hydrationTimeout: 120,   // ms to suppress CN revalidate after hydrate
-  suspensionTimeout: 800,  // ms to serve repeat Suspense re-execs from cache
-})
-
-// Hydrate Once If Provided
 if ((window as any).__CACHEBAY__) {
   cachebay.hydrate((window as any).__CACHEBAY__)
 }
-
-// Villus Client
-export const client = createClient({
-  url: '/graphql',
-  cachePolicy: 'cache-and-network',
-
-  use: [
-    cache,
-    fetchPlugin(),
-  ],
-})
-
-// Install `client` + `cache` Into Your App, Then Mount
 ```
 
----
 
-### Nuxt 4
+## Vue/Nuxt wiring
 
 ```ts
-// plugins/villus.ts
-import { createClient } from 'villus'
-import { createCachebay } from 'cachebay'
-import { fetch as fetchPlugin, dedup as dedupPlugin } from 'villus'
+// plugins/cachebay.ts
+import { defineNuxtPlugin } from '#app'
+import { createCachebay, createHttpTransport, createWsTransport } from 'cachebay'
+import { toRaw } from 'vue'
+import { useSettings } from '~/stores/settings'
 
 export default defineNuxtPlugin((nuxtApp) => {
-  const cache = createCachebay({
+  const url = '/graphql';
+
+  const cachebay = createCachebay({
+    transport: {
+      http: createHttpTransport(url),
+      ws: createWsTransport(url),
+    },
+
     // hydrationTimeout: 120,
     // suspensionTimeout: 800,
   })
 
-  // Persist Per-Request Snapshot On The Server
+  nuxtApp.vueApp.use(cachebay)
+
+  // Server: persist snapshot after render
   if (import.meta.server) {
     nuxtApp.hook('app:rendered', () => {
-      useState('cachebay').value = cachebay.dehydrate()
+      useState('cachebay').value = cachebay.dehydrate();
     })
   }
 
-  // Hydrate Once On The Client
-  if (import.meta.client) {
-    const state = useState('cachebay').value
+  // Client: hydrate once if SSR is enabled
+  if (import.meta.client && settings.ssr) {
+    const state = useState('cachebay').value;
 
     if (state) {
-      cachebay.hydrate(state);
+      cachebay.hydrate(toRaw(state))
     }
   }
-
-  // Villus Client
-  const client = createClient({
-    url: '/graphql',
-    cachePolicy: 'cache-and-network',
-    use: [
-      cache,
-      dedupPlugin(),
-      fetchPlugin(),
-    ],
-  })
-
-  nuxtApp.vueApp.use(client)
-  nuxtApp.vueApp.use(cache)
 })
 ```
-
----
-
-## Options
-
-You can tune SSR/Suspense timeouts when creating the cache:
-
-```ts
-import { createCachebay } from 'cachebay'
-
-const cache = createCachebay({
-  /** Suppress the first CN revalidate right after hydrate (ms) */
-  hydrationTimeout: 120,
-
-  /** After a result, serve repeat Suspense re-execs of the same op key from cache (ms) */
-  suspensionTimeout: 800,
-})
-```
-
-- **`hydrationTimeout`** — grace period after `hydrate()` where the first **cache-and-network** render publishes **cached terminally** (no revalidate).
-- **`suspensionTimeout`** — short window **after a result** during which a repeat execution of the **same op key** returns cached and skips a new fetch.
-
----
 
 ## See also
 
 - **Relay connections** — directive, merge modes, policy matrix: [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md)
 - **Optimistic updates** — layering, entity ops, `addNode` / `removeNode` / `patch`: [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)
 - **Fragments** — identify / read / write: [FRAGMENTS.md](./FRAGMENTS.md)
-- **Composables** — `useCache()`, `useFragment()`: [COMPOSABLES.md](./COMPOSABLES.md)
+- **Mutations** — write merging & optimistic patterns: [MUTATIONS.md](./MUTATIONS.md)
