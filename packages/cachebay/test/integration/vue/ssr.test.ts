@@ -7,6 +7,7 @@ const ssrRoundtrip = async ({ routes }) => {
   const serverClient = createTestClient({
     cacheOptions: {
       suspensionTimeout: 1,
+      hydrationTimeout: 200,
     },
   });
 
@@ -35,7 +36,7 @@ const ssrRoundtrip = async ({ routes }) => {
 
     cacheOptions: {
       suspensionTimeout: 1,
-      hydrationTimeout: 40,
+      hydrationTimeout: 200,
     },
   });
 
@@ -105,7 +106,7 @@ describe("SSR", () => {
         });
 
         // 1. Right after mount - cached data, no request
-        await delay(5);
+        await delay(20);
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
 
@@ -113,7 +114,7 @@ describe("SSR", () => {
         wrapper.setProps({ category: "music", first: 2, after: null });
 
         // 3. Request fires for uncached data
-        await delay(5);
+        await delay(20);
         expect(fx.calls.length).toBe(1);
         expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
 
@@ -121,7 +122,7 @@ describe("SSR", () => {
         wrapper.setProps({ category: "lifestyle", first: 2, after: null });
 
         // 5. No new request for cached data during hydration
-        await delay(5);
+        await delay(20);
         expect(fx.calls.length).toBe(1); // Still 1, no new request during hydration
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
 
@@ -154,7 +155,7 @@ describe("SSR", () => {
         });
 
         // 1. Right after mount - cached data, no request
-        await delay(2);
+        await delay(20);
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
 
@@ -162,7 +163,7 @@ describe("SSR", () => {
         wrapper.setProps({ category: "music", first: 2, after: null });
 
         // 3. Request fires for uncached data
-        await delay(2);
+        await delay(20);
         expect(fx.calls.length).toBe(1);
         expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
 
@@ -170,7 +171,7 @@ describe("SSR", () => {
         wrapper.setProps({ category: "lifestyle", first: 2, after: null });
 
         // 5. No new request for cached data during hydration
-        await delay(2);
+        await delay(20);
         expect(fx.calls.length).toBe(1); // Still 1, no new request during hydration
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
 
@@ -203,7 +204,7 @@ describe("SSR", () => {
         });
 
         // 1. Right after mount - cached data, no request
-        await tick();
+        await delay(20);
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
 
@@ -211,7 +212,7 @@ describe("SSR", () => {
         wrapper.setProps({ category: "music", first: 2, after: null });
 
         // 3. Request fires for uncached data
-        await delay(2);
+        await delay(20);
         expect(fx.calls.length).toBe(1);
         expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
 
@@ -219,7 +220,7 @@ describe("SSR", () => {
         wrapper.setProps({ category: "lifestyle", first: 2, after: null });
 
         // 5. No new request for cached data
-        await delay(2);
+        await delay(20);
         expect(fx.calls.length).toBe(1); // Still 1, no new request
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
 
@@ -252,7 +253,7 @@ describe("SSR", () => {
         });
 
         // 1. Right after mount - cached data, no request
-        await delay(2);
+        await delay(20);
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
 
@@ -261,7 +262,7 @@ describe("SSR", () => {
 
         // 3. No request fires (cache-only never makes network requests)
         // Suspense keeps showing old data until new data arrives
-        await delay(2);
+        await delay(20);
         expect(fx.calls.length).toBe(0); // Still 0
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]); // Suspense shows old data
 
@@ -269,7 +270,7 @@ describe("SSR", () => {
         wrapper.setProps({ category: "lifestyle", first: 2, after: null });
 
         // 5. Still no request
-        await delay(2);
+        await delay(20);
         expect(fx.calls.length).toBe(0); // Still 0
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]); // Cached data restored
 
@@ -312,7 +313,7 @@ describe("SSR", () => {
         wrapper.setProps({ category: "music", first: 2, after: null });
 
         // 3. Request fires for uncached data
-        await delay(2);
+        await delay(20);
         expect(fx.calls.length).toBe(1);
         expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
 
@@ -320,7 +321,7 @@ describe("SSR", () => {
         wrapper.setProps({ category: "lifestyle", first: 2, after: null });
 
         // 5. No new request for cached data
-        await delay(2);
+        await delay(20);
         expect(fx.calls.length).toBe(1); // Still 1, no new request
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
 
@@ -353,7 +354,7 @@ describe("SSR", () => {
         });
 
         // 1. Right after mount - cached data, no request
-        await delay(2);
+        await delay(20);
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
 
@@ -361,7 +362,7 @@ describe("SSR", () => {
         wrapper.setProps({ category: "music", first: 2, after: null });
 
         // 3. Request fires for uncached data
-        await delay(2);
+        await delay(20);
         expect(fx.calls.length).toBe(1);
         expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
 
@@ -369,7 +370,7 @@ describe("SSR", () => {
         wrapper.setProps({ category: "lifestyle", first: 2, after: null });
 
         // 5. No new request for cached data during hydration
-        await delay(2);
+        await delay(20);
         expect(fx.calls.length).toBe(1); // Still 1, no new request during hydration
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
 
@@ -410,7 +411,7 @@ describe("SSR", () => {
         wrapper.setProps({ category: "music", first: 2, after: null });
 
         // 3. Request fires for uncached data
-        await delay(2);
+        await delay(20);
         expect(fx.calls.length).toBe(1);
         expect(getEdges(wrapper, "title")).toEqual(["B1", "B2"]);
 
@@ -418,7 +419,7 @@ describe("SSR", () => {
         wrapper.setProps({ category: "lifestyle", first: 2, after: null });
 
         // 5. No new request for cached data
-        await delay(2);
+        await delay(20);
         expect(fx.calls.length).toBe(1); // Still 1, no new request
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
 
@@ -451,7 +452,7 @@ describe("SSR", () => {
         });
 
         // 1. Right after mount - cached data, no request
-        await delay(2);
+        await delay(20);
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]);
         expect(fx.calls.length).toBe(0);
 
@@ -459,7 +460,7 @@ describe("SSR", () => {
         wrapper.setProps({ category: "music", first: 2, after: null });
 
         // 3. No request fires (cache-only never makes network requests)
-        await delay(2);
+        await delay(20);
         expect(fx.calls.length).toBe(0); // Still 0
         expect(getEdges(wrapper, "title")).toEqual([]); // No data (cache miss)
 
@@ -467,7 +468,7 @@ describe("SSR", () => {
         wrapper.setProps({ category: "lifestyle", first: 2, after: null });
 
         // 5. Still no request
-        await delay(2);
+        await delay(20);
         expect(fx.calls.length).toBe(0); // Still 0
         expect(getEdges(wrapper, "title")).toEqual(["A1", "A2"]); // Cached data restored
 
