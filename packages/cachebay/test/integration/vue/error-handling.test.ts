@@ -1,4 +1,6 @@
 import { mount } from "@vue/test-utils";
+import { defineComponent, h, Suspense, onErrorCaptured, ref } from "vue";
+import { useQuery } from "@/src/adapters/vue";
 import {
   createTestClient,
   createConnectionComponent,
@@ -230,6 +232,175 @@ describe("Error Handling (epoch & pagination semantics)", () => {
       "Post 3",
       "Post 4",
     ]);
+
+    await fx.restore();
+  });
+
+  it("triggers Vue error boundary (onErrorCaptured) in Suspense mode with network-only error", async () => {
+    const routes = [
+      {
+        when: ({ variables }) => variables.id === "1",
+        respond: () => ({ error: new Error("Network timeout") }),
+        delay: 5,
+      },
+    ];
+
+    const { client, fx } = createTestClient({ routes });
+
+    let errorCaptured: Error | null = null;
+    let errorCapturedCount = 0;
+
+    // Child component using Suspense (async setup)
+    const AsyncChild = defineComponent({
+      async setup() {
+        const query = await useQuery({
+          query: operations.USER_QUERY,
+          variables: { id: "1" },
+          cachePolicy: "network-only",
+        });
+
+        return () => h("div", query.data.value?.user?.email || "No data");
+      },
+    });
+
+    // Parent component with error boundary
+    const Parent = defineComponent({
+      setup() {
+        const hasError = ref(false);
+        const errorMessage = ref("");
+
+        onErrorCaptured((err) => {
+          errorCaptured = err as Error;
+          errorCapturedCount++;
+          hasError.value = true;
+          errorMessage.value = err.message;
+          return false; // Prevent error from propagating further
+        });
+
+        return () =>
+          h("div", [
+            hasError.value
+              ? h("div", { class: "error-boundary" }, `Error: ${errorMessage.value}`)
+              : h(Suspense, {}, {
+                  default: () => h(AsyncChild),
+                  fallback: () => h("div", { class: "loading" }, "Loading..."),
+                }),
+          ]);
+      },
+    });
+
+    const wrapper = mount(Parent, {
+      global: { plugins: [client] },
+    });
+
+    // Initially should show loading
+    expect(wrapper.find(".loading").exists()).toBe(true);
+
+    // Wait for error to be caught
+    await delay(20);
+
+    // Error should be captured by onErrorCaptured
+    expect(errorCapturedCount).toBe(1);
+    expect(errorCaptured).not.toBeNull();
+    expect(errorCaptured?.message).toContain("Network timeout");
+
+    // Error boundary should display error
+    expect(wrapper.find(".error-boundary").exists()).toBe(true);
+    expect(wrapper.find(".error-boundary").text()).toContain("Network timeout");
+
+    await fx.restore();
+  });
+
+  it("resolves with cached data in Suspense mode when cache-and-network has network error", async () => {
+    const routes = [
+      {
+        when: ({ variables }) => variables.id === "1",
+        respond: () => ({ error: new Error("Network failed!") }),
+        delay: 10,
+      },
+    ];
+
+    const { client, cache, fx } = createTestClient({ routes });
+
+    // Pre-populate cache with stale data
+    cache.writeQuery({
+      query: operations.USER_QUERY,
+      variables: { id: "1" },
+      data: {
+        __typename: "Query",
+        user: {
+          __typename: "User",
+          id: "1",
+          email: "cached@example.com",
+          name: "Cached User",
+        },
+      },
+    });
+
+    let errorCaptured: Error | null = null;
+
+    // Child component using Suspense (async setup)
+    const AsyncChild = defineComponent({
+      async setup() {
+        const query = await useQuery({
+          query: operations.USER_QUERY,
+          variables: { id: "1" },
+          cachePolicy: "cache-and-network", // Returns cached data immediately, then fetches
+        });
+
+        return () =>
+          h("div", [
+            h("div", { class: "email" }, query.data.value?.user?.email || "No email"),
+            query.error.value
+              ? h("div", { class: "error-indicator" }, "Network error occurred")
+              : null,
+          ]);
+      },
+    });
+
+    // Parent component with error boundary
+    const Parent = defineComponent({
+      setup() {
+        onErrorCaptured((err) => {
+          errorCaptured = err as Error;
+          return false;
+        });
+
+        return () =>
+          h(Suspense, {}, {
+            default: () => h(AsyncChild),
+            fallback: () => h("div", { class: "loading" }, "Loading..."),
+          });
+      },
+    });
+
+    const wrapper = mount(Parent, {
+      global: { plugins: [client] },
+    });
+
+    // Should show loading initially
+    expect(wrapper.find(".loading").exists()).toBe(true);
+
+    // Wait for cache data to resolve Suspense
+    await delay(5);
+
+    // Should NOT trigger error boundary because cached data resolved the Suspense
+    expect(errorCaptured).toBeNull();
+
+    // Should show cached data
+    expect(wrapper.find(".email").text()).toBe("cached@example.com");
+
+    // Wait for network error
+    await delay(15);
+
+    // Still should NOT trigger error boundary (network error happens after Suspense resolved)
+    expect(errorCaptured).toBeNull();
+
+    // Should still show cached data
+    expect(wrapper.find(".email").text()).toBe("cached@example.com");
+
+    // Should show error indicator (error.value is set)
+    expect(wrapper.find(".error-indicator").exists()).toBe(true);
 
     await fx.restore();
   });

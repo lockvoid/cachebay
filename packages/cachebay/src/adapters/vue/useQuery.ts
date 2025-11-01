@@ -73,6 +73,12 @@ export function useQuery<TData = any, TVars = any>(
 
   let watchHandle: ReturnType<typeof client.watchQuery> | null = null;
   const suspensionPromise = createDeferred();
+  
+  // Add a catch handler to prevent unhandled rejections when not using Suspense
+  // If .then() is called (Suspense mode), it will override this handler
+  suspensionPromise.promise.catch(() => {
+    // Errors are handled via error.value for non-Suspense components
+  });
 
   /**
    * Setup watcher (first time only)
@@ -133,10 +139,13 @@ export function useQuery<TData = any, TVars = any>(
       // This prevents loading flash by setting error AND isFetching before first render
       onError: (err) => {
         error.value = err;
-
-        //suspensionPromise.reject(err);
-
         isFetching.value = false; // Set synchronously to prevent loading flash
+        
+        // Always reject suspense promise so Vue Suspense error boundaries can catch it
+        // The .catch() handler added to the promise prevents unhandled rejections for non-Suspense components
+        queueMicrotask(() => {
+          suspensionPromise.reject(err);
+        });
       },
     });
 
@@ -213,7 +222,7 @@ export function useQuery<TData = any, TVars = any>(
 
       if (watchHandle) {
         watchHandle.update({ variables: vars, immediate: false }); // Don't materialize - performQuery will handle it
-        performQuery(vars, policy); // performQuery handles all policies including cache-only
+        performQuery(vars, policy).catch(() => { /* NOOP */ }); // performQuery handles all policies including cache-only
       }
     },
     { deep: true },
