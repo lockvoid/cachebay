@@ -84,57 +84,63 @@ export function useQuery<TData = any, TVars = any>(
       onData: (newData) => {
         data.value = newData as TData;
         error.value = null;
-        // Don't set isFetching here - performQuery handles it
       },
       onError: (err) => {
         error.value = err;
-        // Don't set isFetching here - performQuery handles it
       },
       immediate: false, // Don't materialize immediately - executeQuery will handle initial data
     });
   };
-
 
   /**
    * Execute query with current variables
    */
   const performQuery = async (vars: TVars, policy: CachePolicy): Promise<OperationResult<TData> | undefined> => {
     error.value = null;
+
     isFetching.value = true;
 
-    try {
-      const result = await client.executeQuery<TData, TVars>({
-        query: options.query,
-        variables: vars,
-        cachePolicy: policy,
-        // onCacheData is called synchronously for cache hits (before Promise resolves)
-        // This prevents loading flash for cache-only, cache-first, and shows stale data for cache-and-network
-        onCacheData: (cachedData, { willFetchFromNetwork }) => {
-          data.value = cachedData;
+    const result = await client.executeQuery<TData, TVars>({
+      query: options.query,
+      variables: vars,
+      cachePolicy: policy,
 
+      onNetworkData: (networkData) => {
+
+        isFetching.value = false; // Set synchronously to prevent loading flash
+
+        queueMicrotask(() => {
+          suspensionPromise.resolve(networkData);
+        });
+      },
+
+      // onCacheData is called synchronously for cache hits (before Promise resolves)
+      // This prevents loading flash for cache-only, cache-first, and shows stale data for cache-and-network
+      onCacheData: (cachedData, { willFetchFromNetwork }) => {
+        data.value = cachedData;
+
+        // Only set isFetching to false if no network request will be made
+        // If network request is pending, keep isFetching true to show loading indicator
+        if (!willFetchFromNetwork) {
+          isFetching.value = false;
+        }
+
+        queueMicrotask(() => {
           suspensionPromise.resolve(cachedData);
+        });
+      },
+      // onError is called synchronously for cache-only misses (before Promise resolves)
+      // This prevents loading flash by setting error AND isFetching before first render
+      onError: (err) => {
+        error.value = err;
 
-          // Only set isFetching to false if no network request will be made
-          // If network request is pending, keep isFetching true to show loading indicator
-          if (!willFetchFromNetwork) {
-            isFetching.value = false;
-          }
-        },
-        // onError is called synchronously for cache-only misses (before Promise resolves)
-        // This prevents loading flash by setting error AND isFetching before first render
-        onError: (err) => {
-          error.value = err;
-          isFetching.value = false; // Set synchronously to prevent loading flash
-        },
-      });
+        //suspensionPromise.reject(err);
 
-      // Promise resolves with fresh data, set isFetching to false
-      isFetching.value = false;
-      return result;
-    } catch {
-      isFetching.value = false;
-      return undefined;
-    }
+        isFetching.value = false; // Set synchronously to prevent loading flash
+      },
+    });
+
+    return result;
   };
 
   /**
@@ -165,9 +171,6 @@ export function useQuery<TData = any, TVars = any>(
     // Execute query with refetch policy using performQuery
     const result = await performQuery(vars, refetchPolicy);
 
-    // Resolve suspension promise for lazy mode refetch
-    suspensionPromise.resolve(result);
-
     return result;
   };
 
@@ -190,11 +193,7 @@ export function useQuery<TData = any, TVars = any>(
           setupWatcher(vars);
           // Execute query unless lazy mode
           if (!options.lazy) {
-            const promise = performQuery(vars, policy);
-
-            promise.then(result => {
-              suspensionPromise.resolve(result);
-            });
+            performQuery(vars, policy).catch(() => { /** **/ });
           }
         }
       }
@@ -231,7 +230,7 @@ export function useQuery<TData = any, TVars = any>(
       const policy = newPolicy || "cache-first";
 
       // Re-execute query with new policy (performQuery handles all policies)
-      performQuery(vars, policy);
+      performQuery(vars, policy).catch(() => { /* NOOP */ });
     },
   );
 

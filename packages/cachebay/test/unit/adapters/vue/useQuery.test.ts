@@ -1140,6 +1140,7 @@ describe("useQuery", () => {
     });
 
     await nextTick();
+    await nextTick();
 
     // KEY TEST: Suspense should have resolved immediately with cached data
     // WITHOUT waiting for the 100ms network request
