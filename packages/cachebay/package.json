@@ -12,9 +12,7 @@
     "lint": "eslint",
     "lint:fix": "eslint --fix",
     "prepublishOnly": "pnpm build",
-    "test": "vitest --run",
-    "test:benchmark": "vitest bench --run",
-    "test:perf": "vitest bench --run"
+    "test": "vitest --run"
   },
   "devDependencies": {
     "@codspeed/vitest-plugin": "^5.0.1",

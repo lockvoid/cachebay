@@ -15,6 +15,7 @@ import {
   CONNECTION_DIRECTIVE,
 } from "./constants";
 import { fingerprintPlan, hashFingerprint } from "./fingerprint";
+import { dedupeDocument } from "./lowering/dedupe";
 import { lowerSelectionSet } from "./lowering/flatten";
 import { isCachePlan, buildFieldKey, buildConnectionKey, buildConnectionCanonicalKey } from "./utils";
 import { collectVarsFromSelectionSet, makeMaskedVarsKeyFn } from "./variables";
@@ -321,8 +322,11 @@ export const compilePlan = (
 
   const fragmentsByName = indexFragments(document);
 
+  // Dedupe: flatten + merge identical selections (compile-time optimization)
+  const dedupedDoc = dedupeDocument(document, fragmentsByName);
+
   // Operation path
-  const operation = document.definitions.find(
+  const operation = dedupedDoc.definitions.find(
     (d): d is OperationDefinitionNode => d.kind === Kind.OPERATION_DEFINITION,
   );
 
@@ -347,9 +351,9 @@ export const compilePlan = (
       selectionSet: selectionWithTypename,
     };
 
-    const newDefinitions = new Array(document.definitions.length);
-    for (let i = 0; i < document.definitions.length; i++) {
-      const d = document.definitions[i];
+    const newDefinitions = new Array(dedupedDoc.definitions.length);
+    for (let i = 0; i < dedupedDoc.definitions.length; i++) {
+      const d = dedupedDoc.definitions[i];
       if (d.kind === Kind.OPERATION_DEFINITION) {
         newDefinitions[i] = operationWithTypename;
       } else if (d.kind === Kind.FRAGMENT_DEFINITION) {
@@ -367,7 +371,7 @@ export const compilePlan = (
     }
 
     const docWithTypename: DocumentNode = {
-      kind: document.kind,
+      kind: dedupedDoc.kind,
       definitions: newDefinitions,
     };
 
@@ -400,7 +404,7 @@ export const compilePlan = (
   }
 
   // Fragment path (single or multiple)
-  const fragmentDefs = document.definitions.filter(
+  const fragmentDefs = dedupedDoc.definitions.filter(
     (d): d is FragmentDefinitionNode => d.kind === Kind.FRAGMENT_DEFINITION,
   );
 
@@ -430,9 +434,9 @@ export const compilePlan = (
 
     // Build network-safe doc with __typename added to ALL fragments
     // Just need to strip @connection directives
-    const newDefinitions = new Array(document.definitions.length);
-    for (let i = 0; i < document.definitions.length; i++) {
-      const d = document.definitions[i];
+    const newDefinitions = new Array(dedupedDoc.definitions.length);
+    for (let i = 0; i < dedupedDoc.definitions.length; i++) {
+      const d = dedupedDoc.definitions[i];
       if (d.kind === Kind.FRAGMENT_DEFINITION) {
         const fragWithTypename = ensureTypenameRecursive(d.selectionSet);
         newDefinitions[i] = {
@@ -448,7 +452,7 @@ export const compilePlan = (
     }
 
     const docWithTypename: DocumentNode = {
-      kind: document.kind,
+      kind: dedupedDoc.kind,
       definitions: newDefinitions,
     };
 
