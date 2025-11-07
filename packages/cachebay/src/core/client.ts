@@ -195,7 +195,7 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
     },
   });
 
-  const optimistic = createOptimistic({ graph });
+  const optimistic = createOptimistic({ graph, planner });
   const ssr = createSSR({ hydrationTimeout: options.hydrationTimeout }, { graph });
   const canonical = createCanonical({ graph, optimistic });
   const documents = createDocuments({ graph, planner, canonical });

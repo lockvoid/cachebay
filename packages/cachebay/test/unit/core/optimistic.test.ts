@@ -1,16 +1,20 @@
 import { createGraph } from "@/src/core/graph";
 import { createOptimistic } from "@/src/core/optimistic";
+import { createPlanner } from "@/src/core/planner";
 import { readCanonicalEdges } from "@/test/helpers/unit";
+import { POST_FRAGMENT, POST_COMMENTS_FRAGMENT, USER_POSTS_FRAGMENT } from "@/test/helpers/operations";
 
 describe("Optimistic", () => {
   let graph: ReturnType<typeof createGraph>;
   let optimistic: ReturnType<typeof createOptimistic>;
+  let planner: ReturnType<typeof createPlanner>;
   let onChangeSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     onChangeSpy = vi.fn();
     graph = createGraph({ onChange: onChangeSpy });
-    optimistic = createOptimistic({ graph });
+    planner = createPlanner();
+    optimistic = createOptimistic({ graph, planner });
   });
 
   describe("Entity Operations", () => {
@@ -834,6 +838,698 @@ describe("Optimistic", () => {
 
       const ids2 = readCanonicalEdges(graph, key).map(e => graph.getRecord(e.nodeKey)?.id);
       expect(ids2).toEqual(["p1", "p2"]);
+    });
+  });
+
+  describe("Fragment Operations", () => {
+    describe("addNode() with fragment", () => {
+      it("adds node using fragment without nested connections", () => {
+        const key = "@connection.posts({})";
+
+        const tx = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { id: "p1", title: "Post 1", flags: ["draft"] },
+            { 
+              position: "end",
+              fragment: POST_FRAGMENT,
+              fragmentName: "PostFields"
+            }
+          );
+        });
+
+        tx.commit();
+
+        const edges = readCanonicalEdges(graph, key);
+        expect(edges.length).toBe(1);
+        expect(graph.getRecord("Post:p1")).toEqual({
+          __typename: "Post",
+          id: "p1",
+          title: "Post 1",
+          flags: ["draft"]
+        });
+      });
+
+      it("auto-initializes nested connections from fragment", () => {
+        const key = "@connection.posts({})";
+
+        const tx = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { id: "p1", title: "Post with Comments" },
+            {
+              position: "end",
+              fragment: POST_COMMENTS_FRAGMENT,
+              fragmentName: "PostComments"
+            }
+          );
+        });
+
+        tx.commit();
+
+        // Check main connection
+        const edges = readCanonicalEdges(graph, key);
+        expect(edges.length).toBe(1);
+        expect(graph.getRecord("Post:p1")?.title).toBe("Post with Comments");
+
+        // Check nested comments connection was auto-initialized
+        const commentsKey = "@connection.Post:p1.PostComments({})";
+        const commentsConnection = graph.getRecord(commentsKey);
+        expect(commentsConnection).toBeDefined();
+        expect(commentsConnection?.__typename).toBe("Connection");
+        expect(commentsConnection?.edges).toEqual({ __refs: [] });
+
+        // Check pageInfo was created
+        const pageInfoKey = `${commentsKey}.pageInfo`;
+        const pageInfo = graph.getRecord(pageInfoKey);
+        expect(pageInfo).toBeDefined();
+        expect(pageInfo?.__typename).toBe("PageInfo");
+        expect(pageInfo?.hasNextPage).toBe(false);
+        expect(pageInfo?.hasPreviousPage).toBe(false);
+      });
+
+      it("uses fragment typename when not provided in node data", () => {
+        const key = "@connection.posts({})";
+
+        const tx = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { id: "p1", title: "Auto Typename" },
+            {
+              position: "end",
+              fragment: POST_FRAGMENT,
+              fragmentName: "PostFields"
+            }
+          );
+        });
+
+        tx.commit();
+
+        expect(graph.getRecord("Post:p1")?.__typename).toBe("Post");
+      });
+
+      it("respects provided typename over fragment typename", () => {
+        const key = "@connection.posts({})";
+
+        const tx = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { __typename: "VideoPost", id: "p1", title: "Video Post" },
+            {
+              position: "end",
+              fragment: POST_FRAGMENT,
+              fragmentName: "PostFields"
+            }
+          );
+        });
+
+        tx.commit();
+
+        expect(graph.getRecord("VideoPost:p1")?.__typename).toBe("VideoPost");
+      });
+
+      it("handles fragment with variables for connection filters", () => {
+        graph.putRecord("User:u1", { __typename: "User", id: "u1", email: "user@test.com" });
+
+        const tx = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "users" });
+          c.addNode(
+            { id: "u2", email: "new@test.com" },
+            {
+              position: "end",
+              fragment: USER_POSTS_FRAGMENT,
+              fragmentName: "UserPosts",
+              variables: { postsCategory: "tech" }
+            }
+          );
+        });
+
+        tx.commit();
+
+        // Check nested posts connection with category filter
+        const postsKey = '@connection.User:u2.posts({"category":"tech"})';
+        const postsConnection = graph.getRecord(postsKey);
+        expect(postsConnection).toBeDefined();
+        expect(postsConnection?.__typename).toBe("Connection");
+      });
+
+      it("works without fragment (backward compatibility)", () => {
+        const key = "@connection.posts({})";
+
+        const tx = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { __typename: "Post", id: "p1", title: "No Fragment" },
+            { position: "end" }
+          );
+        });
+
+        tx.commit();
+
+        const edges = readCanonicalEdges(graph, key);
+        expect(edges.length).toBe(1);
+        expect(graph.getRecord("Post:p1")?.title).toBe("No Fragment");
+      });
+    });
+
+    describe("fragment with revert and layering", () => {
+      it("reverts nested connection initialization on revert", () => {
+        const key = "@connection.posts({})";
+
+        const tx = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { id: "p1", title: "Post 1" },
+            {
+              position: "end",
+              fragment: POST_COMMENTS_FRAGMENT,
+              fragmentName: "PostComments"
+            }
+          );
+        });
+
+        // Check nested connection exists
+        const commentsKey = "@connection.Post:p1.PostComments({})";
+        expect(graph.getRecord(commentsKey)).toBeDefined();
+
+        tx.revert();
+
+        // Check main node removed
+        expect(readCanonicalEdges(graph, key).length).toBe(0);
+        expect(graph.getRecord("Post:p1")).toBeUndefined();
+
+        // Check nested connection removed
+        expect(graph.getRecord(commentsKey)).toBeUndefined();
+        expect(graph.getRecord(`${commentsKey}.pageInfo`)).toBeUndefined();
+      });
+
+      it("preserves nested connections across layers", () => {
+        const key = "@connection.posts({})";
+
+        const tx1 = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { id: "p1", title: "Layer 1" },
+            {
+              position: "end",
+              fragment: POST_COMMENTS_FRAGMENT,
+              fragmentName: "PostComments"
+            }
+          );
+        });
+
+        const tx2 = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { id: "p2", title: "Layer 2" },
+            {
+              position: "end",
+              fragment: POST_COMMENTS_FRAGMENT,
+              fragmentName: "PostComments"
+            }
+          );
+        });
+
+        // Both nested connections should exist
+        expect(graph.getRecord("@connection.Post:p1.PostComments({})")).toBeDefined();
+        expect(graph.getRecord("@connection.Post:p2.PostComments({})")).toBeDefined();
+
+        tx1.revert();
+
+        // Layer 1 removed, layer 2 preserved
+        expect(graph.getRecord("Post:p1")).toBeUndefined();
+        expect(graph.getRecord("@connection.Post:p1.PostComments({})")).toBeUndefined();
+        expect(graph.getRecord("Post:p2")).toBeDefined();
+        expect(graph.getRecord("@connection.Post:p2.PostComments({})")).toBeDefined();
+
+        tx2.commit();
+
+        // Layer 2 still exists after commit
+        expect(graph.getRecord("Post:p2")).toBeDefined();
+        expect(graph.getRecord("@connection.Post:p2.PostComments({})")).toBeDefined();
+      });
+
+      it("updates nested connection on commit with real data", () => {
+        const key = "@connection.posts({})";
+
+        const tx = optimistic.modifyOptimistic((o, ctx) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { 
+              id: ctx?.data?.id ?? "temp-1", 
+              title: ctx?.data?.title ?? "Optimistic Title" 
+            },
+            {
+              position: "end",
+              fragment: POST_COMMENTS_FRAGMENT,
+              fragmentName: "PostComments"
+            }
+          );
+        });
+
+        // Check optimistic state
+        expect(graph.getRecord("Post:temp-1")?.title).toBe("Optimistic Title");
+        expect(graph.getRecord("@connection.Post:temp-1.PostComments({})")).toBeDefined();
+
+        tx.commit({ id: "p1", title: "Real Title" });
+
+        // Check real data
+        expect(graph.getRecord("Post:temp-1")).toBeUndefined();
+        expect(graph.getRecord("Post:p1")?.title).toBe("Real Title");
+        
+        // Nested connection should be re-initialized with real ID
+        expect(graph.getRecord("@connection.Post:p1.PostComments({})")).toBeDefined();
+        expect(graph.getRecord("@connection.Post:temp-1.PostComments({})")).toBeUndefined();
+      });
+
+      it("handles multiple nested connections in same fragment", () => {
+        const ComplexFragment = `
+          fragment ComplexPost on Post {
+            id
+            title
+            
+            comments(first: 10) @connection(key: "PostComments") {
+              pageInfo {
+                hasNextPage
+              }
+              edges {
+                node {
+                  id
+                  text
+                }
+              }
+            }
+            
+            reactions(first: 5) @connection(key: "PostReactions") {
+              pageInfo {
+                hasNextPage
+              }
+              edges {
+                node {
+                  id
+                  emoji
+                }
+              }
+            }
+          }
+        `;
+
+        const key = "@connection.posts({})";
+
+        const tx = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { id: "p1", title: "Complex Post" },
+            {
+              position: "end",
+              fragment: ComplexFragment,
+              fragmentName: "ComplexPost"
+            }
+          );
+        });
+
+        tx.commit();
+
+        // Check both nested connections initialized
+        expect(graph.getRecord("@connection.Post:p1.PostComments({})")).toBeDefined();
+        expect(graph.getRecord("@connection.Post:p1.PostReactions({})")).toBeDefined();
+        
+        // Check both pageInfos created
+        expect(graph.getRecord("@connection.Post:p1.PostComments({}).pageInfo")).toBeDefined();
+        expect(graph.getRecord("@connection.Post:p1.PostReactions({}).pageInfo")).toBeDefined();
+      });
+
+      it("ignores fragment if node cannot be identified", () => {
+        const key = "@connection.posts({})";
+
+        const tx = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { title: "No ID" } as any,
+            {
+              position: "end",
+              fragment: POST_FRAGMENT,
+              fragmentName: "PostFields"
+            }
+          );
+        });
+
+        tx.commit();
+
+        expect(readCanonicalEdges(graph, key).length).toBe(0);
+      });
+
+      it("combines fragment with edge metadata", () => {
+        const key = "@connection.posts({})";
+
+        const tx = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { id: "p1", title: "Post 1" },
+            {
+              position: "end",
+              fragment: POST_FRAGMENT,
+              fragmentName: "PostFields",
+              edge: { cursor: "custom-cursor", score: 42 }
+            }
+          );
+        });
+
+        tx.commit();
+
+        const edges = readCanonicalEdges(graph, key);
+        expect(edges.length).toBe(1);
+        expect(edges[0].meta.score).toBe(42);
+      });
+
+      it("supports anchored positioning with fragment", () => {
+        const key = "@connection.posts({})";
+
+        const tx1 = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode({ __typename: "Post", id: "p1", title: "Post 1" }, { position: "end" });
+          c.addNode({ __typename: "Post", id: "p3", title: "Post 3" }, { position: "end" });
+        });
+
+        tx1.commit();
+
+        const tx2 = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { id: "p2", title: "Post 2" },
+            {
+              position: "after",
+              anchor: "Post:p1",
+              fragment: POST_FRAGMENT,
+              fragmentName: "PostFields"
+            }
+          );
+        });
+
+        tx2.commit();
+
+        const ids = readCanonicalEdges(graph, key).map(e => graph.getRecord(e.nodeKey)?.id);
+        expect(ids).toEqual(["p1", "p2", "p3"]);
+      });
+    });
+
+    describe("idempotency and edge cases", () => {
+      it("is idempotent when called multiple times with same fragment", () => {
+        const key = "@connection.posts({})";
+
+        const tx = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+
+          // First call - initializes nested connection
+          c.addNode(
+            { id: "p1", title: "Post 1" },
+            { 
+              position: "end",
+              fragment: POST_COMMENTS_FRAGMENT, 
+              fragmentName: "PostComments" 
+            }
+          );
+
+          // Manually add something to the nested connection
+          const commentsConn = o.connection("@connection.Post:p1.PostComments({})");
+          commentsConn.addNode({ __typename: "Comment", id: "c1", text: "Comment 1" }, { position: "end" });
+
+          // Second call - should NOT reset the nested connection
+          c.addNode(
+            { id: "p1", title: "Post 1 Updated" },
+            { 
+              position: "end",
+              fragment: POST_COMMENTS_FRAGMENT, 
+              fragmentName: "PostComments" 
+            }
+          );
+        });
+
+        tx.commit();
+
+        // Entity should be updated
+        expect(graph.getRecord("Post:p1")?.title).toBe("Post 1 Updated");
+
+        // Nested connection should still have the comment (NOT reset to empty)
+        const commentsEdges = readCanonicalEdges(graph, "@connection.Post:p1.PostComments({})");
+        expect(commentsEdges.length).toBe(1);
+        expect(graph.getRecord("Comment:c1")?.text).toBe("Comment 1");
+      });
+
+      it("revert after commit is a no-op", () => {
+        const key = "@connection.posts({})";
+
+        const tx = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { id: "p1", title: "Post 1" },
+            { 
+              position: "end",
+              fragment: POST_COMMENTS_FRAGMENT, 
+              fragmentName: "PostComments" 
+            }
+          );
+        });
+
+        tx.commit();
+
+        // Verify committed state
+        expect(graph.getRecord("Post:p1")).toBeDefined();
+        expect(graph.getRecord("@connection.Post:p1.PostComments({})")).toBeDefined();
+
+        // Revert after commit should be no-op
+        tx.revert();
+
+        // Everything should still exist
+        expect(graph.getRecord("Post:p1")).toBeDefined();
+        expect(graph.getRecord("@connection.Post:p1.PostComments({})")).toBeDefined();
+        expect(readCanonicalEdges(graph, key).length).toBe(1);
+      });
+
+      it("handles multiple revert calls", () => {
+        const key = "@connection.posts({})";
+
+        const tx = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { id: "p1", title: "Post 1" },
+            { 
+              position: "end",
+              fragment: POST_COMMENTS_FRAGMENT, 
+              fragmentName: "PostComments" 
+            }
+          );
+        });
+
+        // First revert
+        tx.revert();
+        expect(graph.getRecord("Post:p1")).toBeUndefined();
+        expect(graph.getRecord("@connection.Post:p1.PostComments({})")).toBeUndefined();
+
+        // Second revert should be safe (no-op)
+        tx.revert();
+        expect(graph.getRecord("Post:p1")).toBeUndefined();
+        expect(graph.getRecord("@connection.Post:p1.PostComments({})")).toBeUndefined();
+
+        // Third revert should also be safe
+        tx.revert();
+        expect(graph.getRecord("Post:p1")).toBeUndefined();
+      });
+
+      it("handles layer 2 reverting before layer 1", () => {
+        const key = "@connection.posts({})";
+
+        const tx1 = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { id: "p1", title: "Layer 1" },
+            { 
+              position: "end",
+              fragment: POST_COMMENTS_FRAGMENT, 
+              fragmentName: "PostComments" 
+            }
+          );
+        });
+
+        const tx2 = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { id: "p2", title: "Layer 2" },
+            { 
+              position: "end",
+              fragment: POST_COMMENTS_FRAGMENT, 
+              fragmentName: "PostComments" 
+            }
+          );
+        });
+
+        // Revert layer 2 first (reverse order)
+        tx2.revert();
+
+        // Layer 1 should still exist
+        expect(graph.getRecord("Post:p1")).toBeDefined();
+        expect(graph.getRecord("@connection.Post:p1.PostComments({})")).toBeDefined();
+
+        // Layer 2 should be gone
+        expect(graph.getRecord("Post:p2")).toBeUndefined();
+        expect(graph.getRecord("@connection.Post:p2.PostComments({})")).toBeUndefined();
+
+        // Now revert layer 1
+        tx1.revert();
+
+        // Both should be gone
+        expect(graph.getRecord("Post:p1")).toBeUndefined();
+        expect(graph.getRecord("@connection.Post:p1.PostComments({})")).toBeUndefined();
+      });
+
+      it("properly cleans up cursor indices on revert", () => {
+        const key = "@connection.posts({})";
+
+        // First, create a connection with actual cursor data
+        graph.putRecord("@connection.Post:p1.PostComments({})", {
+          __typename: "Connection",
+          edges: { __refs: [] },
+          pageInfo: { __ref: "@connection.Post:p1.PostComments({}).pageInfo" }
+        });
+        graph.putRecord("@connection.Post:p1.PostComments({})::cursorIndex", { cursor1: 0 });
+
+        const tx = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { id: "p1", title: "Post 1" },
+            { 
+              position: "end",
+              fragment: POST_COMMENTS_FRAGMENT, 
+              fragmentName: "PostComments" 
+            }
+          );
+        });
+
+        const commentsKey = "@connection.Post:p1.PostComments({})";
+        const cursorIndexKey = `${commentsKey}::cursorIndex`;
+
+        // Connection already exists, so fragment init should skip it (idempotency)
+        // But we should still track it in baseline for revert
+        expect(graph.getRecord(cursorIndexKey)).toBeDefined();
+
+        tx.revert();
+
+        // Cursor index should be restored to baseline (which had cursor1)
+        const restoredIndex = graph.getRecord(cursorIndexKey);
+        expect(restoredIndex).toBeDefined();
+        expect(restoredIndex).toHaveProperty("cursor1");
+      });
+
+      it("properly cleans up pageInfo records on revert", () => {
+        const key = "@connection.posts({})";
+
+        const tx = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { id: "p1", title: "Post 1" },
+            { 
+              position: "end",
+              fragment: POST_COMMENTS_FRAGMENT, 
+              fragmentName: "PostComments" 
+            }
+          );
+        });
+
+        const commentsKey = "@connection.Post:p1.PostComments({})";
+        const pageInfoKey = `${commentsKey}.pageInfo`;
+
+        // PageInfo should exist
+        const pageInfo = graph.getRecord(pageInfoKey);
+        expect(pageInfo).toBeDefined();
+        expect(pageInfo?.__typename).toBe("PageInfo");
+        expect(pageInfo?.hasNextPage).toBe(false);
+
+        tx.revert();
+
+        // PageInfo should be cleaned up
+        expect(graph.getRecord(pageInfoKey)).toBeUndefined();
+      });
+
+      it("handles nested entities with connections in fragments", () => {
+        // Fragment with nested entity that also has connections
+        const tx = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "users" });
+          c.addNode(
+            { 
+              id: "u1", 
+              email: "user@test.com",
+            },
+            { 
+              position: "end",
+              fragment: USER_POSTS_FRAGMENT, 
+              fragmentName: "UserPosts",
+              variables: { postsCategory: "tech" }
+            }
+          );
+        });
+
+        // User entity should exist
+        expect(graph.getRecord("User:u1")).toBeDefined();
+
+        // Nested posts connection should be initialized
+        const postsKey = '@connection.User:u1.posts({"category":"tech"})';
+        expect(graph.getRecord(postsKey)).toBeDefined();
+        expect(graph.getRecord(`${postsKey}.pageInfo`)).toBeDefined();
+
+        tx.revert();
+
+        // Everything should be cleaned up
+        expect(graph.getRecord("User:u1")).toBeUndefined();
+        expect(graph.getRecord(postsKey)).toBeUndefined();
+        expect(graph.getRecord(`${postsKey}.pageInfo`)).toBeUndefined();
+        expect(graph.getRecord(`${postsKey}::cursorIndex`)).toBeUndefined();
+      });
+
+      it("replayOptimistic works correctly after revert", () => {
+        const key = "@connection.posts({})";
+
+        const tx1 = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { id: "p1", title: "Post 1" },
+            { 
+              position: "end",
+              fragment: POST_COMMENTS_FRAGMENT, 
+              fragmentName: "PostComments" 
+            }
+          );
+        });
+
+        const tx2 = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            { id: "p2", title: "Post 2" },
+            { 
+              position: "end",
+              fragment: POST_COMMENTS_FRAGMENT, 
+              fragmentName: "PostComments" 
+            }
+          );
+        });
+
+        // Revert first layer
+        tx1.revert();
+
+        // Replay should only show layer 2
+        const result = optimistic.replayOptimistic({ connections: [key] });
+        expect(result.added).toContain("Post:p2");
+        expect(result.added).not.toContain("Post:p1");
+
+        // Verify only p2 exists
+        const ids = readCanonicalEdges(graph, key).map(e => graph.getRecord(e.nodeKey)?.id);
+        expect(ids).toEqual(["p2"]);
+
+        // Nested connection for p2 should exist, but not for p1
+        expect(graph.getRecord("@connection.Post:p2.PostComments({})")).toBeDefined();
+        expect(graph.getRecord("@connection.Post:p1.PostComments({})")).toBeUndefined();
+
+        tx2.commit();
+      });
     });
   });
 });

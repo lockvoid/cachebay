@@ -8,8 +8,14 @@ import {
   CONNECTION_PAGE_INFO_TYPENAME,
 } from "./constants";
 import type { GraphInstance } from "./graph";
+import type { PlannerInstance } from "./planner";
+import type { DocumentNode } from "graphql";
+import type { CachePlan, PlanField } from "../compiler";
 
-type OptimisticDependencies = { graph: GraphInstance };
+type OptimisticDependencies = { 
+  graph: GraphInstance;
+  planner: PlannerInstance;
+};
 
 const ENTITY_WRITE = Symbol("EntityWrite");
 const ENTITY_DELETE = Symbol("EntityDelete");
@@ -56,7 +62,14 @@ type PatchInput = Record<string, any> | ((prev: any) => Record<string, any>);
 type ConnectionAPI = {
   addNode: (
     node: any,
-    opts?: { position?: "start" | "end" | "before" | "after"; anchor?: EntityRef; edge?: Record<string, any> },
+    opts?: { 
+      position?: "start" | "end" | "before" | "after"; 
+      anchor?: EntityRef; 
+      edge?: Record<string, any>;
+      fragment?: DocumentNode | CachePlan | string;
+      fragmentName?: string;
+      variables?: Record<string, any>;
+    },
   ) => void;
   removeNode: (ref: EntityRef) => void;
   patch: (patchOrFn: PatchInput) => void;
@@ -565,10 +578,19 @@ const recordOp = (layer: Layer, graph: GraphInstance, op: EntityOp | ConnectionO
 };
 
 const revertEntities = (layer: Layer, graph: GraphInstance): void => {
+  // Track which canonical keys are managed by connection ops
+  const connectionOpKeys = new Set<string>();
+  for (const op of layer.connectionOps) {
+    connectionOpKeys.add(op.connectionKey);
+  }
+
   for (const [recordId, snapshot] of layer.localBase) {
-    if (!isCanonicalKey(recordId)) {
-      restoreEntity(graph, recordId, snapshot);
+    // Skip canonical keys that are managed by connection ops (they'll be reverted by revertConnections)
+    // But DO revert canonical keys created by fragments (not in connectionOps)
+    if (isCanonicalKey(recordId) && connectionOpKeys.has(recordId)) {
+      continue;
     }
+    restoreEntity(graph, recordId, snapshot);
   }
 };
 
@@ -677,7 +699,7 @@ const revertConnections = (layer: Layer, graph: GraphInstance): void => {
   }
 };
 
-export const createOptimistic = ({ graph }: OptimisticDependencies) => {
+export const createOptimistic = ({ graph, planner }: OptimisticDependencies) => {
   const pending = new Set<Layer>();
   let nextLayerId = 1;
 
@@ -711,6 +733,88 @@ export const createOptimistic = ({ graph }: OptimisticDependencies) => {
       }
 
       return entityKey;
+    };
+
+    /**
+     * Initialize nested connections found in a fragment plan
+     * Walks the plan and creates canonical connection records for @connection fields
+     */
+    const initializeNestedConnections = (
+      entityKey: string,
+      plan: CachePlan,
+      variables: Record<string, any>,
+      providedData: any,
+      recording: boolean,
+    ): void => {
+      const walkFields = (fields: PlanField[] | null, parentId: string, data: any): void => {
+        if (!fields) return;
+
+        for (const field of fields) {
+          // Handle @connection fields - always initialize them regardless of data
+          if (field.isConnection) {
+            const fieldValue = data?.[field.responseKey];
+            const connectionKey = buildConnectionCanonicalKey(field, parentId, variables);
+            
+            // Skip if connection already exists (idempotency - don't overwrite existing data)
+            if (graph.getRecord(connectionKey)) {
+              continue;
+            }
+            
+            // Capture baseline before modifying
+            if (recording) {
+              captureBaseline(layer, graph, connectionKey);
+              captureBaseline(layer, graph, `${connectionKey}.pageInfo`);
+              captureBaseline(layer, graph, getCursorIndexKey(connectionKey));
+            }
+            
+            // Initialize empty connection or use provided data
+            const connectionData = fieldValue && typeof fieldValue === "object" ? fieldValue : {};
+            const pageInfo = connectionData.pageInfo || {
+              startCursor: null,
+              endCursor: null,
+              hasNextPage: false,
+              hasPreviousPage: false,
+            };
+
+            // Create pageInfo record
+            const pageInfoKey = `${connectionKey}.pageInfo`;
+            const pageInfoRecord = {
+              __typename: CONNECTION_PAGE_INFO_TYPENAME,
+              ...pageInfo,
+            };
+
+            writeEntity(graph, pageInfoKey, pageInfoRecord, "replace");
+
+            // Create connection record
+            const connectionRecord = {
+              __typename: CONNECTION_TYPENAME,
+              edges: { __refs: [] },
+              pageInfo: { __ref: pageInfoKey },
+            };
+
+            writeEntity(graph, connectionKey, connectionRecord, "replace");
+
+            // Initialize cursor index
+            writeCursorIndex(graph, connectionKey, {});
+
+            continue;
+          }
+
+          // Recurse into nested selections for non-connection fields
+          if (field.selectionSet && !field.isConnection) {
+            const fieldValue = data?.[field.responseKey];
+            if (fieldValue && typeof fieldValue === "object") {
+              // For entity references, get their ID
+              const childId = graph.identify(fieldValue);
+              if (childId) {
+                walkFields(field.selectionSet, childId, fieldValue);
+              }
+            }
+          }
+        }
+      };
+
+      walkFields(plan.root, entityKey, providedData);
     };
 
     const resolveAnchor = (anchor?: string | { __typename: string; id: any } | null): string | null => {
@@ -796,7 +900,27 @@ export const createOptimistic = ({ graph }: OptimisticDependencies) => {
 
         return {
           addNode(node, opts = {}) {
-            const entityKey = ensureEntity(node);
+            // If fragment is provided, process it first
+            let processedNode = node;
+            if (opts.fragment) {
+              const plan = planner.getPlan(opts.fragment, { fragmentName: opts.fragmentName });
+              const variables = opts.variables || {};
+
+              // Ensure node has __typename for identification
+              if (!processedNode.__typename && plan.rootTypename) {
+                processedNode = { __typename: plan.rootTypename, ...processedNode };
+              }
+
+              // Get entity key early to use for nested connection initialization
+              const tempEntityKey = graph.identify(processedNode);
+              
+              if (tempEntityKey) {
+                // Initialize nested connections based on fragment plan
+                initializeNestedConnections(tempEntityKey, plan, variables, processedNode, recording);
+              }
+            }
+
+            const entityKey = ensureEntity(processedNode);
             if (!entityKey) {
               return;
             }

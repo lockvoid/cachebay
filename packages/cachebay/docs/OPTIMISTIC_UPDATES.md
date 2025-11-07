@@ -8,6 +8,19 @@ Works for **entities** and **Relay connections** — no array churn; updates are
 ## TL;DR
 
 ```ts
+import { gql } from 'graphql-tag'
+
+const POST_FRAGMENT = gql`
+  fragment PostFields on Post {
+    id
+    title
+    comments @connection(key: "PostComments") {
+      edges { node { id text } }
+      pageInfo { hasNextPage }
+    }
+  }
+`
+
 // Start a layer
 const tx = cachebay.modifyOptimistic((o, { data }) => {
   // 1) Entity: patch fields (normalized by __typename:id)
@@ -16,8 +29,15 @@ const tx = cachebay.modifyOptimistic((o, { data }) => {
   // 2) Get the canonical connection
   const c = o.connection({ parent: 'Query', key: 'posts' })
 
-  // 3) Prepend an optimistic node
-  c.addNode({ __typename: 'Post', id: data?.id ?? 'temp:123456', title: 'Draft' }, { position: 'start' })
+  // 3) Prepend an optimistic node with fragment (auto-initializes nested connections)
+  c.addNode(
+    { id: data?.id ?? 'temp:123456', title: 'Draft' },
+    { 
+      position: 'start',
+      fragment: POST_FRAGMENT,
+      fragmentName: 'PostFields'
+    }
+  )
 
   // 4) Patch connection pageInfo/extras (shallow-merge)
   c.patch((prev) => ({ pageInfo: { ...prev.pageInfo, hasNextPage: false } }))
@@ -50,6 +70,9 @@ const tx = cachebay.modifyOptimistic(
       position?: 'start' | 'end' | 'before' | 'after',
       anchor?: 'Type:id' | { __typename, id },
       edge?: Record<string, any>,
+      fragment?: string | DocumentNode | CachePlan,
+      fragmentName?: string,
+      variables?: Record<string, any>,
     })
 
     c.removeNode('Type:id' | { __typename, id })
@@ -125,11 +148,18 @@ c.addNode(node, {
   position?: 'start' | 'end' | 'before' | 'after',
   anchor?: 'Type:id' | { __typename, id },
   edge?: Record<string, any>,
+  fragment?: string | DocumentNode | CachePlan,
+  fragmentName?: string,
+  variables?: Record<string, any>,
 })
 ```
 
 - De-dups by **entity key**; re-adding refreshes edge meta in place without reordering.
 - Missing `anchor` falls back to **start** for `before` and **end** for `after`.
+- **Fragment support**: Provide a `fragment` to auto-initialize nested `@connection` fields and ensure type consistency.
+  - Nested connections are initialized with empty edges and pageInfo automatically.
+  - Uses fragment's `__typename` if not provided in node data.
+  - **Idempotent**: calling `addNode` multiple times with the same fragment won't reset existing nested connections.
 
 #### `c.removeNode(ref)`
 ```ts
@@ -170,8 +200,6 @@ const keys = cachebay.inspect.getConnectionKeys({
 **Add Post (prepend into all Query.posts)**
 
 ```ts
-const CREATE_POST =
-
 async function createPost(cache, client, input) {
   // Build optimistic layer
   const tx = cachebay.modifyOptimistic((o, { data }) => {
@@ -213,6 +241,82 @@ async function createPost(cache, client, input) {
     tx.revert();
 
     throw e;
+  }
+}
+```
+
+**Add Post with nested connections (using fragments)**
+
+```ts
+import { gql } from 'graphql-tag'
+
+const POST_FRAGMENT = gql`
+  fragment PostFields on Post {
+    id
+    title
+    author {
+      id
+      name
+    }
+    comments @connection(key: "PostComments") {
+      edges {
+        node {
+          id
+          text
+        }
+      }
+      pageInfo {
+        hasNextPage
+      }
+    }
+  }
+`
+
+async function createPost(cache, client, input) {
+  const optimisticId = `tmp:${Date.now()}`
+
+  const tx = cachebay.modifyOptimistic((o, { data }) => {
+    const keys = cachebay.inspect.getConnectionKeys({ parent: 'Query', key: 'posts' })
+
+    for (const key of keys) {
+      const c = o.connection(key)
+
+      // Fragment auto-initializes nested connections (comments)
+      c.addNode(
+        {
+          id: data?.id ?? optimisticId,
+          title: data?.title ?? input.title,
+          author: { id: 'me', name: 'Current User' },
+        },
+        {
+          position: 'start',
+          fragment: POST_FRAGMENT,
+          fragmentName: 'PostFields',
+        }
+      )
+    }
+  })
+
+  try {
+    const result = await client.executeMutation({
+      query: `
+        mutation CreatePost($input: CreatePostInput!) {
+          createPost(input: $input) {
+            post {
+              ...PostFields
+            }
+          }
+        }
+        ${POST_FRAGMENT}
+      `,
+      variables: { input },
+    })
+
+    tx.commit(result.data?.createPost?.post)
+    return result
+  } catch (e) {
+    tx.revert()
+    throw e
   }
 }
 ```
@@ -264,6 +368,12 @@ async function deletePost(cache, client, id) {
 > * `pageInfo` updates are merged **field-by-field**.
 > * Edge creation is **O(1)** by using a monotonic edge index (no scans over `edges`).
 > * `cursor` (if provided on `edge`) is treated as meta; Cachebay maintains a cursor→position index for stable inserts/removals.
+> * **Fragment benefits**:
+>   - **Type safety**: Fragment structure matches your queries exactly.
+>   - **DRY**: Reuse the same fragment in queries and optimistic updates.
+>   - **Auto-initialization**: Nested `@connection` fields are initialized automatically.
+>   - **Consistency**: Variables ensure connection canonical keys match between optimistic and real data.
+>   - **Idempotent**: Multiple `addNode` calls with the same fragment won't reset existing nested connections.
 
 ## Layering semantics
 
