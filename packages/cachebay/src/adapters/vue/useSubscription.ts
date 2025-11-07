@@ -5,13 +5,19 @@ import type { DocumentNode } from "graphql";
 /**
  * useSubscription options
  */
-export interface UseSubscriptionOptions<TVars = any> {
+export interface UseSubscriptionOptions<TData = any, TVars = any> {
   /** GraphQL subscription document */
   query: DocumentNode | string;
   /** Subscription variables (can be reactive) */
   variables?: MaybeRefOrGetter<TVars>;
   /** Enable subscription execution (default: true, can be reactive) */
   enabled?: MaybeRefOrGetter<boolean>;
+  /** Called when new subscription data arrives (for imperative side effects) */
+  onData?: (data: TData) => void;
+  /** Called when subscription encounters an error (for imperative error handling) */
+  onError?: (error: Error) => void;
+  /** Called when subscription completes/closes (for cleanup or reconnection logic) */
+  onComplete?: () => void;
 }
 
 /**
@@ -67,6 +73,9 @@ export function useSubscription<TData = any, TVars = any>(
       const observable = await client.executeSubscription<TData, TVars>({
         query: options.query,
         variables: vars,
+        onData: options.onData,
+        onError: options.onError,
+        onComplete: options.onComplete,
       });
 
       const subscription = observable.subscribe({

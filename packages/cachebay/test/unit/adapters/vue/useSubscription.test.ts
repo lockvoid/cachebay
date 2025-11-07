@@ -394,4 +394,190 @@ describe("useSubscription", () => {
       messageAdded: { id: "3", text: "!" },
     });
   });
+
+  describe("callbacks", () => {
+    it("calls onData callback when new data arrives", async () => {
+      const onDataMock = vi.fn();
+      let subscriptionResult: any;
+
+      const App = defineComponent({
+        setup() {
+          subscriptionResult = useSubscription({
+            query: SUBSCRIPTION,
+            onData: onDataMock,
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Emit data
+      capturedObserver.next({
+        data: { messageAdded: { id: "1", text: "Hello" } },
+        error: null,
+      });
+
+      await nextTick();
+
+      // onData should be called with the data
+      expect(onDataMock).toHaveBeenCalledTimes(1);
+      expect(onDataMock).toHaveBeenCalledWith({
+        messageAdded: { id: "1", text: "Hello" },
+      });
+
+      // Reactive state should also update
+      expect(subscriptionResult.data.value).toEqual({
+        messageAdded: { id: "1", text: "Hello" },
+      });
+    });
+
+    it("calls onError callback when error occurs", async () => {
+      const onErrorMock = vi.fn();
+      let subscriptionResult: any;
+
+      const App = defineComponent({
+        setup() {
+          subscriptionResult = useSubscription({
+            query: SUBSCRIPTION,
+            onError: onErrorMock,
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Emit error
+      const testError = new Error("Subscription failed");
+      capturedObserver.error(testError);
+
+      await nextTick();
+
+      // onError should be called
+      expect(onErrorMock).toHaveBeenCalledTimes(1);
+      expect(onErrorMock).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining("Subscription failed"),
+      }));
+
+      // Reactive error state should also update
+      expect(subscriptionResult.error.value).toBeDefined();
+    });
+
+    it("calls onComplete callback when subscription completes", async () => {
+      const onCompleteMock = vi.fn();
+      let subscriptionResult: any;
+
+      const App = defineComponent({
+        setup() {
+          subscriptionResult = useSubscription({
+            query: SUBSCRIPTION,
+            onComplete: onCompleteMock,
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Complete subscription
+      capturedObserver.complete();
+
+      await nextTick();
+
+      // onComplete should be called
+      expect(onCompleteMock).toHaveBeenCalledTimes(1);
+
+      // isFetching should be false
+      expect(subscriptionResult.isFetching.value).toBe(false);
+    });
+
+    it("supports all callbacks together", async () => {
+      const onDataMock = vi.fn();
+      const onErrorMock = vi.fn();
+      const onCompleteMock = vi.fn();
+
+      const App = defineComponent({
+        setup() {
+          useSubscription({
+            query: SUBSCRIPTION,
+            onData: onDataMock,
+            onError: onErrorMock,
+            onComplete: onCompleteMock,
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Emit data
+      capturedObserver.next({
+        data: { messageAdded: { id: "1", text: "Hello" } },
+        error: null,
+      });
+      await nextTick();
+      expect(onDataMock).toHaveBeenCalledTimes(1);
+
+      // Complete
+      capturedObserver.complete();
+      await nextTick();
+      expect(onCompleteMock).toHaveBeenCalledTimes(1);
+
+      // Error should not be called
+      expect(onErrorMock).not.toHaveBeenCalled();
+    });
+  });
 });
