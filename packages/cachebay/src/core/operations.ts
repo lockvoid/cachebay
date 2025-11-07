@@ -1,7 +1,7 @@
 import { CACHE_AND_NETWORK, NETWORK_ONLY, CACHE_FIRST, CACHE_ONLY } from "./constants";
 import { StaleResponseError, CombinedError, CacheMissError } from "./errors";
 import { __DEV__ } from "./instrumentation";
-import { validateCachePolicy } from "./utils";
+import { validateCachePolicy, isEmptyObject } from "./utils";
 import type { DocumentsInstance } from "./documents";
 import type { PlannerInstance } from "./planner";
 import type { SSRInstance } from "./ssr";
@@ -285,7 +285,7 @@ export const createOperations = (
               console.error(errorMessage, freshMaterialization.ok.miss);
             }
 
-            return { data: null, error: new CombinedError({ networkError: new Error(errorMessage), }) };
+            return { data: null, error: new CombinedError({ networkError: new Error(errorMessage) }) };
           }
 
           markEmitted(strictSignature);
@@ -300,7 +300,7 @@ export const createOperations = (
             }
           }
 
-          return { data: freshMaterialization.data || null, error: result.error || null, meta: { source: "network" }, };
+          return { data: freshMaterialization.data || null, error: result.error || null, meta: { source: "network" } };
         }
 
         // Mark as emitted for suspension tracking
@@ -447,7 +447,7 @@ export const createOperations = (
         // Check if materialization succeeded
         if (freshMaterialization.source === "none") {
           let errorMessage = "[cachebay] Mutation materialization failed after write - missing required fields";
-          
+
           // Add detailed miss information in development mode
           if (__DEV__ && freshMaterialization.ok.miss && freshMaterialization.ok.miss.length > 0) {
             const misses = freshMaterialization.ok.miss.map((m: any) => {
@@ -455,18 +455,18 @@ export const createOperations = (
                 return `  - Entity "${m.id}" not found in cache (at path: ${m.at})`;
               } else if (m.kind === "root-link-missing") {
                 // Extract field name from fieldKey (remove arguments)
-                const fieldName = m.fieldKey.split('(')[0];
+                const fieldName = m.fieldKey.split("(")[0];
                 return `  - Root field "${fieldName}" not found (at path: ${m.at})`;
               } else if (m.kind === "field-link-missing") {
                 // Extract field name from fieldKey (remove arguments)
-                const fieldName = m.fieldKey.split('(')[0];
+                const fieldName = m.fieldKey.split("(")[0];
                 return `  - Field "${fieldName}" not found on entity "${m.parentId}" (at path: ${m.at})`;
               }
               return `  - ${JSON.stringify(m)}`;
             }).join("\n");
             errorMessage += "\n\nMissing fields:\n" + misses;
           }
-          
+
           const error = new CombinedError({
             networkError: new Error(errorMessage),
           });
@@ -554,7 +554,7 @@ export const createOperations = (
       const observableOrPromise = transport.ws(context);
 
       // Check if transport returns a Promise (async) or Observable (sync)
-      const isPromise = observableOrPromise && typeof (observableOrPromise as any).then === 'function';
+      const isPromise = observableOrPromise && typeof (observableOrPromise as any).then === "function";
 
       // Common handlers for both sync and async paths
       const createHandlers = (observer: Partial<ObserverLike<OperationResult<TData>>>) => ({
@@ -568,6 +568,13 @@ export const createOperations = (
           }
 
           const result = eventData as OperationResult<TData>;
+
+          // Skip empty/null data (acknowledgment messages from server)
+          // Many GraphQL servers send { data: null } or { data: {} } as initial acknowledgment
+          // before sending real subscription events (e.g., HTTP callback protocol, graphql-ws)
+          if (!result.data || result.data === null || isEmptyObject(result.data)) {
+            return;
+          }
 
           // Write successful subscription data to cache with unique rootId
           if (result.data && !result.error) {

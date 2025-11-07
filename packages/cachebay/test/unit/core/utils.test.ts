@@ -1,6 +1,7 @@
 import { ROOT_ID } from "@/src/core/constants";
 import {
   isObject,
+  isEmptyObject,
   isDataDeepEqual,
   hasTypename,
   fingerprintNodes,
@@ -36,6 +37,53 @@ describe("Utils", () => {
       class CustomClass { }
       expect(isObject(new CustomClass())).toBe(true);
       expect(isObject(new Date())).toBe(true);
+    });
+  });
+
+  describe("isEmptyObject", () => {
+    it("returns true for empty plain objects", () => {
+      expect(isEmptyObject({})).toBe(true);
+      expect(isEmptyObject(Object.create(null))).toBe(true);
+    });
+
+    it("returns false for objects with properties", () => {
+      expect(isEmptyObject({ a: 1 })).toBe(false);
+      expect(isEmptyObject({ __typename: "User" })).toBe(false);
+      expect(isEmptyObject({ a: undefined })).toBe(false); // undefined is still a property
+    });
+
+    it("returns false for null", () => {
+      expect(isEmptyObject(null)).toBe(false);
+    });
+
+    it("returns false for undefined", () => {
+      expect(isEmptyObject(undefined)).toBe(false);
+    });
+
+    it("returns false for arrays (even empty ones)", () => {
+      expect(isEmptyObject([])).toBe(false);
+      expect(isEmptyObject([1, 2, 3])).toBe(false);
+    });
+
+    it("returns false for primitives", () => {
+      expect(isEmptyObject(42)).toBe(false);
+      expect(isEmptyObject("")).toBe(false);
+      expect(isEmptyObject("string")).toBe(false);
+      expect(isEmptyObject(true)).toBe(false);
+      expect(isEmptyObject(false)).toBe(false);
+    });
+
+    it("returns false for class instances", () => {
+      class CustomClass { }
+      expect(isEmptyObject(new CustomClass())).toBe(false);
+      expect(isEmptyObject(new Date())).toBe(false);
+    });
+
+    it("handles GraphQL subscription acknowledgment patterns", () => {
+      // Common patterns from GraphQL servers
+      expect(isEmptyObject({})).toBe(true); // Empty acknowledgment
+      expect(isEmptyObject({ data: null })).toBe(false); // Has 'data' property
+      expect(isEmptyObject({ data: {} })).toBe(false); // Has 'data' property
     });
   });
 

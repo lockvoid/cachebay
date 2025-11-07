@@ -5,6 +5,32 @@ export const isObject = (value: any): value is Record<string, any> => {
 };
 
 /**
+ * Check if a value is an empty plain object (no own properties)
+ * Returns false for null, arrays, class instances, or non-objects
+ * Only returns true for plain objects like {} or Object.create(null)
+ * 
+ * @example
+ * isEmptyObject({}) // true
+ * isEmptyObject({ a: 1 }) // false
+ * isEmptyObject(null) // false
+ * isEmptyObject([]) // false
+ * isEmptyObject(new Date()) // false
+ */
+export const isEmptyObject = (value: any): boolean => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  
+  // Only accept plain objects (Object.prototype or null prototype)
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== null && proto !== Object.prototype) {
+    return false;
+  }
+  
+  return Object.keys(value).length === 0;
+};
+
+/**
  * Deep equality comparison for JSON data structures (normalized cache data).
  * Optimized for common patterns: __ref objects, __refs arrays, primitives.
  * Not a true deep equal - designed specifically for cache comparison.

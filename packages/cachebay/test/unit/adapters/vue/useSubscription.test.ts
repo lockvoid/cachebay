@@ -580,4 +580,146 @@ describe("useSubscription", () => {
       expect(onErrorMock).not.toHaveBeenCalled();
     });
   });
+
+  describe("empty/null data handling", () => {
+    it("silently skips null data (acknowledgment messages)", async () => {
+      let subscriptionResult: any;
+
+      const App = defineComponent({
+        setup() {
+          subscriptionResult = useSubscription({
+            query: SUBSCRIPTION,
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Server sends null data (acknowledgment)
+      capturedObserver.next({
+        data: null,
+        error: null,
+      });
+
+      await nextTick();
+
+      // Should not error, data should remain null
+      expect(subscriptionResult.data.value).toBeNull();
+      expect(subscriptionResult.error.value).toBeNull();
+      expect(subscriptionResult.isFetching.value).toBe(true); // Still waiting for real data
+    });
+
+    it("silently skips empty object data (acknowledgment messages)", async () => {
+      let subscriptionResult: any;
+
+      const App = defineComponent({
+        setup() {
+          subscriptionResult = useSubscription({
+            query: SUBSCRIPTION,
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Server sends empty object (acknowledgment)
+      capturedObserver.next({
+        data: {},
+        error: null,
+      });
+
+      await nextTick();
+
+      // Should not error, data should remain null
+      expect(subscriptionResult.data.value).toBeNull();
+      expect(subscriptionResult.error.value).toBeNull();
+      expect(subscriptionResult.isFetching.value).toBe(true); // Still waiting for real data
+    });
+
+    it("processes real data after acknowledgment", async () => {
+      let subscriptionResult: any;
+
+      const App = defineComponent({
+        setup() {
+          subscriptionResult = useSubscription({
+            query: SUBSCRIPTION,
+          });
+          return () => h("div");
+        },
+      });
+
+      mount(App, {
+        global: {
+          plugins: [
+            {
+              install(app) {
+                provideCachebay(app as any, cache);
+              },
+            },
+          ],
+        },
+      });
+
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // 1. Server sends acknowledgment (null)
+      capturedObserver.next({
+        data: null,
+        error: null,
+      });
+      await nextTick();
+      expect(subscriptionResult.data.value).toBeNull();
+
+      // 2. Server sends acknowledgment (empty object)
+      capturedObserver.next({
+        data: {},
+        error: null,
+      });
+      await nextTick();
+      expect(subscriptionResult.data.value).toBeNull();
+
+      // 3. Server sends real data
+      capturedObserver.next({
+        data: { messageAdded: { id: "1", text: "Hello" } },
+        error: null,
+      });
+      await nextTick();
+
+      // Should have real data now
+      expect(subscriptionResult.data.value).toEqual({
+        messageAdded: { id: "1", text: "Hello" },
+      });
+      expect(subscriptionResult.error.value).toBeNull();
+      expect(subscriptionResult.isFetching.value).toBe(false);
+    });
+  });
 });
