@@ -1080,7 +1080,7 @@ describe("useQuery", () => {
     expect(queryResult.data).toBeDefined();
   });
 
-  it.only("resolves Suspense for multiple components with same query", async () => {
+  it("resolves Suspense for multiple components with same query", async () => {
     // Regression test: When multiple components use the same query with Suspense,
     // each component creates its own suspensionPromise. The bug was that resolving
     // the promise in the shared watchQuery.onData callback would only resolve ONE
