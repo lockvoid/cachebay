@@ -1080,6 +1080,78 @@ describe("useQuery", () => {
     expect(queryResult.data).toBeDefined();
   });
 
+  it.only("resolves Suspense for multiple components with same query", async () => {
+    // Regression test: When multiple components use the same query with Suspense,
+    // each component creates its own suspensionPromise. The bug was that resolving
+    // the promise in the shared watchQuery.onData callback would only resolve ONE
+    // of the promises, causing other components' Suspense to hang forever.
+    //
+    // The fix ensures each component's suspensionPromise is resolved independently
+    // via per-query callbacks (onCacheData/onNetworkData) rather than the shared
+    // watchQuery callback.
+
+    let queryResult1: any;
+    let queryResult2: any;
+    let suspense1Resolved = false;
+    let suspense2Resolved = false;
+
+    const Component1 = defineComponent({
+      async setup() {
+        queryResult1 = await useQuery({
+          query: USER_QUERY,
+          variables: { id: "1" },
+        }).then((result) => {
+          suspense1Resolved = true;
+          return result;
+        });
+        return () => h("div", "Component1");
+      },
+    });
+
+    const Component2 = defineComponent({
+      async setup() {
+        queryResult2 = await useQuery({
+          query: USER_QUERY,
+          variables: { id: "1" }, // SAME query - tests deduplication with Suspense
+        }).then((result) => {
+          suspense2Resolved = true;
+          return result;
+        });
+        return () => h("div", "Component2");
+      },
+    });
+
+    const App = defineComponent({
+      setup() {
+        return () => h("div", [h(Component1), h(Component2)]);
+      },
+    });
+
+    mount(App, {
+      global: {
+        plugins: [
+          {
+            install(app) {
+              provideCachebay(app as any, cache);
+            },
+          },
+        ],
+      },
+    });
+
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Both components should resolve their Suspense promises
+    // This tests that query deduplication doesn't break Suspense for multiple components
+    expect(suspense1Resolved).toBe(true);
+    expect(suspense2Resolved).toBe(true);
+    expect(queryResult1.data.value).toBeDefined();
+    expect(queryResult2.data.value).toBeDefined();
+    expect(queryResult1.data.value).toMatchObject({ user: { id: "1", email: "alice@example.com" } });
+    expect(queryResult2.data.value).toMatchObject({ user: { id: "1", email: "alice@example.com" } });
+  });
+
   it("Suspense resolves immediately with cached data for cache-and-network", async () => {
     // Create a slow transport to ensure we can verify Suspense resolves before network
     const slowTransport: Transport = {

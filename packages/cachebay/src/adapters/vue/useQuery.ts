@@ -73,10 +73,10 @@ export function useQuery<TData = any, TVars = any>(
 
   let watchHandle: ReturnType<typeof client.watchQuery> | null = null;
   const suspensionPromise = createDeferred();
-  
+
   // Add a catch handler to prevent unhandled rejections when not using Suspense
   // If .then() is called (Suspense mode), it will override this handler
-  suspensionPromise.promise.catch(() => {
+  suspensionPromise.promise.catch((e) => {
     // Errors are handled via error.value for non-Suspense components
   });
 
@@ -88,6 +88,8 @@ export function useQuery<TData = any, TVars = any>(
       query: options.query,
       variables: vars,
       onData: (newData) => {
+        suspensionPromise.resolve(newData);
+
         data.value = newData as TData;
         error.value = null;
       },
@@ -112,12 +114,7 @@ export function useQuery<TData = any, TVars = any>(
       cachePolicy: policy,
 
       onNetworkData: (networkData) => {
-
         isFetching.value = false; // Set synchronously to prevent loading flash
-
-        queueMicrotask(() => {
-          suspensionPromise.resolve(networkData);
-        });
       },
 
       // onCacheData is called synchronously for cache hits (before Promise resolves)
@@ -130,17 +127,13 @@ export function useQuery<TData = any, TVars = any>(
         if (!willFetchFromNetwork) {
           isFetching.value = false;
         }
-
-        queueMicrotask(() => {
-          suspensionPromise.resolve(cachedData);
-        });
       },
       // onError is called synchronously for cache-only misses (before Promise resolves)
       // This prevents loading flash by setting error AND isFetching before first render
       onError: (err) => {
         error.value = err;
         isFetching.value = false; // Set synchronously to prevent loading flash
-        
+
         // Always reject suspense promise so Vue Suspense error boundaries can catch it
         // The .catch() handler added to the promise prevents unhandled rejections for non-Suspense components
         queueMicrotask(() => {
