@@ -16,9 +16,9 @@ Starts a subscription and returns an observable you can subscribe to.
 const observable = cachebay.executeSubscription({
   query, // string | DocumentNode
   variables, // optional object
-  onData, // optional (data) => void
-  onError, // optional (error) => void
-  onComplete, // optional () => void
+  onData, // optional (data) => void - imperative callback
+  onError, // optional (error) => void - imperative callback
+  onComplete, // optional () => void - imperative callback
 });
 
 // Observable-like: { subscribe({ next, error, complete }) }
@@ -65,6 +65,38 @@ const { unsubscribe } = subscription.subscribe({
 
 unsubscribe();
 ```
+
+### Imperative Callbacks
+
+The `onData`, `onError`, and `onComplete` callbacks are **imperative** - they're called directly when events occur, allowing you to perform cache updates or side effects:
+
+```ts
+const subscription = cachebay.executeSubscription({
+  query: NEW_MESSAGE_SUBSCRIPTION,
+  variables: { channelId: "ch1" },
+  
+  onData: ({ data }) => {
+    // Update cache imperatively
+    cachebay.cache.modifyOptimistic((o) => {
+      o.connection({ parent: "Query", key: "messages" })
+        .addNode(data.newMessage);
+    }).commit();
+  },
+});
+```
+
+### Empty/Null Data Handling
+
+Cachebay automatically **ignores empty or null subscription data** to handle acknowledgment messages from GraphQL subscription protocols:
+
+```ts
+// These are automatically skipped (no normalization error):
+{ data: null }           // ✅ Ignored
+{ data: {} }             // ✅ Ignored
+{ data: { field: null }} // ✅ Normalized normally
+```
+
+This prevents errors when subscription servers send initial acknowledgment responses like `{ "data": null }` to confirm subscription initialization.
 
 ---
 
