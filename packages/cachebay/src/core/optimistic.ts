@@ -785,10 +785,60 @@ export const createOptimistic = ({ graph, planner }: OptimisticDependencies) => 
 
             writeEntity(graph, pageInfoKey, pageInfoRecord, "replace");
 
+            // Process inline edges if provided
+            const edgeRefs: string[] = [];
+            const inlineEdges = Array.isArray(connectionData.edges) ? connectionData.edges : [];
+            
+            for (let i = 0; i < inlineEdges.length; i++) {
+              const edge = inlineEdges[i];
+              if (!edge?.node) continue;
+              
+              const node = edge.node;
+              const nodeKey = graph.identify(node);
+              
+              if (!nodeKey) continue;
+              
+              // Write the node entity
+              if (recording) {
+                captureBaseline(layer, graph, nodeKey);
+              }
+              writeEntity(graph, nodeKey, node, "merge");
+              
+              // Create edge record
+              const edgeKey = `${connectionKey}.edges.${i}`;
+              const nodeTypename = node.__typename || "";
+              const edgeTypename = nodeTypename ? `${nodeTypename}Edge` : "Edge";
+              
+              const edgeRecord: any = {
+                __typename: edge.__typename || edgeTypename,
+                node: { __ref: nodeKey },
+              };
+              
+              // Copy edge metadata (cursor, etc.)
+              for (const key in edge) {
+                if (key !== "__typename" && key !== "node") {
+                  edgeRecord[key] = edge[key];
+                }
+              }
+              
+              if (recording) {
+                captureBaseline(layer, graph, edgeKey);
+              }
+              writeEntity(graph, edgeKey, edgeRecord, "replace");
+              
+              edgeRefs.push(edgeKey);
+              
+              // Add cursor to index if present
+              const cursor = edge.cursor || edgeRecord.cursor;
+              if (cursor) {
+                addCursorToIndex(graph, connectionKey, cursor, i);
+              }
+            }
+
             // Create connection record
             const connectionRecord = {
               __typename: CONNECTION_TYPENAME,
-              edges: { __refs: [] },
+              edges: { __refs: edgeRefs },
               pageInfo: { __ref: pageInfoKey },
             };
 

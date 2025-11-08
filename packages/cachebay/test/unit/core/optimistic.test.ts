@@ -990,6 +990,72 @@ describe("Optimistic", () => {
         expect(edges.length).toBe(1);
         expect(graph.getRecord("Post:p1")?.title).toBe("No Fragment");
       });
+
+      it("initializes nested connection with inline edges data", () => {
+        const key = "@connection.posts({})";
+
+        const tx = optimistic.modifyOptimistic((o) => {
+          const c = o.connection({ parent: "Query", key: "posts" });
+          c.addNode(
+            {
+              id: "p1",
+              title: "Post with Inline Comments",
+              comments: {
+                __typename: "CommentConnection",
+                pageInfo: {
+                  startCursor: "c1",
+                  endCursor: "c2",
+                  hasNextPage: true,
+                  hasPreviousPage: false,
+                },
+                edges: [
+                  {
+                    __typename: "CommentEdge",
+                    node: { __typename: "Comment", id: "c1", text: "First comment" },
+                  },
+                  {
+                    __typename: "CommentEdge",
+                    node: { __typename: "Comment", id: "c2", text: "Second comment" },
+                  },
+                ],
+              },
+            },
+            {
+              position: "end",
+              fragment: POST_COMMENTS_FRAGMENT,
+              fragmentName: "PostComments",
+            }
+          );
+        });
+
+        tx.commit();
+
+        // Check main connection
+        const edges = readCanonicalEdges(graph, key);
+        expect(edges.length).toBe(1);
+        expect(graph.getRecord("Post:p1")?.title).toBe("Post with Inline Comments");
+
+        // Check nested comments connection was initialized with inline data
+        const commentsKey = "@connection.Post:p1.PostComments({})";
+        const commentsConnection = graph.getRecord(commentsKey);
+        expect(commentsConnection).toBeDefined();
+        expect(commentsConnection?.__typename).toBe("Connection");
+
+        // Check edges were created from inline data
+        const commentEdges = readCanonicalEdges(graph, commentsKey);
+        expect(commentEdges.length).toBe(2);
+        expect(graph.getRecord("Comment:c1")?.text).toBe("First comment");
+        expect(graph.getRecord("Comment:c2")?.text).toBe("Second comment");
+
+        // Check pageInfo was created with inline data
+        const pageInfoKey = `${commentsKey}.pageInfo`;
+        const pageInfo = graph.getRecord(pageInfoKey);
+        expect(pageInfo).toBeDefined();
+        expect(pageInfo?.startCursor).toBe("c1");
+        expect(pageInfo?.endCursor).toBe("c2");
+        expect(pageInfo?.hasNextPage).toBe(true);
+        expect(pageInfo?.hasPreviousPage).toBe(false);
+      });
     });
 
     describe("fragment with revert and layering", () => {

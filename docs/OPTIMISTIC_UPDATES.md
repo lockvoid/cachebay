@@ -157,7 +157,8 @@ c.addNode(node, {
 - De-dups by **entity key**; re-adding refreshes edge meta in place without reordering.
 - Missing `anchor` falls back to **start** for `before` and **end** for `after`.
 - **Fragment support**: Provide a `fragment` to auto-initialize nested `@connection` fields and ensure type consistency.
-  - Nested connections are initialized with empty edges and pageInfo automatically.
+  - Nested connections are initialized automatically - if you provide inline `edges` data, they will be processed; otherwise empty edges are created.
+  - Inline edges are written to the graph with their nodes and metadata (cursor, etc.).
   - Uses fragment's `__typename` if not provided in node data.
   - **Idempotent**: calling `addNode` multiple times with the same fragment won't reset existing nested connections.
 
@@ -321,6 +322,56 @@ async function createPost(cache, client, input) {
 }
 ```
 
+**Add Post with inline nested connection edges**
+
+If you already have the nested connection data (e.g., from a subscription or mutation response), you can provide it inline and the fragment will process the edges:
+
+```ts
+const tx = cachebay.modifyOptimistic((o) => {
+  const c = o.connection({ parent: 'Query', key: 'posts' })
+  
+  c.addNode(
+    {
+      id: 'p1',
+      title: 'Post with Comments',
+      comments: {
+        __typename: 'CommentConnection',
+        pageInfo: {
+          startCursor: 'c1',
+          endCursor: 'c2',
+          hasNextPage: true,
+          hasPreviousPage: false,
+        },
+        edges: [
+          {
+            __typename: 'CommentEdge',
+            cursor: 'c1',
+            node: { __typename: 'Comment', id: 'c1', text: 'First comment' },
+          },
+          {
+            __typename: 'CommentEdge',
+            cursor: 'c2',
+            node: { __typename: 'Comment', id: 'c2', text: 'Second comment' },
+          },
+        ],
+      },
+    },
+    {
+      position: 'start',
+      fragment: POST_FRAGMENT,
+      fragmentName: 'PostFields',
+    }
+  )
+})
+
+tx.commit()
+
+// The nested comments connection is now fully populated:
+// - Comment:c1 and Comment:c2 entities are written
+// - Edge records with cursors are created
+// - PageInfo is set with the provided values
+```
+
 **Delete Post (remove from all Query.posts)**
 
 ```ts
@@ -372,6 +423,7 @@ async function deletePost(cache, client, id) {
 >   - **Type safety**: Fragment structure matches your queries exactly.
 >   - **DRY**: Reuse the same fragment in queries and optimistic updates.
 >   - **Auto-initialization**: Nested `@connection` fields are initialized automatically.
+>   - **Inline edges support**: Provide nested connection data inline (edges, pageInfo) and it will be processed automatically.
 >   - **Consistency**: Variables ensure connection canonical keys match between optimistic and real data.
 >   - **Idempotent**: Multiple `addNode` calls with the same fragment won't reset existing nested connections.
 
