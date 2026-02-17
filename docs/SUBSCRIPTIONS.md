@@ -255,6 +255,96 @@ enabled.value = false; // stop
 
 ---
 
+## Svelte
+
+### `createSubscription`
+
+A reactive wrapper that exposes `data`, `error`, and `isFetching`. Import from **`cachebay/svelte`**.
+
+**Options**
+
+* `query: string | DocumentNode`
+* `variables?: MaybeGetter<TVars>` — plain value or reactive getter
+* `enabled?: MaybeGetter<boolean>` — plain value or reactive getter (default: `true`)
+* `onData?: (data: TData) => void` — imperative callback
+* `onError?: (error: Error) => void` — imperative callback
+* `onComplete?: () => void` — imperative callback
+
+**Returns**
+
+* `readonly data: TData | null`
+* `readonly error: Error | null`
+* `readonly isFetching: boolean`
+
+**Basic usage**
+
+```svelte
+<script lang="ts">
+  import { createSubscription } from 'cachebay/svelte'
+
+  const { data, error, isFetching } = createSubscription({
+    query: `
+      subscription OnPostUpdated($id: ID!) {
+        postUpdated(id: $id) {
+          post { id title }
+        }
+      }
+    `,
+
+    variables: {
+      id: 'p1',
+    },
+  })
+</script>
+
+{#if isFetching}
+  <p>Listening...</p>
+{:else if error}
+  <pre>{error.message}</pre>
+{:else}
+  <pre>{JSON.stringify(data, null, 2)}</pre>
+{/if}
+```
+
+**Enable/disable via reactive getters**
+
+```svelte
+<script lang="ts">
+  import { createSubscription } from 'cachebay/svelte'
+
+  let postId = $state('p1')
+  let enabled = $state(false)
+
+  const { data } = createSubscription({
+    query: `
+      subscription OnPostUpdated($id: ID!) {
+        postUpdated(id: $id) {
+          post { id title }
+        }
+      }
+    `,
+
+    variables: () => ({
+      id: postId,
+    }),
+
+    enabled: () => enabled,
+  })
+</script>
+
+<button onclick={() => enabled = !enabled}>
+  {enabled ? 'Stop' : 'Start'}
+</button>
+```
+
+> Notes:
+>
+> * Changing `variables` or `enabled` automatically tears down the old subscription and starts a new one.
+> * `isFetching` is `true` until the first data or error arrives.
+> * Cleanup is automatic via `$effect` return + `onDestroy`.
+
+---
+
 ## Next steps
 
 Continue to [RELAY_CONNECTIONS.md](./RELAY_CONNECTIONS.md) to learn about cursor-based pagination with infinite scroll and page-based navigation.

@@ -124,6 +124,84 @@ export default defineNuxtPlugin((nuxtApp) => {
 })
 ```
 
+## Svelte/SvelteKit wiring
+
+SvelteKit handles SSR via `load` functions and hooks. Since Cachebay queries run inside components (not in `load`), the pattern is:
+
+1. Create the cache in `+layout.svelte` (runs on both server and client).
+2. Server: dehydrate state after render via a server hook.
+3. Client: hydrate from the serialized snapshot.
+
+```svelte
+<!-- src/routes/+layout.svelte -->
+<script lang="ts">
+  import { createCachebay } from 'cachebay'
+  import { setCachebay } from 'cachebay/svelte'
+  import { browser } from '$app/environment'
+
+  let { data, children } = $props()
+
+  const cachebay = createCachebay({
+    transport: {
+      http: createHttpTransport('/api/graphql'),
+      ws: browser ? createWsTransport('/api/graphql') : undefined,
+    },
+
+    // hydrationTimeout: 120,
+    // suspensionTimeout: 800,
+  })
+
+  // Hydrate on client if SSR snapshot exists
+  if (browser && data?.cachebayState) {
+    cachebay.hydrate(data.cachebayState)
+  }
+
+  setCachebay(cachebay)
+</script>
+
+{@render children()}
+```
+
+**Server hook for dehydration:**
+
+```ts
+// src/hooks.server.ts
+import type { Handle } from '@sveltejs/kit'
+
+export const handle: Handle = async ({ event, resolve }) => {
+  const response = await resolve(event, {
+    transformPageChunk: ({ html }) => {
+      // Embed dehydrated state in the HTML
+      // (alternative: use +layout.server.ts load function)
+      return html
+    },
+  })
+
+  return response
+}
+```
+
+**Alternative: pass state via `+layout.server.ts`:**
+
+```ts
+// src/routes/+layout.server.ts
+import type { LayoutServerLoad } from './$types'
+
+export const load: LayoutServerLoad = async ({ cookies }) => {
+  return {
+    // Pass any server-side config (e.g., settings from cookies)
+    ssr: cookies.get('ssr') === 'true',
+  }
+}
+```
+
+> Notes:
+>
+> * `dehydrate()` / `hydrate()` work identically across frameworks — they snapshot entities, connections, and page records.
+> * The hydration window suppresses the first CN revalidate, preventing a double fetch after SSR.
+> * For client-only rendering (no SSR), simply skip the `hydrate()` call and omit server hooks.
+> * Subscriptions should be gated with `browser` from `$app/environment` — they only run on the client.
+
 ## Next steps
 
 Review [KEYNOTES.md](./KEYNOTES.md) for architectural insights, or explore the [demo app](../packages/demo) to see everything in action.

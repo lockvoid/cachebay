@@ -304,6 +304,149 @@ await query.refetch()
 
 ---
 
+## Svelte
+
+`createQuery` comes from **`cachebay/svelte`**. It integrates cache policies, watchers, and reactive getters.
+
+**Basic usage**
+
+```svelte
+<script lang="ts">
+  import { createQuery } from 'cachebay/svelte'
+
+  const { data, error, isFetching, refetch } = createQuery({
+    query: `
+      query ($id: ID!) {
+        post(id:$id) {
+          id
+          title
+        }
+      }
+    `,
+
+    variables: {
+      id: 'p1',
+    },
+
+    cachePolicy: 'cache-first',
+  })
+</script>
+
+{#if isFetching}
+  <p>Loading...</p>
+{:else if error}
+  <p>Error: {error.message}</p>
+{:else}
+  <h1>{data?.post?.title}</h1>
+{/if}
+```
+
+**Reactive variables** (via getter functions)
+
+Options that accept `MaybeGetter<T>` can be a plain value **or** a `() => T` getter. Svelte 5's `$effect` auto-tracks reads inside the getter, so the query re-executes when dependencies change.
+
+```svelte
+<script lang="ts">
+  import { createQuery } from 'cachebay/svelte'
+
+  let postId = $state('p1')
+
+  const { data } = createQuery({
+    query: `
+      query ($id: ID!) {
+        post(id:$id) {
+          id
+          title
+        }
+      }
+    `,
+
+    variables: () => ({
+      id: postId,
+    }),
+  })
+</script>
+
+<button onclick={() => postId = 'p2'}>Load Post 2</button>
+<pre>{JSON.stringify(data, null, 2)}</pre>
+```
+
+**Refetch** (defaults to `network-only`)
+
+```ts
+await refetch({ variables: { id: 'p2' } })
+// or override
+await refetch({ cachePolicy: 'cache-and-network' })
+```
+
+**Enabled**
+
+```svelte
+<script lang="ts">
+  import { createQuery } from 'cachebay/svelte'
+
+  let enabled = $state(false)
+
+  const query = createQuery({
+    query: `
+      query ($id: ID!) {
+        post(id:$id) {
+          id
+          title
+        }
+      }
+    `,
+
+    variables: {
+      id: 'p1',
+    },
+
+    enabled: () => enabled,
+  })
+</script>
+
+<!-- Later: start the query -->
+<button onclick={() => enabled = true}>Enable</button>
+```
+
+**Lazy**
+
+```svelte
+<script lang="ts">
+  import { createQuery } from 'cachebay/svelte'
+
+  const query = createQuery({
+    query: `
+      query ($id: ID!) {
+        post(id:$id) {
+          id
+          title
+        }
+      }
+    `,
+
+    variables: {
+      id: 'p1',
+    },
+
+    lazy: true,
+  })
+</script>
+
+<!-- Fetch on demand -->
+<button onclick={() => query.refetch()}>Load</button>
+```
+
+> Notes:
+>
+> * Return values are **plain objects with reactive getters** — no `$` prefix, no stores. Access `data`, `error`, `isFetching` directly in templates.
+> * When `enabled` returns `false`, `refetch()` is a **no‑op**. Toggle `enabled` to `true` first.
+> * `refetch()` merges provided variables into the last set (Apollo‑style).
+> * `lazy: true` skips the initial query execution; use `refetch()` later to trigger it.
+> * Cleanup (watcher unsubscription) is automatic via `onDestroy`.
+
+---
+
 ## Pagination & variable changes
 
 For cursor pagination and merge rules, see **Relay connections**. Changing variables re‑materializes watchers and (depending on policy) fetches fresh pages.

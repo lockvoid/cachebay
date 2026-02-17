@@ -170,6 +170,94 @@ export default defineNuxtPlugin((nuxtApp) => {
 });
 ```
 
+## Svelte / SvelteKit
+
+Cachebay ships a Svelte adapter with runes-native helpers (`createQuery`, `createFragment`, `createMutation`, `createSubscription`). Import **only** from `cachebay/svelte`.
+
+> Requires Svelte 5 (runes). No Svelte stores — all return values are plain objects with reactive getters.
+
+### Svelte
+
+Provide the instance via `setCachebay` in a root component:
+
+```svelte
+<!-- App.svelte -->
+<script lang="ts">
+  import { createCachebay } from 'cachebay'
+  import { setCachebay } from 'cachebay/svelte'
+
+  const cachebay = createCachebay({
+    transport: {
+      http: async ({ query, variables }) => {
+        try {
+          const res = await fetch('/graphql', {
+            method: 'POST',
+
+            headers: {
+              'content-type': 'application/json',
+            },
+
+            body: JSON.stringify({ query, variables }),
+          })
+
+          const json = await res.json()
+
+          return { data: json?.data ?? null, error: json?.errors?.[0] ?? null }
+        } catch (error) {
+          return { data: null, error }
+        }
+      },
+    },
+  })
+
+  setCachebay(cachebay)
+</script>
+```
+
+### SvelteKit
+
+Create the instance and call `setCachebay` in `+layout.svelte`:
+
+```svelte
+<!-- src/routes/+layout.svelte -->
+<script lang="ts">
+  import { createCachebay } from 'cachebay'
+  import { setCachebay } from 'cachebay/svelte'
+
+  const cachebay = createCachebay({
+    transport: {
+      http: async ({ query, variables }) => {
+        try {
+          const res = await fetch('/api/graphql', {
+            method: 'POST',
+
+            headers: {
+              'content-type': 'application/json',
+            },
+
+            body: JSON.stringify({ query, variables }),
+          })
+
+          const json = await res.json()
+
+          return { data: json?.data ?? null, error: json?.errors?.[0] ?? null }
+        } catch (error) {
+          return { data: null, error }
+        }
+      },
+    },
+  })
+
+  setCachebay(cachebay)
+
+  let { children } = $props()
+</script>
+
+{@render children()}
+```
+
+> **Context scope:** `setCachebay` uses Svelte's `setContext`, so it must be called during component initialization (top‑level `<script>`). All child components can then call `getCachebay()` or any `create*` helper.
+
 ## Next steps
 
 Continue to [OPERATIONS.md](./OPERATIONS.md) for executing queries, mutations, and subscriptions.

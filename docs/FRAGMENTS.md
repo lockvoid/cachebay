@@ -203,6 +203,83 @@ variables.value = { locale: 'de' }
 
 ---
 
+## Svelte
+
+### `createFragment`
+
+Create a reactive view of a single entity's fragment. Import from **`cachebay/svelte`**.
+
+**Options**
+
+* `id: string | (() => string)` — canonical record id, can be a reactive getter
+* `fragment: string | DocumentNode | CachePlan`
+* `fragmentName?: string` — when the document contains multiple fragments
+* `variables?: Record<string, unknown> | (() => Record<string, unknown>)`
+
+**Returns**
+
+`{ readonly data: TData | undefined }`
+
+**Basic usage**
+
+```svelte
+<script lang="ts">
+  import { createFragment } from 'cachebay/svelte'
+
+  const { data: post } = createFragment<{ id: string; title: string }>({
+    id: 'Post:p1',
+
+    fragment: `
+      fragment PostFields on Post {
+        id
+        title
+      }
+    `,
+
+    fragmentName: 'PostFields',
+  })
+</script>
+
+{#if post}
+  <h1>{post.title}</h1>
+{/if}
+```
+
+**Reactive id/variables**
+
+```svelte
+<script lang="ts">
+  import { createFragment } from 'cachebay/svelte'
+
+  let { entityId } = $props<{ entityId: string }>()
+  let locale = $state('en')
+
+  const { data: post } = createFragment<{ id: string; title: string }>({
+    id: () => entityId,
+
+    variables: () => ({ locale }),
+
+    fragment: `
+      fragment PostFields on Post {
+        id
+        title
+      }
+    `,
+
+    fragmentName: 'PostFields',
+  })
+</script>
+```
+
+> Notes:
+>
+> * Returns a **plain object with a reactive getter** — no `$` prefix. Access `data` directly.
+> * When `id` becomes falsy, the watcher is cleaned up and `data` becomes `undefined`.
+> * Changing `id` or `variables` reuses the existing watcher via `update()` for efficiency.
+> * With interfaces configured, `id: 'Post:123'` resolves to the concrete record once known.
+
+---
+
 ## Next steps
 
 Continue to [MUTATIONS.md](./MUTATIONS.md) to learn about executing mutations, write merging, and optimistic update patterns.

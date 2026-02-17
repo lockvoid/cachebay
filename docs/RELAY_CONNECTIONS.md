@@ -253,6 +253,159 @@ const { data } = useQuery({
 
 ```
 
+## Svelte recipes
+
+The same patterns apply with `createQuery` from **`cachebay/svelte`**. Use `$state` for pagination variables and pass them via reactive getters.
+
+### Infinite feed (append)
+
+```svelte
+<script lang="ts">
+  import { createQuery } from 'cachebay/svelte'
+
+  let after = $state<string | null>(null)
+
+  const { data } = createQuery({
+    query: `
+      query Posts($category: String, $first: Int, $after: String) {
+        posts(category: $category, first: $first, after: $after)
+          @connection(mode: "infinite", filters: ["category"]) {
+          pageInfo {
+            endCursor
+            hasNextPage
+          }
+
+          edges {
+            cursor
+
+            node {
+              id
+              title
+            }
+          }
+        }
+      }
+    `,
+
+    variables: () => ({
+      category: 'tech',
+      first: 10,
+      after,
+    }),
+
+    cachePolicy: 'cache-and-network',
+  })
+
+  const loadMore = () => {
+    const pageInfo = data?.posts?.pageInfo
+
+    if (pageInfo?.hasNextPage) {
+      after = pageInfo.endCursor
+    }
+  }
+</script>
+
+{#if data?.posts}
+  {#each data.posts.edges as edge}
+    <article>{edge.node.title}</article>
+  {/each}
+
+  {#if data.posts.pageInfo.hasNextPage}
+    <button onclick={loadMore}>Load more</button>
+  {/if}
+{/if}
+```
+
+### Infinite feed (prepend / load previous)
+
+```svelte
+<script lang="ts">
+  import { createQuery } from 'cachebay/svelte'
+
+  let before = $state<string | null>(null)
+
+  const { data } = createQuery({
+    query: `
+      query Posts($category: String, $last: Int, $before: String) {
+        posts(category: $category, last: $last, before: $before)
+          @connection(mode: "infinite", filters: ["category"]) {
+          pageInfo {
+            startCursor
+            hasPreviousPage
+          }
+
+          edges {
+            cursor
+
+            node {
+              id
+              title
+            }
+          }
+        }
+      }
+    `,
+
+    variables: () => ({
+      category: 'tech',
+      last: 10,
+      before,
+    }),
+
+    cachePolicy: 'cache-and-network',
+  })
+
+  const loadPrevious = () => {
+    const pageInfo = data?.posts?.pageInfo
+
+    if (pageInfo?.hasPreviousPage) {
+      before = pageInfo.startCursor
+    }
+  }
+</script>
+```
+
+### Strict paging (replace)
+
+```svelte
+<script lang="ts">
+  import { createQuery } from 'cachebay/svelte'
+
+  let after = $state<string | null>(null)
+
+  const { data } = createQuery({
+    query: `
+      query Posts($category: String, $first: Int, $after: String) {
+        posts(category: $category, first: $first, after: $after)
+          @connection(mode: "page", filters: ["category"]) {
+          pageInfo {
+            endCursor
+            hasNextPage
+          }
+
+          edges {
+            cursor
+
+            node {
+              id
+              title
+            }
+          }
+        }
+      }
+    `,
+
+    variables: () => ({
+      category: 'tech',
+      first: 10,
+      after,
+    }),
+
+    cachePolicy: 'cache-first',
+  })
+</script>
+```
+
 ## Next steps
 
 Continue to [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md) to learn about layered optimistic updates for instant UI feedback with clean rollback.
