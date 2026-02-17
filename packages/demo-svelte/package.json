@@ -1,0 +1,29 @@
+{
+  "name": "cachebay-demo-svelte",
+  "version": "0.9.2",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@pothos/core": "^4.9.1",
+    "@pothos/plugin-relay": "^4.6.2",
+    "cachebay": "workspace:*",
+    "graphql-sse": "^2.5.4",
+    "graphql-yoga": "^5.16.0",
+    "nprogress": "^0.2.0",
+    "valibot": "^1.1.0"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-auto": "^6.0.0",
+    "@sveltejs/kit": "^2.21.0",
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "@tailwindcss/vite": "^4.1.13",
+    "svelte": "^5.34.0",
+    "tailwindcss": "^4.1.12",
+    "typescript": "^5.9.2",
+    "vite": "^6.3.0"
+  }
+}
