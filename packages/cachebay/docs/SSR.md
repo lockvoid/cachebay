@@ -126,7 +126,7 @@ export default defineNuxtPlugin((nuxtApp) => {
 
 ## Next steps
 
-Review [KEYNOTES.md](./KEYNOTES.md) for architectural insights, or explore the [demo app](../packages/demo) to see everything in action.
+Review [KEYNOTES.md](./KEYNOTES.md) for architectural insights, or explore the [demo app](../packages/demo-vue) to see everything in action.
 
 ## See also
 

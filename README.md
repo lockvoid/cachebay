@@ -38,7 +38,7 @@ For benchmarking — see **[Benchmarks](./packages/benchmarks/README.md)**.
 
 ## Demo app
 
-**[Nuxt 4 Demo App ϟ](./packages/demo)**
+**[Nuxt 4 Demo App ϟ](./packages/demo-vue)**
 
 or try live https://harrypotter.exp.lockvoid.com/
 

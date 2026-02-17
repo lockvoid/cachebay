@@ -14,7 +14,7 @@ COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* ./
 COPY packages/cachebay ./packages/cachebay/
 
 # Copy demo package
-COPY packages/demo ./packages/demo/
+COPY packages/demo ./packages/demo-vue/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
@@ -22,7 +22,7 @@ RUN pnpm install --frozen-lockfile
 # Build stage
 FROM base AS builder
 
-WORKDIR /workspace/packages/demo
+WORKDIR /workspace/packages/demo-vue
 
 # Build the application
 RUN pnpm build
@@ -36,13 +36,13 @@ LABEL service=harrypotter
 WORKDIR /app
 
 # Copy built application
-COPY --from=builder /workspace/packages/demo/.output ./nuxt
+COPY --from=builder /workspace/packages/demo-vue/.output ./nuxt
 
 # Copy vendor database files as read-only templates
-COPY --from=builder /workspace/packages/demo/vendor ./vendor
+COPY --from=builder /workspace/packages/demo-vue/vendor ./vendor
 
 # Copy database management script
-COPY --from=builder /workspace/packages/demo/bin/reset-db /app/reset-db
+COPY --from=builder /workspace/packages/demo-vue/bin/reset-db /app/reset-db
 RUN chmod +x /app/reset-db
 
 # Expose the port
