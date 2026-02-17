@@ -507,6 +507,6 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     notifyDataByDependencies,
     notifyErrorBySignature,
     notifyDataBySignature,
-    inspect, // Expose for debugging and testing
+    inspect,
   };
 };

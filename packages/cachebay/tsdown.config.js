@@ -1,6 +1,38 @@
 import { defineConfig } from "tsdown";
 import { readFileSync, writeFileSync } from "fs";
 import { join } from "path";
+import ts from "typescript";
+import { compileModule } from "svelte/compiler";
+
+/**
+ * Rolldown plugin that compiles .svelte.ts files using the Svelte compiler.
+ * Strips TypeScript with tsc first, then runs compileModule to transform runes.
+ */
+const svelteModulePlugin = () => ({
+  name: "svelte-module",
+
+  transform(code, id) {
+    if (!id.endsWith(".svelte.ts")) return null;
+
+    // Strip TypeScript types first (compileModule only accepts JS)
+    const stripped = ts.transpileModule(code, {
+      compilerOptions: {
+        target: ts.ScriptTarget.ESNext,
+        module: ts.ModuleKind.ESNext,
+        moduleResolution: ts.ModuleResolutionKind.Bundler,
+        verbatimModuleSyntax: true,
+      },
+    });
+
+    // Compile runes ($state, $effect, etc.) into Svelte runtime calls
+    const result = compileModule(stripped.outputText, {
+      filename: id,
+      generate: "client",
+    });
+
+    return { code: result.js.code, map: result.js.map };
+  },
+});
 
 export default defineConfig({
   outDir: "dist",
@@ -11,12 +43,15 @@ export default defineConfig({
     "src/core/index.ts",
     "src/compiler/index.ts",
     "src/adapters/vue/index.ts",
+    "src/adapters/svelte/index.ts",
   ],
 
   format: ["esm"],
 
+  plugins: [svelteModulePlugin()],
+
   external: (id, importer) => {
-    if (importer?.includes("adapters/vue")) {
+    if (importer?.includes("adapters/vue") || importer?.includes("adapters/svelte")) {
       if (id.startsWith("../../core")) {
         return true;
       }
@@ -28,7 +63,7 @@ export default defineConfig({
       }
     }
 
-    return ["vue", "graphql", "graphql-tag"].includes(id);
+    return ["vue", "svelte", "svelte/internal/client", "graphql", "graphql-tag"].includes(id);
   },
 
   onNetworkData: async () => {
@@ -40,6 +75,6 @@ export default defineConfig({
       writeFileSync(sourcePath, content, "utf-8");
     };
 
-    ["adapters/vue/index.js", "core/index.js"].forEach(rewriteImports);
+    ["adapters/vue/index.js", "adapters/svelte/index.js", "core/index.js"].forEach(rewriteImports);
   },
 });

@@ -1,9 +1,10 @@
 import { URL, fileURLToPath } from "node:url";
 import vue from "@vitejs/plugin-vue";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue(), svelte()],
 
   test: {
     environment: "happy-dom",

@@ -19,6 +19,7 @@
     "@lockvoid/eslint-config": "^0.7.0",
     "@nuxt/test-utils": "^3.19.2",
     "@playwright/test": "^1.55.0",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@vitejs/plugin-vue": "^6.0.1",
     "@vitest/coverage-v8": "3.2.4",
     "@vue/test-utils": "^2.4.6",
@@ -29,6 +30,7 @@
     "graphql": "^16.11.0",
     "graphql-tag": "^2.12.6",
     "happy-dom": "^18.0.1",
+    "svelte": "^5.51.2",
     "tailwindcss": "^4.1.13",
     "tsdown": "^0.15.6",
     "typescript": "^5.9.2",
@@ -39,7 +41,16 @@
   },
   "peerDependencies": {
     "graphql": "^16.11.0",
+    "svelte": "^5.0.0",
     "vue": "^3.5.18"
+  },
+  "peerDependenciesMeta": {
+    "vue": {
+      "optional": true
+    },
+    "svelte": {
+      "optional": true
+    }
   },
   "exports": {
     ".": {
@@ -53,6 +64,10 @@
     "./vue": {
       "import": "./dist/adapters/vue/index.js",
       "types": "./dist/adapters/vue/index.d.ts"
+    },
+    "./svelte": {
+      "import": "./dist/adapters/svelte/index.js",
+      "types": "./dist/adapters/svelte/index.d.ts"
     }
   },
   "files": [
