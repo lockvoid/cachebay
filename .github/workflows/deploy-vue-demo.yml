@@ -1,4 +1,4 @@
-name: Deploy Demo
+name: Deploy Vue Demo
 
 on:
   push:
@@ -10,7 +10,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: packages/demo
+        working-directory: packages/demo-vue
 
     permissions:
       contents: read
@@ -46,11 +46,11 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./packages/demo/Dockerfile
+          file: ./packages/demo-vue/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/demo:latest
-            ghcr.io/${{ github.repository }}/demo:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/demo-vue:latest
+            ghcr.io/${{ github.repository }}/demo-vue:${{ github.sha }}
 
       - name: Deploy application with Kamal
         run: kamal deploy -c kamal.yml --skip-push
