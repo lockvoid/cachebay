@@ -1,6 +1,6 @@
 service: harrypotter
 
-image: ghcr.io/lockvoid/cachebay/demo
+image: lockvoid/cachebay/demo-vue
 
 servers:
   web:
