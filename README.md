@@ -17,6 +17,7 @@
 - **Relay-style connections** with append/prepend/replace modes, edge de-dup by node key, and zero array churn.
 - **Layered optimistic updates** — patch/delete entities and add/remove/patch connections with clean commit/revert.
 - **Server-side rendering** — dehydrate/hydrate; first client mount renders from cache without a duplicate request; clean Suspense behavior.
+- **Persistent storage & cross-tab sync** — IndexedDB-backed cache persistence with journal-based cross-tab synchronization; works in Capacitor iOS.
 
 ## Keynotes
 
@@ -35,6 +36,7 @@ For benchmarking — see **[Benchmarks](./packages/benchmarks/README.md)**.
 - **[Relay Connections](./docs/RELAY_CONNECTIONS.md)**
 - **[Optimistic Updates](./docs/OPTIMISTIC_UPDATES.md)**
 - **[SSR](./docs/SSR.md)**
+- **[Storage](./docs/STORAGE.md)**
 
 ## Demo app
 
