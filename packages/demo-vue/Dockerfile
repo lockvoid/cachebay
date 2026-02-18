@@ -14,7 +14,7 @@ COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* ./
 COPY packages/cachebay ./packages/cachebay/
 
 # Copy demo package
-COPY packages/demo ./packages/demo-vue/
+COPY packages/demo-vue ./packages/demo-vue/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
