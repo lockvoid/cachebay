@@ -9,6 +9,7 @@ import { createPlanner } from "./planner";
 import { createQueries } from "./queries";
 import { createSSR } from "./ssr";
 import type { CachebayOptions } from "./types";
+import type { StorageAdapter, StorageInspection } from "../storage/idb";
 
 /**
  * Main Cachebay instance type
@@ -147,6 +148,25 @@ export type CachebayInstance = {
   inspect: ReturnType<typeof createInspect>;
 
   /**
+   * Storage API (only present when `storage` option is provided).
+   * Provides debug inspection, manual journal eviction, and forced sync.
+   */
+  storage: {
+    /** Debug inspection of storage state */
+    inspect: () => Promise<StorageInspection>;
+    /** Manually evict old journal entries */
+    evictJournal: () => Promise<void>;
+    /** Force an immediate journal poll */
+    flushJournal: () => Promise<void>;
+  } | null;
+
+  /**
+   * Dispose: stop storage polling, close connections.
+   * Call when the cache instance is no longer needed.
+   */
+  dispose: () => void;
+
+  /**
    * Internal APIs for testing and debugging
    * @internal
    */
@@ -185,6 +205,10 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
 
   const planner = createPlanner();
 
+  // Storage integration: mutable refs captured by onChange closure
+  let storageAdapter: StorageAdapter | null = null;
+  let isApplyingRemote = false;
+
   const graph = createGraph({
     keys: options.keys || {},
     interfaces: options.interfaces || {},
@@ -192,6 +216,25 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
     onChange: (touchedIds) => {
       queries.notifyDataByDependencies(touchedIds);
       fragments.notifyDataByDependencies(touchedIds);
+
+      // Persist delta to storage (skip if applying remote updates from another tab)
+      if (storageAdapter && !isApplyingRemote) {
+        const updates: Array<[string, Record<string, unknown>]> = [];
+        const removes: string[] = [];
+
+        for (const id of touchedIds) {
+          const record = graph.getRecord(id);
+
+          if (record !== undefined) {
+            updates.push([id, record]);
+          } else {
+            removes.push(id);
+          }
+        }
+
+        if (updates.length > 0) storageAdapter.put(updates);
+        if (removes.length > 0) storageAdapter.remove(removes);
+      }
     },
   });
 
@@ -259,6 +302,72 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
 
   // Planner
   cache.getPlan = planner.getPlan;
+
+  // Storage API
+  cache.storage = null;
+
+  // Storage integration
+  if (options.storage) {
+    const instanceId = Math.random().toString(36).slice(2, 10);
+
+    storageAdapter = options.storage({
+      instanceId,
+
+      onUpdate(records) {
+        isApplyingRemote = true;
+
+        for (let i = 0; i < records.length; i++) {
+          const [id, snap] = records[i];
+
+          graph.putRecord(id, snap);
+        }
+
+        graph.flush();
+        isApplyingRemote = false;
+      },
+
+      onRemove(ids) {
+        isApplyingRemote = true;
+
+        for (let i = 0; i < ids.length; i++) {
+          graph.removeRecord(ids[i]);
+        }
+
+        graph.flush();
+        isApplyingRemote = false;
+      },
+    });
+
+    cache.storage = {
+      inspect: storageAdapter.inspect,
+      evictJournal: storageAdapter.evictJournal,
+      flushJournal: storageAdapter.flushJournal,
+    };
+
+    // Async load from storage — only fill gaps (don't overwrite SSR-hydrated data)
+    storageAdapter.load().then((records) => {
+      if (records.length === 0) return;
+
+      isApplyingRemote = true;
+
+      for (let i = 0; i < records.length; i++) {
+        const [id, snap] = records[i];
+
+        if (!graph.getRecord(id)) {
+          graph.putRecord(id, snap);
+        }
+      }
+
+      graph.flush();
+      isApplyingRemote = false;
+    });
+  }
+
+  // Dispose
+  cache.dispose = () => {
+    storageAdapter?.dispose();
+    storageAdapter = null;
+  };
 
   // Internals for tests
   cache.__internals = {

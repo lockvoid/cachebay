@@ -79,3 +79,6 @@ export type { GraphInstance, GraphOptions } from "./graph";
 
 // Inspect utilities
 export type { InspectAPI } from "./inspect";
+
+// Storage types
+export type { StorageAdapterFactory, StorageAdapter, StorageContext, StorageInspection } from "../storage/idb";

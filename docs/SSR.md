@@ -214,3 +214,4 @@ Review [KEYNOTES.md](./KEYNOTES.md) for architectural insights, or explore the [
 - **Optimistic updates** — layering, entity ops, `addNode` / `removeNode` / `patch`: [OPTIMISTIC_UPDATES.md](./OPTIMISTIC_UPDATES.md)
 - **Fragments** — identify / read / write: [FRAGMENTS.md](./FRAGMENTS.md)
 - **Mutations** — write merging & optimistic patterns: [MUTATIONS.md](./MUTATIONS.md)
+- **Storage** — persistent cache & cross-tab sync: [STORAGE.md](./STORAGE.md)

@@ -44,6 +44,7 @@ export default defineConfig({
     "src/compiler/index.ts",
     "src/adapters/vue/index.ts",
     "src/adapters/svelte/index.ts",
+    "src/storage/idb.ts",
   ],
 
   format: ["esm"],
@@ -58,7 +59,7 @@ export default defineConfig({
     }
 
     if (importer?.includes("core")) {
-      if (id.startsWith("../compiler")) {
+      if (id.startsWith("../compiler") || id.startsWith("../storage")) {
         return true;
       }
     }
@@ -70,7 +71,7 @@ export default defineConfig({
     const rewriteImports = (filePath) => {
       const sourcePath = join(process.cwd(), "dist", filePath);
 
-      const content = readFileSync(sourcePath, "utf-8").replace(/\/(core|compiler)"/g, '/$1/index.js"').replace(/\/(core|compiler)'/g, "/$1/index.js'");
+      const content = readFileSync(sourcePath, "utf-8").replace(/\/(core|compiler)"/g, '/$1/index.js"').replace(/\/(core|compiler)'/g, "/$1/index.js'").replace(/\/storage\/idb"/g, '/storage/idb.js"').replace(/\/storage\/idb'/g, "/storage/idb.js'");
 
       writeFileSync(sourcePath, content, "utf-8");
     };

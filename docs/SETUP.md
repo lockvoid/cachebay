@@ -14,6 +14,7 @@ Create a cache instance with `createCachebay(options)` and reuse it across your 
 * `cachePolicy?` *(default: "cache-first")*: default policy for queries; override per operation as needed.
 * `keys?`: only if you need custom identity; by default Cachebay uses the object's `id` field.
 * `interfaces?`: interface → implementing types map (resolves interface fragments).
+* `storage?`: storage adapter factory for persistent cache & cross-tab sync (see [STORAGE.md](./STORAGE.md)).
 * `hydrationTimeout?` *(ms, default 100)*: Hydration timeout window.
 * `suspensionTimeout?` *(ms, default 1000)*: Suspension window to stabilize repeated calls.
 

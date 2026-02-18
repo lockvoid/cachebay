@@ -250,6 +250,7 @@ export const createGraph = (options: GraphOptions = {}) => {
 
     try {
       onChange(pendingChanges);
+
       pendingChanges.clear();
     } finally {
       isFlushing = false;

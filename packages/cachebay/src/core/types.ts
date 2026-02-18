@@ -231,6 +231,8 @@ export type CachebayOptions = {
   suspensionTimeout?: number;
   /** Transport layer for network operations (http and ws) - REQUIRED */
   transport: import("./operations").Transport;
+  /** Optional persistent storage adapter for cache persistence and cross-tab sync */
+  storage?: import("../storage/idb").StorageAdapterFactory;
 };
 
 /**

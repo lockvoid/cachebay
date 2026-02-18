@@ -54,16 +54,14 @@ export const createSSR = (options: SSROptions = {}, { graph }: Deps) => {
   /**
    * Hydrate a snapshot into the graph.
    * - input can be a plain snapshot or a function that emits it (stream-friendly)
-   * - clears the graph first, then restores records
-   * - `isHydrating()` is true until the next microtask
+   * - merges records into the graph (existing records are updated field-by-field)
+   * - `isHydrating()` is true for the duration of `hydrationTimeout`
    */
   const hydrate = (
     input: GraphSnapshot | ((emit: (snapshot: GraphSnapshot) => void) => void),
   ) => {
     const run = (snapshot: GraphSnapshot) => {
       if (!snapshot || !Array.isArray(snapshot.records)) return;
-
-      graph.clear();
 
       for (let i = 0; i < snapshot.records.length; i++) {
         const entry = snapshot.records[i];
