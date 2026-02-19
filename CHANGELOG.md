@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.10.1] — 2026-02-19
+
+### Changed
+- Fix declaration types generation.
+- Switch build output to `.mjs`/`.d.mts` extensions for all entry points.
+
 ## [0.10.0] — 2026-02-18
 
 ### Added

@@ -4,8 +4,8 @@
   "license": "MIT",
   "author": "LockVoid",
   "type": "module",
-  "main": "./dist/core/index.js",
-  "types": "./dist/core/index.d.ts",
+  "main": "./dist/core/index.mjs",
+  "types": "./dist/core/index.d.mts",
   "scripts": {
     "build": "tsdown",
     "coverage": "vitest --run --coverage",
@@ -33,7 +33,7 @@
     "happy-dom": "^18.0.1",
     "svelte": "^5.51.2",
     "tailwindcss": "^4.1.13",
-    "tsdown": "^0.15.6",
+    "tsdown": "^0.20.3",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.41.0",
     "vitest": "^3.2.4",
@@ -55,24 +55,24 @@
   },
   "exports": {
     ".": {
-      "import": "./dist/core/index.js",
-      "types": "./dist/core/index.d.ts"
+      "import": "./dist/core/index.mjs",
+      "types": "./dist/core/index.d.mts"
     },
     "./compiler": {
-      "import": "./dist/compiler/index.js",
-      "types": "./dist/compiler/index.d.ts"
+      "import": "./dist/compiler/index.mjs",
+      "types": "./dist/compiler/index.d.mts"
     },
     "./vue": {
-      "import": "./dist/adapters/vue/index.js",
-      "types": "./dist/adapters/vue/index.d.ts"
+      "import": "./dist/adapters/vue/index.mjs",
+      "types": "./dist/adapters/vue/index.d.mts"
     },
     "./svelte": {
-      "import": "./dist/adapters/svelte/index.js",
-      "types": "./dist/adapters/svelte/index.d.ts"
+      "import": "./dist/adapters/svelte/index.mjs",
+      "types": "./dist/adapters/svelte/index.d.mts"
     },
     "./idb": {
-      "import": "./dist/storage/idb.js",
-      "types": "./dist/storage/idb.d.ts"
+      "import": "./dist/storage/idb.mjs",
+      "types": "./dist/storage/idb.d.mts"
     }
   },
   "files": [

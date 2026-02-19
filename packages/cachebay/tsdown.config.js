@@ -71,11 +71,11 @@ export default defineConfig({
     const rewriteImports = (filePath) => {
       const sourcePath = join(process.cwd(), "dist", filePath);
 
-      const content = readFileSync(sourcePath, "utf-8").replace(/\/(core|compiler)"/g, '/$1/index.js"').replace(/\/(core|compiler)'/g, "/$1/index.js'").replace(/\/storage\/idb"/g, '/storage/idb.js"').replace(/\/storage\/idb'/g, "/storage/idb.js'");
+      const content = readFileSync(sourcePath, "utf-8").replace(/\/(core|compiler)"/g, '/$1/index.mjs"').replace(/\/(core|compiler)'/g, "/$1/index.mjs'").replace(/\/storage\/idb"/g, '/storage/idb.mjs"').replace(/\/storage\/idb'/g, "/storage/idb.mjs'");
 
       writeFileSync(sourcePath, content, "utf-8");
     };
 
-    ["adapters/vue/index.js", "adapters/svelte/index.js", "core/index.js"].forEach(rewriteImports);
+    ["adapters/vue/index.mjs", "adapters/svelte/index.mjs", "core/index.mjs"].forEach(rewriteImports);
   },
 });
