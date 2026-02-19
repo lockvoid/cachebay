@@ -67,7 +67,7 @@ export default defineConfig({
     return ["vue", "svelte", "svelte/internal/client", "graphql", "graphql-tag"].includes(id);
   },
 
-  onNetworkData: async () => {
+  onSuccess: async () => {
     const rewriteImports = (filePath) => {
       const sourcePath = join(process.cwd(), "dist", filePath);
 
