@@ -283,10 +283,14 @@ builder.subscriptionType({
 
 const schema = builder.toSchema();
 
-const yoga = createYoga({
+const yoga = createYoga<RequestEvent>({
   schema,
 
   graphqlEndpoint: "/api/graphql",
+
+  fetchAPI: {
+    Response,
+  },
 
   graphiql: {
     title: "Harry Potter",
@@ -297,14 +301,5 @@ const yoga = createYoga({
   },
 });
 
-const handler = async ({ request }: RequestEvent) => {
-  const response = await yoga.fetch(request);
-
-  return new Response(response.body, {
-    status: response.status,
-    headers: response.headers,
-  });
-};
-
-export const GET = handler;
-export const POST = handler;
+export const GET = yoga;
+export const POST = yoga;

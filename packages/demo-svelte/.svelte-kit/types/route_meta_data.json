@@ -1,9 +1,0 @@
-{
-	"/": [],
-	"/api/graphql": [
-		"src/routes/api/graphql/+server.ts"
-	],
-	"/spells/new": [],
-	"/spells/[id]": [],
-	"/spells/[id]/edit": []
-}
