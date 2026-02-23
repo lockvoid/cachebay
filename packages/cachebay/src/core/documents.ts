@@ -1160,9 +1160,17 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     materializeCache.delete(cacheKey);
   };
 
+  /**
+   * Evict all materialized document caches
+   */
+  const evictAll = (): void => {
+    materializeCache.clear();
+  };
+
   return {
     normalize,
     materialize,
     invalidate,
+    evictAll,
   };
 };

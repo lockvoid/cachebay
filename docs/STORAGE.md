@@ -112,6 +112,17 @@ await cachebay.storage.evictJournal()
 
 When no `storage` option is provided, `cachebay.storage` is `null`.
 
+### Evict all data
+
+`cachebay.evictAll()` clears both the in-memory cache **and** persistent storage in a single call. This is the recommended way to reset state on logout or account switch — it drains pending IDB writes, clears both the `records` and `journal` object stores, and resets the sync cursor.
+
+```ts
+// On logout: clear everything
+await cachebay.evictAll()
+```
+
+See [SETUP.md](./SETUP.md) for the full list of what gets cleared vs preserved.
+
 ### Capacitor: force sync before navigation
 
 In Capacitor iOS, separate WebKit instances don't share `BroadcastChannel`, which is why cachebay uses journal-based IDB polling instead. When opening a modal or navigating between views, call `flushJournal()` to ensure the latest state is visible immediately — without waiting for the next poll cycle:
@@ -124,11 +135,13 @@ await Modal.open(...)
 
 ## Dispose
 
-Call `dispose()` when the cache is no longer needed. This stops journal polling and closes the IDB connection.
+Call `dispose()` when the cache instance is no longer needed. This stops journal polling and closes the IDB connection. The instance is **not usable** after disposal.
 
 ```ts
 cachebay.dispose()
 ```
+
+> To clear all data while keeping the instance alive (e.g. on logout), use `await cachebay.evictAll()` instead.
 
 ## Custom storage adapters
 
@@ -148,6 +161,7 @@ const myStorage: StorageAdapterFactory = (ctx) => {
     load() { /* return all persisted records */ },
     flushJournal() { /* force immediate sync poll */ },
     evictJournal() { /* clean old sync entries */ },
+    evictAll() { /* clear all persisted records and sync entries */ },
     inspect() { /* return debug info */ },
     dispose() { /* cleanup */ },
   }

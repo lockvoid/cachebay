@@ -1170,7 +1170,15 @@ export const createOptimistic = ({ graph, planner }: OptimisticDependencies) => 
     return { total: layers.length, layers };
   };
 
-  return { modifyOptimistic, replayOptimistic, inspect };
+  /**
+   * Evict all pending optimistic layers.
+   * Outstanding commit()/revert() handles become safe no-ops.
+   */
+  const evictAll = (): void => {
+    pending.clear();
+  };
+
+  return { modifyOptimistic, replayOptimistic, evictAll, inspect };
 };
 
 export type OptimisticInstance = ReturnType<typeof createOptimistic>;

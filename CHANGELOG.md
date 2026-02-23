@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.11.0] — 2026-02-23
+
+### Added
+- **`evictAll()`** — public API to clear all cached data from memory and persistent storage. Evicts the normalized graph store, materialization caches, optimistic layers, and IDB records/journal. Active watchers are preserved and re-materialize with empty data.
+
 ## [0.10.1] — 2026-02-19
 
 ### Changed

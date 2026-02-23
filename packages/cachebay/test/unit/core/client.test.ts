@@ -53,6 +53,9 @@ describe("createCachebay", () => {
 
     // Inspect API
     expect(cache.inspect).toBeTruthy();
+
+    // Evict API
+    expect(typeof cache.evictAll).toBe("function");
   });
 
   it("exposes internals for testing", () => {

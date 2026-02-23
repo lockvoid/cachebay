@@ -397,6 +397,27 @@ export const createStorage = (options?: IDBStorageOptions): StorageAdapterFactor
     };
 
     /**
+     * Clear all persisted records and journal entries.
+     * Drains pending writes first to avoid races.
+     */
+    const evictAll = async (): Promise<void> => {
+      await drainWrites();
+
+      if (disposed) return;
+
+      const database = await getDB();
+      const { tx, stores } = writeTx(database, [RECORDS_STORE, JOURNAL_STORE]);
+      const [recordsStore, journalStore] = stores;
+
+      recordsStore.clear();
+      journalStore.clear();
+
+      lastSeenEpoch = 0;
+
+      return txDone(tx);
+    };
+
+    /**
      * Debug inspection of storage state.
      */
     const inspectStorage = async (): Promise<StorageInspection> => {
@@ -440,6 +461,6 @@ export const createStorage = (options?: IDBStorageOptions): StorageAdapterFactor
       dbPromise = null;
     };
 
-    return { put, remove, load, flushJournal, evictJournal, inspect: inspectStorage, dispose };
+    return { put, remove, load, flushJournal, evictJournal, evictAll, inspect: inspectStorage, dispose };
   };
 };

@@ -161,6 +161,12 @@ export type CachebayInstance = {
   } | null;
 
   /**
+   * Evict all cached data from memory and persistent storage.
+   * Active watchers are preserved — they will re-materialize with empty data.
+   */
+  evictAll: () => Promise<void>;
+
+  /**
    * Dispose: stop storage polling, close connections.
    * Call when the cache instance is no longer needed.
    */
@@ -362,6 +368,34 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
       isApplyingRemote = false;
     });
   }
+
+  // Evict all
+  cache.evictAll = async () => {
+    // Snapshot keys before clearing so we can notify watchers
+    const allKeys = graph.keys();
+
+    // Clear optimistic layers first (they reference graph data)
+    optimistic.evictAll();
+
+    // Clear materialization caches
+    documents.evictAll();
+
+    // Clear the normalized graph store
+    graph.evictAll();
+
+    // Clear persistent storage if present
+    if (storageAdapter) {
+      await storageAdapter.evictAll();
+    }
+
+    // Notify watchers directly (bypasses graph.onChange to avoid storage re-persistence)
+    if (allKeys.length > 0) {
+      const touchedIds = new Set<string>(allKeys);
+
+      queries.notifyDataByDependencies(touchedIds);
+      fragments.notifyDataByDependencies(touchedIds);
+    }
+  };
 
   // Dispose
   cache.dispose = () => {

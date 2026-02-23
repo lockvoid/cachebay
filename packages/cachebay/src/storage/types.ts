@@ -40,6 +40,8 @@ export type StorageAdapter = {
   flushJournal: () => Promise<void>;
   /** Manually evict old journal entries */
   evictJournal: () => Promise<void>;
+  /** Clear all persisted records and journal entries */
+  evictAll: () => Promise<void>;
   /** Debug inspection of storage state */
   inspect: () => Promise<StorageInspection>;
   /** Cleanup: stop polling, close connections */

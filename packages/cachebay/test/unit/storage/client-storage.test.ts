@@ -14,6 +14,7 @@ const mockTransport: Transport = {
 const storageStubs = () => ({
   flushJournal: vi.fn().mockResolvedValue(undefined),
   evictJournal: vi.fn().mockResolvedValue(undefined),
+  evictAll: vi.fn().mockResolvedValue(undefined),
   inspect: vi.fn().mockResolvedValue({ recordCount: 0, journalCount: 0, lastSeenEpoch: 0, instanceId: "mock" }),
 });
 

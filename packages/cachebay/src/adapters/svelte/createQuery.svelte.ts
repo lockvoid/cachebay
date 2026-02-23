@@ -41,7 +41,12 @@ export interface RefetchOptions<TVars = any> {
 }
 
 /**
- * createQuery return value
+ * createQuery return value.
+ *
+ * **IMPORTANT: Do not destructure this object.**
+ * Destructuring (`const { data } = createQuery(...)`) breaks Svelte reactivity
+ * because JS destructuring evaluates getters once and copies the plain value.
+ * Use `query.data` in templates instead.
  */
 export interface CreateQueryReturn<TData = any, TVars = any> {
   /** Query data - undefined when not loaded, null when explicitly null, TData when loaded */
@@ -58,7 +63,22 @@ export interface CreateQueryReturn<TData = any, TVars = any> {
 }
 
 /**
- * Reactive GraphQL query with cache policies
+ * Reactive GraphQL query with cache policies.
+ *
+ * **IMPORTANT: Do not destructure the return value.**
+ * The returned object uses getters backed by `$state` for reactivity.
+ * Destructuring (`const { data } = createQuery(...)`) evaluates getters once,
+ * capturing a static value that never updates. Instead, assign to a single variable:
+ *
+ * ```svelte
+ * // Correct
+ * const query = createQuery({ query: MY_QUERY });
+ * // use query.data, query.error, query.isFetching in template
+ *
+ * // WRONG - breaks reactivity
+ * const { data } = createQuery({ query: MY_QUERY });
+ * ```
+ *
  * @param options - Query options
  * @returns Reactive query state with refetch
  */

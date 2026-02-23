@@ -100,7 +100,7 @@ describe("SSR", () => {
       expect(() => JSON.stringify(snapshot)).not.toThrow();
 
       // 2) Clear and ensure empty
-      graph.clear();
+      graph.evictAll();
       expect(graph.keys().length).toBe(0);
 
       // 3) Hydrate

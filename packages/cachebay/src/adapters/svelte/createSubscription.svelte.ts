@@ -32,7 +32,11 @@ export interface CreateSubscriptionOptions<TData = any, TVars = any> {
 }
 
 /**
- * createSubscription return value
+ * createSubscription return value.
+ *
+ * **IMPORTANT: Do not destructure this object.**
+ * Destructuring (`const { data } = createSubscription(...)`) breaks Svelte reactivity.
+ * Use `subscription.data` in templates instead.
  */
 export interface CreateSubscriptionReturn<TData = any> {
   /** Subscription data (reactive) */
@@ -44,7 +48,11 @@ export interface CreateSubscriptionReturn<TData = any> {
 }
 
 /**
- * Reactive GraphQL subscription
+ * Reactive GraphQL subscription.
+ *
+ * **IMPORTANT: Do not destructure the return value** — it breaks Svelte reactivity.
+ * Use `const sub = createSubscription(...)` and access `sub.data` in templates.
+ *
  * @param options - Subscription options
  * @returns Reactive subscription state
  */

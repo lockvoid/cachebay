@@ -265,11 +265,14 @@ export const createGraph = (options: GraphOptions = {}) => {
   };
 
   /**
-   * Clear all data
+   * Evict all data from the graph store
    */
-  const clear = () => {
+  const evictAll = () => {
     recordStore.clear();
     recordVersionStore.clear();
+    pendingChanges.clear();
+    identityManager.clear();
+    versionClock = 0;
   };
 
   /**
@@ -301,7 +304,7 @@ export const createGraph = (options: GraphOptions = {}) => {
     getVersion,
     flush,
     keys,
-    clear,
+    evictAll,
     inspect,
   };
 };

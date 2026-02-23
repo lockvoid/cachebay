@@ -518,7 +518,7 @@ describe("core/graph.ts", () => {
     });
   });
 
-  describe("clear", () => {
+  describe("evictAll", () => {
     it("clears all records and versions", () => {
       graph.putRecord("User:u1", { __typename: "User", id: "u1", name: "Ada" });
       graph.putRecord("Post:p1", { __typename: "Post", id: "p1", title: "Title 1" });
@@ -527,11 +527,49 @@ describe("core/graph.ts", () => {
       expect(graph.getVersion("User:u1")).toBe(1);
       expect(graph.getVersion("Post:p1")).toBe(2);
 
-      graph.clear();
+      graph.evictAll();
 
       expect(graph.keys().length).toBe(0);
       expect(graph.getVersion("User:u1")).toBe(0);
       expect(graph.getVersion("Post:p1")).toBe(0);
+    });
+
+    it("resets version clock so next write starts from 1", () => {
+      graph.putRecord("User:u1", { __typename: "User", id: "u1", name: "Ada" });
+      expect(graph.getVersion("User:u1")).toBe(1);
+
+      graph.evictAll();
+
+      graph.putRecord("User:u2", { __typename: "User", id: "u2", name: "Bob" });
+      expect(graph.getVersion("User:u2")).toBe(1);
+    });
+
+    it("does not fire pending onChange after evictAll", async () => {
+      const changes: Set<string>[] = [];
+      const graphWithListener = createGraph({
+        onChange: (recordIds) => {
+          changes.push(new Set(recordIds));
+        },
+      });
+
+      graphWithListener.putRecord("User:u1", { __typename: "User", id: "u1", name: "Ada" });
+      // Don't flush — changes are pending
+
+      graphWithListener.evictAll();
+
+      // Wait for microtask
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      // No onChange should have fired since pendingChanges was cleared
+      expect(changes).toHaveLength(0);
+    });
+
+    it("identity still works after evictAll", () => {
+      graph.identify({ __typename: "User", id: "u1" });
+
+      graph.evictAll();
+
+      expect(graph.identify({ __typename: "User", id: "u1" })).toBe("User:u1");
     });
   });
 

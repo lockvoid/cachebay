@@ -259,6 +259,27 @@ Create the instance and call `setCachebay` in `+layout.svelte`:
 
 > **Context scope:** `setCachebay` uses Svelte's `setContext`, so it must be called during component initialization (top‑level `<script>`). All child components can then call `getCachebay()` or any `create*` helper.
 
+## Evict all cached data
+
+Call `evictAll()` to clear the entire in-memory cache and persistent storage (if configured). Useful for logout, account switching, or test cleanup.
+
+```ts
+await cachebay.evictAll()
+```
+
+**What gets cleared:**
+
+* Normalized graph store (all entities)
+* Materialized query/fragment result caches
+* Pending optimistic layers
+* IndexedDB records & journal (when storage is configured)
+
+**What is preserved:**
+
+* Active query and fragment watchers — they remain subscribed and will pick up new data when queries are re-fetched.
+
+> **`evictAll()` vs `dispose()`**: `evictAll()` resets the cache but keeps the instance usable. `dispose()` shuts down the instance entirely (stops polling, closes IDB). Use `evictAll()` for logout; use `dispose()` when the instance is no longer needed.
+
 ## Next steps
 
 Continue to [OPERATIONS.md](./OPERATIONS.md) for executing queries, mutations, and subscriptions.

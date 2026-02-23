@@ -28,7 +28,11 @@ export interface CreateFragmentOptions {
 }
 
 /**
- * createFragment return value
+ * createFragment return value.
+ *
+ * **IMPORTANT: Do not destructure this object.**
+ * Destructuring (`const { data } = createFragment(...)`) breaks Svelte reactivity.
+ * Use `fragment.data` in templates instead.
  */
 export interface CreateFragmentReturn<TData = unknown> {
   /** Fragment data - undefined when entity is not in cache */
@@ -38,6 +42,10 @@ export interface CreateFragmentReturn<TData = unknown> {
 /**
  * Create a reactive fragment view from cache.
  * Returns a reactive object that updates when the fragment data changes.
+ *
+ * **IMPORTANT: Do not destructure the return value** — it breaks Svelte reactivity.
+ * Use `const fragment = createFragment(...)` and access `fragment.data` in templates.
+ *
  * @param options - Fragment configuration
  * @returns Reactive object with fragment data
  */

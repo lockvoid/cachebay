@@ -11,7 +11,11 @@ export interface CreateMutationOptions {
 }
 
 /**
- * createMutation return value
+ * createMutation return value.
+ *
+ * **IMPORTANT: Do not destructure this object.**
+ * Destructuring (`const { data } = createMutation(...)`) breaks Svelte reactivity.
+ * Use `mutation.data` in templates instead.
  */
 export interface CreateMutationReturn<TData = any, TVars = any> {
   /** Mutation data (reactive) */
@@ -25,7 +29,11 @@ export interface CreateMutationReturn<TData = any, TVars = any> {
 }
 
 /**
- * Reactive GraphQL mutation
+ * Reactive GraphQL mutation.
+ *
+ * **IMPORTANT: Do not destructure the return value** — it breaks Svelte reactivity.
+ * Use `const mutation = createMutation(...)` and access `mutation.data` in templates.
+ *
  * @param options - Mutation options with query
  * @returns Reactive mutation state and execute function
  */

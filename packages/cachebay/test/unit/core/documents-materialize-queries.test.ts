@@ -2835,4 +2835,52 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       expect(read1.fingerprints.user.__version).toBeGreaterThan(0);
     });
   });
+
+  describe("evictAll", () => {
+    it("clears all cached materialized results", () => {
+      const QUERY = planner.getPlan(USER_QUERY);
+
+      documents.normalize({
+        document: QUERY,
+        variables: { id: "u1" },
+        data: {
+          user: users.buildNode({ id: "u1", email: "u1@example.com" }),
+        },
+      });
+
+      documents.normalize({
+        document: QUERY,
+        variables: { id: "u2" },
+        data: {
+          user: users.buildNode({ id: "u2", email: "u2@example.com" }),
+        },
+      });
+
+      graph.flush();
+
+      // Cache both queries
+      const u1_cached = documents.materialize({
+        document: QUERY,
+        variables: { id: "u1" },
+        updateCache: true,
+      });
+
+      const u2_cached = documents.materialize({
+        document: QUERY,
+        variables: { id: "u2" },
+        updateCache: true,
+      });
+
+      // Verify both are cached
+      expect(documents.materialize({ document: QUERY, variables: { id: "u1" }, preferCache: true })).toBe(u1_cached);
+      expect(documents.materialize({ document: QUERY, variables: { id: "u2" }, preferCache: true })).toBe(u2_cached);
+
+      // Evict all
+      documents.evictAll();
+
+      // Both return new references (cache was cleared)
+      expect(documents.materialize({ document: QUERY, variables: { id: "u1" }, preferCache: true })).not.toBe(u1_cached);
+      expect(documents.materialize({ document: QUERY, variables: { id: "u2" }, preferCache: true })).not.toBe(u2_cached);
+    });
+  });
 });
