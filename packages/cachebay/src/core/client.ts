@@ -162,7 +162,8 @@ export type CachebayInstance = {
 
   /**
    * Evict all cached data from memory and persistent storage.
-   * Active watchers are preserved — they will re-materialize with empty data.
+   * Active query watchers emit undefined (clearing the UI) then re-fetch from the network.
+   * Active fragment watchers emit undefined (clearing the UI) without re-fetching.
    */
   evictAll: () => Promise<void>;
 
@@ -312,6 +313,27 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
   // Storage API
   cache.storage = null;
 
+  // Shared eviction logic used by both local evictAll() and remote onEvictAll
+  const evictInMemoryAndRefetch = () => {
+    optimistic.evictAll();
+    documents.evictAll();
+    graph.evictAll();
+
+    fragments.notifyEvictAll();
+
+    const refetchDescriptors = queries.notifyEvictAll();
+
+    for (const descriptor of refetchDescriptors) {
+      operations.executeQuery({
+        query: descriptor.query,
+        variables: descriptor.variables,
+        cachePolicy: "network-only",
+      }).catch(() => {
+        // Errors are delivered to watchers via onQueryNetworkError callback
+      });
+    }
+  };
+
   // Storage integration
   if (options.storage) {
     const instanceId = Math.random().toString(36).slice(2, 10);
@@ -342,6 +364,10 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
         graph.flush();
         isApplyingRemote = false;
       },
+
+      onEvictAll() {
+        evictInMemoryAndRefetch();
+      },
     });
 
     cache.storage = {
@@ -371,30 +397,14 @@ export function createCachebay(options: CachebayOptions): CachebayInstance {
 
   // Evict all
   cache.evictAll = async () => {
-    // Snapshot keys before clearing so we can notify watchers
-    const allKeys = graph.keys();
-
-    // Clear optimistic layers first (they reference graph data)
-    optimistic.evictAll();
-
-    // Clear materialization caches
-    documents.evictAll();
-
-    // Clear the normalized graph store
-    graph.evictAll();
-
-    // Clear persistent storage if present
+    // Clear persistent storage first (writes evict-all signal for other tabs)
+    // Must happen before refetches to avoid wiping freshly fetched data
     if (storageAdapter) {
       await storageAdapter.evictAll();
     }
 
-    // Notify watchers directly (bypasses graph.onChange to avoid storage re-persistence)
-    if (allKeys.length > 0) {
-      const touchedIds = new Set<string>(allKeys);
-
-      queries.notifyDataByDependencies(touchedIds);
-      fragments.notifyDataByDependencies(touchedIds);
-    }
+    // Clear in-memory caches, notify watchers, and trigger re-fetches
+    evictInMemoryAndRefetch();
   };
 
   // Dispose

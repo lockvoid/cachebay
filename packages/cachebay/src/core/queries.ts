@@ -500,6 +500,38 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     };
   };
 
+  /**
+   * Evict all watcher data and collect re-fetch descriptors.
+   * Emits undefined to all watchers, then returns unique query/variables
+   * pairs so the caller can re-execute them from the network.
+   */
+  const notifyEvictAll = (): Array<{ query: CachePlan | DocumentNode | string; variables: Record<string, any> }> => {
+    const refetchMap = new Map<string, { query: CachePlan | DocumentNode | string; variables: Record<string, any> }>();
+
+    for (const [, w] of watchers) {
+      if (w.lastData !== undefined) {
+        w.lastData = undefined;
+        w.lastFingerprints = undefined;
+
+        try {
+          w.onData(undefined);
+        } catch (e) {
+          w.onError?.(e as Error);
+        }
+      }
+
+      // Collect unique query+variables by signature for re-fetch
+      if (!refetchMap.has(w.signature)) {
+        refetchMap.set(w.signature, {
+          query: w.query,
+          variables: w.variables,
+        });
+      }
+    }
+
+    return Array.from(refetchMap.values());
+  };
+
   return {
     readQuery,
     writeQuery,
@@ -507,6 +539,7 @@ export const createQueries = ({ documents, planner }: QueriesDependencies) => {
     notifyDataByDependencies,
     notifyErrorBySignature,
     notifyDataBySignature,
+    notifyEvictAll,
     inspect,
   };
 };

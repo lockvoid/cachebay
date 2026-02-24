@@ -390,11 +390,32 @@ export const createFragments = ({ planner, documents }: FragmentsDependencies) =
     };
   };
 
+  /**
+   * Evict all watcher data after evictAll.
+   * Emits undefined to all watchers that had data.
+   * Fragments don't re-fetch (no network operation).
+   */
+  const notifyEvictAll = (): void => {
+    for (const [, w] of watchers) {
+      if (w.lastData !== undefined) {
+        w.lastData = undefined;
+        w.lastFingerprints = undefined;
+
+        try {
+          w.onData(undefined);
+        } catch (e) {
+          w.onError?.(e as Error);
+        }
+      }
+    }
+  };
+
   return {
     readFragment,
     writeFragment,
     watchFragment,
     notifyDataByDependencies,
+    notifyEvictAll,
     inspect,
   };
 };

@@ -668,6 +668,273 @@ describe("createStorage (IDB)", () => {
     });
   });
 
+  describe("evictAll", () => {
+    it("clears all records from IDB", async () => {
+      const adapter = createAdapter();
+
+      adapter.put([
+        ["User:1", { __typename: "User", id: "1", name: "Alice" }],
+        ["User:2", { __typename: "User", id: "2", name: "Bob" }],
+      ]);
+      await delay(50);
+
+      await adapter.load();
+      await adapter.evictAll();
+
+      const records = await readAllRecords(dbName);
+      expect(records.size).toBe(0);
+
+      adapter.dispose();
+    });
+
+    it("writes an evict-all journal entry after clearing", async () => {
+      const adapter = createAdapter({ instanceId: "tab-A" });
+
+      adapter.put([
+        ["User:1", { __typename: "User", id: "1", name: "Alice" }],
+      ]);
+      await delay(50);
+
+      await adapter.load();
+      await adapter.evictAll();
+
+      const journal = await readAllJournal(dbName);
+      // Old put entry cleared, only the evict-all signal remains
+      expect(journal.length).toBe(1);
+      expect(journal[0].value.type).toBe("evict-all");
+      expect(journal[0].value.clientId).toBe("tab-A");
+      expect(journal[0].value.recordId).toBeUndefined();
+      expect(typeof journal[0].value.ts).toBe("number");
+
+      adapter.dispose();
+    });
+
+    it("signals other tabs via onEvictAll callback", async () => {
+      const onEvictAllB = vi.fn();
+
+      const adapterA = createAdapter({ instanceId: "tab-A" }, { pollInterval: 50 });
+      const adapterB = createAdapter(
+        { instanceId: "tab-B", onEvictAll: onEvictAllB },
+        { pollInterval: 50 },
+      );
+
+      await adapterA.load();
+      await adapterB.load();
+
+      // Seed data so both tabs have something
+      adapterA.put([
+        ["User:1", { __typename: "User", id: "1", name: "Alice" }],
+      ]);
+      await delay(150);
+
+      // Tab A evicts all
+      await adapterA.evictAll();
+
+      // Wait for tab B to poll and pick up the evict-all signal
+      await delay(150);
+
+      expect(onEvictAllB).toHaveBeenCalledTimes(1);
+
+      adapterA.dispose();
+      adapterB.dispose();
+    });
+
+    it("does not call onEvictAll on the originating tab", async () => {
+      const onEvictAllA = vi.fn();
+
+      const adapterA = createAdapter(
+        { instanceId: "tab-A", onEvictAll: onEvictAllA },
+        { pollInterval: 50 },
+      );
+
+      await adapterA.load();
+
+      adapterA.put([
+        ["User:1", { __typename: "User", id: "1", name: "Alice" }],
+      ]);
+      await delay(50);
+
+      await adapterA.evictAll();
+      await delay(150);
+
+      // Originating tab should NOT receive its own evict-all signal
+      expect(onEvictAllA).not.toHaveBeenCalled();
+
+      adapterA.dispose();
+    });
+
+    it("fresh tab load after evictAll does not retrigger onEvictAll", async () => {
+      const adapterA = createAdapter({ instanceId: "tab-A" }, { pollInterval: 50 });
+      await adapterA.load();
+
+      adapterA.put([
+        ["User:1", { __typename: "User", id: "1", name: "Alice" }],
+      ]);
+      await delay(50);
+
+      await adapterA.evictAll();
+      adapterA.dispose();
+
+      // New tab loads after evictAll — should not retrigger
+      const onEvictAllC = vi.fn();
+      const adapterC = createAdapter(
+        { instanceId: "tab-C", onEvictAll: onEvictAllC },
+        { pollInterval: 50 },
+      );
+
+      const records = await adapterC.load();
+
+      // Records should be empty (evicted)
+      expect(records.length).toBe(0);
+
+      // Wait for a few poll cycles
+      await delay(200);
+
+      // onEvictAll should NOT have been triggered (lastSeenEpoch is past the signal)
+      expect(onEvictAllC).not.toHaveBeenCalled();
+
+      adapterC.dispose();
+    });
+
+    it("syncs evictAll across three tabs", async () => {
+      const onEvictAllB = vi.fn();
+      const onEvictAllC = vi.fn();
+
+      const adapterA = createAdapter({ instanceId: "tab-A" }, { pollInterval: 50 });
+      const adapterB = createAdapter(
+        { instanceId: "tab-B", onEvictAll: onEvictAllB },
+        { pollInterval: 50 },
+      );
+      const adapterC = createAdapter(
+        { instanceId: "tab-C", onEvictAll: onEvictAllC },
+        { pollInterval: 50 },
+      );
+
+      await adapterA.load();
+      await adapterB.load();
+      await adapterC.load();
+
+      adapterA.put([
+        ["User:1", { __typename: "User", id: "1", name: "Alice" }],
+      ]);
+      await delay(150);
+
+      await adapterA.evictAll();
+      await delay(150);
+
+      expect(onEvictAllB).toHaveBeenCalledTimes(1);
+      expect(onEvictAllC).toHaveBeenCalledTimes(1);
+
+      adapterA.dispose();
+      adapterB.dispose();
+      adapterC.dispose();
+    });
+
+    it("flushJournal picks up evict-all signal immediately", async () => {
+      const onEvictAllB = vi.fn();
+
+      const adapterA = createAdapter({ instanceId: "tab-A" }, { pollInterval: 999_999 });
+      const adapterB = createAdapter(
+        { instanceId: "tab-B", onEvictAll: onEvictAllB },
+        { pollInterval: 999_999 }, // no auto-poll
+      );
+
+      await adapterA.load();
+      await adapterB.load();
+
+      await adapterA.evictAll();
+
+      // Manually flush tab B (no waiting for poll timer)
+      await adapterB.flushJournal();
+
+      expect(onEvictAllB).toHaveBeenCalledTimes(1);
+
+      adapterA.dispose();
+      adapterB.dispose();
+    });
+
+    it("evict-all journal entry is cleaned up by evictJournal", async () => {
+      const adapter = createAdapter(
+        { instanceId: "tab-A" },
+        { pollInterval: 50, journalMaxAge: 50 },
+      );
+
+      await adapter.load();
+      await adapter.evictAll();
+
+      // Verify the evict-all entry exists
+      let journal = await readAllJournal(dbName);
+      expect(journal.length).toBe(1);
+      expect(journal[0].value.type).toBe("evict-all");
+
+      // Wait for the entry to age past journalMaxAge
+      await delay(100);
+
+      await adapter.evictJournal();
+
+      // Entry should be cleaned up
+      journal = await readAllJournal(dbName);
+      expect(journal.length).toBe(0);
+
+      adapter.dispose();
+    });
+
+    it("does not call onUpdate/onRemove when evict-all is in the batch", async () => {
+      const onUpdateB = vi.fn();
+      const onRemoveB = vi.fn();
+      const onEvictAllB = vi.fn();
+
+      const adapterA = createAdapter({ instanceId: "tab-A" }, { pollInterval: 999_999 });
+      const adapterB = createAdapter(
+        {
+          instanceId: "tab-B",
+          onUpdate: onUpdateB,
+          onRemove: onRemoveB,
+          onEvictAll: onEvictAllB,
+        },
+        { pollInterval: 999_999 },
+      );
+
+      await adapterA.load();
+      await adapterB.load();
+
+      // Tab A writes a record, then immediately evicts all
+      // Both journal entries will be in the same poll batch for tab B
+      adapterA.put([["User:1", { __typename: "User", id: "1", name: "Alice" }]]);
+      await delay(50);
+      await adapterA.evictAll();
+
+      await adapterB.flushJournal();
+
+      // Only onEvictAll should fire — the put is stale
+      expect(onEvictAllB).toHaveBeenCalledTimes(1);
+      expect(onUpdateB).not.toHaveBeenCalled();
+      expect(onRemoveB).not.toHaveBeenCalled();
+
+      adapterA.dispose();
+      adapterB.dispose();
+    });
+
+    it("inspect shows correct state after evictAll", async () => {
+      const adapter = createAdapter({ instanceId: "tab-A" });
+
+      adapter.put([
+        ["User:1", { __typename: "User", id: "1", name: "Alice" }],
+      ]);
+      await delay(50);
+
+      await adapter.load();
+      await adapter.evictAll();
+
+      const inspection = await adapter.inspect();
+      expect(inspection.recordCount).toBe(0);
+      // Journal has exactly 1 entry (the evict-all signal)
+      expect(inspection.journalCount).toBe(1);
+
+      adapter.dispose();
+    });
+  });
+
   describe("dispose", () => {
     it("stops polling after dispose", async () => {
       const onUpdate = vi.fn();

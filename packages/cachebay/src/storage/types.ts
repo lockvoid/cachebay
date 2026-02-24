@@ -9,6 +9,8 @@ export type StorageContext = {
   onUpdate: (records: Array<[string, Record<string, unknown>]>) => void;
   /** Called when a remote tab/instance has removed records */
   onRemove: (recordIds: string[]) => void;
+  /** Called when a remote tab/instance has evicted all data */
+  onEvictAll?: () => void;
 };
 
 /**

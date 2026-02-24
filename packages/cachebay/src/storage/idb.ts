@@ -289,6 +289,17 @@ export const createStorage = (options?: IDBStorageOptions): StorageAdapterFactor
       // Update lastSeenEpoch to the max key we saw
       lastSeenEpoch = journalKeys[journalKeys.length - 1] as number;
 
+      // Check for remote evict-all — if found, call onEvictAll and skip granular changes
+      // (any put/remove entries before the evict-all are stale)
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i] as { clientId: string; type: string };
+
+        if (entry.clientId !== instanceId && entry.type === "evict-all") {
+          ctx.onEvictAll?.();
+          return;
+        }
+      }
+
       // Collect remote changes (filter out our own writes)
       const updates: Array<[string, Record<string, unknown>]> = [];
       const removes: string[] = [];
@@ -397,8 +408,17 @@ export const createStorage = (options?: IDBStorageOptions): StorageAdapterFactor
     };
 
     /**
-     * Clear all persisted records and journal entries.
+     * Clear all persisted records and signal other tabs via journal.
      * Drains pending writes first to avoid races.
+     *
+     * Strategy:
+     * 1. Clear the records store (user data gone)
+     * 2. Clear the journal store (old entries gone)
+     * 3. Write a single `evict-all` journal entry (signal for other tabs)
+     * 4. Set lastSeenEpoch to the new entry's key (skip our own signal)
+     *
+     * The `evict-all` entry contains zero user data — just clientId + ts.
+     * It gets cleaned up by the normal evictJournal() cycle (journalMaxAge).
      */
     const evictAll = async (): Promise<void> => {
       await drainWrites();
@@ -406,15 +426,28 @@ export const createStorage = (options?: IDBStorageOptions): StorageAdapterFactor
       if (disposed) return;
 
       const database = await getDB();
-      const { tx, stores } = writeTx(database, [RECORDS_STORE, JOURNAL_STORE]);
-      const [recordsStore, journalStore] = stores;
 
-      recordsStore.clear();
-      journalStore.clear();
+      // Phase 1: clear records + journal in one transaction
+      const clearTx = database.transaction([RECORDS_STORE, JOURNAL_STORE], "readwrite");
+      clearTx.objectStore(RECORDS_STORE).clear();
+      clearTx.objectStore(JOURNAL_STORE).clear();
+      await txDone(clearTx);
 
-      lastSeenEpoch = 0;
+      // Phase 2: write the evict-all signal in a new transaction
+      // (must be separate because autoIncrement key is only available after commit)
+      const signalTx = database.transaction(JOURNAL_STORE, "readwrite");
+      const journalStore = signalTx.objectStore(JOURNAL_STORE);
+      const addReq = journalStore.add({
+        clientId: instanceId,
+        type: "evict-all",
+        ts: Date.now(),
+      });
 
-      return txDone(tx);
+      const newKey = await promisify(addReq);
+      await txDone(signalTx);
+
+      // Skip past our own signal on next poll
+      lastSeenEpoch = newKey as number;
     };
 
     /**
