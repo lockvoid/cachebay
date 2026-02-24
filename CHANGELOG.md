@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.11.1] — 2026-02-25
+
+### Fixed
+- **`evictAll()` watcher re-fetch** — active query watchers now emit `undefined` (clearing the UI) and automatically re-fetch from the network. Fragment watchers emit `undefined` without re-fetching.
+- **`evictAll()` cross-tab sync** — when one tab calls `evictAll()`, other tabs sharing the same IDB storage are notified via `onEvictAll` and clear their in-memory caches + re-fetch active queries. Uses a journal-based signal that is cleaned up by the normal `evictJournal()` cycle.
+
 ## [0.11.0] — 2026-02-23
 
 ### Added
