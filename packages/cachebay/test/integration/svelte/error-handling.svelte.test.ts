@@ -9,6 +9,46 @@ import {
 } from "./helpers.svelte";
 
 describe("Error Handling (Svelte)", () => {
+  it("ends loading on materialization failure and recovers on refetch", async () => {
+    const query = "query User { user { id email } }";
+    const completeData = { user: { __typename: "User", id: "u1", email: "u1@example.com" } };
+    let completeResponse = false;
+    const { cache, fx } = createTestClient({
+      routes: [{
+        when: () => true,
+        respond: () => ({ data: completeResponse ? completeData : {} }),
+      }],
+    });
+
+    const q = createTestQuery(cache, query, { cachePolicy: "network-only" });
+
+    try {
+      await tick();
+      flushSync();
+
+      expect(q.isFetching).toBe(false);
+      expect(q.error?.message).toContain("[cachebay] Query materialization failed");
+      expect(q.errorUpdates).toHaveLength(1);
+      expect(q.data).toBeUndefined();
+      expect(fx.calls).toHaveLength(1);
+
+      completeResponse = true;
+      await q.refetch();
+      await tick();
+      flushSync();
+
+      expect(q.isFetching).toBe(false);
+      expect(q.error).toBeNull();
+      expect(q.data).toEqual(completeData);
+      expect(q.errorUpdates).toHaveLength(1);
+      expect(fx.calls).toHaveLength(2);
+    } finally {
+      q.dispose();
+      await fx.restore();
+      cache.dispose();
+    }
+  });
+
   it("records transport errors without data emissions on cold network-only", async () => {
     const routes = [
       {

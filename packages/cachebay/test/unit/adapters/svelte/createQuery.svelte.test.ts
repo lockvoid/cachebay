@@ -50,6 +50,76 @@ describe("createQuery", () => {
     setCachebay(cache);
   });
 
+  it("returns a root array through the actual createQuery adapter", async () => {
+    const response = { users: [{ __typename: "User", id: "u1", email: "u1@example.com" }] };
+    vi.mocked(mockTransport.http).mockResolvedValue({ data: response, error: null });
+
+    let queryResult!: ReturnType<typeof createQuery>;
+    const dispose = $effect.root(() => {
+      queryResult = createQuery({
+        query: "query Users { users { id email } }",
+        cachePolicy: "network-only",
+        lazy: true,
+      });
+    });
+
+    try {
+      flushSync();
+      await tick();
+      await queryResult.refetch();
+
+      expect(mockTransport.http).toHaveBeenCalledTimes(1);
+      expect(queryResult.isFetching).toBe(false);
+      expect(queryResult.error).toBeNull();
+      expect(queryResult.data).toEqual(response);
+    } finally {
+      for (const destroy of destroyCallbacks) {
+        destroy();
+      }
+      dispose();
+      cache.dispose();
+    }
+  });
+
+  it("ends loading and reports materialization errors through the actual createQuery adapter", async () => {
+    vi.mocked(mockTransport.http).mockResolvedValue({ data: {}, error: null });
+
+    let queryResult!: ReturnType<typeof createQuery>;
+    const dispose = $effect.root(() => {
+      queryResult = createQuery({
+        query: USER_QUERY,
+        variables: { id: "1" },
+        cachePolicy: "network-only",
+        lazy: true,
+      });
+    });
+
+    try {
+      flushSync();
+      await tick();
+      await queryResult.refetch();
+
+      expect(mockTransport.http).toHaveBeenCalledTimes(1);
+      expect(queryResult.isFetching).toBe(false);
+      expect(queryResult.error?.message).toContain("[cachebay] Query materialization failed");
+      expect(queryResult.data).toBeUndefined();
+
+      const response = { user: { __typename: "User", id: "1", email: "alice@example.com" } };
+      vi.mocked(mockTransport.http).mockResolvedValue({ data: response, error: null });
+      await queryResult.refetch();
+
+      expect(queryResult.isFetching).toBe(false);
+      expect(queryResult.error).toBeNull();
+      expect(queryResult.data).toEqual(response);
+    } finally {
+      for (const destroy of destroyCallbacks) {
+        destroy();
+      }
+      dispose();
+      cache.dispose();
+    }
+  });
+
   it("executes query and returns reactive data", async () => {
     let queryResult: any;
 

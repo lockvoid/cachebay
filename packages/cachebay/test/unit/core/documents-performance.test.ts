@@ -444,6 +444,9 @@ describe("documents - materialize cache", () => {
         updateCache: true,
       });
 
+      expect(result1.source).not.toBe("none");
+      expect(result1.data).toEqual(data);
+
       // Should return exact same reference (proves cache hit)
       expect(result1).toBe(result2);
       expect(result1.data).toBe(result2.data);
@@ -574,6 +577,9 @@ describe("documents - materialize cache", () => {
         preferCache: true,
         updateCache: true,
       });
+
+      expect(result1.source).not.toBe("none");
+      expect(result1.data).toEqual(data);
 
       // Should return same cached result
       expect(result1).toBe(result2);

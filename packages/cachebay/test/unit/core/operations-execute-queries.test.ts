@@ -205,6 +205,16 @@ describe("operations", () => {
     });
 
     it("returns error when materialization fails after write", async () => {
+      const onError = vi.fn();
+      const onNetworkData = vi.fn();
+      const onQueryNetworkError = vi.fn().mockReturnValue(true);
+      const onQueryNetworkData = vi.fn().mockReturnValue(true);
+
+      operations = createOperations(
+        { transport: mockTransport, onQueryNetworkError, onQueryNetworkData },
+        { planner: mockPlanner, documents: mockDocuments, ssr: mockSsr },
+      );
+
       const mockResult: OperationResult = {
         data: { user: { id: "1", name: "Alice" } },
         error: null,
@@ -226,13 +236,17 @@ describe("operations", () => {
         },
       });
 
-      const result = await operations.executeQuery({ query, variables });
+      const result = await operations.executeQuery({ query, variables, onError, onNetworkData });
 
       expect(result.data).toBeNull();
       expect(result.error).toBeInstanceOf(CombinedError);
       expect(result.error?.message).toContain("[cachebay] Query materialization failed");
       expect(result.error?.networkError?.message).toContain("missing required fields");
       expect(mockDocuments.normalize).toHaveBeenCalled();
+      expect(onError).toHaveBeenCalledExactlyOnceWith(result.error);
+      expect(onQueryNetworkError).toHaveBeenCalledExactlyOnceWith("query-sig-123", result.error);
+      expect(onNetworkData).not.toHaveBeenCalled();
+      expect(onQueryNetworkData).not.toHaveBeenCalled();
     });
   });
 

@@ -1053,6 +1053,43 @@ export const createDocuments = (deps: DocumentsDependencies) => {
 
           const link = (rootRecord as any)[fieldKey];
 
+          if (link != null && Array.isArray(link.__refs)) {
+            const refs = link.__refs;
+            const outArray = new Array(refs.length);
+
+            data[field.responseKey] = outArray;
+
+            if (fingerprint) {
+              const arrayFingerprints = [];
+              const fpArray: any[] = [];
+              fingerprints[field.responseKey] = fpArray;
+
+              for (let j = 0; j < refs.length; j++) {
+                const childOut: any = {};
+                const childFp: any = {};
+                outArray[j] = childOut;
+                fpArray[j] = childFp;
+                readEntity(refs[j], field, childOut, childFp, path + "[" + j + "]");
+
+                if (childFp[FINGERPRINT_KEY] !== undefined) {
+                  arrayFingerprints.push(childFp[FINGERPRINT_KEY]);
+                }
+              }
+
+              if (arrayFingerprints.length > 0) {
+                setFingerprint(fpArray, fingerprintNodes(0, arrayFingerprints));
+              }
+            } else {
+              for (let j = 0; j < refs.length; j++) {
+                const childOut: any = {};
+                outArray[j] = childOut;
+                readEntity(refs[j], field, childOut, {}, path + "[" + j + "]");
+              }
+            }
+
+            continue;
+          }
+
           if (!link || !link.__ref) {
             // null is a valid value, not a cache miss
             if (link === null) {

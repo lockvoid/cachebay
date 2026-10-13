@@ -285,7 +285,7 @@ export const createOperations = (
               console.error(errorMessage, freshMaterialization.ok.miss);
             }
 
-            return { data: null, error: new CombinedError({ networkError: new Error(errorMessage) }) };
+            throw new Error(errorMessage);
           }
 
           markEmitted(strictSignature);

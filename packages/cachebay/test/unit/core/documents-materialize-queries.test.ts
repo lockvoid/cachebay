@@ -58,6 +58,147 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
     });
   });
 
+  describe("root arrays", () => {
+    const QUERY = compilePlan(/* GraphQL */ `
+      query Users {
+        users {
+          id
+          email
+        }
+      }
+    `);
+
+    const data = {
+      users: [
+        { __typename: "User", id: "u1", email: "u1@example.com" },
+        { __typename: "User", id: "u2", email: "u2@example.com" },
+      ],
+    };
+
+    it.each([
+      { canonical: true, fingerprint: true },
+      { canonical: true, fingerprint: false },
+      { canonical: false, fingerprint: true },
+      { canonical: false, fingerprint: false },
+    ])("materializes entity arrays with canonical=$canonical and fingerprint=$fingerprint", ({ canonical, fingerprint }) => {
+      documents.normalize({ document: QUERY, data });
+
+      const result = documents.materialize({ document: QUERY, canonical, fingerprint });
+
+      expect(result.source).toBe(canonical ? "canonical" : "strict");
+      expect(result.ok.strict).toBe(true);
+      expect(result.ok.canonical).toBe(true);
+      expect(result.data).toEqual(data);
+      expect(result.dependencies).toEqual(new Set([
+        `${ROOT_ID}.users`,
+        "User:u1",
+        "User:u2",
+      ]));
+
+      if (fingerprint) {
+        expect(result.fingerprints.__version).toEqual(expect.any(Number));
+        expect(result.fingerprints.users.__version).toEqual(expect.any(Number));
+        expect(result.fingerprints.users).toHaveLength(2);
+        expect(result.fingerprints.users[0]).toEqual({ __version: expect.any(Number) });
+        expect(result.fingerprints.users[1]).toEqual({ __version: expect.any(Number) });
+      } else {
+        expect(result.fingerprints).toBeUndefined();
+      }
+    });
+
+    it.each([
+      { label: "empty", users: [] },
+      { label: "null", users: null },
+    ])("treats an explicitly $label list as fulfilled", ({ users }) => {
+      documents.normalize({ document: QUERY, data: { users } });
+
+      const result = documents.materialize({ document: QUERY });
+
+      expect(result.source).not.toBe("none");
+      expect(result.ok.strict).toBe(true);
+      expect(result.ok.canonical).toBe(true);
+      expect(result.data).toEqual({ users });
+      expect(result.dependencies).toEqual(new Set([`${ROOT_ID}.users`]));
+    });
+
+    it.each([
+      { operation: "mutation", rootId: "@mutation.1" },
+      { operation: "subscription", rootId: "@subscription.1" },
+    ])("materializes arrays from a $operation root", ({ operation, rootId }) => {
+      const document = compilePlan(`${operation} Users { users { id email } }`);
+
+      documents.normalize({ document, rootId, data });
+
+      const result = documents.materialize({ document, rootId });
+
+      expect(result.source).not.toBe("none");
+      expect(result.data).toEqual(data);
+      expect(result.dependencies).toEqual(new Set([
+        `${rootId}.users`,
+        "User:u1",
+        "User:u2",
+      ]));
+    });
+
+    it("materializes arrays of inline objects without entity keys", () => {
+      const document = compilePlan("query Notices { notices { message } }");
+      const notices = [{ message: "First notice" }, { message: "Second notice" }];
+
+      documents.normalize({ document, data: { notices } });
+
+      const result = documents.materialize({ document });
+
+      expect(result.source).not.toBe("none");
+      expect(result.data).toEqual({ notices });
+      expect(result.dependencies).toEqual(new Set([
+        `${ROOT_ID}.notices`,
+        `${ROOT_ID}.notices.0`,
+        `${ROOT_ID}.notices.1`,
+      ]));
+    });
+
+    it("reports a missing array entity instead of a missing root link", () => {
+      documents.normalize({ document: QUERY, data });
+      graph.removeRecord("User:u2");
+
+      const result = documents.materialize({ document: QUERY });
+
+      expect(result.source).toBe("none");
+      expect(result.ok.strict).toBe(false);
+      expect(result.ok.canonical).toBe(false);
+      expect(result.ok.miss).toContainEqual({
+        kind: "entity-missing",
+        at: `${ROOT_ID}.users[1]`,
+        id: "User:u2",
+      });
+      expect(result.dependencies).toContain("User:u2");
+    });
+
+    it("resolves aliases and keeps argument-specific arrays separate", () => {
+      const document = compilePlan(/* GraphQL */ `
+        query Users($group: String!) {
+          members: users(group: $group) {
+            id
+            email
+          }
+        }
+      `);
+
+      documents.normalize({ document, variables: { group: "first" }, data: { members: [data.users[0]] } });
+      documents.normalize({ document, variables: { group: "second" }, data: { members: [data.users[1]] } });
+
+      const first = documents.materialize({ document, variables: { group: "first" } });
+      const second = documents.materialize({ document, variables: { group: "second" } });
+
+      expect(first.source).not.toBe("none");
+      expect(second.source).not.toBe("none");
+      expect(first.data).toEqual({ members: [data.users[0]] });
+      expect(second.data).toEqual({ members: [data.users[1]] });
+      expect(first.dependencies).toContain(`${ROOT_ID}.users({"group":"first"})`);
+      expect(second.dependencies).toContain(`${ROOT_ID}.users({"group":"second"})`);
+    });
+  });
+
   it("FULFILLED (source !== 'none') for fully-present entity selection (scalars + link)", () => {
     const QUERY = compilePlan(/* GraphQL */ `
       query UserById($id: ID!) {
