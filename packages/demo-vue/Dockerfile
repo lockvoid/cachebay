@@ -1,8 +1,8 @@
 # Build stage
 FROM node:22.13.1-alpine AS base
 
-# Install pnpm globally
-RUN npm install -g pnpm
+# Keep the package manager version fixed across image builds
+RUN npm install -g pnpm@10.29.2
 
 # Set working directory
 WORKDIR /workspace

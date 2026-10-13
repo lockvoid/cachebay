@@ -1,10 +1,11 @@
 // documents.test.ts
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { compilePlan } from "@/src/compiler";
 import { createCanonical } from "@/src/core/canonical";
 import { ROOT_ID } from "@/src/core/constants";
 import { createDocuments } from "@/src/core/documents";
 import { createGraph } from "@/src/core/graph";
+import * as instrumentation from "@/src/core/instrumentation";
 import { createOptimistic } from "@/src/core/optimistic";
 import { createPlanner } from "@/src/core/planner";
 import { writeConnectionPage } from "@/test/helpers";
@@ -157,21 +158,32 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
       ]));
     });
 
-    it("reports a missing array entity instead of a missing root link", () => {
-      documents.normalize({ document: QUERY, data });
-      graph.removeRecord("User:u2");
+    it.each([true, false])("tracks a missing array entity with development=%s", (development) => {
+      const developmentFlag = vi.spyOn(instrumentation, "__DEV__", "get").mockReturnValue(development);
 
-      const result = documents.materialize({ document: QUERY });
+      try {
+        documents.normalize({ document: QUERY, data });
+        graph.removeRecord("User:u2");
 
-      expect(result.source).toBe("none");
-      expect(result.ok.strict).toBe(false);
-      expect(result.ok.canonical).toBe(false);
-      expect(result.ok.miss).toContainEqual({
-        kind: "entity-missing",
-        at: `${ROOT_ID}.users[1]`,
-        id: "User:u2",
-      });
-      expect(result.dependencies).toContain("User:u2");
+        const result = documents.materialize({ document: QUERY });
+
+        expect(result.source).toBe("none");
+        expect(result.ok.strict).toBe(false);
+        expect(result.ok.canonical).toBe(false);
+        expect(result.dependencies).toContain("User:u2");
+
+        if (development) {
+          expect(result.ok.miss).toContainEqual({
+            kind: "entity-missing",
+            at: `${ROOT_ID}.users[1]`,
+            id: "User:u2",
+          });
+        } else {
+          expect(result.ok.miss).toBeUndefined();
+        }
+      } finally {
+        developmentFlag.mockRestore();
+      }
     });
 
     it("resolves aliases and keeps argument-specific arrays separate", () => {
