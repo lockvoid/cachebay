@@ -201,6 +201,7 @@ describe("Canonical - Relay Style Pagination", () => {
         const canonicalConnection = graph.getRecord(canonicalKey);
         const pageInfo = graph.getRecord(`${canonicalKey}.pageInfo`);
 
+        expect(canonicalConnection.pageInfo).toEqual({ __ref: `${canonicalKey}.pageInfo` });
         expect(pageInfo.startCursor).toBeDefined();
         expect(pageInfo.endCursor).toBeDefined();
         expect(getNodeIds(canonicalKey)).toEqual(["p1", "p2", "p3"]);

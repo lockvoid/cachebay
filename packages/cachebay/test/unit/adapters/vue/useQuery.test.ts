@@ -1,10 +1,10 @@
 import { mount } from "@vue/test-utils";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { defineComponent, h, ref, nextTick, watch } from "vue";
+import { defineComponent, h, ref, nextTick } from "vue";
 import { provideCachebay } from "@/src/adapters/vue/plugin";
 import { useQuery } from "@/src/adapters/vue/useQuery";
 import { createCachebay } from "@/src/core/client";
-import type { Transport, OperationResult } from "@/src/core/operations";
+import type { Transport } from "@/src/core/operations";
 import { USER_QUERY } from "@/test/helpers/operations";
 
 describe("useQuery", () => {
@@ -541,11 +541,10 @@ describe("useQuery", () => {
 
   it("reacts to reactive variables changes", async () => {
     const userId = ref("1");
-    let queryResult: any;
 
     const App = defineComponent({
       setup() {
-        queryResult = useQuery({
+        useQuery({
           query: USER_QUERY,
           variables: () => ({ id: userId.value }),
         });
@@ -1584,11 +1583,9 @@ describe("useQuery", () => {
       cachePolicy: "network-only",
     });
 
-    let queryResult: any;
-
     const App = defineComponent({
       setup() {
-        queryResult = useQuery({
+        useQuery({
           query: USER_QUERY,
           variables: { id: "1" },
           // No cachePolicy specified - should use global "network-only"

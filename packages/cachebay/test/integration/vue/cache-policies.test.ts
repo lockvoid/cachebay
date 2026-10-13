@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils";
-import { createTestClient, createConnectionComponent, createDetailComponent, seedCache, getEdges, fixtures, operations, delay, tick } from "@/test/helpers";
+import { createTestClient, createConnectionComponent, createDetailComponent, seedCache, getEdges, fixtures, operations, delay } from "@/test/helpers";
 
 describe("Cache Policies Behavior", () => {
   describe("network-only policy", () => {
@@ -161,7 +161,7 @@ describe("Cache Policies Behavior", () => {
         },
       });
 
-      const { client, cache, fx } = createTestClient({ routes });
+      const { client, fx } = createTestClient({ routes });
 
       const wrapper = mount(Cmp, {
         props: {

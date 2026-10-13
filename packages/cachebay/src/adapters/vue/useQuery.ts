@@ -76,7 +76,7 @@ export function useQuery<TData = any, TVars = any>(
 
   // Add a catch handler to prevent unhandled rejections when not using Suspense
   // If .then() is called (Suspense mode), it will override this handler
-  suspensionPromise.promise.catch((e) => {
+  suspensionPromise.promise.catch(() => {
     // Errors are handled via error.value for non-Suspense components
   });
 
@@ -113,7 +113,7 @@ export function useQuery<TData = any, TVars = any>(
       variables: vars,
       cachePolicy: policy,
 
-      onNetworkData: (networkData) => {
+      onNetworkData: () => {
         isFetching.value = false; // Set synchronously to prevent loading flash
       },
 

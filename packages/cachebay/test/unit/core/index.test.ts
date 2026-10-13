@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, expectTypeOf } from "vitest";
 import * as Cachebay from "@/src/core";
 
 describe("Core Package Exports", () => {
@@ -20,83 +20,67 @@ describe("Core Package Exports", () => {
   describe("Type exports (compile-time check)", () => {
     it("CachebayInstance type is available", () => {
       // This is a compile-time check - if types are missing, TypeScript will error
-      type TestInstance = Cachebay.CachebayInstance;
-      expect(true).toBe(true);
+      expectTypeOf<Cachebay.CachebayInstance>().not.toBeNever();
     });
 
     it("ReadFragmentArgs type is available", () => {
-      type TestType = Cachebay.ReadFragmentArgs;
-      expect(true).toBe(true);
+      expectTypeOf<Cachebay.ReadFragmentArgs>().not.toBeNever();
     });
 
     it("WriteFragmentArgs type is available", () => {
-      type TestType = Cachebay.WriteFragmentArgs;
-      expect(true).toBe(true);
+      expectTypeOf<Cachebay.WriteFragmentArgs>().not.toBeNever();
     });
 
     it("ReadQueryOptions type is available", () => {
-      type TestType = Cachebay.ReadQueryOptions;
-      expect(true).toBe(true);
+      expectTypeOf<Cachebay.ReadQueryOptions>().not.toBeNever();
     });
 
     it("WriteQueryOptions type is available", () => {
-      type TestType = Cachebay.WriteQueryOptions;
-      expect(true).toBe(true);
+      expectTypeOf<Cachebay.WriteQueryOptions>().not.toBeNever();
     });
 
     it("Operation type is available", () => {
-      type TestType = Cachebay.Operation;
-      expect(true).toBe(true);
+      expectTypeOf<Cachebay.Operation>().not.toBeNever();
     });
 
     it("OperationResult type is available", () => {
-      type TestType = Cachebay.OperationResult;
-      expect(true).toBe(true);
+      expectTypeOf<Cachebay.OperationResult>().not.toBeNever();
     });
 
     it("CachePolicy type is available", () => {
-      type TestType = Cachebay.CachePolicy;
-      expect(true).toBe(true);
+      expectTypeOf<Cachebay.CachePolicy>().not.toBeNever();
     });
 
     it("Transport type is available", () => {
-      type TestType = Cachebay.Transport;
-      expect(true).toBe(true);
+      expectTypeOf<Cachebay.Transport>().not.toBeNever();
     });
 
     it("HttpTransport type is available", () => {
-      type TestType = Cachebay.HttpTransport;
-      expect(true).toBe(true);
+      expectTypeOf<Cachebay.HttpTransport>().not.toBeNever();
     });
 
     it("WsTransport type is available", () => {
-      type TestType = Cachebay.WsTransport;
-      expect(true).toBe(true);
+      expectTypeOf<Cachebay.WsTransport>().not.toBeNever();
     });
 
     it("HttpContext type is available", () => {
-      type TestType = Cachebay.HttpContext;
-      expect(true).toBe(true);
+      expectTypeOf<Cachebay.HttpContext>().not.toBeNever();
     });
 
     it("WsContext type is available", () => {
-      type TestType = Cachebay.WsContext;
-      expect(true).toBe(true);
+      expectTypeOf<Cachebay.WsContext>().not.toBeNever();
     });
 
     it("ObservableLike type is available", () => {
-      type TestType = Cachebay.ObservableLike<any>;
-      expect(true).toBe(true);
+      expectTypeOf<Cachebay.ObservableLike<any>>().not.toBeNever();
     });
 
     it("ObserverLike type is available", () => {
-      type TestType = Cachebay.ObserverLike<any>;
-      expect(true).toBe(true);
+      expectTypeOf<Cachebay.ObserverLike<any>>().not.toBeNever();
     });
 
     it("CachebayOptions type is available", () => {
-      type TestType = Cachebay.CachebayOptions;
-      expect(true).toBe(true);
+      expectTypeOf<Cachebay.CachebayOptions>().not.toBeNever();
     });
   });
 });

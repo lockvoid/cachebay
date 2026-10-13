@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import "fake-indexeddb/auto";
 import { createCachebay } from "@/src/core/client";
-import { createStorage } from "@/src/storage/idb";
-import type { StorageAdapterFactory, StorageAdapter, StorageContext } from "@/src/storage/types";
 import type { Transport } from "@/src/core/operations";
+import { createStorage } from "@/src/storage/idb";
+import type { StorageAdapterFactory, StorageContext } from "@/src/storage/types";
 import { delay } from "@/test/helpers";
 
 const mockTransport: Transport = {
@@ -45,7 +45,7 @@ describe("client + storage integration", () => {
       const putSpy = vi.fn();
       const removeSpy = vi.fn();
 
-      const mockStorage: StorageAdapterFactory = (ctx) => ({
+      const mockStorage: StorageAdapterFactory = () => ({
         put: putSpy,
         remove: removeSpy,
         load: () => Promise.resolve([]),
@@ -78,7 +78,7 @@ describe("client + storage integration", () => {
       const putSpy = vi.fn();
       const removeSpy = vi.fn();
 
-      const mockStorage: StorageAdapterFactory = (ctx) => ({
+      const mockStorage: StorageAdapterFactory = () => ({
         put: putSpy,
         remove: removeSpy,
         load: () => Promise.resolve([]),
@@ -109,7 +109,7 @@ describe("client + storage integration", () => {
     it("writeFragment triggers storage.put", async () => {
       const putSpy = vi.fn();
 
-      const mockStorage: StorageAdapterFactory = (ctx) => ({
+      const mockStorage: StorageAdapterFactory = () => ({
         put: putSpy,
         remove: vi.fn(),
         load: () => Promise.resolve([]),

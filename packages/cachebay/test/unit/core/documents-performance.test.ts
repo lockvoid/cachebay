@@ -276,9 +276,6 @@ describe("documents - materialize cache", () => {
         }
       `;
 
-      const data1 = { __typename: "User", id: "1", name: "Alice" };
-      const data2 = { __typename: "User", id: "2", name: "Bob" };
-
       // Write entities directly
       graph.putRecord("User:1", { __typename: "User", id: "1", name: "Alice" });
       graph.putRecord("User:2", { __typename: "User", id: "2", name: "Bob" });

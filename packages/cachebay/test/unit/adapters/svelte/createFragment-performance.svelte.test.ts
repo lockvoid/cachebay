@@ -78,8 +78,8 @@ vi.mock("svelte", async () => {
 });
 
 import { gql } from "graphql-tag";
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import { flushSync } from "svelte";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { setCachebay } from "@/src/adapters/svelte/context";
 import { createFragment } from "@/src/adapters/svelte/createFragment.svelte";
 import { createCachebay } from "@/src/core/client";

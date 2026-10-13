@@ -2,7 +2,7 @@
 import { mount } from "@vue/test-utils";
 import { defineComponent, h } from "vue";
 import { useQuery, useMutation } from "@/src/adapters/vue";
-import { createTestClient, seedCache, tick, delay, fixtures, operations } from "@/test/helpers";
+import { createTestClient, seedCache, delay, fixtures, operations } from "@/test/helpers";
 
 describe("Mutations", () => {
   it("updates entity through normalization and returns mutation data", async () => {
@@ -118,7 +118,7 @@ describe("Mutations", () => {
       }
     `;
 
-    const { cache, client, fx } = createTestClient({
+    const { client, fx } = createTestClient({
       routes: [
         {
           when: ({ body }) => {

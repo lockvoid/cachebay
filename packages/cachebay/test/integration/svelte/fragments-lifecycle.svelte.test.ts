@@ -2,7 +2,6 @@ import { flushSync } from "svelte";
 import {
   createTestClient,
   createTestFragment,
-  fixtures,
   operations,
   tick,
 } from "./helpers.svelte";

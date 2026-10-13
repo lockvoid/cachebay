@@ -1,4 +1,4 @@
-import { defineComponent, h, computed, watch, Suspense } from "vue";
+import { defineComponent, h, computed, watch, Suspense, effectScope } from "vue";
 import { provideCachebay } from "@/src/adapters/vue/plugin";
 import { useQuery } from "@/src/adapters/vue/useQuery";
 import { createCachebay } from "@/src/core/client";
@@ -271,6 +271,7 @@ export const createConnectionComponentSuspense = (
     inheritAttrs: false,
 
     async setup(props, { attrs }) {
+      const watcherScope = effectScope();
       const variables = computed(() => {
         return attrs;
       });
@@ -291,19 +292,21 @@ export const createConnectionComponentSuspense = (
         return connectionFn(data.value);
       });
 
-      watch(data, (value) => {
-        if (value) {
-          dataUpdates.push(connectionFn(value));
-        } else {
-          dataUpdates.push(`${value}`);
-        }
-      }, { immediate: true });
+      watcherScope.run(() => {
+        watch(data, (value) => {
+          if (value) {
+            dataUpdates.push(connectionFn(value));
+          } else {
+            dataUpdates.push(`${value}`);
+          }
+        }, { immediate: true });
 
-      watch(error, (value) => {
-        if (value) {
-          errorUpdates.push(value);
-        }
-      }, { immediate: true });
+        watch(error, (value) => {
+          if (value) {
+            errorUpdates.push(value);
+          }
+        }, { immediate: true });
+      });
 
       return () => {
         renders.count++;
@@ -451,6 +454,7 @@ export const createDetailComponentSuspense = (
     inheritAttrs: false,
 
     async setup(props, { attrs }) {
+      const watcherScope = effectScope();
       const variables = computed(() => {
         return attrs;
       });
@@ -471,19 +475,21 @@ export const createDetailComponentSuspense = (
         return detailFn(data.value);
       });
 
-      watch(data, (value) => {
-        if (value) {
-          dataUpdates.push(detailFn(value));
-        } else {
-          dataUpdates.push(`${value}`);
-        }
-      }, { immediate: true });
+      watcherScope.run(() => {
+        watch(data, (value) => {
+          if (value) {
+            dataUpdates.push(detailFn(value));
+          } else {
+            dataUpdates.push(`${value}`);
+          }
+        }, { immediate: true });
 
-      watch(error, (value) => {
-        if (value) {
-          errorUpdates.push(value);
-        }
-      }, { immediate: true });
+        watch(error, (value) => {
+          if (value) {
+            errorUpdates.push(value);
+          }
+        }, { immediate: true });
+      });
 
       return () => {
         renders.count++;

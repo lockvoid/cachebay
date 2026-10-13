@@ -7,10 +7,10 @@
  */
 import { flushSync } from "svelte";
 import { createCachebay } from "@/src/core/client";
-import { tick, delay } from "@/test/helpers/concurrency";
 import type { CachebayInstance } from "@/src/core/client";
 import type { Transport } from "@/src/core/operations";
 import type { CachePolicy } from "@/src/core/types";
+import { tick, delay } from "@/test/helpers/concurrency";
 import type { DocumentNode } from "graphql";
 
 export { tick, delay, flushSync };

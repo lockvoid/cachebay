@@ -119,11 +119,9 @@ describe("useFragment", () => {
 
     const userId = ref("User:u1");
 
-    let fragmentData: any;
-
     const App = defineComponent({
       setup() {
-        fragmentData = useFragment({
+        useFragment({
           id: userId,
           fragment: USER_FIELDS_FRAGMENT,
         });
@@ -173,11 +171,9 @@ describe("useFragment", () => {
 
     const variables = ref({ first: 10 });
 
-    let fragmentData: any;
-
     const App = defineComponent({
       setup() {
-        fragmentData = useFragment({
+        useFragment({
           id: "User:u1",
           fragment: USER_FIELDS_FRAGMENT,
           variables,
@@ -220,11 +216,9 @@ describe("useFragment", () => {
       return { unsubscribe: vi.fn(), update: vi.fn() };
     });
 
-    let fragmentData: any;
-
     const App = defineComponent({
       setup() {
-        fragmentData = useFragment({
+        useFragment({
           id: "User:u1",
           fragment: USER_FIELDS_FRAGMENT,
         });

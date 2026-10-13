@@ -2,7 +2,6 @@ import { flushSync } from "svelte";
 import {
   createTestClient,
   createTestQuery,
-  seedCache,
   fixtures,
   operations,
   delay,
@@ -322,7 +321,7 @@ describe("Relay connections (Svelte)", () => {
     ];
 
     let currentCategory = $state("A");
-    let currentFirst = $state(2);
+    const currentFirst = $state(2);
     let currentAfter = $state<string | null>(null);
 
     const { cache } = createTestClient({ routes });

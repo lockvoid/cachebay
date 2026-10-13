@@ -1,13 +1,11 @@
 import { gql } from "graphql-tag";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { createCanonical } from "@/src/core/canonical";
 import { createDocuments } from "@/src/core/documents";
 import { createGraph } from "@/src/core/graph";
-import { createOperations } from "@/src/core/operations";
 import { createOptimistic } from "@/src/core/optimistic";
 import { createPlanner } from "@/src/core/planner";
-import { createQueries, getQueryCanonicalKeys } from "@/src/core/queries";
-import { createSSR } from "@/src/core/ssr";
+import { createQueries } from "@/src/core/queries";
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
@@ -17,7 +15,6 @@ describe("queries API", () => {
   let canonical: ReturnType<typeof createCanonical>;
   let documents: ReturnType<typeof createDocuments>;
   let queries: ReturnType<typeof createQueries>;
-  let operations: ReturnType<typeof createOperations>;
 
   beforeEach(() => {
     graph = createGraph({
@@ -34,24 +31,9 @@ describe("queries API", () => {
     const optimistic = createOptimistic({ graph });
     canonical = createCanonical({ graph, optimistic });
     documents = createDocuments({ graph, planner, canonical });
-    const ssr = createSSR({ hydrationTimeout: 100 }, { graph });
 
     // Create queries
     queries = createQueries({ documents, planner });
-
-    // Create operations with callback
-    operations = createOperations(
-      {
-        transport: {
-          http: vi.fn().mockResolvedValue({ data: null, error: null }),
-          ws: vi.fn(),
-        },
-      },
-      { planner, documents, ssr },
-      {
-        onQueryExecuted: queries.notifyDataBySignature,
-      },
-    );
   });
 
   describe("readQuery / writeQuery", () => {

@@ -1,16 +1,14 @@
 import { buildConnectionCanonicalKey } from "../compiler";
 import {
   ROOT_ID,
-  TYPENAME_FIELD,
-  ID_FIELD,
   CONNECTION_PAGE_INFO_FIELD,
   CONNECTION_TYPENAME,
   CONNECTION_PAGE_INFO_TYPENAME,
 } from "./constants";
 import type { GraphInstance } from "./graph";
 import type { PlannerInstance } from "./planner";
-import type { DocumentNode } from "graphql";
 import type { CachePlan, PlanField } from "../compiler";
+import type { DocumentNode } from "graphql";
 
 type OptimisticDependencies = { 
   graph: GraphInstance;
@@ -890,12 +888,11 @@ export const createOptimistic = ({ graph, planner }: OptimisticDependencies) => 
         }
 
         // Skip empty patch objects
-        let hasAny = false;
-        for (const _ in delta) {
-          hasAny = true;
+        let firstKey: string | undefined;
+        for (firstKey in delta) {
           break;
         }
-        if (!hasAny) {
+        if (firstKey === undefined) {
           return;
         }
 
@@ -1021,12 +1018,11 @@ export const createOptimistic = ({ graph, planner }: OptimisticDependencies) => 
             }
 
             // Skip empty patch objects
-            let hasAny = false;
-            for (const _ in delta) {
-              hasAny = true;
+            let firstKey: string | undefined;
+            for (firstKey in delta) {
               break;
             }
-            if (!hasAny) {
+            if (firstKey === undefined) {
               return;
             }
 

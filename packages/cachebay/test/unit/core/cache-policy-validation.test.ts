@@ -1,5 +1,5 @@
 import { gql } from "graphql-tag";
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createCachebay } from "@/src/core/client";
 
 // Mock instrumentation module for production test

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { setCachebay, getCachebay } from "@/src/adapters/svelte/context";
 import { createCachebay } from "@/src/core/client";
 import type { Transport } from "@/src/core/operations";
 
@@ -17,9 +18,6 @@ vi.mock("svelte", async () => {
     },
   };
 });
-
-// Import AFTER mock is set up
-import { setCachebay, getCachebay } from "@/src/adapters/svelte/context";
 
 describe("Svelte Context", () => {
   const mockTransport: Transport = {

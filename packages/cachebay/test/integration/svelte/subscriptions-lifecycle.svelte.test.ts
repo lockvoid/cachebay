@@ -171,7 +171,7 @@ describe("Subscriptions (Svelte)", () => {
         http: async () => ({ data: null, error: null }),
         ws: async () => {
           return {
-            subscribe(observer: any) {
+            subscribe() {
               return {
                 unsubscribe: () => {
                   unsubscribeCalled = true;

@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils";
-import { createTestClient, createConnectionComponent, seedCache, getPageInfo, getEdges, fixtures, operations, delay, tick } from "@/test/helpers";
+import { createTestClient, createConnectionComponent, getPageInfo, getEdges, fixtures, operations, delay, tick } from "@/test/helpers";
 
 describe("Relay connections", () => {
   describe("cache-first", () => {
@@ -38,7 +38,7 @@ describe("Relay connections", () => {
         },
       ];
 
-      const { client, cache } = createTestClient({ routes });
+      const { client } = createTestClient({ routes });
 
       const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
         cachePolicy: "cache-first",
@@ -104,7 +104,7 @@ describe("Relay connections", () => {
       },
     ];
 
-    const { client, cache } = createTestClient({ routes });
+    const { client } = createTestClient({ routes });
 
     const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
       cachePolicy: "cache-and-network",
@@ -170,7 +170,7 @@ describe("Relay connections", () => {
         },
       },
     ];
-    const { client, cache } = createTestClient({ routes });
+    const { client } = createTestClient({ routes });
 
     const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
       cachePolicy: "cache-and-network",
@@ -235,7 +235,7 @@ describe("Relay connections", () => {
       },
     ];
 
-    const { client, cache } = createTestClient({ routes });
+    const { client } = createTestClient({ routes });
 
     const Cmp = createConnectionComponent(operations.POSTS_WITH_PAGE_QUERY, {
       cachePolicy: "cache-and-network",
@@ -449,7 +449,7 @@ describe("Relay connections", () => {
       },
     ];
 
-    const { client, cache } = createTestClient({ routes });
+    const { client } = createTestClient({ routes });
 
     const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
       cachePolicy: "cache-and-network",
@@ -705,7 +705,7 @@ describe("Relay connections", () => {
       },
     ];
 
-    const { client, cache } = createTestClient({ routes });
+    const { client } = createTestClient({ routes });
 
     const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
       cachePolicy: "cache-and-network",

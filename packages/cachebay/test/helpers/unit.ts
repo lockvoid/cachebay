@@ -1,3 +1,7 @@
+import { visit, parse, Kind, type DocumentNode, type SelectionSetNode } from "graphql";
+import type { PlanField } from "@/src/compiler";
+import { compilePlan } from "@/src/compiler/compile";
+import { createGraph } from "@/src/core/graph";
 import type { Connection, ConnectionRecord, ConnectionRef } from "@/src/core/types";
 
 /**
@@ -22,11 +26,9 @@ export const writeConnectionPage = (graph: ReturnType<typeof createGraph>, pageK
 
     graph.putRecord(nodeKey, node);
 
-    const { node: _1, ...edgeFields } = edge;
-
     graph.putRecord(edgeKey, {
       __typename: edge.__typename || "Edge",
-      ...edgeFields,
+      ...edge,
       node: { __ref: nodeKey },
     });
     edgeKeys.push(edgeKey);
@@ -51,16 +53,6 @@ export const writeConnectionPage = (graph: ReturnType<typeof createGraph>, pageK
     pageInfo: { __ref: pageInfoKey },
   };
 };
-
-// old
-
-
-import { visit, parse, Kind, type DocumentNode, type SelectionSetNode } from "graphql";
-import gql from "graphql-tag";
-import type { PlanField } from "@/src/compiler";
-import { compilePlan } from "@/src/compiler/compile";
-import { ROOT_ID } from "@/src/core/constants";
-import { createGraph } from "@/src/core/graph";
 
 export function readCanonicalEdges(graph: ReturnType<typeof createGraph>, canonicalKey: string) {
   const page = graph.getRecord(canonicalKey);

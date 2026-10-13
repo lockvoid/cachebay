@@ -1,9 +1,9 @@
-import { describe, it, expect, vi } from "vitest";
 import { gql } from "graphql-tag";
+import { describe, it, expect, vi } from "vitest";
 import "fake-indexeddb/auto";
 import { createCachebay } from "@/src/core/client";
-import type { StorageAdapterFactory, StorageContext } from "@/src/storage/types";
 import type { Transport } from "@/src/core/operations";
+import type { StorageAdapterFactory, StorageContext } from "@/src/storage/types";
 import { delay } from "@/test/helpers";
 
 const mockTransport: Transport = {

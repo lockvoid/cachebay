@@ -135,7 +135,7 @@ export function recycleSnapshots<T>(
   prevData: T,
   nextData: T,
   prevFingerprints: any,
-  nextFingerprints: any
+  nextFingerprints: any,
 ): T {
   // Fast path: reference equality
   if (prevData === nextData) {
@@ -237,7 +237,7 @@ export function recycleSnapshots<T>(
         prevObject[key],
         nextObject[key],
         prevFingerprints?.[key],
-        nextFingerprints?.[key]
+        nextFingerprints?.[key],
       );
       if (recycled !== nextObject[key]) {
         nextObject[key] = recycled;

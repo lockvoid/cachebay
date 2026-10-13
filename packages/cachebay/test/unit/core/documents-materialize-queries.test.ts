@@ -41,7 +41,7 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
         Post: (p) => p.id,
       },
       interfaces: { Post: ["AudioPost", "VideoPost"] },
-      onChange: (_touchedIds) => {
+      onChange: () => {
         // No per-plan dirty marking; watchers will rely on versioned dependencies.
       },
     });
@@ -736,8 +736,6 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
         __version: expect.any(Number),
         user: { __version: expect.any(Number) },
       });
-      const rootFp1 = c1.fingerprints.__version;
-      const userFp1 = c1.fingerprints.user.__version;
 
       // Update the user
       documents.normalize({
@@ -760,6 +758,8 @@ describe("documents.materialize (plain materialization + source/ok + dependencie
         email: "u1+updated@example.com",
       });
       expect(c2.fingerprints.user).toEqual({ __version: expect.any(Number) });
+      expect(c2.fingerprints.__version).not.toBe(c1.fingerprints.__version);
+      expect(c2.fingerprints.user.__version).not.toBe(c1.fingerprints.user.__version);
 
       expect(c1.dependencies).toEqual(new Set([
         `${ROOT_ID}.user({"id":"u1"})`,

@@ -1,8 +1,8 @@
-import { defineConfig } from "tsdown";
 import { readFileSync, writeFileSync } from "fs";
 import { join } from "path";
-import ts from "typescript";
 import { compileModule } from "svelte/compiler";
+import { defineConfig } from "tsdown";
+import ts from "typescript";
 
 /**
  * Rolldown plugin that compiles .svelte.ts files using the Svelte compiler.

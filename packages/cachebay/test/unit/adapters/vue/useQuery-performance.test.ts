@@ -60,8 +60,8 @@ vi.mock("@/src/core/queries", async () => {
   };
 });
 
-import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
-import { ref, nextTick, defineComponent, h, createApp } from "vue";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { ref, nextTick, h, createApp } from "vue";
 import { provideCachebay } from "@/src/adapters/vue/plugin";
 import { useQuery } from "@/src/adapters/vue/useQuery";
 import { createCachebay } from "@/src/core/client";

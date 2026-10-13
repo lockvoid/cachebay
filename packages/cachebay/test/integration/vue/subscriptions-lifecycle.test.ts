@@ -9,7 +9,7 @@ describe("Subscriptions", () => {
     const cache = createCachebay({
       transport: {
         http: async () => ({ data: null, error: null }),
-        ws: async (context) => {
+        ws: async () => {
           return {
             subscribe(observer) {
               emitUpdate = (data) => {
@@ -171,7 +171,7 @@ describe("Subscriptions", () => {
         http: async () => ({ data: null, error: null }),
         ws: async () => {
           return {
-            subscribe(observer) {
+            subscribe() {
               return {
                 unsubscribe: () => {
                   unsubscribeCalled = true;

@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
 import { parse, print } from "graphql";
-import { dedupeDocument, dedupeSelectionSet } from "../../../src/compiler/lowering/dedupe";
+import { describe, it, expect } from "vitest";
+import { dedupeDocument } from "../../../src/compiler/lowering/dedupe";
 
 describe("dedupeSelectionSet", () => {
   it("merges identical fields with same args", () => {

@@ -1,5 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import { flushSync } from "svelte";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { setCachebay } from "@/src/adapters/svelte/context";
+import { createFragment } from "@/src/adapters/svelte/createFragment.svelte";
 import { compilePlan } from "@/src/compiler";
 import { createCachebay } from "@/src/core/client";
 import type { Transport } from "@/src/core/operations";
@@ -23,9 +25,6 @@ vi.mock("svelte", async () => {
     },
   };
 });
-
-import { setCachebay } from "@/src/adapters/svelte/context";
-import { createFragment } from "@/src/adapters/svelte/createFragment.svelte";
 
 const USER_FIELDS_FRAGMENT = compilePlan(/* GraphQL */ `
   fragment UserFields on User {
@@ -107,10 +106,9 @@ describe("createFragment", () => {
     });
 
     let currentId = $state("User:u1");
-    let fragmentResult: any;
 
     $effect.root(() => {
-      fragmentResult = createFragment({
+      createFragment({
         id: () => currentId,
         fragment: USER_FIELDS_FRAGMENT,
       });
@@ -146,10 +144,9 @@ describe("createFragment", () => {
     });
 
     let currentVars = $state<Record<string, unknown>>({ first: 10 });
-    let fragmentResult: any;
 
     $effect.root(() => {
-      fragmentResult = createFragment({
+      createFragment({
         id: "User:u1",
         fragment: USER_FIELDS_FRAGMENT,
         variables: () => currentVars,

@@ -10,7 +10,6 @@ describe("documents.normalize", () => {
   let graph: ReturnType<typeof createGraph>;
   let optimistic: ReturnType<typeof createOptimistic>;
   let planner: ReturnType<typeof createPlanner>;
-  let views: ReturnType<typeof createViews>;
   let canonical: ReturnType<typeof createCanonical>;
   let documents: ReturnType<typeof createDocuments>;
 

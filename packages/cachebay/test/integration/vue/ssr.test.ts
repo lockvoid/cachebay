@@ -282,7 +282,7 @@ describe("SSR", () => {
   describe("Non-suspense", () => {
     describe("cache-and-network", () => {
       it("swallows cached requests but fires uncached requests during hydration", async () => {
-        const { client, cache, fx } = await ssrRoundtrip({ routes });
+        const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
           cachePolicy: "cache-and-network",
@@ -380,7 +380,7 @@ describe("SSR", () => {
 
     describe("network-only", () => {
       it("swallows cached requests but fires uncached requests during hydration", async () => {
-        const { client, cache, fx } = await ssrRoundtrip({ routes });
+        const { client, fx } = await ssrRoundtrip({ routes });
 
         const Cmp = createConnectionComponent(operations.POSTS_QUERY, {
           cachePolicy: "network-only",

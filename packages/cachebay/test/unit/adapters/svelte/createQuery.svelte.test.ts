@@ -1,5 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import { flushSync } from "svelte";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { setCachebay } from "@/src/adapters/svelte/context";
+import { createQuery } from "@/src/adapters/svelte/createQuery.svelte";
 import { createCachebay } from "@/src/core/client";
 import type { Transport } from "@/src/core/operations";
 import { USER_QUERY } from "@/test/helpers/operations";
@@ -23,9 +25,6 @@ vi.mock("svelte", async () => {
     },
   };
 });
-
-import { setCachebay } from "@/src/adapters/svelte/context";
-import { createQuery } from "@/src/adapters/svelte/createQuery.svelte";
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
@@ -269,7 +268,7 @@ describe("createQuery", () => {
   });
 
   it("refetch does nothing when query is disabled", async () => {
-    let isEnabled = $state(false);
+    const isEnabled = $state(false);
     let queryResult: any;
 
     $effect.root(() => {
@@ -463,10 +462,9 @@ describe("createQuery", () => {
 
   it("reacts to reactive variables changes", async () => {
     let currentId = $state("1");
-    let queryResult: any;
 
     $effect.root(() => {
-      queryResult = createQuery({
+      createQuery({
         query: USER_QUERY,
         variables: () => ({ id: currentId }),
       });

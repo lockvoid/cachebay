@@ -9,12 +9,7 @@ export type FragmentsDependencies = {
   documents: DocumentsInstance;
 };
 
-export type ReadFragmentArgs<TData = unknown> = {
-  id: string;
-  fragment: DocumentNode | CachePlan | string;
-  fragmentName?: string;
-  variables?: Record<string, unknown>;
-};
+export type ReadFragmentArgs<TData = unknown> = Omit<WriteFragmentArgs<TData>, "data">;
 
 export type WatchFragmentOptions = {
   id: string;

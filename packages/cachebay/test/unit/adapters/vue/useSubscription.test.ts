@@ -60,11 +60,9 @@ describe("useSubscription", () => {
   });
 
   it("subscribes to WebSocket transport", async () => {
-    let subscriptionResult: any;
-
     const App = defineComponent({
       setup() {
-        subscriptionResult = useSubscription({
+        useSubscription({
           query: SUBSCRIPTION,
           variables: { roomId: "1" },
         });
@@ -209,11 +207,10 @@ describe("useSubscription", () => {
 
   it("reacts to reactive enabled changes", async () => {
     const isEnabled = ref(false);
-    let subscriptionResult: any;
 
     const App = defineComponent({
       setup() {
-        subscriptionResult = useSubscription({
+        useSubscription({
           query: SUBSCRIPTION,
           enabled: isEnabled,
         });
@@ -246,11 +243,10 @@ describe("useSubscription", () => {
 
   it("reacts to reactive variables changes", async () => {
     const roomId = ref("1");
-    let subscriptionResult: any;
 
     const App = defineComponent({
       setup() {
-        subscriptionResult = useSubscription({
+        useSubscription({
           query: SUBSCRIPTION,
           variables: () => ({ roomId: roomId.value }),
         });

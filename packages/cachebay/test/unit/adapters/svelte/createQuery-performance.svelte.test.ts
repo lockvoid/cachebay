@@ -77,15 +77,13 @@ vi.mock("svelte", async () => {
   };
 });
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import { flushSync } from "svelte";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { setCachebay } from "@/src/adapters/svelte/context";
 import { createQuery } from "@/src/adapters/svelte/createQuery.svelte";
 import { createCachebay } from "@/src/core/client";
 import type { CachePolicy } from "@/src/core/operations";
 import { operations } from "@/test/helpers";
-
-const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
 describe("createQuery Performance", () => {
   let client: ReturnType<typeof createCachebay>;

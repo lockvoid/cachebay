@@ -1,8 +1,8 @@
 import { createGraph } from "@/src/core/graph";
 import { createOptimistic } from "@/src/core/optimistic";
 import { createPlanner } from "@/src/core/planner";
-import { readCanonicalEdges } from "@/test/helpers/unit";
 import { POST_FRAGMENT, POST_COMMENTS_FRAGMENT, USER_POSTS_FRAGMENT } from "@/test/helpers/operations";
+import { readCanonicalEdges } from "@/test/helpers/unit";
 
 describe("Optimistic", () => {
   let graph: ReturnType<typeof createGraph>;
@@ -380,7 +380,7 @@ describe("Optimistic", () => {
 
         graph.flush();
 
-        const tx = optimistic.modifyOptimistic((o) => {
+        optimistic.modifyOptimistic((o) => {
           const c = o.connection({ parent: "Query", key: "posts" });
 
           c.removeNode("Post:p1");
@@ -853,8 +853,8 @@ describe("Optimistic", () => {
             { 
               position: "end",
               fragment: POST_FRAGMENT,
-              fragmentName: "PostFields"
-            }
+              fragmentName: "PostFields",
+            },
           );
         });
 
@@ -866,7 +866,7 @@ describe("Optimistic", () => {
           __typename: "Post",
           id: "p1",
           title: "Post 1",
-          flags: ["draft"]
+          flags: ["draft"],
         });
       });
 
@@ -880,8 +880,8 @@ describe("Optimistic", () => {
             {
               position: "end",
               fragment: POST_COMMENTS_FRAGMENT,
-              fragmentName: "PostComments"
-            }
+              fragmentName: "PostComments",
+            },
           );
         });
 
@@ -909,8 +909,6 @@ describe("Optimistic", () => {
       });
 
       it("uses fragment typename when not provided in node data", () => {
-        const key = "@connection.posts({})";
-
         const tx = optimistic.modifyOptimistic((o) => {
           const c = o.connection({ parent: "Query", key: "posts" });
           c.addNode(
@@ -918,8 +916,8 @@ describe("Optimistic", () => {
             {
               position: "end",
               fragment: POST_FRAGMENT,
-              fragmentName: "PostFields"
-            }
+              fragmentName: "PostFields",
+            },
           );
         });
 
@@ -929,8 +927,6 @@ describe("Optimistic", () => {
       });
 
       it("respects provided typename over fragment typename", () => {
-        const key = "@connection.posts({})";
-
         const tx = optimistic.modifyOptimistic((o) => {
           const c = o.connection({ parent: "Query", key: "posts" });
           c.addNode(
@@ -938,8 +934,8 @@ describe("Optimistic", () => {
             {
               position: "end",
               fragment: POST_FRAGMENT,
-              fragmentName: "PostFields"
-            }
+              fragmentName: "PostFields",
+            },
           );
         });
 
@@ -959,8 +955,8 @@ describe("Optimistic", () => {
               position: "end",
               fragment: USER_POSTS_FRAGMENT,
               fragmentName: "UserPosts",
-              variables: { postsCategory: "tech" }
-            }
+              variables: { postsCategory: "tech" },
+            },
           );
         });
 
@@ -980,7 +976,7 @@ describe("Optimistic", () => {
           const c = o.connection({ parent: "Query", key: "posts" });
           c.addNode(
             { __typename: "Post", id: "p1", title: "No Fragment" },
-            { position: "end" }
+            { position: "end" },
           );
         });
 
@@ -1024,7 +1020,7 @@ describe("Optimistic", () => {
               position: "end",
               fragment: POST_COMMENTS_FRAGMENT,
               fragmentName: "PostComments",
-            }
+            },
           );
         });
 
@@ -1069,8 +1065,8 @@ describe("Optimistic", () => {
             {
               position: "end",
               fragment: POST_COMMENTS_FRAGMENT,
-              fragmentName: "PostComments"
-            }
+              fragmentName: "PostComments",
+            },
           );
         });
 
@@ -1090,8 +1086,6 @@ describe("Optimistic", () => {
       });
 
       it("preserves nested connections across layers", () => {
-        const key = "@connection.posts({})";
-
         const tx1 = optimistic.modifyOptimistic((o) => {
           const c = o.connection({ parent: "Query", key: "posts" });
           c.addNode(
@@ -1099,8 +1093,8 @@ describe("Optimistic", () => {
             {
               position: "end",
               fragment: POST_COMMENTS_FRAGMENT,
-              fragmentName: "PostComments"
-            }
+              fragmentName: "PostComments",
+            },
           );
         });
 
@@ -1111,8 +1105,8 @@ describe("Optimistic", () => {
             {
               position: "end",
               fragment: POST_COMMENTS_FRAGMENT,
-              fragmentName: "PostComments"
-            }
+              fragmentName: "PostComments",
+            },
           );
         });
 
@@ -1136,20 +1130,18 @@ describe("Optimistic", () => {
       });
 
       it("updates nested connection on commit with real data", () => {
-        const key = "@connection.posts({})";
-
         const tx = optimistic.modifyOptimistic((o, ctx) => {
           const c = o.connection({ parent: "Query", key: "posts" });
           c.addNode(
             { 
               id: ctx?.data?.id ?? "temp-1", 
-              title: ctx?.data?.title ?? "Optimistic Title" 
+              title: ctx?.data?.title ?? "Optimistic Title",
             },
             {
               position: "end",
               fragment: POST_COMMENTS_FRAGMENT,
-              fragmentName: "PostComments"
-            }
+              fragmentName: "PostComments",
+            },
           );
         });
 
@@ -1200,8 +1192,6 @@ describe("Optimistic", () => {
           }
         `;
 
-        const key = "@connection.posts({})";
-
         const tx = optimistic.modifyOptimistic((o) => {
           const c = o.connection({ parent: "Query", key: "posts" });
           c.addNode(
@@ -1209,8 +1199,8 @@ describe("Optimistic", () => {
             {
               position: "end",
               fragment: ComplexFragment,
-              fragmentName: "ComplexPost"
-            }
+              fragmentName: "ComplexPost",
+            },
           );
         });
 
@@ -1235,8 +1225,8 @@ describe("Optimistic", () => {
             {
               position: "end",
               fragment: POST_FRAGMENT,
-              fragmentName: "PostFields"
-            }
+              fragmentName: "PostFields",
+            },
           );
         });
 
@@ -1256,8 +1246,8 @@ describe("Optimistic", () => {
               position: "end",
               fragment: POST_FRAGMENT,
               fragmentName: "PostFields",
-              edge: { cursor: "custom-cursor", score: 42 }
-            }
+              edge: { cursor: "custom-cursor", score: 42 },
+            },
           );
         });
 
@@ -1287,8 +1277,8 @@ describe("Optimistic", () => {
               position: "after",
               anchor: "Post:p1",
               fragment: POST_FRAGMENT,
-              fragmentName: "PostFields"
-            }
+              fragmentName: "PostFields",
+            },
           );
         });
 
@@ -1301,8 +1291,6 @@ describe("Optimistic", () => {
 
     describe("idempotency and edge cases", () => {
       it("is idempotent when called multiple times with same fragment", () => {
-        const key = "@connection.posts({})";
-
         const tx = optimistic.modifyOptimistic((o) => {
           const c = o.connection({ parent: "Query", key: "posts" });
 
@@ -1312,8 +1300,8 @@ describe("Optimistic", () => {
             { 
               position: "end",
               fragment: POST_COMMENTS_FRAGMENT, 
-              fragmentName: "PostComments" 
-            }
+              fragmentName: "PostComments",
+            },
           );
 
           // Manually add something to the nested connection
@@ -1326,8 +1314,8 @@ describe("Optimistic", () => {
             { 
               position: "end",
               fragment: POST_COMMENTS_FRAGMENT, 
-              fragmentName: "PostComments" 
-            }
+              fragmentName: "PostComments",
+            },
           );
         });
 
@@ -1352,8 +1340,8 @@ describe("Optimistic", () => {
             { 
               position: "end",
               fragment: POST_COMMENTS_FRAGMENT, 
-              fragmentName: "PostComments" 
-            }
+              fragmentName: "PostComments",
+            },
           );
         });
 
@@ -1373,8 +1361,6 @@ describe("Optimistic", () => {
       });
 
       it("handles multiple revert calls", () => {
-        const key = "@connection.posts({})";
-
         const tx = optimistic.modifyOptimistic((o) => {
           const c = o.connection({ parent: "Query", key: "posts" });
           c.addNode(
@@ -1382,8 +1368,8 @@ describe("Optimistic", () => {
             { 
               position: "end",
               fragment: POST_COMMENTS_FRAGMENT, 
-              fragmentName: "PostComments" 
-            }
+              fragmentName: "PostComments",
+            },
           );
         });
 
@@ -1403,8 +1389,6 @@ describe("Optimistic", () => {
       });
 
       it("handles layer 2 reverting before layer 1", () => {
-        const key = "@connection.posts({})";
-
         const tx1 = optimistic.modifyOptimistic((o) => {
           const c = o.connection({ parent: "Query", key: "posts" });
           c.addNode(
@@ -1412,8 +1396,8 @@ describe("Optimistic", () => {
             { 
               position: "end",
               fragment: POST_COMMENTS_FRAGMENT, 
-              fragmentName: "PostComments" 
-            }
+              fragmentName: "PostComments",
+            },
           );
         });
 
@@ -1424,8 +1408,8 @@ describe("Optimistic", () => {
             { 
               position: "end",
               fragment: POST_COMMENTS_FRAGMENT, 
-              fragmentName: "PostComments" 
-            }
+              fragmentName: "PostComments",
+            },
           );
         });
 
@@ -1449,13 +1433,11 @@ describe("Optimistic", () => {
       });
 
       it("properly cleans up cursor indices on revert", () => {
-        const key = "@connection.posts({})";
-
         // First, create a connection with actual cursor data
         graph.putRecord("@connection.Post:p1.PostComments({})", {
           __typename: "Connection",
           edges: { __refs: [] },
-          pageInfo: { __ref: "@connection.Post:p1.PostComments({}).pageInfo" }
+          pageInfo: { __ref: "@connection.Post:p1.PostComments({}).pageInfo" },
         });
         graph.putRecord("@connection.Post:p1.PostComments({})::cursorIndex", { cursor1: 0 });
 
@@ -1466,8 +1448,8 @@ describe("Optimistic", () => {
             { 
               position: "end",
               fragment: POST_COMMENTS_FRAGMENT, 
-              fragmentName: "PostComments" 
-            }
+              fragmentName: "PostComments",
+            },
           );
         });
 
@@ -1487,8 +1469,6 @@ describe("Optimistic", () => {
       });
 
       it("properly cleans up pageInfo records on revert", () => {
-        const key = "@connection.posts({})";
-
         const tx = optimistic.modifyOptimistic((o) => {
           const c = o.connection({ parent: "Query", key: "posts" });
           c.addNode(
@@ -1496,8 +1476,8 @@ describe("Optimistic", () => {
             { 
               position: "end",
               fragment: POST_COMMENTS_FRAGMENT, 
-              fragmentName: "PostComments" 
-            }
+              fragmentName: "PostComments",
+            },
           );
         });
 
@@ -1529,8 +1509,8 @@ describe("Optimistic", () => {
               position: "end",
               fragment: USER_POSTS_FRAGMENT, 
               fragmentName: "UserPosts",
-              variables: { postsCategory: "tech" }
-            }
+              variables: { postsCategory: "tech" },
+            },
           );
         });
 
@@ -1561,8 +1541,8 @@ describe("Optimistic", () => {
             { 
               position: "end",
               fragment: POST_COMMENTS_FRAGMENT, 
-              fragmentName: "PostComments" 
-            }
+              fragmentName: "PostComments",
+            },
           );
         });
 
@@ -1573,8 +1553,8 @@ describe("Optimistic", () => {
             { 
               position: "end",
               fragment: POST_COMMENTS_FRAGMENT, 
-              fragmentName: "PostComments" 
-            }
+              fragmentName: "PostComments",
+            },
           );
         });
 

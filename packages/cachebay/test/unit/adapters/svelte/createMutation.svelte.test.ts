@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { flushSync } from "svelte";
+import { setCachebay } from "@/src/adapters/svelte/context";
+import { createMutation } from "@/src/adapters/svelte/createMutation.svelte";
 import { createCachebay } from "@/src/core/client";
 import type { Transport } from "@/src/core/operations";
 
@@ -19,9 +20,6 @@ vi.mock("svelte", async () => {
     onDestroy: () => {},
   };
 });
-
-import { setCachebay } from "@/src/adapters/svelte/context";
-import { createMutation } from "@/src/adapters/svelte/createMutation.svelte";
 
 const MUTATION = "mutation CreateUser($name: String!) { createUser(name: $name) { id name } }";
 

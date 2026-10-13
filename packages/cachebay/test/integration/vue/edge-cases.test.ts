@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils";
-import { defineComponent, h, computed, watch, Suspense } from "vue";
+import { defineComponent, h } from "vue";
 import { useFragment } from "@/src/adapters/vue/useFragment";
 import { useQuery } from "@/src/adapters/vue/useQuery";
 import { createTestClient, createConnectionComponent, getEdges, fixtures, operations, delay, tick } from "@/test/helpers";
@@ -85,7 +85,7 @@ describe("Edge cases", () => {
   });
 
   it("renders concrete fragment implementations without phantom keys", async () => {
-    const { cache, client } = createTestClient();
+    const { cache } = createTestClient();
 
     cache.writeFragment({
       id: "Post:1",
@@ -114,7 +114,7 @@ describe("Edge cases", () => {
   });
 
   it("hides deleted entities from live fragment readers", async () => {
-    const { cache, client } = createTestClient();
+    const { cache } = createTestClient();
 
     cache.writeFragment({
       id: "Post:1",
@@ -214,7 +214,7 @@ describe("Edge cases", () => {
       },
     ];
 
-    const { client, cache, fx } = createTestClient({
+    const { client, fx } = createTestClient({
       routes,
 
       cacheOptions: {
@@ -223,15 +223,15 @@ describe("Edge cases", () => {
       },
     });
 
-    const Cmp = defineComponent({
-      name: "Cmp",
+    const ConcurrentQueriesComponent = defineComponent({
+      name: "ConcurrentQueriesComponent",
 
       inheritAttrs: false,
 
       setup() {
-        const userQuery = useQuery({ query: operations.USER_QUERY, variables: { id: "1" }, cachePolicy: "cache-and-network" });
+        useQuery({ query: operations.USER_QUERY, variables: { id: "1" }, cachePolicy: "cache-and-network" });
 
-        const userPostsQuery = useQuery({ query: operations.USER_POSTS_QUERY, variables: { userId: "1", postsCategory: "A", postsFirst: 2, postsAfter: null }, cachePolicy: "cache-and-network" });
+        useQuery({ query: operations.USER_POSTS_QUERY, variables: { userId: "1", postsCategory: "A", postsFirst: 2, postsAfter: null }, cachePolicy: "cache-and-network" });
 
         return () => {
           return h("div", {});
@@ -239,7 +239,7 @@ describe("Edge cases", () => {
       },
     });
 
-    const wrapper = mount(Cmp, {
+    const wrapper = mount(ConcurrentQueriesComponent, {
       global: {
         plugins: [client],
       },
@@ -248,6 +248,7 @@ describe("Edge cases", () => {
     await delay(10);
 
     expect(fx.calls.length).toBe(2);
+    wrapper.unmount();
   });
 
   it("invalidates query cache when last watcher unmounts and remount gets fresh data", async () => {

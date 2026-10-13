@@ -3,7 +3,6 @@ import {
   createTestClient,
   createTestQuery,
   createTestFragment,
-  seedCache,
   fixtures,
   operations,
   delay,

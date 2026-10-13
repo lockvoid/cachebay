@@ -1,5 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import { flushSync } from "svelte";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { setCachebay } from "@/src/adapters/svelte/context";
+import { createSubscription } from "@/src/adapters/svelte/createSubscription.svelte";
 import { createCachebay } from "@/src/core/client";
 import type { Transport } from "@/src/core/operations";
 
@@ -22,9 +24,6 @@ vi.mock("svelte", async () => {
     },
   };
 });
-
-import { setCachebay } from "@/src/adapters/svelte/context";
-import { createSubscription } from "@/src/adapters/svelte/createSubscription.svelte";
 
 const SUBSCRIPTION = "subscription OnMessage { messageAdded { id text } }";
 
@@ -216,9 +215,7 @@ describe("createSubscription", () => {
     };
     mockTransport.ws = vi.fn().mockResolvedValue(mockObservable);
 
-    let dispose: (() => void) | undefined;
-
-    dispose = $effect.root(() => {
+    const dispose = $effect.root(() => {
       createSubscription({
         query: SUBSCRIPTION,
       });
@@ -235,6 +232,7 @@ describe("createSubscription", () => {
     }
 
     expect(unsubscribeSpy).toHaveBeenCalled();
+    dispose();
   });
 
   it("handles multiple data emissions", async () => {

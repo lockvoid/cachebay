@@ -6,7 +6,6 @@ import { createDocuments } from "@/src/core/documents";
 import { createGraph } from "@/src/core/graph";
 import { createOptimistic } from "@/src/core/optimistic";
 import { createPlanner } from "@/src/core/planner";
-import { users } from "@/test/helpers/fixtures";
 import { USER_QUERY } from "@/test/helpers/operations";
 
 describe("documents.materialize - fragments with rootId", () => {

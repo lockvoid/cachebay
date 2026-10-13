@@ -559,10 +559,10 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     let canonicalOK = true;
 
     const misses = [];
-    const miss = __DEV__ ? (m: Miss) => { misses.push(m); } : (_: Miss) => { };
+    const miss = __DEV__ ? (m: Miss) => { misses.push(m); } : () => { };
     const addPath = __DEV__
       ? (base: string, seg: string) => (base ? base + "." + seg : seg)
-      : (_base: string, _seg: string) => "";
+      : () => "";
 
     const selectionAppliesToRuntime = (field: any, runtimeType: string | undefined): boolean => {
       const one = field.typeCondition || field.onType || field.typeName;
@@ -1024,7 +1024,7 @@ export const createDocuments = (deps: DocumentsDependencies) => {
     const fingerprints = fingerprint ? {} : undefined;
 
     // Determine if rootId is actually a root ID (@ or @mutation.X or @subscription.X)
-    const isRootId = rootId && (rootId === ROOT_ID || rootId.startsWith('@mutation.') || rootId.startsWith('@subscription.'));
+    const isRootId = rootId && (rootId === ROOT_ID || rootId.startsWith("@mutation.") || rootId.startsWith("@subscription."));
     
     if (rootId && !isRootId) {
       // Fragment materialization - read from entity

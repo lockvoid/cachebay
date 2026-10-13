@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { CombinedError } from "../../../src/core/errors";
-import { createOperations } from "../../../src/core/operations";
-import type { Transport, OperationResult, ObservableLike } from "../../../src/core/operations";
 import * as instrumentation from "../../../src/core/instrumentation";
+import { createOperations } from "../../../src/core/operations";
+import type { Transport, OperationResult } from "../../../src/core/operations";
 
 describe("operations", () => {
   let mockTransport: Transport;

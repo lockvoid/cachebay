@@ -3,7 +3,6 @@ import { createCanonical } from "@/src/core/canonical";
 import { ROOT_ID } from "@/src/core/constants";
 import { createDocuments } from "@/src/core/documents";
 import { createGraph } from "@/src/core/graph";
-import { createOptimistic } from "@/src/core/optimistic";
 import { createPlanner } from "@/src/core/planner";
 import { createQueries } from "@/src/core/queries";
 import { users } from "@/test/helpers/fixtures";
@@ -13,7 +12,6 @@ describe("queries - cache reference counting", () => {
   let graph: ReturnType<typeof createGraph>;
   let planner: ReturnType<typeof createPlanner>;
   let canonicalLayer: ReturnType<typeof createCanonical>;
-  let optimistic: ReturnType<typeof createOptimistic>;
   let documents: ReturnType<typeof createDocuments>;
   let queries: ReturnType<typeof createQueries>;
 
@@ -30,7 +28,6 @@ describe("queries - cache reference counting", () => {
     graph.putRecord(ROOT_ID, { id: ROOT_ID, __typename: ROOT_ID });
 
     canonicalLayer = createCanonical({ graph });
-    optimistic = createOptimistic({ graph, canonical: canonicalLayer });
 
     documents = createDocuments({
       graph,

@@ -1,5 +1,5 @@
 import { flushSync } from "svelte";
-import { createTestClient, createTestQuery, seedCache, fixtures, operations, delay, tick } from "./helpers.svelte";
+import { createTestClient, createTestQuery, fixtures, operations, delay, tick } from "./helpers.svelte";
 
 describe("Svelte adapter smoke test", () => {
   it("createQuery fetches data from network", async () => {
