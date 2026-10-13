@@ -6,6 +6,11 @@
   "type": "module",
   "main": "./dist/core/index.mjs",
   "types": "./dist/core/index.d.mts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lockvoid/cachebay.git",
+    "directory": "packages/cachebay"
+  },
   "scripts": {
     "build": "tsdown",
     "coverage": "vitest --run --coverage",
